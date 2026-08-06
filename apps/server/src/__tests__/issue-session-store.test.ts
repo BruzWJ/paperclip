@@ -350,7 +350,7 @@ describe("Issue Session bounded read store", () => {
     expect(fixture.selectCount).toBe(0);
   });
 
-  it("authenticates the cursor and binds company, issue, Session, run, direction, projection, and row kind", async () => {
+  it("authenticates the cursor and binds company, issue, Session, run, delta range, direction, projection, and row kind", async () => {
     const fixture = queuedDb([[messageRow(0), messageRow(1)]]);
     const store = createIssueSessionStore(fixture.db, {
       cursorSecret: "test-only-session-store-secret",
@@ -365,6 +365,9 @@ describe("Issue Session bounded read store", () => {
       scope({ sessionId: otherSessionId }),
       scope({ runId: otherRunId }),
       scope({ runId: undefined }),
+      scope({ afterSeq: 0 }),
+      scope({ highWaterSeq: 1 }),
+      scope({ messageOrder: "changed" }),
       scope({ direction: "desc" }),
       scope({ projection: "audit" }),
     ];
@@ -410,6 +413,103 @@ describe("Issue Session bounded read store", () => {
     await expect(
       store.pageMessages(scope({ sessionId: "" })),
     ).rejects.toBeInstanceOf(IssueSessionInvalidCursor);
+    await expect(
+      store.pageMessages(scope({ highWaterSeq: -2 })),
+    ).rejects.toBeInstanceOf(IssueSessionInvalidCursor);
+    await expect(
+      store.pageMessages(scope({ afterSeq: -2 })),
+    ).rejects.toBeInstanceOf(IssueSessionInvalidCursor);
+    await expect(
+      store.pageMessages(scope({ afterSeq: 2, highWaterSeq: 1 })),
+    ).rejects.toBeInstanceOf(IssueSessionInvalidCursor);
+    await expect(
+      store.pageEvents(scope({ messageOrder: "changed" })),
+    ).rejects.toBeInstanceOf(IssueSessionInvalidCursor);
     expect(fixture.selectCount).toBe(0);
+  });
+
+  it("rejects storage rows beyond the signed snapshot high-water", async () => {
+    const fixture = queuedDb([[messageRow(2)]]);
+    const store = createIssueSessionStore(fixture.db, {
+      cursorSecret: "test-only-session-store-secret",
+    });
+
+    await expect(
+      store.pageMessages(scope({ highWaterSeq: 1 })),
+    ).rejects.toThrow("cross-scope or non-keyset page");
+  });
+
+  it("rejects message state updated beyond the signed snapshot high-water", async () => {
+    const row = { ...messageRow(1), modelStateSeq: 2 };
+    const fixture = queuedDb([[row]]);
+    const store = createIssueSessionStore(fixture.db, {
+      cursorSecret: "test-only-session-store-secret",
+    });
+
+    await expect(
+      store.pageMessages(scope({ highWaterSeq: 1 })),
+    ).rejects.toThrow("message state outside the snapshot");
+  });
+
+  it("re-emits a mutable message when model-visible state advances after a checkpoint", async () => {
+    const partial = { ...messageRow(2), modelStateSeq: 4 };
+    const final = { ...messageRow(2), modelStateSeq: 6 };
+    const fixture = queuedDb([[partial], [final]]);
+    const store = createIssueSessionStore(fixture.db, {
+      cursorSecret: "test-only-session-store-secret",
+    });
+
+    const first = await store.pageMessages(scope({
+      afterSeq: -1,
+      highWaterSeq: 4,
+      messageOrder: "changed",
+    }));
+    const second = await store.pageMessages(scope({
+      afterSeq: 4,
+      highWaterSeq: 6,
+      messageOrder: "changed",
+    }));
+
+    expect(first.items.map(({ row }) => [row.seq, row.modelStateSeq])).toEqual([
+      [2, 4],
+    ]);
+    expect(second.items.map(({ row }) => [row.seq, row.modelStateSeq])).toEqual([
+      [2, 6],
+    ]);
+  });
+
+  it("keysets equal model-state sequences by strictly increasing message id", async () => {
+    const firstRow = { ...messageRow(1), modelStateSeq: 4 };
+    const secondRow = { ...messageRow(2), modelStateSeq: 4 };
+    const fixture = queuedDb([[firstRow, secondRow], [secondRow]]);
+    const store = createIssueSessionStore(fixture.db, {
+      cursorSecret: "test-only-session-store-secret",
+    });
+    const changedScope = scope({
+      afterSeq: -1,
+      highWaterSeq: 4,
+      messageOrder: "changed",
+    });
+
+    const first = await store.pageMessages(changedScope, { limit: 1 });
+    const second = await store.pageMessages(changedScope, {
+      cursor: first.nextCursor,
+      limit: 1,
+    });
+
+    expect(first.items.map(({ row }) => row.id)).toEqual([firstRow.id]);
+    expect(second.items.map(({ row }) => row.id)).toEqual([secondRow.id]);
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it("rejects storage rows at or below the signed delta checkpoint", async () => {
+    const fixture = queuedDb([[messageRow(1)]]);
+    const store = createIssueSessionStore(fixture.db, {
+      cursorSecret: "test-only-session-store-secret",
+    });
+
+    await expect(
+      store.pageMessages(scope({ afterSeq: 1 })),
+    ).rejects.toThrow("cross-scope or non-keyset page");
   });
 });

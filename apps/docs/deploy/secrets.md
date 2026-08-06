@@ -30,8 +30,8 @@ run or downstream system might have captured a value.
 ## Using Secrets In Runs
 
 Creating a company secret does not automatically create an environment variable.
-You use a secret by binding it into a project, environment, or plugin
-configuration field that supports secret references.
+You use a secret by binding it into a project or environment configuration
+field that supports secret references.
 
 For project environment variables:
 
@@ -51,7 +51,7 @@ own reserved `PAPERCLIP_*` runtime variables separately.
 
 ## User-Specific Secrets
 
-User-specific secrets let a project or plugin declare a slot such as
+User-specific secrets let a project declare a slot such as
 `github_api_token`, then resolve the value owned by the run's responsible user
 at dispatch time. The environment binding stores only the definition key:
 

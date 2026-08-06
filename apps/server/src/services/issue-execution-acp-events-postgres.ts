@@ -65,6 +65,47 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
+const PAPERCLIP_MCP_SERVER_NAME = "paperclip";
+const PAPERCLIP_MCP_TOOL_NAME = /^[A-Za-z0-9._-]{1,128}$/;
+
+/**
+ * Extracts the exact Paperclip MCP identity retained in normalized ACP raw
+ * input. A Paperclip-marked envelope must be exact; display titles are never
+ * parsed as aliases for canonical tool names.
+ */
+export function canonicalPaperclipMcpToolName(value: unknown): string | null {
+  if (!isPlainRecord(value) || value.server !== PAPERCLIP_MCP_SERVER_NAME) {
+    return null;
+  }
+  if (
+    Object.keys(value).sort().join("\n") !==
+      ["arguments", "server", "tool"].sort().join("\n") ||
+    typeof value.tool !== "string" ||
+    !PAPERCLIP_MCP_TOOL_NAME.test(value.tool)
+  ) {
+    reject("Paperclip MCP tool input has no exact canonical identity");
+  }
+  return value.tool;
+}
+
+/**
+ * Projects one ACP tool label into a collision-free Session name. Paperclip
+ * MCP tools retain their exact compiler-owned name; every other tool is kept
+ * in the separate provider display namespace and can never masquerade as a
+ * Paperclip capability.
+ */
+export function projectedAcpToolName(
+  rawInput: unknown,
+  providerTitle: string,
+): string {
+  const paperclipToolName = canonicalPaperclipMcpToolName(rawInput);
+  if (paperclipToolName !== null) return paperclipToolName;
+  if (providerTitle.length === 0) {
+    reject("ACP provider tool has no display title");
+  }
+  return `provider-tool:${providerTitle}`;
+}
+
 function redactValue<T>(
   value: T,
   redactText: (text: string) => string,
@@ -583,7 +624,9 @@ async function publishToolEvent(
     if (event.kind !== "tool_call") {
       reject("ACP tool update arrived before its tool-call creation");
     }
-    const name = redactSensitiveText(redactText(event.title));
+    const name = redactSensitiveText(redactText(
+      projectedAcpToolName(event.rawInput, event.title),
+    ));
     await publication.publish(IssueSession.Event.Tool.Input.Started.type, {
       timestamp: publication.timestamp.getTime(),
       sessionID: prompt.sessionId,

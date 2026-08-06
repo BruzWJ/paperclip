@@ -15,8 +15,6 @@ const manifest: PaperclipPluginManifestV1 = {
     "database.namespace.write",
     "issues.read",
     "issues.create",
-    "issues.update",
-    "issues.withdraw",
     "ui.dashboardWidget.register",
     "ui.detailTab.register",
     "instance.settings.register"
@@ -35,16 +33,12 @@ const manifest: PaperclipPluginManifestV1 = {
       routeKey: "initialize",
       method: "POST",
       path: "/issues/:issueId/smoke",
-      auth: "board",
-      capability: "api.routes.register",
       companyResolution: { from: "issue", param: "issueId" }
     },
     {
       routeKey: "summary",
       method: "GET",
       path: "/issues/:issueId/smoke",
-      auth: "board",
-      capability: "api.routes.register",
       companyResolution: { from: "issue", param: "issueId" }
     }
   ],

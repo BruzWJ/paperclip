@@ -841,8 +841,7 @@ async function inspectCreatorEndpoint(
         : null;
       if (
         !plugin ||
-        plugin.pluginKey !== issue.creatorPluginKey ||
-        plugin.status === "uninstalled"
+        plugin.pluginKey !== issue.creatorPluginKey
       ) {
         return {
           terminalReason: "plugin_uninstalled",

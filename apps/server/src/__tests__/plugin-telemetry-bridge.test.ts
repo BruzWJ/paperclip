@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHostClientHandlers } from "../../../../packages/plugins/sdk/src/host-client-factory.js";
 import { PLUGIN_RPC_ERROR_CODES } from "../../../../packages/plugins/sdk/src/protocol.js";
 import { buildHostServices } from "../services/plugin-host-services.js";
+import {
+  createPluginHostServicesTestOptions,
+  createPluginManifestFake,
+  noopPluginEventDelivery,
+} from "./helpers/plugin-host-services.js";
 
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 
@@ -20,6 +25,10 @@ function createEventBusStub() {
   } as any;
 }
 
+const telemetryHostOptions = createPluginHostServicesTestOptions({
+  manifest: createPluginManifestFake({ id: "linear" }),
+});
+
 describe("plugin telemetry bridge", () => {
   beforeEach(() => {
     mockGetTelemetryClient.mockReset();
@@ -32,13 +41,9 @@ describe("plugin telemetry bridge", () => {
     const services = buildHostServices(
       {} as never,
       "plugin-record-id",
-      "linear",
       createEventBusStub(),
-      undefined,
-      {
-        ordinaryIssues: {} as never,
-        pluginIssueControlPlane: {} as never,
-      },
+      noopPluginEventDelivery,
+      telemetryHostOptions,
     );
     const handlers = createHostClientHandlers({
       pluginId: "linear",
@@ -63,13 +68,9 @@ describe("plugin telemetry bridge", () => {
     const services = buildHostServices(
       {} as never,
       "plugin-record-id",
-      "linear",
       createEventBusStub(),
-      undefined,
-      {
-        ordinaryIssues: {} as never,
-        pluginIssueControlPlane: {} as never,
-      },
+      noopPluginEventDelivery,
+      telemetryHostOptions,
     );
 
     await expect(
@@ -83,13 +84,9 @@ describe("plugin telemetry bridge", () => {
     const services = buildHostServices(
       {} as never,
       "plugin-record-id",
-      "linear",
       createEventBusStub(),
-      undefined,
-      {
-        ordinaryIssues: {} as never,
-        pluginIssueControlPlane: {} as never,
-      },
+      noopPluginEventDelivery,
+      telemetryHostOptions,
     );
     const handlers = createHostClientHandlers({
       pluginId: "linear",
@@ -113,13 +110,9 @@ describe("plugin telemetry bridge", () => {
     const services = buildHostServices(
       {} as never,
       "plugin-record-id",
-      "linear",
       createEventBusStub(),
-      undefined,
-      {
-        ordinaryIssues: {} as never,
-        pluginIssueControlPlane: {} as never,
-      },
+      noopPluginEventDelivery,
+      telemetryHostOptions,
     );
     const handlers = createHostClientHandlers({
       pluginId: "linear",

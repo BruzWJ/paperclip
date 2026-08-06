@@ -1,11 +1,11 @@
-import { usePluginAction, usePluginData, type PluginWidgetProps } from "@paperclipai/plugin-sdk/ui";
+import { usePluginAction, usePluginData, type PluginHostContextProps } from "@paperclipai/plugin-sdk/ui";
 
 type HealthData = {
   status: "ok" | "degraded" | "error";
   checkedAt: string;
 };
 
-export function DashboardWidget(_props: PluginWidgetProps) {
+export function DashboardWidget(_props: PluginHostContextProps) {
   const { data, loading, error } = usePluginData<HealthData>("health");
   const ping = usePluginAction("ping");
 

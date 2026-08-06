@@ -6,15 +6,15 @@ import type {
   PluginUiSlotEntityType,
   PluginStateScopeKind,
   PluginLauncherPlacementZone,
-  PluginLauncherAction,
   PluginLauncherBounds,
   PluginLauncherRenderEnvironment,
-  PluginApiRouteAuthMode,
   PluginApiRouteMethod,
   PluginDatabaseCoreReadTable,
   PluginDatabaseMigrationStatus,
-  PluginDatabaseNamespaceMode,
-  PluginDatabaseNamespaceStatus,
+  PluginJobStatus,
+  PluginJobRunStatus,
+  PluginJobRunTrigger,
+  PluginWebhookDeliveryStatus,
   IssuePriority,
   ProjectStatus,
   RoutineCatchUpPolicy,
@@ -40,6 +40,21 @@ import type { ContextAccess } from "../issue-runtime.js";
  * but are otherwise ignored by standard JSON Schema validators.
  */
 export type JsonSchema = {
+  type?: string;
+  title?: string;
+  description?: string;
+  properties?: Record<string, JsonSchema>;
+  required?: string[];
+  additionalProperties?: boolean;
+  enum?: readonly (string | number | boolean | null)[];
+  const?: string | number | boolean | null;
+  oneOf?: JsonSchema[];
+  anyOf?: JsonSchema[];
+  items?: JsonSchema;
+  minLength?: number;
+  maxLength?: number;
+  minimum?: number;
+  maximum?: number;
   /**
    * When true, the Paperclip config UI hides this property behind an
    * "Advanced options" disclosure. Defaults to false (always visible).
@@ -57,7 +72,6 @@ export type JsonSchema = {
 export type {
   PluginDatabaseCoreReadTable,
   PluginDatabaseMigrationStatus,
-  PluginDatabaseNamespaceMode,
   PluginDatabaseNamespaceStatus,
 } from "../constants.js";
 
@@ -78,7 +92,7 @@ export interface PluginJobDeclaration {
   /** Optional description of what the job does. */
   description?: string;
   /** Cron expression for the schedule (e.g. "star/15 star star star star" or "0 * * * *"). */
-  schedule?: string;
+  schedule: string;
 }
 
 /**
@@ -98,7 +112,7 @@ export interface PluginWebhookDeclaration {
 
 /**
  * Declares an agent tool contributed by the plugin. Tools are namespaced
- * by plugin ID at runtime (e.g. `linear:search-issues`).
+ * by plugin ID at runtime (e.g. `linear__search-issues`).
  *
  * Requires the `agent.tools.register` capability.
  *
@@ -320,10 +334,16 @@ export interface PluginManagedRoutineDeclaration {
   concurrencyPolicy?: RoutineConcurrencyPolicy;
   /** Suggested missed-trigger behavior. Defaults to core routine default. */
   catchUpPolicy?: RoutineCatchUpPolicy;
-  /** Suggested routine variables. */
-  variables?: RoutineVariable[];
+  /** Suggested routine variables. Labels and default values are optional. */
+  variables?: Array<
+    Omit<RoutineVariable, "label" | "defaultValue">
+    & Partial<Pick<RoutineVariable, "label" | "defaultValue">>
+  >;
   /** Suggested triggers created when the routine is first reconciled. */
-  triggers?: Array<Pick<RoutineTrigger, "kind" | "label" | "enabled" | "cronExpression" | "timezone" | "signingMode" | "replayWindowSec">>;
+  triggers?: Array<
+    Pick<RoutineTrigger, "kind">
+    & Partial<Pick<RoutineTrigger, "label" | "enabled" | "cronExpression" | "timezone" | "signingMode" | "replayWindowSec">>
+  >;
   /** Defaults for issues created by this routine. */
   issueTemplate?: {
     surfaceVisibility?: IssueSurfaceVisibility;
@@ -383,9 +403,7 @@ export interface PluginManagedSkillResolution {
  *
  * @see PLUGIN_SPEC.md §19 — UI Extension Model
  */
-export interface PluginUiSlotDeclaration {
-  /** The type of UI mount point (page, detailTab, issueDetailView, toolbarButton, etc.). */
-  type: PluginUiSlotType;
+interface PluginUiSlotDeclarationBase {
   /** Unique slot identifier within the plugin. */
   id: string;
   /** Human-readable name shown in navigation or tab labels. */
@@ -393,45 +411,89 @@ export interface PluginUiSlotDeclaration {
   /** Which export name in the UI bundle provides this component. */
   exportName: string;
   /**
-   * Entity targets for context-sensitive slots.
-   * Required for `detailTab`, `issueDetailView`, and `contextMenuItem`.
-   */
-  entityTypes?: PluginUiSlotEntityType[];
-  /**
-   * Optional company-scoped route segment for page, routeSidebar, and
-   * companySettingsPage slots.
-   * Example: `kitchensink` becomes `/:companyPrefix/kitchensink`.
-   * For companySettingsPage, `permissions` becomes
-   * `/:companyPrefix/company/settings/permissions`.
-   */
-  routePath?: string;
-  /**
    * Optional ordering hint within a slot surface. Lower numbers appear first.
    * Defaults to host-defined ordering if omitted.
    */
   order?: number;
 }
 
-/**
- * Describes the action triggered by a plugin launcher surface.
- */
-export interface PluginLauncherActionDeclaration {
-  /** What kind of launch behavior the host should perform. */
-  type: PluginLauncherAction;
-  /**
-   * Stable target identifier or URL. The meaning depends on `type`
-   * (for example a route, tab key, action key, or external URL).
-   */
-  target: string;
-  /** Optional arbitrary parameters passed along to the target. */
-  params?: Record<string, unknown>;
-}
+type PluginRoutedUiSlotDeclaration = {
+  type: "page" | "routeSidebar" | "companySettingsPage";
+  /** Canonical company-scoped route segment owned by this slot. */
+  routePath: string;
+  entityTypes?: never;
+};
 
-/**
- * Optional render metadata for the destination opened by a launcher.
- */
+type PluginEntityUiSlotDeclaration =
+  | {
+      type: "detailTab";
+      entityTypes: PluginUiSlotEntityType[];
+      routePath?: never;
+    }
+  | {
+      type: "issueDetailView";
+      entityTypes: Array<Extract<PluginUiSlotEntityType, "issue">>;
+      routePath?: never;
+    }
+  | {
+      type: "projectSidebarItem";
+      entityTypes: Array<Extract<PluginUiSlotEntityType, "project">>;
+      routePath?: never;
+    }
+  | {
+      type: "toolbarButton";
+      entityTypes: Array<Extract<
+        PluginUiSlotEntityType,
+        "project" | "issue" | "execution_workspace"
+      >>;
+      routePath?: never;
+    };
+
+type PluginGlobalUiSlotDeclaration = {
+  type: Exclude<
+    PluginUiSlotType,
+    PluginRoutedUiSlotDeclaration["type"] | PluginEntityUiSlotDeclaration["type"]
+  >;
+  entityTypes?: never;
+  routePath?: never;
+};
+
+export type PluginUiSlotDeclaration = PluginUiSlotDeclarationBase & (
+  | PluginRoutedUiSlotDeclaration
+  | PluginEntityUiSlotDeclaration
+  | PluginGlobalUiSlotDeclaration
+);
+
+/** Describes the exact action triggered by a plugin launcher surface. */
+export type PluginLauncherActionDeclaration =
+  | {
+      /** Navigate within Paperclip. */
+      type: "navigate";
+      target: string;
+      params?: never;
+    }
+  | {
+      /** Open an absolute HTTP(S) URL in a new browser tab. */
+      type: "deepLink";
+      target: string;
+      params?: never;
+    }
+  | {
+      /** Invoke a plugin worker action. */
+      type: "performAction";
+      target: string;
+      params?: Record<string, unknown>;
+    }
+  | {
+      /** Render the named UI export in the corresponding host-owned overlay. */
+      type: "openModal" | "openDrawer" | "openPopover";
+      target: string;
+      params?: never;
+    };
+
+/** Render metadata required by component-rendering launcher actions. */
 export interface PluginLauncherRenderDeclaration {
-  /** High-level container the launcher expects the host to use. */
+  /** The concrete host-owned overlay container. */
   environment: PluginLauncherRenderEnvironment;
   /** Optional size hint for the destination surface. */
   bounds?: PluginLauncherBounds;
@@ -441,49 +503,59 @@ export interface PluginLauncherRenderDeclaration {
  * Serializable runtime snapshot of the host launcher/container environment.
  */
 export interface PluginLauncherRenderContextSnapshot {
-  /** The current launcher/container environment selected by the host. */
-  environment: PluginLauncherRenderEnvironment | null;
-  /** Launcher id that opened this surface, if any. */
-  launcherId: string | null;
-  /** Current host-applied bounds hint for the environment, if any. */
-  bounds: PluginLauncherBounds | null;
+  /** The concrete launcher/container environment selected by the host. */
+  environment: PluginLauncherRenderEnvironment;
+  /** Launcher id that opened this surface. */
+  launcherId: string;
+  /** Current host-applied bounds for the overlay. */
+  bounds: PluginLauncherBounds;
 }
 
 /**
  * Declares a plugin launcher surface independent of the low-level slot
  * implementation that mounts it.
  */
-export interface PluginLauncherDeclaration {
+interface PluginLauncherDeclarationBase {
   /** Stable identifier for this launcher, unique within the plugin. */
   id: string;
   /** Human-readable label shown for the launcher. */
   displayName: string;
-  /** Optional description for operator-facing docs or future UI affordances. */
+  /** Optional operator-facing description. */
   description?: string;
-  /** Where in the host UI this launcher should be placed. */
-  placementZone: PluginLauncherPlacementZone;
-  /** Optional export name in the UI bundle when the launcher has custom UI. */
-  exportName?: string;
-  /**
-   * Optional entity targeting for context-sensitive launcher zones.
-   * Reuses the same entity union as UI slots for consistency.
-   */
-  entityTypes?: PluginUiSlotEntityType[];
   /** Optional ordering hint within the placement zone. */
   order?: number;
-  /** What should happen when the launcher is activated. */
-  action: PluginLauncherActionDeclaration;
-  /** Optional render/container hints for the launched destination. */
-  render?: PluginLauncherRenderDeclaration;
 }
 
-/**
- * Lower-bound semver requirement for the Paperclip host.
- *
- * The host should reject installation when its running version is lower than
- * the declared minimum.
- */
-export type PluginMinimumHostVersion = string;
+type PluginLauncherPlacementDeclaration =
+  | {
+      placementZone: "toolbarButton";
+      entityTypes: Array<Extract<PluginUiSlotEntityType, "project" | "issue">>;
+    }
+  | {
+      placementZone: Exclude<PluginLauncherPlacementZone, "toolbarButton">;
+      entityTypes?: never;
+    };
+
+type PluginLauncherActionAndRenderDeclaration =
+  | {
+      action: Extract<
+        PluginLauncherActionDeclaration,
+        { type: "openModal" | "openDrawer" | "openPopover" }
+      >;
+      /** Required host-owned overlay metadata for component-rendering actions. */
+      render: PluginLauncherRenderDeclaration;
+    }
+  | {
+      action: Extract<
+        PluginLauncherActionDeclaration,
+        { type: "navigate" | "deepLink" | "performAction" }
+      >;
+      render?: never;
+    };
+
+export type PluginLauncherDeclaration = PluginLauncherDeclarationBase
+  & PluginLauncherPlacementDeclaration
+  & PluginLauncherActionAndRenderDeclaration;
 
 /**
  * Groups plugin UI declarations that are served from the shared UI bundle
@@ -526,12 +598,8 @@ export interface PluginApiRouteDeclaration {
   method: PluginApiRouteMethod;
   /** Plugin-local path under `/api/plugins/:pluginId/api`, e.g. `/issues/:issueId/smoke`. */
   path: string;
-  /** Actor class allowed to call the route. */
-  auth: PluginApiRouteAuthMode;
-  /** Capability required to expose the route. Currently `api.routes.register`. */
-  capability: "api.routes.register";
   /** How the host resolves company access for this route. */
-  companyResolution?: PluginApiRouteCompanyResolution;
+  companyResolution: PluginApiRouteCompanyResolution;
 }
 
 export interface PluginObjectReferenceRefreshPolicy {
@@ -584,21 +652,16 @@ export interface PaperclipPluginManifestV1 {
   categories: PluginCategory[];
   /**
    * Minimum host version required (semver lower bound).
-   * Preferred generic field for new manifests.
+   * The host rejects installation when its running version is lower.
    */
-  minimumHostVersion?: PluginMinimumHostVersion;
-  /**
-   * Legacy alias for `minimumHostVersion`.
-   * Kept for backwards compatibility with existing manifests and docs.
-   */
-  minimumPaperclipVersion?: PluginMinimumHostVersion;
+  minimumHostVersion?: string;
   /** Capabilities this plugin requires from the host. Enforced at runtime. */
   capabilities: PluginCapability[];
   /** Entrypoint paths relative to the package root. */
   entrypoints: {
     /** Path to the worker entrypoint (required). */
     worker: string;
-    /** Path to the UI bundle directory (required when `ui.slots` is declared). */
+    /** Path to the UI bundle directory (present exactly when the manifest contributes UI). */
     ui?: string;
   };
   /** JSON Schema for operator-editable instance configuration. */
@@ -627,18 +690,16 @@ export interface PaperclipPluginManifestV1 {
   localFolders?: PluginLocalFolderDeclaration[];
   /** External object reference providers this plugin contributes. */
   objectReferences?: PluginObjectReferenceProviderDeclaration[];
-  /**
-   * Legacy top-level launcher declarations.
-   * Prefer `ui.launchers` for new manifests.
-   */
-  launchers?: PluginLauncherDeclaration[];
-  /** UI bundle declarations. Requires `entrypoints.ui` when populated. */
+  /** Non-empty UI declarations. Present exactly when `entrypoints.ui` is declared. */
   ui?: PluginUiDeclaration;
 }
 
 // ---------------------------------------------------------------------------
 // Plugin Record – represents a row in the `plugins` table
 // ---------------------------------------------------------------------------
+
+/** Explicit origin of one plugin installation. */
+export type PluginInstallSource = "npm" | "local";
 
 /**
  * Domain type for an installed plugin as persisted in the `plugins` table.
@@ -651,21 +712,17 @@ export interface PluginRecord {
   pluginKey: string;
   /** npm package name (e.g. `"@acme/plugin-linear"`). */
   packageName: string;
-  /** Installed semver version. */
-  version: string;
-  /** Plugin API version from the manifest. */
-  apiVersion: number;
-  /** Plugin categories from the manifest. */
-  categories: PluginCategory[];
+  /** Explicit installation origin; never inferred from the package path. */
+  source: PluginInstallSource;
   /** Full manifest snapshot persisted at install/upgrade time. */
   manifestJson: PaperclipPluginManifestV1;
   /** Current lifecycle status. */
   status: PluginStatus;
-  /** Deterministic load order (null if not yet assigned). */
-  installOrder: number | null;
-  /** Resolved package path for local-path installs; used to find worker entrypoint. */
-  packagePath: string | null;
-  /** Most recent error message, or operator-provided disable reason. */
+  /** Deterministic load order assigned when the installation row is created. */
+  installOrder: number;
+  /** Canonical resolved package root for this installation. */
+  packagePath: string;
+  /** Most recent lifecycle or runtime error message. */
   lastError: string | null;
   /** Timestamp when the plugin was first installed. */
   installedAt: Date;
@@ -673,15 +730,84 @@ export interface PluginRecord {
   updatedAt: Date;
 }
 
-export interface PluginDatabaseNamespaceRecord {
-  id: string;
+/** One ready plugin's normalized host-rendered UI declarations. */
+export interface PluginUiContribution {
   pluginId: string;
   pluginKey: string;
-  namespaceName: string;
-  namespaceMode: PluginDatabaseNamespaceMode;
-  status: PluginDatabaseNamespaceStatus;
-  createdAt: Date;
-  updatedAt: Date;
+  displayName: string;
+  version: string;
+  updatedAt: string;
+  slots: PluginUiSlotDeclaration[];
+  launchers: PluginLauncherDeclaration[];
+}
+
+/** Runtime states exposed by the plugin worker supervisor. */
+export type PluginWorkerStatus =
+  | "stopped"
+  | "starting"
+  | "running"
+  | "stopping"
+  | "crashed"
+  | "backoff";
+
+/** Installation health snapshot returned by the plugin dashboard. */
+export interface PluginHealthCheckResult {
+  pluginId: string;
+  status: PluginStatus;
+  healthy: boolean;
+  checks: Array<{
+    name: string;
+    passed: boolean;
+    message?: string;
+  }>;
+  lastError?: string;
+}
+
+/** Worker-process diagnostics returned by the plugin dashboard. */
+export interface PluginWorkerDiagnostics {
+  status: PluginWorkerStatus;
+  pid: number | null;
+  uptime: number | null;
+  consecutiveCrashes: number;
+  totalCrashes: number;
+  pendingRequests: number;
+  lastCrashAt: number | null;
+  nextRestartAt: number | null;
+}
+
+/** Serialized recent job execution returned by the plugin dashboard. */
+export interface PluginDashboardJobRun {
+  id: string;
+  jobId: string;
+  jobKey: string;
+  trigger: PluginJobRunTrigger;
+  status: PluginJobRunStatus;
+  durationMs: number | null;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+}
+
+/** Serialized recent webhook execution returned by the plugin dashboard. */
+export interface PluginDashboardWebhookDelivery {
+  id: string;
+  webhookKey: string;
+  status: PluginWebhookDeliveryStatus;
+  durationMs: number | null;
+  error: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+}
+
+/** Canonical aggregate returned by the plugin dashboard endpoint. */
+export interface PluginDashboardData {
+  pluginId: string;
+  worker: PluginWorkerDiagnostics | null;
+  recentJobRuns: PluginDashboardJobRun[];
+  recentWebhookDeliveries: PluginDashboardWebhookDelivery[];
+  health: PluginHealthCheckResult;
+  checkedAt: string;
 }
 
 export interface PluginMigrationRecord {
@@ -699,63 +825,21 @@ export interface PluginMigrationRecord {
 }
 
 // ---------------------------------------------------------------------------
-// Plugin State – represents a row in the `plugin_state` table
-// ---------------------------------------------------------------------------
-
-/**
- * Domain type for a single scoped key-value entry in the `plugin_state` table.
- * Plugins read and write these entries through `ctx.state` in the SDK.
- *
- * The five-part composite key `(pluginId, scopeKind, scopeId, namespace, stateKey)`
- * uniquely identifies a state entry.
- *
- * @see PLUGIN_SPEC.md §21.3 — `plugin_state`
- */
-export interface PluginStateRecord {
-  /** UUID primary key. */
-  id: string;
-  /** FK to `plugins.id`. */
-  pluginId: string;
-  /** Granularity of the scope. */
-  scopeKind: PluginStateScopeKind;
-  /**
-   * UUID or text identifier for the scoped object.
-   * `null` for `instance` scope (no associated entity).
-   */
-  scopeId: string | null;
-  /**
-   * Sub-namespace within the scope to avoid key collisions.
-   * Defaults to `"default"` if not explicitly set by the plugin.
-   */
-  namespace: string;
-  /** The key for this state entry within the namespace. */
-  stateKey: string;
-  /** Stored JSON value. May be any JSON-serializable type. */
-  valueJson: unknown;
-  /** Timestamp of the most recent write. */
-  updatedAt: Date;
-}
-
-// ---------------------------------------------------------------------------
 // Plugin Config – represents a row in the `plugin_config` table
 // ---------------------------------------------------------------------------
 
 /**
- * Domain type for a plugin's company-scoped configuration as persisted in the
+ * Domain type for an installed plugin's instance-scoped configuration as persisted in the
  * `plugin_config` table.
  * See PLUGIN_SPEC.md §21.3 for the schema definition.
  */
 export interface PluginConfig {
   /** UUID primary key. */
   id: string;
-  /** FK to `plugins.id`. Unique together with `companyId`. */
+  /** FK to `plugins.id`. Unique for the installed plugin. */
   pluginId: string;
-  /** FK to `companies.id`. */
-  companyId: string;
   /** Operator-provided configuration values (validated against `instanceConfigSchema`). */
   configJson: Record<string, unknown>;
-  /** Most recent config validation error, if any. */
-  lastError: string | null;
   /** Timestamp when the config row was created. */
   createdAt: Date;
   /** Timestamp of the most recent config update. */
@@ -771,56 +855,8 @@ export interface PluginCompanySettings {
   id: string;
   companyId: string;
   pluginId: string;
-  enabled: boolean;
   settingsJson: Record<string, unknown>;
-  lastError: string | null;
   createdAt: Date;
-  updatedAt: Date;
-}
-
-/**
- * Query filter for `ctx.entities.list`.
- */
-export interface PluginEntityQuery {
-  /** Optional filter by entity type (e.g. 'project', 'issue'). */
-  entityType?: string;
-  /** Optional filter by external system identifier. */
-  externalId?: string;
-  /** Maximum number of records to return. Defaults to 100. */
-  limit?: number;
-  /** Number of records to skip. Defaults to 0. */
-  offset?: number;
-}
-
-// ---------------------------------------------------------------------------
-// Plugin Entity – represents a row in the `plugin_entities` table
-// ---------------------------------------------------------------------------
-
-/**
- * Domain type for an external entity mapping as persisted in the `plugin_entities` table.
- */
-export interface PluginEntityRecord {
-  /** UUID primary key. */
-  id: string;
-  /** FK to `plugins.id`. */
-  pluginId: string;
-  /** Plugin-defined entity type. */
-  entityType: string;
-  /** Scope where this entity lives. */
-  scopeKind: PluginStateScopeKind;
-  /** UUID or text identifier for the scoped object. */
-  scopeId: string | null;
-  /** External identifier in the remote system. */
-  externalId: string | null;
-  /** Human-readable title. */
-  title: string | null;
-  /** Optional status string. */
-  status: string | null;
-  /** Full entity data blob. */
-  data: Record<string, unknown>;
-  /** ISO 8601 creation timestamp. */
-  createdAt: Date;
-  /** ISO 8601 last-updated timestamp. */
   updatedAt: Date;
 }
 
@@ -841,9 +877,7 @@ export interface PluginJobRecord {
   /** Cron expression for the schedule. */
   schedule: string;
   /** Current job status. */
-  status: "active" | "paused" | "failed";
-  /** Last time the job was executed. */
-  lastRunAt: Date | null;
+  status: PluginJobStatus;
   /** Next scheduled execution time. */
   nextRunAt: Date | null;
   /** ISO 8601 creation timestamp. */
@@ -867,49 +901,13 @@ export interface PluginJobRunRecord {
   /** FK to `plugins.id`. */
   pluginId: string;
   /** What triggered this run. */
-  trigger: "schedule" | "manual" | "retry";
+  trigger: PluginJobRunTrigger;
   /** Current run status. */
-  status: "pending" | "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  status: PluginJobRunStatus;
   /** Run duration in milliseconds. */
   durationMs: number | null;
   /** Error message if the run failed. */
   error: string | null;
-  /** Run logs. */
-  logs: string[];
-  /** ISO 8601 start timestamp. */
-  startedAt: Date | null;
-  /** ISO 8601 finish timestamp. */
-  finishedAt: Date | null;
-  /** ISO 8601 creation timestamp. */
-  createdAt: Date;
-}
-
-// ---------------------------------------------------------------------------
-// Plugin Webhook Delivery – represents a row in the `plugin_webhook_deliveries` table
-// ---------------------------------------------------------------------------
-
-/**
- * Domain type for an inbound webhook delivery record.
- */
-export interface PluginWebhookDeliveryRecord {
-  /** UUID primary key. */
-  id: string;
-  /** FK to `plugins.id`. */
-  pluginId: string;
-  /** Webhook endpoint key matching the manifest. */
-  webhookKey: string;
-  /** External identifier from the remote system. */
-  externalId: string | null;
-  /** Delivery status. */
-  status: "pending" | "success" | "failed";
-  /** Processing duration in milliseconds. */
-  durationMs: number | null;
-  /** Error message if processing failed. */
-  error: string | null;
-  /** Webhook payload. */
-  payload: Record<string, unknown>;
-  /** Webhook headers. */
-  headers: Record<string, string>;
   /** ISO 8601 start timestamp. */
   startedAt: Date | null;
   /** ISO 8601 finish timestamp. */

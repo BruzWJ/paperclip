@@ -32,6 +32,7 @@ import { ReportsToPicker } from "./ReportsToPicker";
 import { listAdapterOptions, listVisibleAdapterTypes } from "../adapters/metadata";
 import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
 import { buildAgentUpdatePatch, omitUndefinedEntries, type AgentConfigOverlay } from "../lib/agent-config-patch";
+import { publicRuntimeMessage } from "../lib/public-runtime-message";
 
 /* ---- Create mode values ---- */
 
@@ -381,8 +382,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         result: null,
         error:
           error instanceof Error
-            ? error.message
-            : "ACPX agent configuration test failed.",
+            ? publicRuntimeMessage(error.message, "Agent configuration test failed.")
+            : "Agent configuration test failed.",
       });
     },
   });
@@ -591,7 +592,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
           {hasAdapterType && !uiAdapter && (
             <p className="text-xs text-destructive">
-              This adapter is not in the server-admitted ACPX catalog.
+              This adapter is not available from the local agent catalog.
             </p>
           )}
 
@@ -606,7 +607,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             <div className="space-y-2 rounded-md border border-border bg-muted p-3">
               <div className="flex items-start justify-between gap-3">
                 <p className="text-xs text-muted-foreground">
-                  Test the exact unsaved model and other ACPX settings in a
+                  Test the exact unsaved model and other runtime settings in a
                   disposable no-prompt session. This does not save the agent
                   or prove a future execution workspace is ready.
                 </p>
@@ -633,11 +634,11 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 </p>
               ) : visibleDraftTestResult?.status === "failed" ? (
                 <p role="alert" className="text-xs text-destructive">
-                  {visibleDraftTestResult.message}
+                  {publicRuntimeMessage(visibleDraftTestResult.message)}
                 </p>
               ) : visibleDraftTestResult?.status === "ready" ? (
                 <p role="status" className="text-xs text-foreground">
-                  ACPX accepted this exact draft configuration.
+                  The local agent accepted this exact draft configuration.
                 </p>
               ) : null}
             </div>

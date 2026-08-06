@@ -210,8 +210,8 @@ test("accepts only the canonical compiler, routine, callback, ref, re-lease, esc
   const root = fixtureRoot();
   write(
     root,
-    "apps/server/src/services/plugin-tool-registry.ts",
-    "const pluginTools = new Set<string>();\npluginTools.add('selected-company-row');\n",
+    "apps/server/src/services/runtime-interface-compiler-db.ts",
+    "const selectedPluginTools = new Set<string>();\nselectedPluginTools.add('selected-company-row');\n",
   );
   write(
     root,

@@ -76,7 +76,7 @@ vi.mock("@paperclipai/adapter-utils/acp-subprocess", async (importOriginal) => {
   >();
   return {
     ...actual,
-    loadConfiguredAcpRegistry: vi.fn(async () => ({
+    loadAcpxAgentRegistry: vi.fn(async () => ({
       list: () => acpxFixture.state.snapshot.map((adapter) => adapter.type),
       resolve: acpxFixture.registryResolve,
     })),
@@ -151,7 +151,7 @@ describe("ACPX-supplied server adapter registry", () => {
 
     expect(findServerAdapter(acpxFixture.agentName)).toBeNull();
     expect(() => requireServerAdapter(acpxFixture.agentName)).toThrow(
-      /Unknown ACPX adapter type/,
+      /Unknown local agent type/,
     );
   });
 
@@ -199,7 +199,7 @@ describe("ACPX-supplied server adapter registry", () => {
 
   it("does not accept Paperclip-owned adapter registrations or override state", () => {
     expect(() => registerServerAdapter(acpxFixture.adapter)).toThrow(
-      /supplied exclusively by ACPX/,
+      /discovers compatible local agents/,
     );
     expect(setOverridePaused(acpxFixture.agentName, true)).toBe(false);
     unregisterServerAdapter(acpxFixture.agentName);

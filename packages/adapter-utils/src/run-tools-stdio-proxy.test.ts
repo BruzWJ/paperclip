@@ -25,7 +25,7 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 describe("run-tools stdio proxy", () => {
-  it("stamps source ingress privately, overlaps calls, preserves barriers, and drains before cleanup", async () => {
+  it("stamps source ingress privately, overlaps calls, preserves barriers, and handles MCP lifecycle locally", async () => {
     const directory = await mkdtemp(join(tmpdir(), "paperclip-run-tools-"));
     temporaryDirectories.push(directory);
     const proxyPath = join(directory, "proxy.mjs");
@@ -43,12 +43,6 @@ describe("run-tools stdio proxy", () => {
     let activeCalls = 0;
     let maximumActiveCalls = 0;
     const server = createServer(async (request, response) => {
-      if (request.method === "DELETE") {
-        events.push("delete");
-        response.statusCode = 204;
-        response.end();
-        return;
-      }
       let raw = "";
       for await (const chunk of request) raw += String(chunk);
       const body = JSON.parse(raw) as Record<string, unknown>;
@@ -72,16 +66,21 @@ describe("run-tools stdio proxy", () => {
       } else {
         events.push(`operation:${String(method)}:active=${activeCalls}`);
       }
-      response.statusCode = 200;
+      response.statusCode = method === "tools/list" ? 403 : 200;
       response.setHeader("content-type", "application/json");
-      if (method === "initialize") {
-        response.setHeader("mcp-session-id", "private-session");
-      }
-      response.end(JSON.stringify({
-        jsonrpc: "2.0",
-        id,
-        result: { echoed: id },
-      }));
+      response.end(JSON.stringify(
+        method === "tools/list"
+          ? {
+              jsonrpc: "2.0",
+              id,
+              error: { code: -32601, message: "not available" },
+            }
+          : {
+              jsonrpc: "2.0",
+              id,
+              result: { echoed: id },
+            },
+      ));
     });
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
@@ -108,6 +107,8 @@ describe("run-tools stdio proxy", () => {
     });
     const messages = [
       { jsonrpc: "2.0", id: "init", method: "initialize" },
+      { jsonrpc: "2.0", method: "notifications/initialized", params: {} },
+      { jsonrpc: "2.0", id: "ping", method: "ping" },
       {
         jsonrpc: "2.0",
         id: "slow",
@@ -151,25 +152,32 @@ describe("run-tools stdio proxy", () => {
     expect(calls.find((call) => call.id === "fast")?.ordinal).toBe("1");
     expect(calls.find((call) => call.id === "new")?.ordinal).toBe("2");
     expect(calls.map((call) => call.body)).toEqual(
-      expect.arrayContaining(messages.slice(1, 5)),
+      expect.arrayContaining(messages.slice(3, 7)),
     );
     expect(JSON.stringify(calls)).not.toContain("ingressOrdinal");
     expect(events).toContain("operation:initialize:active=0");
     expect(events).toContain("operation:tools/list:active=0");
-    expect(events.at(-1)).toBe("delete");
+    expect(events).not.toContain("operation:notifications/initialized:active=0");
+    expect(events).not.toContain("operation:ping:active=0");
+    expect(events.at(-1)).toBe("operation:tools/list:active=0");
 
     const responses = stdout
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as { id: string });
     expect(responses[0]?.id).toBe("init");
+    expect(responses[1]?.id).toBe("ping");
     expect(responses.findIndex((response) => response.id === "fast"))
       .toBeLessThan(
         responses.findIndex((response) => response.id === "slow"),
       );
-    expect(responses.at(-1)?.id).toBe("list");
+    expect(responses.at(-1)).toEqual({
+      jsonrpc: "2.0",
+      id: "list",
+      error: { code: -32601, message: "not available" },
+    });
     expect(responses.map((response) => response.id)).toEqual(
-      expect.arrayContaining(["init", "slow", "fast", "new", "list"]),
+      expect.arrayContaining(["init", "ping", "slow", "fast", "new", "list"]),
     );
   });
 });

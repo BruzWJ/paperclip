@@ -3,7 +3,7 @@ import {
   createRuntimeIssueActionPort,
   type RuntimeIssueActionService,
 } from "../services/runtime-issue-action-port.js";
-import { RuntimeToolArgumentsInvalid } from "../services/runtime-tool-executor.js";
+import { RuntimeToolArgumentsInvalid } from "../services/runtime-interface-compiler.js";
 import type { PromptCapabilityBinding } from "../services/prompt-capability-gateway.js";
 
 const ownerCapability: PromptCapabilityBinding = {

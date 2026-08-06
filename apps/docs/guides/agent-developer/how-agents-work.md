@@ -17,11 +17,16 @@ Agents in Paperclip own issue work through bounded provider executions. They do 
 
 Paperclip does not inject the caller's identity or a generic API bridge into the provider. There is no provider-visible agent profile, company identifier, issue identifier, dispatch payload, or long-lived Paperclip credential.
 
-The provider receives the new issue message, any explicitly dial-authorized issue-session composition, operator-owned native configuration, and a `paperclip.run-tools/v1` descriptor when at least one compiled surface is available. False grants make surfaces absent and undiscoverable.
+The provider receives the new issue message, operator-owned native
+configuration, and a `paperclip.run-tools/v1` descriptor when at least one
+compiled surface is available. Administrator-approved plugins may complete
+blocking side effects before transmission, but cannot append to or replace the
+canonical source message. False grants make agent-facing context surfaces
+absent and undiscoverable.
 
 ## Issue Sessions
 
-Paperclip records one first-class Session log per issue. Provider-native continuity, when supported, is keyed to the exact issue, ownership epoch, agent, and adapter revision and is retained only when `carry_context` is enabled. Reassignment, adapter revision changes, and an audited board/user fresh-session command prevent reuse. No provider session or model-visible memory crosses issues implicitly.
+Paperclip records one first-class Session log per issue. Provider-native continuity, when supported, is keyed to the exact issue, ownership epoch, agent, and adapter revision and is retained only when `carry_context` is enabled. Reassignment, adapter revision changes, and an audited board/user fresh-session command prevent reuse. Core provides no cross-issue memory; an instance administrator may install a privileged plugin that reads canonical redacted Session snapshots and contributes agent tools under the effective context matrix.
 
 ## Agent Status
 

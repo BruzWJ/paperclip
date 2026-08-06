@@ -20,6 +20,7 @@ import {
   desc,
   eq,
   gt,
+  lte,
   lt,
   or,
 } from "drizzle-orm";
@@ -51,6 +52,12 @@ export interface IssueSessionPageScope {
   issueId: string;
   sessionId: string;
   runId?: string;
+  /** Exclusive lower bound for the selected row sequence. Defaults to -1. */
+  afterSeq?: number;
+  /** Inclusive immutable snapshot bound for this row kind. */
+  highWaterSeq?: number;
+  /** Messages only: keyset and delta by their latest model-visible state. */
+  messageOrder?: "created" | "changed";
   direction?: "asc" | "desc";
   projection: IssueSessionReadProjection;
 }
@@ -106,6 +113,9 @@ interface IssueSessionCursorEnvelope {
   issueId: string;
   sessionId: string;
   runId: string | null;
+  afterSeq: number;
+  highWaterSeq: number | null;
+  messageOrder: "created" | "changed" | null;
   direction: "asc" | "desc";
   projection: IssueSessionReadProjection;
   seq: number;
@@ -377,6 +387,9 @@ function decodeCursor(
     decoded.issueId !== expected.issueId ||
     decoded.sessionId !== expected.sessionId ||
     decoded.runId !== expected.runId ||
+    decoded.afterSeq !== expected.afterSeq ||
+    decoded.highWaterSeq !== expected.highWaterSeq ||
+    decoded.messageOrder !== expected.messageOrder ||
     decoded.direction !== expected.direction ||
     decoded.projection !== expected.projection ||
     !Number.isSafeInteger(decoded.seq) ||
@@ -399,6 +412,17 @@ function assertScope(scope: IssueSessionPageScope): void {
     scope.sessionId.length === 0 ||
     (scope.runId !== undefined &&
       (typeof scope.runId !== "string" || scope.runId.length === 0)) ||
+    (scope.afterSeq !== undefined &&
+      (!Number.isSafeInteger(scope.afterSeq) || scope.afterSeq < -1)) ||
+    (scope.highWaterSeq !== undefined &&
+      (!Number.isSafeInteger(scope.highWaterSeq) ||
+        scope.highWaterSeq < -1)) ||
+    (scope.afterSeq !== undefined &&
+      scope.highWaterSeq !== undefined &&
+      scope.afterSeq > scope.highWaterSeq) ||
+    (scope.messageOrder !== undefined &&
+      scope.messageOrder !== "created" &&
+      scope.messageOrder !== "changed") ||
     (scope.direction !== undefined &&
       scope.direction !== "asc" &&
       scope.direction !== "desc") ||
@@ -430,6 +454,9 @@ function assertSequencedPage<Row extends {
       row.issueId === base.issueId &&
       row.sessionId === base.sessionId &&
       (base.runId === null || runId(row) === base.runId);
+    const insideSnapshot =
+      seq > base.afterSeq &&
+      (base.highWaterSeq === null || seq <= base.highWaterSeq);
     const ordered =
       previous === null ||
       (base.direction === "asc"
@@ -439,6 +466,7 @@ function assertSequencedPage<Row extends {
           (seq === previous.seq && row.id < previous.id));
     if (
       !scoped ||
+      !insideSnapshot ||
       !Number.isSafeInteger(seq) ||
       seq < 0 ||
       typeof row.id !== "string" ||
@@ -457,7 +485,8 @@ function assertSequencedPage<Row extends {
  * The sole bounded read authority for canonical Session events, messages,
  * and projected comments. Every cursor is authenticated
  * and bound to company, issue, Session, optional run, direction, row kind,
- * and a closed projection purpose.
+ * message creation/change ordering, exclusive delta checkpoint, inclusive
+ * snapshot high-water, and a closed projection purpose.
  */
 export function createIssueSessionStore(
   db: Db,
@@ -472,6 +501,11 @@ export function createIssueSessionStore(
     scope: IssueSessionPageScope,
   ): Omit<IssueSessionCursorEnvelope, "seq" | "id"> {
     assertScope(scope);
+    if (rowKind !== "message" && scope.messageOrder !== undefined) {
+      throw new IssueSessionInvalidCursor(
+        "Issue Session message ordering is unavailable for this row kind",
+      );
+    }
     return {
       v: 1,
       rowKind,
@@ -479,6 +513,10 @@ export function createIssueSessionStore(
       issueId: scope.issueId,
       sessionId: scope.sessionId,
       runId: scope.runId ?? null,
+      afterSeq: scope.afterSeq ?? -1,
+      highWaterSeq: scope.highWaterSeq ?? null,
+      messageOrder:
+        rowKind === "message" ? scope.messageOrder ?? "created" : null,
       direction: scope.direction ?? "asc",
       projection: scope.projection,
     };
@@ -507,6 +545,10 @@ export function createIssueSessionStore(
             eq(issueSessionEvents.sessionId, base.sessionId),
             ...(base.runId
               ? [eq(issueSessionEvents.runId, base.runId)]
+              : []),
+            gt(issueSessionEvents.seq, base.afterSeq),
+            ...(base.highWaterSeq !== null
+              ? [lte(issueSessionEvents.seq, base.highWaterSeq)]
               : []),
             ...(after
               ? [
@@ -568,6 +610,10 @@ export function createIssueSessionStore(
       );
       const limit = boundedPageSize(request.limit);
       const forward = base.direction === "asc";
+      const sequenceColumn =
+        base.messageOrder === "changed"
+          ? issueSessionMessages.modelStateSeq
+          : issueSessionMessages.seq;
       const rows = await db
         .select()
         .from(issueSessionMessages)
@@ -579,14 +625,21 @@ export function createIssueSessionStore(
             ...(base.runId
               ? [eq(issueSessionMessages.runId, base.runId)]
               : []),
+            gt(sequenceColumn, base.afterSeq),
+            ...(base.highWaterSeq !== null
+              ? [
+                  lte(sequenceColumn, base.highWaterSeq),
+                  lte(issueSessionMessages.modelStateSeq, base.highWaterSeq),
+                ]
+              : []),
             ...(after
               ? [
                   or(
                     forward
-                      ? gt(issueSessionMessages.seq, after.seq)
-                      : lt(issueSessionMessages.seq, after.seq),
+                      ? gt(sequenceColumn, after.seq)
+                      : lt(sequenceColumn, after.seq),
                     and(
-                      eq(issueSessionMessages.seq, after.seq),
+                      eq(sequenceColumn, after.seq),
                       forward
                         ? gt(issueSessionMessages.id, after.id)
                         : lt(issueSessionMessages.id, after.id),
@@ -598,8 +651,8 @@ export function createIssueSessionStore(
         )
         .orderBy(
           forward
-            ? asc(issueSessionMessages.seq)
-            : desc(issueSessionMessages.seq),
+            ? asc(sequenceColumn)
+            : desc(sequenceColumn),
           forward
             ? asc(issueSessionMessages.id)
             : desc(issueSessionMessages.id),
@@ -609,9 +662,23 @@ export function createIssueSessionStore(
         rows,
         base,
         after,
-        (row) => row.seq,
+        (row) =>
+          base.messageOrder === "changed" ? row.modelStateSeq : row.seq,
         (row) => row.runId,
       );
+      if (
+        base.highWaterSeq !== null &&
+        rows.some(
+          (row) =>
+            !Number.isSafeInteger(row.modelStateSeq) ||
+            row.modelStateSeq < row.seq ||
+            row.modelStateSeq > base.highWaterSeq!,
+        )
+      ) {
+        throw new IssueSessionInvariantError(
+          "Issue Session storage returned message state outside the snapshot",
+        );
+      }
       const pageRows = rows.slice(0, limit);
       const finalRow = pageRows.at(-1);
       return {
@@ -623,7 +690,10 @@ export function createIssueSessionStore(
           rows.length > limit && finalRow
             ? encodeCursor(options.cursorSecret, {
                 ...base,
-                seq: finalRow.seq,
+                seq:
+                  base.messageOrder === "changed"
+                    ? finalRow.modelStateSeq
+                    : finalRow.seq,
                 id: finalRow.id,
               })
             : null,
@@ -652,6 +722,15 @@ export function createIssueSessionStore(
             eq(issueComments.sessionId, base.sessionId),
             ...(base.runId
               ? [eq(issueComments.runId, base.runId)]
+              : []),
+            gt(issueComments.projectedEventSeq, base.afterSeq),
+            ...(base.highWaterSeq !== null
+              ? [
+                  lte(
+                    issueComments.projectedEventSeq,
+                    base.highWaterSeq,
+                  ),
+                ]
               : []),
             ...(after
               ? [

@@ -315,7 +315,7 @@ describe("Agents", () => {
     vi.clearAllMocks();
   });
 
-  it("shows an ACPX-selected model beside its dynamically discovered adapter", async () => {
+  it("shows a runtime-selected model beside its dynamically discovered adapter", async () => {
     mockAgentsApi.list.mockResolvedValue([
       makeAgent({
         adapterType: "claude",

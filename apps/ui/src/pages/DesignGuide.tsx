@@ -1570,12 +1570,12 @@ export function DesignGuide() {
             </thead>
             <tbody>
               <tr className="border-b border-border">
-                <td className="px-3 py-2">acpx-model-primary</td>
+                <td className="px-3 py-2">local-model-primary</td>
                 <td className="px-3 py-2 font-mono">1.2M</td>
                 <td className="px-3 py-2 font-mono">$18.00</td>
               </tr>
               <tr className="border-b border-border">
-                <td className="px-3 py-2">acpx-model-secondary</td>
+                <td className="px-3 py-2">local-model-secondary</td>
                 <td className="px-3 py-2 font-mono">500k</td>
                 <td className="px-3 py-2 font-mono">$1.25</td>
               </tr>

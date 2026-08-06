@@ -750,27 +750,29 @@ Plugin lifecycle commands include `plugin init`, `list`, `install`, `uninstall`,
 administrators install an explicit local path or npm package.
 
 ```sh
+pnpm paperclipai plugin init <package-name> --category <connector|workspace|automation|ui> [--template <standard|environment>]
+pnpm paperclipai plugin list
+pnpm paperclipai plugin install <npm-package-name> [--version <version>]
+pnpm paperclipai plugin install --local <path>
+pnpm paperclipai plugin inspect <plugin-installation-id>
+pnpm paperclipai plugin enable <plugin-installation-id>
+pnpm paperclipai plugin disable <plugin-installation-id>
+pnpm paperclipai plugin uninstall <plugin-installation-id>
 pnpm paperclipai plugin ui-contributions
-pnpm paperclipai plugin health <plugin-id>
-pnpm paperclipai plugin logs <plugin-id>
-pnpm paperclipai plugin upgrade <plugin-id>
-pnpm paperclipai plugin config <plugin-id> --company-id <company-id>
-pnpm paperclipai plugin config:set <plugin-id> --company-id <company-id> --payload-json '{"configJson":{...}}'
-pnpm paperclipai plugin config:test <plugin-id> --company-id <company-id> --payload-json '{"configJson":{...}}'
-pnpm paperclipai plugin jobs <plugin-id>
-pnpm paperclipai plugin job:runs <plugin-id> <job-id>
-pnpm paperclipai plugin job:trigger <plugin-id> <job-id> [--payload-json '{...}']
-pnpm paperclipai plugin webhook <plugin-id> <endpoint-key> [--payload-json '{...}']
-pnpm paperclipai plugin dashboard <plugin-id>
-pnpm paperclipai plugin bridge:data <plugin-id> --payload-json '{...}'
-pnpm paperclipai plugin bridge:action <plugin-id> --payload-json '{...}'
-pnpm paperclipai plugin bridge:stream <plugin-id> <channel> [--duration-ms 10000]
-pnpm paperclipai plugin data <plugin-id> <key> --payload-json '{...}'
-pnpm paperclipai plugin action <plugin-id> <key> --payload-json '{...}'
-pnpm paperclipai plugin local-folders <plugin-id> --company-id <company-id>
-pnpm paperclipai plugin local-folder:status <plugin-id> <folder-key> --company-id <company-id>
-pnpm paperclipai plugin local-folder:validate <plugin-id> <folder-key> --company-id <company-id> [--payload-json '{...}']
-pnpm paperclipai plugin local-folder:set <plugin-id> <folder-key> --company-id <company-id> --payload-json '{...}'
+pnpm paperclipai plugin logs <plugin-installation-id>
+pnpm paperclipai plugin upgrade <plugin-installation-id> [--version <version>]
+pnpm paperclipai plugin config <plugin-installation-id>
+pnpm paperclipai plugin config:set <plugin-installation-id> --payload-json '{"configJson":{...}}'
+pnpm paperclipai plugin config:test <plugin-installation-id> --payload-json '{"configJson":{...}}'
+pnpm paperclipai plugin jobs <plugin-installation-id>
+pnpm paperclipai plugin job:runs <plugin-installation-id> <job-id>
+pnpm paperclipai plugin job:trigger <plugin-installation-id> <job-id> [--payload-json '{...}']
+pnpm paperclipai plugin webhook <plugin-installation-id> <endpoint-key> [--payload-json '{...}']
+pnpm paperclipai plugin dashboard <plugin-installation-id>
+pnpm paperclipai plugin local-folders <plugin-installation-id> --company-id <company-id>
+pnpm paperclipai plugin local-folder:status <plugin-installation-id> <folder-key> --company-id <company-id>
+pnpm paperclipai plugin local-folder:validate <plugin-installation-id> <folder-key> --company-id <company-id> [--payload-json '{...}']
+pnpm paperclipai plugin local-folder:set <plugin-installation-id> <folder-key> --company-id <company-id> --payload-json '{...}'
 ```
 
 Feedback traces can be fetched directly by ID when automating export workflows:

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { accessService } from "../services/access.js";
-import { grantsForHumanRole } from "../services/company-member-roles.js";
+import { grantsForHumanRole } from "@paperclipai/shared";
 import { createMockDb } from "./helpers/mock-db.js";
 
 const mocks = vi.hoisted(() => ({

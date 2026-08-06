@@ -1,19 +1,17 @@
 import {
   companies,
-  pluginCompanySettings,
   plugins,
   type Db,
 } from "@paperclipai/db";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
-  resolveInvokableIssueOwnerCatalogFromDb,
   resolveInvokableIssueOwnerCatalogInTransaction,
   type InvokableIssueOwnerResolution,
 } from "./agent-invokability.js";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 import {
-  lockPluginCompanySettingScopeInTransaction,
-  type PluginCompanySettingLockScope,
+  lockPluginInstallationCompanyScopeInTransaction,
+  type PluginInstallationCompanyLockScope,
 } from "./plugin-authorization-locks.js";
 
 export type PluginIssueOwnerOperation = "issues.create" | "issues.update";
@@ -29,7 +27,6 @@ export interface PluginIssueOwnerCatalogInput
   operation: PluginIssueOwnerOperation;
   installation: typeof plugins.$inferSelect | null;
   company: typeof companies.$inferSelect | null;
-  companySetting: typeof pluginCompanySettings.$inferSelect | null;
   invokableOwnerCatalog: ReadonlyMap<
     string,
     InvokableIssueOwnerResolution
@@ -42,7 +39,6 @@ export type PluginIssueAuthorizationRejectionReason =
   | "plugin_installation_not_ready"
   | "plugin_operation_not_approved"
   | "plugin_company_missing"
-  | "plugin_company_disabled"
   | "plugin_owner_not_permitted";
 
 export class PluginIssueAuthorizationRejected extends Error {
@@ -66,10 +62,10 @@ function reject(
   throw new PluginIssueAuthorizationRejected(message, reason, details);
 }
 
-function assertInstallationCompanyAvailability(
-  input: PluginIssueAuthorizationIdentity & PluginCompanySettingLockScope,
+function assertInstallationRequestScope(
+  input: PluginIssueAuthorizationIdentity & PluginInstallationCompanyLockScope,
 ): typeof plugins.$inferSelect {
-  const { installation, company, companySetting } = input;
+  const { installation, company } = input;
   if (!installation) {
     reject(
       "plugin_installation_missing",
@@ -108,44 +104,16 @@ function assertInstallationCompanyAvailability(
       { companyId: input.companyId },
     );
   }
-  if (
-    companySetting &&
-    (
-      companySetting.pluginId !== installation.id ||
-      companySetting.companyId !== company.id
-    )
-  ) {
-    reject(
-      "plugin_installation_identity_mismatch",
-      "Plugin company setting identity does not match",
-      {
-        pluginInstallationId: installation.id,
-        companyId: company.id,
-      },
-    );
-  }
-  // The persisted schema defines absence as enabled-by-default. An explicit
-  // false is the sole company-level disable switch.
-  if (companySetting?.enabled === false) {
-    reject(
-      "plugin_company_disabled",
-      "Plugin is disabled for this company",
-      {
-        pluginInstallationId: installation.id,
-        companyId: company.id,
-      },
-    );
-  }
   return installation;
 }
 
 function assertPluginIssueOperationAvailability(
   input: PluginIssueAuthorizationIdentity &
-    PluginCompanySettingLockScope & {
+    PluginInstallationCompanyLockScope & {
       operation: PluginIssueOwnerOperation;
     },
 ): typeof plugins.$inferSelect {
-  const installation = assertInstallationCompanyAvailability(input);
+  const installation = assertInstallationRequestScope(input);
   if (!installation.manifestJson.capabilities.includes(input.operation)) {
     reject(
       "plugin_operation_not_approved",
@@ -195,10 +163,10 @@ export function selectPluginPermittedIssueOwner(
   return owner;
 }
 
-async function readInstallationCompanyAvailability(
+async function readInstallationRequestScope(
   db: Db,
   input: PluginIssueAuthorizationIdentity,
-): Promise<PluginCompanySettingLockScope> {
+): Promise<PluginInstallationCompanyLockScope> {
   const installation = await db
     .select()
     .from(plugins)
@@ -209,59 +177,27 @@ async function readInstallationCompanyAvailability(
     .from(companies)
     .where(eq(companies.id, input.companyId))
     .then((rows) => rows[0] ?? null);
-  const companySetting = await db
-    .select()
-    .from(pluginCompanySettings)
-    .where(
-      and(
-        eq(
-          pluginCompanySettings.pluginId,
-          input.pluginInstallationId,
-        ),
-        eq(pluginCompanySettings.companyId, input.companyId),
-      ),
-    )
-    .then((rows) => rows[0] ?? null);
-  return { installation, company, companySetting };
+  return { installation, company };
 }
 
 /**
- * Read-side company availability check used by the plugin host before
- * dispatch. Mutations must still use the locked operation-specific resolver.
+ * Read-side installation identity/readiness and company-scope check used by
+ * the plugin host before dispatch. Mutations still use the locked resolver.
  */
-export async function assertPluginInstallationAvailableForCompany(
+export async function assertPluginInstallationRequestScope(
   db: Db,
   input: PluginIssueAuthorizationIdentity,
 ): Promise<typeof plugins.$inferSelect> {
-  return assertInstallationCompanyAvailability({
+  return assertInstallationRequestScope({
     ...input,
-    ...(await readInstallationCompanyAvailability(db, input)),
-  });
-}
-
-/** Resolves a descriptor/configuration-time catalog without write locks. */
-export async function resolvePluginPermittedIssueOwnerCatalogFromDb(
-  db: Db,
-  input: PluginIssueAuthorizationIdentity & {
-    operation: PluginIssueOwnerOperation;
-  },
-): Promise<ReadonlyMap<string, InvokableIssueOwnerResolution>> {
-  const availability = await readInstallationCompanyAvailability(db, input);
-  const invokableOwnerCatalog =
-    await resolveInvokableIssueOwnerCatalogFromDb(db, {
-      companyId: input.companyId,
-    });
-  return resolvePluginPermittedIssueOwnerCatalog({
-    ...input,
-    ...availability,
-    invokableOwnerCatalog,
+    ...(await readInstallationRequestScope(db, input)),
   });
 }
 
 /**
  * Mutation-time catalog resolver. This owns the exact lock order:
  *
- *   installation -> company -> setting -> agents -> current revisions
+ *   installation -> company -> agents -> current revisions
  */
 export async function resolvePluginPermittedIssueOwnerCatalogInTransaction(
   tx: IssueSessionDbTransaction,
@@ -270,7 +206,7 @@ export async function resolvePluginPermittedIssueOwnerCatalogInTransaction(
   },
 ): Promise<ReadonlyMap<string, InvokableIssueOwnerResolution>> {
   const availability =
-    await lockPluginCompanySettingScopeInTransaction(tx, input);
+    await lockPluginInstallationCompanyScopeInTransaction(tx, input);
   // Reject an unavailable installation/company/capability before doing the
   // broader agent-graph lock, while retaining the same transaction boundary.
   assertPluginIssueOperationAvailability({ ...input, ...availability });

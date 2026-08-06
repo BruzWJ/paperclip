@@ -70,7 +70,7 @@ export function JoinRequestApprovalControls({
     }
     // A catalog refresh can remove a transport while this control remains
     // open. Clear the stale choice instead of submitting it as if it were
-    // still ACPX-admitted.
+    // still admitted by the local-agent catalog.
     setDefaultEnvironmentId("");
   }, [defaultEnvironmentId, eligibleEnvironments]);
   const environmentRequired = isAgentRequest;

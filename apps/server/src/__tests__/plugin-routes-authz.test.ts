@@ -1,28 +1,29 @@
 import express from "express";
+import os from "node:os";
+import path from "node:path";
+import { promises as fs } from "node:fs";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { PluginConfig, PluginRecord } from "@paperclipai/shared";
 import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockRegistry = vi.hoisted(() => ({
   getById: vi.fn(),
   getByKey: vi.fn(),
-  upsertConfig: vi.fn(),
+  getConfig: vi.fn(),
   getCompanySettings: vi.fn(),
   upsertCompanySettings: vi.fn(),
 }));
 
 const mockLifecycle = vi.hoisted(() => ({
-  load: vi.fn(),
+  install: vi.fn(),
   upgrade: vi.fn(),
   unload: vi.fn(),
   enable: vi.fn(),
   disable: vi.fn(),
-}));
-
-const mockSecretService = vi.hoisted(() => ({
-  getById: vi.fn(),
-  syncSecretRefsForTarget: vi.fn(),
+  updateConfig: vi.fn(),
+  markError: vi.fn(),
 }));
 
 vi.mock("../services/plugin-registry.js", () => ({
@@ -33,21 +34,19 @@ vi.mock("../services/activity-log.js", () => ({
   logActivity: vi.fn(),
 }));
 
-vi.mock("../services/secrets.js", () => ({
-  secretService: () => mockSecretService,
-}));
-
-vi.mock("../services/live-events.js", () => ({
-  publishGlobalLiveEvent: vi.fn(),
-}));
+function createAuditDb() {
+  return {
+    select: vi.fn(() => ({
+      from: vi.fn().mockResolvedValue([]),
+    })),
+  };
+}
 
 async function createApp(
   actor: Record<string, unknown>,
-  loaderOverrides: Record<string, unknown> = {},
   routeOverrides: {
     db?: unknown;
-    jobDeps?: unknown;
-    bridgeDeps?: unknown;
+    runtime?: unknown;
     captureJsonContext?: (context: unknown, body: unknown) => void;
   } = {},
 ) {
@@ -56,13 +55,12 @@ async function createApp(
     import("../middleware/index.js"),
   ]);
 
-  const loader = {
-    installPlugin: vi.fn(),
-    ...loaderOverrides,
-  };
-
   const app = express();
-  app.use(express.json());
+  app.use(express.json({
+    verify(req, _res, buf) {
+      (req as unknown as { rawBody: Buffer }).rawBody = buf;
+    },
+  }));
   if (routeOverrides.captureJsonContext) {
     app.use((_req, res, next) => {
       const originalJson = res.json.bind(res);
@@ -79,16 +77,13 @@ async function createApp(
   });
   app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", pluginRoutes(
-    (routeOverrides.db ?? {}) as never,
-    loader as never,
+    (routeOverrides.db ?? createAuditDb()) as never,
     mockLifecycle as never,
-    routeOverrides.jobDeps as never,
-    undefined,
-    routeOverrides.bridgeDeps as never,
+    routeOverrides.runtime as never,
   ));
   app.use(errorHandler);
 
-  return { app, loader };
+  return { app };
 }
 
 const companyA = "22222222-2222-4222-8222-222222222222";
@@ -96,7 +91,49 @@ const companyB = "33333333-3333-4333-8333-333333333333";
 const agentA = "44444444-4444-4444-8444-444444444444";
 const runA = "55555555-5555-4555-8555-555555555555";
 const pluginId = "11111111-1111-4111-8111-111111111111";
-const secretId = "77777777-7777-4777-8777-777777777777";
+const installedAt = new Date("2026-08-05T01:02:03.000Z");
+const updatedAt = new Date("2026-08-06T04:05:06.000Z");
+
+function pluginRecord(overrides: Partial<PluginRecord> = {}): PluginRecord {
+  return {
+    id: pluginId,
+    pluginKey: "paperclip.example",
+    packageName: "paperclip-plugin-example",
+    source: "npm",
+    packagePath: "/plugins/paperclip-plugin-example",
+    status: "ready",
+    installOrder: 1,
+    manifestJson: {
+      id: "paperclip.example",
+      apiVersion: 1,
+      version: "1.0.0",
+      displayName: "Example",
+      description: "Example plugin",
+      author: "Paperclip",
+      categories: ["automation"],
+      capabilities: [],
+      entrypoints: { worker: "dist/worker.js" },
+    },
+    lastError: null,
+    installedAt,
+    updatedAt,
+    ...overrides,
+  };
+}
+
+function pluginConfig(
+  configJson: Record<string, unknown>,
+  overrides: Partial<PluginConfig> = {},
+): PluginConfig {
+  return {
+    id: "config-1",
+    pluginId,
+    configJson,
+    createdAt: installedAt,
+    updatedAt,
+    ...overrides,
+  };
+}
 
 function boardActor(
   overrides: Parameters<typeof testBoardSessionActor>[0] = {},
@@ -124,12 +161,7 @@ function agentActor(overrides: Record<string, unknown> = {}) {
 }
 
 function readyPlugin() {
-  mockRegistry.getById.mockResolvedValue({
-    id: pluginId,
-    pluginKey: "paperclip.example",
-    version: "1.0.0",
-    status: "ready",
-  });
+  mockRegistry.getById.mockResolvedValue(pluginRecord());
 }
 
 describe.sequential("plugin install and upgrade authz", () => {
@@ -138,42 +170,23 @@ describe.sequential("plugin install and upgrade authz", () => {
   });
 
   it("rejects plugin installation for non-admin board users", async () => {
-    const { app, loader } = await createApp(boardActor({
+    const { app } = await createApp(boardActor({
       companyIds: ["company-1"],
     }));
 
     const res = await request(app)
       .post("/api/plugins/install")
-      .send({ packageName: "paperclip-plugin-example" });
+      .send({ source: "npm", packageName: "paperclip-plugin-example" });
 
     expect(res.status).toBe(403);
-    expect(loader.installPlugin).not.toHaveBeenCalled();
+    expect(mockLifecycle.install).not.toHaveBeenCalled();
   }, 20_000);
 
   it("allows instance admins to install plugins", async () => {
-    const pluginId = "11111111-1111-4111-8111-111111111111";
-    const pluginKey = "paperclip.example";
-    const discovered = {
-      manifest: {
-        id: pluginKey,
-      },
-    };
+    const installedPlugin = pluginRecord();
+    mockLifecycle.install.mockResolvedValue(installedPlugin);
 
-    mockRegistry.getByKey.mockResolvedValue({
-      id: pluginId,
-      pluginKey,
-      packageName: "paperclip-plugin-example",
-      version: "1.0.0",
-    });
-    mockRegistry.getById.mockResolvedValue({
-      id: pluginId,
-      pluginKey,
-      packageName: "paperclip-plugin-example",
-      version: "1.0.0",
-    });
-    mockLifecycle.load.mockResolvedValue(undefined);
-
-    const { app, loader } = await createApp(
+    const { app } = await createApp(
       boardActor({
         userId: "admin-1",
         userName: "Admin One",
@@ -182,19 +195,58 @@ describe.sequential("plugin install and upgrade authz", () => {
         isInstanceAdmin: true,
         companyIds: [],
       }),
-      { installPlugin: vi.fn().mockResolvedValue(discovered) },
     );
 
     const res = await request(app)
       .post("/api/plugins/install")
-      .send({ packageName: "paperclip-plugin-example" });
+      .send({ source: "npm", packageName: "paperclip-plugin-example" });
 
     expect(res.status).toBe(200);
-    expect(loader.installPlugin).toHaveBeenCalledWith({
-      packageName: "paperclip-plugin-example",
-      version: undefined,
+    expect(res.body).toMatchObject({
+      id: pluginId,
+      installedAt: installedAt.toISOString(),
+      updatedAt: updatedAt.toISOString(),
     });
-    expect(mockLifecycle.load).toHaveBeenCalledWith(pluginId);
+    expect(mockLifecycle.install).toHaveBeenCalledWith({
+      source: "npm",
+      packageName: "paperclip-plugin-example",
+    });
+  }, 20_000);
+
+  it("rejects undeclared install fields", async () => {
+    const { app } = await createApp(boardActor({
+      isInstanceAdmin: true,
+      companyIds: [],
+    }));
+
+    const res = await request(app)
+      .post("/api/plugins/install")
+      .send({
+        source: "npm",
+        packageName: "paperclip-plugin-example",
+        unsupportedField: false,
+      });
+
+    expect(res.status).toBe(400);
+    expect(mockLifecycle.install).not.toHaveBeenCalled();
+  }, 20_000);
+
+  it("accepts only exact npm names and absolute local paths", async () => {
+    const { app } = await createApp(boardActor({
+      isInstanceAdmin: true,
+      companyIds: [],
+    }));
+
+    const invalidNpm = await request(app)
+      .post("/api/plugins/install")
+      .send({ source: "npm", packageName: "./plugin" });
+    const invalidLocal = await request(app)
+      .post("/api/plugins/install")
+      .send({ source: "local", path: "./plugin" });
+
+    expect(invalidNpm.status).toBe(400);
+    expect(invalidLocal.status).toBe(400);
+    expect(mockLifecycle.install).not.toHaveBeenCalled();
   }, 20_000);
 
   it("rejects plugin upgrades for non-admin board users", async () => {
@@ -213,10 +265,26 @@ describe.sequential("plugin install and upgrade authz", () => {
   }, 20_000);
 
   it.each([
+    ["logs", `/api/plugins/${pluginId}/logs`],
+    ["configuration", `/api/plugins/${pluginId}/config`],
+    ["jobs", `/api/plugins/${pluginId}/jobs`],
+    ["job runs", `/api/plugins/${pluginId}/jobs/job-1/runs`],
+    ["dashboard", `/api/plugins/${pluginId}/dashboard`],
+  ])("rejects instance-wide plugin %s reads for non-admin board users", async (_name, path) => {
+    const { app } = await createApp(boardActor({ companyIds: [companyA] }));
+
+    const res = await request(app).get(path);
+
+    expect(res.status).toBe(403);
+    expect(mockRegistry.getById).not.toHaveBeenCalled();
+  }, 20_000);
+
+  it.each([
     ["delete", "delete", "/api/plugins/11111111-1111-4111-8111-111111111111", undefined],
     ["enable", "post", "/api/plugins/11111111-1111-4111-8111-111111111111/enable", {}],
     ["disable", "post", "/api/plugins/11111111-1111-4111-8111-111111111111/disable", {}],
     ["config", "post", "/api/plugins/11111111-1111-4111-8111-111111111111/config", { configJson: {} }],
+    ["config test", "post", "/api/plugins/11111111-1111-4111-8111-111111111111/config/test", { configJson: {} }],
   ] as const)("rejects plugin %s for non-admin board users", async (_name, method, path, body) => {
     const { app } = await createApp(boardActor({
       companyIds: ["company-1"],
@@ -227,28 +295,14 @@ describe.sequential("plugin install and upgrade authz", () => {
 
     expect(res.status).toBe(403);
     expect(mockRegistry.getById).not.toHaveBeenCalled();
-    expect(mockRegistry.upsertConfig).not.toHaveBeenCalled();
+    expect(mockLifecycle.updateConfig).not.toHaveBeenCalled();
     expect(mockLifecycle.unload).not.toHaveBeenCalled();
     expect(mockLifecycle.enable).not.toHaveBeenCalled();
     expect(mockLifecycle.disable).not.toHaveBeenCalled();
   }, 20_000);
 
-  it("resolves plugin keys without probing the UUID id column for core plugin actions", async () => {
+  it("rejects plugin keys because installation routes are UUID-only", async () => {
     const pluginKey = "paperclipqa.hello-plugin";
-    const plugin = {
-      id: pluginId,
-      pluginKey,
-      version: "1.0.0",
-      status: "ready",
-    };
-    mockRegistry.getById.mockImplementation(() => {
-      throw new Error("getById should not be called for plugin keys");
-    });
-    mockRegistry.getByKey.mockResolvedValue(plugin);
-    mockLifecycle.unload.mockResolvedValue(plugin);
-    mockLifecycle.enable.mockResolvedValue(plugin);
-    mockLifecycle.disable.mockResolvedValue(plugin);
-
     const { app } = await createApp(boardActor({
       userId: "admin-1",
       userName: "Admin One",
@@ -261,27 +315,58 @@ describe.sequential("plugin install and upgrade authz", () => {
     const inspectRes = await request(app).get(`/api/plugins/${pluginKey}`);
     const disableRes = await request(app).post(`/api/plugins/${pluginKey}/disable`).send({});
     const enableRes = await request(app).post(`/api/plugins/${pluginKey}/enable`).send({});
-    const uninstallRes = await request(app).delete(`/api/plugins/${pluginKey}?purge=true`);
+    const uninstallRes = await request(app).delete(`/api/plugins/${pluginKey}`);
 
-    expect(inspectRes.status).toBe(200);
-    expect(disableRes.status).toBe(200);
-    expect(enableRes.status).toBe(200);
-    expect(uninstallRes.status).toBe(200);
+    expect(inspectRes.status).toBe(404);
+    expect(disableRes.status).toBe(404);
+    expect(enableRes.status).toBe(404);
+    expect(uninstallRes.status).toBe(404);
     expect(mockRegistry.getById).not.toHaveBeenCalled();
-    expect(mockRegistry.getByKey).toHaveBeenCalledWith(pluginKey);
-    expect(mockLifecycle.disable).toHaveBeenCalledWith(pluginId, undefined);
-    expect(mockLifecycle.enable).toHaveBeenCalledWith(pluginId);
-    expect(mockLifecycle.unload).toHaveBeenCalledWith(pluginId, true);
+    expect(mockRegistry.getByKey).not.toHaveBeenCalled();
+    expect(mockLifecycle.disable).not.toHaveBeenCalled();
+    expect(mockLifecycle.enable).not.toHaveBeenCalled();
+    expect(mockLifecycle.unload).not.toHaveBeenCalled();
   }, 20_000);
 
-  it("allows instance admins to save company-scoped secret refs and sync plugin bindings", async () => {
+  it("uses one idempotent query-free uninstall operation", async () => {
+    mockLifecycle.unload
+      .mockResolvedValueOnce(pluginRecord({ status: "disabled" }))
+      .mockResolvedValueOnce(null);
+    const { app } = await createApp(boardActor({
+      isInstanceAdmin: true,
+      companyIds: [],
+    }));
+
+    const first = await request(app).delete(`/api/plugins/${pluginId}`);
+    const repeated = await request(app).delete(`/api/plugins/${pluginId}`);
+
+    expect(first.status).toBe(204);
+    expect(repeated.status).toBe(204);
+    expect(mockLifecycle.unload).toHaveBeenNthCalledWith(1, pluginId);
+    expect(mockLifecycle.unload).toHaveBeenNthCalledWith(2, pluginId);
+  }, 20_000);
+
+  it("rejects removed uninstall query options", async () => {
+    const { app } = await createApp(boardActor({
+      isInstanceAdmin: true,
+      companyIds: [],
+    }));
+
+    const res = await request(app)
+      .delete(`/api/plugins/${pluginId}`)
+      .query({ purge: "true" });
+
+    expect(res.status).toBe(400);
+    expect(mockLifecycle.unload).not.toHaveBeenCalled();
+  }, 20_000);
+
+  it("allows instance admins to save one installation-wide config without a company", async () => {
     readyPlugin();
-    const configJson = {
-      apiKeyRef: { type: "secret_ref", secretId, version: "latest" },
+    const draftConfig = {
+      endpoint: "https://service.example",
+      apiSecret: "new-secret-value",
     };
-    mockSecretService.getById.mockResolvedValue({ id: secretId, companyId: companyA, status: "active" });
-    mockSecretService.syncSecretRefsForTarget.mockResolvedValue([]);
-    mockRegistry.upsertConfig.mockResolvedValue({ id: "config-1", pluginId, companyId: companyA, configJson });
+    mockLifecycle.updateConfig.mockResolvedValue(pluginConfig(draftConfig));
 
     const { app } = await createApp(boardActor({
       userId: "admin-1",
@@ -289,78 +374,92 @@ describe.sequential("plugin install and upgrade authz", () => {
       userEmail: "admin-1@paperclip.test",
       sessionId: "session-admin-1",
       isInstanceAdmin: true,
-      companyIds: [companyA],
+      companyIds: [],
     }));
 
     const res = await request(app)
       .post(`/api/plugins/${pluginId}/config`)
-      .send({ companyId: companyA, configJson });
+      .send({ configJson: draftConfig });
 
     expect(res.status).toBe(200);
-    expect(mockSecretService.getById).toHaveBeenCalledWith(secretId);
-    expect(mockSecretService.syncSecretRefsForTarget).toHaveBeenCalledWith(
-      companyA,
-      { targetType: "plugin", targetId: pluginId },
-      [{
-        secretId,
-        configPath: "apiKeyRef",
-        versionSelector: "latest",
-        required: true,
-        label: "apiKeyRef",
-        projectionClass: undefined,
-        projectionAllowlistKey: null,
-      }],
-      {
-        actor: { type: "user", userId: "admin-1" },
-        replaceAll: true,
-      },
-    );
-    expect(mockRegistry.upsertConfig).toHaveBeenCalledWith(pluginId, companyA, {
-      companyId: companyA,
-      configJson,
+    expect(res.body).toMatchObject({
+      createdAt: installedAt.toISOString(),
+      updatedAt: updatedAt.toISOString(),
+    });
+    expect(mockLifecycle.updateConfig).toHaveBeenCalledWith(pluginId, draftConfig);
+  }, 20_000);
+
+  it("lets an instance admin read config without company membership", async () => {
+    readyPlugin();
+    mockRegistry.getConfig.mockResolvedValue(pluginConfig({
+      endpoint: "https://service.example",
+    }));
+
+    const { app } = await createApp(boardActor({
+      userId: "admin-1",
+      userName: "Admin One",
+      userEmail: "admin-1@paperclip.test",
+      sessionId: "session-admin-1",
+      isInstanceAdmin: true,
+      companyIds: [],
+    }));
+
+    const res = await request(app).get(`/api/plugins/${pluginId}/config`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      createdAt: installedAt.toISOString(),
+      updatedAt: updatedAt.toISOString(),
+    });
+    expect(mockRegistry.getConfig).toHaveBeenCalledWith(pluginId);
+  }, 20_000);
+
+  it("delegates configuration and runtime coordination to the lifecycle", async () => {
+    readyPlugin();
+    mockLifecycle.updateConfig.mockResolvedValue(pluginConfig(
+      { revision: "next" },
+      { id: "config-restart" },
+    ));
+    const { app } = await createApp(boardActor({
+      isInstanceAdmin: true,
+      companyIds: [],
+    }), { runtime: {} });
+
+    const response = await request(app)
+      .post(`/api/plugins/${pluginId}/config`)
+      .send({ configJson: { revision: "next" } });
+
+    expect(response.status).toBe(200);
+    expect(mockLifecycle.updateConfig).toHaveBeenCalledWith(pluginId, {
+      revision: "next",
     });
   }, 20_000);
 
-  it("rejects plugin config saves that reference another company's secret before syncing bindings", async () => {
+  it("does not duplicate the lifecycle-owned error transition when config reload fails", async () => {
     readyPlugin();
-    mockSecretService.getById.mockResolvedValue({ id: secretId, companyId: companyB, status: "active" });
-    mockSecretService.syncSecretRefsForTarget.mockResolvedValue([]);
-
+    mockLifecycle.updateConfig.mockRejectedValue(new Error("worker failed"));
     const { app } = await createApp(boardActor({
-      userId: "admin-1",
-      userName: "Admin One",
-      userEmail: "admin-1@paperclip.test",
-      sessionId: "session-admin-1",
       isInstanceAdmin: true,
-      companyIds: [companyA],
+      companyIds: [],
     }));
 
     const res = await request(app)
       .post(`/api/plugins/${pluginId}/config`)
-      .send({
-        companyId: companyA,
-        configJson: {
-          apiKeyRef: { type: "secret_ref", secretId, version: "latest" },
-        },
-      });
+      .send({ configJson: { endpoint: "https://service.example" } });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/outside the selected company/i);
-    expect(mockSecretService.syncSecretRefsForTarget).not.toHaveBeenCalled();
-    expect(mockRegistry.upsertConfig).not.toHaveBeenCalled();
+    expect(mockLifecycle.updateConfig).toHaveBeenCalledTimes(1);
+    expect(mockLifecycle.markError).not.toHaveBeenCalled();
   }, 20_000);
 
   it("allows instance admins to upgrade plugins", async () => {
-    const pluginId = "11111111-1111-4111-8111-111111111111";
-    mockRegistry.getById.mockResolvedValue({
-      id: pluginId,
-      pluginKey: "paperclip.example",
-      version: "1.0.0",
-    });
-    mockLifecycle.upgrade.mockResolvedValue({
-      id: pluginId,
-      version: "1.1.0",
-    });
+    mockRegistry.getById.mockResolvedValue(pluginRecord());
+    mockLifecycle.upgrade.mockResolvedValue(pluginRecord({
+      manifestJson: {
+        ...pluginRecord().manifestJson,
+        version: "1.1.0",
+      },
+    }));
 
     const { app } = await createApp(boardActor({
       userId: "admin-1",
@@ -388,16 +487,15 @@ describe.sequential("scoped plugin API routes", () => {
   it("dispatches manifest-declared scoped routes after company access checks", async () => {
     const pluginId = "11111111-1111-4111-8111-111111111111";
     const workerManager = {
+      isRunning: vi.fn().mockReturnValue(true),
       call: vi.fn().mockResolvedValue({
         status: 202,
         body: { ok: true },
       }),
     };
-    mockRegistry.getById.mockResolvedValue(null);
-    mockRegistry.getByKey.mockResolvedValue({
+    mockRegistry.getById.mockResolvedValue({
       id: pluginId,
       pluginKey: "paperclip.example",
-      version: "1.0.0",
       status: "ready",
       manifestJson: {
         id: "paperclip.example",
@@ -407,8 +505,6 @@ describe.sequential("scoped plugin API routes", () => {
             routeKey: "smoke",
             method: "GET",
             path: "/smoke",
-            auth: "board",
-            capability: "api.routes.register",
             companyResolution: { from: "query", key: "companyId" },
           },
         ],
@@ -424,12 +520,11 @@ describe.sequential("scoped plugin API routes", () => {
         isInstanceAdmin: false,
         companyIds: ["company-1"],
       }),
-      {},
-      { bridgeDeps: { workerManager } },
+      { runtime: { workerManager } },
     );
 
     const res = await request(app)
-      .get("/api/plugins/paperclip.example/api/smoke")
+      .get(`/api/plugins/${pluginId}/api/smoke`)
       .query({ companyId: "company-1" });
 
     expect(res.status).toBe(202);
@@ -457,7 +552,6 @@ describe.sequential("plugin local folder routes", () => {
     mockRegistry.getById.mockResolvedValue({
       id: pluginId,
       pluginKey: "paperclip.example",
-      version: "1.0.0",
       status: "ready",
       manifestJson: {
         id: "paperclip.example",
@@ -500,6 +594,49 @@ describe.sequential("plugin local folder routes", () => {
     expect(res.body.error).toContain("Local folder key is not declared");
     expect(mockRegistry.upsertCompanySettings).not.toHaveBeenCalled();
   });
+
+  it("rejects local-folder declaration overrides in REST input", async () => {
+    readyLocalFolderPlugin();
+    const { app } = await createApp(boardActor());
+
+    const res = await request(app)
+      .put(`/api/plugins/${pluginId}/companies/${companyA}/local-folders/content-root`)
+      .send({ path: "/tmp", access: "read" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Invalid plugin local-folder path request");
+    expect(mockRegistry.upsertCompanySettings).not.toHaveBeenCalled();
+  });
+
+  it("persists only the operator-selected local-folder path", async () => {
+    readyLocalFolderPlugin();
+    const { app } = await createApp(boardActor());
+    const folderPath = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-plugin-route-folder-"));
+
+    try {
+      const res = await request(app)
+        .put(`/api/plugins/${pluginId}/companies/${companyA}/local-folders/content-root`)
+        .send({ path: folderPath });
+
+      expect(res.status).toBe(200);
+      await expect(fs.stat(path.join(folderPath, "docs"))).resolves.toMatchObject({});
+      expect(mockRegistry.upsertCompanySettings).toHaveBeenCalledWith(
+        pluginId,
+        companyA,
+        {
+          settingsJson: {
+            localFolders: {
+              "content-root": {
+                path: folderPath,
+              },
+            },
+          },
+        },
+      );
+    } finally {
+      await fs.rm(folderPath, { recursive: true, force: true });
+    }
+  });
 });
 
 describe.sequential("plugin bridge authz", () => {
@@ -508,15 +645,13 @@ describe.sequential("plugin bridge authz", () => {
   });
 
   it.each([
-    ["legacy data", "post", `/api/plugins/${pluginId}/bridge/data`, { key: "health" }],
-    ["legacy action", "post", `/api/plugins/${pluginId}/bridge/action`, { key: "sync" }],
-    ["url data", "post", `/api/plugins/${pluginId}/data/health`, {}],
-    ["url action", "post", `/api/plugins/${pluginId}/actions/sync`, {}],
+    ["data", "post", `/api/plugins/${pluginId}/data/health`, {}],
+    ["action", "post", `/api/plugins/${pluginId}/actions/sync`, {}],
   ] as const)("rejects %s bridge calls without companyId for non-admin users", async (_name, _method, path, body) => {
     readyPlugin();
     const call = vi.fn();
-    const { app } = await createApp(boardActor(), {}, {
-      bridgeDeps: {
+    const { app } = await createApp(boardActor(), {
+      runtime: {
         workerManager: { call },
       },
     });
@@ -532,8 +667,8 @@ describe.sequential("plugin bridge authz", () => {
   it("forwards authorized bridge company scope to the plugin worker", async () => {
     readyPlugin();
     const call = vi.fn().mockResolvedValue({ ok: true });
-    const { app } = await createApp(boardActor(), {}, {
-      bridgeDeps: {
+    const { app } = await createApp(boardActor(), {
+      runtime: {
         workerManager: { call },
       },
     });
@@ -558,8 +693,8 @@ describe.sequential("plugin bridge authz", () => {
       userId: "admin-1",
       isInstanceAdmin: true,
       companyIds: [],
-    }), {}, {
-      bridgeDeps: {
+    }), {
+      runtime: {
         workerManager: { call },
       },
     });
@@ -584,8 +719,8 @@ describe.sequential("plugin bridge authz", () => {
   it("passes authenticated actor context and overrides spoofed company scope for plugin actions", async () => {
     readyPlugin();
     const call = vi.fn().mockResolvedValue({ ok: true });
-    const { app } = await createApp(boardActor(), {}, {
-      bridgeDeps: {
+    const { app } = await createApp(boardActor(), {
+      runtime: {
         workerManager: { call },
       },
     });
@@ -634,8 +769,8 @@ describe.sequential("plugin bridge authz", () => {
         status: "active",
       }],
     };
-    const { app } = await createApp(malformedActor, {}, {
-      bridgeDeps: {
+    const { app } = await createApp(malformedActor, {
+      runtime: {
         workerManager: { call },
       },
     });
@@ -651,8 +786,8 @@ describe.sequential("plugin bridge authz", () => {
   it("rejects agent-scoped plugin actions at the generic REST boundary", async () => {
     readyPlugin();
     const call = vi.fn().mockResolvedValue({ ok: true });
-    const { app } = await createApp(agentActor(), {}, {
-      bridgeDeps: {
+    const { app } = await createApp(agentActor(), {
+      runtime: {
         workerManager: { call },
       },
     });
@@ -673,29 +808,13 @@ describe.sequential("plugin bridge authz", () => {
     });
     expect(call).not.toHaveBeenCalled();
 
-    const legacyRes = await request(app)
-      .post(`/api/plugins/${pluginId}/bridge/action`)
-      .send({
-        key: "sync",
-        companyId: companyA,
-        params: {
-          companyId: companyB,
-          reviewerAgentId: "spoofed-agent",
-        },
-      });
-
-    expect(legacyRes.status).toBe(403);
-    expect(legacyRes.body).toMatchObject({
-      code: "compiled_run_interface_required",
-    });
-    expect(call).not.toHaveBeenCalled();
   });
 
   it("rejects agent plugin actions outside the authenticated company scope", async () => {
     readyPlugin();
     const call = vi.fn().mockResolvedValue({ ok: true });
-    const { app } = await createApp(agentActor(), {}, {
-      bridgeDeps: {
+    const { app } = await createApp(agentActor(), {
+      runtime: {
         workerManager: { call },
       },
     });
@@ -715,8 +834,8 @@ describe.sequential("plugin bridge authz", () => {
     readyPlugin();
     const call = vi.fn().mockRejectedValue(new Error("missing source_objects column"));
     const captured: Array<{ context: any; body: unknown }> = [];
-    const { app } = await createApp(boardActor(), {}, {
-      bridgeDeps: {
+    const { app } = await createApp(boardActor(), {
+      runtime: {
         workerManager: { call },
       },
       captureJsonContext: (context, body) => {
@@ -748,8 +867,8 @@ describe.sequential("plugin bridge authz", () => {
   it("rejects manual job triggers for non-admin board users", async () => {
     const scheduler = { triggerJob: vi.fn() };
     const jobStore = { getJobByIdForPlugin: vi.fn() };
-    const { app } = await createApp(boardActor(), {}, {
-      jobDeps: { scheduler, jobStore },
+    const { app } = await createApp(boardActor(), {
+      runtime: { scheduler, jobStore },
     });
 
     const res = await request(app)
@@ -769,8 +888,8 @@ describe.sequential("plugin bridge authz", () => {
       userId: "admin-1",
       isInstanceAdmin: true,
       companyIds: [],
-    }), {}, {
-      jobDeps: { scheduler, jobStore },
+    }), {
+      runtime: { scheduler, jobStore },
     });
 
     const res = await request(app)
@@ -779,7 +898,69 @@ describe.sequential("plugin bridge authz", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ runId: "run-1", jobId: "job-1" });
-    expect(scheduler.triggerJob).toHaveBeenCalledWith("job-1", "manual");
+    expect(scheduler.triggerJob).toHaveBeenCalledWith("job-1");
   });
 
+});
+
+describe.sequential("plugin webhook body transport", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("forwards non-JSON bytes while preserving JSON raw and parsed bodies", async () => {
+    mockRegistry.getById.mockResolvedValue(pluginRecord({
+      manifestJson: {
+        ...pluginRecord().manifestJson,
+        capabilities: ["webhooks.receive"],
+        webhooks: [{ endpointKey: "events", displayName: "Events" }],
+      },
+    }));
+    const call = vi.fn().mockResolvedValue(undefined);
+    const db = {
+      insert: vi.fn(() => ({
+        values: vi.fn(() => ({
+          returning: vi.fn().mockResolvedValue([{ id: "delivery-1" }]),
+        })),
+      })),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({
+          where: vi.fn().mockResolvedValue(undefined),
+        })),
+      })),
+    };
+    const { app } = await createApp(boardActor(), {
+      db,
+      runtime: { workerManager: { call } },
+    });
+
+    const text = await request(app)
+      .post(`/api/plugins/${pluginId}/webhooks/events`)
+      .type("text/plain")
+      .send("event=push&ref=main");
+    const json = await request(app)
+      .post(`/api/plugins/${pluginId}/webhooks/events`)
+      .send({ event: "push", ref: "main" });
+
+    expect(text.status).toBe(200);
+    expect(json.status).toBe(200);
+    expect(call).toHaveBeenNthCalledWith(
+      1,
+      pluginId,
+      "handleWebhook",
+      expect.objectContaining({
+        rawBody: "event=push&ref=main",
+        parsedBody: undefined,
+      }),
+    );
+    expect(call).toHaveBeenNthCalledWith(
+      2,
+      pluginId,
+      "handleWebhook",
+      expect.objectContaining({
+        rawBody: '{"event":"push","ref":"main"}',
+        parsedBody: { event: "push", ref: "main" },
+      }),
+    );
+  });
 });

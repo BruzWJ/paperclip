@@ -270,46 +270,47 @@ function snapshot(
 }
 
 describe("Postgres runtime-interface compile snapshot", () => {
-  it("admits only enabled tools from an exact agent-tool manifest", () => {
+  it("admits only authorized tools from an exact ready-plugin manifest", () => {
     const manifest: PaperclipPluginManifestV1 = {
-      id: "acme.memory",
+      id: "acme.search",
       apiVersion: 1,
       version: "1.0.0",
-      displayName: "Memory",
-      description: "Memory tools",
+      displayName: "Search",
+      description: "External search tools",
       author: "Acme",
       categories: ["connector"],
       capabilities: ["agent.tools.register"],
       entrypoints: { worker: "./dist/worker.js" },
       tools: [{
-        name: "recall",
-        displayName: "Recall",
-        description: "Recall memory",
+        name: "query",
+        displayName: "Query",
+        description: "Query an external index",
         parametersSchema: { type: "object" },
       }],
     };
-    const rows = [
-      { id: "enabled", pluginKey: "acme.memory", manifestJson: manifest },
-      { id: "disabled", pluginKey: "acme.memory", manifestJson: manifest },
-      {
-        id: "mismatched",
-        pluginKey: "acme.other",
-        manifestJson: manifest,
-      },
-      {
-        id: "missing-capability",
-        pluginKey: "acme.memory",
-        manifestJson: { ...manifest, capabilities: [] },
-      },
-    ];
-
-    expect(readyPluginTools(rows, new Set(["disabled"]))).toEqual([{
-      installationId: "enabled",
-      name: "acme.memory:recall",
-      title: "Recall",
-      description: "Recall memory",
+    expect(readyPluginTools([
+      { id: "installed", pluginKey: "acme.search", manifestJson: manifest },
+    ])).toEqual([{
+      installationId: "installed",
+      manifestIdentity: expect.stringMatching(/^[0-9a-f]{64}$/),
+      name: "acme.search__query",
+      toolName: "query",
+      title: "Query",
+      description: "Query an external index",
       inputSchema: { type: "object" },
     }]);
+
+    expect(() => readyPluginTools([{
+      id: "mismatched",
+      pluginKey: "acme.other",
+      manifestJson: manifest,
+    }])).toThrow("does not match installation key");
+
+    expect(() => readyPluginTools([{
+      id: "missing-capability",
+      pluginKey: "acme.search",
+      manifestJson: { ...manifest, capabilities: [] },
+    }])).toThrow("declares agent tools without agent.tools.register");
   });
 
   it("derives exact attenuated catalogs without identity or legacy defaults", () => {

@@ -15,10 +15,11 @@ substrate on the PAP-10341 branch canonical:
   rules, action requests, compiler-owned run-interface bindings, named gateway
   tokens, audit events, and runtime slots.
   Connections v1 is retired as an implementation path.
-- **D2: one vault, server-side credential resolution.** Durable third-party credentials live
-  in `company_secrets` as secret refs. Adapter config, plugin config, harness
-  credential files, and run environments may receive only governed
-  credentials.
+- **D2: server-side credential resolution.** Durable company-scoped third-party
+  credentials live in `company_secrets` as secret refs. Instance plugin
+  configuration lives in the installation's `plugin_config` row. Adapter
+  config, harness credential files, and run environments may receive only
+  governed credentials.
 - **D3: the vocabulary and three-door IA are product law.** The default product
   doors are Apps, Connections, and Review. Protocol and operator-depth concepts
   live behind Developer or Advanced surfaces.

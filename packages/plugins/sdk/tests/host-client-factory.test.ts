@@ -13,63 +13,40 @@ import {
 } from "../src/protocol.js";
 
 describe("createHostClientHandlers invocation company scope", () => {
-  it("rejects worker-selected config and secret company ids without a host invocation scope", async () => {
-    const configGet = vi.fn(async () => ({ apiKeyRef: "unreachable" }));
-    const secretsResolve = vi.fn(async () => "unreachable");
+  it("allows instance config reads without a company scope", async () => {
+    const configGet = vi.fn(async () => ({ apiKey: "configured" }));
     const services = {
       config: { get: configGet },
-      secrets: { resolve: secretsResolve },
     } as unknown as HostServices;
 
     const handlers = createHostClientHandlers({
       pluginId: "paperclip.test",
-      capabilities: ["secrets.read-ref"],
+      capabilities: [],
       services,
     });
 
-    await expect(
-      handlers["config.get"]({ companyId: "company-a" }),
-    ).rejects.toBeInstanceOf(InvocationScopeDeniedError);
-    await expect(
-      handlers["secrets.resolve"]({
-        companyId: "company-a",
-        secretRef: { type: "secret_ref", secretId: "secret-a" },
-      }),
-    ).rejects.toBeInstanceOf(InvocationScopeDeniedError);
-    expect(configGet).not.toHaveBeenCalled();
-    expect(secretsResolve).not.toHaveBeenCalled();
+    await expect(handlers["config.get"]({})).resolves.toEqual({ apiKey: "configured" });
+    expect(configGet).toHaveBeenCalledWith({}, undefined);
   });
 
-  it("allows explicit config and secret company ids only when they match the host invocation scope", async () => {
-    const configGet = vi.fn(async () => ({ apiKeyRef: "ref" }));
-    const secretsResolve = vi.fn(async () => "resolved");
+  it("ignores worker-supplied company fields for instance config", async () => {
+    const configGet = vi.fn(async () => ({ apiKey: "configured" }));
     const services = {
       config: { get: configGet },
-      secrets: { resolve: secretsResolve },
     } as unknown as HostServices;
 
     const handlers = createHostClientHandlers({
       pluginId: "paperclip.test",
-      capabilities: ["secrets.read-ref"],
+      capabilities: [],
       services,
     });
     const context = { invocationScope: { companyId: "company-a" } };
 
     await expect(
-      handlers["config.get"]({ companyId: "company-a" }, context),
-    ).resolves.toEqual({ apiKeyRef: "ref" });
-    await expect(
-      handlers["secrets.resolve"]({
-        companyId: "company-a",
-        secretRef: { type: "secret_ref", secretId: "secret-a" },
-      }, context),
-    ).resolves.toBe("resolved");
+      handlers["config.get"]({ companyId: "company-b" } as never, context),
+    ).resolves.toEqual({ apiKey: "configured" });
 
-    expect(configGet).toHaveBeenCalledWith({ companyId: "company-a" }, context);
-    expect(secretsResolve).toHaveBeenCalledWith({
-      companyId: "company-a",
-      secretRef: { type: "secret_ref", secretId: "secret-a" },
-    }, context);
+    expect(configGet).toHaveBeenCalledWith({}, context);
   });
 
   it("rejects company-scoped host calls outside the current invocation company", async () => {
@@ -428,7 +405,17 @@ describe("createHostClientHandlers plugin run-context scope", () => {
       agentId: "agent-a",
       runId: "run-a",
       projectId: null,
-      contextAccess: {},
+      contextAccess: {
+        carry_context: false,
+        read_issue_comments: false,
+        read_issue_agent_run: false,
+        list_sub_issues: false,
+        read_sub_issue_comments: false,
+        read_sub_issue_agent_run: false,
+        list_company_issues: false,
+        read_company_issue_comments: false,
+        read_company_issue_agent_run: false,
+      },
     };
     const resolveContext = vi.fn(async () => resolved);
     const params = { runContextHandle: "pc_plugin_ctx_v1_exact" };
@@ -458,20 +445,76 @@ describe("createHostClientHandlers plugin run-context scope", () => {
 
   it("keeps privileged runtime records inside the invocation company", async () => {
     const readIssueComments = vi.fn(async () => ({ items: [], nextCursor: null }));
+    const readSession = vi.fn(async () => ({
+      session: {
+        companyId: "company-a",
+        issueId: "issue-a",
+        sessionId: "session-a",
+      },
+      snapshotHighWaterSeq: 15,
+    }) as never);
     const services = {
-      runtimeRecords: { readIssueComments },
+      runtimeRecords: { readIssueComments, readSession },
     } as unknown as HostServices;
-    const handler = createHostClientHandlers({
+    const handlers = createHostClientHandlers({
       pluginId: "paperclip.test",
       capabilities: ["runtime.records.read"],
       services,
-    })["runtime.records.readIssueComments"];
+    });
 
-    await expect(handler(
+    await expect(handlers["runtime.records.readIssueComments"](
       { companyId: "company-b", issueId: "issue-b" },
       { invocationScope: { companyId: "company-a" } },
     )).rejects.toBeInstanceOf(InvocationScopeDeniedError);
     expect(readIssueComments).not.toHaveBeenCalled();
+
+    const sessionInput = {
+      companyId: "company-a",
+      sessionId: "session-a",
+      snapshotHighWaterSeq: 15,
+      messages: { afterSeq: 8, limit: 50 },
+      events: { afterSeq: -1, limit: 50 },
+    };
+    await handlers["runtime.records.readSession"](sessionInput, {
+      invocationScope: {
+        companyId: "company-a",
+        canonicalSession: {
+          issueId: "issue-a",
+          sessionId: "session-a",
+          snapshotHighWaterSeq: 15,
+        },
+      },
+    });
+    expect(readSession).toHaveBeenCalledWith(sessionInput);
+
+    await expect(handlers["runtime.records.readSession"](
+      { ...sessionInput, snapshotHighWaterSeq: 16 },
+      {
+        invocationScope: {
+          companyId: "company-a",
+          canonicalSession: {
+            issueId: "issue-a",
+            sessionId: "session-a",
+            snapshotHighWaterSeq: 15,
+          },
+        },
+      },
+    )).rejects.toBeInstanceOf(InvocationScopeDeniedError);
+    expect(readSession).toHaveBeenCalledOnce();
+
+    await expect(handlers["runtime.records.readSession"](
+      { ...sessionInput, companyId: "company-b" },
+      { invocationScope: { companyId: "company-a" } },
+    )).rejects.toBeInstanceOf(InvocationScopeDeniedError);
+    expect(readSession).toHaveBeenCalledOnce();
+
+    await expect(createHostClientHandlers({
+      pluginId: "paperclip.test",
+      capabilities: [],
+      services,
+    })["runtime.records.readSession"](sessionInput)).rejects.toBeInstanceOf(
+      CapabilityDeniedError,
+    );
   });
 
   it("uses the shared gateway trace DTO unchanged in the plugin protocol", async () => {

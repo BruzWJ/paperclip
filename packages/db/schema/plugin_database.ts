@@ -8,7 +8,6 @@ import {
 } from "drizzle-orm/pg-core";
 import type {
   PluginDatabaseMigrationStatus,
-  PluginDatabaseNamespaceMode,
   PluginDatabaseNamespaceStatus,
 } from "@paperclipai/shared";
 import { plugins } from "./plugins.js";
@@ -18,7 +17,7 @@ import { plugins } from "./plugins.js";
  *
  * Namespaces are deterministic per immutable installation and owned by the
  * host. Reinstalling the same plugin key therefore cannot collide with or
- * inherit a tombstone's custom objects. Plugin SQL may create objects only
+ * inherit a prior installation's custom objects. Plugin SQL may create objects only
  * inside its namespace, while selected public core tables remain read-only
  * join targets through runtime checks.
  */
@@ -31,7 +30,6 @@ export const pluginDatabaseNamespaces = pgTable(
       .references(() => plugins.id, { onDelete: "cascade" }),
     pluginKey: text("plugin_key").notNull(),
     namespaceName: text("namespace_name").notNull(),
-    namespaceMode: text("namespace_mode").$type<PluginDatabaseNamespaceMode>().notNull().default("schema"),
     status: text("status").$type<PluginDatabaseNamespaceStatus>().notNull().default("active"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

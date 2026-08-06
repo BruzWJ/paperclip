@@ -25,6 +25,8 @@ describe("redactSensitive", () => {
       refresh_token: "d",
       api_key: "e",
       authorization: "Bearer f",
+      apiSecret: "g",
+      webhookSecret: "h",
     }) as Record<string, string>;
 
     for (const value of Object.values(out)) {

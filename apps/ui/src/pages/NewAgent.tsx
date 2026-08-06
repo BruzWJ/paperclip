@@ -51,9 +51,9 @@ export function NewAgent() {
     );
   const [configValues, setConfigValues] = useState<CreateConfigValues>(defaultCreateValues);
   const [selectedSkillKeys, setSelectedSkillKeys] = useState<string[]>([]);
-  // ACPX's public local runtime accepts the operator-native skill channel;
+  // The packaged local runtime accepts the operator-native skill channel;
   // Paperclip must not offer the legacy isolated-home mode that execution
-  // rejects before it reaches ACPX.
+  // rejects before it reaches the local runtime.
   const skillChannel = "operator_native" as const;
   const [formError, setFormError] = useState<string | null>(null);
   const createIdempotencyKeyRef = useRef(crypto.randomUUID());
@@ -293,7 +293,7 @@ export function NewAgent() {
             ) : (
               <p className="text-xs text-muted-foreground">
                 Draft configuration is structurally valid. Test Agent applies
-                these exact settings through a disposable ACPX session; full
+                these exact settings through a disposable local runtime session; full
                 workspace readiness is checked against the persisted run.
               </p>
             )}
@@ -316,7 +316,7 @@ export function NewAgent() {
                 Operator-managed native skills
               </div>
               <span className="text-xs text-muted-foreground">
-                ACPX uses the local CLI's native skill handling. Paperclip
+                The local CLI uses its native skill handling. Paperclip
                 performs no isolated skill-home materialization.
               </span>
             </div>

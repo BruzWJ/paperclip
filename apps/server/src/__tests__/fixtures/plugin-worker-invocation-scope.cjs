@@ -13,18 +13,9 @@ function sendNestedHostRequest(originalRequest, invocationId) {
   const mode = params.mode;
   const requestedCompanyId = params.requestedCompanyId;
   const hostMethod = params.hostMethod || "companies.get";
-  const nestedParams = hostMethod === "secrets.resolve"
-    ? {
-        companyId: requestedCompanyId,
-        secretRef: {
-          type: "secret_ref",
-          secretId: params.secretId || "11111111-1111-4111-8111-111111111111",
-        },
-        configPath: params.configPath || "apiKeyRef",
-      }
-    : {
-        companyId: requestedCompanyId,
-      };
+  const nestedParams = {
+    companyId: requestedCompanyId,
+  };
   const nestedRequest = {
     jsonrpc: "2.0",
     id: nestedId,
@@ -78,9 +69,17 @@ rl.on("line", (line) => {
       jsonrpc: "2.0",
       id: message.id,
       result: {
-        ok: true,
         supportedMethods: ["getData", "performAction"],
       },
+    });
+    return;
+  }
+
+  if (method === "health") {
+    send({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: { status: "ok" },
     });
     return;
   }

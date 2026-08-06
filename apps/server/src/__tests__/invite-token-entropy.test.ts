@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createInviteToken } from "../routes/access.js";
+import { createInviteToken } from "../services/company-invite-creation.js";
 
 const PREFIX = "pcp_invite_";
 

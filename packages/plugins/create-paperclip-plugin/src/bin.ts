@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { scaffoldPluginProject, type ScaffoldPluginOptions } from "./index.js";
+import {
+  PLUGIN_CATEGORIES,
+  PLUGIN_SCAFFOLD_TEMPLATES,
+  pluginPackageDirectoryName,
+  scaffoldPluginProject,
+  type ScaffoldPluginOptions,
+} from "./index.js";
 
 interface RunCliDeps {
   cwd?: string;
@@ -16,11 +22,6 @@ function parseArg(argv: string[], name: string): string | undefined {
   return argv[index + 1];
 }
 
-/** Convert `@scope/name` to an output directory basename (`name`). */
-function packageToDirName(pluginName: string): string {
-  return pluginName.replace(/^@[^/]+\//, "");
-}
-
 /** CLI wrapper for `scaffoldPluginProject`. */
 export function runCli(argv = process.argv, deps: RunCliDeps = {}): string | undefined {
   const pluginName = argv[2];
@@ -29,13 +30,21 @@ export function runCli(argv = process.argv, deps: RunCliDeps = {}): string | und
   const exit = deps.exit ?? process.exit;
 
   if (!pluginName) {
-    stderr("Usage: create-paperclip-plugin <name> [--template default|connector|workspace] [--output <dir>] [--sdk-path <paperclip-sdk-path>]");
+    stderr(
+      `Usage: create-paperclip-plugin <name> --category ${PLUGIN_CATEGORIES.join("|")} [--template ${PLUGIN_SCAFFOLD_TEMPLATES.join("|")}] [--output <dir>] [--sdk-path <paperclip-sdk-path>]`,
+    );
     exit(1);
   }
 
-  const template = (parseArg(argv, "--template") ?? "default") as ScaffoldPluginOptions["template"];
+  const category = parseArg(argv, "--category");
+  if (!category) {
+    stderr("--category is required");
+    exit(1);
+  }
+
+  const template = (parseArg(argv, "--template") ?? "standard") as ScaffoldPluginOptions["template"];
   const outputRoot = parseArg(argv, "--output") ?? deps.cwd ?? process.cwd();
-  const targetDir = path.resolve(outputRoot, packageToDirName(pluginName));
+  const targetDir = path.resolve(outputRoot, pluginPackageDirectoryName(pluginName));
 
   const out = scaffoldPluginProject({
     pluginName,
@@ -44,7 +53,7 @@ export function runCli(argv = process.argv, deps: RunCliDeps = {}): string | und
     displayName: parseArg(argv, "--display-name"),
     description: parseArg(argv, "--description"),
     author: parseArg(argv, "--author"),
-    category: parseArg(argv, "--category") as ScaffoldPluginOptions["category"] | undefined,
+    category: category as ScaffoldPluginOptions["category"],
     sdkPath: parseArg(argv, "--sdk-path"),
   });
 

@@ -230,7 +230,7 @@ const storybookSecrets: CompanySecret[] = [
 const adapterFixtures: AdapterInfo[] = [
   {
     type: "fixture-agent",
-    label: "ACPX fixture agent",
+    label: "Local fixture agent",
     source: "acpx",
     modelsCount: 0,
     loaded: true,

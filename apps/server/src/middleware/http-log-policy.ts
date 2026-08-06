@@ -29,6 +29,10 @@ const SILENCED_SUCCESS_STATIC_PATHS = new Set([
   "/sw.js",
 ]);
 
+const SENSITIVE_REQUEST_BODY_API_PATHS = [
+  /^\/api\/plugins\/[^/]+\/config(?:\/test)?\/?$/,
+];
+
 function normalizePath(url: string): string {
   const trimmed = url.trim();
   if (trimmed.length === 0) return "/";
@@ -46,4 +50,16 @@ export function shouldSilenceHttpSuccessLog(method: string | undefined, url: str
   if (SILENCED_SUCCESS_STATIC_PATHS.has(pathname)) return true;
   if (SILENCED_SUCCESS_STATIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return true;
   return SILENCED_SUCCESS_API_PATHS.some((pattern) => pattern.test(pathname));
+}
+
+/**
+ * Some generic configuration routes accept schema-declared secret fields whose
+ * names are controlled by the plugin. Key-name redaction cannot prove which
+ * fields are sensitive, so failed requests for these routes must omit the
+ * request body entirely.
+ */
+export function shouldSuppressHttpRequestBodyLog(url: string | undefined): boolean {
+  if (!url) return false;
+  const pathname = normalizePath(url);
+  return SENSITIVE_REQUEST_BODY_API_PATHS.some((pattern) => pattern.test(pathname));
 }

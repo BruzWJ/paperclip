@@ -1,10 +1,10 @@
 # Plugin Authoring Guide
 
-This guide describes the current, implemented way to create a Paperclip plugin in this repo.
+This guide describes the current way to create a Paperclip plugin in this repo.
+The normative runtime contract is [PLUGIN_SPEC.md](./PLUGIN_SPEC.md); this guide
+organizes that contract as an authoring workflow.
 
-It is intentionally narrower than [PLUGIN_SPEC.md](./PLUGIN_SPEC.md). The spec includes future ideas; this guide only covers the alpha surface that exists now.
-
-> **New to plugins?** Start with the short [Local Plugin Development guide](./LOCAL_PLUGIN_DEVELOPMENT.md) — it walks the CLI happy path (`plugin init` → `pnpm dev` → `plugin install <path>`) end to end. Come back here for the full manifest surface, worker capabilities, and UI components.
+> **New to plugins?** Start with the short [Local Plugin Development guide](./LOCAL_PLUGIN_DEVELOPMENT.md) — it walks the CLI happy path (`plugin init` → `pnpm dev` → `plugin install --local <path>`) end to end. Come back here for the full manifest surface, worker capabilities, and UI components.
 
 ## Current reality
 
@@ -23,7 +23,6 @@ It is intentionally narrower than [PLUGIN_SPEC.md](./PLUGIN_SPEC.md). The spec i
 - The host provides a small shared React component kit through
   `@paperclipai/plugin-sdk/ui`; use it for common Paperclip controls before
   building custom versions.
-- `ctx.assets` is not supported in the current runtime.
 
 ## External object reference providers
 
@@ -53,7 +52,7 @@ or `dangerouslySetInnerHTML` content for inline references.
 Use the CLI scaffold command:
 
 ```bash
-paperclipai plugin init @yourscope/plugin-name --output /absolute/path/to/plugin-repos
+paperclipai plugin init @yourscope/plugin-name --category connector --output /absolute/path/to/plugin-repos
 ```
 
 That creates `<output>/plugin-name/` with:
@@ -63,7 +62,6 @@ That creates `<output>/plugin-name/` with:
 - `src/ui/index.tsx`
 - `tests/plugin.spec.ts`
 - `esbuild.config.mjs`
-- `rollup.config.mjs`
 
 Inside this monorepo, the scaffold uses `workspace:*` for `@paperclipai/plugin-sdk`.
 
@@ -71,7 +69,7 @@ Outside this monorepo, the scaffold snapshots `@paperclipai/plugin-sdk` from the
 
 ## Local development workflow
 
-See the short [Local Plugin Development guide](./LOCAL_PLUGIN_DEVELOPMENT.md) for the full happy path (`pnpm dev` → `paperclipai plugin install <absolute-path>` → `paperclipai plugin list`) and reload semantics.
+See the short [Local Plugin Development guide](./LOCAL_PLUGIN_DEVELOPMENT.md) for the full happy path (`pnpm dev` → `paperclipai plugin install --local <absolute-path>` → `paperclipai plugin list`) and reload semantics.
 
 Minimum verification from the generated plugin folder:
 
@@ -82,33 +80,33 @@ pnpm test
 pnpm build
 ```
 
-## Supported alpha surface
+## Supported surface
 
 Worker:
 
-- config
-- events
-- jobs
-- launchers
-- http
-- secrets
-- activity
-- state
+- instance config and trusted local folders
+- events and jobs
+- managed outbound HTTP
+- canonical runtime context and redacted runtime records
+- activity, metrics, telemetry, and structured logs
+- scoped state and plugin-owned entities
 - database namespace via `ctx.db`
 - scoped JSON API routes declared with `apiRoutes`
-- entities
-- projects, project workspaces, and plugin-managed projects
+- projects, project/execution workspaces, and plugin-managed projects
 - companies
 - issues, comments, namespaced `plugin:<pluginKey>` origins, blocker relations, and callback-bound ordinary-issue creation
 - agents and plugin-managed agents
 - plugin-managed routines
 - plugin-managed skills
 - goals
+- access membership/invites and authorization policy/grant administration
 - data/actions
-- streams
-- tools
-- metrics
-- logger
+- agent tools
+
+Manifest-backed worker handlers also cover webhooks, environment drivers,
+external-object detection/resolution, and blocking before-prompt observation.
+UI launchers and slots are declared under `manifest.ui` and run through the
+separate browser SDK.
 
 ### Plugin database declarations
 
@@ -144,8 +142,6 @@ apiRoutes: [
     routeKey: "initialize",
     method: "POST",
     path: "/issues/:issueId/smoke",
-    auth: "board-or-agent",
-    capability: "api.routes.register",
     companyResolution: { from: "issue", param: "issueId" },
   },
 ]
@@ -153,10 +149,30 @@ apiRoutes: [
 
 The host resolves the plugin, checks that it is ready, enforces
 `api.routes.register`, matches the declared method/path, resolves company access,
-and dispatches to the worker's `onApiRequest` handler. The worker receives
-sanitized headers, route params, query, parsed JSON
+and dispatches to the worker's `onApiRequest` handler.
+Every route declares `companyResolution`; issue resolution names an exact
+`:param` in the route path, and GET routes cannot resolve from a request body.
+The worker receives sanitized headers, route params, query, parsed JSON
 body, actor context, and company id. Do not use plugin routes to claim core
 paths; they always remain under `/api/plugins/:pluginId/api/*`.
+
+## Instance configuration
+
+`instanceConfigSchema` describes one configuration for the installed plugin,
+not one configuration per company. An instance administrator edits it once at
+**Instance Settings → Plugins → your plugin**. Workers read it with
+`await ctx.config.get()`; there is no `companyId` argument.
+
+```ts
+const config = await ctx.config.get();
+const apiSecret = String(config.apiSecret ?? "");
+```
+
+Paperclip stores this administrator-provided object directly in the installed
+plugin's `plugin_config` row. The core does not interpret plugin-specific
+fields. Company IDs still scope business records, events, tools, local folders,
+and other company operations; they never select the installed plugin's URL or
+credential.
 
 ## Managed Paperclip resources
 
@@ -294,9 +310,9 @@ import { definePlugin } from "@paperclipai/plugin-sdk";
 
 export default definePlugin({
   setup(ctx) {
-    ctx.actions.register("setup-company", async (params) => {
-      const companyId = String(params.companyId ?? "");
-      if (!companyId) throw new Error("companyId is required");
+    ctx.actions.register("setup-company", async (_params, context) => {
+      const companyId = context.actor.companyId;
+      if (!companyId) throw new Error("This action requires a company context");
 
       const project = await ctx.projects.managed.reconcile("research", companyId);
       const agent = await ctx.agents.managed.reconcile("researcher", companyId);
@@ -311,6 +327,9 @@ export default definePlugin({
 
 Authoring rules:
 
+- Treat action parameters as plugin input, not authority. Read the authenticated
+  company only from the immutable `context.actor.companyId` supplied to the
+  action handler.
 - Keep keys stable once published. Renaming `agentKey`, `projectKey`,
   `routineKey`, or `skillKey` creates a new managed resource from the host's
   point of view.
@@ -344,16 +363,21 @@ broader than ordinary connector capabilities:
 
 | Capability | Generic host contract |
 | --- | --- |
-| `agent.tools.register` | Every declared tool is compiled directly for all agents in companies where the ready plugin is enabled. No company-tool catalog projection or per-agent selection is involved. |
+| `agent.tools.register` | Every declared tool is discovered from the ready installation manifest and compiled directly for all agents. The per-prompt DB compiler is the only tool catalog; no company-tool projection, per-agent selection, or in-memory registration is involved. |
 | `runtime.context.read` | An exact live tool handler can resolve its opaque `runContext` or ask whether a target issue is reachable under the agent's existing context-access matrix. |
-| `runtime.records.read` | The worker can read company-scoped, provider-safe run traces and issue comments for automatic infrastructure processing. |
+| `runtime.records.read` | The worker can read company-scoped provider-safe run/comment projections and snapshot-bounded canonical Session identity/messages/events. Mutable Session-head metadata is excluded; message deltas can key on creation or model-visible update sequence. |
+| `runtime.prompt.observe` | The worker receives a blocking `onBeforePrompt` callback for every exact provider prompt, may synchronize against the bounded canonical snapshot, and returns `null` or one non-empty `{ prependText }` contribution. Paperclip prepends successful contributions only to the outbound request; the canonical Session message remains unchanged. |
 | `http.private-network` | The managed HTTP client may reach loopback/private addresses while retaining DNS pinning and other HTTP protections. Also requires `http.outbound`. |
 
-Tools remain plugin-namespaced and execute through the normal
-prompt-capability gateway.
-The host revalidates the installation, manifest capability, company enablement,
-exact compiled tool name, and immutable tool-call binding when the tool is
-called.
+Tools use the unambiguous MCP-safe provider name `pluginId__toolName` and
+execute through the normal prompt-capability gateway.
+The host revalidates the installation, manifest capability, company scope,
+exact compiled tool name, and immutable tool-call binding when a tool is
+called. Before-prompt hooks run synchronously in installation order before the
+execution target or prompt capability is minted. Hook failure, an invalid
+result, or a concurrent disable/upgrade fails closed before provider
+transmission. The hook receives Paperclip Session/run/source identities and the
+effective context matrix, never the opaque provider-native session handle.
 
 Use these capabilities only when an ordinary selected tool and ordinary
 company APIs cannot implement the requirement. Do not add a domain-specific
@@ -364,7 +388,6 @@ UI:
 
 - `usePluginData`
 - `usePluginAction`
-- `usePluginStream`
 - `usePluginToast`
 - `useHostContext`
 - typed slot props from `@paperclipai/plugin-sdk/ui`
@@ -373,6 +396,7 @@ Mount surfaces currently wired in the host include:
 
 - `page`
 - `settingsPage`
+- `companySettingsPage`
 - `dashboardWidget`
 - `sidebar`
 - `routeSidebar`
@@ -382,9 +406,17 @@ Mount surfaces currently wired in the host include:
 - `projectSidebarItem`
 - `globalToolbarButton`
 - `toolbarButton`
-- `contextMenuItem`
-- `commentAnnotation`
-- `commentContextMenuItem`
+
+Entity-scoped mounts are exact: `detailTab` supports `project`, `issue`,
+`execution_workspace`, and `project_workspace`; `issueDetailView` supports
+only `issue`; `projectSidebarItem` supports only `project`; and
+`toolbarButton` supports `project`, `issue`, and `execution_workspace`.
+Launcher placements are limited to `sidebar`, `globalToolbarButton`, and
+`toolbarButton`; launcher toolbar buttons mount only for `project` and `issue`.
+Launcher component actions (`openModal`, `openDrawer`, and `openPopover`) require
+the sole mounted render environment, `hostOverlay`. Navigation, external
+`deepLink`, and worker `performAction` launchers do not accept render metadata;
+only `performAction` accepts action parameters.
 
 ### `routeSidebar` and the app sidebar
 
@@ -552,7 +584,7 @@ export const manifest = {
 Use this when:
 
 - The data lives outside any project workspace.
-- Reads and writes need company-scoped configuration.
+- Reads and writes need a company-scoped folder selection.
 - The operator picks the path once in plugin settings and the worker resolves
   files relative to that root.
 

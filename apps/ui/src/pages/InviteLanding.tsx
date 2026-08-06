@@ -681,17 +681,17 @@ export function InviteLandingPage() {
                   />
                 </label>
                 <label className="block text-sm">
-                  <span className="mb-1 block text-zinc-400">ACPX agent name</span>
+                  <span className="mb-1 block text-zinc-400">Local agent runtime</span>
                   <input
                     className={fieldClassName}
                     value={adapterType}
                     onChange={(event) =>
                       setAdapterType(event.target.value as AgentAdapterType)
                     }
-                    placeholder="Exact name shown in ACP adapters"
+                    placeholder="Exact name shown in the local agent list"
                   />
                   <span className="mt-1 block text-xs text-zinc-500">
-                    The approver&apos;s Paperclip server validates this against its current ACPX catalog.
+                    The approver&apos;s Paperclip server validates this against its current local agent catalog.
                   </span>
                 </label>
                 <label className="block text-sm">

@@ -138,10 +138,6 @@ const CompanyAccess = lazyPage(
   () => import("./pages/CompanyAccess"),
   "CompanyAccess",
 );
-const CompanyAccessLegacyRoute = lazyPage(
-  () => import("./pages/CompanyAccess"),
-  "CompanyAccessLegacyRoute",
-);
 const AdvancedToolsRoute = lazyPage(
   () => import("./pages/tools/AdvancedToolsRoute"),
   "AdvancedToolsRoute",
@@ -280,10 +276,6 @@ function boardRoutes() {
         element={<CloudUpstream />}
       />
       <Route path="company/settings/members" element={<CompanyAccess />} />
-      <Route
-        path="company/settings/access"
-        element={<CompanyAccessLegacyRoute />}
-      />
       <Route path="company/settings/invites" element={<CompanyInvites />} />
       <Route path="company/export/*" element={<CompanyExport />} />
       <Route path="company/import" element={<CompanyImport />} />
@@ -379,7 +371,6 @@ function boardRoutes() {
       <Route path="skills/studio/new" element={<SkillStudio />} />
       <Route path="skills/studio/:skillId" element={<SkillStudio />} />
       <Route path="skills/*" element={<CompanySkills />} />
-      <Route path="plugins/:pluginId" element={<PluginPage />} />
       <Route path="org" element={<OrgChart />} />
       <Route path="agents" element={<Navigate to="/agents/all" replace />} />
       {AGENT_FILTER_TABS.map((tab) => (

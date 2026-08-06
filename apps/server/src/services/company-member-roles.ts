@@ -1,4 +1,3 @@
-import { PERMISSION_KEYS } from "@paperclipai/shared";
 import type { HumanCompanyMembershipRole } from "@paperclipai/shared";
 
 const HUMAN_COMPANY_MEMBERSHIP_ROLES: HumanCompanyMembershipRole[] = [
@@ -16,39 +15,6 @@ export function normalizeHumanRole(
   return HUMAN_COMPANY_MEMBERSHIP_ROLES.includes(value as HumanCompanyMembershipRole)
     ? (value as HumanCompanyMembershipRole)
     : fallback;
-}
-
-export function grantsForHumanRole(
-  role: HumanCompanyMembershipRole
-): Array<{
-  permissionKey: (typeof PERMISSION_KEYS)[number];
-  scope: Record<string, unknown> | null;
-}> {
-  switch (role) {
-    case "owner":
-      return [
-        { permissionKey: "agents:create", scope: null },
-        { permissionKey: "agents:configure", scope: null },
-        { permissionKey: "skills:create", scope: null },
-        { permissionKey: "environments:manage", scope: null },
-        { permissionKey: "users:invite", scope: null },
-        { permissionKey: "users:manage_permissions", scope: null },
-        { permissionKey: "joins:approve", scope: null },
-      ];
-    case "admin":
-      return [
-        { permissionKey: "agents:create", scope: null },
-        { permissionKey: "agents:configure", scope: null },
-        { permissionKey: "skills:create", scope: null },
-        { permissionKey: "environments:manage", scope: null },
-        { permissionKey: "users:invite", scope: null },
-        { permissionKey: "joins:approve", scope: null },
-      ];
-    case "operator":
-      return [];
-    case "viewer":
-      return [];
-  }
 }
 
 export function resolveHumanInviteRole(

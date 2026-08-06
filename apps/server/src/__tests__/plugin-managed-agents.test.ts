@@ -141,7 +141,6 @@ function agent(overrides: Record<string, unknown> = {}) {
 function service(db: ReturnType<typeof createMockDb>["db"]) {
   return pluginManagedAgentService(db, {
     pluginId,
-    pluginKey,
     manifest: manifest(),
   });
 }

@@ -5,8 +5,7 @@ Official TypeScript SDK for Paperclip plugin authors.
 - **Worker SDK:** `@paperclipai/plugin-sdk` — `definePlugin`, context, lifecycle
 - **UI SDK:** `@paperclipai/plugin-sdk/ui` — React hooks and slot props
 - **Testing:** `@paperclipai/plugin-sdk/testing` — in-memory host harness
-- **Bundlers:** `@paperclipai/plugin-sdk/bundlers` — esbuild/rollup presets
-- **Dev server:** `@paperclipai/plugin-sdk/dev-server` — static UI server + SSE reload
+- **Bundlers:** `@paperclipai/plugin-sdk/bundlers` — esbuild presets
 
 Reference: `doc/plugins/PLUGIN_SPEC.md`
 
@@ -14,22 +13,23 @@ Reference: `doc/plugins/PLUGIN_SPEC.md`
 
 | Import | Purpose |
 |--------|--------|
-| `@paperclipai/plugin-sdk` | Worker entry: `definePlugin`, `runWorker`, context types, protocol helpers |
-| `@paperclipai/plugin-sdk/ui` | UI entry: `usePluginData`, `usePluginAction`, `usePluginStream`, `useHostContext`, `useHostNavigation`, slot prop types |
-| `@paperclipai/plugin-sdk/ui/hooks` | Hooks only |
-| `@paperclipai/plugin-sdk/ui/types` | UI types and slot prop interfaces |
+| `@paperclipai/plugin-sdk` | Worker entry: `definePlugin`, `runWorker`, `pluginManifestV1Schema`, context and manifest contracts |
+| `@paperclipai/plugin-sdk/ui` | UI entry: `usePluginData`, `usePluginAction`, `useHostContext`, `useHostNavigation`, slot prop types |
 | `@paperclipai/plugin-sdk/testing` | `createTestHarness` for unit/integration tests |
 | `@paperclipai/plugin-sdk/bundlers` | `createPluginBundlerPresets` for worker/manifest/ui builds |
-| `@paperclipai/plugin-sdk/dev-server` | `startPluginDevServer`, `getUiBuildSnapshot` |
-| `@paperclipai/plugin-sdk/protocol` | JSON-RPC protocol types and helpers (advanced) |
-| `@paperclipai/plugin-sdk/types` | Worker context and API types (advanced) |
 
 ## Manifest entrypoints
 
 In your plugin manifest you declare:
 
-- **`entrypoints.worker`** (required) — Path to the worker bundle (e.g. `dist/worker.js`). The host loads this and calls `setup(ctx)`.
-- **`entrypoints.ui`** (required if you use UI) — Path to the UI bundle directory. The host loads components from here for slots and launchers.
+- **`entrypoints.worker`** (required) — Relative package path to the worker bundle (e.g. `dist/worker.js`). The host loads this and calls `setup(ctx)`.
+- **`entrypoints.ui`** (required if you use UI) — Path to the UI bundle directory. Its entry module is always `index.js`; `createPluginBundlerPresets` emits that filename for any `uiEntry` source path.
+
+Every slot `exportName` and every overlay launcher target must be a named React
+component function exported by that `index.js`. Paperclip validates the whole
+declared component set before registering it. One missing or non-component
+export rejects that contribution revision; components from an older plugin
+revision are never used as a fallback.
 
 ## Install
 
@@ -48,7 +48,6 @@ The SDK is stable enough for local development and first-party examples, but the
 - The current host runtime expects a writable filesystem, `npm` available at runtime, and network access to the package registry used for plugin installation.
 - Dynamic plugin install is currently best suited to single-node persistent deployments. Multi-instance cloud deployments still need a shared artifact/distribution model before runtime installs are reliable across nodes.
 - The host ships a small shared React component kit through `@paperclipai/plugin-sdk/ui`. Use it for native Paperclip controls; custom React and CSS are still supported.
-- `ctx.assets` is not part of the supported runtime in this build. Do not depend on asset upload/read APIs yet.
 
 If you are authoring a plugin for others to deploy, treat npm-packaged installation as the supported path and treat repo-local example installs as a development convenience.
 
@@ -59,25 +58,16 @@ import { definePlugin, runWorker } from "@paperclipai/plugin-sdk";
 
 const plugin = definePlugin({
   async setup(ctx) {
-    ctx.events.on("issue.created", async (event) => {
-      ctx.logger.info("Issue created", { issueId: event.entityId });
-    });
-
     ctx.data.register("health", async () => ({ status: "ok" }));
     ctx.actions.register("ping", async () => ({ pong: true }));
 
-    ctx.tools.register("calculator", {
-      displayName: "Calculator",
-      description: "Basic math",
-      parametersSchema: {
-        type: "object",
-        properties: { a: { type: "number" }, b: { type: "number" } },
-        required: ["a", "b"]
-      }
-    }, async (params) => {
+    ctx.tools.register("calculator", async (params) => {
       const { a, b } = params as { a: number; b: number };
       return { content: `Result: ${a + b}`, data: { result: a + b } };
     });
+  },
+  async onHealth() {
+    return { status: "ok" };
   },
 });
 
@@ -94,19 +84,29 @@ runWorker(plugin, import.meta.url);
 | Hook | Purpose |
 |------|--------|
 | `setup(ctx)` | **Required.** Called once at startup. Register event handlers, jobs, data/actions/tools, etc. |
-| `onHealth?()` | Optional. Return `{ status, message?, details? }` for health dashboard. |
-| `onConfigChanged?(newConfig)` | Optional. Apply new config without restart; if omitted, host restarts worker. |
+| `onHealth()` | **Required.** Return `{ status, message?, details? }` for the health dashboard. |
+| `onBeforePrompt?(input)` | Optional privileged blocking hook. Complete synchronization for one exact canonical source message and return `null` or `{ prependText }`. Requires `runtime.prompt.observe`. |
 | `onShutdown?()` | Optional. Clean up before process exit (limited time window). |
-| `onValidateConfig?(config)` | Optional. Return `{ ok, warnings?, errors? }` for settings UI / Test Connection. |
-| `onWebhook?(input)` | Optional. Handle `POST /api/plugins/:pluginId/webhooks/:endpointKey`; required if webhooks declared. |
+| `onValidateConfig?(config)` | Optional. Return `{ ok, warnings?, errors? }` for explicit draft validation. |
+| `onWebhook?(input)` | Present exactly when `manifest.webhooks` declares endpoints. Handle `POST /api/plugins/:pluginId/webhooks/:endpointKey`. |
+| `onApiRequest?(input)` | Present exactly when `manifest.apiRoutes` declares routes. Handle scoped plugin JSON API requests. |
 
-**Context (`ctx`) in setup:** `config`, `localFolders`, `events`, `jobs`, `launchers`, `http`, `runtime`, `secrets`, `activity`, `state`, `entities`, `projects`, `companies`, `issues`, `agents`, `goals`, `access`, `authorization`, `data`, `actions`, `streams`, `tools`, `metrics`, `logger`, `manifest`. Worker-side host APIs are capability-gated; declare capabilities in the manifest.
+**Context (`ctx`) in setup:** `config`, `localFolders`, `events`, `jobs`, `db`, `http`, `runtime`, `activity`, `state`, `entities`, `projects`, `executionWorkspaces`, `skills`, `routines`, `companies`, `issues`, `agents`, `goals`, `access`, `authorization`, `data`, `actions`, `tools`, `metrics`, `telemetry`, `logger`, `manifest`. Worker-side host APIs are capability-gated; declare capabilities in the manifest.
+
+`instanceConfigSchema` produces one instance-admin configuration for the
+installed plugin. Read it with `await ctx.config.get()`; configuration is not
+selected by company. Paperclip stores the administrator-provided configuration
+object directly and does not interpret plugin-specific fields.
 
 **Agent work:** create an ordinary issue through `ctx.issues.create` with an
 explicit eligible owner and a registered creator callback. Plugins cannot
 invoke an agent or open a conversational agent session directly.
 
-**Jobs:** Declare in `manifest.jobs` with `jobKey`, `displayName`, `schedule` (cron). Register handler with `ctx.jobs.register(jobKey, fn)`. **Webhooks:** Declare in `manifest.webhooks` with `endpointKey`; handle in `onWebhook(input)`. **State:** `ctx.state.get/set/delete(scopeKey)`; scope kinds: `instance`, `company`, `project`, `project_workspace`, `agent`, `issue`, `goal`, `run`.
+**UI actions:** the host passes plugin-defined parameters unchanged. Treat
+them as untrusted input and read company authority only from the immutable
+`context.actor.companyId` argument supplied to the action handler.
+
+**Jobs:** Declare in `manifest.jobs` with `jobKey`, `displayName`, `schedule` (cron), and register exactly one matching handler with `ctx.jobs.register(jobKey, fn)`. **Webhooks:** `manifest.webhooks` and `onWebhook(input)` must either both be present or both be absent. **State:** `ctx.state.get/set/delete(scopeKey)`; scope kinds: `instance`, `company`, `project`, `project_workspace`, `agent`, `issue`, `goal`, `run`.
 
 **Trusted local folders:** Declare `manifest.localFolders[]` and the `local.folders` capability when a plugin needs an operator-configured company-scoped folder. Use `ctx.localFolders.configure()`, `status()`, `readText()`, and `writeTextAtomic()` instead of resolving arbitrary filesystem paths yourself. The host validates absolute roots, read/write access, required relative folders/files, traversal attempts, symlink escapes, and writes through temp-file-plus-rename atomic replacement.
 
@@ -117,18 +117,39 @@ capabilities are visible at install/upgrade time and should be approved only
 for administrator-controlled plugins:
 
 - Declare `agent.tools.register` to expose every manifest-declared tool directly
-  to all agents in companies where the ready plugin is enabled. Installation is
+  to all agents while the plugin installation is ready. Installation is
   the administrator grant; no company-tool catalog projection or per-agent
-  selection is involved. Calls still use the prompt-capability gateway, schema
-  validation, immutable installation binding, and audit trail.
+  selection is involved. The database-backed per-prompt compiler is the sole
+  discovery/schema authority; calls still use the prompt-capability gateway,
+  immutable installation binding, direct bare-name worker dispatch, and audit
+  trail. Register only the handler with `ctx.tools.register(name, handler)`;
+  initialization fails unless handler names exactly match `manifest.tools`.
+  Providers see `pluginId__toolName`; `__` is reserved and the combined MCP
+  name is limited to 128 characters.
 - Declare `runtime.context.read` to call `runContext.resolve()` and
   `runContext.issueReach(issueId)` inside a tool handler. The run-context
   handle is opaque, host-issued, short-lived, and accepted only for that exact
   invocation.
 - Declare `runtime.records.read` to read canonical provider-safe records with
   `ctx.runtime.records.readRun(...)` and
-  `ctx.runtime.records.readIssueComments(...)`. Requests are fenced to the
-  active invocation's company by the host.
+  `ctx.runtime.records.readIssueComments(...)`, or snapshot-bounded canonical
+  Session data with `ctx.runtime.records.readSession(...)`. The Session result
+  contains immutable identity plus paginated messages/events; mutable Session
+  head metadata is intentionally absent because it cannot truthfully represent
+  an older snapshot. Message reads use either creation `afterSeq` or
+  model-update `changedAfterSeq`, while every page is capped by the inclusive
+  host-issued `snapshotHighWaterSeq`. Requests are fenced to the active
+  invocation's company and exact prompt snapshot by the host.
+  Paperclip does not fabricate historical versions of a mutable message: if
+  its current `modelStateSeq` has advanced beyond an older requested cutoff,
+  that row is omitted. Read at each host-issued boundary before advancing a
+  `changedAfterSeq` checkpoint.
+- Declare `runtime.prompt.observe` and implement `onBeforePrompt(input)` to run
+  a blocking synchronization step before every provider message. Return `null`
+  or one non-empty `{ prependText }` contribution. After every hook and its
+  authority fence succeeds, Paperclip prepends contributions in installation
+  order to the outbound request while leaving the canonical Session message
+  unchanged. Invalid results or hook failures fail closed before transmission.
 - Declare `http.private-network` together with `http.outbound` when the worker
   must call an operator-hosted loopback or private-network service. The host
   retains protocol validation, DNS resolution pinning, timeouts, and response
@@ -142,27 +163,29 @@ company identifier from one invocation in another.
 
 Subscribe in `setup` with `ctx.events.on(name, handler)` or `ctx.events.on(name, filter, handler)`. Emit plugin-scoped events with `ctx.events.emit(name, companyId, payload)` (requires `events.emit`).
 
-**Core domain events (subscribe with `events.subscribe`):**
+**Core domain events currently produced (subscribe with `events.subscribe`):**
 
 | Event | Typical entity |
 |-------|-----------------|
-| `company.created`, `company.updated` | company |
-| `project.created`, `project.updated` | project |
-| `project.workspace_created`, `project.workspace_updated`, `project.workspace_deleted` | project_workspace |
-| `issue.created`, `issue.updated`, `issue.comment.created` | issue |
-| `issue.document.created`, `issue.document.updated`, `issue.document.deleted` | issue |
-| `issue.relations.updated` | issue |
-| `agent.created`, `agent.updated`, `agent.status_changed` | agent |
-| `agent.run.started`, `agent.run.finished`, `agent.run.failed`, `agent.run.cancelled` | run |
-| `goal.created`, `goal.updated` | goal |
-| `approval.created`, `approval.decided` | approval |
-| `budget.incident.opened`, `budget.incident.resolved` | budget_incident |
-| `cost_event.created` | cost |
-| `activity.logged` | activity |
+| `issue.board.comment.created` | issue_comment |
+| `agent.run.finished`, `agent.run.failed`, `agent.run.cancelled` | agent_run |
+
+`issue.board.comment.created` is emitted only for a committed named-board-user
+comment. Session-projected agent comments do not emit it; terminal run events
+are the corresponding post-run warming signal.
 
 **Plugin-to-plugin:** Subscribe to `plugin.<pluginId>.<eventName>` (e.g. `plugin.acme.linear.sync-done`). Emit with `ctx.events.emit("sync-done", companyId, payload)`; the host namespaces it automatically.
 
-**Filter (optional):** Pass a second argument to `on()`: `{ projectId?, companyId?, agentId? }` so the host only delivers matching events.
+**Filter (optional):** Pass a second argument to `on()`: `{ companyId?, agentId? }` so the host only delivers matching events. `agentId` applies to terminal run events.
+Pairing `agentId` with `issue.board.comment.created` is rejected at
+registration; plugin-scoped event patterns may use `agentId` when their payload
+defines that field.
+
+Core and plugin-scoped events are in-process, post-commit warming signals. The
+producer awaits delivery, isolates and logs handler failures, and does not
+persist, replay, or retry an event. Plugins must use canonical host reads (and,
+for pre-message synchronization, the blocking `onBeforePrompt` hook) as their
+correctness boundary.
 
 **Company context:** Events still carry `companyId` for company-scoped data, but plugin installation and activation are instance-wide in the current runtime. Access and authorization host services require an active company-scoped invocation such as an event, API route, tool run, environment call, or UI bridge call; the requested `companyId` must match that active scope.
 
@@ -173,6 +196,9 @@ Plugins can declare **scheduled jobs** that the host runs on a cron schedule. Us
 1. **Capability:** Add `jobs.schedule` to `manifest.capabilities`.
 2. **Declare jobs** in `manifest.jobs`: each entry has `jobKey`, `displayName`, optional `description`, and `schedule` (a 5-field cron expression).
 3. **Register a handler** in `setup()` with `ctx.jobs.register(jobKey, async (job) => { ... })`.
+
+Worker activation requires an exact one-to-one match between declared job keys
+and registered handlers. Undeclared, missing, and duplicate handlers are errors.
 
 **Cron format** (5 fields: minute, hour, day-of-month, month, day-of-week):
 
@@ -192,10 +218,10 @@ Examples: `"0 * * * *"` = every hour at minute 0; `"*/5 * * * *"` = every 5 minu
 |-------------|----------|-------------|
 | `jobKey`    | string   | Matches the manifest declaration. |
 | `runId`     | string   | UUID for this run. |
-| `trigger`   | `"schedule" \| "manual" \| "retry"` | What caused this run. |
+| `trigger`   | `"schedule" \| "manual"` | What caused this run. |
 | `scheduledAt` | string | ISO 8601 time when the run was scheduled. |
 
-Runs can be triggered by the **schedule**, **manually** from the UI/API, or as a **retry** (when an operator re-runs a job after a failure). Re-throw from the handler to mark the run as failed; the host records the failure. The host does not automatically retry—operators can trigger another run manually from the UI or API.
+Runs can be triggered by the **schedule** or **manually** through the instance-admin API. Re-throw from the handler to mark the run as failed; the host records the failure. The host does not automatically retry—an instance administrator can trigger a new manual run through that API.
 
 Example:
 
@@ -222,53 +248,57 @@ const manifest = {
 
 ```ts
 ctx.jobs.register("heartbeat", async (job) => {
-  ctx.logger.info("Heartbeat run", { runId: job.runId, trigger: job.trigger });
+  await ctx.logger.info("Heartbeat run", { runId: job.runId, trigger: job.trigger });
   await ctx.state.set({ scopeKind: "instance", stateKey: "last-heartbeat" }, new Date().toISOString());
 });
 ```
 
 ## UI slots and launchers
 
-Slots are mount points for plugin React components. Launchers are host-rendered entry points (buttons, menu items) that open plugin UI. Declare slots in `manifest.ui.slots` with `type`, `id`, `displayName`, `exportName`; for context-sensitive slots add `entityTypes`. Declare launchers in `manifest.ui.launchers` (or legacy `manifest.launchers`).
+Slots are mount points for plugin React components. Launchers are host-rendered buttons that navigate, invoke an action, or open plugin UI. Declare slots in `manifest.ui.slots` with `type`, `id`, `displayName`, and `exportName`; routed slots also require `routePath`, while entity-scoped slots require `entityTypes`. Declare launchers in `manifest.ui.launchers`.
 
-### Slot types / launcher placement zones
+### Slot types
 
-Slot types describe where a component mounts. Most values also exist as launcher placement zones.
-
-| Slot type / placement zone | Scope | Entity types (when context-sensitive) |
-|----------------------------|-------|---------------------------------------|
+| Slot type | Scope | Entity types (when context-sensitive) |
+|-----------|-------|---------------------------------------|
 | `page` | Global | — |
 | `sidebar` | Global | — |
 | `routeSidebar` | Global | — |
 | `sidebarPanel` | Global | — |
 | `settingsPage` | Global | — |
+| `companySettingsPage` | Global | — |
 | `dashboardWidget` | Global | — |
 | `globalToolbarButton` | Global | — |
-| `detailTab` | Entity | `project`, `issue`, `agent`, `goal`, `run` |
-| `issueDetailView` | Entity | (issue context) |
-| `commentAnnotation` | Entity | `comment` |
-| `commentContextMenuItem` | Entity | `comment` |
+| `detailTab` | Entity | `project`, `issue`, `execution_workspace`, `project_workspace` |
+| `issueDetailView` | Entity | `issue` |
 | `projectSidebarItem` | Entity | `project` |
-| `toolbarButton` | Entity | varies by host surface |
-| `contextMenuItem` | Entity | varies by host surface |
+| `toolbarButton` | Entity | `project`, `issue`, `execution_workspace` |
+
+Launcher placement zones are a separate closed set:
+
+| Placement zone | Scope | Entity types |
+|----------------|-------|--------------|
+| `sidebar` | Global | — |
+| `globalToolbarButton` | Global | — |
+| `toolbarButton` | Entity | `project`, `issue` |
 
 **Scope** describes whether the slot requires an entity to render. **Global** slots render without a specific entity but still receive the active `companyId` through `PluginHostContext` — use it to scope data fetches to the current company. **Entity** slots additionally require `entityId` and `entityType` (e.g. a detail tab on a specific issue).
 
-**Entity types** (for `entityTypes` on slots): `project` \| `issue` \| `agent` \| `goal` \| `run` \| `comment`. Full list: import `PLUGIN_UI_SLOT_TYPES` and `PLUGIN_UI_SLOT_ENTITY_TYPES` from `@paperclipai/plugin-sdk`.
+The host rejects `entityTypes` that do not have a production mount for the selected slot or launcher. Import `PLUGIN_UI_SLOT_TYPES`, `PLUGIN_UI_SLOT_ENTITY_TYPES`, and `PLUGIN_LAUNCHER_PLACEMENT_ZONES` from `@paperclipai/plugin-sdk` for the closed vocabularies.
 
 ### Slot component descriptions
 
 #### `page`
 
-A full-page extension mounted at `/plugins/:pluginId` (global) or `/:company/plugins/:pluginId` (company-context route). Use this for rich, standalone plugin experiences such as dashboards, configuration wizards, or multi-step workflows. Receives `PluginPageProps` with `context.companyId` set to the active company. Requires the `ui.page.register` capability.
+A full-page extension mounted at `/:companyPrefix/:routePath/*`. The required manifest `routePath` is the page's only route identity; plugin keys and installation UUIDs are not route aliases. Use this for rich, standalone plugin experiences such as dashboards or multi-step workflows. Receives `PluginHostContextProps` with `context.companyId` set to the active company. Requires the `ui.page.register` capability.
 
 #### `sidebar`
 
-Adds a navigation-style entry to the main company sidebar navigation area, rendered alongside the core nav items (Dashboard, Issues, Goals, etc.). Use this for lightweight, always-visible links or status indicators that feel native to the sidebar. Receives `PluginSidebarProps` with `context.companyId` set to the active company. Requires the `ui.sidebar.register` capability.
+Adds a navigation-style entry to the main company sidebar navigation area, rendered alongside the core nav items (Dashboard, Issues, Goals, etc.). Use this for lightweight, always-visible links or status indicators that feel native to the sidebar. Receives `PluginHostContextProps` with `context.companyId` set to the active company. Requires the `ui.sidebar.register` capability.
 
 #### `routeSidebar`
 
-A contextual sidebar shown while the current route is a plugin page route with the same `routePath`. Use this for full-page plugin workspaces that need their own local navigation. It does **not** replace the app sidebar: the host collapses the main `<Sidebar/>` to its 64px icon rail (still hover/peek-able) and renders your `routeSidebar` in a secondary pane beside it, producing `[ app rail ][ your sidebar ][ content ]`. Receives `PluginRouteSidebarProps` with `context.companyId` and `context.companyPrefix` set to the active company. Requires the `ui.sidebar.register` capability.
+A contextual sidebar shown while the current route is a plugin page route with the same `routePath`. Use this for full-page plugin workspaces that need their own local navigation. It does **not** replace the app sidebar: the host collapses the main `<Sidebar/>` to its 64px icon rail (still hover/peek-able) and renders your `routeSidebar` in a secondary pane beside it, producing `[ app rail ][ your sidebar ][ content ]`. Receives `PluginHostContextProps` with `context.companyId` and `context.companyPrefix` set to the active company. Requires the `ui.sidebar.register` capability.
 
 Do **not** mount `RequestCollapsedSidebar` (or otherwise try to collapse the app sidebar) from a `routeSidebar` plugin — the host drives the collapse automatically while your route is active and restores the user's preference when they navigate away. The collapse is a hard invariant: a secondary sidebar always forces the app rail collapsed (hiding its expand toggle), overriding any user pin, but it never mutates the user's saved expanded/collapsed preference — that is restored as soon as they leave your route.
 
@@ -278,15 +308,19 @@ Renders richer inline content in a dedicated panel area below the company sideba
 
 #### `settingsPage`
 
-Replaces the auto-generated JSON Schema settings form with a custom React component. Use this when the default form is insufficient — for example, when your plugin needs multi-step configuration, OAuth flows, "Test Connection" buttons, or rich input controls. Receives `PluginSettingsPageProps` with `context.companyId` set to the active company. The component is responsible for reading and writing config through the bridge (via `usePluginData` and `usePluginAction`).
+Replaces the auto-generated JSON Schema settings form with a custom React component. Use this when the default form is insufficient — for example, when your plugin needs multi-step configuration, OAuth flows, "Test Connection" buttons, or rich input controls. This is an instance settings surface, so it mounts without a company context. The component is responsible for reading and writing config through the bridge (via `usePluginData` and `usePluginAction`).
+
+#### `companySettingsPage`
+
+A company-scoped settings page mounted at `/:companyPrefix/company/settings/:routePath`. The required `routePath` also creates its Company Settings sidebar entry. Receives the active `companyId` and `companyPrefix`. Requires the `instance.settings.register` capability.
 
 #### `dashboardWidget`
 
-A card or section rendered on the main dashboard. Use this for at-a-glance metrics, status indicators, or summary views that surface plugin data alongside core Paperclip information. Receives `PluginWidgetProps` with `context.companyId` set to the active company. Requires the `ui.dashboardWidget.register` capability.
+A card or section rendered on the main dashboard. Use this for at-a-glance metrics, status indicators, or summary views that surface plugin data alongside core Paperclip information. Receives `PluginHostContextProps` with `context.companyId` set to the active company. Requires the `ui.dashboardWidget.register` capability.
 
 #### `detailTab`
 
-An additional tab on a project, issue, agent, goal, or run detail page. Rendered when the user navigates to that entity's detail view. Receives `PluginDetailTabProps` with `context.companyId` set to the active company and `context.entityId` / `context.entityType` guaranteed to be non-null, so you can immediately scope data fetches to the relevant entity. Specify which entity types the tab applies to via the `entityTypes` array in the manifest slot declaration. Requires the `ui.detailTab.register` capability.
+An additional tab on a project, issue, execution-workspace, or project-workspace detail page. Receives `PluginDetailTabProps` with `context.companyId` set to the active company and `context.entityId` / `context.entityType` guaranteed to be non-null. Specify the mounted entity types through `entityTypes`. Requires the `ui.detailTab.register` capability.
 
 #### `issueDetailView`
 
@@ -302,19 +336,7 @@ A button rendered in the global top bar (breadcrumb bar) that appears on every p
 
 #### `toolbarButton`
 
-A button rendered in the toolbar of an entity page (e.g. project detail, issue detail). Use this for short-lived, contextual actions scoped to the current entity — like triggering a project sync, opening a picker, or running a quick command on that entity. The component can open a plugin-owned modal internally for confirmations or compact forms. Receives `context.companyId`, `context.entityId`, and `context.entityType`; declare `entityTypes` in the manifest to control which entity pages the button appears on. Requires the `ui.action.register` capability.
-
-#### `contextMenuItem`
-
-An entry added to a right-click or overflow context menu on a host surface. Use this for secondary actions that apply to the entity under the cursor (e.g. "Copy to Linear", "Re-run analysis"). Receives `context.companyId` set to the active company; entity context varies by host surface. Requires the `ui.action.register` capability.
-
-#### `commentAnnotation`
-
-A per-comment annotation region rendered below each individual comment in the issue detail timeline. Use this to augment comments with parsed file links, sentiment badges, inline actions, or any per-comment metadata. Receives `PluginCommentAnnotationProps` with `context.entityId` set to the comment UUID, `context.entityType` set to `"comment"`, `context.parentEntityId` set to the parent issue UUID, `context.projectId` set to the issue's project (if any), and `context.companyPrefix` set to the active company slug. Requires the `ui.commentAnnotation.register` capability.
-
-#### `commentContextMenuItem`
-
-A per-comment context menu item rendered in the "more" dropdown menu (⋮) on each comment in the issue detail timeline. Use this to add per-comment actions such as "Create sub-issue from comment", "Translate", "Flag for review", or custom plugin actions. Receives `PluginCommentContextMenuItemProps` with `context.entityId` set to the comment UUID, `context.entityType` set to `"comment"`, `context.parentEntityId` set to the parent issue UUID, `context.projectId` set to the issue's project (if any), and `context.companyPrefix` set to the active company slug. Plugins can open drawers, modals, or popovers scoped to that comment. The ⋮ menu button only appears on comments where at least one plugin renders visible content. Requires the `ui.action.register` capability.
+A button rendered on project, issue, or execution-workspace detail pages. Use this for short-lived actions scoped to the current entity. Receives `context.companyId`, `context.entityId`, and `context.entityType`; the required `entityTypes` controls which mounted pages receive it. Requires the `ui.action.register` capability.
 
 ### Launcher actions and render options
 
@@ -325,12 +347,18 @@ A per-comment context menu item rendered in the "more" dropdown menu (⋮) on ea
 | `openDrawer` | Open a drawer. |
 | `openPopover` | Open a popover. |
 | `performAction` | Run an action (e.g. call plugin). |
-| `deepLink` | Deep link to plugin or external URL. |
+| `deepLink` | Open an absolute HTTP(S) URL in a new tab. |
 
 | Render option | Values | Description |
 |---------------|--------|-------------|
-| `environment` | `hostInline`, `hostOverlay`, `hostRoute`, `external`, `iframe` | Container the launcher expects after activation. |
-| `bounds` | `inline`, `compact`, `default`, `wide`, `full` | Size hint for overlays/drawers. |
+| `environment` | `hostOverlay` | The concrete host-owned modal, drawer, or popover container. |
+| `bounds` | `inline`, `compact`, `default`, `wide`, `full` | Size hint for the host-owned overlay. |
+
+`openModal`, `openDrawer`, and `openPopover` require `render` metadata and use
+the named `action.target` UI export. `navigate`, `deepLink`, and
+`performAction` must not declare `render`; only `performAction` accepts
+`action.params`. This keeps the manifest limited to behavior the host actually
+executes.
 
 ### Capabilities
 
@@ -341,18 +369,12 @@ Declare in `manifest.capabilities`. Grouped by scope:
 | **Company** | `companies.read` |
 | | `projects.read` |
 | | `project.workspaces.read` |
+| | `execution.workspaces.read` |
 | | `issues.read` |
-| | `issue.comments.read` |
-| | `issue.documents.read` |
-| | `issue.relations.read` |
-| | `issue.subtree.read` |
 | | `agents.read` |
 | | `goals.read` |
 | | `goals.create` |
 | | `goals.update` |
-| | `activity.read` |
-| | `costs.read` |
-| | `issues.orchestration.read` |
 | | `access.members.read` |
 | | `access.invites.read` |
 | | `authorization.grants.read` |
@@ -362,9 +384,12 @@ Declare in `manifest.capabilities`. Grouped by scope:
 | | `issues.create` |
 | | `issues.update` |
 | | `issues.withdraw` |
-| | `issue.comments.create` |
-| | `issue.documents.write` |
-| | `issue.relations.write` |
+| | `projects.managed` |
+| | `routines.managed` |
+| | `skills.managed` |
+| | `agents.pause` |
+| | `agents.resume` |
+| | `agents.managed` |
 | | `activity.log.write` |
 | | `metrics.write` |
 | | `telemetry.track` |
@@ -372,8 +397,6 @@ Declare in `manifest.capabilities`. Grouped by scope:
 | | `database.namespace.write` |
 | | `external.objects.detect` |
 | | `external.objects.read` |
-| | `external.objects.write` |
-| | `external.objects.refresh` |
 | **Instance** | `instance.settings.register` |
 | | `plugin.state.read` |
 | | `plugin.state.write` |
@@ -384,10 +407,10 @@ Declare in `manifest.capabilities`. Grouped by scope:
 | | `api.routes.register` |
 | | `http.outbound` |
 | | `http.private-network` |
-| | `secrets.read-ref` |
 | | `environment.drivers.register` |
 | | `local.folders` |
 | | `runtime.context.read` |
+| | `runtime.prompt.observe` |
 | | `runtime.records.read` |
 | **Agent** | `agent.tools.register` |
 | | `access.members.write` |
@@ -398,7 +421,6 @@ Declare in `manifest.capabilities`. Grouped by scope:
 | | `ui.page.register` |
 | | `ui.detailTab.register` |
 | | `ui.dashboardWidget.register` |
-| | `ui.commentAnnotation.register` |
 | | `ui.action.register` |
 
 Full list in code: import `PLUGIN_CAPABILITIES` from `@paperclipai/plugin-sdk`.
@@ -501,15 +523,16 @@ apiRoutes: [
     routeKey: "initialize",
     method: "POST",
     path: "/issues/:issueId/smoke",
-    auth: "board-or-agent",
-    capability: "api.routes.register",
     companyResolution: { from: "issue", param: "issueId" },
   },
 ]
 ```
 
-Implement `onApiRequest(input)` in the worker to handle the route. The host
+`manifest.apiRoutes` and `onApiRequest(input)` must either both be present or
+both be absent. The host
 performs auth, company access, capability, and route matching before dispatch.
+Every route declares `companyResolution`; issue resolution names an exact
+`:param` in the route path, and GET routes cannot resolve from a request body.
 The worker receives route params, query, parsed JSON body,
 sanitized headers, actor context, and `companyId`; responses are JSON `{ status?,
 headers?, body? }`.
@@ -606,7 +629,7 @@ export function DashboardWidget() {
 Fetches data from the worker's registered `getData` handler. Re-fetches when `params` changes. Returns `{ data, loading, error, refresh }`.
 
 ```tsx
-import { usePluginData } from "@paperclipai/plugin-sdk/ui";
+import { usePluginData, type PluginHostContextProps } from "@paperclipai/plugin-sdk/ui";
 
 interface SyncStatus {
   lastSyncAt: string;
@@ -614,7 +637,7 @@ interface SyncStatus {
   healthy: boolean;
 }
 
-export function SyncStatusWidget({ context }: PluginWidgetProps) {
+export function SyncStatusWidget({ context }: PluginHostContextProps) {
   const { data, loading, error, refresh } = usePluginData<SyncStatus>("sync-status", {
     companyId: context.companyId,
   });
@@ -641,7 +664,7 @@ Returns an async function that calls the worker's `performAction` handler. Throw
 import { useState } from "react";
 import { usePluginAction, type PluginBridgeError } from "@paperclipai/plugin-sdk/ui";
 
-export function ResyncButton({ context }: PluginWidgetProps) {
+export function ResyncButton() {
   const resync = usePluginAction("resync");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -650,7 +673,7 @@ export function ResyncButton({ context }: PluginWidgetProps) {
     setBusy(true);
     setError(null);
     try {
-      await resync({ companyId: context.companyId });
+      await resync({});
     } catch (err) {
       setError((err as PluginBridgeError).message);
     } finally {
@@ -705,34 +728,6 @@ export function WikiSidebarLink() {
 `linkProps("/wiki")` resolves against the active company prefix, so in company `PAP` it renders `href="/PAP/wiki"`. Already-prefixed paths such as `/PAP/wiki` are not prefixed again. For button-style commands, call `hostNavigation.navigate("/issues/PAP-123")`.
 
 Avoid raw same-origin `href`s or `window.location.assign()` for Paperclip-internal navigation from plugin UI. Those bypass the host router and can reload the whole app. External links should keep normal anchors with `target="_blank"` and `rel="noopener noreferrer"` as appropriate.
-
-#### `usePluginStream<T>(channel, options?)`
-
-Subscribes to a real-time event stream pushed from the plugin worker via SSE. The worker pushes events using `ctx.streams.emit(channel, event)` and the hook receives them as they arrive. Returns `{ events, lastEvent, connecting, connected, error, close }`.
-
-```tsx
-import { usePluginStream } from "@paperclipai/plugin-sdk/ui";
-
-interface ChatToken {
-  text: string;
-}
-
-export function ChatMessages({ context }: PluginWidgetProps) {
-  const { events, connected, close } = usePluginStream<ChatToken>("chat-stream", {
-    companyId: context.companyId ?? undefined,
-  });
-
-  return (
-    <div>
-      {events.map((e, i) => <span key={i}>{e.text}</span>)}
-      {connected && <span className="pulse" />}
-      <button onClick={close}>Stop</button>
-    </div>
-  );
-}
-```
-
-The SSE connection targets `GET /api/plugins/:pluginId/bridge/stream/:channel?companyId=...`. The host bridge manages the EventSource lifecycle; `close()` terminates the connection.
 
 ### UI authoring note
 
@@ -856,16 +851,17 @@ Each slot type receives a typed props object with `context: PluginHostContext`. 
 
 | Slot type | Props interface | `context` extras |
 |-----------|----------------|------------------|
-| `page` | `PluginPageProps` | — |
-| `sidebar` | `PluginSidebarProps` | — |
-| `routeSidebar` | `PluginRouteSidebarProps` | — |
-| `settingsPage` | `PluginSettingsPageProps` | — |
-| `dashboardWidget` | `PluginWidgetProps` | — |
-| `globalToolbarButton` | `PluginGlobalToolbarButtonProps` | — |
-| `detailTab` | `PluginDetailTabProps` | `entityId: string`, `entityType: string` |
-| `toolbarButton` | `PluginToolbarButtonProps` | `entityId: string`, `entityType: string` |
-| `commentAnnotation` | `PluginCommentAnnotationProps` | `entityId: string`, `entityType: "comment"`, `parentEntityId: string`, `projectId`, `companyPrefix` |
-| `commentContextMenuItem` | `PluginCommentContextMenuItemProps` | `entityId: string`, `entityType: "comment"`, `parentEntityId: string`, `projectId`, `companyPrefix` |
+| `page` | `PluginHostContextProps` | — |
+| `sidebar` | `PluginHostContextProps` | — |
+| `routeSidebar` | `PluginHostContextProps` | — |
+| `sidebarPanel` | `PluginHostContextProps` | — |
+| `settingsPage` | `PluginHostContextProps` | — |
+| `companySettingsPage` | `PluginHostContextProps` | — |
+| `dashboardWidget` | `PluginHostContextProps` | — |
+| `globalToolbarButton` | `PluginHostContextProps` | — |
+| `detailTab` | `PluginDetailTabProps` | `entityId: string`, mounted `entityType` |
+| `issueDetailView` | `PluginDetailTabProps` | `entityId: string`, `entityType: "issue"` |
+| `toolbarButton` | `PluginDetailTabProps` | `entityId: string`, mounted `entityType` |
 | `projectSidebarItem` | `PluginProjectSidebarItemProps` | `entityId: string`, `entityType: "project"` |
 
 Example detail tab with entity context:
@@ -874,9 +870,9 @@ Example detail tab with entity context:
 import type { PluginDetailTabProps } from "@paperclipai/plugin-sdk/ui";
 import { usePluginData } from "@paperclipai/plugin-sdk/ui";
 
-export function AgentMetricsTab({ context }: PluginDetailTabProps) {
-  const { data, loading } = usePluginData<Record<string, string>>("agent-metrics", {
-    agentId: context.entityId,
+export function IssueMetricsTab({ context }: PluginDetailTabProps) {
+  const { data, loading } = usePluginData<Record<string, string>>("issue-metrics", {
+    issueId: context.entityId,
     companyId: context.companyId,
   });
 
@@ -903,7 +899,7 @@ V1 does not provide a dedicated `modal` slot. Plugins can either:
 - declare concrete UI mount points in `ui.slots`
 - declare host-rendered entry points in `ui.launchers`
 
-Supported launcher placement zones currently mirror the major host surfaces such as `projectSidebarItem`, `globalToolbarButton`, `toolbarButton`, `detailTab`, `settingsPage`, and `contextMenuItem`. Plugins may still open their own local modal from those entry points when needed.
+Supported launcher placement zones are exactly `sidebar`, `globalToolbarButton`, and `toolbarButton`. The first two are company-scoped. `toolbarButton` launchers require `entityTypes` and mount only on project and issue detail pages.
 
 Declarative launcher example:
 
@@ -932,10 +928,10 @@ Declarative launcher example:
 
 The host returns launcher metadata from `GET /api/plugins/ui-contributions` alongside slot declarations.
 
-When a launcher opens a host-owned overlay or page, `useHostContext()`,
+When a launcher opens a host-owned overlay, `useHostContext()`,
 `usePluginData()`, and `usePluginAction()` receive the current
-`renderEnvironment` through the bridge. Use that to tailor compact modal UI vs.
-full-page layouts without adding custom route parsing in the plugin.
+`hostOverlay` render environment through the bridge, together with the active
+launcher id and bounds.
 
 ## Project sidebar item
 
@@ -985,7 +981,7 @@ Use optional `order` in the slot to sort among other project sidebar items. See 
 Two toolbar slot types are available depending on where the button should appear:
 
 - **`globalToolbarButton`** — renders in the top bar on every page, scoped to the company. No entity context. Use for workspace-wide actions.
-- **`toolbarButton`** — renders on entity detail pages (project, issue, etc.). Receives `entityId` and `entityType`. Declare `entityTypes` to control which pages the button appears on.
+- **`toolbarButton`** — renders on project and issue detail pages. Receives `entityId` and `entityType`. Declare `entityTypes` to control which page receives the button.
 
 For short-lived actions, mount the appropriate slot type and open a plugin-owned modal inside the component. Use `useHostContext()` to scope the action to the current company or entity.
 
@@ -1077,61 +1073,6 @@ export function SyncToolbarButton() {
 
 Prefer deep-linkable tabs and pages for primary workflows. Reserve plugin-owned modals for confirmations, pickers, and compact editors.
 
-## Real-time streaming (`ctx.streams`)
-
-Plugins can push real-time events from the worker to the UI using server-sent events (SSE). This is useful for streaming LLM tokens, live sync progress, or any push-based data.
-
-### Worker side
-
-In `setup()`, use `ctx.streams` to open a channel, emit events, and close when done:
-
-```ts
-const plugin = definePlugin({
-  async setup(ctx) {
-    ctx.actions.register("chat", async (params) => {
-      const companyId = params.companyId as string;
-      ctx.streams.open("chat-stream", companyId);
-
-      for await (const token of streamFromLLM(params.prompt as string)) {
-        ctx.streams.emit("chat-stream", { text: token });
-      }
-
-      ctx.streams.close("chat-stream");
-      return { ok: true };
-    });
-  },
-});
-```
-
-**API:**
-
-| Method | Description |
-|--------|-------------|
-| `ctx.streams.open(channel, companyId)` | Open a named stream channel and associate it with a company. Sends a `streams.open` notification to the host. |
-| `ctx.streams.emit(channel, event)` | Push an event to the channel. The `companyId` is automatically resolved from the prior `open()` call. |
-| `ctx.streams.close(channel)` | Close the channel and clear the company mapping. Sends a `streams.close` notification. |
-
-Stream notifications are fire-and-forget JSON-RPC messages (no `id` field). They are sent via `notifyHost()` synchronously during handler execution.
-
-### UI side
-
-Use the `usePluginStream` hook (see [Hooks reference](#usepluginstreamtchannel-options) above) to subscribe to events from the UI.
-
-### Host-side architecture
-
-The host maintains an in-memory `PluginStreamBus` that fans out worker notifications to connected SSE clients:
-
-1. Worker emits `streams.emit` notification via stdout
-2. Host (`plugin-worker-manager`) receives the notification and publishes to `PluginStreamBus`
-3. SSE endpoint (`GET /api/plugins/:pluginId/bridge/stream/:channel?companyId=...`) subscribes to the bus and writes events to the response
-
-The bus is keyed by `pluginId:channel:companyId`, so multiple UI clients can subscribe to the same stream independently.
-
-Use `ctx.streams` for plugin-owned progress or external integration output.
-Agent results arrive through the durable issue creator-callback outbox and
-canonical issue comments; they are not relayed through a plugin-held chat
-session.
-
 ## Testing utilities
 
 ```ts
@@ -1141,7 +1082,11 @@ import manifest from "../src/manifest.js";
 
 const harness = createTestHarness({ manifest });
 await plugin.definition.setup(harness.ctx);
-await harness.emit("issue.created", { issueId: "iss_1" }, { entityId: "iss_1", entityType: "issue" });
+await harness.emit(
+  "issue.board.comment.created",
+  { issueId: "iss_1", commentId: "comment_1" },
+  { entityId: "comment_1", entityType: "issue_comment" },
+);
 ```
 
 ## Bundler presets
@@ -1151,22 +1096,4 @@ import { createPluginBundlerPresets } from "@paperclipai/plugin-sdk/bundlers";
 
 const presets = createPluginBundlerPresets({ uiEntry: "src/ui/index.tsx" });
 // presets.esbuild.worker / presets.esbuild.manifest / presets.esbuild.ui
-// presets.rollup.worker / presets.rollup.manifest / presets.rollup.ui
 ```
-
-## Local dev server (hot-reload events)
-
-```bash
-paperclip-plugin-dev-server --root . --ui-dir dist/ui --port 4177
-```
-
-Or programmatically:
-
-```ts
-import { startPluginDevServer } from "@paperclipai/plugin-sdk/dev-server";
-const server = await startPluginDevServer({ rootDir: process.cwd() });
-```
-
-Dev server endpoints:
-- `GET /__paperclip__/health` returns `{ ok, rootDir, uiDir }`
-- `GET /__paperclip__/events` streams `reload` SSE events on UI build changes

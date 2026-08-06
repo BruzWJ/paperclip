@@ -28,6 +28,7 @@ import {
   publishAgentRunTerminalEvent,
   type AgentRunTerminalPluginEventInput,
 } from "./agent-run-plugin-events.js";
+import type { PluginDomainEventPublisher } from "./plugin-domain-event-publisher.js";
 
 const ACTIVE_RUN_STATUSES = ["queued", "running", "scheduled_retry"] as const;
 const TERMINAL_RUN_STATUSES = new Set<IssueExecutionRunStatus>([
@@ -129,6 +130,7 @@ export interface IssueExecutionCancellationServiceOptions {
   readonly settlement: IssueExecutionCancelledRunSettlementPort;
   readonly now?: () => Date;
   readonly idFactory?: () => string;
+  readonly pluginDomainEvents: PluginDomainEventPublisher;
 }
 
 export interface IssueExecutionCancellationResult {
@@ -149,16 +151,22 @@ export type IssueExecutionCancellationActor =
   | { readonly kind: "user"; readonly userId: string }
   | { readonly kind: "agent"; readonly agentId: string };
 
-export interface RequestedRunCancellation {
+export type RequestedRunCancellation = {
   readonly companyId: string;
   readonly issueId: string;
   readonly runId: string;
-  /** Null means the active envelope had no prompt attempt to cancel. */
-  readonly cancellationIntentId: string | null;
-  readonly state: "intent_requested" | "terminalized";
-  /** Post-commit plugin event owned by the reconciliation step. */
-  readonly terminalEvent?: AgentRunTerminalPluginEventInput;
-}
+} & (
+  | {
+      readonly cancellationIntentId: string;
+      readonly state: "intent_requested";
+    }
+  | {
+      readonly cancellationIntentId: null;
+      readonly state: "terminalized";
+      /** Required post-commit plugin event owned by reconciliation. */
+      readonly terminalEvent: AgentRunTerminalPluginEventInput;
+    }
+);
 
 export interface IssueExecutionAuthorityFenceResult {
   readonly refIds: readonly string[];
@@ -257,23 +265,19 @@ function exactDate(value: Date, label: string): Date {
   return value;
 }
 
-function terminalizedCancellationResult(
-  request: RequestedRunCancellation,
-): IssueExecutionCancellationResult {
-  if (request.cancellationIntentId !== null) {
-    reject("terminalized cancellation unexpectedly owns an intent");
+async function terminalizedCancellationResult(
+  publisher: PluginDomainEventPublisher,
+  request: Extract<RequestedRunCancellation, { state: "terminalized" }>,
+): Promise<IssueExecutionCancellationResult> {
+  if (
+    request.terminalEvent.companyId !== request.companyId
+    || request.terminalEvent.issueId !== request.issueId
+    || request.terminalEvent.runId !== request.runId
+    || request.terminalEvent.outcome !== "cancelled"
+  ) {
+    reject("terminalized cancellation plugin event crossed its exact run");
   }
-  if (request.terminalEvent) {
-    if (
-      request.terminalEvent.companyId !== request.companyId
-      || request.terminalEvent.issueId !== request.issueId
-      || request.terminalEvent.runId !== request.runId
-      || request.terminalEvent.outcome !== "cancelled"
-    ) {
-      reject("terminalized cancellation plugin event crossed its exact run");
-    }
-    publishAgentRunTerminalEvent(request.terminalEvent);
-  }
+  await publishAgentRunTerminalEvent(publisher, request.terminalEvent);
   return {
     runId: request.runId,
     alreadyTerminal: true,
@@ -769,7 +773,10 @@ export function createIssueExecutionCancellationService(
         reject("agent cancellation bundle crossed its company");
       }
       if (request.state === "terminalized") {
-        results.push(terminalizedCancellationResult(request));
+        results.push(await terminalizedCancellationResult(
+          options.pluginDomainEvents,
+          request,
+        ));
         continue;
       }
       if (request.cancellationIntentId === null) {
@@ -957,7 +964,10 @@ export function createIssueExecutionCancellationService(
         reject("cancellation bundle crossed its company");
       }
       if (request.state === "terminalized") {
-        results.push(terminalizedCancellationResult(request));
+        results.push(await terminalizedCancellationResult(
+          options.pluginDomainEvents,
+          request,
+        ));
         continue;
       }
       if (request.cancellationIntentId === null) {

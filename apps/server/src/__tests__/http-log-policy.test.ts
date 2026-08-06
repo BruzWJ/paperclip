@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { shouldSilenceHttpSuccessLog } from "../middleware/http-log-policy.js";
+import {
+  shouldSilenceHttpSuccessLog,
+  shouldSuppressHttpRequestBodyLog,
+} from "../middleware/http-log-policy.js";
 
 describe("shouldSilenceHttpSuccessLog", () => {
   it("silences cached 304 responses", () => {
@@ -69,5 +72,17 @@ describe("shouldSilenceHttpSuccessLog", () => {
   it("keeps failing requests visible", () => {
     expect(shouldSilenceHttpSuccessLog("GET", "/api/health", 500)).toBe(false);
     expect(shouldSilenceHttpSuccessLog("GET", "/@fs/Users/dotta/paperclip/ui/src/main.tsx", 404)).toBe(false);
+  });
+});
+
+describe("shouldSuppressHttpRequestBodyLog", () => {
+  it("suppresses plugin instance config bodies for save and test failures", () => {
+    expect(shouldSuppressHttpRequestBodyLog("/api/plugins/plugin-1/config")).toBe(true);
+    expect(shouldSuppressHttpRequestBodyLog("/api/plugins/plugin-1/config/test?probe=true")).toBe(true);
+  });
+
+  it("does not suppress unrelated plugin request bodies", () => {
+    expect(shouldSuppressHttpRequestBodyLog("/api/plugins/plugin-1/actions/sync")).toBe(false);
+    expect(shouldSuppressHttpRequestBodyLog("/api/plugins/install")).toBe(false);
   });
 });

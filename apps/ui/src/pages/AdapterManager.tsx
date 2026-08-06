@@ -8,6 +8,7 @@ import { useAdapterCatalogSync } from "@/adapters/use-adapter-catalog";
 import { queryKeys } from "@/lib/queryKeys";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { publicRuntimeMessage } from "@/lib/public-runtime-message";
 
 function AdapterCatalogRow({ adapter }: { adapter: AdapterInfo }) {
   const isReady = adapter.loaded;
@@ -17,7 +18,7 @@ function AdapterCatalogRow({ adapter }: { adapter: AdapterInfo }) {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{adapter.label}</span>
-            <Badge variant="outline">ACPX-supplied contract</Badge>
+            <Badge variant="outline">Local runtime contract</Badge>
             <Badge
               variant="secondary"
               className={isReady ? "text-green-700" : "text-destructive"}
@@ -32,11 +33,11 @@ function AdapterCatalogRow({ adapter }: { adapter: AdapterInfo }) {
           <p className="mt-1 text-xs text-muted-foreground">
             {isReady ? (
               <>
-                ACPX agent name <code>{adapter.type}</code> · {adapter.modelsCount} selectable models
+                Agent runtime name <code>{adapter.type}</code> · {adapter.modelsCount} reported model{adapter.modelsCount === 1 ? "" : "s"}
               </>
             ) : (
               <>
-                ACPX agent name <code>{adapter.type}</code> · not selectable until its local ACPX probe and catalog admission succeed
+                Agent runtime name <code>{adapter.type}</code> · not selectable until its local readiness check and catalog admission succeed
               </>
             )}
           </p>
@@ -49,13 +50,13 @@ function AdapterCatalogRow({ adapter }: { adapter: AdapterInfo }) {
       {isReady ? (
         <div className="flex flex-wrap gap-1.5">
           <Badge variant="secondary">
-            {adapter.capabilities.runtimeControls.length} ACPX runtime controls
+            {adapter.capabilities.runtimeControls.length} runtime controls
           </Badge>
         </div>
       ) : (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          <span className="font-medium">ACPX candidate diagnostic:</span>{" "}
-          {adapter.diagnostic.message}
+          <span className="font-medium">Local agent diagnostic:</span>{" "}
+          {publicRuntimeMessage(adapter.diagnostic.message)}
         </div>
       )}
     </li>
@@ -72,7 +73,7 @@ export function AdapterManager() {
       { label: selectedCompany?.name ?? "Company", href: "/dashboard" },
       { label: "Settings", href: "/company/settings" },
       { label: "Instance settings", href: "/company/settings/instance/general" },
-      { label: "ACPX agents" },
+      { label: "Local agents" },
     ]);
   }, [selectedCompany?.name, setBreadcrumbs]);
 
@@ -82,7 +83,7 @@ export function AdapterManager() {
   });
 
   if (isLoading) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading ACPX catalog...</div>;
+    return <div className="p-4 text-sm text-muted-foreground">Loading local agent catalog...</div>;
   }
 
   return (
@@ -90,25 +91,27 @@ export function AdapterManager() {
       <div className="space-y-1">
         <div className="flex items-center gap-2">
           <Cpu className="h-6 w-6 text-muted-foreground" />
-          <h1 className="text-xl font-semibold">ACPX agents</h1>
+          <h1 className="text-xl font-semibold">Local agents</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          ACPX supplies compatible local agent names, models, session settings,
-          and the resolved execution contract. Paperclip refreshes the ACPX
-          catalog automatically and supervises those executions.
+          Paperclip discovers compatible local agents, models, session settings,
+          and their resolved execution contracts automatically, then supervises
+          those executions.
         </p>
       </div>
 
       {error ? (
         <Card>
           <CardContent className="py-6 text-sm text-destructive">
-            {error instanceof Error ? error.message : "The ACPX catalog is unavailable."}
+            {error instanceof Error
+              ? publicRuntimeMessage(error.message)
+              : "The local agent catalog is unavailable."}
           </CardContent>
         </Card>
       ) : !adapters?.length ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No configured ACPX agent is currently available on this host. Declare a local runtime in ACPX&apos;s agents configuration, then retry.
+            No compatible local agent is currently available. Install and authenticate a compatible agent CLI on this host, then retry.
           </CardContent>
         </Card>
       ) : (

@@ -11,16 +11,15 @@
  * 1. **Sync job declarations** — When a plugin is installed or started, the
  *    host calls `syncJobDeclarations()` to upsert the manifest's declared jobs
  *    into the `plugin_jobs` table. Jobs removed from the manifest are marked
- *    `paused` (not deleted) to preserve history.
+ *    `removed` (not deleted) to preserve history.
  *
- * 2. **Job CRUD** — List, get, pause, and resume jobs for a given plugin.
+ * 2. **Job reads** — List jobs and resolve exact job rows for dispatch.
  *
  * 3. **Run lifecycle** — Create job run records, update their status, and
- *    record results (duration, errors, logs).
+ *    record terminal status, duration, and errors. Worker logs use the
+ *    canonical `plugin_logs` table.
  *
- * 4. **Next-run calculation** — After a run completes the host should call
- *    `updateNextRunAt()` with the next cron tick so the scheduler knows when
- *    to fire next.
+ * 4. **Run scheduling state** — Persist the scheduler's sole next-run pointer.
  *
  * The capability check (`jobs.schedule`) is enforced upstream by the host
  * client factory and manifest validator — this store trusts that the caller
@@ -30,23 +29,15 @@
  * @see PLUGIN_SPEC.md §21.3 — `plugin_jobs` / `plugin_job_runs` tables
  */
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { plugins, pluginJobs, pluginJobRuns } from "@paperclipai/db";
 import type {
   PluginJobDeclaration,
   PluginJobRunStatus,
   PluginJobRunTrigger,
-  PluginJobRecord,
 } from "@paperclipai/shared";
 import { notFound } from "../errors.js";
-
-/**
- * The statuses used for job *definitions* in the `plugin_jobs` table.
- * Aliased from `PluginJobRecord` to keep the store API aligned with
- * the domain type (`"active" | "paused" | "failed"`).
- */
-type JobDefinitionStatus = PluginJobRecord["status"];
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,7 +46,7 @@ type JobDefinitionStatus = PluginJobRecord["status"];
 /**
  * Input for creating a job run record.
  */
-export interface CreateJobRunInput {
+interface CreateJobRunInput {
   /** FK to the plugin_jobs row. */
   jobId: string;
   /** FK to the plugins row. */
@@ -67,9 +58,9 @@ export interface CreateJobRunInput {
 /**
  * Input for completing (or failing) a job run.
  */
-export interface CompleteJobRunInput {
+interface CompleteJobRunInput {
   /** Final run status. */
-  status: PluginJobRunStatus;
+  status: Extract<PluginJobRunStatus, "succeeded" | "failed" | "cancelled">;
   /** Error message if the run failed. */
   error?: string | null;
   /** Run duration in milliseconds. */
@@ -91,7 +82,8 @@ export interface CompleteJobRunInput {
  * await jobStore.syncJobDeclarations(pluginId, manifest.jobs ?? []);
  *
  * // Before dispatching a runJob RPC — create a run record
- * const run = await jobStore.createRun({ jobId, pluginId, trigger: "schedule" });
+ * const run = await jobStore.createRunIfIdle({ jobId, pluginId, trigger: "schedule" });
+ * if (!run) return;
  *
  * // After the RPC completes — record the result
  * await jobStore.completeRun(run.id, {
@@ -120,6 +112,20 @@ export function pluginJobStore(db: Db) {
     }
   }
 
+  async function cancelRuns(condition: SQL, reason: string): Promise<number> {
+    const rows = await db
+      .update(pluginJobRuns)
+      .set({
+        status: "cancelled" as PluginJobRunStatus,
+        error: reason,
+        durationMs: null,
+        finishedAt: new Date(),
+      })
+      .where(condition)
+      .returning({ id: pluginJobRuns.id });
+    return rows.length;
+  }
+
   // -----------------------------------------------------------------------
   // Public API
   // -----------------------------------------------------------------------
@@ -138,7 +144,7 @@ export function pluginJobStore(db: Db) {
      * - **New jobs** are inserted with status `active`.
      * - **Existing jobs** have their `schedule` updated if it changed.
      * - **Removed jobs** (present in DB but absent from the manifest) are
-     *   set to `paused` so their history is preserved.
+     *   set to `removed` so their history is preserved.
      *
      * The unique constraint `(pluginId, jobKey)` is used for conflict
      * resolution.
@@ -169,24 +175,28 @@ export function pluginJobStore(db: Db) {
         declaredKeys.add(decl.jobKey);
 
         const existing = existingByKey.get(decl.jobKey);
-        const schedule = decl.schedule ?? "";
+        const schedule = decl.schedule;
 
         if (existing) {
-          // Update schedule if it changed; re-activate if it was paused
-          const updates: Record<string, unknown> = {
-            updatedAt: new Date(),
-          };
+          // A changed or restored declaration needs a schedule pointer
+          // recomputed from the new canonical cron expression.
+          const updates: Record<string, unknown> = {};
           if (existing.schedule !== schedule) {
             updates.schedule = schedule;
+            updates.nextRunAt = null;
           }
-          if (existing.status === "paused") {
+          if (existing.status === "removed") {
             updates.status = "active";
+            updates.nextRunAt = null;
           }
 
-          await db
-            .update(pluginJobs)
-            .set(updates)
-            .where(eq(pluginJobs.id, existing.id));
+          if (Object.keys(updates).length > 0) {
+            updates.updatedAt = new Date();
+            await db
+              .update(pluginJobs)
+              .set(updates)
+              .where(eq(pluginJobs.id, existing.id));
+          }
         } else {
           // Insert new job
           await db.insert(pluginJobs).values({
@@ -198,12 +208,16 @@ export function pluginJobStore(db: Db) {
         }
       }
 
-      // Pause jobs that are no longer declared in the manifest
+      // Retain removed job rows so their run history remains inspectable.
       for (const existing of existingJobs) {
-        if (!declaredKeys.has(existing.jobKey) && existing.status !== "paused") {
+        if (!declaredKeys.has(existing.jobKey) && existing.status !== "removed") {
           await db
             .update(pluginJobs)
-            .set({ status: "paused", updatedAt: new Date() })
+            .set({
+              status: "removed",
+              nextRunAt: null,
+              updatedAt: new Date(),
+            })
             .where(eq(pluginJobs.id, existing.id));
         }
       }
@@ -217,7 +231,7 @@ export function pluginJobStore(db: Db) {
      */
     async listJobs(
       pluginId: string,
-      status?: JobDefinitionStatus,
+      status?: (typeof pluginJobs.$inferSelect)["status"],
     ): Promise<(typeof pluginJobs.$inferSelect)[]> {
       const conditions = [eq(pluginJobs.pluginId, pluginId)];
       if (status) {
@@ -227,29 +241,6 @@ export function pluginJobStore(db: Db) {
         .select()
         .from(pluginJobs)
         .where(and(...conditions));
-    },
-
-    /**
-     * Get a single job by its composite key `(pluginId, jobKey)`.
-     *
-     * @param pluginId - UUID of the owning plugin
-     * @param jobKey - Stable job identifier from the manifest
-     * @returns The job row, or `null` if not found
-     */
-    async getJobByKey(
-      pluginId: string,
-      jobKey: string,
-    ): Promise<(typeof pluginJobs.$inferSelect) | null> {
-      const rows = await db
-        .select()
-        .from(pluginJobs)
-        .where(
-          and(
-            eq(pluginJobs.pluginId, pluginId),
-            eq(pluginJobs.jobKey, jobKey),
-          ),
-        );
-      return rows[0] ?? null;
     },
 
     /**
@@ -285,45 +276,41 @@ export function pluginJobStore(db: Db) {
       return rows[0] ?? null;
     },
 
-    /**
-     * Update a job's status.
-     *
-     * @param jobId - UUID of the job row
-     * @param status - New status
-     */
-    async updateJobStatus(
+    /** Persist the scheduler's sole next-execution pointer. */
+    async updateNextRunAt(
       jobId: string,
-      status: JobDefinitionStatus,
-    ): Promise<void> {
-      await db
-        .update(pluginJobs)
-        .set({ status, updatedAt: new Date() })
-        .where(eq(pluginJobs.id, jobId));
-    },
-
-    /**
-     * Update the `lastRunAt` and `nextRunAt` timestamps on a job.
-     *
-     * Called by the scheduler after a run completes to advance the
-     * scheduling pointer.
-     *
-     * @param jobId - UUID of the job row
-     * @param lastRunAt - When the last run started
-     * @param nextRunAt - When the next run should fire
-     */
-    async updateRunTimestamps(
-      jobId: string,
-      lastRunAt: Date,
       nextRunAt: Date | null,
     ): Promise<void> {
       await db
         .update(pluginJobs)
         .set({
-          lastRunAt,
           nextRunAt,
           updatedAt: new Date(),
         })
         .where(eq(pluginJobs.id, jobId));
+    },
+
+    /** Advance only the exact active schedule pointer that produced a run. */
+    async advanceNextRunAt(input: {
+      jobId: string;
+      schedule: string;
+      currentNextRunAt: Date;
+      nextRunAt: Date;
+    }): Promise<boolean> {
+      const rows = await db
+        .update(pluginJobs)
+        .set({
+          nextRunAt: input.nextRunAt,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(pluginJobs.id, input.jobId),
+          eq(pluginJobs.status, "active"),
+          eq(pluginJobs.schedule, input.schedule),
+          eq(pluginJobs.nextRunAt, input.currentNextRunAt),
+        ))
+        .returning({ id: pluginJobs.id });
+      return rows.length === 1;
     },
 
     // =====================================================================
@@ -331,29 +318,51 @@ export function pluginJobStore(db: Db) {
     // =====================================================================
 
     /**
-     * Create a new job run record with status `queued`.
+     * Atomically create a queued run only when the job is active and has no
+     * queued or running execution.
      *
-     * The caller should create the run record *before* dispatching the
-     * `runJob` RPC to the worker, then update it to `running` once the
-     * worker begins execution.
+     * Locking the parent job row serializes admission across scheduler
+     * instances without a second in-memory or caller-owned overlap check.
      *
-     * @param input - Job run input (jobId, pluginId, trigger)
-     * @returns The newly created run row
+     * @returns The newly created run, or `null` when admission is unavailable.
      */
-    async createRun(
+    async createRunIfIdle(
       input: CreateJobRunInput,
-    ): Promise<typeof pluginJobRuns.$inferSelect> {
-      const rows = await db
-        .insert(pluginJobRuns)
-        .values({
-          jobId: input.jobId,
-          pluginId: input.pluginId,
-          trigger: input.trigger,
-          status: "queued",
-        })
-        .returning();
+    ): Promise<typeof pluginJobRuns.$inferSelect | null> {
+      return db.transaction(async (tx) => {
+        const [job] = await tx
+          .select({ id: pluginJobs.id, status: pluginJobs.status })
+          .from(pluginJobs)
+          .where(and(
+            eq(pluginJobs.id, input.jobId),
+            eq(pluginJobs.pluginId, input.pluginId),
+          ))
+          .for("update");
+        if (!job || job.status !== "active") return null;
 
-      return rows[0]!;
+        const activeRuns = await tx
+          .select({ id: pluginJobRuns.id })
+          .from(pluginJobRuns)
+          .where(and(
+            eq(pluginJobRuns.jobId, input.jobId),
+            inArray(pluginJobRuns.status, ["queued", "running"]),
+          ));
+        if (activeRuns.length > 0) return null;
+
+        const [run] = await tx
+          .insert(pluginJobRuns)
+          .values({
+            jobId: input.jobId,
+            pluginId: input.pluginId,
+            trigger: input.trigger,
+            status: "queued",
+          })
+          .returning();
+        if (!run) {
+          throw new Error("Plugin job run insert returned no record");
+        }
+        return run;
+      });
     },
 
     /**
@@ -361,14 +370,19 @@ export function pluginJobStore(db: Db) {
      *
      * @param runId - UUID of the run row
      */
-    async markRunning(runId: string): Promise<void> {
-      await db
+    async markRunning(runId: string): Promise<boolean> {
+      const rows = await db
         .update(pluginJobRuns)
         .set({
           status: "running" as PluginJobRunStatus,
           startedAt: new Date(),
         })
-        .where(eq(pluginJobRuns.id, runId));
+        .where(and(
+          eq(pluginJobRuns.id, runId),
+          eq(pluginJobRuns.status, "queued"),
+        ))
+        .returning({ id: pluginJobRuns.id });
+      return rows.length > 0;
     },
 
     /**
@@ -381,8 +395,8 @@ export function pluginJobStore(db: Db) {
     async completeRun(
       runId: string,
       input: CompleteJobRunInput,
-    ): Promise<void> {
-      await db
+    ): Promise<boolean> {
+      const rows = await db
         .update(pluginJobRuns)
         .set({
           status: input.status,
@@ -390,23 +404,37 @@ export function pluginJobStore(db: Db) {
           durationMs: input.durationMs ?? null,
           finishedAt: new Date(),
         })
-        .where(eq(pluginJobRuns.id, runId));
+        .where(and(
+          eq(pluginJobRuns.id, runId),
+          inArray(pluginJobRuns.status, ["queued", "running"]),
+        ))
+        .returning({ id: pluginJobRuns.id });
+      return rows.length > 0;
     },
 
     /**
-     * Get a run by its primary key.
-     *
-     * @param runId - UUID of the run row
-     * @returns The run row, or `null` if not found
+     * Cancel every non-terminal run owned by a plugin in one durable update.
+     * This reconciles work that cannot survive a runtime restart or unload.
      */
-    async getRunById(
-      runId: string,
-    ): Promise<(typeof pluginJobRuns.$inferSelect) | null> {
-      const rows = await db
-        .select()
-        .from(pluginJobRuns)
-        .where(eq(pluginJobRuns.id, runId));
-      return rows[0] ?? null;
+    async cancelNonTerminalRuns(
+      pluginId: string,
+      reason: string,
+    ): Promise<number> {
+      return cancelRuns(
+        and(
+          eq(pluginJobRuns.pluginId, pluginId),
+          inArray(pluginJobRuns.status, ["queued", "running"]),
+        )!,
+        reason,
+      );
+    },
+
+    /** Cancel every non-terminal job run during server startup recovery. */
+    async cancelAllNonTerminalRuns(reason: string): Promise<number> {
+      return cancelRuns(
+        inArray(pluginJobRuns.status, ["queued", "running"]),
+        reason,
+      );
     },
 
     /**

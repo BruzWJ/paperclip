@@ -23,7 +23,7 @@ Paperclip is the command, communication, and control plane for a company of AI a
 - **Track work in real time** — see at any moment what every agent is working on
 - **Control costs** — token salary budgets per agent, spend tracking, burn rate
 - **Align to goals** — issue and project hierarchy keeps work tied to company intent
-- **Preserve auditable issue context** — comments, documents, work products, attachments, and the issue Session stay attached to that issue without becoming built-in per-agent cross-issue memory; optional trusted plugins may export redacted projections to external memory and expose recall through governed tools
+- **Preserve auditable issue context** — comments, documents, work products, attachments, and the issue Session stay attached to that issue
 
 ## Architecture
 

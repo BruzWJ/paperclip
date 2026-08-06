@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, index, uniqueIndex, boolean } from "drizzle-orm/pg-core";
+import { pgTable, uuid, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { plugins } from "./plugins.js";
 
@@ -10,10 +10,9 @@ import { plugins } from "./plugins.js";
  * operator configuration. Each company can have at most one settings row per
  * plugin.
  *
- * Rows represent explicit overrides from the default company behavior:
- * - no row => plugin is enabled for the company by default
- * - row with `enabled = false` => plugin is disabled for that company
- * - row with `enabled = true` => plugin remains enabled and stores company settings
+ * Rows exist only when a plugin persists company-scoped feature data, such as
+ * trusted local-folder bindings. Plugin installation and readiness are
+ * instance-wide and are not configurable through this table.
  */
 export const pluginCompanySettings = pgTable(
   "plugin_company_settings",
@@ -25,9 +24,7 @@ export const pluginCompanySettings = pgTable(
     pluginId: uuid("plugin_id")
       .notNull()
       .references(() => plugins.id, { onDelete: "cascade" }),
-    enabled: boolean("enabled").notNull().default(true),
     settingsJson: jsonb("settings_json").$type<Record<string, unknown>>().notNull().default({}),
-    lastError: text("last_error"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
 
 const chokidarMock = vi.hoisted(() => ({
   watch: vi.fn(),
@@ -15,6 +16,21 @@ vi.mock("chokidar", () => ({
 import { createPluginDevWatcher, resolvePluginWatchTargets } from "../services/plugin-dev-watcher.js";
 
 const tempDirs: string[] = [];
+
+const TEST_MANIFEST: PaperclipPluginManifestV1 = {
+  id: "acme.example",
+  apiVersion: 1,
+  version: "1.0.0",
+  displayName: "Example",
+  description: "Example plugin",
+  author: "Acme",
+  categories: ["automation"],
+  capabilities: [],
+  entrypoints: {
+    worker: "./dist/worker.js",
+    ui: "./dist/ui",
+  },
+};
 
 beforeEach(() => {
   vi.useRealTimers();
@@ -43,8 +59,6 @@ function writePluginPackage(pluginDir: string): void {
       name: "@acme/example",
       paperclipPlugin: {
         manifest: "./dist/manifest.js",
-        worker: "./dist/worker.js",
-        ui: "./dist/ui",
       },
     }),
   );
@@ -57,7 +71,7 @@ function writePluginPackage(pluginDir: string): void {
 function createLifecycle() {
   const emitter = new EventEmitter();
   return Object.assign(emitter, {
-    restartWorker: vi.fn().mockResolvedValue(undefined),
+    reloadRuntime: vi.fn().mockResolvedValue(undefined),
   });
 }
 
@@ -75,35 +89,25 @@ function installMockFsWatcher() {
 }
 
 describe("resolvePluginWatchTargets", () => {
-  it("watches package metadata plus concrete declared runtime files", () => {
+  it("watches only the worker artifact consumed by a runtime reload", () => {
     const pluginDir = makeTempPluginDir();
     writePluginPackage(pluginDir);
 
-    const targets = resolvePluginWatchTargets(pluginDir);
+    const targets = resolvePluginWatchTargets(pluginDir, TEST_MANIFEST);
 
-    expect(targets).toEqual([
-      { path: path.join(pluginDir, "dist", "manifest.js"), recursive: false, kind: "file" },
-      { path: path.join(pluginDir, "dist", "ui", "index.css"), recursive: false, kind: "file" },
-      { path: path.join(pluginDir, "dist", "ui", "index.js"), recursive: false, kind: "file" },
-      { path: path.join(pluginDir, "dist", "worker.js"), recursive: false, kind: "file" },
-      { path: path.join(pluginDir, "package.json"), recursive: false, kind: "file" },
-    ]);
+    expect(targets).toEqual([path.join(pluginDir, "dist", "worker.js")]);
   });
 
-  it("falls back to dist when package metadata does not declare entrypoints", () => {
+  it("rejects a worker target outside the package root", () => {
     const pluginDir = makeTempPluginDir();
-    mkdirSync(path.join(pluginDir, "dist", "nested"), { recursive: true });
-    writeFileSync(path.join(pluginDir, "package.json"), JSON.stringify({ name: "@acme/example" }));
-    writeFileSync(path.join(pluginDir, "dist", "manifest.js"), "export default {};\n");
-    writeFileSync(path.join(pluginDir, "dist", "nested", "chunk.js"), "export default {};\n");
+    writePluginPackage(pluginDir);
 
-    const targets = resolvePluginWatchTargets(pluginDir);
-
-    expect(targets).toEqual([
-      { path: path.join(pluginDir, "package.json"), recursive: false, kind: "file" },
-      { path: path.join(pluginDir, "dist", "manifest.js"), recursive: false, kind: "file" },
-      { path: path.join(pluginDir, "dist", "nested", "chunk.js"), recursive: false, kind: "file" },
-    ]);
+    expect(() => resolvePluginWatchTargets(pluginDir, {
+      ...TEST_MANIFEST,
+      entrypoints: { worker: "../worker.js" },
+    })).toThrow(
+      "manifest.entrypoints.worker",
+    );
   });
 });
 
@@ -116,33 +120,69 @@ describe("createPluginDevWatcher", () => {
 
     const devWatcher = createPluginDevWatcher(
       lifecycle as never,
-      async (pluginId) => (pluginId === "plugin-1" ? pluginDir : null),
+      async (pluginId) => pluginId === "plugin-1"
+        ? { packagePath: pluginDir, manifest: TEST_MANIFEST }
+        : null,
     );
 
-    lifecycle.emit("plugin.loaded", { pluginId: "plugin-1", pluginKey: "example" });
+    lifecycle.emit("plugin.activated", { pluginId: "plugin-1" });
 
     await vi.waitFor(() => expect(chokidarMock.watch).toHaveBeenCalledTimes(1));
     const [watchedPaths] = chokidarMock.watch.mock.calls[0] ?? [];
     expect(watchedPaths).toContain(path.join(pluginDir, "dist", "worker.js"));
 
-    devWatcher.close();
+    await devWatcher.close();
   });
 
-  it("debounces watched file changes and restarts the plugin worker", async () => {
+  it("does not start a late watcher after the plugin is deactivated", async () => {
+    const pluginDir = makeTempPluginDir();
+    writePluginPackage(pluginDir);
+    installMockFsWatcher();
+    const lifecycle = createLifecycle();
+    let resolveSource!: (source: {
+      packagePath: string;
+      manifest: PaperclipPluginManifestV1;
+    }) => void;
+    const source = new Promise<{
+      packagePath: string;
+      manifest: PaperclipPluginManifestV1;
+    }>((resolve) => {
+      resolveSource = resolve;
+    });
+
+    const devWatcher = createPluginDevWatcher(
+      lifecycle as never,
+      async () => source,
+    );
+    lifecycle.emit("plugin.activated", { pluginId: "plugin-1" });
+    lifecycle.emit("plugin.deactivated", { pluginId: "plugin-1" });
+    resolveSource({ packagePath: pluginDir, manifest: TEST_MANIFEST });
+    await source;
+    await Promise.resolve();
+
+    expect(chokidarMock.watch).not.toHaveBeenCalled();
+    await devWatcher.close();
+  });
+
+  it("debounces watched file changes and reloads the plugin runtime", async () => {
     vi.useFakeTimers();
     const pluginDir = makeTempPluginDir();
     writePluginPackage(pluginDir);
     const { handlers } = installMockFsWatcher();
     const lifecycle = createLifecycle();
 
-    const devWatcher = createPluginDevWatcher(lifecycle as never);
-    devWatcher.watch("plugin-1", pluginDir);
+    const devWatcher = createPluginDevWatcher(
+      lifecycle as never,
+      async () => ({ packagePath: pluginDir, manifest: TEST_MANIFEST }),
+    );
+    lifecycle.emit("plugin.activated", { pluginId: "plugin-1" });
+    await vi.waitFor(() => expect(chokidarMock.watch).toHaveBeenCalledTimes(1));
 
     handlers.all?.("change", path.join(pluginDir, "dist", "worker.js"));
     await vi.advanceTimersByTimeAsync(500);
 
-    expect(lifecycle.restartWorker).toHaveBeenCalledWith("plugin-1");
+    expect(lifecycle.reloadRuntime).toHaveBeenCalledWith("plugin-1");
 
-    devWatcher.close();
+    await devWatcher.close();
   });
 });

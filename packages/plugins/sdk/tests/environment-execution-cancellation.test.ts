@@ -1,18 +1,14 @@
-import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
-import { promisify } from "node:util";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { definePlugin } from "../src/define-plugin.js";
 import {
-  buildCancelEnvironmentShellCommand,
+  definePlugin as defineSdkPlugin,
+  type PluginDefinition,
+} from "../src/define-plugin.js";
+import {
   createEnvironmentExecutionCancellationRegistry,
-  wrapCancellableEnvironmentShellCommand,
 } from "../src/environment-execution-control.js";
 import {
   createRequest,
@@ -27,7 +23,14 @@ import {
 import { createEnvironmentTestHarness } from "../src/testing.js";
 import { startWorkerRpcHost } from "../src/worker-rpc-host.js";
 
-const execFileAsync = promisify(execFile);
+function definePlugin(definition: Omit<PluginDefinition, "onHealth">) {
+  return defineSdkPlugin({
+    ...definition,
+    async onHealth() {
+      return { status: "ok" };
+    },
+  });
+}
 
 const MANIFEST = {
   id: "paperclip.environment-execution-cancellation-test",
@@ -70,26 +73,6 @@ function cancelParams(
     reason: "operator cancelled",
     ...overrides,
   };
-}
-
-async function waitFor(
-  predicate: () => boolean | Promise<boolean>,
-  message: string,
-  timeoutMs = 2_000,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error(message);
-}
-
-function waitForExit(child: ChildProcess): Promise<number | null> {
-  return new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", resolve);
-  });
 }
 
 function startTestWorker(plugin: ReturnType<typeof definePlugin>) {
@@ -234,65 +217,12 @@ describe("environment exact execution cancellation", () => {
     });
   });
 
-  it("cancels one shell process group without stopping a concurrent command", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "paperclip-exact-cancel-"));
-    const cancelledOutput = path.join(root, "cancelled-command-finished");
-    const preservedOutput = path.join(root, "preserved-command-finished");
-    const quote = (value: string) => `'${value.replace(/'/g, `'"'"'`)}'`;
-    const cancelledId = "cancelled-execution";
-    const preservedId = "preserved-execution";
-    const cancelledControl = `/tmp/.paperclip-execution-${Buffer.from(cancelledId).toString("hex")}/pid`;
-    const cancelled = spawn(
-      "sh",
-      [
-        "-c",
-        wrapCancellableEnvironmentShellCommand(
-          cancelledId,
-          `sleep 2; printf cancelled > ${quote(cancelledOutput)}`,
-        ),
-      ],
-      { stdio: "ignore" },
-    );
-    const preserved = spawn(
-      "sh",
-      [
-        "-c",
-        wrapCancellableEnvironmentShellCommand(
-          preservedId,
-          `sleep 0.25; printf preserved > ${quote(preservedOutput)}`,
-        ),
-      ],
-      { stdio: "ignore" },
-    );
-    const cancelledExit = waitForExit(cancelled);
-    const preservedExit = waitForExit(preserved);
-
-    try {
-      await waitFor(
-        async () => access(cancelledControl).then(() => true, () => false),
-        "cancellable command did not publish its exact process identity",
-      );
-      await execFileAsync("sh", [
-        "-c",
-        buildCancelEnvironmentShellCommand(cancelledId),
-      ]);
-      await expect(cancelledExit).resolves.not.toBe(0);
-      await expect(preservedExit).resolves.toBe(0);
-      await expect(access(cancelledOutput)).rejects.toThrow();
-      await expect(readFile(preservedOutput, "utf8")).resolves.toBe("preserved");
-    } finally {
-      cancelled.kill("SIGKILL");
-      preserved.kill("SIGKILL");
-      await rm(root, { recursive: true, force: true });
-    }
-  }, 10_000);
-
   it("fails environment-driver conformance when execution has no exact cancellation hook", () => {
     expect(() =>
       createEnvironmentTestHarness({
         manifest: MANIFEST,
         environmentDriver: {
-          driverKey: "legacy-sandbox",
+          driverKey: "sandbox-without-cancellation",
           async onExecute(): Promise<PluginEnvironmentExecuteResult> {
             return {
               exitCode: 0,
@@ -344,7 +274,8 @@ describe("environment exact execution cancellation", () => {
         supportedMethods: string[];
       }>("initialize", {
         manifest: MANIFEST,
-        config: {},
+        instanceInfo: { instanceId: "test", hostVersion: "0.0.0" },
+        apiVersion: 1,
         databaseNamespace: null,
       });
       expect(initialized.supportedMethods).toContain("environmentExecute");

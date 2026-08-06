@@ -2,7 +2,24 @@ import { describe, expect, it, vi } from "vitest";
 import { canonicalizeMoneyAmount } from "@paperclipai/shared";
 
 import { createTestHarness } from "../src/testing.js";
-import type { Agent, PaperclipPluginManifestV1 } from "../src/types.js";
+import {
+  definePlugin as defineSdkPlugin,
+  type PluginDefinition,
+} from "../src/define-plugin.js";
+import type {
+  Agent,
+  PaperclipPluginManifestV1,
+  PluginBeforePromptInput,
+} from "../src/types.js";
+
+function definePlugin(definition: Omit<PluginDefinition, "onHealth">) {
+  return defineSdkPlugin({
+    ...definition,
+    async onHealth() {
+      return { status: "ok" };
+    },
+  });
+}
 
 const manifest = {
   id: "paperclip.test-actions",
@@ -16,14 +33,105 @@ const manifest = {
   entrypoints: {},
 } satisfies PaperclipPluginManifestV1;
 
+const beforePromptInput = {
+  companyId: "company-1",
+  issueId: "issue-1",
+  sessionId: "session-1",
+  runId: "run-1",
+  agentId: "agent-1",
+  projectId: null,
+  sourceText: "Continue the issue",
+  promptKind: "base",
+  sessionOperation: "new",
+  refId: "ref-1",
+  refOrdinal: 0,
+  segmentOrdinal: 0,
+  sourceMessageId: "msg_source",
+  sourceMessageSeq: 12,
+  contextAccess: {
+    carry_context: false,
+    read_issue_comments: true,
+    read_issue_agent_run: false,
+    list_sub_issues: false,
+    read_sub_issue_comments: false,
+    read_sub_issue_agent_run: false,
+    list_company_issues: false,
+    read_company_issue_comments: false,
+    read_company_issue_agent_run: false,
+  },
+  snapshotHighWaterSeq: 12,
+} satisfies PluginBeforePromptInput;
+
+describe("createTestHarness before-prompt lifecycle", () => {
+  it("requires the install-visible capability and returns the hook result", async () => {
+    const plugin = definePlugin({
+      async setup() {},
+      async onBeforePrompt() {
+        return { prependText: "Plugin prelude" };
+      },
+    });
+    const allowed = createTestHarness({
+      manifest: {
+        ...manifest,
+        capabilities: ["runtime.prompt.observe"],
+      },
+    });
+    await expect(allowed.beforePrompt(plugin, beforePromptInput)).resolves.toEqual({
+      prependText: "Plugin prelude",
+    });
+
+    const denied = createTestHarness({ manifest });
+    await expect(denied.beforePrompt(plugin, beforePromptInput)).rejects.toThrow(
+      "runtime.prompt.observe",
+    );
+  });
+});
+
+describe("createTestHarness plugin entity identity", () => {
+  it("upserts one record per exact type, scope, and nullable external ID", async () => {
+    const harness = createTestHarness({ manifest });
+
+    const first = await harness.ctx.entities.upsert({
+      entityType: "summary",
+      scopeKind: "issue",
+      scopeId: "issue-1",
+      data: { revision: 1 },
+    });
+    const updated = await harness.ctx.entities.upsert({
+      entityType: "summary",
+      scopeKind: "issue",
+      scopeId: "issue-1",
+      data: { revision: 2 },
+    });
+    const otherScope = await harness.ctx.entities.upsert({
+      entityType: "summary",
+      scopeKind: "issue",
+      scopeId: "issue-2",
+      data: { revision: 1 },
+    });
+
+    expect(updated).toMatchObject({
+      id: first.id,
+      createdAt: first.createdAt,
+      externalId: null,
+      data: { revision: 2 },
+    });
+    expect(otherScope.id).not.toBe(first.id);
+    await expect(harness.ctx.entities.list({
+      scopeKind: "issue",
+      scopeId: "issue-1",
+    })).resolves.toEqual([updated]);
+  });
+});
+
 describe("createTestHarness action context", () => {
-  it("passes immutable authenticated actor context and overrides caller company scope", async () => {
+  it("passes one immutable authenticated actor context without rewriting plugin params", async () => {
     const harness = createTestHarness({ manifest });
 
     harness.ctx.actions.register("inspect", async (params, context) => ({
       paramsCompanyId: params.companyId,
       actor: context.actor,
-      companyId: context.companyId,
+      actorCompanyId: context.actor.companyId,
       contextFrozen: Object.isFrozen(context),
       actorFrozen: Object.isFrozen(context.actor),
     }));
@@ -37,7 +145,7 @@ describe("createTestHarness action context", () => {
         runId?: string;
         companyId: string | null;
       };
-      companyId: string | null;
+      actorCompanyId: string | null;
       contextFrozen: boolean;
       actorFrozen: boolean;
     }>(
@@ -52,8 +160,8 @@ describe("createTestHarness action context", () => {
       },
     );
 
-    expect(result.paramsCompanyId).toBe("host-company");
-    expect(result.companyId).toBe("host-company");
+    expect(result.paramsCompanyId).toBe("spoofed-company");
+    expect(result.actorCompanyId).toBe("host-company");
     expect(result.actor).toEqual({
       type: "user",
       userId: "board-user-1",
@@ -65,10 +173,10 @@ describe("createTestHarness action context", () => {
 
   it("keeps one-argument action handlers while requiring an explicit actor", async () => {
     const harness = createTestHarness({ manifest });
-    harness.ctx.actions.register("legacy", async (params) => ({ ok: params.ok }));
+    harness.ctx.actions.register("one-argument", async (params) => ({ ok: params.ok }));
 
     await expect(harness.performAction(
-      "legacy",
+      "one-argument",
       { ok: true },
       { actor: { type: "system", companyId: null } },
     )).resolves.toEqual({ ok: true });
@@ -94,11 +202,67 @@ describe("createTestHarness action context", () => {
   });
 });
 
+describe("createTestHarness invite contract", () => {
+  it("creates, lists, scopes, and revokes invites in memory", async () => {
+    const harness = createTestHarness({
+      manifest: {
+        ...manifest,
+        capabilities: ["access.invites.read", "access.invites.write"],
+      },
+    });
+
+    const created = await harness.ctx.access.invites.create({
+      companyId: "company-1",
+      allowedJoinTypes: "both",
+      humanRole: "viewer",
+      defaultsPayload: { source: "test" },
+      agentMessage: "Join the test company",
+    });
+    expect(created).toMatchObject({
+      companyId: "company-1",
+      source: "plugin_host",
+      state: "active",
+      defaultsPayload: {
+        source: "test",
+        human: { role: "viewer", grants: [] },
+        agentMessage: "Join the test company",
+      },
+    });
+    expect(created.token).toEqual(expect.any(String));
+
+    await expect(harness.ctx.access.invites.list({
+      companyId: "company-2",
+    })).resolves.toEqual({ invites: [], nextOffset: null });
+    await expect(harness.ctx.access.invites.list({
+      companyId: "company-1",
+      state: "active",
+    })).resolves.toMatchObject({
+      invites: [{ id: created.id, state: "active" }],
+      nextOffset: null,
+    });
+
+    await expect(harness.ctx.access.invites.revoke(
+      created.id,
+      "company-2",
+    )).rejects.toThrow("Invite not found");
+    await expect(harness.ctx.access.invites.revoke(
+      created.id,
+      "company-1",
+    )).resolves.toMatchObject({ id: created.id, state: "revoked" });
+    await expect(harness.ctx.access.invites.list({
+      companyId: "company-1",
+      state: "active",
+    })).resolves.toEqual({ invites: [], nextOffset: null });
+  });
+});
+
 describe("createTestHarness issue control plane", () => {
   it("exposes only canonical plugin issue operations and terminalizes a withdrawal", async () => {
     const harness = createTestHarness({
-      manifest,
-      capabilities: ["issues.read", "issues.create", "issues.update", "issues.withdraw"],
+      manifest: {
+        ...manifest,
+        capabilities: ["issues.read", "issues.create", "issues.update", "issues.withdraw"],
+      },
     });
     const now = new Date();
     const owner: Agent = {

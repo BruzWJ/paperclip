@@ -438,7 +438,7 @@ describe("Layout", () => {
   });
 
   it("keeps the app sidebar and shows the settings sidebar in the secondary pane on settings routes", async () => {
-    currentPathname = "/PAP/company/settings/access";
+    currentPathname = "/PAP/company/settings/members";
     mockPluginSlots.slots = [
       {
         type: "page",
@@ -449,7 +449,6 @@ describe("Layout", () => {
         pluginId: "plugin-1",
         pluginKey: "fake-plugin",
         pluginDisplayName: "Fake Plugin",
-        pluginVersion: "1.0.0",
       },
       {
         type: "routeSidebar",
@@ -460,7 +459,6 @@ describe("Layout", () => {
         pluginId: "plugin-1",
         pluginKey: "fake-plugin",
         pluginDisplayName: "Fake Plugin",
-        pluginVersion: "1.0.0",
       },
     ];
     const root = createRoot(container);
@@ -831,7 +829,6 @@ describe("Layout", () => {
       pluginId: "plugin-1",
       pluginKey: "wiki-plugin",
       pluginDisplayName: "Wiki Plugin",
-      pluginVersion: "1.0.0",
     },
     {
       type: "routeSidebar",
@@ -842,7 +839,6 @@ describe("Layout", () => {
       pluginId: "plugin-1",
       pluginKey: "wiki-plugin",
       pluginDisplayName: "Wiki Plugin",
-      pluginVersion: "1.0.0",
     },
   ];
 
@@ -976,7 +972,6 @@ describe("Layout", () => {
         pluginId: "plugin-1",
         pluginKey: "wiki-plugin-a",
         pluginDisplayName: "Wiki Plugin A",
-        pluginVersion: "1.0.0",
       },
       {
         type: "page",
@@ -987,7 +982,6 @@ describe("Layout", () => {
         pluginId: "plugin-2",
         pluginKey: "wiki-plugin-b",
         pluginDisplayName: "Wiki Plugin B",
-        pluginVersion: "1.0.0",
       },
       {
         type: "routeSidebar",
@@ -998,7 +992,6 @@ describe("Layout", () => {
         pluginId: "plugin-1",
         pluginKey: "wiki-plugin-a",
         pluginDisplayName: "Wiki Plugin A",
-        pluginVersion: "1.0.0",
       },
     ];
     const root = createRoot(container);

@@ -52,15 +52,13 @@ export function aliasFromConfigPath(configPath: string | null | undefined): stri
 
 /**
  * Human label for a secret access-event `consumerType`. Runtime consumers are
- * emitted as raw enum values (e.g. `agent_api`, `plugin_worker`) which read
+ * emitted as raw enum values (e.g. `agent_api`) which read
  * poorly when merely capitalized; map the ones that need help explicitly.
  */
 export function consumerTypeLabel(consumerType: SecretAccessEvent["consumerType"]): string {
   switch (consumerType) {
     case "agent_api":
       return "Agent API";
-    case "plugin_worker":
-      return "Plugin worker";
     case "tool_connection":
       return "Tool connection";
     default:

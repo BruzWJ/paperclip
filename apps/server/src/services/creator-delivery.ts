@@ -1271,10 +1271,10 @@ export function createPostgresCreatorDeliveryService(
       )
       .limit(1)
       .then((rows) => rows[0] ?? null);
-    if (!pluginDelivery) {
+    if (!pluginDelivery || !pluginDelivery.pluginInstallationId) {
       throw new PermanentCreatorDeliveryError(
         "plugin_uninstalled",
-        "Plugin creator callback outbox row is missing",
+        "Plugin creator callback installation is unavailable",
       );
     }
     const installation = await db
@@ -1287,12 +1287,6 @@ export function createPostgresCreatorDeliveryService(
       throw new PermanentCreatorDeliveryError(
         "plugin_uninstalled",
         "Plugin creator installation no longer exists",
-      );
-    }
-    if (installation.status === "uninstalled") {
-      throw new PermanentCreatorDeliveryError(
-        "plugin_uninstalled",
-        "Plugin creator installation is uninstalled",
       );
     }
     if (installation.status === "disabled") {

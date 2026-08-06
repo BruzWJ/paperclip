@@ -9,7 +9,7 @@ import {
 } from "@paperclipai/adapter-utils";
 import {
   assertAcpRegistryAgentName,
-  loadConfiguredAcpRegistry,
+  loadAcpxAgentRegistry,
   type AcpAgentRegistry,
 } from "@paperclipai/adapter-utils/acp-subprocess";
 import {
@@ -30,7 +30,7 @@ export interface RegisteredServerAdapterImplementation {
 }
 
 /**
- * An ACPX-configured agent that was intentionally not admitted as an
+ * An ACPX-supplied local candidate that was intentionally not admitted as an
  * executable Paperclip adapter because its disposable local probe or generic
  * dynamic-contract validation failed. This is observability only: it never
  * participates in selection or launch.
@@ -150,7 +150,7 @@ function acpxCandidateDiagnostic(
 }
 
 /**
- * Re-probes ACPX-configured local agents. A short successful-snapshot cache
+ * Re-probes locally installed agents supplied by ACPX's registry. A short successful-snapshot cache
  * prevents every board repaint from opening temporary ACPX-resolved sessions
  * while still making newly configured/authenticated CLIs appear automatically.
  */
@@ -168,7 +168,7 @@ export function refreshAcpxAdapters(input: { force?: boolean } = {}): Promise<vo
   refreshInFlight = (async () => {
     try {
       const cwd = process.cwd();
-      const registry = await loadConfiguredAcpRegistry({ cwd });
+      const registry = await loadAcpxAgentRegistry({ cwd });
       const snapshot = await discoverLocalAcpxAdapterCatalog(cwd, registry);
       const next = new Map<string, RegisteredServerAdapterImplementation>();
       const nextDiagnostics = new Map<string, AcpxAdapterProbeDiagnostic>();
@@ -233,7 +233,7 @@ export function registerServerAdapter(
   _options: RegisterServerAdapterOptions = {},
 ): RegisteredServerAdapterImplementation {
   throw new Error(
-    "Paperclip's agent catalog is supplied exclusively by ACPX; declare the local runtime in ACPX's agents configuration instead of registering an adapter package",
+    "Paperclip discovers compatible local agents automatically; install and authenticate the local CLI instead of registering an adapter package",
   );
 }
 
@@ -280,7 +280,7 @@ export function requireServerAdapterImplementation(
       ? identity.artifactDigest
       : "invalid-identity";
     throw new Error(
-      `Unavailable ACPX adapter implementation: ${adapterType} (${digest})`,
+      `Unavailable local agent implementation: ${adapterType} (${digest})`,
     );
   }
   return implementation.adapter;
@@ -359,11 +359,11 @@ export async function resolveAvailableAdapterModel(
     )
   ).flat();
   if (candidates.length === 0) {
-    throw new Error("Company model id is not available in the current ACPX catalog");
+    throw new Error("Company model id is not available in the current local agent catalog");
   }
   const model = candidates[0]!;
   if (candidates.some((candidate) => !sameAdapterModel(candidate, model))) {
-    throw new Error("Company model id is ambiguous across ACPX agents");
+    throw new Error("Company model id is ambiguous across local agents");
   }
   return model;
 }
@@ -414,6 +414,6 @@ export function findSelectableServerAdapter(type: string): ServerAdapterModule |
 
 export function requireServerAdapter(type: string): ServerAdapterModule {
   const adapter = findActiveServerAdapter(type);
-  if (!adapter) throw new Error(`Unknown ACPX adapter type: ${type}`);
+  if (!adapter) throw new Error(`Unknown local agent type: ${type}`);
   return adapter;
 }

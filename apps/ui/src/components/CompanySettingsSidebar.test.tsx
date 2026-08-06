@@ -281,7 +281,6 @@ describe("CompanySettingsSidebar", () => {
           pluginId: "plugin-1",
           pluginKey: "permissions-extension",
           pluginDisplayName: "Permissions Extension",
-          pluginVersion: "0.1.0",
         },
       ],
       isLoading: false,

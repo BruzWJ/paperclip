@@ -198,6 +198,16 @@ import {
   importMcpJsonSchema,
   toolPolicyTestRequestSchema,
   createToolMcpGatewaySchema,
+  pluginBridgeRequestSchema,
+  pluginConfigRequestSchema,
+  pluginDisableRequestSchema,
+  pluginInstallRequestSchema,
+  pluginJobRunsQuerySchema,
+  pluginListQuerySchema,
+  pluginLocalFolderPathRequestSchema,
+  pluginLogsQuerySchema,
+  pluginUpgradeRequestSchema,
+  PLUGIN_BRIDGE_ERROR_CODES,
 } from "@paperclipai/shared";
 
 type JsonSchema = Record<string, unknown>;
@@ -470,6 +480,20 @@ const ErrorSchema = registry.register(
   "Error",
   z.object({ error: z.string() }),
 );
+
+const PluginBridgeErrorSchema = registry.register(
+  "PluginBridgeError",
+  z.object({
+    code: z.enum(PLUGIN_BRIDGE_ERROR_CODES),
+    message: z.string(),
+    details: z.unknown().optional(),
+  }).strict(),
+);
+
+const pluginBridgeErrorResponse = {
+  description: "Plugin worker bridge failure",
+  content: { "application/json": { schema: PluginBridgeErrorSchema } },
+};
 
 const responses = {
   ok: (schema: z.ZodTypeAny = z.record(z.unknown())) => ({
@@ -867,6 +891,7 @@ const PUBLIC_OPERATIONS = new Set([
   "POST /mcp/gateways/{gatewayPublicId}",
   "GET /api/tool-gateway/gateways/{gatewayId}/mcp",
   "POST /api/tool-gateway/gateways/{gatewayId}/mcp",
+  "POST /api/plugins/{pluginId}/webhooks/{endpointKey}",
 ]);
 
 const BOARD_ONLY_PREFIXES = [
@@ -1019,6 +1044,18 @@ const BOARD_ONLY_OPERATIONS = new Set([
 const INSTANCE_ADMIN_OPERATIONS = new Set([
   "POST /api/companies",
   "POST /api/plugins/install",
+  "DELETE /api/plugins/{pluginId}",
+  "POST /api/plugins/{pluginId}/enable",
+  "POST /api/plugins/{pluginId}/disable",
+  "GET /api/plugins/{pluginId}/logs",
+  "POST /api/plugins/{pluginId}/upgrade",
+  "GET /api/plugins/{pluginId}/config",
+  "POST /api/plugins/{pluginId}/config",
+  "POST /api/plugins/{pluginId}/config/test",
+  "GET /api/plugins/{pluginId}/jobs",
+  "GET /api/plugins/{pluginId}/jobs/{jobId}/runs",
+  "POST /api/plugins/{pluginId}/jobs/{jobId}/trigger",
+  "GET /api/plugins/{pluginId}/dashboard",
   "POST /api/instance/database-backups",
   "POST /api/admin/users/{userId}/promote-instance-admin",
   "POST /api/admin/users/{userId}/demote-instance-admin",
@@ -4939,11 +4976,14 @@ registry.registerPath({
 
 // ─── Plugins ──────────────────────────────────────────────────────────────────
 
+const pluginInstallationParams = z.object({ pluginId: z.string().uuid() });
+
 registry.registerPath({
   method: "get",
   path: "/api/plugins",
   tags: ["plugins"],
   summary: "List installed plugins",
+  request: { query: pluginListQuerySchema },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
@@ -4961,11 +5001,7 @@ registry.registerPath({
   tags: ["plugins"],
   summary: "Install a plugin",
   request: {
-    body: jsonBody(z.object({
-      packageName: z.string(),
-      version: z.string().optional(),
-      isLocalPath: z.boolean().optional(),
-    })),
+    body: jsonBody(pluginInstallRequestSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
@@ -4975,7 +5011,7 @@ registry.registerPath({
   path: "/api/plugins/{pluginId}",
   tags: ["plugins"],
   summary: "Get a plugin",
-  request: { params: z.object({ pluginId: z.string() }) },
+  request: { params: pluginInstallationParams },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
 });
 
@@ -4984,8 +5020,16 @@ registry.registerPath({
   path: "/api/plugins/{pluginId}",
   tags: ["plugins"],
   summary: "Delete a plugin",
-  request: { params: z.object({ pluginId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  request: {
+    params: pluginInstallationParams,
+  },
+  responses: {
+    204: r.noContent,
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+  },
 });
 
 registry.registerPath({
@@ -4993,7 +5037,7 @@ registry.registerPath({
   path: "/api/plugins/{pluginId}/enable",
   tags: ["plugins"],
   summary: "Enable a plugin",
-  request: { params: z.object({ pluginId: z.string() }) },
+  request: { params: pluginInstallationParams },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
@@ -5002,17 +5046,17 @@ registry.registerPath({
   path: "/api/plugins/{pluginId}/disable",
   tags: ["plugins"],
   summary: "Disable a plugin",
-  request: { params: z.object({ pluginId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/plugins/{pluginId}/health",
-  tags: ["plugins"],
-  summary: "Get plugin health",
-  request: { params: z.object({ pluginId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  request: {
+    params: pluginInstallationParams,
+    body: jsonBody(pluginDisableRequestSchema),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+  },
 });
 
 registry.registerPath({
@@ -5020,8 +5064,11 @@ registry.registerPath({
   path: "/api/plugins/{pluginId}/logs",
   tags: ["plugins"],
   summary: "Get plugin logs",
-  request: { params: z.object({ pluginId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  request: {
+    params: pluginInstallationParams,
+    query: pluginLogsQuerySchema,
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
 registry.registerPath({
@@ -5029,44 +5076,58 @@ registry.registerPath({
   path: "/api/plugins/{pluginId}/upgrade",
   tags: ["plugins"],
   summary: "Upgrade a plugin",
-  request: { params: z.object({ pluginId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  request: {
+    params: pluginInstallationParams,
+    body: jsonBody(pluginUpgradeRequestSchema),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+  },
 });
 
 registry.registerPath({
   method: "get",
   path: "/api/plugins/{pluginId}/config",
   tags: ["plugins"],
-  summary: "Get company-scoped plugin config",
+  summary: "Get instance-scoped plugin config",
   request: {
-    params: z.object({ pluginId: z.string() }),
-    query: z.object({ companyId: z.string() }),
+    params: pluginInstallationParams,
   },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
 registry.registerPath({
   method: "post",
   path: "/api/plugins/{pluginId}/config",
   tags: ["plugins"],
-  summary: "Set company-scoped plugin config",
+  summary: "Set instance-scoped plugin config",
   request: {
-    params: z.object({ pluginId: z.string() }),
-    body: jsonBody(z.object({ companyId: z.string(), configJson: z.record(z.unknown()) })),
+    params: pluginInstallationParams,
+    body: jsonBody(pluginConfigRequestSchema),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
 });
 
 registry.registerPath({
   method: "post",
   path: "/api/plugins/{pluginId}/config/test",
   tags: ["plugins"],
-  summary: "Test company-scoped plugin config",
+  summary: "Test instance-scoped plugin config",
   request: {
-    params: z.object({ pluginId: z.string() }),
-    body: jsonBody(z.object({ companyId: z.string(), configJson: z.record(z.unknown()) })),
+    params: pluginInstallationParams,
+    body: jsonBody(pluginConfigRequestSchema),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    502: pluginBridgeErrorResponse,
+  },
 });
 
 registry.registerPath({
@@ -5074,8 +5135,10 @@ registry.registerPath({
   path: "/api/plugins/{pluginId}/jobs",
   tags: ["plugins"],
   summary: "List plugin jobs",
-  request: { params: z.object({ pluginId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  request: {
+    params: pluginInstallationParams,
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
 registry.registerPath({
@@ -5083,8 +5146,11 @@ registry.registerPath({
   path: "/api/plugins/{pluginId}/jobs/{jobId}/runs",
   tags: ["plugins"],
   summary: "List runs for a plugin job",
-  request: { params: z.object({ pluginId: z.string(), jobId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  request: {
+    params: pluginInstallationParams.extend({ jobId: z.string() }),
+    query: pluginJobRunsQuerySchema,
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
 registry.registerPath({
@@ -5092,7 +5158,7 @@ registry.registerPath({
   path: "/api/plugins/{pluginId}/jobs/{jobId}/trigger",
   tags: ["plugins"],
   summary: "Trigger a plugin job",
-  request: { params: z.object({ pluginId: z.string(), jobId: z.string() }) },
+  request: { params: pluginInstallationParams.extend({ jobId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
@@ -5102,9 +5168,14 @@ registry.registerPath({
   tags: ["plugins"],
   summary: "Deliver an external webhook payload to a plugin",
   request: {
-    params: z.object({ pluginId: z.string(), endpointKey: z.string() }),
+    params: pluginInstallationParams.extend({ endpointKey: z.string() }),
   },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    404: r.notFound,
+    502: pluginBridgeErrorResponse,
+  },
 });
 
 registry.registerPath({
@@ -5112,70 +5183,32 @@ registry.registerPath({
   path: "/api/plugins/{pluginId}/dashboard",
   tags: ["plugins"],
   summary: "Get plugin dashboard data",
-  request: { params: z.object({ pluginId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/plugins/{pluginId}/bridge/data",
-  tags: ["plugins"],
-  summary: "Send data via plugin bridge",
-  request: {
-    params: z.object({ pluginId: z.string() }),
-    body: jsonBody(z.object({
-      key: z.string(),
-      companyId: z.string().optional(),
-      params: z.record(z.unknown()).optional(),
-    })),
-  },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/plugins/{pluginId}/bridge/action",
-  tags: ["plugins"],
-  summary: "Send action via plugin bridge",
-  request: {
-    params: z.object({ pluginId: z.string() }),
-    body: jsonBody(z.object({
-      key: z.string(),
-      companyId: z.string().optional(),
-      params: z.record(z.unknown()).optional(),
-    })),
-  },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  request: { params: pluginInstallationParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
 registry.registerPath({
   method: "post",
   path: "/api/plugins/{pluginId}/data/{key}",
   tags: ["plugins"],
-  summary: "Get plugin data by key (URL-keyed bridge)",
+  summary: "Get plugin data by key",
   request: {
-    params: z.object({ pluginId: z.string(), key: z.string() }),
-    body: jsonBody(z.object({
-      companyId: z.string().optional(),
-      params: z.record(z.unknown()).optional(),
-    })),
+    params: pluginInstallationParams.extend({ key: z.string() }),
+    body: jsonBody(pluginBridgeRequestSchema),
   },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  responses: { 200: r.ok(), 401: r.unauthorized, 502: pluginBridgeErrorResponse },
 });
 
 registry.registerPath({
   method: "post",
   path: "/api/plugins/{pluginId}/actions/{key}",
   tags: ["plugins"],
-  summary: "Invoke a plugin action (URL-keyed bridge)",
+  summary: "Invoke a plugin action",
   request: {
-    params: z.object({ pluginId: z.string(), key: z.string() }),
-    body: jsonBody(z.object({
-      companyId: z.string().optional(),
-      params: z.record(z.unknown()).optional(),
-    })),
+    params: pluginInstallationParams.extend({ key: z.string() }),
+    body: jsonBody(pluginBridgeRequestSchema),
   },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  responses: { 200: r.ok(), 401: r.unauthorized, 502: pluginBridgeErrorResponse },
 });
 
 // ─── Instance database backups ────────────────────────────────────────────────
@@ -5280,7 +5313,12 @@ registry.registerPath({
     params: z.object({ companyId: z.string() }),
     body: jsonBody(externalObjectSummariesBodySchema),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+  },
 });
 
 registry.registerPath({
@@ -5471,20 +5509,6 @@ registry.registerPath({
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
-// ─── Plugin bridge stream ─────────────────────────────────────────────────────
-
-registry.registerPath({
-  method: "get",
-  path: "/api/plugins/{pluginId}/bridge/stream/{channel}",
-  tags: ["plugins"],
-  summary: "Subscribe to a plugin bridge SSE stream",
-  request: { params: z.object({ pluginId: z.string(), channel: z.string() }) },
-  responses: {
-    200: { description: "Server-sent event stream (text/event-stream)" },
-    401: r.unauthorized,
-  },
-});
-
 // ─── Plugin UI static ─────────────────────────────────────────────────────────
 
 registry.registerPath({
@@ -5492,7 +5516,7 @@ registry.registerPath({
   path: "/api/_plugins/{pluginId}/ui/{filePath}",
   tags: ["plugins"],
   summary: "Serve plugin UI static file",
-  request: { params: z.object({ pluginId: z.string(), filePath: z.string() }) },
+  request: { params: pluginInstallationParams.extend({ filePath: z.string() }) },
   responses: { 200: { description: "Static file content" }, 404: r.notFound },
 });
 
@@ -5977,13 +6001,6 @@ registerCurrentRoute({
   body: updateDocumentAnnotationThreadSchema,
 });
 
-const pluginLocalFolderRequestSchema = z.object({
-  path: z.string().min(1),
-  access: z.enum(["read", "readWrite"]).optional(),
-  requiredDirectories: z.array(z.string()).optional(),
-  requiredFiles: z.array(z.string()).optional(),
-});
-
 for (const route of [
   ["get", "/api/plugins/{pluginId}/companies/{companyId}/local-folders", "List plugin local folders"],
   ["get", "/api/plugins/{pluginId}/companies/{companyId}/local-folders/{folderKey}/status", "Get plugin local folder status"],
@@ -5995,7 +6012,9 @@ for (const route of [
     path: route[1],
     tags: ["plugins"],
     summary: route[2],
-    ...(route[0] === "post" || route[0] === "put" ? { body: pluginLocalFolderRequestSchema } : {}),
+    ...(route[0] === "post" || route[0] === "put"
+      ? { body: pluginLocalFolderPathRequestSchema }
+      : {}),
   });
 }
 

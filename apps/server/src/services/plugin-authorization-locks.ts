@@ -6,32 +6,26 @@ import {
 import { and, eq } from "drizzle-orm";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 
-export interface PluginCompanySettingLockInput {
+interface PluginCompanySettingLockInput {
   pluginInstallationId: string;
   companyId: string;
 }
 
-export interface PluginCompanySettingLockScope {
+export interface PluginInstallationCompanyLockScope {
   installation: typeof plugins.$inferSelect | null;
   company: typeof companies.$inferSelect | null;
+}
+
+interface PluginCompanySettingLockScope
+  extends PluginInstallationCompanyLockScope {
   companySetting: typeof pluginCompanySettings.$inferSelect | null;
 }
 
-/**
- * Shared serialization prefix for company-setting writes and plugin issue
- * owner mutations:
- *
- *   installation -> company -> plugin_company_settings
- *
- * A company row is locked even when the setting row is absent. That makes an
- * absent setting serializable with a concurrent first insert. Callers that
- * need agent ownership then acquire company agents and their exact current
- * revisions after this helper returns.
- */
-export async function lockPluginCompanySettingScopeInTransaction(
+/** Lock the instance installation and target company in canonical order. */
+export async function lockPluginInstallationCompanyScopeInTransaction(
   tx: IssueSessionDbTransaction,
   input: PluginCompanySettingLockInput,
-): Promise<PluginCompanySettingLockScope> {
+): Promise<PluginInstallationCompanyLockScope> {
   const installation = await tx
     .select()
     .from(plugins)
@@ -45,6 +39,26 @@ export async function lockPluginCompanySettingScopeInTransaction(
     .where(eq(companies.id, input.companyId))
     .for("update")
     .then((rows) => rows[0] ?? null);
+
+  return { installation, company };
+}
+
+/**
+ * Serialization scope for company-setting writes:
+ *
+ *   installation -> company -> plugin_company_settings
+ *
+ * A company row is locked even when the setting row is absent, so absence is
+ * serialized with a concurrent first insert.
+ */
+export async function lockPluginCompanySettingScopeInTransaction(
+  tx: IssueSessionDbTransaction,
+  input: PluginCompanySettingLockInput,
+): Promise<PluginCompanySettingLockScope> {
+  const scope = await lockPluginInstallationCompanyScopeInTransaction(
+    tx,
+    input,
+  );
 
   const companySetting = await tx
     .select()
@@ -61,5 +75,5 @@ export async function lockPluginCompanySettingScopeInTransaction(
     .for("update")
     .then((rows) => rows[0] ?? null);
 
-  return { installation, company, companySetting };
+  return { ...scope, companySetting };
 }

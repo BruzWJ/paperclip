@@ -39,13 +39,8 @@ export function renderSdkUiComponent<TProps>(
   }
 
   const createElement = registry?.react?.createElement;
-  if (typeof createElement === "function") {
-    return createElement(component, props as Record<string, unknown>);
+  if (typeof createElement !== "function") {
+    throw missingBridgeValueError("react.createElement");
   }
-
-  if (typeof component === "function") {
-    return component(props);
-  }
-
-  throw new Error(`Paperclip plugin UI component "${name}" is not callable`);
+  return createElement(component, props as Record<string, unknown>);
 }

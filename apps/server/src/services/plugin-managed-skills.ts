@@ -18,12 +18,13 @@ const MANAGED_SKILL_RESOURCE_KIND = "skill";
 
 interface PluginManagedSkillServiceOptions {
   pluginId: string;
-  pluginKey: string;
-  manifest?: PaperclipPluginManifestV1 | null;
+  manifest: PaperclipPluginManifestV1;
 }
 
 function pluginKeySlug(pluginKey: string) {
-  return normalizeAgentUrlKey(pluginKey) ?? "plugin";
+  const slug = normalizeAgentUrlKey(pluginKey);
+  if (!slug) throw new Error(`Invalid plugin key: ${pluginKey}`);
+  return slug;
 }
 
 function canonicalSkillKey(pluginKey: string, skillKey: string) {
@@ -157,10 +158,11 @@ export function pluginManagedSkillService(
   db: Db,
   options: PluginManagedSkillServiceOptions,
 ) {
+  const pluginKey = options.manifest.id;
   const skills = companySkillService(db);
 
   function declarationFor(skillKey: string) {
-    const declaration = options.manifest?.skills?.find((skill) => skill.skillKey === skillKey);
+    const declaration = options.manifest.skills?.find((skill) => skill.skillKey === skillKey);
     if (!declaration) {
       throw notFound(`Managed skill declaration not found: ${skillKey}`);
     }
@@ -185,7 +187,7 @@ export function pluginManagedSkillService(
     declaration: PluginManagedSkillDeclaration,
     skillId: string,
   ) {
-    const defaultsJson = buildSkillDefaults(options.pluginKey, declaration);
+    const defaultsJson = buildSkillDefaults(pluginKey, declaration);
     const existing = await getBinding(companyId, declaration.skillKey);
     if (existing) {
       if (
@@ -210,7 +212,7 @@ export function pluginManagedSkillService(
       .values({
         companyId,
         pluginId: options.pluginId,
-        pluginKey: options.pluginKey,
+        pluginKey,
         resourceKind: MANAGED_SKILL_RESOURCE_KIND,
         resourceKey: declaration.skillKey,
         resourceId: skillId,
@@ -230,7 +232,7 @@ export function pluginManagedSkillService(
     declaration: PluginManagedSkillDeclaration,
   ): Promise<PluginManagedSkillResolution["defaultDrift"]> {
     if (!skill) return null;
-    const declaredFiles = buildDeclaredSkillFiles(options.pluginKey, declaration);
+    const declaredFiles = buildDeclaredSkillFiles(pluginKey, declaration);
     const currentFiles: Record<string, string | null> = {};
     const paths = new Set([
       ...Object.keys(declaredFiles),
@@ -262,7 +264,7 @@ export function pluginManagedSkillService(
     status: PluginManagedSkillResolution["status"],
   ) {
     return resolution(
-      options.pluginKey,
+      pluginKey,
       companyId,
       declaration,
       skill,
@@ -277,7 +279,7 @@ export function pluginManagedSkillService(
     mode: "reconcile" | "reset",
   ) {
     const beforeByKey = mode === "reconcile"
-      ? await skills.getByKey(companyId, canonicalSkillKey(options.pluginKey, declaration.skillKey))
+      ? await skills.getByKey(companyId, canonicalSkillKey(pluginKey, declaration.skillKey))
       : null;
     if (beforeByKey) {
       await upsertBinding(companyId, declaration, beforeByKey.id);
@@ -285,11 +287,11 @@ export function pluginManagedSkillService(
     }
     const results = await skills.importPackageFiles(
       companyId,
-      buildPackageFiles(options.pluginKey, declaration),
+      buildPackageFiles(pluginKey, declaration),
       { onConflict: "replace" },
     );
     const imported = results.find((result) =>
-      result.skill.key === canonicalSkillKey(options.pluginKey, declaration.skillKey)
+      result.skill.key === canonicalSkillKey(pluginKey, declaration.skillKey)
       || result.originalSlug === (declaration.slug ?? declaration.skillKey)
       || result.originalSlug === declaration.skillKey
     )?.skill ?? results[0]?.skill ?? null;
@@ -325,7 +327,7 @@ export function pluginManagedSkillService(
       entityType: "company_skill",
       entityId: imported.skill.id,
       details: {
-        sourcePluginKey: options.pluginKey,
+        sourcePluginKey: pluginKey,
         managedResourceKey: declaration.skillKey,
         status: imported.status,
       },
@@ -344,7 +346,7 @@ export function pluginManagedSkillService(
       entityType: "company_skill",
       entityId: imported.skill.id,
       details: {
-        sourcePluginKey: options.pluginKey,
+        sourcePluginKey: pluginKey,
         managedResourceKey: declaration.skillKey,
       },
     });

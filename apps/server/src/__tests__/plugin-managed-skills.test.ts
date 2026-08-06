@@ -109,7 +109,6 @@ function service(
 ) {
   return pluginManagedSkillService(db, {
     pluginId,
-    pluginKey,
     manifest: pluginManifest,
   });
 }

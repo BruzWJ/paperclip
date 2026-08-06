@@ -9,8 +9,8 @@
  *
  * 2. **Runtime activation** — `activatePlugin()` wires up a loaded plugin
  *    with all runtime services: resolves its entrypoint, builds
- *    capability-gated host handlers, spawns a worker process, syncs job
- *    declarations, registers event subscriptions, and discovers tools.
+ *    capability-gated host binding, spawns a worker process, and syncs job
+ *    declarations.
  *
  * 3. **Shutdown** — `shutdownAll()` gracefully stops all active workers
  *    and unregisters runtime hooks.
@@ -18,57 +18,44 @@
  * @see PLUGIN_SPEC.md §10 — Package Contract
  * @see PLUGIN_SPEC.md §12 — Process Model
  */
-import { existsSync } from "node:fs";
-import { readFile, rm, stat } from "node:fs/promises";
+import { existsSync, realpathSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
-import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import type { Db } from "@paperclipai/db";
 import type {
+  DeploymentExposure,
   PaperclipPluginManifestV1,
-  PluginLauncherDeclaration,
+  PluginInstallRequest,
+  PluginInstallSource,
   PluginRecord,
-  PluginUiSlotDeclaration,
 } from "@paperclipai/shared";
+import type { HostClientHandlers } from "@paperclipai/plugin-sdk";
 import { logger } from "../middleware/logger.js";
-import { pluginManifestValidator } from "./plugin-manifest-validator.js";
-import { pluginCapabilityValidator } from "./plugin-capability-validator.js";
-import { pluginRegistryService } from "./plugin-registry.js";
-import type { PluginWorkerManager, WorkerStartOptions, WorkerToHostHandlers } from "./plugin-worker-manager.js";
-import type { PluginEventBus } from "./plugin-event-bus.js";
+import { parsePluginManifest } from "./plugin-manifest-validator.js";
+import {
+  installPluginInTransaction,
+  lockPluginInstallationInTransaction,
+  lockPluginRegistryClaimsInTransaction,
+  pluginRegistryService,
+} from "./plugin-registry.js";
+import type { PluginWorkerManager, WorkerStartOptions } from "./plugin-worker-manager.js";
 import type { PluginJobScheduler } from "./plugin-job-scheduler.js";
 import type { PluginJobStore } from "./plugin-job-store.js";
-import type { PluginToolDispatcher } from "./plugin-tool-dispatcher.js";
 import type { PluginLifecycleManager } from "./plugin-lifecycle.js";
 import { pluginDatabaseService } from "./plugin-database.js";
+import { validatePluginInstanceConfig } from "./plugin-config-validator.js";
+import { isPathContained, resolvePluginPath } from "./plugin-paths.js";
 
 const execFileAsync = promisify(execFile);
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/**
- * Default managed directory for npm-installed plugin packages.
- *
- * @see PLUGIN_SPEC.md §8.1 — On-Disk Layout
- */
-export const DEFAULT_LOCAL_PLUGIN_DIR = path.join(
-  os.homedir(),
-  ".paperclip",
-  "plugins",
-);
-
-const DEV_TSX_LOADER_PATH = path.resolve(__dirname, "../../../../packages/cli/node_modules/tsx/dist/loader.mjs");
 
 export function buildPluginWorkerEnv(input: {
-  instanceInfo: { deploymentExposure?: string | null };
+  instanceInfo: { deploymentExposure: DeploymentExposure };
 }): Record<string, string> {
   return {
-    PAPERCLIP_DEPLOYMENT_EXPOSURE: input.instanceInfo.deploymentExposure ?? "",
+    PAPERCLIP_DEPLOYMENT_EXPOSURE: input.instanceInfo.deploymentExposure,
   };
 }
 
@@ -79,7 +66,7 @@ export function buildPluginWorkerEnv(input: {
 /**
  * A requested plugin package after its manifest has been loaded and validated.
  */
-export interface ResolvedPluginPackage {
+interface ResolvedPluginPackage {
   /** Absolute path to the root of the npm package directory. */
   packagePath: string;
   /** The npm package name as declared in package.json. */
@@ -90,11 +77,9 @@ export interface ResolvedPluginPackage {
   source: PluginInstallSource;
   /** The parsed and validated manifest. */
   manifest: PaperclipPluginManifestV1;
+  /** Isolated host-managed root, or null for an operator-owned local path. */
+  managedInstallRoot: string | null;
 }
-
-export type PluginInstallSource =
-  | "local-filesystem"  // ~/.paperclip/plugins/ local directory
-  | "npm";              // npm package installed into the managed plugin directory
 
 type ParsedSemver = {
   major: number;
@@ -103,10 +88,13 @@ type ParsedSemver = {
   prerelease: string[];
 };
 
-function getDeclaredPageRoutePaths(manifest: PaperclipPluginManifestV1): string[] {
-  return (manifest.ui?.slots ?? [])
-    .filter((slot): slot is PluginUiSlotDeclaration => slot.type === "page" && typeof slot.routePath === "string" && slot.routePath.length > 0)
-    .map((slot) => slot.routePath!);
+function assertPluginConfigCompatible(
+  config: Record<string, unknown>,
+  schema: PaperclipPluginManifestV1["instanceConfigSchema"],
+): void {
+  if (!validatePluginInstanceConfig(config, schema).valid) {
+    throw new Error("Stored plugin configuration does not match the installed manifest");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -116,15 +104,12 @@ function getDeclaredPageRoutePaths(manifest: PaperclipPluginManifestV1): string[
 /**
  * Options for the plugin loader service.
  */
-export interface PluginLoaderOptions {
-  /**
-   * Path where npm plugin packages are installed and managed.
-   * Defaults to ~/.paperclip/plugins/
-   */
-  localPluginDir?: string;
+interface PluginLoaderOptions {
+  /** Instance-scoped root for immutable host-managed npm installations. */
+  localPluginDir: string;
 
-  /** Optional direct Postgres connection used for plugin DDL migrations. */
-  migrationDb?: Db;
+  /** Explicit Postgres authority used for plugin DDL migrations. */
+  migrationDb: Db;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,31 +119,23 @@ export interface PluginLoaderOptions {
 /**
  * Options for installing a single plugin package.
  */
-export interface PluginInstallOptions {
-  /**
-   * npm package name to install (e.g. "paperclip-plugin-linear" or "@acme/plugin-linear").
-   * Either packageName or localPath must be set.
-   */
-  packageName?: string;
-
-  /**
-   * Absolute or relative path to a local plugin directory for development installs.
-   * When set, the plugin is loaded from this path without npm install.
-   * Either packageName or localPath must be set.
-   */
-  localPath?: string;
-
-  /**
-   * Version specifier passed to npm install (e.g. "^1.2.0", "latest").
-   * Ignored when localPath is set.
-   */
+export interface PluginUpgradeOptions {
+  /** Target npm version. Local-source upgrades always reload their source path. */
   version?: string;
+}
 
-  /**
-   * Plugin install directory where packages are managed.
-   * Defaults to the localPluginDir configured on the service.
-   */
-  installDir?: string;
+/**
+ * Fully validated upgrade candidate that has not changed durable installation
+ * authority yet. Exactly one terminal operation is allowed: `commit()` makes
+ * the candidate canonical, while `discard()` removes its unreferenced managed
+ * package tree.
+ */
+interface PreparedPluginUpgrade {
+  readonly previousPlugin: PluginRecord;
+  readonly oldManifest: PaperclipPluginManifestV1;
+  readonly newManifest: PaperclipPluginManifestV1;
+  commit(): Promise<void>;
+  discard(): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -168,9 +145,9 @@ export interface PluginInstallOptions {
 /**
  * Runtime services passed to the loader for plugin initialization.
  *
- * When these are provided, the loader can fully activate plugins (spawn
- * workers, register event subscriptions, sync jobs, register tools).
- * When omitted, the loader can install packages but cannot activate them.
+ * Once bound, the loader can fully activate plugins (spawn workers, bind
+ * host services, and sync jobs). Runtime operations fail closed before this
+ * complete graph is bound.
  *
  * @see PLUGIN_SPEC.md §8.3 — Install Process
  * @see PLUGIN_SPEC.md §12 — Process Model
@@ -178,24 +155,22 @@ export interface PluginInstallOptions {
 export interface PluginRuntimeServices {
   /** Worker process manager for spawning and managing plugin workers. */
   workerManager: PluginWorkerManager;
-  /** Event bus for registering plugin event subscriptions. */
-  eventBus: PluginEventBus;
   /** Job scheduler for registering plugin cron jobs. */
   jobScheduler: PluginJobScheduler;
   /** Job store for syncing manifest job declarations to the DB. */
   jobStore: PluginJobStore;
-  /** Tool dispatcher for registering plugin-contributed agent tools. */
-  toolDispatcher: PluginToolDispatcher;
-  /** Lifecycle manager for state transitions and worker lifecycle events. */
+  /** Lifecycle manager for state transitions after activation failures. */
   lifecycleManager: PluginLifecycleManager;
   /**
-   * Factory that creates worker-to-host RPC handlers for a given plugin.
+   * Factory that creates one activation-scoped host binding for a plugin.
    *
-   * The returned handlers service worker→host calls (e.g. state.get,
-   * events.emit, config.get). Each plugin gets its own set of handlers
-   * scoped to its capabilities and plugin ID.
+   * Its handlers service worker→host calls; its disposer releases every
+   * resource created with that exact activation.
    */
-  buildHostHandlers: (pluginId: string, manifest: PaperclipPluginManifestV1) => WorkerToHostHandlers;
+  buildHostBinding: (
+    pluginId: string,
+    manifest: PaperclipPluginManifestV1,
+  ) => PluginHostBinding;
   /**
    * Host instance information passed to the worker during initialization.
    * Includes the instance ID and host version.
@@ -203,8 +178,14 @@ export interface PluginRuntimeServices {
   instanceInfo: {
     instanceId: string;
     hostVersion: string;
-    deploymentExposure?: "private" | "public";
+    deploymentExposure: DeploymentExposure;
   };
+}
+
+/** One activation-scoped worker-to-host RPC surface and its exact cleanup. */
+interface PluginHostBinding {
+  handlers: HostClientHandlers;
+  dispose(): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -217,27 +198,9 @@ export interface PluginRuntimeServices {
  * Contains the plugin record, activation status, and any error that
  * occurred during the process.
  */
-export interface PluginLoadResult {
-  /** The plugin record from the database. */
-  plugin: PluginRecord;
-  /** Whether the plugin was successfully activated. */
-  success: boolean;
-  /** Error message if activation failed. */
-  error?: string;
-  /** Which subsystems were registered during activation. */
-  registered: {
-    /** True if the worker process was started. */
-    worker: boolean;
-    /** Number of event subscriptions registered (from manifest event declarations). */
-    eventSubscriptions: number;
-    /** Number of job declarations synced to the database. */
-    jobs: number;
-    /** Number of webhook endpoints declared in manifest. */
-    webhooks: number;
-    /** Number of agent tools registered. */
-    tools: number;
-  };
-}
+type PluginLoadResult =
+  | { plugin: PluginRecord; success: true }
+  | { plugin: PluginRecord; success: false; error: string };
 
 /**
  * Result of activating all ready plugins at server startup.
@@ -251,18 +214,6 @@ export interface PluginLoadAllResult {
   failed: number;
   /** Per-plugin results. */
   results: PluginLoadResult[];
-}
-
-/**
- * Normalized UI contribution metadata extracted from a plugin manifest.
- *
- * The host serves all plugin UI bundles from the manifest's `entrypoints.ui`
- * directory and currently expects the bundle entry module to be `index.js`.
- */
-export interface PluginUiContributionMetadata {
-  uiEntryFile: string;
-  slots: PluginUiSlotDeclaration[];
-  launchers: PluginLauncherDeclaration[];
 }
 
 // ---------------------------------------------------------------------------
@@ -280,36 +231,26 @@ export interface PluginLoader {
    * 4. Reject incompatible plugin API versions.
    * 5. Validate manifest capabilities.
    * 6. Persist install record in Postgres.
-   * 7. Return the resolved plugin package for the caller to use.
+   * 7. Return the persisted installation record.
    *
    * Worker spawning and lifecycle management are handled by the caller
    * (pluginLifecycleManager and the server startup orchestration).
    *
    * @see PLUGIN_SPEC.md §8.3 — Install Process
    */
-  installPlugin(options: PluginInstallOptions): Promise<ResolvedPluginPackage>;
+  installPlugin(options: PluginInstallRequest): Promise<PluginRecord>;
 
   /**
-   * Upgrade an already-installed plugin to a newer version.
-   *
-   * Similar to installPlugin, but:
-   * 1. Requires the plugin to already exist in the database.
-   * 2. Uses the existing packageName if not provided in options.
-   * 3. Updates the existing plugin record instead of creating a new one.
-   * 4. Returns the old and new manifests for capability comparison.
+   * Resolve and validate an upgrade without changing the durable installation.
+   * The lifecycle manager first prepares the candidate, then fences and drains
+   * the old runtime before revoking it and committing the replacement manifest.
    *
    * @see PLUGIN_SPEC.md §25.3 — Upgrade Lifecycle
    */
-  upgradePlugin(pluginId: string, options: Omit<PluginInstallOptions, "installDir">): Promise<{
-    oldManifest: PaperclipPluginManifestV1;
-    newManifest: PaperclipPluginManifestV1;
-    resolved: ResolvedPluginPackage;
-  }>;
-
-  /**
-   * Check whether a plugin API version is supported by this host.
-   */
-  isSupportedApiVersion(apiVersion: number): boolean;
+  prepareUpgrade(
+    pluginId: string,
+    options: PluginUpgradeOptions,
+  ): Promise<PreparedPluginUpgrade>;
 
   /**
    * Remove runtime-managed on-disk install artifacts for a plugin.
@@ -318,11 +259,6 @@ export interface PluginLoader {
    * source checkouts outside that directory are intentionally left alone.
    */
   cleanupInstallArtifacts(plugin: PluginRecord): Promise<void>;
-
-  /**
-   * Get the local plugin directory this loader is configured to use.
-   */
-  getLocalPluginDir(): string;
 
   // -----------------------------------------------------------------------
   // Runtime initialization (requires PluginRuntimeServices)
@@ -333,8 +269,7 @@ export interface PluginLoader {
    *
    * The server creates the loader first so the lifecycle manager can own that
    * exact instance, then completes the lifecycle/dispatcher graph and binds it
-   * here before exposing runtime plugin operations. Callers that only install
-   * or validate packages do not call this method.
+   * here before exposing any plugin operation.
    */
   bindRuntimeServices(services: PluginRuntimeServices): void;
 
@@ -347,11 +282,10 @@ export interface PluginLoader {
    * 2. Spawns the worker process via the worker manager.
    * 3. Syncs job declarations from the manifest to the `plugin_jobs` table.
    * 4. Registers the plugin with the job scheduler.
-   * 5. Registers event subscriptions declared in the manifest (scoped via the event bus).
-   * 6. Registers agent tools from the manifest via the tool dispatcher.
    *
-   * Plugins that fail to activate are marked as `error` in the database.
-   * Activation failures are non-fatal — other plugins continue loading.
+   * Activation failures are returned to the lifecycle manager, which owns the
+   * persisted `ready` → `error` transition. One failure does not prevent the
+   * remaining ready plugins from being attempted.
    *
    * **Requires** `PluginRuntimeServices` to have been bound.
    * Throws if runtime services are not available.
@@ -364,14 +298,11 @@ export interface PluginLoader {
   loadAll(): Promise<PluginLoadAllResult>;
 
   /**
-   * Activate a single plugin that is in `installed` or `ready` status.
+   * Activate a single plugin that is in `ready` status.
    *
    * Used after a fresh install (POST /api/plugins/install) or after
    * enabling a previously disabled plugin. Performs the same subsystem
    * registration as `loadAll()` but for a single plugin.
-   *
-   * If the plugin is in `installed` status, transitions it to `ready`
-   * via the lifecycle manager before spawning the worker.
    *
    * **Requires** `PluginRuntimeServices` to have been bound.
    *
@@ -383,8 +314,9 @@ export interface PluginLoader {
   loadSingle(pluginId: string): Promise<PluginLoadResult>;
 
   /**
-   * Deactivate a single plugin — stop its worker and unregister all
-   * subsystem registrations (events, jobs, tools).
+   * Deactivate a single plugin — fence job admission, drain and stop its
+   * worker, finish job unregistration, and dispose the exact host binding
+   * created for the activation.
    *
    * Used during plugin disable, uninstall, and before upgrade. Does NOT
    * change the plugin's status in the database — that is the caller's
@@ -393,11 +325,9 @@ export interface PluginLoader {
    * **Requires** `PluginRuntimeServices` to have been provided at construction.
    *
    * @param pluginId - UUID of the plugin to deactivate
-   * @param pluginKey - The plugin key (manifest ID) for scoped cleanup
-   *
    * @see PLUGIN_SPEC.md §8.5 — Uninstall Process
    */
-  unloadSingle(pluginId: string, pluginKey: string): Promise<void>;
+  unloadSingle(pluginId: string): Promise<void>;
 
   /**
    * Stop all managed plugin workers. Called during server shutdown.
@@ -410,10 +340,6 @@ export interface PluginLoader {
    */
   shutdownAll(): Promise<void>;
 
-  /**
-   * Whether runtime services are available for plugin activation.
-   */
-  hasRuntimeServices(): boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -421,21 +347,29 @@ export interface PluginLoader {
 // ---------------------------------------------------------------------------
 
 /**
- * Read and parse a package.json from a directory path.
- * Returns null if no package.json exists.
+ * Read and parse the required package.json from a directory path.
  */
 async function readPackageJson(
   dir: string,
-): Promise<Record<string, unknown> | null> {
+): Promise<Record<string, unknown>> {
   const pkgPath = path.join(dir, "package.json");
-  if (!existsSync(pkgPath)) return null;
-
+  let raw: string;
   try {
-    const raw = await readFile(pkgPath, "utf-8");
-    return JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return null;
+    raw = await readFile(pkgPath, "utf-8");
+  } catch (err) {
+    throw new Error(`Unable to read plugin package.json at ${pkgPath}: ${String(err)}`);
   }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`Malformed plugin package.json at ${pkgPath}: ${String(err)}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`Plugin package.json must contain a JSON object: ${pkgPath}`);
+  }
+  return parsed as Record<string, unknown>;
 }
 
 /**
@@ -449,37 +383,25 @@ async function readPackageJson(
 function resolveManifestPath(
   packageRoot: string,
   pkgJson: Record<string, unknown>,
-): string | null {
+): string {
   const paperclipPlugin = pkgJson["paperclipPlugin"];
   if (
-    paperclipPlugin !== null &&
-    typeof paperclipPlugin === "object" &&
-    !Array.isArray(paperclipPlugin)
+    paperclipPlugin === null
+    || typeof paperclipPlugin !== "object"
+    || Array.isArray(paperclipPlugin)
   ) {
-    const manifestRelPath = (paperclipPlugin as Record<string, unknown>)[
-      "manifest"
-    ];
-    if (typeof manifestRelPath === "string") {
-      // NOTE: the resolved path is returned as-is even if the file does not yet
-      // exist on disk (e.g. the package has not been built).  Callers MUST guard
-      // with existsSync() before passing the path to loadManifestFromPath().
-      return path.resolve(packageRoot, manifestRelPath);
-    }
+    throw new Error("package.json must declare paperclipPlugin.manifest");
   }
 
-  // Fallback: look for dist/manifest.js as a convention
-  const conventionalPath = path.join(packageRoot, "dist", "manifest.js");
-  if (existsSync(conventionalPath)) {
-    return conventionalPath;
+  const manifestRelPath = (paperclipPlugin as Record<string, unknown>)["manifest"];
+  if (typeof manifestRelPath !== "string" || manifestRelPath.trim().length === 0) {
+    throw new Error("package.json must declare paperclipPlugin.manifest");
   }
 
-  // Fallback: look for manifest.js at package root
-  const rootManifestPath = path.join(packageRoot, "manifest.js");
-  if (existsSync(rootManifestPath)) {
-    return rootManifestPath;
-  }
-
-  return null;
+  return resolvePluginPath(packageRoot, manifestRelPath, {
+    label: "paperclipPlugin.manifest",
+    kind: "file",
+  });
 }
 
 function parseSemver(version: string): ParsedSemver | null {
@@ -544,37 +466,6 @@ function compareSemver(left: string, right: string): number {
   return 0;
 }
 
-function getMinimumHostVersion(manifest: PaperclipPluginManifestV1): string | undefined {
-  return manifest.minimumHostVersion ?? manifest.minimumPaperclipVersion;
-}
-
-/**
- * Extract UI contribution metadata from a manifest for route serialization.
- *
- * Returns `null` when the plugin does not declare any UI slots or launchers.
- * Launcher declarations are aggregated from both the legacy top-level
- * `launchers` field and the preferred `ui.launchers` field.
- */
-export function getPluginUiContributionMetadata(
-  manifest: PaperclipPluginManifestV1,
-): PluginUiContributionMetadata | null {
-  const slots = manifest.ui?.slots ?? [];
-  const launchers = [
-    ...(manifest.launchers ?? []),
-    ...(manifest.ui?.launchers ?? []),
-  ];
-
-  if (slots.length === 0 && launchers.length === 0) {
-    return null;
-  }
-
-  return {
-    uiEntryFile: "index.js",
-    slots,
-    launchers,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -584,33 +475,28 @@ export function getPluginUiContributionMetadata(
  *
  * The loader is responsible for explicit plugin installation and runtime
  * activation. It reads the requested package from a local path or npm,
- * validates its manifest, registers it in the database, and — when runtime
- * services are bound — initialises worker processes, event
- * subscriptions, job schedules, webhook endpoints, and agent tools.
+ * validates its manifest, registers it in the database, and initialises worker
+ * processes and job schedules through the required runtime service graph.
  *
- * Usage (install only):
- * ```ts
- * const loader = pluginLoader(db);
- *
- * // Install a specific plugin
- * const resolved = await loader.installPlugin({
- *   packageName: "paperclip-plugin-linear",
- *   version: "^1.0.0",
- * });
- * ```
- *
- * Usage (full runtime activation at server startup):
+ * Usage:
  * ```ts
  * const loader = pluginLoader(db, loaderOpts);
  * loader.bindRuntimeServices({
  *   workerManager,
- *   eventBus,
  *   jobScheduler,
  *   jobStore,
- *   toolDispatcher,
  *   lifecycleManager,
- *   buildHostHandlers: (pluginId, manifest) => ({ ... }),
+ *   buildHostBinding: (pluginId, manifest) => ({
+ *     handlers: { ... },
+ *     async dispose() {},
+ *   }),
  *   instanceInfo: { instanceId: "inst-1", hostVersion: "1.0.0" },
+ * });
+ *
+ * const plugin = await loader.installPlugin({
+ *   source: "npm",
+ *   packageName: "paperclip-plugin-linear",
+ *   version: "^1.0.0",
  * });
  *
  * // Load all ready plugins at startup
@@ -630,41 +516,151 @@ export function getPluginUiContributionMetadata(
  */
 export function pluginLoader(
   db: Db,
-  options: PluginLoaderOptions = {},
+  options: PluginLoaderOptions,
 ): PluginLoader {
-  const {
-    localPluginDir = DEFAULT_LOCAL_PLUGIN_DIR,
-    migrationDb = db,
-  } = options;
+  const localPluginDir = path.resolve(options.localPluginDir);
+  const migrationDb = options.migrationDb;
 
   const registry = pluginRegistryService(db);
-  const manifestValidator = pluginManifestValidator();
-  const capabilityValidator = pluginCapabilityValidator();
   const log = logger.child({ service: "plugin-loader" });
   let runtimeServices: PluginRuntimeServices | undefined;
+  const activeHostBindings = new Map<string, {
+    pluginKey: string;
+    binding: PluginHostBinding;
+    handlers: HostClientHandlers;
+    revoke(): void;
+  }>();
 
-  async function assertPageRoutePathsAvailable(manifest: PaperclipPluginManifestV1): Promise<void> {
-    const requestedRoutePaths = getDeclaredPageRoutePaths(manifest);
-    if (requestedRoutePaths.length === 0) return;
+  function createRevocableHostBinding(
+    pluginId: string,
+    pluginKey: string,
+    binding: PluginHostBinding,
+  ) {
+    let revoked = false;
+    const handlers = Object.fromEntries(
+      Object.entries(binding.handlers).map(([method, handler]) => {
+        const invoke = handler as unknown as (
+          ...args: unknown[]
+        ) => Promise<unknown>;
+        return [
+          method,
+          async (...args: unknown[]) => {
+            if (revoked) {
+              throw new Error(
+                `Plugin host binding is revoked: ${pluginId} (${pluginKey})`,
+              );
+            }
+            return invoke(...args);
+          },
+        ];
+      }),
+    ) as HostClientHandlers;
 
-    const uniqueRequested = new Set(requestedRoutePaths);
-    if (uniqueRequested.size !== requestedRoutePaths.length) {
-      throw new Error(`Plugin ${manifest.id} declares duplicate page routePath values`);
+    return {
+      pluginKey,
+      binding,
+      handlers,
+      revoke() {
+        revoked = true;
+      },
+    };
+  }
+
+  function requireRuntimeServices(operation: string): PluginRuntimeServices {
+    if (!runtimeServices) {
+      throw new Error(
+        `Cannot ${operation}: PluginRuntimeServices have not been bound. `
+          + "Call bindRuntimeServices() before runtime activation.",
+      );
+    }
+    return runtimeServices;
+  }
+
+  async function disposeHostBinding(pluginId: string): Promise<void> {
+    const active = activeHostBindings.get(pluginId);
+    if (!active) return;
+    await active.binding.dispose();
+    activeHostBindings.delete(pluginId);
+  }
+
+  async function unloadPluginRuntime(pluginId: string): Promise<void> {
+    const services = requireRuntimeServices("unload plugin runtime");
+    const activeBinding = activeHostBindings.get(pluginId);
+    const pluginKey = activeBinding?.pluginKey;
+    const errors: unknown[] = [];
+    let unregisterAttempt: Promise<void> | null = null;
+
+    // unregisterPlugin closes job admission synchronously, then waits for
+    // already-admitted executions through their terminal DB writes before it
+    // cancels residual rows. Start that fence before stopping the worker, but
+    // attach a rejection handler immediately and do not await it yet.
+    try {
+      unregisterAttempt = services.jobScheduler.unregisterPlugin(pluginId);
+      void unregisterAttempt.catch(() => undefined);
+    } catch (err) {
+      errors.push(err);
     }
 
-    const installedPlugins = await registry.listInstalled();
-    for (const plugin of installedPlugins) {
-      if (plugin.pluginKey === manifest.id) continue;
-      const installedManifest = plugin.manifestJson as PaperclipPluginManifestV1 | null;
-      if (!installedManifest) continue;
-      const installedRoutePaths = new Set(getDeclaredPageRoutePaths(installedManifest));
-      const conflictingRoute = requestedRoutePaths.find((routePath) => installedRoutePaths.has(routePath));
-      if (conflictingRoute) {
-        throw new Error(
-          `Plugin ${manifest.id} routePath "${conflictingRoute}" conflicts with installed plugin ${plugin.pluginKey}`,
-        );
+    try {
+      if (services.workerManager.getWorker(pluginId)) {
+        await services.workerManager.stopWorker(pluginId);
+      }
+    } catch (err) {
+      errors.push(err);
+    }
+
+    // The binding remains available while accepted worker handlers drain.
+    // Once the bounded stop attempt finishes, revoke synchronously before
+    // awaiting scheduler teardown or disposing the binding, including on
+    // forced failure.
+    activeBinding?.revoke();
+
+    if (unregisterAttempt) {
+      try {
+        await unregisterAttempt;
+      } catch (err) {
+        errors.push(err);
       }
     }
+    try {
+      await disposeHostBinding(pluginId);
+    } catch (err) {
+      errors.push(err);
+    }
+
+    if (errors.length > 0) {
+      throw new AggregateError(
+        errors,
+        `Failed to completely unload plugin runtime ${pluginId}`,
+      );
+    }
+    log.info({ pluginId, pluginKey }, "plugin-loader: plugin runtime unloaded");
+  }
+
+  async function updateManifestWithCompatibleConfig(
+    pluginId: string,
+    manifest: PaperclipPluginManifestV1,
+    update: { packageName: string; packagePath: string },
+  ): Promise<void> {
+    await db.transaction(async (tx) => {
+      const locked = await lockPluginInstallationInTransaction(tx, pluginId);
+      if (!locked) {
+        throw new Error(`Plugin installation is unavailable: ${pluginId}`);
+      }
+      await lockPluginRegistryClaimsInTransaction(tx, manifest, pluginId);
+      const txDb = tx as unknown as Db;
+      const txRegistry = pluginRegistryService(txDb);
+      const configRow = await txRegistry.getConfig(pluginId);
+      assertPluginConfigCompatible(
+        configRow?.configJson ?? {},
+        manifest.instanceConfigSchema,
+      );
+      await txRegistry.update(pluginId, {
+        packageName: update.packageName,
+        packagePath: update.packagePath,
+        manifest,
+      });
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -686,133 +682,118 @@ export function pluginLoader(
    * @returns The resolved package and validated manifest.
    */
   async function fetchAndValidate(
-    installOptions: PluginInstallOptions,
+    installOptions: PluginInstallRequest,
   ): Promise<ResolvedPluginPackage> {
-    const { packageName, localPath, version, installDir } = installOptions;
+    const hostVersion = requireRuntimeServices("validate plugin package").instanceInfo.hostVersion;
+    let managedInstallRoot: string | null = null;
 
-    if (!packageName && !localPath) {
-      throw new Error("Either packageName or localPath must be provided");
-    }
+    try {
+      let resolvedPackagePath: string;
 
-    const targetInstallDir = installDir ?? localPluginDir;
-
-    // Step 1 & 2: Resolve and install package
-    let resolvedPackagePath: string;
-    let resolvedPackageName: string;
-
-    if (localPath) {
-      // Local path install — validate the directory exists
-      const absLocalPath = path.resolve(localPath);
-      if (!existsSync(absLocalPath)) {
-        throw new Error(`Local plugin path does not exist: ${absLocalPath}`);
-      }
-      resolvedPackagePath = absLocalPath;
-      const pkgJson = await readPackageJson(absLocalPath);
-      resolvedPackageName =
-        typeof pkgJson?.["name"] === "string"
-          ? pkgJson["name"]
-          : path.basename(absLocalPath);
-
-      log.info(
-        { localPath: absLocalPath, packageName: resolvedPackageName },
-        "plugin-loader: fetching plugin from local path",
-      );
-    } else {
-      // npm install
-      const spec = version ? `${packageName}@${version}` : packageName!;
-
-      log.info(
-        { spec, installDir: targetInstallDir },
-        "plugin-loader: fetching plugin from npm",
-      );
-
-      try {
-        // Use execFile (not exec) to avoid shell injection from package name/version.
-        // --ignore-scripts prevents preinstall/install/postinstall hooks from
-        // executing arbitrary code on the host before manifest validation.
-        await execFileAsync(
-          "npm",
-          ["install", spec, "--prefix", targetInstallDir, "--save", "--ignore-scripts"],
-          { timeout: 120_000 }, // 2 minute timeout for npm install
-        );
-      } catch (err) {
-        throw new Error(`npm install failed for ${spec}: ${String(err)}`);
-      }
-
-      // Resolve the package path after installation
-      const nodeModulesPath = path.join(targetInstallDir, "node_modules");
-      resolvedPackageName = packageName!;
-
-      // Handle scoped packages
-      if (resolvedPackageName.startsWith("@")) {
-        const [scope, name] = resolvedPackageName.split("/");
-        resolvedPackagePath = path.join(nodeModulesPath, scope!, name!);
+      if (installOptions.source === "local") {
+        if (!path.isAbsolute(installOptions.path)) {
+          throw new Error("Local plugin path must be absolute");
+        }
+        if (!existsSync(installOptions.path)) {
+          throw new Error(`Local plugin path does not exist: ${installOptions.path}`);
+        }
+        resolvedPackagePath = realpathSync(installOptions.path);
       } else {
-        resolvedPackagePath = path.join(nodeModulesPath, resolvedPackageName);
+        const spec = installOptions.version
+          ? `${installOptions.packageName}@${installOptions.version}`
+          : installOptions.packageName;
+        await mkdir(localPluginDir, { recursive: true });
+        managedInstallRoot = await mkdtemp(path.join(localPluginDir, "install-"));
+
+        log.info(
+          { spec, installRoot: managedInstallRoot },
+          "plugin-loader: fetching plugin from npm",
+        );
+
+        try {
+          // A candidate gets its own immutable dependency tree. It cannot
+          // alter any installed plugin before validation and persistence.
+          await execFileAsync(
+            "npm",
+            ["install", "--prefix", managedInstallRoot, "--save", "--ignore-scripts", "--", spec],
+            { timeout: 120_000 },
+          );
+        } catch (err) {
+          throw new Error(`npm install failed for ${spec}: ${String(err)}`);
+        }
+
+        resolvedPackagePath = resolveManagedInstallPackageDir(
+          managedInstallRoot,
+          installOptions.packageName,
+        );
+        if (!existsSync(resolvedPackagePath)) {
+          throw new Error(
+            `Package directory not found after installation: ${resolvedPackagePath}`,
+          );
+        }
+        resolvedPackagePath = realpathSync(resolvedPackagePath);
       }
 
-      if (!existsSync(resolvedPackagePath)) {
+      const pkgJson = await readPackageJson(resolvedPackagePath);
+      const declaredPackageName = pkgJson["name"];
+      const declaredPackageVersion = pkgJson["version"];
+      if (typeof declaredPackageName !== "string" || declaredPackageName.trim().length === 0) {
+        throw new Error(`Plugin package.json must declare a nonblank name: ${resolvedPackagePath}`);
+      }
+      if (
+        installOptions.source === "npm"
+        && declaredPackageName !== installOptions.packageName
+      ) {
         throw new Error(
-          `Package directory not found after installation: ${resolvedPackagePath}`,
+          `Requested package name '${installOptions.packageName}' does not match package.json name '${declaredPackageName}'`,
         );
       }
-    }
+      if (typeof declaredPackageVersion !== "string" || !parseSemver(declaredPackageVersion)) {
+        throw new Error(`Plugin package.json must declare a valid semver version: ${resolvedPackagePath}`);
+      }
 
-    // Step 3: Read and validate plugin manifest
-    // Note: this.loadManifest (used via current context)
-    const pkgJson = await readPackageJson(resolvedPackagePath);
-    if (!pkgJson) throw new Error(`Missing package.json at ${resolvedPackagePath}`);
+      const manifestPath = resolveManifestPath(resolvedPackagePath, pkgJson);
+      const manifest = await loadManifestFromPath(manifestPath);
+      if (manifest.version !== declaredPackageVersion) {
+        throw new Error(
+          `Plugin manifest version '${manifest.version}' does not match package.json version '${declaredPackageVersion}'`,
+        );
+      }
 
-    const manifestPath = resolveManifestPath(resolvedPackagePath, pkgJson);
-    if (!manifestPath || !existsSync(manifestPath)) {
-      throw new Error(
-        `Package ${resolvedPackageName} at ${resolvedPackagePath} does not appear to be a Paperclip plugin (no manifest found). Build the package before installing it.`,
-      );
-    }
+      if (installOptions.source === "local") {
+        log.info(
+          { path: resolvedPackagePath, packageName: declaredPackageName },
+          "plugin-loader: fetching plugin from local path",
+        );
+      }
 
-    const manifest = await loadManifestFromPath(manifestPath);
-
-    // Step 4: Reject incompatible plugin API versions
-    if (!manifestValidator.getSupportedVersions().includes(manifest.apiVersion)) {
-      throw new Error(
-        `Plugin ${manifest.id} declares apiVersion ${manifest.apiVersion} which is not supported by this host. ` +
-          `Supported versions: ${manifestValidator.getSupportedVersions().join(", ")}`,
-      );
-    }
-
-    // Step 5: Validate manifest capabilities are consistent
-    const capResult = capabilityValidator.validateManifestCapabilities(manifest);
-    if (!capResult.allowed) {
-      throw new Error(
-        `Plugin ${manifest.id} manifest has inconsistent capabilities. ` +
-          `Missing required capabilities for declared features: ${capResult.missing.join(", ")}`,
-      );
-    }
-
-    await assertPageRoutePathsAvailable(manifest);
-
-    // Step 6: Reject plugins that require a newer host than the running server
-    const minimumHostVersion = getMinimumHostVersion(manifest);
-    const hostVersion = runtimeServices?.instanceInfo.hostVersion;
-    if (minimumHostVersion && hostVersion) {
-      if (compareSemver(hostVersion, minimumHostVersion) < 0) {
+      const minimumHostVersion = manifest.minimumHostVersion;
+      if (minimumHostVersion && compareSemver(hostVersion, minimumHostVersion) < 0) {
         throw new Error(
           `Plugin ${manifest.id} requires host version ${minimumHostVersion} or newer, ` +
             `but this server is running ${hostVersion}`,
         );
       }
+
+      return {
+        packagePath: resolvedPackagePath,
+        packageName: declaredPackageName,
+        version: declaredPackageVersion,
+        source: installOptions.source,
+        manifest,
+        managedInstallRoot,
+      };
+    } catch (err) {
+      if (managedInstallRoot) {
+        await rm(managedInstallRoot, { recursive: true, force: true }).catch((cleanupError) => {
+          log.warn(
+            { installRoot: managedInstallRoot, err: cleanupError },
+            "plugin-loader: failed to discard rejected npm candidate",
+          );
+        });
+      }
+      throw err;
     }
-
-    // Use the version declared in the manifest (required field per the spec)
-    const resolvedVersion = manifest.version;
-
-    return {
-      packagePath: resolvedPackagePath,
-      packageName: resolvedPackageName,
-      version: resolvedVersion,
-      source: localPath ? "local-filesystem" : "npm",
-      manifest,
-    };
   }
 
   /**
@@ -830,60 +811,17 @@ export function pluginLoader(
       const manifestStat = await stat(manifestPath);
       manifestUrl.searchParams.set("mtime", String(Math.trunc(manifestStat.mtimeMs)));
       const mod = await import(manifestUrl.href) as Record<string, unknown>;
-      // The manifest may be the default export or the module itself
-      raw = mod["default"] ?? mod;
+      if (!("default" in mod)) {
+        throw new Error("Manifest module must provide a default export");
+      }
+      raw = mod["default"];
     } catch (err) {
       throw new Error(
         `Failed to load manifest module at ${manifestPath}: ${String(err)}`,
       );
     }
 
-    return manifestValidator.parseOrThrow(raw);
-  }
-
-  async function loadManifestFromPackageRoot(
-    packageRoot: string,
-  ): Promise<PaperclipPluginManifestV1 | null> {
-    const pkgJson = await readPackageJson(packageRoot);
-    if (!pkgJson) return null;
-
-    const manifestPath = resolveManifestPath(packageRoot, pkgJson);
-    if (!manifestPath || !existsSync(manifestPath)) return null;
-
-    return loadManifestFromPath(manifestPath);
-  }
-
-  async function refreshPluginManifestFromPackage(
-    plugin: PluginRecord,
-    packageRoot: string,
-  ): Promise<PluginRecord> {
-    const manifest = await loadManifestFromPackageRoot(packageRoot);
-    if (!manifest) {
-      throw new Error(`Plugin package ${plugin.packageName} no longer exposes a Paperclip manifest`);
-    }
-    if (manifest.id !== plugin.pluginKey) {
-      throw new Error(
-        `Plugin manifest ID '${manifest.id}' does not match installed plugin '${plugin.pluginKey}'`,
-      );
-    }
-
-    if (JSON.stringify(manifest) === JSON.stringify(plugin.manifestJson)) {
-      return plugin;
-    }
-
-    await registry.update(plugin.id, {
-      packageName: plugin.packageName,
-      version: manifest.version,
-      manifest,
-    });
-
-    return {
-      ...plugin,
-      version: manifest.version,
-      apiVersion: manifest.apiVersion,
-      categories: manifest.categories,
-      manifestJson: manifest,
-    };
+    return parsePluginManifest(raw);
   }
 
   // -------------------------------------------------------------------------
@@ -895,38 +833,60 @@ export function pluginLoader(
     // installPlugin
     // -----------------------------------------------------------------------
 
-    async installPlugin(installOptions: PluginInstallOptions): Promise<ResolvedPluginPackage> {
+    async installPlugin(installOptions: PluginInstallRequest): Promise<PluginRecord> {
       const resolved = await fetchAndValidate(installOptions);
       const manifest = resolved.manifest;
+      const initialStatus = validatePluginInstanceConfig(
+        {},
+        manifest.instanceConfigSchema,
+      ).valid
+        ? "ready"
+        : "disabled";
 
-      // Step 6: Persist install record and apply plugin-owned schema migrations
-      // in one database transaction. If migration validation fails, the plugin
-      // row, namespace record, migration ledger, and created schema all roll back.
-      const installDb = manifest.database ? migrationDb : db;
-      await installDb.transaction(async (tx) => {
-        const txDb = tx as unknown as Db;
-        const txRegistry = pluginRegistryService(txDb);
-        const installed = await txRegistry.install(
-          {
-            packageName: resolved.packageName,
-            packagePath: resolved.source === "local-filesystem" ? resolved.packagePath : undefined,
-          },
-          manifest,
-        );
-
-        if (!installed) {
-          throw new Error(`Plugin install did not return a registry row: ${manifest.id}`);
-        }
-
-        if (manifest.database) {
-          await pluginDatabaseService(txDb).applyMigrations(
-            installed.id,
+      let plugin: PluginRecord;
+      try {
+        // Only a fully validated package becomes canonical. The registry row
+        // and plugin-owned migrations commit together; a rejected candidate's
+        // isolated npm tree is discarded below.
+        const installDb = manifest.database ? migrationDb : db;
+        plugin = await installDb.transaction(async (tx) => {
+          const txDb = tx as unknown as Db;
+          const installed = await installPluginInTransaction(
+            tx,
+            {
+              packageName: resolved.packageName,
+              packagePath: resolved.packagePath,
+              source: resolved.source,
+              status: initialStatus,
+            },
             manifest,
-            resolved.packagePath,
-            { persistFailure: false },
           );
+
+          if (!installed) {
+            throw new Error(`Plugin install did not return a registry row: ${manifest.id}`);
+          }
+
+          if (manifest.database) {
+            await pluginDatabaseService(txDb).applyMigrations(
+              installed.id,
+              manifest,
+              resolved.packagePath,
+              { persistFailure: false },
+            );
+          }
+          return installed;
+        });
+      } catch (err) {
+        if (resolved.managedInstallRoot) {
+          await rm(resolved.managedInstallRoot, { recursive: true, force: true }).catch((cleanupError) => {
+            log.warn(
+              { installRoot: resolved.managedInstallRoot, err: cleanupError },
+              "plugin-loader: failed to discard uncommitted npm installation",
+            );
+          });
         }
-      });
+        throw err;
+      }
 
       log.info(
         {
@@ -934,115 +894,140 @@ export function pluginLoader(
           packageName: resolved.packageName,
           version: resolved.version,
           capabilities: manifest.capabilities,
+          status: plugin.status,
         },
         "plugin-loader: plugin installed successfully",
       );
 
-      return resolved;
+      return plugin;
     },
 
     // -----------------------------------------------------------------------
-    // upgradePlugin
+    // prepareUpgrade
     // -----------------------------------------------------------------------
 
     /**
-     * Upgrade an already-installed plugin to a newer version.
+     * Prepare an already-installed plugin upgrade without changing its
+     * authoritative registry row.
      *
      * This method:
      * 1. Fetches and validates the new plugin package using `fetchAndValidate`.
      * 2. Ensures the new manifest ID matches the existing plugin ID for safety.
-     * 3. Updates the plugin record in the registry with the new version and manifest.
+     * 3. Returns one candidate that can be committed only after runtime drain.
      *
      * @param pluginId - The UUID of the plugin to upgrade.
-     * @param upgradeOptions - Options for the upgrade (packageName, localPath, version).
+     * @param upgradeOptions - Optional target version for managed npm installs.
      * @returns The old and new manifests, along with the resolved package.
      * @throws {Error} If the plugin is not found or if the new manifest ID differs.
      */
-    async upgradePlugin(
+    async prepareUpgrade(
       pluginId: string,
-      upgradeOptions: Omit<PluginInstallOptions, "installDir">,
-    ): Promise<{
-      oldManifest: PaperclipPluginManifestV1;
-      newManifest: PaperclipPluginManifestV1;
-      resolved: ResolvedPluginPackage;
-    }> {
-      const plugin = (await registry.getById(pluginId)) as {
-        id: string;
-        packageName: string;
-        packagePath: string | null;
-        manifestJson: PaperclipPluginManifestV1;
-      } | null;
+      upgradeOptions: PluginUpgradeOptions,
+    ): Promise<PreparedPluginUpgrade> {
+      const plugin = await registry.getById(pluginId);
       if (!plugin) throw new Error(`Plugin not found: ${pluginId}`);
+      const previousPlugin = plugin;
 
+      if (!path.isAbsolute(plugin.packagePath)) {
+        throw new Error(`Plugin installation package root is not absolute: ${pluginId}`);
+      }
+      if (!existsSync(plugin.packagePath)) {
+        throw new Error(`Plugin package root does not exist: ${plugin.packagePath}`);
+      }
+      const persistedPackageRoot = realpathSync(plugin.packagePath);
       const oldManifest = plugin.manifestJson;
-      const {
-        packageName = plugin.packageName,
-        // For local-path installs, fall back to the stored packagePath so
-        // `upgradePlugin` can re-read the manifest from disk without needing
-        // the caller to re-supply the path every time.
-        localPath = plugin.packagePath ?? undefined,
-        version,
-      } = upgradeOptions;
+      if (plugin.source === "local" && upgradeOptions.version !== undefined) {
+        throw new Error("A target version cannot be specified for a local-source plugin upgrade");
+      }
 
       log.info(
-        { pluginId, packageName, version, localPath },
+        {
+          pluginId,
+          packageName: plugin.packageName,
+          version: upgradeOptions.version,
+          source: plugin.source,
+        },
         "plugin-loader: upgrading plugin",
       );
 
-      // 1. Fetch/Install the new version
-      const resolved = await fetchAndValidate({
-        packageName,
-        localPath,
-        version,
-        installDir: localPluginDir,
-      });
+      let candidate: ResolvedPluginPackage | null = null;
+      try {
+        candidate = await fetchAndValidate(plugin.source === "npm"
+          ? {
+              source: "npm",
+              packageName: plugin.packageName,
+              version: upgradeOptions.version,
+            }
+          : {
+              source: "local",
+              path: persistedPackageRoot,
+            });
+        const newManifest = candidate.manifest;
 
-      const newManifest = resolved.manifest;
+        if (newManifest.id !== oldManifest.id) {
+          throw new Error(
+            `Upgrade failed: new manifest ID '${newManifest.id}' does not match existing plugin ID '${oldManifest.id}'`,
+          );
+        }
 
-      // 2. Validate it's the same plugin ID
-      if (newManifest.id !== oldManifest.id) {
-        throw new Error(
-          `Upgrade failed: new manifest ID '${newManifest.id}' does not match existing plugin ID '${oldManifest.id}'`,
+        const oldCaps = new Set(oldManifest.capabilities);
+        const escalated = newManifest.capabilities.filter((capability) =>
+          !oldCaps.has(capability)
         );
+        if (escalated.length > 0) {
+          log.warn(
+            { pluginId, escalated, oldVersion: oldManifest.version, newVersion: newManifest.version },
+            "plugin-loader: upgrade rejected capability escalation",
+          );
+          throw new Error(
+            `Upgrade for "${pluginId}" introduces unsupported capability escalation: ${escalated.join(", ")}`,
+          );
+        }
+
+        let disposition: "prepared" | "committed" | "discarded" = "prepared";
+        return {
+          previousPlugin,
+          oldManifest,
+          newManifest,
+          async commit() {
+            if (disposition !== "prepared") {
+              throw new Error(
+                `Plugin upgrade candidate is already ${disposition}: ${pluginId}`,
+              );
+            }
+            await updateManifestWithCompatibleConfig(pluginId, newManifest, {
+              packageName: candidate!.packageName,
+              packagePath: candidate!.packagePath,
+            });
+            disposition = "committed";
+          },
+          async discard() {
+            if (disposition === "discarded") return;
+            if (disposition !== "prepared") {
+              throw new Error(
+                `Committed plugin upgrade candidate cannot be discarded: ${pluginId}`,
+              );
+            }
+            if (candidate!.managedInstallRoot) {
+              await rm(candidate!.managedInstallRoot, {
+                recursive: true,
+                force: true,
+              });
+            }
+            disposition = "discarded";
+          },
+        };
+      } catch (error) {
+        if (candidate?.managedInstallRoot) {
+          await rm(candidate.managedInstallRoot, { recursive: true, force: true }).catch((cleanupError) => {
+            log.warn(
+              { installRoot: candidate?.managedInstallRoot, err: cleanupError },
+              "plugin-loader: failed to discard rejected upgrade candidate",
+            );
+          });
+        }
+        throw error;
       }
-
-      // 3. Detect capability escalation — new capabilities not in the old manifest
-      const oldCaps = new Set(oldManifest.capabilities ?? []);
-      const newCaps = newManifest.capabilities ?? [];
-      const escalated = newCaps.filter((c) => !oldCaps.has(c));
-
-      if (escalated.length > 0) {
-        log.warn(
-          { pluginId, escalated, oldVersion: oldManifest.version, newVersion: newManifest.version },
-          "plugin-loader: upgrade introduces new capabilities — requires admin approval",
-        );
-        throw new Error(
-          `Upgrade for "${pluginId}" introduces new capabilities that require approval: ${escalated.join(", ")}. ` +
-            `The previous version declared [${[...oldCaps].join(", ")}]. ` +
-            `Please review and approve the capability escalation before upgrading.`,
-        );
-      }
-
-      // 4. Update the existing record
-      await registry.update(pluginId, {
-        packageName: resolved.packageName,
-        version: resolved.version,
-        manifest: newManifest,
-      });
-
-      return {
-        oldManifest,
-        newManifest,
-        resolved,
-      };
-    },
-
-    // -----------------------------------------------------------------------
-    // isSupportedApiVersion
-    // -----------------------------------------------------------------------
-
-    isSupportedApiVersion(apiVersion: number): boolean {
-      return manifestValidator.getSupportedVersions().includes(apiVersion);
     },
 
     // -----------------------------------------------------------------------
@@ -1050,51 +1035,15 @@ export function pluginLoader(
     // -----------------------------------------------------------------------
 
     async cleanupInstallArtifacts(plugin: PluginRecord): Promise<void> {
-      const managedTargets = new Set<string>();
-      const managedNodeModulesDir = resolveManagedInstallPackageDir(localPluginDir, plugin.packageName);
-      const directManagedDir = path.join(localPluginDir, plugin.packageName);
-
-      managedTargets.add(managedNodeModulesDir);
-      if (isPathInsideDir(directManagedDir, localPluginDir)) {
-        managedTargets.add(directManagedDir);
+      if (plugin.source === "local") {
+        return;
       }
-      if (plugin.packagePath && isPathInsideDir(plugin.packagePath, localPluginDir)) {
-        managedTargets.add(path.resolve(plugin.packagePath));
-      }
-
-      const packageJsonPath = path.join(localPluginDir, "package.json");
-      if (existsSync(packageJsonPath)) {
-        try {
-          await execFileAsync(
-            "npm",
-            ["uninstall", plugin.packageName, "--prefix", localPluginDir, "--ignore-scripts"],
-            { timeout: 120_000 },
-          );
-        } catch (err) {
-          log.warn(
-            {
-              pluginId: plugin.id,
-              pluginKey: plugin.pluginKey,
-              packageName: plugin.packageName,
-              err: err instanceof Error ? err.message : String(err),
-            },
-            "plugin-loader: npm uninstall failed during cleanup, falling back to direct removal",
-          );
-        }
-      }
-
-      for (const target of managedTargets) {
-        if (!existsSync(target)) continue;
-        await rm(target, { recursive: true, force: true });
-      }
-    },
-
-    // -----------------------------------------------------------------------
-    // getLocalPluginDir
-    // -----------------------------------------------------------------------
-
-    getLocalPluginDir(): string {
-      return localPluginDir;
+      const installRoot = resolveManagedInstallRoot(
+        localPluginDir,
+        plugin.packagePath,
+        plugin.packageName,
+      );
+      await rm(installRoot, { recursive: true, force: true });
     },
 
     // -----------------------------------------------------------------------
@@ -1109,14 +1058,6 @@ export function pluginLoader(
     },
 
     // -----------------------------------------------------------------------
-    // hasRuntimeServices
-    // -----------------------------------------------------------------------
-
-    hasRuntimeServices(): boolean {
-      return runtimeServices !== undefined;
-    },
-
-    // -----------------------------------------------------------------------
     // loadAll
     // -----------------------------------------------------------------------
 
@@ -1124,23 +1065,62 @@ export function pluginLoader(
      * loadAll — Loads and activates all plugins that are currently in 'ready' status.
      *
      * This method is typically called during server startup. It fetches all ready
-     * plugins from the registry and attempts to activate them in parallel using
-     * Promise.allSettled. Failures in individual plugins do not prevent others from loading.
+     * plugins from the registry and activates them in parallel. Each activation
+     * returns its own success/failure result after complete partial cleanup.
      *
      * @returns A promise that resolves with summary statistics of the load operation.
      */
     async loadAll(): Promise<PluginLoadAllResult> {
-      if (!runtimeServices) {
-        throw new Error(
-          "Cannot loadAll: PluginRuntimeServices have not been bound. " +
-            "Call bindRuntimeServices() before runtime activation.",
-        );
-      }
+      const services = requireRuntimeServices("loadAll");
 
       log.info("plugin-loader: loading all ready plugins");
 
+      const cancelledRuns = await services.jobStore.cancelAllNonTerminalRuns(
+        "Paperclip restarted before plugin job completed",
+      );
+      if (cancelledRuns > 0) {
+        log.warn(
+          { cancelledRuns },
+          "plugin-loader: cancelled interrupted plugin job runs",
+        );
+      }
+
+      const failedDeliveries = await registry.failInterruptedWebhookDeliveries(
+        "Paperclip restarted before webhook delivery completed",
+      );
+      if (failedDeliveries > 0) {
+        log.warn(
+          { failedDeliveries },
+          "plugin-loader: failed interrupted webhook deliveries",
+        );
+      }
+
+      // Crash-safe reconciliation: install candidates are immutable roots and
+      // only registry-referenced roots are live. A crash before persistence or
+      // after uninstall cleanup therefore leaves a safely removable orphan.
+      if (existsSync(localPluginDir)) {
+        const livePlugins = await registry.list();
+        const referencedRoots = new Set(
+          livePlugins
+            .filter((plugin) => plugin.source === "npm")
+            .map((plugin) => resolveManagedInstallRoot(
+              localPluginDir,
+              plugin.packagePath,
+              plugin.packageName,
+            )),
+        );
+        const entries = await readdir(localPluginDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isDirectory() || !isManagedInstallRootName(entry.name)) continue;
+          const installRoot = path.resolve(localPluginDir, entry.name);
+          if (!referencedRoots.has(installRoot)) {
+            await rm(installRoot, { recursive: true, force: true });
+          }
+        }
+      }
+
       // Fetch all plugins in ready status, ordered by installOrder
-      const readyPlugins = (await registry.listByStatus("ready")) as PluginRecord[];
+      const readyPlugins = await registry.listByStatus("ready");
 
       if (readyPlugins.length === 0) {
         log.info("plugin-loader: no ready plugins to load");
@@ -1152,20 +1132,9 @@ export function pluginLoader(
         "plugin-loader: found ready plugins to load",
       );
 
-      // Load plugins in parallel
-      const results = await Promise.allSettled(
+      const loadResults = await Promise.all(
         readyPlugins.map((plugin) => activatePlugin(plugin))
       );
-
-      const loadResults = results.map((r, i) => {
-        if (r.status === "fulfilled") return r.value;
-        return {
-          plugin: readyPlugins[i]!,
-          success: false,
-          error: String(r.reason),
-          registered: { worker: false, eventSubscriptions: 0, jobs: 0, webhooks: 0, tools: 0 },
-        };
-      });
 
       const succeeded = loadResults.filter((r) => r.success).length;
       const failed = loadResults.filter((r) => !r.success).length;
@@ -1202,38 +1171,17 @@ export function pluginLoader(
      * @returns A promise that resolves with the result of the activation.
      */
     async loadSingle(pluginId: string): Promise<PluginLoadResult> {
-      if (!runtimeServices) {
-        throw new Error(
-          "Cannot loadSingle: PluginRuntimeServices have not been bound. " +
-            "Call bindRuntimeServices() before runtime activation.",
-        );
-      }
+      requireRuntimeServices("loadSingle");
 
-      const plugin = (await registry.getById(pluginId)) as PluginRecord | null;
+      const plugin = await registry.getById(pluginId);
       if (!plugin) {
         throw new Error(`Plugin not found: ${pluginId}`);
-      }
-
-      // If the plugin is in 'installed' status, transition it to 'ready' first.
-      // lifecycleManager.load() transitions the status AND activates the plugin
-      // via activateReadyPlugin() → loadSingle() (recursive call with 'ready'
-      // status) → activatePlugin(). We must NOT call activatePlugin() again here,
-      // as that would double-start the worker and duplicate registrations.
-      if (plugin.status === "installed") {
-        await runtimeServices.lifecycleManager.load(pluginId);
-        const updated = (await registry.getById(pluginId)) as PluginRecord | null;
-        if (!updated) throw new Error(`Plugin not found after status update: ${pluginId}`);
-        return {
-          plugin: updated,
-          success: true,
-          registered: { worker: true, eventSubscriptions: 0, jobs: 0, webhooks: 0, tools: 0 },
-        };
       }
 
       if (plugin.status !== "ready") {
         throw new Error(
           `Cannot load plugin in status '${plugin.status}'. ` +
-            `Plugin must be in 'installed' or 'ready' status.`,
+            `Plugin must be in 'ready' status.`,
         );
       }
 
@@ -1244,57 +1192,8 @@ export function pluginLoader(
     // unloadSingle
     // -----------------------------------------------------------------------
 
-    async unloadSingle(pluginId: string, pluginKey: string): Promise<void> {
-      if (!runtimeServices) {
-        throw new Error(
-          "Cannot unloadSingle: no PluginRuntimeServices provided.",
-        );
-      }
-
-      log.info(
-        { pluginId, pluginKey },
-        "plugin-loader: unloading single plugin",
-      );
-
-      const {
-        workerManager,
-        eventBus,
-        jobScheduler,
-        toolDispatcher,
-      } = runtimeServices;
-
-      // 1. Unregister from job scheduler (cancels in-flight runs)
-      try {
-        await jobScheduler.unregisterPlugin(pluginId);
-      } catch (err) {
-        log.warn(
-          { pluginId, err: err instanceof Error ? err.message : String(err) },
-          "plugin-loader: failed to unregister from job scheduler (best-effort)",
-        );
-      }
-
-      // 2. Clear event subscriptions
-      eventBus.clearPlugin(pluginKey);
-
-      // 3. Unregister agent tools
-      toolDispatcher.unregisterPluginTools(pluginKey);
-
-      // 4. Stop the worker process
-      try {
-        if (workerManager.isRunning(pluginId)) {
-          await workerManager.stopWorker(pluginId);
-        }
-      } catch (err) {
-        log.warn(
-          { pluginId, err: err instanceof Error ? err.message : String(err) },
-          "plugin-loader: failed to stop worker during unload (best-effort)",
-        );
-      }
-
-      log.info(
-        { pluginId, pluginKey },
-        "plugin-loader: plugin unloaded successfully",
-      );
+    async unloadSingle(pluginId: string): Promise<void> {
+      await unloadPluginRuntime(pluginId);
     },
 
     // -----------------------------------------------------------------------
@@ -1302,21 +1201,42 @@ export function pluginLoader(
     // -----------------------------------------------------------------------
 
     async shutdownAll(): Promise<void> {
-      if (!runtimeServices) {
-        throw new Error(
-          "Cannot shutdownAll: no PluginRuntimeServices provided.",
-        );
-      }
+      const services = requireRuntimeServices("shutdownAll");
 
       log.info("plugin-loader: shutting down all plugins");
 
-      const { workerManager, jobScheduler } = runtimeServices;
+      const errors: unknown[] = [];
 
-      // 1. Stop the job scheduler tick loop
-      jobScheduler.stop();
+      try {
+        services.jobScheduler.stop();
+      } catch (err) {
+        errors.push(err);
+      }
 
-      // 2. Stop all worker processes
-      await workerManager.stopAll();
+      try {
+        await services.workerManager.stopAll();
+      } catch (err) {
+        errors.push(err);
+      }
+
+      // Let already-accepted handlers use their activation-scoped host
+      // services through the bounded worker drain, then fence every binding
+      // before disposing it. stopAll attempts every worker before returning.
+      for (const active of activeHostBindings.values()) {
+        active.revoke();
+      }
+
+      for (const pluginId of [...activeHostBindings.keys()]) {
+        try {
+          await disposeHostBinding(pluginId);
+        } catch (err) {
+          errors.push(err);
+        }
+      }
+
+      if (errors.length > 0) {
+        throw new AggregateError(errors, "Failed to completely shut down plugin runtimes");
+      }
 
       log.info("plugin-loader: all plugins shut down");
     },
@@ -1327,80 +1247,75 @@ export function pluginLoader(
   // -------------------------------------------------------------------------
 
   /**
-   * Activate a single plugin: spawn its worker, register event subscriptions,
-   * sync jobs, register tools.
+   * Activate a single plugin: bind its host RPC surface, spawn its worker,
+   * and sync jobs. Agent-tool declarations remain canonical in the persisted
+   * manifest and are compiled directly for each prompt-capability operation.
    *
    * This is the core orchestration logic shared by `loadAll()` and `loadSingle()`.
-   * Failures are caught and reported in the result; the plugin is marked as
-   * `error` in the database when activation fails.
+   * Failures are caught, fully cleaned up, and returned to the lifecycle
+   * manager, which owns the single persisted status transition.
    */
   async function activatePlugin(plugin: PluginRecord): Promise<PluginLoadResult> {
     const pluginId = plugin.id;
     const pluginKey = plugin.pluginKey;
-    let activePlugin = plugin;
-    let manifest = activePlugin.manifestJson;
-
-    const registered: PluginLoadResult["registered"] = {
-      worker: false,
-      eventSubscriptions: 0,
-      jobs: 0,
-      webhooks: 0,
-      tools: 0,
-    };
-
-    // Guard: runtime services must exist (callers already checked)
-    if (!runtimeServices) {
-      return {
-        plugin,
-        success: false,
-        error: "No runtime services available",
-        registered,
-      };
-    }
+    const manifest = plugin.manifestJson;
 
     const {
       workerManager,
-      eventBus,
       jobScheduler,
       jobStore,
-      toolDispatcher,
       lifecycleManager,
-      buildHostHandlers,
+      buildHostBinding,
       instanceInfo,
-    } = runtimeServices;
+    } = requireRuntimeServices("activate plugin");
 
     try {
       log.info(
-        { pluginId, pluginKey, version: plugin.version },
+        { pluginId, pluginKey, version: manifest.version },
         "plugin-loader: activating plugin",
       );
 
       // ------------------------------------------------------------------
       // 1. Resolve worker entrypoint
       // ------------------------------------------------------------------
-      const packageRoot = resolvePluginPackageRoot(activePlugin, localPluginDir);
-      activePlugin = await refreshPluginManifestFromPackage(activePlugin, packageRoot);
-      manifest = activePlugin.manifestJson;
-      const workerEntrypoint = resolveWorkerEntrypoint(activePlugin, localPluginDir);
+      const packageRoot = resolvePluginPackageRoot(plugin);
+      const workerEntrypoint = resolveWorkerEntrypoint(plugin, packageRoot);
 
       // ------------------------------------------------------------------
-      // 2. Apply restricted database migrations before worker startup
+      // 2. Validate the persisted configuration before any plugin-owned
+      // activation work. A missing row is the canonical empty config.
       // ------------------------------------------------------------------
-      const databaseNamespace = manifest.database
-        ? (await pluginDatabaseService(migrationDb).applyMigrations(pluginId, manifest, packageRoot))?.namespaceName ?? null
-        : null;
+      const configRow = await registry.getConfig(pluginId);
+      assertPluginConfigCompatible(
+        configRow?.configJson ?? {},
+        manifest.instanceConfigSchema,
+      );
 
       // ------------------------------------------------------------------
-      // 3. Build host handlers for this plugin
+      // 3. Apply restricted database migrations before worker startup
       // ------------------------------------------------------------------
-      const hostHandlers = buildHostHandlers(pluginId, manifest);
+      let databaseNamespace: string | null = null;
+      if (manifest.database) {
+        const namespace = await pluginDatabaseService(migrationDb)
+          .applyMigrations(pluginId, manifest, packageRoot);
+        if (!namespace) {
+          throw new Error("Plugin database migration returned no namespace");
+        }
+        databaseNamespace = namespace.namespaceName;
+      }
 
       // ------------------------------------------------------------------
-      // 4. Bootstrap worker config
+      // 4. Build the activation-scoped host binding for this plugin
       // ------------------------------------------------------------------
-      // Plugin configuration is company-scoped. Workers receive an empty
-      // bootstrap config and must use ctx.config.get(companyId) at runtime.
-      const config: Record<string, unknown> = {};
+      if (activeHostBindings.has(pluginId)) {
+        throw new Error(`Plugin runtime is already active: ${pluginId}`);
+      }
+      const hostBinding = createRevocableHostBinding(
+        pluginId,
+        pluginKey,
+        buildHostBinding(pluginId, manifest),
+      );
+      activeHostBindings.set(pluginId, hostBinding);
 
       // ------------------------------------------------------------------
       // 5. Spawn worker process
@@ -1408,25 +1323,24 @@ export function pluginLoader(
       const workerOptions: WorkerStartOptions = {
         entrypointPath: workerEntrypoint,
         manifest,
-        config,
         instanceInfo,
         apiVersion: manifest.apiVersion,
         databaseNamespace,
-        hostHandlers,
-        autoRestart: true,
+        hostHandlers: hostBinding.handlers,
+        onTerminalCrash: async ({ code, signal, stderrExcerpt }) => {
+          const exit = `code=${code}, signal=${signal}`;
+          const detail = stderrExcerpt.trim()
+            ? `; stderr: ${stderrExcerpt.trim()}`
+            : "";
+          await lifecycleManager.markError(
+            pluginId,
+            `Worker restart budget exhausted (${exit})${detail}`,
+          );
+        },
         env: buildPluginWorkerEnv({ instanceInfo }),
       };
 
-      // Repo-local plugin installs can resolve workspace TS sources at runtime
-      // (for example @paperclipai/shared exports). Run those workers through
-      // the tsx loader so local plugin packages work in development.
-      if (activePlugin.packagePath && existsSync(DEV_TSX_LOADER_PATH)) {
-        workerOptions.execArgv = ["--import", DEV_TSX_LOADER_PATH];
-      }
-
       await workerManager.startWorker(pluginId, workerOptions);
-      registered.worker = true;
-
       log.info(
         { pluginId, pluginKey },
         "plugin-loader: worker started",
@@ -1436,71 +1350,18 @@ export function pluginLoader(
       // 6. Sync job declarations and register with scheduler
       // ------------------------------------------------------------------
       const jobDeclarations = manifest.jobs ?? [];
+      await jobStore.syncJobDeclarations(pluginId, jobDeclarations);
       if (jobDeclarations.length > 0) {
-        await jobStore.syncJobDeclarations(pluginId, jobDeclarations);
         await jobScheduler.registerPlugin(pluginId);
-        registered.jobs = jobDeclarations.length;
 
         log.info(
           { pluginId, pluginKey, jobs: jobDeclarations.length },
           "plugin-loader: job declarations synced and plugin registered with scheduler",
         );
-      }
-
-      // ------------------------------------------------------------------
-      // 6. Register event subscriptions
-      //
-      // Note: Event subscriptions are declared at runtime by the plugin
-      // worker via the SDK's ctx.events.on() calls. The event bus manages
-      // per-plugin subscription scoping. Here we ensure the event bus has
-      // a scoped handle ready for this plugin — the actual subscriptions
-      // are registered by the host handler layer when the worker calls
-      // events.subscribe via RPC.
-      //
-      // The bus.forPlugin() call creates the scoped handle if needed;
-      // any previous subscriptions for this plugin are preserved if the
-      // worker is restarting.
-      // ------------------------------------------------------------------
-      const _scopedBus = eventBus.forPlugin(pluginKey);
-      registered.eventSubscriptions = eventBus.subscriptionCount(pluginKey);
-
-      log.debug(
-        { pluginId, pluginKey },
-        "plugin-loader: event bus scoped handle ready",
-      );
-
-      // ------------------------------------------------------------------
-      // 7. Register webhook endpoints (manifest-declared)
-      //
-      // Webhooks are statically declared in the manifest. The actual
-      // endpoint routing is handled by the plugin routes module which
-      // checks the manifest for declared webhooks. No explicit
-      // registration step is needed here — the manifest is persisted
-      // in the DB and the route handler reads it at request time.
-      //
-      // We track the count for the result reporting.
-      // ------------------------------------------------------------------
-      const webhookDeclarations = manifest.webhooks ?? [];
-      registered.webhooks = webhookDeclarations.length;
-
-      if (webhookDeclarations.length > 0) {
-        log.info(
-          { pluginId, pluginKey, webhooks: webhookDeclarations.length },
-          "plugin-loader: webhook endpoints declared in manifest",
-        );
-      }
-
-      // ------------------------------------------------------------------
-      // 8. Register agent tools
-      // ------------------------------------------------------------------
-      const toolDeclarations = manifest.tools ?? [];
-      if (toolDeclarations.length > 0) {
-        toolDispatcher.registerPluginTools(pluginKey, manifest, pluginId);
-        registered.tools = toolDeclarations.length;
-
-        log.info(
-          { pluginId, pluginKey, tools: toolDeclarations.length },
-          "plugin-loader: agent tools registered",
+      } else {
+        log.debug(
+          { pluginId, pluginKey },
+          "plugin-loader: empty job declarations synced",
         );
       }
 
@@ -1511,13 +1372,12 @@ export function pluginLoader(
         {
           pluginId,
           pluginKey,
-          version: activePlugin.version,
-          registered,
+          version: manifest.version,
         },
         "plugin-loader: plugin activated successfully",
       );
 
-      return { plugin: activePlugin, success: true, registered };
+      return { plugin, success: true };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
 
@@ -1526,25 +1386,27 @@ export function pluginLoader(
         "plugin-loader: failed to activate plugin",
       );
 
-      // Mark the plugin as errored in the database so it is not retried
-      // automatically on next startup without operator intervention.
+      let failure = errorMessage;
       try {
-        await lifecycleManager.markError(pluginId, `Activation failed: ${errorMessage}`);
-      } catch (markErr) {
+        await unloadPluginRuntime(pluginId);
+      } catch (cleanupErr) {
+        const cleanupMessage = cleanupErr instanceof Error
+          ? cleanupErr.message
+          : String(cleanupErr);
+        failure = `${errorMessage}; activation cleanup failed: ${cleanupMessage}`;
         log.error(
           {
             pluginId,
-            err: markErr instanceof Error ? markErr.message : String(markErr),
+            err: cleanupMessage,
           },
-          "plugin-loader: failed to mark plugin as error after activation failure",
+          "plugin-loader: failed to clean partial runtime after activation failure",
         );
       }
 
       return {
-        plugin: activePlugin,
+        plugin,
         success: false,
-        error: errorMessage,
-        registered,
+        error: failure,
       };
     }
   }
@@ -1555,103 +1417,88 @@ export function pluginLoader(
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve the absolute path to a plugin's worker entrypoint from its manifest
- * and known install locations.
+ * Resolve the absolute path to a plugin's worker entrypoint from its manifest.
  *
  * The manifest `entrypoints.worker` field is relative to the package root.
- * We check the local plugin directory (where the package was installed) and
- * also the package directory if it was a local-path install.
  *
  * @see PLUGIN_SPEC.md §10 — Package Contract
  */
 function resolveWorkerEntrypoint(
-  plugin: PluginRecord & { packagePath?: string | null },
-  localPluginDir: string,
+  plugin: PluginRecord,
+  packageRoot: string,
 ): string {
-  const manifest = plugin.manifestJson;
-  const workerRelPath = manifest.entrypoints.worker;
-
-  // For local-path installs we persist the resolved package path; use it first
-  if (plugin.packagePath && existsSync(plugin.packagePath)) {
-    const entrypoint = path.resolve(plugin.packagePath, workerRelPath);
-    if (entrypoint.startsWith(path.resolve(plugin.packagePath)) && existsSync(entrypoint)) {
-      return entrypoint;
-    }
-  }
-
-  // Try the local plugin directory (standard npm install location)
-  const packageName = plugin.packageName;
-  let packageDir: string;
-
-  if (packageName.startsWith("@")) {
-    // Scoped package: @scope/plugin-name → localPluginDir/node_modules/@scope/plugin-name
-    const [scope, name] = packageName.split("/");
-    packageDir = path.join(localPluginDir, "node_modules", scope!, name!);
-  } else {
-    packageDir = path.join(localPluginDir, "node_modules", packageName);
-  }
-
-  // Also check if the package exists directly under localPluginDir
-  // (for direct local-path installs or symlinked packages)
-  const directDir = path.join(localPluginDir, packageName);
-
-  // Try in order: node_modules path, direct path
-  for (const dir of [packageDir, directDir]) {
-    const entrypoint = path.resolve(dir, workerRelPath);
-
-    // Security: ensure entrypoint is actually inside the directory (prevent path traversal)
-    if (!entrypoint.startsWith(path.resolve(dir))) {
-      continue;
-    }
-
-    if (existsSync(entrypoint)) {
-      return entrypoint;
-    }
-  }
-
-  // Fallback: try the worker path as-is (absolute or relative to cwd)
-  // ONLY if it's already an absolute path and we trust the manifest (which we've already validated)
-  if (path.isAbsolute(workerRelPath) && existsSync(workerRelPath)) {
-    return workerRelPath;
-  }
-
-  throw new Error(
-    `Worker entrypoint not found for plugin "${plugin.pluginKey}". ` +
-      `Checked: ${path.resolve(packageDir, workerRelPath)}, ` +
-      `${path.resolve(directDir, workerRelPath)}`,
+  return resolvePluginPath(
+    packageRoot,
+    plugin.manifestJson.entrypoints.worker,
+    {
+      label: `Worker entrypoint for plugin "${plugin.pluginKey}"`,
+      kind: "file",
+    },
   );
 }
 
-function resolvePluginPackageRoot(
-  plugin: PluginRecord & { packagePath?: string | null },
-  localPluginDir: string,
-): string {
-  if (plugin.packagePath && existsSync(plugin.packagePath)) {
-    return path.resolve(plugin.packagePath);
+function resolvePluginPackageRoot(plugin: PluginRecord): string {
+  if (!path.isAbsolute(plugin.packagePath)) {
+    throw new Error(
+      `Plugin installation package root is not absolute: ${plugin.pluginKey}`,
+    );
   }
-
-  const packageName = plugin.packageName;
-  const packageDir = packageName.startsWith("@")
-    ? path.join(localPluginDir, "node_modules", ...packageName.split("/"))
-    : path.join(localPluginDir, "node_modules", packageName);
-  if (existsSync(packageDir)) return packageDir;
-
-  const directDir = path.join(localPluginDir, packageName);
-  if (existsSync(directDir)) return directDir;
-
-  throw new Error(`Package root not found for plugin "${plugin.pluginKey}"`);
+  if (!existsSync(plugin.packagePath)) {
+    throw new Error(
+      `Canonical package root not found for plugin "${plugin.pluginKey}": ${plugin.packagePath}`,
+    );
+  }
+  return realpathSync(plugin.packagePath);
 }
 
 function resolveManagedInstallPackageDir(localPluginDir: string, packageName: string): string {
-  if (packageName.startsWith("@")) {
-    return path.join(localPluginDir, "node_modules", ...packageName.split("/"));
+  const nodeModulesDir = path.resolve(localPluginDir, "node_modules");
+  const segments = packageName.split("/");
+  const validSegments = packageName.startsWith("@")
+    ? segments.length === 2
+      && segments[0]!.length > 1
+      && segments[1]!.length > 0
+    : segments.length === 1 && segments[0]!.length > 0;
+  if (!validSegments || segments.some((segment) => segment === "." || segment === "..")) {
+    throw new Error(`Invalid plugin package name: ${packageName}`);
   }
-  return path.join(localPluginDir, "node_modules", packageName);
+
+  const packageDir = path.resolve(nodeModulesDir, ...segments);
+  if (!isPathContained(nodeModulesDir, packageDir) || packageDir === nodeModulesDir) {
+    throw new Error(`Invalid plugin package name: ${packageName}`);
+  }
+  return packageDir;
 }
 
-function isPathInsideDir(candidatePath: string, parentDir: string): boolean {
-  const resolvedCandidate = path.resolve(candidatePath);
-  const resolvedParent = path.resolve(parentDir);
-  const relative = path.relative(resolvedParent, resolvedCandidate);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+function isManagedInstallRootName(name: string): boolean {
+  return /^install-[A-Za-z0-9_-]+$/.test(name);
+}
+
+function resolveManagedInstallRoot(
+  localPluginDir: string,
+  packagePath: string,
+  packageName: string,
+): string {
+  if (!path.isAbsolute(packagePath)) {
+    throw new Error(`Managed plugin package root is not absolute: ${packagePath}`);
+  }
+
+  const managedRoot = path.resolve(localPluginDir);
+  const relativePackagePath = path.relative(managedRoot, path.resolve(packagePath));
+  const segments = relativePackagePath.split(path.sep);
+  const installRootName = segments[0];
+  if (
+    !installRootName
+    || !isManagedInstallRootName(installRootName)
+    || segments[1] !== "node_modules"
+  ) {
+    throw new Error(`Managed plugin package root is outside the canonical install layout: ${packagePath}`);
+  }
+
+  const installRoot = path.resolve(managedRoot, installRootName);
+  const expectedPackagePath = resolveManagedInstallPackageDir(installRoot, packageName);
+  if (path.resolve(packagePath) !== expectedPackagePath) {
+    throw new Error(`Managed plugin package root does not match its installation record: ${packagePath}`);
+  }
+  return installRoot;
 }

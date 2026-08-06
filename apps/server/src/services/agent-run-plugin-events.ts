@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { IssueExecutionTerminal } from "./issue-execution-dispatcher.js";
-import { publishPluginDomainEvent } from "./activity-log.js";
+import type { PluginDomainEventPublisher } from "./plugin-domain-event-publisher.js";
 
 export interface AgentRunTerminalPluginEventInput {
   companyId: string;
@@ -17,15 +17,16 @@ export interface AgentRunTerminalPluginEventInput {
  * Callers must invoke this only after the transaction that terminalized the
  * run has committed, so plugins can immediately read its stable projection.
  */
-export function publishAgentRunTerminalEvent(
+export async function publishAgentRunTerminalEvent(
+  publisher: PluginDomainEventPublisher,
   input: AgentRunTerminalPluginEventInput,
-): void {
+): Promise<void> {
   const eventType = input.outcome === "succeeded"
     ? "agent.run.finished" as const
     : input.outcome === "cancelled"
       ? "agent.run.cancelled" as const
       : "agent.run.failed" as const;
-  void publishPluginDomainEvent({
+  await publisher.publish({
     eventId: randomUUID(),
     eventType,
     occurredAt: input.occurredAt.toISOString(),

@@ -1,7 +1,3 @@
-import {
-  createHash,
-  randomBytes
-} from "node:crypto";
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
@@ -57,10 +53,13 @@ import {
   logActivity
 } from "../services/index.js";
 import {
-  grantsForHumanRole,
   normalizeHumanRole,
   resolveHumanInviteRole,
 } from "../services/company-member-roles.js";
+import {
+  createCompanyInvite,
+  hashInviteToken,
+} from "../services/company-invite-creation.js";
 import { humanJoinGrantsFromDefaults } from "../services/invite-grants.js";
 import {
   collapseDuplicatePendingHumanJoinRequests,
@@ -76,33 +75,10 @@ import { claimFirstInstanceAdmin } from "../first-admin-claim.js";
 import { getStorageService } from "../storage/index.js";
 import { requireRequestAuthority } from "../http/request-authority.js";
 
-function hashToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-const INVITE_TOKEN_PREFIX = "pcp_invite_";
-// 32 random bytes = 256 bits of entropy, base64url-encoded (43 chars). The
-// invite token is public (anyone with the link can GET/accept the invite), so
-// it must not be brute-forceable. The previous 8-char base36 suffix carried only
-// ~41 bits, which is online-enumerable. The token is stored hashed (sha256) in
-// `invites.tokenHash`; the raw value is only returned once on creation.
-const INVITE_TOKEN_ENTROPY_BYTES = 32;
-const INVITE_TOKEN_MAX_RETRIES = 5;
-const COMPANY_INVITE_TTL_MS = 72 * 60 * 60 * 1000;
-
 type MemberGrantPayload = {
   permissionKey: PermissionKey;
   scope?: Record<string, unknown> | null;
 };
-
-export function createInviteToken() {
-  const suffix = randomBytes(INVITE_TOKEN_ENTROPY_BYTES).toString("base64url");
-  return `${INVITE_TOKEN_PREFIX}${suffix}`;
-}
-
-export function companyInviteExpiresAt(nowMs: number = Date.now()) {
-  return new Date(nowMs + COMPANY_INVITE_TTL_MS);
-}
 
 function requestBaseUrl(req: Request) {
   return requireRequestAuthority(req).origin;
@@ -836,30 +812,6 @@ function extractInviteMessage(
   return trimmed.length ? trimmed : null;
 }
 
-function mergeInviteDefaults(
-  defaultsPayload: Record<string, unknown> | null | undefined,
-  agentMessage: string | null,
-  humanRole: "owner" | "admin" | "operator" | "viewer" | null = null,
-): Record<string, unknown> | null {
-  const merged =
-    defaultsPayload && typeof defaultsPayload === "object"
-      ? { ...defaultsPayload }
-      : {};
-  if (humanRole) {
-    const existingHuman =
-      isPlainObject(merged.human) ? { ...(merged.human as Record<string, unknown>) } : {};
-    merged.human = {
-      ...existingHuman,
-      role: humanRole,
-      grants: grantsForHumanRole(humanRole),
-    };
-  }
-  if (agentMessage) {
-    merged.agentMessage = agentMessage;
-  }
-  return Object.keys(merged).length ? merged : null;
-}
-
 function requestIp(req: Request) {
   const forwarded = req.header("x-forwarded-for");
   if (forwarded) {
@@ -965,32 +917,6 @@ async function resolveAcceptedInviteJoinRequest(
       requestEmailSnapshot: actorEmail,
     },
   );
-}
-
-function isInviteTokenHashCollisionError(error: unknown) {
-  const candidates = [
-    error,
-    (error as { cause?: unknown } | null)?.cause ?? null
-  ];
-  for (const candidate of candidates) {
-    if (!candidate || typeof candidate !== "object") continue;
-    const code =
-      "code" in candidate && typeof candidate.code === "string"
-        ? candidate.code
-        : null;
-    const message =
-      "message" in candidate && typeof candidate.message === "string"
-        ? candidate.message
-        : "";
-    const constraint =
-      "constraint" in candidate && typeof candidate.constraint === "string"
-        ? candidate.constraint
-        : null;
-    if (code !== "23505") continue;
-    if (constraint === "invites_token_hash_unique_idx") return true;
-    if (message.includes("invites_token_hash_unique_idx")) return true;
-  }
-  return false;
 }
 
 export function accessRoutes(
@@ -1330,65 +1256,6 @@ export function accessRoutes(
     return req.actor.userId;
   }
 
-  async function createCompanyInviteForCompany(input: {
-    invitedByUserId: string;
-    companyId: string;
-    allowedJoinTypes: "human" | "agent" | "both";
-    humanRole?: "owner" | "admin" | "operator" | "viewer" | null;
-    defaultsPayload?: Record<string, unknown> | null;
-    agentMessage?: string | null;
-  }) {
-    const normalizedAgentMessage =
-      typeof input.agentMessage === "string"
-        ? input.agentMessage.trim() || null
-        : null;
-    const effectiveHumanRole =
-      input.allowedJoinTypes === "agent"
-        ? null
-        : input.humanRole ?? "operator";
-    const insertValues = {
-      companyId: input.companyId,
-      inviteType: "company_join" as const,
-      allowedJoinTypes: input.allowedJoinTypes,
-      defaultsPayload: mergeInviteDefaults(
-        input.defaultsPayload ?? null,
-        normalizedAgentMessage,
-        effectiveHumanRole,
-      ),
-      expiresAt: companyInviteExpiresAt(),
-      source: "board_api" as const,
-      invitedByUserId: input.invitedByUserId,
-    };
-
-    let token: string | null = null;
-    let created: typeof invites.$inferSelect | null = null;
-    for (let attempt = 0; attempt < INVITE_TOKEN_MAX_RETRIES; attempt += 1) {
-      const candidateToken = createInviteToken();
-      try {
-        const row = await db
-          .insert(invites)
-          .values({
-            ...insertValues,
-            tokenHash: hashToken(candidateToken)
-          })
-          .returning()
-          .then((rows) => rows[0]);
-        token = candidateToken;
-        created = row;
-        break;
-      } catch (error) {
-        if (!isInviteTokenHashCollisionError(error)) {
-          throw error;
-        }
-      }
-    }
-    if (!token || !created) {
-      throw conflict("Failed to generate a unique invite token. Please retry.");
-    }
-
-    return { token, created, normalizedAgentMessage };
-  }
-
   async function approveHumanJoinRequestFromInvite(input: {
     req: Request;
     invite: typeof invites.$inferSelect;
@@ -1556,10 +1423,10 @@ export function accessRoutes(
     async (req, res) => {
       const companyId = req.params.companyId as string;
       const invitedByUserId = await assertCompanyPermission(req, companyId, "users:invite");
-      const { token, created, normalizedAgentMessage } =
-        await createCompanyInviteForCompany({
-          invitedByUserId,
+      const { token, invite: created, normalizedAgentMessage } =
+        await createCompanyInvite(db, {
           companyId,
+          provenance: { source: "board_api", invitedByUserId },
           allowedJoinTypes: req.body.allowedJoinTypes,
           humanRole: req.body.humanRole ?? null,
           defaultsPayload: req.body.defaultsPayload ?? null,
@@ -1608,7 +1475,7 @@ export function accessRoutes(
     const invite = await db
       .select()
       .from(invites)
-      .where(eq(invites.tokenHash, hashToken(token)))
+      .where(eq(invites.tokenHash, hashInviteToken(token)))
       .then((rows) => rows[0] ?? null);
     const inviteJoinRequest = await resolveAcceptedInviteJoinRequest(db, req, invite);
     if (
@@ -1640,7 +1507,7 @@ export function accessRoutes(
     const invite = await db
       .select()
       .from(invites)
-      .where(eq(invites.tokenHash, hashToken(token)))
+      .where(eq(invites.tokenHash, hashInviteToken(token)))
       .then((rows) => rows[0] ?? null);
     const inviteJoinRequest = await resolveAcceptedInviteJoinRequest(db, req, invite);
     if (
@@ -1694,7 +1561,7 @@ export function accessRoutes(
     const invite = await db
       .select()
       .from(invites)
-      .where(eq(invites.tokenHash, hashToken(token)))
+      .where(eq(invites.tokenHash, hashInviteToken(token)))
       .then((rows) => rows[0] ?? null);
     if (!invite || invite.revokedAt || inviteExpired(invite)) {
       throw notFound("Invite not found");
@@ -1712,7 +1579,7 @@ export function accessRoutes(
     const invite = await db
       .select()
       .from(invites)
-      .where(eq(invites.tokenHash, hashToken(token)))
+      .where(eq(invites.tokenHash, hashInviteToken(token)))
       .then((rows) => rows[0] ?? null);
     if (!invite || invite.revokedAt || inviteExpired(invite)) {
       throw notFound("Invite not found");
@@ -1738,7 +1605,7 @@ export function accessRoutes(
       const invite = await db
         .select()
         .from(invites)
-        .where(eq(invites.tokenHash, hashToken(token)))
+        .where(eq(invites.tokenHash, hashInviteToken(token)))
         .then((rows) => rows[0] ?? null);
       if (!invite || invite.revokedAt || inviteExpired(invite)) {
         throw notFound("Invite not found");

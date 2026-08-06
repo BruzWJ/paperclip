@@ -4274,7 +4274,7 @@ export function SecretUsageTab({ loading, bindings }: { loading: boolean; bindin
   if (bindings.length === 0) {
     return (
       <div className="py-6 text-center text-xs text-muted-foreground">
-        No active bindings. Add this secret in agent, project, environment, or plugin config to start using it.
+        No active bindings. Add this secret in agent, project, or environment config to start using it.
       </div>
     );
   }

@@ -59,13 +59,13 @@ ACPX-admitted local execution context, and maps ACPX-advertised choices to
 stable ACPX session configuration. It does not execute a provider request or
 parse provider output.
 
-ACPX is the sole supplier of Paperclip's agent catalog. Paperclip reads the
-exact entries in ACPX's resolved `agents` configuration, temporarily probes each
+ACPX is the sole supplier of Paperclip's agent catalog. Paperclip enumerates the
+ACPX registry and its resolved launch overrides, excludes candidates that would
+need to materialize an absent local CLI, temporarily probes each remaining
 candidate, and surfaces only candidates that initialize an ACPX session
-successfully. Unconfigured ACPX built-in shortcuts are not catalog membership.
-ACPX supplies the agent name, model choices, configuration choices, and
-defaults; Paperclip owns no parallel list of agents, models, frontends, or
-provider flags.
+successfully. A built-in name alone is not local availability. ACPX supplies
+the agent name, model choices, configuration choices, and defaults; Paperclip
+owns no parallel list of agents, models, frontends, or provider flags.
 
 Paperclip checks the unchanged registry name before ACPX resolution, so it
 never accepts an alias or arbitrary command fallback. ACPX owns the provider
@@ -132,13 +132,21 @@ Paperclip records one canonical Session log per issue. `carry_context` controls
 native continuity:
 
 - **False:** every ordinary request uses `session/new`; its exact source text is
-  the entire prompt and Paperclip performs no history composition.
+  the entire canonical input and Paperclip performs no built-in history
+  composition.
 - **True with an eligible stored target:** the worker asks ACPX to perform the
-  frozen resume operation and still sends only the exact new source text.
+  frozen resume operation and still uses only the exact new canonical source.
 - **True with no stored target:** the worker selects `session/new` before
-  launch and sends only the exact current source text. The canonical Session
+  launch and uses only the exact current source text. The canonical Session
   log remains available for inspection but is not replayed, summarized, or
-  injected.
+  injected by core.
+
+An administrator-approved plugin may implement the generic blocking
+before-prompt lifecycle. Paperclip gives that hook a bounded canonical Session
+snapshot so it can complete required side effects, requires one exact `null`
+acknowledgement, and sends the canonical source message to ACPX byte-for-byte.
+A hook failure or concurrent plugin disable/upgrade fails before ACPX receives
+the prompt.
 
 If ACPX rejects a frozen resume because its frontend cannot resume that
 provider session, the attempt fails through ACPX's normal runtime result.
@@ -236,10 +244,12 @@ directly.
 
 If runs fail repeatedly:
 
-1. Run `acpx config show --format json` at the Paperclip service scope and
-   confirm the exact candidate remains in the resolved `agents` map.
-2. Refresh the ACPX-backed catalog and confirm that configured candidate passes
-   its temporary session probe on the local Paperclip host.
+1. Confirm the selected CLI executable is installed on the Paperclip service
+   host and visible on its `PATH`.
+2. Refresh the ACPX-backed catalog and confirm that local candidate passes its
+   temporary session probe. For a custom ACPX launch override, also run
+   `acpx config show --format json` at the Paperclip service scope and confirm
+   the exact override is resolved.
 3. Run the selected CLI's native login on that execution target.
 4. Verify every saved stable ACPX configuration value is still advertised by the
    selected CLI; Paperclip does not infer model limits ACPX does not provide.
@@ -260,9 +270,9 @@ attempt and any later retry re-evaluates the current immutable request.
 
 1. Install an ACPX-compatible CLI on the execution target.
 2. Authenticate the AI CLI through its native login flow.
-3. Declare its entry in ACPX's `agents` configuration and confirm
-   it with `acpx config show --format json`.
-4. Select the exact configured adapter and complete its required stable ACPX
+3. Refresh the local agent catalog. Add and verify an ACPX `agents` entry only
+   when the CLI needs a custom name or launch override.
+4. Select the exact discovered adapter and complete its required stable ACPX
    configuration.
 5. Configure an execution-workspace policy.
 6. Set explicit context dials, issue-action grants, and selected company

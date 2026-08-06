@@ -1,6 +1,6 @@
 import {
-  listAcpRegistryAgentNames,
-  loadConfiguredAcpRegistry,
+  listLocallyAvailableAcpRegistryAgentNames,
+  loadAcpxAgentRegistry,
   type AcpxAgentDiscovery,
   type AcpxDiscoveredConfigOption,
   type AcpxDiscoveredConfigOptionValue,
@@ -205,8 +205,22 @@ function configOption(option: SelectableOption): AcpAdapterConfigOption {
 
 function modelsFor(
   model: SelectableOption | null,
+  discovery: AcpxAgentDiscovery,
 ): readonly AdapterModel[] {
-  if (!model || model.kind !== "select") return Object.freeze([]);
+  if (!model || model.kind !== "select") {
+    const fixedModel = discovery.currentModelId;
+    if (!fixedModel || !discovery.models.includes(fixedModel)) {
+      return Object.freeze([]);
+    }
+    return Object.freeze([
+      Object.freeze({
+        id: fixedModel,
+        label: fixedModel,
+        value: fixedModel,
+        limits: null,
+      }),
+    ]);
+  }
   return Object.freeze(
     model.values.map((value) =>
       Object.freeze({
@@ -230,7 +244,7 @@ export function acpxDiscoveryToServerAdapter(
 ): ServerAdapterModule {
   const options = selectableOptions(discovery);
   const selectedModelOption = modelOption(discovery, options);
-  const models = modelsFor(selectedModelOption);
+  const models = modelsFor(selectedModelOption, discovery);
   return Object.freeze({
     type: discovery.agentName,
     definition: Object.freeze({
@@ -253,7 +267,7 @@ export function acpxDiscoveryToServerAdapter(
       }),
       ui: Object.freeze({
         label: discovery.agentName,
-        description: "Discovered from the local ACPX runtime.",
+        description: "Available from a compatible local agent runtime.",
       }),
       configSchema: Object.freeze({
         fields: Object.freeze(options.map(configSchemaField)),
@@ -263,7 +277,7 @@ export function acpxDiscoveryToServerAdapter(
       models,
       modelProfiles: Object.freeze([]),
       configurationDoc:
-        "This agent and its configuration are supplied by ACPX at runtime.",
+        "This agent and its configuration are discovered dynamically at runtime.",
     }),
   });
 }
@@ -325,16 +339,18 @@ function candidateDiagnostic(
 }
 
 /**
- * Probes every explicitly configured ACPX agent and retains only successful
- * ACPX-resolved session initialization. Failed candidates remain diagnostic metadata rather
- * than selectable Paperclip agents.
+ * Probes every locally installed candidate from ACPX's registry and retains
+ * only successful ACPX-resolved session initialization. Failed candidates
+ * remain diagnostic metadata rather than selectable Paperclip agents.
  */
 export async function discoverLocalAcpxAdapterCatalog(
   cwd = process.cwd(),
   suppliedRegistry?: AcpAgentRegistry,
 ): Promise<AcpxCatalogSnapshot> {
-  const registry = suppliedRegistry ?? await loadConfiguredAcpRegistry({ cwd });
-  const names = listAcpRegistryAgentNames(registry);
+  const registry = suppliedRegistry ?? await loadAcpxAgentRegistry({ cwd });
+  const names = await listLocallyAvailableAcpRegistryAgentNames(registry, {
+    cwd,
+  });
   const probes = await mapConcurrent<
     string,
     AcpxCatalogCandidate

@@ -1,12 +1,19 @@
 import path from "node:path";
-import { existsSync } from "node:fs";
 import { Command, Option } from "commander";
 import {
+  PLUGIN_CATEGORIES,
+  PLUGIN_SCAFFOLD_TEMPLATES,
+  pluginPackageDirectoryName,
   scaffoldPluginProject,
   shellQuote,
   type ScaffoldPluginOptions,
 } from "../../../../plugins/create-paperclip-plugin/src/index.js";
 import pc from "picocolors";
+import type {
+  PluginDetailDto,
+  PluginInstallRequest,
+  PluginRecordDto,
+} from "@paperclipai/shared";
 import {
   addCommonClientOptions,
   handleCommandError,
@@ -14,22 +21,6 @@ import {
   resolveCommandContext,
   type BaseClientOptions,
 } from "./common.js";
-
-// ---------------------------------------------------------------------------
-// Types mirroring server-side shapes
-// ---------------------------------------------------------------------------
-
-interface PluginRecord {
-  id: string;
-  pluginKey: string;
-  packageName: string;
-  version: string;
-  status: string;
-  displayName?: string;
-  lastError?: string | null;
-  installedAt: string;
-  updatedAt: string;
-}
 
 /** Subset of `GET /api/health` we surface as install/target diagnostics. */
 interface TargetHealth {
@@ -62,45 +53,27 @@ interface PluginInstallOptions extends BaseClientOptions {
   verifyTarget?: boolean;
 }
 
-interface PluginInstallRequest {
-  packageName: string;
+interface PluginUpgradeOptions extends BaseClientOptions {
   version?: string;
-  isLocalPath: boolean;
 }
 
-interface PluginUninstallOptions extends BaseClientOptions {
-  force?: boolean;
-}
-
-interface PluginInitOptions extends BaseClientOptions {
+interface PluginInitOptions {
   output?: string;
   template?: ScaffoldPluginOptions["template"];
-  category?: ScaffoldPluginOptions["category"];
+  category: ScaffoldPluginOptions["category"];
   displayName?: string;
   description?: string;
   author?: string;
   sdkPath?: string;
+  json?: boolean;
 }
 
 interface PluginJsonOptions extends BaseClientOptions {
   payloadJson?: string;
 }
 
-interface PluginStreamOptions extends BaseClientOptions {
-  durationMs?: string;
-}
-
 interface PluginCompanyOptions extends PluginJsonOptions {
   companyId?: string;
-}
-
-function requireCompanyId(ctx: { companyId?: string }): string {
-  if (!ctx.companyId) {
-    throw new Error(
-      "Company ID is required. Pass --company-id, set PAPERCLIP_BOARD_COMPANY_ID, or set context profile companyId via `paperclipai context set`.",
-    );
-  }
-  return ctx.companyId;
 }
 
 interface PluginInitResult {
@@ -118,33 +91,11 @@ function expandHomePath(packageArg: string): string {
   return path.resolve(home, packageArg.slice(1).replace(/^[\\/]/, ""));
 }
 
-function hasLocalPathSyntax(packageArg: string): boolean {
-  return (
-    path.isAbsolute(packageArg) ||
-    packageArg.startsWith("./") ||
-    packageArg.startsWith("../") ||
-    packageArg.startsWith("~") ||
-    packageArg.startsWith(".\\") ||
-    packageArg.startsWith("..\\")
-  );
-}
-
-function isExistingRelativePath(
-  packageArg: string,
-  cwd: string,
-  pathExists: (targetPath: string) => boolean,
-): boolean {
-  if (packageArg.trim() === "") return false;
-  if (hasLocalPathSyntax(packageArg)) return false;
-  return pathExists(path.resolve(cwd, packageArg));
-}
-
 /**
  * Resolve a local path argument to an absolute path so the server can find the
  * plugin on disk regardless of where the user ran the CLI.
  */
-function resolvePackageArg(packageArg: string, isLocal: boolean, cwd = process.cwd()): string {
-  if (!isLocal) return packageArg;
+function resolveLocalPluginPath(packageArg: string, cwd = process.cwd()): string {
   if (path.isAbsolute(packageArg)) return packageArg;
   if (packageArg.startsWith("~")) return expandHomePath(packageArg);
   return path.resolve(cwd, packageArg);
@@ -153,23 +104,32 @@ function resolvePackageArg(packageArg: string, isLocal: boolean, cwd = process.c
 export function buildPluginInstallRequest(
   packageArg: string,
   opts: Pick<PluginInstallOptions, "local" | "version"> = {},
-  deps: { cwd?: string; existsSync?: (targetPath: string) => boolean } = {},
+  deps: { cwd?: string } = {},
 ): PluginInstallRequest {
-  const cwd = deps.cwd ?? process.cwd();
-  const pathExists = deps.existsSync ?? existsSync;
-  const isLocal =
-    opts.local ||
-    hasLocalPathSyntax(packageArg) ||
-    (opts.version ? false : isExistingRelativePath(packageArg, cwd, pathExists));
-
-  if (isLocal && opts.version) {
+  if (opts.local && opts.version) {
     throw new Error("--version is only supported for npm package installs, not local plugin paths.");
   }
 
+  if (opts.local) {
+    return {
+      source: "local",
+      path: resolveLocalPluginPath(packageArg, deps.cwd),
+    };
+  }
+
+  if (
+    path.isAbsolute(packageArg)
+    || packageArg.startsWith("./")
+    || packageArg.startsWith("../")
+    || packageArg.startsWith("~")
+  ) {
+    throw new Error("Local plugin paths require --local.");
+  }
+
   return {
-    packageName: resolvePackageArg(packageArg, Boolean(isLocal), cwd),
-    version: opts.version,
-    isLocalPath: Boolean(isLocal),
+    source: "npm",
+    packageName: packageArg,
+    ...(opts.version ? { version: opts.version } : {}),
   };
 }
 
@@ -236,20 +196,18 @@ export function formatTargetDiagnostics(diag: TargetDiagnostics): string {
   return lines.join("\n");
 }
 
-function formatPlugin(p: PluginRecord): string {
+function formatPlugin(p: PluginRecordDto): string {
   const statusColor =
     p.status === "ready"
       ? pc.green(p.status)
       : p.status === "error"
         ? pc.red(p.status)
-        : p.status === "disabled"
-          ? pc.dim(p.status)
-          : pc.yellow(p.status);
+        : pc.dim(p.status);
 
   const parts = [
     `key=${pc.bold(p.pluginKey)}`,
     `status=${statusColor}`,
-    `version=${p.version}`,
+    `version=${p.manifestJson.version}`,
     `id=${pc.dim(p.id)}`,
   ];
 
@@ -260,8 +218,14 @@ function formatPlugin(p: PluginRecord): string {
   return parts.join("  ");
 }
 
-function packageToDirName(pluginName: string): string {
-  return pluginName.replace(/^@[^/]+\//, "");
+function requirePluginRecord(
+  record: PluginRecordDto | null,
+  operation: string,
+): PluginRecordDto {
+  if (record === null) {
+    throw new Error(`Plugin ${operation} returned an empty response.`);
+  }
+  return record;
 }
 
 export function buildPluginInitScaffoldOptions(
@@ -270,7 +234,7 @@ export function buildPluginInitScaffoldOptions(
   cwd = process.cwd(),
 ): ScaffoldPluginOptions {
   const outputRoot = path.resolve(cwd, opts.output ?? ".");
-  const outputDir = path.resolve(outputRoot, packageToDirName(packageName));
+  const outputDir = path.resolve(outputRoot, pluginPackageDirectoryName(packageName));
 
   return {
     pluginName: packageName,
@@ -290,7 +254,7 @@ export function buildPluginInitNextCommands(outputDir: string): string[] {
     `cd ${quotedOutputDir}`,
     "pnpm install",
     "pnpm dev",
-    `paperclipai plugin install ${quotedOutputDir}`,
+    `paperclipai plugin install --local ${quotedOutputDir}`,
   ];
 }
 
@@ -322,39 +286,39 @@ export function registerPluginCommands(program: Command): void {
   // -------------------------------------------------------------------------
   // plugin init <package-name>
   // -------------------------------------------------------------------------
-  addCommonClientOptions(
-    plugin
-      .command("init <packageName>")
-      .description("Scaffold a local Paperclip plugin project")
-      .option("--output <dir>", "Directory to create the plugin folder in")
-      .addOption(
-        new Option("--template <template>", "Starter template")
-          .choices(["default", "connector", "workspace", "environment"])
-          .default("default"),
-      )
-      .addOption(
-        new Option("--category <category>", "Manifest category")
-          .choices(["connector", "workspace", "automation", "ui", "environment"]),
-      )
-      .option("--display-name <name>", "Manifest display name")
-      .option("--description <description>", "Manifest description")
-      .option("--author <author>", "Manifest author")
-      .option("--sdk-path <path>", "Local @paperclipai/plugin-sdk package path")
-      .action((packageName: string, opts: PluginInitOptions) => {
-        try {
-          const result = runPluginInitCommand(packageName, opts);
+  plugin
+    .command("init <packageName>")
+    .description("Scaffold a local Paperclip plugin project")
+    .option("--output <dir>", "Directory to create the plugin folder in")
+    .addOption(
+      new Option("--template <template>", "Starter template")
+        .choices([...PLUGIN_SCAFFOLD_TEMPLATES])
+        .default("standard"),
+    )
+    .addOption(
+      new Option("--category <category>", "Manifest category")
+        .choices([...PLUGIN_CATEGORIES])
+        .makeOptionMandatory(),
+    )
+    .option("--display-name <name>", "Manifest display name")
+    .option("--description <description>", "Manifest description")
+    .option("--author <author>", "Manifest author")
+    .option("--sdk-path <path>", "Local @paperclipai/plugin-sdk package path")
+    .option("--json", "Output raw JSON")
+    .action((packageName: string, opts: PluginInitOptions) => {
+      try {
+        const result = runPluginInitCommand(packageName, opts);
 
-          if (opts.json) {
-            printOutput(result, { json: true });
-            return;
-          }
-
-          console.log(renderPluginInitSuccess(result));
-        } catch (err) {
-          handleCommandError(err);
+        if (opts.json) {
+          printOutput(result, { json: true });
+          return;
         }
-      }),
-  );
+
+        console.log(renderPluginInitSuccess(result));
+      } catch (err) {
+        handleCommandError(err);
+      }
+    });
 
   // -------------------------------------------------------------------------
   // plugin list
@@ -363,12 +327,12 @@ export function registerPluginCommands(program: Command): void {
     plugin
       .command("list")
       .description("List installed plugins")
-      .option("--status <status>", "Filter by status (ready, error, disabled, installed, upgrade_pending)")
+      .option("--status <status>", "Filter by status (ready, error, disabled)")
       .action(async (opts: PluginListOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
           const qs = opts.status ? `?status=${encodeURIComponent(opts.status)}` : "";
-          const plugins = await ctx.api.get<PluginRecord[]>(`/api/plugins${qs}`);
+          const plugins = await ctx.api.get<PluginRecordDto[]>(`/api/plugins${qs}`);
 
           if (ctx.json) {
             printOutput(plugins, { json: true });
@@ -391,19 +355,19 @@ export function registerPluginCommands(program: Command): void {
   );
 
   // -------------------------------------------------------------------------
-  // plugin install <package-or-path>
+  // plugin install <package-name-or-path>
   // -------------------------------------------------------------------------
   addCommonClientOptions(
     plugin
       .command("install <package>")
       .description(
-        "Install a plugin from a local path or npm package.\n" +
+        "Install an npm plugin, or use --local to install from a filesystem path.\n" +
           "  Examples:\n" +
-          "    paperclipai plugin install ./my-plugin              # local path\n" +
+          "    paperclipai plugin install --local ./my-plugin      # local path\n" +
           "    paperclipai plugin install @acme/plugin-linear      # npm package\n" +
-          "    paperclipai plugin install @acme/plugin-linear@1.2  # pinned version",
+          "    paperclipai plugin install @acme/plugin-linear --version 1.2.3",
       )
-      .option("-l, --local", "Treat <package> as a local filesystem path", false)
+      .option("-l, --local", "Install <package> as a local filesystem path", false)
       .option("--version <version>", "Specific npm version to install (npm packages only)")
       .option(
         "--no-verify-target",
@@ -430,31 +394,26 @@ export function registerPluginCommands(program: Command): void {
           if (!ctx.json) {
             console.log(
               pc.dim(
-                installRequest.isLocalPath
-                  ? `Installing plugin from local path: ${installRequest.packageName}`
+                installRequest.source === "local"
+                  ? `Installing plugin from local path: ${installRequest.path}`
                   : `Installing plugin: ${installRequest.packageName}${opts.version ? `@${opts.version}` : ""}`,
               ),
             );
           }
 
-          const installedPlugin = await ctx.api.post<PluginRecord>("/api/plugins/install", installRequest);
+          const installedPlugin = requirePluginRecord(
+            await ctx.api.post<PluginRecordDto>("/api/plugins/install", installRequest),
+            "install",
+          );
 
           if (ctx.json) {
-            // Preserve the original flat PluginRecord shape so existing
-            // automation reading top-level fields (id/pluginKey/version/status)
-            // keeps working; attach target diagnostics as an additive field.
             printOutput({ ...installedPlugin, ...(target ? { target } : {}) }, { json: true });
-            return;
-          }
-
-          if (!installedPlugin) {
-            console.log(pc.dim("Install returned no plugin record."));
             return;
           }
 
           console.log(
             pc.green(
-              `✓ Installed ${pc.bold(installedPlugin.pluginKey)} v${installedPlugin.version} (${installedPlugin.status})`,
+              `✓ Installed ${pc.bold(installedPlugin.pluginKey)} v${installedPlugin.manifestJson.version} (${installedPlugin.status})`,
             ),
           );
 
@@ -462,8 +421,8 @@ export function registerPluginCommands(program: Command): void {
             console.log(pc.red(`  Warning: ${installedPlugin.lastError}`));
           }
 
-          if (installRequest.isLocalPath) {
-            console.log(renderLocalPluginInstallHint(installRequest.packageName));
+          if (installRequest.source === "local") {
+            console.log(renderLocalPluginInstallHint(installRequest.path));
           }
         } catch (err) {
           handleCommandError(err);
@@ -501,42 +460,30 @@ export function registerPluginCommands(program: Command): void {
   );
 
   // -------------------------------------------------------------------------
-  // plugin uninstall <plugin-key-or-id>
+  // plugin uninstall <plugin-id>
   // -------------------------------------------------------------------------
   addCommonClientOptions(
     plugin
-      .command("uninstall <pluginKey>")
-      .description(
-        "Uninstall a plugin by its plugin key or database ID.\n" +
-          "  Use --force to also purge operational state, config, jobs, webhooks, and custom database objects.",
-      )
-      .option("--force", "Also purge operational plugin data", false)
-      .action(async (pluginKey: string, opts: PluginUninstallOptions) => {
+      .command("uninstall <pluginId>")
+      .description("Uninstall a plugin and delete its installation-owned data")
+      .action(async (pluginId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const purge = opts.force === true;
-          const qs = purge ? "?purge=true" : "";
 
           if (!ctx.json) {
-            console.log(
-              pc.dim(
-                purge
-                  ? `Uninstalling and purging plugin: ${pluginKey}`
-                  : `Uninstalling plugin: ${pluginKey}`,
-              ),
-            );
+            console.log(pc.dim(`Uninstalling plugin: ${pluginId}`));
           }
 
-          const result = await ctx.api.delete<PluginRecord>(
-            `/api/plugins/${encodeURIComponent(pluginKey)}${qs}`,
+          await ctx.api.delete<void>(
+            `/api/plugins/${encodeURIComponent(pluginId)}`,
           );
 
           if (ctx.json) {
-            printOutput(result, { json: true });
+            printOutput({ pluginId }, { json: true });
             return;
           }
 
-          console.log(pc.green(`✓ Uninstalled ${pc.bold(pluginKey)}${purge ? " (purged)" : ""}`));
+          console.log(pc.green(`✓ Uninstalled ${pc.bold(pluginId)}`));
         } catch (err) {
           handleCommandError(err);
         }
@@ -544,17 +491,20 @@ export function registerPluginCommands(program: Command): void {
   );
 
   // -------------------------------------------------------------------------
-  // plugin enable <plugin-key-or-id>
+  // plugin enable <plugin-id>
   // -------------------------------------------------------------------------
   addCommonClientOptions(
     plugin
-      .command("enable <pluginKey>")
+      .command("enable <pluginId>")
       .description("Enable a disabled or errored plugin")
-      .action(async (pluginKey: string, opts: BaseClientOptions) => {
+      .action(async (pluginId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const result = await ctx.api.post<PluginRecord>(
-            `/api/plugins/${encodeURIComponent(pluginKey)}/enable`,
+          const result = requirePluginRecord(
+            await ctx.api.post<PluginRecordDto>(
+              `/api/plugins/${encodeURIComponent(pluginId)}/enable`,
+            ),
+            "enable",
           );
 
           if (ctx.json) {
@@ -562,7 +512,7 @@ export function registerPluginCommands(program: Command): void {
             return;
           }
 
-          console.log(pc.green(`✓ Enabled ${pc.bold(pluginKey)} — status: ${result?.status ?? "unknown"}`));
+          console.log(pc.green(`✓ Enabled ${pc.bold(pluginId)} — status: ${result.status}`));
         } catch (err) {
           handleCommandError(err);
         }
@@ -570,17 +520,20 @@ export function registerPluginCommands(program: Command): void {
   );
 
   // -------------------------------------------------------------------------
-  // plugin disable <plugin-key-or-id>
+  // plugin disable <plugin-id>
   // -------------------------------------------------------------------------
   addCommonClientOptions(
     plugin
-      .command("disable <pluginKey>")
+      .command("disable <pluginId>")
       .description("Disable a running plugin without uninstalling it")
-      .action(async (pluginKey: string, opts: BaseClientOptions) => {
+      .action(async (pluginId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const result = await ctx.api.post<PluginRecord>(
-            `/api/plugins/${encodeURIComponent(pluginKey)}/disable`,
+          const result = requirePluginRecord(
+            await ctx.api.post<PluginRecordDto>(
+              `/api/plugins/${encodeURIComponent(pluginId)}/disable`,
+            ),
+            "disable",
           );
 
           if (ctx.json) {
@@ -588,7 +541,7 @@ export function registerPluginCommands(program: Command): void {
             return;
           }
 
-          console.log(pc.dim(`Disabled ${pc.bold(pluginKey)} — status: ${result?.status ?? "unknown"}`));
+          console.log(pc.dim(`Disabled ${pc.bold(pluginId)} — status: ${result.status}`));
         } catch (err) {
           handleCommandError(err);
         }
@@ -596,27 +549,25 @@ export function registerPluginCommands(program: Command): void {
   );
 
   // -------------------------------------------------------------------------
-  // plugin inspect <plugin-key-or-id>
+  // plugin inspect <plugin-id>
   // -------------------------------------------------------------------------
   addCommonClientOptions(
     plugin
-      .command("inspect <pluginKey>")
+      .command("inspect <pluginId>")
       .description("Show full details for an installed plugin")
-      .action(async (pluginKey: string, opts: BaseClientOptions) => {
+      .action(async (pluginId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const result = await ctx.api.get<PluginRecord>(
-            `/api/plugins/${encodeURIComponent(pluginKey)}`,
+          const result = requirePluginRecord(
+            await ctx.api.get<PluginDetailDto>(
+              `/api/plugins/${encodeURIComponent(pluginId)}`,
+            ),
+            "inspect",
           );
 
           if (ctx.json) {
             printOutput(result, { json: true });
             return;
-          }
-
-          if (!result) {
-            console.log(pc.red(`Plugin not found: ${pluginKey}`));
-            process.exit(1);
           }
 
           console.log(formatPlugin(result));
@@ -630,37 +581,16 @@ export function registerPluginCommands(program: Command): void {
   );
 
   addPluginGet(plugin, "ui-contributions", "List plugin UI contributions", "/api/plugins/ui-contributions");
-  addPluginSubGet(plugin, "health", "Get plugin health", "health");
   addPluginSubGet(plugin, "logs", "Get plugin logs", "logs");
-  addPluginSubPost(plugin, "upgrade", "Upgrade a plugin", "upgrade");
-  addPluginConfigGet(plugin, "config", "Get company-scoped plugin config");
-  addPluginConfigPost(plugin, "config:set", "Set company-scoped plugin config", "config");
-  addPluginConfigPost(plugin, "config:test", "Test company-scoped plugin config", "config/test");
+  addPluginUpgrade(plugin);
+  addPluginConfigGet(plugin, "config", "Get instance-wide plugin config");
+  addPluginConfigPost(plugin, "config:set", "Set instance-wide plugin config", "config");
+  addPluginConfigPost(plugin, "config:test", "Test instance-wide plugin config", "config/test");
   addPluginSubGet(plugin, "jobs", "List plugin jobs", "jobs");
   addPluginJobGet(plugin, "job:runs", "List plugin job runs", "runs");
   addPluginJobPost(plugin, "job:trigger", "Trigger a plugin job", "trigger");
-  addPluginKeyPost(plugin, "webhook", "Deliver a plugin webhook", "webhooks");
+  addPluginWebhookPost(plugin);
   addPluginSubGet(plugin, "dashboard", "Get plugin dashboard data", "dashboard");
-  addPluginSubPost(plugin, "bridge:data", "Send plugin bridge data", "bridge/data");
-  addPluginSubPost(plugin, "bridge:action", "Send plugin bridge action", "bridge/action");
-  addCommonClientOptions(
-    plugin
-      .command("bridge:stream")
-      .description("Stream a plugin bridge channel")
-      .argument("<pluginId>", "Plugin ID or key")
-      .argument("<channel>", "Stream channel")
-      .option("--duration-ms <ms>", "Stop streaming after this many milliseconds")
-      .action(async (pluginId: string, channel: string, opts: PluginStreamOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          await streamPluginBridge(ctx.api.apiBase, ctx.api.apiKey, pluginId, channel, parseOptionalInt(opts.durationMs));
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-  addPluginKeyPost(plugin, "data", "Get plugin URL-keyed data", "data");
-  addPluginKeyPost(plugin, "action", "Invoke plugin URL-keyed action", "actions");
   addPluginLocalFolderGet(plugin, "local-folders", "List plugin local folder bindings");
   addPluginLocalFolderKeyGet(plugin, "local-folder:status", "Get plugin local folder status", "status");
   addPluginLocalFolderKeyPost(plugin, "local-folder:validate", "Validate plugin local folder binding", "validate");
@@ -678,19 +608,8 @@ function addPluginGet(parent: Command, name: string, description: string, path: 
   }));
 }
 
-function addPluginPost(parent: Command, name: string, description: string, path: string): void {
-  addCommonClientOptions(parent.command(name).description(description).option("--payload-json <json>", "JSON payload", "{}").action(async (opts: PluginJsonOptions) => {
-    try {
-      const ctx = resolveCommandContext(opts);
-      printOutput(await ctx.api.post(path, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
-    } catch (err) {
-      handleCommandError(err);
-    }
-  }));
-}
-
 function addPluginSubGet(parent: Command, name: string, description: string, suffix: string): void {
-  addCommonClientOptions(parent.command(name).description(description).argument("<pluginId>", "Plugin ID or key").action(async (pluginId: string, opts: BaseClientOptions) => {
+  addCommonClientOptions(parent.command(name).description(description).argument("<pluginId>", "Plugin installation UUID").action(async (pluginId: string, opts: BaseClientOptions) => {
     try {
       const ctx = resolveCommandContext(opts);
       printOutput(await ctx.api.get(`/api/plugins/${encodeURIComponent(pluginId)}/${suffix}`), { json: ctx.json });
@@ -700,15 +619,27 @@ function addPluginSubGet(parent: Command, name: string, description: string, suf
   }));
 }
 
-function addPluginSubPost(parent: Command, name: string, description: string, suffix: string): void {
-  addCommonClientOptions(parent.command(name).description(description).argument("<pluginId>", "Plugin ID or key").option("--payload-json <json>", "JSON payload", "{}").action(async (pluginId: string, opts: PluginJsonOptions) => {
-    try {
-      const ctx = resolveCommandContext(opts);
-      printOutput(await ctx.api.post(`/api/plugins/${encodeURIComponent(pluginId)}/${suffix}`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
-    } catch (err) {
-      handleCommandError(err);
-    }
-  }));
+function addPluginUpgrade(parent: Command): void {
+  addCommonClientOptions(
+    parent
+      .command("upgrade")
+      .description("Upgrade a plugin")
+      .argument("<pluginId>", "Plugin installation UUID")
+      .option("--version <version>", "Specific npm version to install")
+      .action(async (pluginId: string, opts: PluginUpgradeOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          printOutput(
+            await ctx.api.post(`/api/plugins/${encodeURIComponent(pluginId)}/upgrade`, {
+              ...(opts.version ? { version: opts.version } : {}),
+            }),
+            { json: ctx.json },
+          );
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
 }
 
 function addPluginConfigGet(parent: Command, name: string, description: string): void {
@@ -716,21 +647,18 @@ function addPluginConfigGet(parent: Command, name: string, description: string):
     parent
       .command(name)
       .description(description)
-      .argument("<pluginId>", "Plugin ID or key")
-      .option("-C, --company-id <id>", "Company ID")
-      .action(async (pluginId: string, opts: PluginCompanyOptions) => {
+      .argument("<pluginId>", "Plugin installation UUID")
+      .action(async (pluginId: string, opts: BaseClientOptions) => {
         try {
-          const ctx = resolveCommandContext(opts, { requireCompany: true });
-          const companyId = requireCompanyId(ctx);
+          const ctx = resolveCommandContext(opts);
           printOutput(
-            await ctx.api.get(`/api/plugins/${encodeURIComponent(pluginId)}/config?companyId=${encodeURIComponent(companyId)}`),
+            await ctx.api.get(`/api/plugins/${encodeURIComponent(pluginId)}/config`),
             { json: ctx.json },
           );
         } catch (err) {
           handleCommandError(err);
         }
       }),
-    { includeCompany: false },
   );
 }
 
@@ -739,30 +667,25 @@ function addPluginConfigPost(parent: Command, name: string, description: string,
     parent
       .command(name)
       .description(description)
-      .argument("<pluginId>", "Plugin ID or key")
-      .option("-C, --company-id <id>", "Company ID")
+      .argument("<pluginId>", "Plugin installation UUID")
       .option("--payload-json <json>", "JSON payload", "{}")
-      .action(async (pluginId: string, opts: PluginCompanyOptions) => {
+      .action(async (pluginId: string, opts: PluginJsonOptions) => {
         try {
-          const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const ctx = resolveCommandContext(opts);
           const payload = parseJson(opts.payloadJson ?? "{}") as Record<string, unknown>;
           printOutput(
-            await ctx.api.post(`/api/plugins/${encodeURIComponent(pluginId)}/${suffix}`, {
-              ...payload,
-              companyId: ctx.companyId,
-            }),
+            await ctx.api.post(`/api/plugins/${encodeURIComponent(pluginId)}/${suffix}`, payload),
             { json: ctx.json },
           );
         } catch (err) {
           handleCommandError(err);
         }
       }),
-    { includeCompany: false },
   );
 }
 
 function addPluginJobGet(parent: Command, name: string, description: string, suffix: string): void {
-  addCommonClientOptions(parent.command(name).description(description).argument("<pluginId>", "Plugin ID or key").argument("<jobId>", "Job ID").action(async (pluginId: string, jobId: string, opts: BaseClientOptions) => {
+  addCommonClientOptions(parent.command(name).description(description).argument("<pluginId>", "Plugin installation UUID").argument("<jobId>", "Job ID").action(async (pluginId: string, jobId: string, opts: BaseClientOptions) => {
     try {
       const ctx = resolveCommandContext(opts);
       printOutput(await ctx.api.get(`/api/plugins/${encodeURIComponent(pluginId)}/jobs/${encodeURIComponent(jobId)}/${suffix}`), { json: ctx.json });
@@ -773,7 +696,7 @@ function addPluginJobGet(parent: Command, name: string, description: string, suf
 }
 
 function addPluginJobPost(parent: Command, name: string, description: string, suffix: string): void {
-  addCommonClientOptions(parent.command(name).description(description).argument("<pluginId>", "Plugin ID or key").argument("<jobId>", "Job ID").option("--payload-json <json>", "JSON payload", "{}").action(async (pluginId: string, jobId: string, opts: PluginJsonOptions) => {
+  addCommonClientOptions(parent.command(name).description(description).argument("<pluginId>", "Plugin installation UUID").argument("<jobId>", "Job ID").option("--payload-json <json>", "JSON payload", "{}").action(async (pluginId: string, jobId: string, opts: PluginJsonOptions) => {
     try {
       const ctx = resolveCommandContext(opts);
       printOutput(await ctx.api.post(`/api/plugins/${encodeURIComponent(pluginId)}/jobs/${encodeURIComponent(jobId)}/${suffix}`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
@@ -783,11 +706,11 @@ function addPluginJobPost(parent: Command, name: string, description: string, su
   }));
 }
 
-function addPluginKeyPost(parent: Command, name: string, description: string, suffix: string): void {
-  addCommonClientOptions(parent.command(name).description(description).argument("<pluginId>", "Plugin ID or key").argument("<key>", "Endpoint or data/action key").option("--payload-json <json>", "JSON payload", "{}").action(async (pluginId: string, key: string, opts: PluginJsonOptions) => {
+function addPluginWebhookPost(parent: Command): void {
+  addCommonClientOptions(parent.command("webhook").description("Deliver a plugin webhook").argument("<pluginId>", "Plugin installation UUID").argument("<endpointKey>", "Webhook endpoint key").option("--payload-json <json>", "JSON payload", "{}").action(async (pluginId: string, endpointKey: string, opts: PluginJsonOptions) => {
     try {
       const ctx = resolveCommandContext(opts);
-      printOutput(await ctx.api.post(`/api/plugins/${encodeURIComponent(pluginId)}/${suffix}/${encodeURIComponent(key)}`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
+      printOutput(await ctx.api.post(`/api/plugins/${encodeURIComponent(pluginId)}/webhooks/${encodeURIComponent(endpointKey)}`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
     } catch (err) {
       handleCommandError(err);
     }
@@ -799,7 +722,7 @@ function addPluginLocalFolderGet(parent: Command, name: string, description: str
     parent
       .command(name)
       .description(description)
-      .argument("<pluginId>", "Plugin ID or key")
+      .argument("<pluginId>", "Plugin installation UUID")
       .requiredOption("-C, --company-id <id>", "Company ID")
       .action(async (pluginId: string, opts: PluginCompanyOptions) => {
         try {
@@ -818,7 +741,7 @@ function addPluginLocalFolderKeyGet(parent: Command, name: string, description: 
     parent
       .command(name)
       .description(description)
-      .argument("<pluginId>", "Plugin ID or key")
+      .argument("<pluginId>", "Plugin installation UUID")
       .argument("<folderKey>", "Local folder key")
       .requiredOption("-C, --company-id <id>", "Company ID")
       .action(async (pluginId: string, folderKey: string, opts: PluginCompanyOptions) => {
@@ -841,7 +764,7 @@ function addPluginLocalFolderKeyPost(parent: Command, name: string, description:
     parent
       .command(name)
       .description(description)
-      .argument("<pluginId>", "Plugin ID or key")
+      .argument("<pluginId>", "Plugin installation UUID")
       .argument("<folderKey>", "Local folder key")
       .requiredOption("-C, --company-id <id>", "Company ID")
       .option("--payload-json <json>", "JSON payload", "{}")
@@ -868,7 +791,7 @@ function addPluginLocalFolderKeyPut(parent: Command, name: string, description: 
     parent
       .command(name)
       .description(description)
-      .argument("<pluginId>", "Plugin ID or key")
+      .argument("<pluginId>", "Plugin installation UUID")
       .argument("<folderKey>", "Local folder key")
       .requiredOption("-C, --company-id <id>", "Company ID")
       .requiredOption("--payload-json <json>", "JSON payload")
@@ -892,58 +815,4 @@ function addPluginLocalFolderKeyPut(parent: Command, name: string, description: 
 
 function parseJson(value: string): unknown {
   return JSON.parse(value) as unknown;
-}
-
-function parseOptionalInt(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(`Invalid integer value: ${value}`);
-  }
-  return parsed;
-}
-
-async function streamPluginBridge(
-  apiBase: string,
-  apiKey: string | undefined,
-  pluginId: string,
-  channel: string,
-  durationMs: number | undefined,
-): Promise<void> {
-  const controller = new AbortController();
-  const timer = durationMs === undefined ? null : setTimeout(() => controller.abort(), durationMs);
-  try {
-    const response = await fetch(buildApiUrl(
-      apiBase,
-      `/api/plugins/${encodeURIComponent(pluginId)}/bridge/stream/${encodeURIComponent(channel)}`,
-    ), {
-      headers: apiKey ? { authorization: `Bearer ${apiKey}` } : undefined,
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text.trim() || `Request failed with status ${response.status}`);
-    }
-    if (!response.body) return;
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (value) process.stdout.write(decoder.decode(value, { stream: true }));
-    }
-    const trailing = decoder.decode();
-    if (trailing) process.stdout.write(trailing);
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") return;
-    throw error;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-function buildApiUrl(apiBase: string, path: string): string {
-  const url = new URL(apiBase);
-  url.pathname = `${url.pathname.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
-  return url.toString();
 }

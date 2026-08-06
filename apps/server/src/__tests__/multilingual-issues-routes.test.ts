@@ -37,6 +37,7 @@ const multilingualMocks = vi.hoisted(() => ({
     create: vi.fn(),
     userComment: vi.fn(),
   },
+  pluginDomainEvents: { publish: vi.fn() },
   logActivity: vi.fn(),
 }));
 
@@ -152,6 +153,7 @@ function createApp(harness: ReturnType<typeof createMockDb>) {
   });
   app.use("/api", issueRoutes(harness.db, createStorage(), {
     ordinaryIssues: multilingualMocks.ordinaryIssues as never,
+    pluginDomainEvents: multilingualMocks.pluginDomainEvents,
   }));
   app.use(errorHandler);
   return app;
@@ -282,6 +284,14 @@ describe("multilingual issue routes", () => {
       issueId,
       message,
     }));
+    expect(multilingualMocks.pluginDomainEvents.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: expectedCommentId,
+        eventType: "issue.board.comment.created",
+        companyId,
+        payload: { companyId, issueId, commentId: expectedCommentId },
+      }),
+    );
     expect(harness.calls).toEqual([]);
   });
 

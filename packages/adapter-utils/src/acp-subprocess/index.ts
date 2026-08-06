@@ -1,10 +1,15 @@
 export {
   assertAcpRegistryAgentName,
+  isAcpRegistryAgentLocallyAvailable,
   listAcpRegistryAgentNames,
+  listLocallyAvailableAcpRegistryAgentNames,
+  loadAcpxAgentRegistry,
   loadConfiguredAcpRegistry,
 } from "./agent-registry.js";
 export type {
   AcpAgentRegistry,
+  AcpRegistryLocalAvailabilityInput,
+  LoadAcpxAgentRegistryInput,
   LoadConfiguredAcpRegistryInput,
 } from "./agent-registry.js";
 export {
@@ -96,7 +101,4 @@ export type {
   AcpPromptExecutionResult,
   AcpSubprocessTeardownOutcome,
 } from "./client.js";
-export {
-  createPaperclipRunToolsMcpServer,
-  noAcpMcpServers,
-} from "./run-tools.js";
+export { createPaperclipRunToolsMcpServer } from "./run-tools.js";

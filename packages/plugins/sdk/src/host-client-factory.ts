@@ -21,9 +21,8 @@
  *    concrete implementations of each platform service. The factory wires
  *    each handler to the appropriate service method.
  *
- * 3. **Type safety**: The returned handler map is typed as
- *    `WorkerToHostHandlers` (from `plugin-worker-manager.ts`) so it plugs
- *    directly into `WorkerStartOptions.hostHandlers`.
+ * 3. **Type safety**: The returned `HostClientHandlers` map is the complete
+ *    worker→host surface consumed by the host transport.
  *
  * @example
  * ```ts
@@ -108,7 +107,6 @@ export interface HostServices {
 
   /** Provides trusted company-scoped local folder helpers. */
   localFolders: {
-    declarations(params: WorkerToHostMethods["localFolders.declarations"][0]): Promise<WorkerToHostMethods["localFolders.declarations"][1]>;
     configure(params: WorkerToHostMethods["localFolders.configure"][0]): Promise<WorkerToHostMethods["localFolders.configure"][1]>;
     status(params: WorkerToHostMethods["localFolders.status"][0]): Promise<WorkerToHostMethods["localFolders.status"][1]>;
     list(params: WorkerToHostMethods["localFolders.list"][0]): Promise<WorkerToHostMethods["localFolders.list"][1]>;
@@ -126,7 +124,6 @@ export interface HostServices {
 
   /** Provides restricted plugin database namespace methods. */
   db: {
-    namespace(params: WorkerToHostMethods["db.namespace"][0]): Promise<WorkerToHostMethods["db.namespace"][1]>;
     query(params: WorkerToHostMethods["db.query"][0]): Promise<WorkerToHostMethods["db.query"][1]>;
     execute(params: WorkerToHostMethods["db.execute"][0]): Promise<WorkerToHostMethods["db.execute"][1]>;
   };
@@ -150,16 +147,9 @@ export interface HostServices {
 
   /** Provides privileged, company-scoped canonical runtime records. */
   runtimeRecords: {
+    readSession(params: WorkerToHostMethods["runtime.records.readSession"][0]): Promise<WorkerToHostMethods["runtime.records.readSession"][1]>;
     readRun(params: WorkerToHostMethods["runtime.records.readRun"][0]): Promise<WorkerToHostMethods["runtime.records.readRun"][1]>;
     readIssueComments(params: WorkerToHostMethods["runtime.records.readIssueComments"][0]): Promise<WorkerToHostMethods["runtime.records.readIssueComments"][1]>;
-  };
-
-  /** Provides `secrets.resolve`. */
-  secrets: {
-    resolve(
-      params: WorkerToHostMethods["secrets.resolve"][0],
-      context?: WorkerHostCallContext,
-    ): Promise<string>;
   };
 
   /** Provides `activity.log`. */
@@ -194,13 +184,12 @@ export interface HostServices {
     get(params: WorkerToHostMethods["companies.get"][0]): Promise<WorkerToHostMethods["companies.get"][1]>;
   };
 
-  /** Provides `projects.list`, `projects.get`, `projects.listWorkspaces`, `projects.getPrimaryWorkspace`, `projects.getWorkspaceForIssue`. */
+  /** Provides project reads, workspace reads, and managed project operations. */
   projects: {
     list(params: WorkerToHostMethods["projects.list"][0]): Promise<WorkerToHostMethods["projects.list"][1]>;
     get(params: WorkerToHostMethods["projects.get"][0]): Promise<WorkerToHostMethods["projects.get"][1]>;
     listWorkspaces(params: WorkerToHostMethods["projects.listWorkspaces"][0]): Promise<WorkerToHostMethods["projects.listWorkspaces"][1]>;
     getPrimaryWorkspace(params: WorkerToHostMethods["projects.getPrimaryWorkspace"][0]): Promise<WorkerToHostMethods["projects.getPrimaryWorkspace"][1]>;
-    getWorkspaceForIssue(params: WorkerToHostMethods["projects.getWorkspaceForIssue"][0]): Promise<WorkerToHostMethods["projects.getWorkspaceForIssue"][1]>;
     getManaged(params: WorkerToHostMethods["projects.managed.get"][0]): Promise<WorkerToHostMethods["projects.managed.get"][1]>;
     reconcileManaged(params: WorkerToHostMethods["projects.managed.reconcile"][0]): Promise<WorkerToHostMethods["projects.managed.reconcile"][1]>;
     resetManaged(params: WorkerToHostMethods["projects.managed.reset"][0]): Promise<WorkerToHostMethods["projects.managed.reset"][1]>;
@@ -247,7 +236,7 @@ export interface HostServices {
   };
 
   /** Provides run-scoped issue projections for direct plugin tools. */
-  runIssues?: {
+  runIssues: {
     resolveContext(params: WorkerToHostMethods["run.context.resolve"][0]): Promise<WorkerToHostMethods["run.context.resolve"][1]>;
     issueReach(params: WorkerToHostMethods["run.context.issueReach"][0]): Promise<WorkerToHostMethods["run.context.issueReach"][1]>;
     listCompanyIssues(params: WorkerToHostMethods["run.issues.listCompanyIssues"][0]): Promise<WorkerToHostMethods["run.issues.listCompanyIssues"][1]>;
@@ -293,7 +282,6 @@ export interface HostServices {
     getPolicy(params: WorkerToHostMethods["authorization.policies.get"][0]): Promise<WorkerToHostMethods["authorization.policies.get"][1]>;
     updatePolicy(params: WorkerToHostMethods["authorization.policies.update"][0]): Promise<WorkerToHostMethods["authorization.policies.update"][1]>;
     previewAssignment(params: WorkerToHostMethods["authorization.policies.previewAssignment"][0]): Promise<WorkerToHostMethods["authorization.policies.previewAssignment"][1]>;
-    explainAssignment(params: WorkerToHostMethods["authorization.policies.explainAssignment"][0]): Promise<WorkerToHostMethods["authorization.policies.explainAssignment"][1]>;
     searchAudit(params: WorkerToHostMethods["authorization.audit.search"][0]): Promise<WorkerToHostMethods["authorization.audit.search"][1]>;
   };
 }
@@ -327,7 +315,7 @@ export interface HostClientFactoryOptions {
 }
 
 // ---------------------------------------------------------------------------
-// Handler map type (compatible with WorkerToHostHandlers from worker manager)
+// Handler map type
 // ---------------------------------------------------------------------------
 
 /**
@@ -339,10 +327,8 @@ type HostHandler<M extends WorkerToHostMethodName> = (
 ) => Promise<WorkerToHostMethods[M][1]>;
 
 /**
- * A complete map of all worker→host method handlers.
- *
- * This type matches `WorkerToHostHandlers` from `plugin-worker-manager.ts`
- * but makes every handler required (the factory always provides all handlers).
+ * A complete map of all worker→host method handlers. The factory always
+ * provides every method, including capability-denied handlers.
  */
 export type HostClientHandlers = {
   [M in WorkerToHostMethodName]: HostHandler<M>;
@@ -364,7 +350,6 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   "config.get": null,
 
   // Trusted local folders
-  "localFolders.declarations": null,
   "localFolders.configure": "local.folders",
   "localFolders.status": "local.folders",
   "localFolders.list": "local.folders",
@@ -377,7 +362,6 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   "state.set": "plugin.state.write",
   "state.delete": "plugin.state.write",
 
-  "db.namespace": "database.namespace.read",
   "db.query": "database.namespace.read",
   "db.execute": "database.namespace.write",
 
@@ -393,11 +377,9 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   "http.fetch": "http.outbound",
 
   // Privileged runtime records
+  "runtime.records.readSession": "runtime.records.read",
   "runtime.records.readRun": "runtime.records.read",
   "runtime.records.readIssueComments": "runtime.records.read",
-
-  // Secrets
-  "secrets.resolve": "secrets.read-ref",
 
   // Activity
   "activity.log": "activity.log.write",
@@ -420,7 +402,6 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   "projects.get": "projects.read",
   "projects.listWorkspaces": "project.workspaces.read",
   "projects.getPrimaryWorkspace": "project.workspaces.read",
-  "projects.getWorkspaceForIssue": "project.workspaces.read",
   "executionWorkspaces.get": "execution.workspaces.read",
   "projects.managed.get": "projects.managed",
   "projects.managed.reconcile": "projects.managed",
@@ -478,7 +459,6 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   "authorization.policies.get": "authorization.policies.read",
   "authorization.policies.update": "authorization.policies.write",
   "authorization.policies.previewAssignment": "authorization.policies.read",
-  "authorization.policies.explainAssignment": "authorization.policies.read",
   "authorization.audit.search": "authorization.audit.read",
 };
 
@@ -539,6 +519,9 @@ export function createHostClientHandlers(
     method: WorkerToHostMethodName,
     params: unknown,
   ): CompanyScopeRequest {
+    if (method === "config.get") {
+      return noCompanyScope;
+    }
     if (method === "companies.list") return { kind: "all" };
     if (!isRecord(params)) return noCompanyScope;
 
@@ -733,14 +716,10 @@ export function createHostClientHandlers(
 
   return {
     // Config
-    "config.get": gated("config.get", async (params, context) => {
-      const companyId = resolveRequiredCompanyId("config.get", params, context);
-      return services.config.get({ ...params, companyId }, context);
+    "config.get": gated("config.get", async (_params, context) => {
+      return services.config.get({}, context);
     }),
 
-    "localFolders.declarations": gated("localFolders.declarations", async (params) => {
-      return services.localFolders.declarations(params);
-    }),
     "localFolders.configure": gated("localFolders.configure", async (params) => {
       return services.localFolders.configure(params);
     }),
@@ -771,9 +750,6 @@ export function createHostClientHandlers(
       return services.state.delete(params);
     }),
 
-    "db.namespace": gated("db.namespace", async (params) => {
-      return services.db.namespace(params);
-    }),
     "db.query": gated("db.query", async (params) => {
       return services.db.query(params);
     }),
@@ -802,6 +778,44 @@ export function createHostClientHandlers(
       return services.http.fetch(params);
     }),
 
+    "runtime.records.readSession": gated("runtime.records.readSession", async (params, context) => {
+      const companyId = resolveRequiredCompanyId("runtime.records.readSession", params, context);
+      const canonicalSession = context?.invocationScope?.canonicalSession;
+      if (
+        canonicalSession &&
+        (params.sessionId !== canonicalSession.sessionId ||
+          params.snapshotHighWaterSeq !== canonicalSession.snapshotHighWaterSeq)
+      ) {
+        throw new InvocationScopeDeniedError(
+          pluginId,
+          "runtime.records.readSession",
+          "the requested Session snapshot is outside the host-stamped invocation boundary",
+        );
+      }
+      const result = await services.runtimeRecords.readSession({ ...params, companyId });
+      if (
+        result.session.companyId !== companyId ||
+        result.session.sessionId !== params.sessionId ||
+        result.snapshotHighWaterSeq !== params.snapshotHighWaterSeq
+      ) {
+        throw new InvocationScopeDeniedError(
+          pluginId,
+          "runtime.records.readSession",
+          "the canonical Session result is outside the requested snapshot",
+        );
+      }
+      if (
+        canonicalSession &&
+        result.session.issueId !== canonicalSession.issueId
+      ) {
+        throw new InvocationScopeDeniedError(
+          pluginId,
+          "runtime.records.readSession",
+          "the canonical Session does not belong to the host-stamped invocation issue",
+        );
+      }
+      return result;
+    }),
     "runtime.records.readRun": gated("runtime.records.readRun", async (params, context) => {
       const companyId = resolveRequiredCompanyId("runtime.records.readRun", params, context);
       return services.runtimeRecords.readRun({ ...params, companyId });
@@ -809,12 +823,6 @@ export function createHostClientHandlers(
     "runtime.records.readIssueComments": gated("runtime.records.readIssueComments", async (params, context) => {
       const companyId = resolveRequiredCompanyId("runtime.records.readIssueComments", params, context);
       return services.runtimeRecords.readIssueComments({ ...params, companyId });
-    }),
-
-    // Secrets
-    "secrets.resolve": gated("secrets.resolve", async (params, context) => {
-      const companyId = resolveRequiredCompanyId("secrets.resolve", params, context);
-      return services.secrets.resolve({ ...params, companyId }, context);
     }),
 
     // Activity
@@ -862,9 +870,6 @@ export function createHostClientHandlers(
     }),
     "projects.getPrimaryWorkspace": gated("projects.getPrimaryWorkspace", async (params) => {
       return services.projects.getPrimaryWorkspace(params);
-    }),
-    "projects.getWorkspaceForIssue": gated("projects.getWorkspaceForIssue", async (params) => {
-      return services.projects.getWorkspaceForIssue(params);
     }),
     "executionWorkspaces.get": gated("executionWorkspaces.get", async (params) => {
       return services.executionWorkspaces.get(params);
@@ -919,68 +924,26 @@ export function createHostClientHandlers(
     }),
     "run.context.resolve": gated("run.context.resolve", async (params, context) => {
       requireExactRunContextHandle("run.context.resolve", params, context);
-      if (!services.runIssues) {
-        throw new InvocationScopeDeniedError(
-          pluginId,
-          "run.context.resolve",
-          "run-serving context is not configured",
-        );
-      }
       return services.runIssues.resolveContext(params);
     }),
     "run.context.issueReach": gated("run.context.issueReach", async (params, context) => {
       requireExactRunContextHandle("run.context.issueReach", params, context);
-      if (!services.runIssues) {
-        throw new InvocationScopeDeniedError(
-          pluginId,
-          "run.context.issueReach",
-          "run-serving context is not configured",
-        );
-      }
       return services.runIssues.issueReach(params);
     }),
     "run.issues.listCompanyIssues": gated("run.issues.listCompanyIssues", async (params, context) => {
       requireExactRunContextHandle("run.issues.listCompanyIssues", params, context);
-      if (!services.runIssues) {
-        throw new InvocationScopeDeniedError(
-          pluginId,
-          "run.issues.listCompanyIssues",
-          "run-serving issue context is not configured",
-        );
-      }
       return services.runIssues.listCompanyIssues(params);
     }),
     "run.issues.listSubIssues": gated("run.issues.listSubIssues", async (params, context) => {
       requireExactRunContextHandle("run.issues.listSubIssues", params, context);
-      if (!services.runIssues) {
-        throw new InvocationScopeDeniedError(
-          pluginId,
-          "run.issues.listSubIssues",
-          "run-serving issue context is not configured",
-        );
-      }
       return services.runIssues.listSubIssues(params);
     }),
     "run.issues.readIssueComments": gated("run.issues.readIssueComments", async (params, context) => {
       requireExactRunContextHandle("run.issues.readIssueComments", params, context);
-      if (!services.runIssues) {
-        throw new InvocationScopeDeniedError(
-          pluginId,
-          "run.issues.readIssueComments",
-          "run-serving issue context is not configured",
-        );
-      }
       return services.runIssues.readIssueComments(params);
     }),
     "run.issues.readIssueAgentRun": gated("run.issues.readIssueAgentRun", async (params, context) => {
       requireExactRunContextHandle("run.issues.readIssueAgentRun", params, context);
-      if (!services.runIssues) {
-        throw new InvocationScopeDeniedError(
-          pluginId,
-          "run.issues.readIssueAgentRun",
-          "run-serving issue context is not configured",
-        );
-      }
       return services.runIssues.readIssueAgentRun(params);
     }),
     "issues.create": gated("issues.create", async (params, context) => {
@@ -1078,30 +1041,8 @@ export function createHostClientHandlers(
     "authorization.policies.previewAssignment": gated("authorization.policies.previewAssignment", async (params) => {
       return services.authorization.previewAssignment(params);
     }),
-    "authorization.policies.explainAssignment": gated("authorization.policies.explainAssignment", async (params) => {
-      return services.authorization.explainAssignment(params);
-    }),
     "authorization.audit.search": gated("authorization.audit.search", async (params) => {
       return services.authorization.searchAudit(params);
     }),
   };
-}
-
-// ---------------------------------------------------------------------------
-// Utility: getRequiredCapability
-// ---------------------------------------------------------------------------
-
-/**
- * Get the capability required for a given worker→host method, or `null` if
- * no capability is required.
- *
- * Useful for inspecting capability requirements without calling the factory.
- *
- * @param method - The worker→host method name
- * @returns The required capability, or `null`
- */
-export function getRequiredCapability(
-  method: WorkerToHostMethodName,
-): PluginCapability | null {
-  return METHOD_CAPABILITY_MAP[method];
 }

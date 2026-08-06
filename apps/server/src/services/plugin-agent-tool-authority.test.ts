@@ -9,19 +9,19 @@ function manifest(
   overrides: Partial<PaperclipPluginManifestV1> = {},
 ): PaperclipPluginManifestV1 {
   return {
-    id: "acme.memory",
+    id: "acme.search",
     apiVersion: 1,
     version: "1.0.0",
-    displayName: "Memory",
-    description: "Memory tools",
+    displayName: "Search",
+    description: "External search tools",
     author: "Acme",
     categories: ["connector"],
     capabilities: ["agent.tools.register"],
     entrypoints: { worker: "./dist/worker.js" },
     tools: [{
-      name: "recall",
-      displayName: "Recall",
-      description: "Recall memory",
+      name: "query",
+      displayName: "Query",
+      description: "Query an external index",
       parametersSchema: { type: "object" },
     }],
     ...overrides,
@@ -30,27 +30,35 @@ function manifest(
 
 describe("plugin agent-tool authority", () => {
   it("accepts only an exact registered manifest tool", () => {
-    const input = { pluginKey: "acme.memory", manifest: manifest() };
+    const input = { pluginKey: "acme.search", manifest: manifest() };
     expect(listAuthorizedPluginAgentTools(input)).toHaveLength(1);
-    expect(pluginManifestDeclaresAgentTool(input, "acme.memory:recall")).toBe(true);
-    expect(pluginManifestDeclaresAgentTool(input, "acme.memory:other")).toBe(false);
+    expect(pluginManifestDeclaresAgentTool(input, "acme.search__query")).toBe(true);
+    expect(pluginManifestDeclaresAgentTool(input, "acme.search__other")).toBe(false);
   });
 
-  it("rejects a manifest identity mismatch", () => {
+  it("fails on a persisted manifest identity mismatch", () => {
     const input = {
-      pluginKey: "acme.memory",
+      pluginKey: "acme.search",
       manifest: manifest({ id: "acme.other" }),
     };
-    expect(listAuthorizedPluginAgentTools(input)).toEqual([]);
-    expect(pluginManifestDeclaresAgentTool(input, "acme.memory:recall")).toBe(false);
+    expect(() => listAuthorizedPluginAgentTools(input)).toThrow(
+      "does not match installation key",
+    );
+    expect(() => pluginManifestDeclaresAgentTool(input, "acme.search__query")).toThrow(
+      "does not match installation key",
+    );
   });
 
-  it("rejects a manifest without agent.tools.register", () => {
+  it("fails when persisted tools lack agent.tools.register", () => {
     const input = {
-      pluginKey: "acme.memory",
+      pluginKey: "acme.search",
       manifest: manifest({ capabilities: [] }),
     };
-    expect(listAuthorizedPluginAgentTools(input)).toEqual([]);
-    expect(pluginManifestDeclaresAgentTool(input, "acme.memory:recall")).toBe(false);
+    expect(() => listAuthorizedPluginAgentTools(input)).toThrow(
+      "declares agent tools without agent.tools.register",
+    );
+    expect(() => pluginManifestDeclaresAgentTool(input, "acme.search__query")).toThrow(
+      "declares agent tools without agent.tools.register",
+    );
   });
 });

@@ -7,7 +7,7 @@ import {
   RuntimeIssueActionDenied,
   type RuntimeIssueActionService,
 } from "../services/runtime-issue-action-port.js";
-import { RuntimeToolArgumentsInvalid } from "../services/runtime-tool-executor.js";
+import { RuntimeToolArgumentsInvalid } from "../services/runtime-interface-compiler.js";
 import type { PromptCapabilityBinding } from "../services/prompt-capability-gateway.js";
 import { createMockDb } from "./helpers/mock-db.js";
 

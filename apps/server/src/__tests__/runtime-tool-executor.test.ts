@@ -2,14 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import { resolveContextDial } from "../services/context-dial-resolver.js";
 import { createContextRetrievalService } from "../services/context-retrieval.js";
 import {
+  createRuntimePluginToolPort,
   createRuntimeToolExecutor,
   type RuntimeActionInvocation,
   type RuntimeActionPort,
 } from "../services/runtime-tool-executor.js";
 import {
   compileRuntimeInterface,
-  RuntimeDescriptorArgumentsInvalid,
-  RuntimeRetrievalArgumentsInvalid,
+  RuntimeInterfaceConflict,
+  RuntimeToolArgumentsInvalid,
   type CompiledRunToolDescriptor,
 } from "../services/runtime-interface-compiler.js";
 import type { PromptCapabilityBinding } from "../services/prompt-capability-gateway.js";
@@ -56,6 +57,7 @@ const readComments: CompiledRunToolDescriptor = {
 function setup(options: {
   agentDial?: Parameters<typeof resolveContextDial>[0]["agent"];
   enableRunTrace?: boolean;
+  replayedPluginResult?: { value: unknown };
 } = {}) {
   const terminalTransaction = {} as never;
   const issueUpdate = vi.fn(async () => ({ ok: true }));
@@ -80,8 +82,9 @@ function setup(options: {
   };
   const executePlugin = vi.fn(
     async (input: { mintPluginRunContext(): Promise<string> }) => ({
-      plugin: true,
-      opaqueRunContext: await input.mintPluginRunContext(),
+      ok: true as const,
+      content: "plugin result",
+      data: { opaqueRunContext: await input.mintPluginRunContext() },
     }),
   );
   const executeCompany = vi.fn(async () => ({ company: true }));
@@ -165,6 +168,12 @@ function setup(options: {
     },
     callLedger: {
       async claim() {
+        if (options.replayedPluginResult) {
+          return {
+            state: "completed" as const,
+            result: options.replayedPluginResult.value,
+          };
+        }
         return { state: "claimed", id: "ledger-call-1" };
       },
       async registerTerminalInvalid() {},
@@ -193,7 +202,254 @@ const mintPluginRunContext = vi.fn(
   async () => "pc_plugin_ctx_v1_opaque",
 );
 
+describe("runtime plugin tool port", () => {
+  it("dispatches the compiler-bound bare name directly to the exact installation worker", async () => {
+    const call = vi.fn(async () => ({ ok: true, content: "found" }));
+    const mint = vi.fn(async () => "pc_plugin_ctx_v1_direct");
+    const port = createRuntimePluginToolPort({
+      getWorker: vi.fn(() => ({
+        status: "running",
+        manifestIdentity: "manifest-1",
+        call,
+      })),
+    } as never);
+
+    await expect(port.execute({
+      capability,
+      toolName: "lookup",
+      pluginInstallationId: "plugin-installation",
+      pluginManifestIdentity: "manifest-1",
+      arguments: { query: "x" },
+      mintPluginRunContext: mint,
+    })).resolves.toEqual({ ok: true, content: "found" });
+
+    expect(call).toHaveBeenCalledWith(
+      "executeTool",
+      {
+        toolName: "lookup",
+        parameters: { query: "x" },
+        runContextHandle: "pc_plugin_ctx_v1_direct",
+      },
+      undefined,
+      {
+        companyId: "company",
+        pluginRunContextHandle: "pc_plugin_ctx_v1_direct",
+      },
+    );
+  });
+
+  it("does not mint a run context when the exact installation worker is unavailable", async () => {
+    const call = vi.fn();
+    const mint = vi.fn(async () => "pc_plugin_ctx_v1_unused");
+    const port = createRuntimePluginToolPort({
+      getWorker: vi.fn(() => undefined),
+    } as never);
+
+    await expect(port.execute({
+      capability,
+      toolName: "lookup",
+      pluginInstallationId: "plugin-installation",
+      pluginManifestIdentity: "manifest-1",
+      arguments: {},
+      mintPluginRunContext: mint,
+    })).rejects.toThrow(/exact compiled plugin runtime is not running/);
+    expect(mint).not.toHaveBeenCalled();
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it("rejects a replacement worker with a different manifest identity", async () => {
+    const call = vi.fn();
+    const mint = vi.fn(async () => "pc_plugin_ctx_v1_unused");
+    const port = createRuntimePluginToolPort({
+      getWorker: vi.fn(() => ({
+        status: "running",
+        manifestIdentity: "manifest-2",
+        call,
+      })),
+    } as never);
+
+    await expect(port.execute({
+      capability,
+      toolName: "lookup",
+      pluginInstallationId: "plugin-installation",
+      pluginManifestIdentity: "manifest-1",
+      arguments: {},
+      mintPluginRunContext: mint,
+    })).rejects.toThrow(/exact compiled plugin runtime is not running/);
+    expect(mint).not.toHaveBeenCalled();
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it("preserves a declared plugin tool failure as a ToolResult", async () => {
+    const call = vi.fn(async () => ({ ok: false, error: "query is required" }));
+    const port = createRuntimePluginToolPort({
+      getWorker: vi.fn(() => ({
+        status: "running",
+        manifestIdentity: "manifest-1",
+        call,
+      })),
+    } as never);
+
+    await expect(port.execute({
+      capability,
+      toolName: "lookup",
+      pluginInstallationId: "plugin-installation",
+      pluginManifestIdentity: "manifest-1",
+      arguments: {},
+      mintPluginRunContext: vi.fn(async () => "pc_plugin_ctx_v1_direct"),
+    })).resolves.toEqual({ ok: false, error: "query is required" });
+  });
+
+  it("rejects a worker response outside the plugin ToolResult contract", async () => {
+    const call = vi.fn(async () => ({ legacyResult: true }));
+    const port = createRuntimePluginToolPort({
+      getWorker: vi.fn(() => ({
+        status: "running",
+        manifestIdentity: "manifest-1",
+        call,
+      })),
+    } as never);
+
+    await expect(port.execute({
+      capability,
+      toolName: "lookup",
+      pluginInstallationId: "plugin-installation",
+      pluginManifestIdentity: "manifest-1",
+      arguments: {},
+      mintPluginRunContext: vi.fn(async () => "pc_plugin_ctx_v1_direct"),
+    })).rejects.toThrow("Invalid plugin ToolResult");
+  });
+
+  it("never rebinds a compiled call to a replacement worker during context mint", async () => {
+    const oldCall = vi.fn(async () => ({ ok: true, content: "old" }));
+    const newCall = vi.fn(async () => ({ ok: true, content: "new" }));
+    let currentWorker = {
+      status: "running",
+      manifestIdentity: "manifest-1",
+      call: oldCall,
+    };
+    const port = createRuntimePluginToolPort({
+      getWorker: vi.fn(() => currentWorker),
+    } as never);
+
+    await expect(port.execute({
+      capability,
+      toolName: "lookup",
+      pluginInstallationId: "plugin-installation",
+      pluginManifestIdentity: "manifest-1",
+      arguments: {},
+      mintPluginRunContext: vi.fn(async () => {
+        currentWorker = {
+          status: "running",
+          manifestIdentity: "manifest-2",
+          call: newCall,
+        };
+        return "pc_plugin_ctx_v1_direct";
+      }),
+    })).resolves.toEqual({ ok: true, content: "old" });
+
+    expect(oldCall).toHaveBeenCalledOnce();
+    expect(newCall).not.toHaveBeenCalled();
+  });
+
+  it("decodes completed plugin-tool replays through the same ToolResult contract", async () => {
+    const descriptor = {
+      name: "paperclip.example__lookup",
+      title: "Lookup",
+      description: "",
+      inputSchema: {},
+      source: "plugin" as const,
+      pluginInstallationId: "plugin-installation",
+      pluginToolName: "lookup",
+    };
+    const valid = setup({
+      replayedPluginResult: {
+        value: { ok: true, content: "replayed", data: { record: 1 } },
+      },
+    });
+    await expect(valid.executor.execute({
+      capability,
+      descriptor,
+      arguments: {},
+      callIdentity: { source: "provider", id: "replayed-valid" },
+      ingressOrdinal: 0,
+      mintPluginRunContext,
+    })).resolves.toEqual({
+      source: "plugin",
+      value: { ok: true, content: "replayed", data: { record: 1 } },
+    });
+    expect(valid.executePlugin).not.toHaveBeenCalled();
+
+    const invalid = setup({
+      replayedPluginResult: { value: { content: "legacy replay" } },
+    });
+    await expect(invalid.executor.execute({
+      capability,
+      descriptor,
+      arguments: {},
+      callIdentity: { source: "provider", id: "replayed-invalid" },
+      ingressOrdinal: 0,
+      mintPluginRunContext,
+    })).rejects.toThrow("Invalid plugin ToolResult");
+    expect(invalid.executePlugin).not.toHaveBeenCalled();
+  });
+});
+
 describe("runtime tool executor", () => {
+  it.each([
+    {
+      label: "plugin descriptor without an installation binding",
+      descriptor: {
+        name: "paperclip.example__lookup",
+        title: "Lookup",
+        description: "",
+        inputSchema: {},
+        source: "plugin" as const,
+        pluginToolName: "lookup",
+      },
+      message: "Plugin tool is missing its immutable installation binding",
+    },
+    {
+      label: "company descriptor without a selection binding",
+      descriptor: {
+        name: "company_lookup",
+        title: "Lookup",
+        description: "",
+        inputSchema: {},
+        source: "company" as const,
+      },
+      message: "Selected company tool is missing its immutable selection id",
+    },
+    {
+      label: "unknown Paperclip action descriptor",
+      descriptor: {
+        name: "unknown_paperclip_action",
+        title: "Unknown",
+        description: "",
+        inputSchema: {},
+        source: "paperclip" as const,
+      },
+      message: "Unknown Paperclip action unknown_paperclip_action",
+    },
+  ])("rejects a host-invalid $label as an interface conflict", async ({
+    descriptor,
+    message,
+  }) => {
+    const { executor } = setup();
+    await expect(executor.execute({
+      capability,
+      descriptor,
+      arguments: {},
+      callIdentity: { source: "provider", id: descriptor.name },
+      ingressOrdinal: 0,
+      mintPluginRunContext,
+    })).rejects.toMatchObject({
+      name: "RuntimeInterfaceConflict",
+      code: "runtime_interface_conflict",
+      message,
+    } satisfies Partial<RuntimeInterfaceConflict>);
+  });
+
   it("routes retrieval through the effective issue scope", async () => {
     const { executor } = setup();
     await expect(
@@ -204,7 +460,10 @@ describe("runtime tool executor", () => {
         ingressOrdinal: 0,
         mintPluginRunContext,
       }),
-    ).resolves.toMatchObject({ items: [{ body: "visible" }] });
+    ).resolves.toMatchObject({
+      source: "paperclip",
+      value: { items: [{ body: "visible" }] },
+    });
   });
 
   it("forwards the opaque run-trace cursor through the compiled retrieval ABI", async () => {
@@ -267,12 +526,14 @@ describe("runtime tool executor", () => {
     const { executor, executePlugin } = setup();
     await executor.execute({
       capability,      descriptor: {
-        name: "paperclip.example:lookup",
+        name: "paperclip.example__lookup",
         title: "",
         description: "",
         inputSchema: {},
         source: "plugin",
         pluginInstallationId: "plugin-installation",
+        pluginManifestIdentity: "manifest-1",
+        pluginToolName: "lookup",
       },
       arguments: { query: "x" },
       callIdentity: { source: "provider", id: "call-1" },
@@ -283,12 +544,14 @@ describe("runtime tool executor", () => {
       {
         runInterfaceToolCallId: "ledger-call-1",
         pluginInstallationId: "plugin-installation",
+        pluginManifestIdentity: "manifest-1",
       },
     );
     expect(executePlugin).toHaveBeenCalledWith(expect.objectContaining({
       capability,
-      toolName: "paperclip.example:lookup",
+      toolName: "lookup",
       pluginInstallationId: "plugin-installation",
+      pluginManifestIdentity: "manifest-1",
       arguments: { query: "x" },
       mintPluginRunContext: expect.any(Function),
     }));
@@ -311,7 +574,9 @@ describe("runtime tool executor", () => {
       selectedCompanyTools: [],
       pluginTools: [{
         installationId: "plugin-installation",
-        name: "paperclip.example:lookup",
+        manifestIdentity: "manifest-1",
+        name: "paperclip.example__lookup",
+        toolName: "lookup",
         title: "Lookup",
         description: "Lookup",
         inputSchema: {
@@ -321,7 +586,7 @@ describe("runtime tool executor", () => {
           properties: { query: { type: "string", minLength: 1 } },
         },
       }],
-    }).byName.get("paperclip.example:lookup")!;
+    }).byName.get("paperclip.example__lookup")!;
 
     await expect(executor.execute({
       capability,
@@ -330,7 +595,7 @@ describe("runtime tool executor", () => {
       callIdentity: { source: "provider", id: "invalid-plugin-call" },
       ingressOrdinal: 0,
       mintPluginRunContext: mintRunContext,
-    })).rejects.toThrow(RuntimeDescriptorArgumentsInvalid);
+    })).rejects.toThrow(RuntimeToolArgumentsInvalid);
     expect(mintRunContext).not.toHaveBeenCalled();
     expect(executePlugin).not.toHaveBeenCalled();
   });
@@ -422,7 +687,10 @@ describe("runtime tool executor", () => {
         ingressOrdinal: 8,
         mintPluginRunContext,
       }),
-    ).resolves.toEqual({ requested: true });
+    ).resolves.toEqual({
+      source: "paperclip",
+      value: { requested: true },
+    });
 
     expect(classify).toHaveBeenCalledWith({
       capability,
@@ -455,7 +723,7 @@ describe("runtime tool executor", () => {
         ingressOrdinal: 0,
         mintPluginRunContext,
       }),
-    ).rejects.toBeInstanceOf(RuntimeRetrievalArgumentsInvalid);
+    ).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
   });
 
   it("enforces the dynamically compiled configure catalog before dispatch", async () => {
@@ -483,7 +751,7 @@ describe("runtime tool executor", () => {
         ingressOrdinal: 0,
         mintPluginRunContext,
       }),
-    ).rejects.toBeInstanceOf(RuntimeDescriptorArgumentsInvalid);
+    ).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
     expect(agentConfigure).not.toHaveBeenCalled();
 
     await expect(
@@ -494,7 +762,10 @@ describe("runtime tool executor", () => {
         ingressOrdinal: 1,
         mintPluginRunContext,
       }),
-    ).resolves.toEqual({ configured: true });
+    ).resolves.toEqual({
+      source: "paperclip",
+      value: { configured: true },
+    });
     expect(agentConfigure).toHaveBeenCalledWith(
       expect.objectContaining({
         arguments: { agentId: "agent", title: null },

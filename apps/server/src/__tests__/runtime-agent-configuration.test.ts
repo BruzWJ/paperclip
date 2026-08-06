@@ -18,7 +18,7 @@ import {
   runtimeAgentConfigurationDisplayedDiff,
   type RuntimeAgentConfigurationService,
 } from "../services/runtime-agent-configuration.js";
-import { RuntimeToolArgumentsInvalid } from "../services/runtime-tool-executor.js";
+import { RuntimeToolArgumentsInvalid } from "../services/runtime-interface-compiler.js";
 import { createMockDb } from "./helpers/mock-db.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 

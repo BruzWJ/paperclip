@@ -12,7 +12,6 @@ const mockPluginsApi = vi.hoisted(() => ({
 const mockSetBreadcrumbs = vi.hoisted(() => vi.fn());
 const mockParams = vi.hoisted(() => ({
   companyPrefix: "PAP" as string | undefined,
-  pluginId: undefined as string | undefined,
   pluginRoutePath: undefined as string | undefined,
   "*": undefined as string | undefined,
 }));
@@ -36,7 +35,7 @@ vi.mock("@/context/CompanyContext", () => ({
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={to}>{children}</a>,
-  Navigate: () => null,
+  useLocation: () => ({ pathname: "/PAP/wiki", search: "", hash: "" }),
   useParams: () => mockParams,
 }));
 
@@ -72,7 +71,7 @@ function pageContribution(overrides: Partial<{ slots: unknown[] }> = {}) {
     pluginKey: "acme.knowledge-base",
     displayName: "Knowledge Base",
     version: "0.1.0",
-    uiEntryFile: "ui.js",
+    updatedAt: "2026-08-05T00:00:00.000Z",
     slots: [
       {
         type: "page",
@@ -112,7 +111,6 @@ describe("PluginPage", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     mockParams.companyPrefix = "PAP";
-    mockParams.pluginId = undefined;
     mockParams.pluginRoutePath = undefined;
     mockParams["*"] = undefined;
   });
@@ -123,7 +121,7 @@ describe("PluginPage", () => {
     vi.clearAllMocks();
   });
 
-  it("renders the breadcrumb and Back button on a legacy plugin route (no routeSidebar)", async () => {
+  it("renders the breadcrumb and Back button when no routeSidebar is declared", async () => {
     mockParams.pluginRoutePath = "wiki";
     mockPluginsApi.listUiContributions.mockResolvedValue([pageContribution()]);
 
@@ -205,6 +203,46 @@ describe("PluginPage", () => {
 
     expect(mockSetBreadcrumbs).toHaveBeenCalledWith([{ label: "index" }]);
 
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("matches only the exact manifest routePath and fails closed on duplicate owners", async () => {
+    mockParams.pluginRoutePath = "WIKI";
+    mockPluginsApi.listUiContributions.mockResolvedValue([pageContribution()]);
+
+    let root = await renderPage(container);
+    expect(container.querySelector('[data-testid="plugin-slot-mount"]')).toBeNull();
+    await act(async () => {
+      root.unmount();
+    });
+
+    container.innerHTML = "";
+    mockParams.pluginRoutePath = "wiki";
+    mockPluginsApi.listUiContributions.mockResolvedValue([
+      pageContribution({
+        slots: [
+          {
+            type: "page",
+            id: "wiki-page-a",
+            displayName: "Wiki A",
+            exportName: "WikiPageA",
+            routePath: "wiki",
+          },
+          {
+            type: "page",
+            id: "wiki-page-b",
+            displayName: "Wiki B",
+            exportName: "WikiPageB",
+            routePath: "wiki",
+          },
+        ],
+      }),
+    ]);
+
+    root = await renderPage(container);
+    expect(container.querySelector('[data-testid="plugin-slot-mount"]')).toBeNull();
     await act(async () => {
       root.unmount();
     });

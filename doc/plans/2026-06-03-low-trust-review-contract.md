@@ -39,7 +39,7 @@ This contract assumes the reviewer may process hostile PRs, diffs, comments, att
 - `OWASP API BOLA / Broken Function-Level Authorization`: same-company agent reads or mutates resources outside its assigned review issue.
 - `OWASP A01 Broken Access Control`: reviewer reaches agent config, attachments, or runtime controls it does not need.
 - `OWASP A10 SSRF / outbound abuse`: plugin or runtime surfaces create network reach.
-- `STRIDE Information Disclosure`: secrets/config/artifacts leak through issue reads, `GET /agents/me`, plugin secret resolution, or attachments.
+- `STRIDE Information Disclosure`: secrets/config/artifacts leak through issue reads, `GET /agents/me`, plugin configuration, or attachments.
 - `STRIDE Elevation of Privilege`: reviewer uses plugin tools, runtime service controls, or wake/recovery APIs to act as a more trusted worker.
 - `OWASP LLM02 Insecure Output Handling`: low-trust raw output is copied into higher-trust comments, wake payloads, or summaries.
 
@@ -56,10 +56,8 @@ Relevant current behavior:
   - `GET /agents/me` returns full agent detail, including raw `adapterConfig` and `runtimeConfig`, while other config routes are access-gated or redacted.
 - `apps/server/src/routes/workspace-runtime-service-authz.ts`
   - CEO or reporting-tree agents can manage runtime services for linked workspaces.
-- `apps/server/src/routes/plugins.ts` and `apps/server/src/services/plugin-capability-validator.ts`
-  - Plugin tools, plugin state, outbound HTTP, DB namespace access, local folders, and secret refs exist as grantable capabilities.
-- `apps/server/src/services/plugin-secrets-handler.ts`
-  - Plugin workers can resolve secret UUID refs to plaintext when granted `secrets.read-ref`.
+- `apps/server/src/routes/plugins.ts` and `packages/plugins/sdk/src/host-client-factory.ts`
+  - Plugin tools, plugin state, outbound HTTP, DB namespace access, and local folders exist as grantable capabilities.
 - `apps/server/src/services/issue-continuation-summary.ts`
   - Continuation summaries already prefer sanitized summaries over transcript copies.
 - `apps/server/src/services/recovery/*` and `apps/server/src/__tests__/heartbeat-process-recovery.test.ts`
@@ -86,8 +84,8 @@ Relevant current behavior:
 | Issue status | Move assigned review issue between `todo`, `in_progress`, `in_review`, `done`, `blocked` within preset rules | Change assignee, blockers, execution policy, approvals, recovery actions, or other issues' status | Prevent authority expansion |
 | Agent identity | Read redacted self identity only: id, name, role, companyId | Raw `adapterConfig`, `runtimeConfig`, session info, instructions paths, env bindings, config revisions | `GET /agents/me` is a current must-block leak |
 | Other agents / org | Optional read-only labels needed for mention rendering | Agent configuration routes, session routes, skill sync, agent wake/invoke, pause/resume | Avoid lateral movement |
-| Plugins | None in Phase 1 | Plugin tools, plugin bridge routes, plugin state, DB namespace, local folders, outbound HTTP, webhooks, jobs, secret refs | Plugin capability model is too broad for low trust |
-| Secrets / env | None | Secret routes, provider health, plugin secret resolution, direct secret-ref materialization, env/lease introspection | Secrets are outside review scope |
+| Plugins | None in Phase 1 | Plugin tools, plugin bridge routes, plugin state, DB namespace, local folders, outbound HTTP, webhooks, jobs | Plugin capability model is too broad for low trust |
+| Secrets / env | None | Secret routes, provider health, direct secret-ref materialization, env/lease introspection | Secrets are outside review scope |
 | Runtime services | None | Start/stop/restart runtime services, environment probes, lease operations, execution workspace runtime control | Prevent runtime pivot and SSRF |
 | Recovery / watchdog | None except passive viewing of the review issue's own status notices | Resolve recovery actions, interrupt active runs, schedule monitors, wake other agents | Too much control-plane authority |
 | Interactions / approvals / child issues | None in Phase 1 | Create approvals, interactions, child issues, blocker graphs | Reviewer should report findings, not orchestrate the company |
@@ -153,10 +151,10 @@ These surfaces must be explicitly denied or specially filtered for `low_trust_re
 
 3. Plugin execution and bridge surfaces
    Surfaces: `/api/plugins/tools`, `/api/plugins/tools/execute`, plugin bridge/state/DB/local-folder capabilities
-   Reason: secrets, HTTP, DB, filesystem, and tool pivot risk.
+   Reason: HTTP, DB, filesystem, and tool pivot risk.
 
 4. Secret resolution
-   Surfaces: secret routes plus plugin `secrets.read-ref`
+   Surfaces: secret routes and environment secret references
    Reason: plaintext secret disclosure is catastrophic and unrelated to review scope.
 
 5. Runtime service management

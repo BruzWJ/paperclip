@@ -20,7 +20,7 @@ const items = [
 
 type CompanySettingsTab = (typeof items)[number]["value"];
 
-export function getCompanySettingsTab(pathname: string): CompanySettingsTab {
+export function getCompanySettingsTab(pathname: string): CompanySettingsTab | null {
   if (pathname.includes(`${INSTANCE_SETTINGS_PATH_PREFIX}/profile`)) {
     return "instance-profile";
   }
@@ -49,15 +49,11 @@ export function getCompanySettingsTab(pathname: string): CompanySettingsTab {
     return "instance-general";
   }
 
-  if (pathname.includes("/company/settings/environments")) {
-    return "instance-environments";
-  }
-
   if (pathname.includes("/company/settings/cloud-upstream")) {
     return "cloud-upstream";
   }
 
-  if (pathname.includes("/company/settings/members") || pathname.includes("/company/settings/access")) {
+  if (pathname.includes("/company/settings/members")) {
     return "members";
   }
 
@@ -69,7 +65,13 @@ export function getCompanySettingsTab(pathname: string): CompanySettingsTab {
     return "secrets";
   }
 
-  return "general";
+  const segments = pathname.split("/").filter(Boolean);
+  const companySettingsIndex = segments.findIndex(
+    (segment, index) => segment === "company" && segments[index + 1] === "settings",
+  );
+  return companySettingsIndex >= 0 && segments.length === companySettingsIndex + 2
+    ? "general"
+    : null;
 }
 
 export function CompanySettingsNav() {
@@ -84,10 +86,10 @@ export function CompanySettingsNav() {
   }
 
   return (
-    <Tabs value={activeTab} onValueChange={handleTabChange}>
+    <Tabs value={activeTab ?? undefined} onValueChange={handleTabChange}>
       <PageTabBar
         items={items.map(({ value, label }) => ({ value, label }))}
-        value={activeTab}
+        value={activeTab ?? undefined}
         onValueChange={handleTabChange}
         align="start"
       />

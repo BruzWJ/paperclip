@@ -111,7 +111,7 @@ describe("unsaved adapter configuration test", () => {
       ),
       reason: "acp_capability_incompatible",
       message:
-        "The ACPX agent does not expose the runtime controls required by this configuration.",
+        "The local agent runtime does not expose the controls required by this configuration.",
     },
     {
       error: new AcpxRuntimeReadinessCleanupError({
@@ -120,13 +120,13 @@ describe("unsaved adapter configuration test", () => {
       }),
       reason: "acp_cleanup_failed",
       message:
-        "ACPX could not prove cleanup of the disposable test session.",
+        "Paperclip could not verify cleanup of the disposable test session.",
     },
     {
       error: new Error("secret provider detail"),
       reason: "acp_initialization_failed",
       message:
-        "ACPX could not initialize the agent with this configuration.",
+        "Paperclip could not initialize the local agent with this configuration.",
     },
   ] as const)(
     "maps a runtime failure to $reason without returning raw provider output",
@@ -181,7 +181,7 @@ describe("unsaved adapter configuration test", () => {
       adapterType: ADAPTER_TYPE,
       reason: "acp_cleanup_failed",
       message:
-        "Paperclip could not remove the isolated ACPX agent test workspace.",
+        "Paperclip could not remove the isolated local agent test workspace.",
       testedAt: TESTED_AT.toISOString(),
     });
     expect(JSON.stringify(result)).not.toContain("secret filesystem detail");
@@ -209,7 +209,7 @@ describe("unsaved adapter configuration test", () => {
       adapterType: ADAPTER_TYPE,
       reason: "acp_initialization_failed",
       message:
-        "Paperclip could not prepare an isolated workspace for the ACPX agent test.",
+        "Paperclip could not prepare an isolated workspace for the local agent test.",
       testedAt: TESTED_AT.toISOString(),
     });
     expect(JSON.stringify(result)).not.toContain("secret filesystem detail");

@@ -533,7 +533,6 @@ export const SECRET_BINDING_TARGET_TYPES = [
   "project",
   "environment",
   "routine",
-  "plugin",
   "issue",
   "run",
   "tool_connection",
@@ -675,9 +674,6 @@ export const LIVE_EVENT_TYPES = [
   "agent.status",
   "activity.logged",
   "external_object.updated",
-  "plugin.ui.updated",
-  "plugin.worker.crashed",
-  "plugin.worker.restarted",
 ] as const;
 export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number];
 
@@ -753,6 +749,37 @@ export const PERMISSION_KEYS = [
   "joins:approve",
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
+
+const HUMAN_ROLE_PERMISSION_KEYS = {
+  owner: [
+    "agents:create",
+    "agents:configure",
+    "skills:create",
+    "environments:manage",
+    "users:invite",
+    "users:manage_permissions",
+    "joins:approve",
+  ],
+  admin: [
+    "agents:create",
+    "agents:configure",
+    "skills:create",
+    "environments:manage",
+    "users:invite",
+    "joins:approve",
+  ],
+  operator: [],
+  viewer: [],
+} as const satisfies Record<HumanCompanyMembershipRole, readonly PermissionKey[]>;
+
+export function grantsForHumanRole(
+  role: HumanCompanyMembershipRole,
+): Array<{ permissionKey: PermissionKey; scope: null }> {
+  return HUMAN_ROLE_PERMISSION_KEYS[role].map((permissionKey) => ({
+    permissionKey,
+    scope: null,
+  }));
+}
 
 export const TOOL_APPLICATION_TYPES = ["mcp_http", "mcp_stdio", "a2a"] as const;
 export type ToolApplicationType = (typeof TOOL_APPLICATION_TYPES)[number];
@@ -984,24 +1011,37 @@ export type ToolAccessActivityAction = (typeof TOOL_ACCESS_ACTIVITY_ACTIONS)[num
  */
 export const PLUGIN_API_VERSION = 1 as const;
 
+/** Exact provider-visible name contract for every Paperclip MCP tool. */
+export const MCP_TOOL_NAME_MAX_LENGTH = 128;
+const MCP_TOOL_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+export function isMcpToolName(value: string): boolean {
+  return value.length > 0
+    && value.length <= MCP_TOOL_NAME_MAX_LENGTH
+    && MCP_TOOL_NAME_PATTERN.test(value);
+}
+
+/** Canonical provider-visible name for one plugin-owned agent tool. */
+export function pluginAgentToolName(pluginKey: string, toolName: string): string {
+  return `${pluginKey}__${toolName}`;
+}
+
 /**
  * Lifecycle statuses for an installed plugin.
  *
- * State machine: installed → ready | error, ready → disabled | error | upgrade_pending | uninstalled,
- * disabled → ready | uninstalled, error → ready | uninstalled,
- * upgrade_pending → ready | error | uninstalled. Uninstalled is terminal for
- * that immutable installation; reinstall creates a new installation id.
+ * State machine: ready → disabled | error, disabled → ready,
+ * error → ready | disabled. Uninstall deletes the installation after its
+ * runtime and durable authority have been fenced; it is not a lifecycle state.
+ * An upgrade that adds capabilities is rejected rather than represented as a
+ * lifecycle state.
  *
  * @see {@link PluginStatus} — inferred union type
  * @see PLUGIN_SPEC.md §21.3 `plugins.status`
  */
 export const PLUGIN_STATUSES = [
-  "installed",
   "ready",
   "disabled",
   "error",
-  "upgrade_pending",
-  "uninstalled",
 ] as const;
 export type PluginStatus = (typeof PLUGIN_STATUSES)[number];
 
@@ -1021,8 +1061,8 @@ export type PluginCategory = (typeof PLUGIN_CATEGORIES)[number];
 
 /**
  * Named permissions the host grants to a plugin. Plugins declare required
- * capabilities in their manifest; the host enforces them at runtime via the
- * plugin capability validator.
+ * capabilities in their manifest; the host enforces them at each worker and
+ * request authority boundary.
  *
  * Grouped into: Data Read, Data Write, Plugin State, Runtime/Integration,
  * Agent Tools, and UI.
@@ -1040,8 +1080,6 @@ export const PLUGIN_CAPABILITIES = [
   "goals.read",
   "goals.create",
   "goals.update",
-  "activity.read",
-  "costs.read",
   "access.members.read",
   "access.invites.read",
   "authorization.grants.read",
@@ -1069,8 +1107,6 @@ export const PLUGIN_CAPABILITIES = [
   "database.namespace.write",
   "external.objects.detect",
   "external.objects.read",
-  "external.objects.write",
-  "external.objects.refresh",
   // Plugin State
   "plugin.state.read",
   "plugin.state.write",
@@ -1082,10 +1118,10 @@ export const PLUGIN_CAPABILITIES = [
   "api.routes.register",
   "http.outbound",
   "http.private-network",
-  "secrets.read-ref",
   "environment.drivers.register",
   "local.folders",
   "runtime.context.read",
+  "runtime.prompt.observe",
   "runtime.records.read",
   // Agent Tools
   "agent.tools.register",
@@ -1095,13 +1131,9 @@ export const PLUGIN_CAPABILITIES = [
   "ui.page.register",
   "ui.detailTab.register",
   "ui.dashboardWidget.register",
-  "ui.commentAnnotation.register",
   "ui.action.register",
 ] as const;
 export type PluginCapability = (typeof PLUGIN_CAPABILITIES)[number];
-
-export const PLUGIN_DATABASE_NAMESPACE_MODES = ["schema"] as const;
-export type PluginDatabaseNamespaceMode = (typeof PLUGIN_DATABASE_NAMESPACE_MODES)[number];
 
 export const PLUGIN_DATABASE_NAMESPACE_STATUSES = [
   "active",
@@ -1135,9 +1167,6 @@ export type PluginDatabaseCoreReadTable = (typeof PLUGIN_DATABASE_CORE_READ_TABL
 export const PLUGIN_API_ROUTE_METHODS = ["GET", "POST", "PATCH", "DELETE"] as const;
 export type PluginApiRouteMethod = (typeof PLUGIN_API_ROUTE_METHODS)[number];
 
-export const PLUGIN_API_ROUTE_AUTH_MODES = ["board", "webhook"] as const;
-export type PluginApiRouteAuthMode = (typeof PLUGIN_API_ROUTE_AUTH_MODES)[number];
-
 /**
  * UI extension slot types. Each slot type corresponds to a mount point in the
  * Paperclip UI where plugin components can be rendered.
@@ -1155,13 +1184,17 @@ export const PLUGIN_UI_SLOT_TYPES = [
   "projectSidebarItem",
   "globalToolbarButton",
   "toolbarButton",
-  "contextMenuItem",
-  "commentAnnotation",
-  "commentContextMenuItem",
   "settingsPage",
   "companySettingsPage",
 ] as const;
 export type PluginUiSlotType = (typeof PLUGIN_UI_SLOT_TYPES)[number];
+
+export const PLUGIN_ENTITY_SCOPED_UI_SLOT_TYPES = [
+  "detailTab",
+  "issueDetailView",
+  "projectSidebarItem",
+  "toolbarButton",
+] as const satisfies readonly PluginUiSlotType[];
 
 export const WORKSPACE_OVERVIEW_DEFAULT_LIMIT = 50;
 export const WORKSPACE_OVERVIEW_MAX_LIMIT = 100;
@@ -1174,23 +1207,37 @@ export const WORKSPACE_OVERVIEW_LINKED_ISSUE_LIMIT = 4;
  */
 export const PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS = [
   "dashboard",
+  "timeline",
   "onboarding",
   "companies",
   "company",
-  "settings",
-  "plugins",
+  "apps",
+  "skills",
   "org",
   "agents",
   "projects",
+  "workspaces",
   "issues",
+  "search",
+  "tests",
+  "routines",
+  "cases",
+  "review-queue",
+  "learnings",
+  "pipelines",
+  "execution-workspaces",
   "goals",
+  "artifacts",
   "approvals",
   "costs",
   "activity",
+  "board-chat",
+  "decisions",
+  "training",
   "inbox",
-  "workspaces",
+  "u",
   "design-guide",
-  "tests",
+  "instance",
 ] as const;
 export type PluginReservedCompanyRouteSegment =
   (typeof PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS)[number];
@@ -1200,9 +1247,7 @@ export type PluginReservedCompanyRouteSegment =
  * plugin company settings pages may not claim.
  */
 export const PLUGIN_RESERVED_COMPANY_SETTINGS_ROUTE_SEGMENTS = [
-  "general",
-  "environments",
-  "access",
+  "cloud-upstream",
   "members",
   "invites",
   "secrets",
@@ -1218,21 +1263,15 @@ export type PluginReservedCompanySettingsRouteSegment =
  * component implementation detail.
  */
 export const PLUGIN_LAUNCHER_PLACEMENT_ZONES = [
-  "page",
-  "detailTab",
-  "issueDetailView",
-  "dashboardWidget",
   "sidebar",
-  "sidebarPanel",
-  "projectSidebarItem",
   "globalToolbarButton",
   "toolbarButton",
-  "contextMenuItem",
-  "commentAnnotation",
-  "commentContextMenuItem",
-  "settingsPage",
 ] as const;
 export type PluginLauncherPlacementZone = (typeof PLUGIN_LAUNCHER_PLACEMENT_ZONES)[number];
+
+export const PLUGIN_ENTITY_SCOPED_LAUNCHER_PLACEMENT_ZONES = [
+  "toolbarButton",
+] as const satisfies readonly PluginLauncherPlacementZone[];
 
 /**
  * Launcher action kinds describe what the launcher does when activated.
@@ -1260,17 +1299,8 @@ export const PLUGIN_LAUNCHER_BOUNDS = [
 ] as const;
 export type PluginLauncherBounds = (typeof PLUGIN_LAUNCHER_BOUNDS)[number];
 
-/**
- * Render environments describe the container a launcher expects after it is
- * activated. The current host may map these to concrete UI primitives.
- */
-export const PLUGIN_LAUNCHER_RENDER_ENVIRONMENTS = [
-  "hostInline",
-  "hostOverlay",
-  "hostRoute",
-  "external",
-  "iframe",
-] as const;
+/** Concrete host container used by component-rendering launchers. */
+export const PLUGIN_LAUNCHER_RENDER_ENVIRONMENTS = ["hostOverlay"] as const;
 export type PluginLauncherRenderEnvironment =
   (typeof PLUGIN_LAUNCHER_RENDER_ENVIRONMENTS)[number];
 
@@ -1282,10 +1312,6 @@ export type PluginLauncherRenderEnvironment =
 export const PLUGIN_UI_SLOT_ENTITY_TYPES = [
   "project",
   "issue",
-  "agent",
-  "goal",
-  "run",
-  "comment",
   "execution_workspace",
   "project_workspace",
 ] as const;
@@ -1312,14 +1338,23 @@ export type PluginStateScopeKind = (typeof PLUGIN_STATE_SCOPE_KINDS)[number];
 /** Statuses for a plugin's scheduled job definition. */
 export const PLUGIN_JOB_STATUSES = [
   "active",
-  "paused",
-  "failed",
+  "removed",
 ] as const;
 export type PluginJobStatus = (typeof PLUGIN_JOB_STATUSES)[number];
 
+/** Levels persisted by the plugin runtime and accepted by the plugin logs API. */
+export const PLUGIN_LOG_LEVELS = [
+  "debug",
+  "info",
+  "warn",
+  "error",
+  "metric",
+] as const;
+export type PluginLogLevel = (typeof PLUGIN_LOG_LEVELS)[number];
+export type PluginWorkerLogLevel = Exclude<PluginLogLevel, "metric">;
+
 /** Statuses for individual job run executions. */
 export const PLUGIN_JOB_RUN_STATUSES = [
-  "pending",
   "queued",
   "running",
   "succeeded",
@@ -1332,7 +1367,6 @@ export type PluginJobRunStatus = (typeof PLUGIN_JOB_RUN_STATUSES)[number];
 export const PLUGIN_JOB_RUN_TRIGGERS = [
   "schedule",
   "manual",
-  "retry",
 ] as const;
 export type PluginJobRunTrigger = (typeof PLUGIN_JOB_RUN_TRIGGERS)[number];
 
@@ -1351,36 +1385,10 @@ export type PluginWebhookDeliveryStatus = (typeof PLUGIN_WEBHOOK_DELIVERY_STATUS
  * @see PLUGIN_SPEC.md §16 — Event System
  */
 export const PLUGIN_EVENT_TYPES = [
-  "company.created",
-  "company.updated",
-  "project.created",
-  "project.updated",
-  "project.workspace_created",
-  "project.workspace_updated",
-  "project.workspace_deleted",
-  "issue.created",
-  "issue.updated",
-  "issue.comment.created",
-  "issue.document.created",
-  "issue.document.updated",
-  "issue.document.deleted",
-  "issue.relations.updated",
-  "agent.created",
-  "agent.updated",
-  "agent.status_changed",
-  "agent.error_cleared",
-  "agent.run.started",
+  "issue.board.comment.created",
   "agent.run.finished",
   "agent.run.failed",
   "agent.run.cancelled",
-  "goal.created",
-  "goal.updated",
-  "approval.created",
-  "approval.decided",
-  "budget.incident.opened",
-  "budget.incident.resolved",
-  "cost_event.created",
-  "activity.logged",
 ] as const;
 export type PluginEventType = (typeof PLUGIN_EVENT_TYPES)[number];
 
@@ -1398,3 +1406,13 @@ export const PLUGIN_BRIDGE_ERROR_CODES = [
   "UNKNOWN",
 ] as const;
 export type PluginBridgeErrorCode = (typeof PLUGIN_BRIDGE_ERROR_CODES)[number];
+
+/** Canonical structured failure returned by a plugin UI bridge call. */
+export interface PluginBridgeError {
+  /** Machine-readable bridge error code. */
+  code: PluginBridgeErrorCode;
+  /** Human-readable failure description. */
+  message: string;
+  /** Sanitized host or worker diagnostics, when available. */
+  details?: unknown;
+}

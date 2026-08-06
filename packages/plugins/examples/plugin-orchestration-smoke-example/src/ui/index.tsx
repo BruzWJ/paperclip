@@ -2,8 +2,7 @@ import {
   usePluginAction,
   usePluginData,
   type PluginDetailTabProps,
-  type PluginSettingsPageProps,
-  type PluginWidgetProps,
+  type PluginHostContextProps,
 } from "@paperclipai/plugin-sdk/ui";
 import type React from "react";
 
@@ -56,7 +55,7 @@ function SurfaceRows({ data }: { data: SurfaceStatus }) {
   );
 }
 
-export function DashboardWidget({ context }: PluginWidgetProps) {
+export function DashboardWidget({ context }: PluginHostContextProps) {
   const { data, loading, error } = usePluginData<SurfaceStatus>("surface-status", {
     companyId: context.companyId,
   });
@@ -92,7 +91,7 @@ export function IssuePanel({ context }: PluginDetailTabProps) {
         <button
           style={buttonStyle}
           onClick={async () => {
-            await initialize({ companyId: context.companyId, issueId: context.entityId });
+            await initialize({ issueId: context.entityId });
             refresh();
           }}
         >
@@ -114,7 +113,7 @@ export function IssuePanel({ context }: PluginDetailTabProps) {
   );
 }
 
-export function SettingsPage({ context }: PluginSettingsPageProps) {
+export function SettingsPage({ context }: PluginHostContextProps) {
   const { data, loading, error } = usePluginData<SurfaceStatus>("surface-status", {
     companyId: context.companyId,
   });

@@ -92,11 +92,6 @@ vi.mock("../services/plugin-environment-driver.js", () => ({
       configSchema: { type: "object" },
     },
   })),
-  startPluginEnvironmentInteractiveSetup: vi.fn(),
-  getPluginEnvironmentInteractiveSetup: vi.fn(),
-  capturePluginEnvironmentTemplate: vi.fn(),
-  cancelPluginEnvironmentInteractiveSetup: vi.fn(),
-  deletePluginEnvironmentTemplate: vi.fn(),
 }));
 
 function createEnvironment(overrides: Record<string, unknown> = {}) {
@@ -123,7 +118,9 @@ function createApp(actor: Record<string, unknown>) {
     (req as typeof req & { actor: Record<string, unknown> }).actor = actor;
     next();
   });
-  app.use("/api", environmentRoutes({} as never));
+  app.use("/api", environmentRoutes({} as never, {
+    pluginWorkerManager: undefined as never,
+  }));
   app.use(errorHandler);
   return app;
 }

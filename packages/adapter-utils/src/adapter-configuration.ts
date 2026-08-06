@@ -64,7 +64,7 @@ export function resolveAcpAdapterRevisionConfiguration(input: {
 
   const model =
     definition.modelConfigOptionId === null
-      ? null
+      ? definition.models[0] ?? null
       : (() => {
           const modelOption = definition.configOptions.find(
             (option) => option.id === definition.modelConfigOptionId,

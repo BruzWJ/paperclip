@@ -149,7 +149,8 @@ describe("NewAgentDialog", () => {
     });
 
     expect(container.textContent).toContain("Fixture agent");
-    expect(container.textContent).toContain("Discovered from ACPX at runtime");
+    expect(container.textContent).toContain("Available from a local agent runtime");
+    expect(container.textContent).not.toContain("ACPX");
     expect(container.textContent).not.toContain("HTTP Session");
     expect(container.textContent).not.toContain("Process");
 
@@ -195,6 +196,7 @@ describe("NewAgentDialog", () => {
         "https://paperclip.local/api/invites/agent-token/onboarding.txt",
       ),
     );
+    expect(clipboardWriteTextMock.mock.calls[0]?.[0]).not.toContain("ACPX");
     expect(container.textContent).toContain("Agent onboarding prompt");
     expect(container.textContent).toContain("Send this prompt to the external agent");
     expect(container.textContent).not.toContain("Optional message for the agent");
@@ -222,7 +224,7 @@ describe("NewAgentDialog", () => {
     });
   });
 
-  it("shows a recoverable ACPX catalog error instead of an empty runtime picker", async () => {
+  it("shows a recoverable local catalog error instead of an empty runtime picker", async () => {
     adapterCatalogStateMock.mockReturnValue({
       adapters: [],
       isLoading: false,
@@ -251,7 +253,8 @@ describe("NewAgentDialog", () => {
       configureButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(container.textContent).toContain("could not refresh the ACPX runtime catalog");
+    expect(container.textContent).toContain("could not refresh the local agent catalog");
+    expect(container.textContent).not.toContain("ACPX");
     expect(container.textContent).toContain("Retry catalog refresh");
 
     const retryButton = Array.from(container.querySelectorAll("button")).find(

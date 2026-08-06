@@ -15,7 +15,7 @@ import {
 function registry(names: readonly string[] = ["fixture"]): AcpAgentRegistry {
   return {
     list: () => [...names],
-    resolve: (name) => ["fixture-command", name],
+    resolve: (name) => [process.execPath, name],
   };
 }
 
@@ -185,6 +185,37 @@ describe("ACPX runtime readiness probe", () => {
       }),
     ).rejects.toThrow("ACPX agent is not registry-listed");
     expect(ensureSession).not.toHaveBeenCalled();
+    expect(removeTemporaryStateDir).toHaveBeenCalledWith(
+      "/private/readiness-state",
+    );
+  });
+
+  it("rejects an uninstalled package-runner agent before ACPX creates a runtime", async () => {
+    const createAcpRuntime = vi.fn();
+    const removeTemporaryStateDir = vi.fn(async () => {});
+
+    await expect(
+      probeAcpxRuntimeReadiness({
+        cwd: process.cwd(),
+        agentName: "definitely-not-installed-agent",
+        configSelections: [],
+        dependencies: {
+          loadAgentRegistry: async () => ({
+            list: () => ["definitely-not-installed-agent"],
+            resolve: () => [
+              "npx",
+              "-y",
+              "definitely-not-installed-package",
+            ],
+          }),
+          createAcpRuntime,
+          createTemporaryStateDir: async () => "/private/readiness-state",
+          removeTemporaryStateDir,
+        },
+      }),
+    ).rejects.toThrow("ACPX agent is not locally available");
+
+    expect(createAcpRuntime).not.toHaveBeenCalled();
     expect(removeTemporaryStateDir).toHaveBeenCalledWith(
       "/private/readiness-state",
     );

@@ -192,15 +192,21 @@ A change is done when all are true:
 
 Paperclip has one AI execution path: the ACPX public-runtime bounded
 single-prompt bridge.
-ACPX is the sole supplier of exact agent names, local availability, models, and
-stable session settings. Paperclip reads only the exact entries in ACPX's
-resolved `agents` configuration and admits only candidates whose disposable
-ACPX session succeeds. ACPX built-in shortcuts that are absent from that map
-are not catalog entries and must never be probed or surfaced.
+ACPX is the sole supplier of exact agent names, launch resolution, models, and
+stable session settings. Paperclip loads ACPX's public registry, including its
+resolved `agents` overrides, and never treats that override map as an
+installed-agent allowlist. Before an active ACPX probe, Paperclip applies one
+provider-agnostic no-install fence to the ACPX-resolved launch: a direct
+executable must already exist locally, while a package-exec launch requires an
+exact local executable matching the ACPX registry name. A candidate is
+selectable only after that fence and a disposable ACPX session both succeed.
+An ACPX built-in name by itself is not evidence of local availability.
 
-Paperclip must not add an agent/model/configuration catalog, aliases, launch
-argv, provider-specific parser, ACPX runtime/session state, authentication, or
-tools. ACPX owns resolution and lifecycle of the local provider CLI; Paperclip
+Paperclip must not add an agent/model/configuration catalog, aliases,
+provider-specific executable mapping or parser, ACPX runtime/session state,
+authentication, or tools. The generic no-install fence may inspect only the
+launch returned by ACPX and must never execute or materialize a package. ACPX
+owns resolution and lifecycle of the local provider CLI; Paperclip
 owns durable authority fences, request-scoped MCP, safe event projection,
 cancellation requests, and cleanup of its own request files. ACPX's temporary
 state store is deleted after each bounded prompt; only an opaque provider backend
@@ -226,9 +232,9 @@ These are local modifications in the fork's UI. If re-copying source, these must
 ### External adapter packages
 
 External adapter packages cannot add a Paperclip agent. Install and
-authenticate an ACPX-compatible CLI locally, then declare its entry in
-ACPX's `agents` configuration; ACPX discovery supplies its name, models, and
-settings dynamically. A generic advertised option,
+authenticate an ACPX-compatible CLI locally; ACPX discovery supplies its name,
+models, and settings dynamically. Declare an ACPX `agents` entry only for a
+custom name or launch override. A generic advertised option,
 including a reasoning setting when the agent exposes one, is persisted as an
 immutable ACPX session configuration selection and applied through ACPX before
 the prompt. The current ACPX public runtime advertises only local execution

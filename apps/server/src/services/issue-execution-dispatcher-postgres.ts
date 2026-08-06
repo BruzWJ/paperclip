@@ -91,6 +91,7 @@ import {
   publishAgentRunTerminalEvent,
   type AgentRunTerminalPluginEventInput,
 } from "./agent-run-plugin-events.js";
+import type { PluginDomainEventPublisher } from "./plugin-domain-event-publisher.js";
 import {
   activeIssueTreePauseHoldExistsSql,
   lockIssueTreeExecutionGate,
@@ -184,6 +185,7 @@ export interface PostgresIssueExecutionDispatcherRepositoryOptions {
   readonly leaseTtlMs?: number;
   readonly now?: () => Date;
   readonly idFactory?: () => string;
+  readonly pluginDomainEvents: PluginDomainEventPublisher;
 }
 
 export type IssueExecutionAuthorityFenceSelector =
@@ -3175,7 +3177,10 @@ export function createPostgresIssueExecutionDispatcherRepository(
       },
     );
     if (recoveredTerminalEvent) {
-      publishAgentRunTerminalEvent(recoveredTerminalEvent);
+      await publishAgentRunTerminalEvent(
+        options.pluginDomainEvents,
+        recoveredTerminalEvent,
+      );
     }
     return result;
   }
@@ -4058,7 +4063,10 @@ export function createPostgresIssueExecutionDispatcherRepository(
           },
         );
         if (recoveredTerminalEvent) {
-          publishAgentRunTerminalEvent(recoveredTerminalEvent);
+          await publishAgentRunTerminalEvent(
+            options.pluginDomainEvents,
+            recoveredTerminalEvent,
+          );
         }
         if (recovered) refIds.push(recovered);
       }
@@ -4389,7 +4397,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
         return completed;
       });
       if (settlement.finalization) {
-        publishAgentRunTerminalEvent({
+        await publishAgentRunTerminalEvent(options.pluginDomainEvents, {
           companyId: settlement.finalization.companyId,
           issueId: settlement.finalization.issueId,
           runId: settlement.finalization.runId,
@@ -4426,8 +4434,10 @@ export function createPostgresIssueExecutionDispatcherRepository(
         )
         .limit(1)
         .then((rows) => rows[0] ?? null);
-      if (!run) return;
-      publishAgentRunTerminalEvent({
+      if (!run) {
+        reject("terminalized cancellation lost its canonical run");
+      }
+      await publishAgentRunTerminalEvent(options.pluginDomainEvents, {
         companyId: input.companyId,
         issueId: input.issueId,
         runId: input.runId,

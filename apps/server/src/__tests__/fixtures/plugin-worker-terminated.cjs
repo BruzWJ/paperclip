@@ -19,14 +19,22 @@ rl.on("line", (line) => {
       jsonrpc: "2.0",
       id: message.id,
       result: {
-        ok: true,
-        supportedMethods: ["environmentExecute"],
+        supportedMethods: ["getData"],
       },
     });
     return;
   }
 
-  if (method === "environmentExecute") {
+  if (method === "health") {
+    send({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: { status: "ok" },
+    });
+    return;
+  }
+
+  if (method === "getData") {
     send({
       jsonrpc: "2.0",
       id: message.id,

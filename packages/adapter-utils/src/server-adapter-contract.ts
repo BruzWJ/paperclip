@@ -280,9 +280,9 @@ function assertServerAdapterModule(
     throw new Error(`Server adapter "${type}" models contain duplicate ids or values`);
   }
   if (definition.modelConfigOptionId === null) {
-    if (models.length > 0) {
+    if (models.length > 1) {
       throw new Error(
-        `Server adapter "${type}" cannot declare models without an ACPX model option`,
+        `Server adapter "${type}" cannot declare multiple models without an ACPX model option`,
       );
     }
   } else {

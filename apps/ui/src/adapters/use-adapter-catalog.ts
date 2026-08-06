@@ -8,21 +8,21 @@ import { queryKeys } from "@/lib/queryKeys";
 import { syncServerAdapters } from "./registry";
 
 export interface AdapterCatalogSyncState {
-  /** Exact selectable agents from the current successful ACPX snapshot. */
+  /** Exact selectable agents from the current successful server snapshot. */
   readonly adapters: readonly ReadyAdapterInfo[];
   /** True only while the initial catalogue snapshot is being resolved. */
   readonly isLoading: boolean;
-  /** A whole-catalog ACPX refresh failed, rather than returning no agents. */
+  /** A whole-catalog refresh failed, rather than returning no agents. */
   readonly isError: boolean;
   readonly error: Error | null;
-  /** Re-runs the ACPX-backed catalogue request on operator demand. */
+  /** Re-runs the local-agent catalogue request on operator demand. */
   readonly refetch: () => Promise<unknown>;
 }
 
 /**
- * Fetch and install the server-admitted ACPX catalog in the UI
+ * Fetch and install the server-admitted local-agent catalog in the UI
  * schema renderer. The browser cannot add, override, hide, or infer an
- * adapter entry. ACPX probe diagnostics remain visible in the manager but
+ * adapter entry. Local readiness diagnostics remain visible in the manager but
  * deliberately do not enter this selectable catalog.
  */
 export function useAdapterCatalogSyncState(
@@ -38,7 +38,7 @@ export function useAdapterCatalogSyncState(
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnWindowFocus: "always",
-    // The server probes ACPX on a bounded cadence. Keep an open picker in
+    // The server checks local agents on a bounded cadence. Keep an open picker in
     // sync when a local compatible CLI is installed or authenticated.
     refetchInterval: 30_000,
   });
@@ -88,7 +88,7 @@ export function useAdapterCatalogSyncState(
 
 /**
  * Compatibility shorthand for consumers that only need the current dynamic
- * ACPX selection set. New picker surfaces should prefer the stateful variant
+ * local-agent selection set. New picker surfaces should prefer the stateful variant
  * so they can distinguish a failed refresh from an empty successful catalog.
  */
 export function useAdapterCatalogSync(

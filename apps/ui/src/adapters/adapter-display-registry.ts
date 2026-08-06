@@ -1,7 +1,7 @@
 /**
  * Single source of truth for adapter display metadata.
  *
- * ACPX supplies every concrete agent label and configuration. This module
+ * The server supplies every concrete agent label and configuration. This module
  * contains only neutral presentation for historical references that have no
  * current catalog snapshot; it deliberately has no per-agent map.
  */
@@ -21,6 +21,6 @@ export function getAdapterLabel(type: string): string {
 export function getAdapterDisplay(type: string): AdapterDisplayInfo {
   return {
     label: humanizeType(type),
-    description: "Discovered from ACPX at runtime",
+    description: "Available from a local agent runtime",
   };
 }

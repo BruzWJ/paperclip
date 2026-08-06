@@ -908,7 +908,7 @@ export function catalogAdapterConfigurationIsReady(input: {
   schemaError: string | null;
   adapterConfig: Record<string, unknown>;
   defaultEnvironmentId: string;
-  /** When supplied, reject stale selections that ACPX no longer admits. */
+  /** When supplied, reject stale selections that the server no longer admits. */
   executionEnvironmentIds?: readonly string[];
 }): boolean {
   return Boolean(
@@ -2033,7 +2033,7 @@ function CatalogAgentAdapterConfiguration({
           Operator-managed native skills
         </div>
         <span className="text-muted-foreground">
-          ACPX uses the local CLI's native skill handling.
+          The local CLI uses its native skill handling.
         </span>
       </div>
       <label className="grid gap-1.5 text-xs">

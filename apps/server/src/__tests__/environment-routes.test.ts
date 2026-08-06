@@ -70,11 +70,6 @@ const mockValidatePluginEnvironmentDriverConfig = vi.hoisted(() => vi.fn());
 const mockValidatePluginSandboxProviderConfig = vi.hoisted(() => vi.fn());
 const mockListReadyPluginEnvironmentDrivers = vi.hoisted(() => vi.fn());
 const mockResolvePluginSandboxProviderDriverByKey = vi.hoisted(() => vi.fn());
-const mockStartPluginEnvironmentInteractiveSetup = vi.hoisted(() => vi.fn());
-const mockGetPluginEnvironmentInteractiveSetup = vi.hoisted(() => vi.fn());
-const mockCapturePluginEnvironmentTemplate = vi.hoisted(() => vi.fn());
-const mockCancelPluginEnvironmentInteractiveSetup = vi.hoisted(() => vi.fn());
-const mockDeletePluginEnvironmentTemplate = vi.hoisted(() => vi.fn());
 const mockExecutionWorkspaceService = vi.hoisted(() => ({
   clearEnvironmentSelection: vi.fn(),
 }));
@@ -117,11 +112,6 @@ vi.mock("../services/execution-workspaces.js", () => ({
 vi.mock("../services/plugin-environment-driver.js", () => ({
   listReadyPluginEnvironmentDrivers: mockListReadyPluginEnvironmentDrivers,
   resolvePluginSandboxProviderDriverByKey: mockResolvePluginSandboxProviderDriverByKey,
-  startPluginEnvironmentInteractiveSetup: mockStartPluginEnvironmentInteractiveSetup,
-  getPluginEnvironmentInteractiveSetup: mockGetPluginEnvironmentInteractiveSetup,
-  capturePluginEnvironmentTemplate: mockCapturePluginEnvironmentTemplate,
-  cancelPluginEnvironmentInteractiveSetup: mockCancelPluginEnvironmentInteractiveSetup,
-  deletePluginEnvironmentTemplate: mockDeletePluginEnvironmentTemplate,
   validatePluginEnvironmentDriverConfig: mockValidatePluginEnvironmentDriverConfig,
   validatePluginSandboxProviderConfig: mockValidatePluginSandboxProviderConfig,
 }));
@@ -351,11 +341,6 @@ describe("environment routes", () => {
     ));
     mockListReadyPluginEnvironmentDrivers.mockReset();
     mockListReadyPluginEnvironmentDrivers.mockResolvedValue([]);
-    mockStartPluginEnvironmentInteractiveSetup.mockReset();
-    mockGetPluginEnvironmentInteractiveSetup.mockReset();
-    mockCapturePluginEnvironmentTemplate.mockReset();
-    mockCancelPluginEnvironmentInteractiveSetup.mockReset();
-    mockDeletePluginEnvironmentTemplate.mockReset();
     mockAccessService.decide.mockResolvedValue({
       allowed: true,
       explanation: "Allowed by test harness",

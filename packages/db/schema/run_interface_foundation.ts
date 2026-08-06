@@ -30,7 +30,7 @@ export const pluginRunContexts = pgTable(
     runInterfaceToolCallId: uuid("run_interface_tool_call_id").notNull(),
     pluginInstallationId: uuid("plugin_installation_id")
       .notNull()
-      .references(() => plugins.id, { onDelete: "restrict" }),
+      .references(() => plugins.id, { onDelete: "cascade" }),
     handleHash: text("handle_hash").primaryKey(),
     firstUsedAt: timestamp("first_used_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -113,10 +113,8 @@ export const runInterfaceToolCalls = pgTable(
       () => agentCompanyToolSelections.id,
       { onDelete: "restrict" },
     ),
-    pluginInstallationId: uuid("plugin_installation_id").references(
-      () => plugins.id,
-      { onDelete: "restrict" },
-    ),
+    /** Immutable plugin binding identity; intentionally not a live installation FK. */
+    pluginInstallationId: uuid("plugin_installation_id"),
     argumentsDigest: text("arguments_digest").notNull(),
     classification: text("classification")
       .$type<

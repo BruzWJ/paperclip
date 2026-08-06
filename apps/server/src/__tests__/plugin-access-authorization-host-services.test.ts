@@ -3,6 +3,12 @@ import type { Db } from "@paperclipai/db";
 import { buildHostServices } from "../services/plugin-host-services.js";
 import { PluginIssueAuthorizationRejected } from "../services/plugin-issue-authorization.js";
 import { createMockDb } from "./helpers/mock-db.js";
+import {
+  createPluginHostServicesTestOptions,
+  createPluginManifestFake,
+  createPluginRuntimeRecordsReaderFake,
+  noopPluginEventDelivery,
+} from "./helpers/plugin-host-services.js";
 
 const mocks = vi.hoisted(() => ({
   assertPluginAvailable: vi.fn(),
@@ -13,7 +19,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../services/plugin-issue-authorization.js", async () => ({
   ...await vi.importActual<typeof import("../services/plugin-issue-authorization.js")>("../services/plugin-issue-authorization.js"),
-  assertPluginInstallationAvailableForCompany: mocks.assertPluginAvailable,
+  assertPluginInstallationRequestScope: mocks.assertPluginAvailable,
 }));
 
 vi.mock("../services/agents.js", async () => ({
@@ -47,11 +53,15 @@ function createEventBusStub() {
 }
 
 function services(db: Db) {
-  return buildHostServices(db, pluginId, pluginKey, createEventBusStub(), undefined, {
-    ordinaryIssues: {} as never,
-    pluginIssueControlPlane: {} as never,
-    issueExecutionCancellation: {} as never,
-  });
+  return buildHostServices(
+    db,
+    pluginId,
+    createEventBusStub(),
+    noopPluginEventDelivery,
+    createPluginHostServicesTestOptions({
+      manifest: createPluginManifestFake({ id: pluginKey }),
+    }),
+  );
 }
 
 describe("plugin access and authorization host services", () => {
@@ -62,7 +72,7 @@ describe("plugin access and authorization host services", () => {
     mocks.logActivity.mockReset().mockResolvedValue(undefined);
   });
 
-  it("does not disclose company events when the plugin is unavailable there", async () => {
+  it("does not disclose company events when the plugin installation is unavailable", async () => {
     const subscribe = vi.fn();
     const deliver = vi.fn(async () => undefined);
     const eventBus = {
@@ -71,14 +81,11 @@ describe("plugin access and authorization host services", () => {
     const host = buildHostServices(
       createMockDb().db,
       pluginId,
-      pluginKey,
       eventBus,
       deliver,
-      {
-        ordinaryIssues: {} as never,
-        pluginIssueControlPlane: {} as never,
-        issueExecutionCancellation: {} as never,
-      },
+      createPluginHostServicesTestOptions({
+        manifest: createPluginManifestFake({ id: pluginKey }),
+      }),
     );
     await host.events.subscribe({ eventPattern: "agent.run.finished" });
     const handler = subscribe.mock.calls[0]![1] as (event: unknown) => Promise<void>;
@@ -92,8 +99,8 @@ describe("plugin access and authorization host services", () => {
 
     mocks.assertPluginAvailable.mockRejectedValueOnce(
       new PluginIssueAuthorizationRejected(
-        "disabled",
-        "plugin_company_disabled",
+        "not ready",
+        "plugin_installation_not_ready",
         { companyId },
       ),
     );
@@ -107,7 +114,59 @@ describe("plugin access and authorization host services", () => {
     mocks.assertPluginAvailable.mockRejectedValueOnce(new Error("database unavailable"));
     await expect(handler(event)).rejects.toThrow("database unavailable");
     expect(deliver).toHaveBeenCalledOnce();
-    host.dispose();
+    await host.dispose();
+  });
+
+  it("revalidates company availability before privileged canonical Session reads", async () => {
+    const readSession = vi.fn(async () => ({
+      session: {},
+      snapshotHighWaterSeq: 3,
+      messages: { items: [], nextCursor: null },
+      events: { items: [], nextCursor: null },
+    }));
+    const host = buildHostServices(
+      createMockDb().db,
+      pluginId,
+      createEventBusStub(),
+      noopPluginEventDelivery,
+      createPluginHostServicesTestOptions({
+        manifest: createPluginManifestFake({ id: pluginKey }),
+        pluginRuntimeRecordsReader:
+          createPluginRuntimeRecordsReaderFake({ readSession }),
+      }),
+    );
+
+    await host.runtimeRecords.readSession({
+      companyId,
+      sessionId: "ses_plugin_host",
+      snapshotHighWaterSeq: 3,
+    });
+    expect(mocks.assertPluginAvailable).toHaveBeenCalledWith(
+      expect.anything(),
+      { companyId, pluginInstallationId: pluginId, pluginKey },
+    );
+    expect(readSession).toHaveBeenCalledWith({
+      companyId,
+      sessionId: "ses_plugin_host",
+      snapshotHighWaterSeq: 3,
+      pluginInstallationId: pluginId,
+      pluginKey,
+    });
+
+    mocks.assertPluginAvailable.mockRejectedValueOnce(
+      new PluginIssueAuthorizationRejected(
+        "not ready",
+        "plugin_installation_not_ready",
+        { companyId },
+      ),
+    );
+    await expect(host.runtimeRecords.readSession({
+      companyId,
+      sessionId: "ses_plugin_host",
+      snapshotHighWaterSeq: 3,
+    })).rejects.toThrow("not ready");
+    expect(readSession).toHaveBeenCalledOnce();
+    await host.dispose();
   });
 
   it("rejects grant writes for agents outside the requested company", async () => {
@@ -127,7 +186,7 @@ describe("plugin access and authorization host services", () => {
 
     expect(harness.calls).toEqual([]);
     expect(mocks.logActivity).not.toHaveBeenCalled();
-    host.dispose();
+    await host.dispose();
   });
 
   it("redacts invite hashes, tokens, and sensitive defaults at the plugin boundary", async () => {
@@ -169,11 +228,50 @@ describe("plugin access and authorization host services", () => {
     expect(listed.invites[0]).not.toHaveProperty("token");
     expect(listed.invites[0]).not.toHaveProperty("tokenHash");
     expect(mocks.logActivity).toHaveBeenCalledWith(harness.db, expect.objectContaining({
+      actorType: "plugin",
+      actorId: pluginId,
       action: "invite.created_by_plugin",
       entityType: "invite",
       entityId: invite.id,
+      details: expect.objectContaining({
+        sourcePluginId: pluginId,
+        sourcePluginKey: pluginKey,
+      }),
     }));
-    host.dispose();
+    const activity = mocks.logActivity.mock.calls[0]?.[1] as {
+      details?: Record<string, unknown>;
+    };
+    expect(activity.details).not.toHaveProperty("pluginId");
+    expect(activity.details).not.toHaveProperty("pluginKey");
+    await host.dispose();
+  });
+
+  it("does not report or audit a plugin invite revocation when no row was updated", async () => {
+    const invite = {
+      id: "00000000-0000-4000-8000-000000000021",
+      companyId,
+      inviteType: "company_join",
+      tokenHash: "sha256-secret-token-hash",
+      allowedJoinTypes: "human",
+      defaultsPayload: null,
+      expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+      source: "plugin_host",
+      invitedByUserId: null,
+      revokedAt: null,
+      acceptedAt: null,
+      createdAt,
+      updatedAt: createdAt,
+    };
+    const harness = createMockDb({ select: [[invite]], update: [[]] });
+    const host = services(harness.db);
+
+    await expect(host.access.revokeInvite({
+      companyId,
+      inviteId: invite.id,
+    })).rejects.toThrow("Invite was not revoked");
+
+    expect(mocks.logActivity).not.toHaveBeenCalled();
+    await host.dispose();
   });
 
   it("returns bounded, redacted authorization audit results for each decision filter", async () => {
@@ -215,7 +313,7 @@ describe("plugin access and authorization host services", () => {
     expect(allowed[0]).toMatchObject({ entityId: "issue-1", details: { decision: "allow", secret: "***REDACTED***" } });
     expect(denied).toHaveLength(1);
     expect(denied[0]).toMatchObject({ entityId: "issue-2", details: { authorization: "***REDACTED***" } });
-    host.dispose();
+    await host.dispose();
   });
 
   it("resolves persisted subjects before previewing or explaining target-agent authority", async () => {
@@ -240,7 +338,6 @@ describe("plugin access and authorization host services", () => {
     };
 
     const preview = await host.authorization.previewAssignment(agentInput);
-    const explanation = await host.authorization.explainAssignment(agentInput);
     const injectedBoardPreview = await host.authorization.previewAssignment({
       companyId,
       subject: { type: "user", userId: unknownUserId },
@@ -253,14 +350,13 @@ describe("plugin access and authorization host services", () => {
     });
 
     expect(preview).toMatchObject({ allowed: false, reason: "deny_no_grant" });
-    expect(explanation).toMatchObject(preview);
     expect(injectedBoardPreview).toMatchObject({ allowed: false, reason: "deny_unauthenticated" });
     expect(persistedAdminPreview).toMatchObject({ allowed: true, reason: "allow_instance_admin" });
     expect(mocks.authorizationDecide).toHaveBeenCalledWith(expect.objectContaining({
       actor: { type: "agent", agentId: actorAgentId, companyId, source: "internal" },
       resource: { type: "agent", companyId, agentId: targetAgentId },
     }));
-    host.dispose();
+    await host.dispose();
   });
 
   it("rejects plugin attempts to overwrite board-owned agent governance before any write", async () => {
@@ -276,10 +372,12 @@ describe("plugin access and authorization host services", () => {
         apiKey: "sk-test-secret",
         nested: { authorization: "Bearer should-not-persist", safeLabel: "kept" },
       },
-    })).rejects.toThrow("Plugins cannot overwrite board-owned agent governance or grants.");
+    } as never)).rejects.toThrow(
+      "Plugin authorization policy updates only support project or issue resources.",
+    );
 
     expect(harness.calls).toEqual([]);
     expect(mocks.logActivity).not.toHaveBeenCalled();
-    host.dispose();
+    await host.dispose();
   });
 });

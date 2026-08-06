@@ -26,21 +26,15 @@ limited to:
 - its `reportsTo` relationship;
 - a free-text capabilities description used in the owner catalog.
 
-An agent has no core Paperclip role, soul, instruction fallback, or built-in
-cross-issue memory. Paperclip retains control-plane configuration such as adapter binding,
+An agent has no core Paperclip role, soul, or instruction fallback. Paperclip
+retains control-plane configuration such as adapter binding,
 provider-native target declaration, context/action/mention dials, lifecycle
 state, budget, and telemetry, but that bookkeeping is never injected into
 provider context.
 
 Provider-native configuration and storage are operator-owned and opaque.
 Paperclip does not inspect, seed, copy, merge, or delete provider homes,
-authentication, hidden state, or memory.
-
-An administrator may install a trusted infrastructure plugin that exports
-canonical redacted records to an external memory service and contributes
-policy-governed recall tools. That remains an optional plugin-owned edge:
-Paperclip core does not store the memory, inject memory into prompts, or give
-the plugin a provider session.
+authentication, or hidden state.
 
 ### Issues Are the Only Invocation Boundary
 
@@ -93,11 +87,14 @@ agent-home, adapter-configured working-directory, process-directory, or prior
 session fallback.
 
 The ACPX public-runtime bridge carries the immutable run interface to one
-locally installed ACPX-compatible CLI explicitly declared in ACPX's resolved
-`agents` configuration. ACPX owns provider launch and session lifecycle;
-Paperclip never exports a generic API credential or identity bridge into the
-provider process. The current public ACPX runtime is local-only, so remote
-target drivers are not advertised for ACPX agents.
+locally installed compatible CLI discovered from ACPX's public registry.
+ACPX's resolved `agents` configuration contributes launch overrides; it is not
+an installed-agent allowlist. Paperclip prevents package-exec discovery from
+materializing an absent CLI, then requires the candidate to pass an ACPX
+session probe. ACPX owns provider launch and session lifecycle; Paperclip never
+exports a generic API credential or identity bridge into the provider process.
+The current public ACPX runtime is local-only, so remote target drivers are not
+advertised for ACPX agents.
 
 ### Tools and Skills
 
@@ -109,7 +106,7 @@ Paperclip actions and company tools are separate:
   agent and further reduced by safety and approval policy.
 - Plugin tools are a separate, administrator-installed runtime source. Every
   declared tool is available to agents in enabled companies without company-tool
-  catalog projection or per-agent memory configuration.
+  catalog projection.
 - Company skills are explicitly selected workspace content. They grant no
   authority and are not announced through synthesized prompt prose.
 
@@ -119,9 +116,8 @@ surface, or generic REST instruction bundle is injected into a run.
 ## Product Principles
 
 1. **Company is the unit of organization.** Everything is company-scoped.
-2. **Agent identity is configuration, not memory.** Paperclip core carries no
-   per-agent model-visible history between issues; optional trusted plugins may
-   expose externally stored recall only through explicit tools.
+2. **Agent identity is configuration.** Paperclip core does not synthesize an
+   agent-wide provider context between issues.
 3. **All execution is issue-backed.** Durable authority and source records
    precede every provider invocation.
 4. **All work explains why it exists.** Parent/sub-issue and project/goal links

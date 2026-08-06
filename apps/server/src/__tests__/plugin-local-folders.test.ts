@@ -5,11 +5,14 @@ import { promises as fs } from "node:fs";
 import {
   assertConfiguredLocalFolder,
   assertWritableConfiguredLocalFolder,
+  getStoredLocalFolders,
   inspectPluginLocalFolder,
   listPluginLocalFolderEntries,
+  prepareAndInspectPluginLocalFolder,
   preparePluginLocalFolder,
   readPluginLocalFolderText,
   resolvePluginLocalFolderPath,
+  setStoredLocalFolder,
   deletePluginLocalFolderFile,
   writePluginLocalFolderTextAtomic,
 } from "../services/plugin-local-folders.js";
@@ -28,19 +31,55 @@ describe("plugin local folders", () => {
     return root;
   }
 
+  function declaration(overrides: {
+    access?: "read" | "readWrite";
+    requiredDirectories?: string[];
+    requiredFiles?: string[];
+  } = {}) {
+    return {
+      folderKey: "content-root",
+      displayName: "Content root",
+      access: overrides.access ?? "readWrite",
+      requiredDirectories: overrides.requiredDirectories ?? [],
+      requiredFiles: overrides.requiredFiles ?? [],
+    };
+  }
+
+  it("stores only the selected path", () => {
+    const settings = setStoredLocalFolder({ enabled: true }, "content-root", "/tmp/content");
+
+    expect(settings).toEqual({
+      enabled: true,
+      localFolders: {
+        "content-root": {
+          path: "/tmp/content",
+        },
+      },
+    });
+  });
+
+  it("rejects persisted declaration overrides", () => {
+    expect(() => getStoredLocalFolders({
+      localFolders: {
+        "content-root": {
+          path: "/tmp/content",
+          access: "read",
+        },
+      },
+    })).toThrow("contains undeclared fields");
+  });
+
   it("reports a healthy generic folder when required paths exist", async () => {
     const root = await makeRoot();
     await fs.mkdir(path.join(root, "sources"));
     await fs.writeFile(path.join(root, "schema.md"), "schema", "utf8");
 
     const status = await inspectPluginLocalFolder({
-      folderKey: "content-root",
-      storedConfig: {
-        path: root,
-        access: "readWrite",
+      declaration: declaration({
         requiredDirectories: ["sources"],
         requiredFiles: ["schema.md"],
-      },
+      }),
+      path: root,
     });
 
     expect(status.healthy).toBe(true);
@@ -53,12 +92,11 @@ describe("plugin local folders", () => {
     const root = await makeRoot();
 
     const status = await inspectPluginLocalFolder({
-      folderKey: "content-root",
-      storedConfig: {
-        path: root,
+      declaration: declaration({
         requiredDirectories: ["sources"],
         requiredFiles: ["schema.md"],
-      },
+      }),
+      path: root,
     });
 
     expect(status.healthy).toBe(false);
@@ -74,12 +112,11 @@ describe("plugin local folders", () => {
     const missingRoot = path.join(root, "missing-root");
 
     const status = await inspectPluginLocalFolder({
-      folderKey: "content-root",
-      storedConfig: {
-        path: missingRoot,
+      declaration: declaration({
         requiredDirectories: ["sources"],
         requiredFiles: ["schema.md"],
-      },
+      }),
+      path: missingRoot,
     });
 
     expect(status.healthy).toBe(false);
@@ -90,31 +127,18 @@ describe("plugin local folders", () => {
     expect(status.problems.map((item) => item.code)).toContain("missing");
   });
 
-  it("uses manifest declaration access and required paths over stored or caller overrides", async () => {
+  it("derives access and required paths exclusively from the manifest declaration", async () => {
     const root = await makeRoot();
     await fs.mkdir(path.join(root, "manifest-dir"));
     await fs.writeFile(path.join(root, "manifest.md"), "schema", "utf8");
 
     const status = await inspectPluginLocalFolder({
-      folderKey: "content-root",
-      declaration: {
-        folderKey: "content-root",
-        displayName: "Content root",
+      declaration: declaration({
         access: "read",
         requiredDirectories: ["manifest-dir"],
         requiredFiles: ["manifest.md"],
-      },
-      storedConfig: {
-        path: root,
-        access: "readWrite",
-        requiredDirectories: ["stored-dir"],
-        requiredFiles: ["stored.md"],
-      },
-      overrideConfig: {
-        access: "readWrite",
-        requiredDirectories: ["override-dir"],
-        requiredFiles: ["override.md"],
-      },
+      }),
+      path: root,
     });
 
     expect(status.access).toBe("read");
@@ -122,19 +146,20 @@ describe("plugin local folders", () => {
     expect(status.requiredDirectories).toEqual(["manifest-dir"]);
     expect(status.requiredFiles).toEqual(["manifest.md"]);
     expect(status.healthy).toBe(true);
+    expect(() => assertWritableConfiguredLocalFolder(status)).toThrow(
+      "Local folder is not configured for writes",
+    );
   });
 
   it("prepares required directories for a read-write folder without creating required files", async () => {
     const root = await makeRoot();
 
     await preparePluginLocalFolder({
-      folderKey: "content-root",
-      storedConfig: {
-        path: root,
-        access: "readWrite",
+      declaration: declaration({
         requiredDirectories: ["sources", "wiki/concepts"],
         requiredFiles: ["schema.md"],
-      },
+      }),
+      path: root,
     });
 
     await expect(fs.stat(path.join(root, "sources"))).resolves.toMatchObject({});
@@ -142,27 +167,39 @@ describe("plugin local folders", () => {
     await expect(fs.stat(path.join(root, "schema.md"))).rejects.toMatchObject({ code: "ENOENT" });
 
     const status = await inspectPluginLocalFolder({
-      folderKey: "content-root",
-      storedConfig: {
-        path: root,
-        access: "readWrite",
+      declaration: declaration({
         requiredDirectories: ["sources", "wiki/concepts"],
         requiredFiles: ["schema.md"],
-      },
+      }),
+      path: root,
     });
     expect(status.missingDirectories).toEqual([]);
     expect(status.missingFiles).toEqual(["schema.md"]);
   });
 
+  it("prepares and inspects through one configure operation", async () => {
+    const root = await makeRoot();
+
+    const status = await prepareAndInspectPluginLocalFolder({
+      declaration: declaration({
+        requiredDirectories: ["sources"],
+        requiredFiles: ["schema.md"],
+      }),
+      path: root,
+    });
+
+    expect(status.missingDirectories).toEqual([]);
+    expect(status.missingFiles).toEqual(["schema.md"]);
+    await expect(fs.stat(path.join(root, "sources"))).resolves.toMatchObject({});
+  });
+
   it("allows write access to repair folders that are only missing required paths", async () => {
     const root = await makeRoot();
     const status = await inspectPluginLocalFolder({
-      folderKey: "content-root",
-      storedConfig: {
-        path: root,
-        access: "readWrite",
+      declaration: declaration({
         requiredFiles: ["schema.md"],
-      },
+      }),
+      path: root,
     });
 
     expect(status.healthy).toBe(false);
@@ -171,12 +208,10 @@ describe("plugin local folders", () => {
 
     await writePluginLocalFolderTextAtomic(root, "schema.md", "schema");
     const repaired = await inspectPluginLocalFolder({
-      folderKey: "content-root",
-      storedConfig: {
-        path: root,
-        access: "readWrite",
+      declaration: declaration({
         requiredFiles: ["schema.md"],
-      },
+      }),
+      path: root,
     });
     expect(repaired.healthy).toBe(true);
   });
@@ -196,11 +231,10 @@ describe("plugin local folders", () => {
     await fs.symlink(path.join(outside, "secret.txt"), path.join(root, "linked.txt"));
 
     const status = await inspectPluginLocalFolder({
-      folderKey: "content-root",
-      storedConfig: {
-        path: root,
+      declaration: declaration({
         requiredFiles: ["linked.txt"],
-      },
+      }),
+      path: root,
     });
 
     expect(status.healthy).toBe(false);
@@ -227,13 +261,12 @@ describe("plugin local folders", () => {
     await expect(readPluginLocalFolderText(root, "cases/active/smoke/README.md")).resolves.toBe("hello");
   });
 
-  it("returns the real folder key after deleting a file", async () => {
+  it("deletes a file without manufacturing a folder status", async () => {
     const root = await makeRoot();
     await fs.writeFile(path.join(root, "stale.md"), "delete me", "utf8");
 
-    const status = await deletePluginLocalFolderFile(root, "stale.md", "content-root");
+    await deletePluginLocalFolderFile(root, "stale.md");
 
-    expect(status.folderKey).toBe("content-root");
     await expect(fs.stat(path.join(root, "stale.md"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 

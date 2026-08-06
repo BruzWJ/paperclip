@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { Link, Navigate, useParams } from "@/lib/router";
+import { Link, useParams } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
@@ -15,21 +15,19 @@ import { ArrowLeft } from "lucide-react";
 import { NotFoundPage } from "./NotFound";
 
 /**
- * Company-context plugin page. Renders a plugin's `page` slot at
- * `/:companyPrefix/plugins/:pluginId` when the plugin declares a page slot
- * and is enabled for that company.
+ * Company-context plugin page. Renders the one plugin `page` slot that owns
+ * the requested manifest `routePath`.
  *
  * @see doc/plugins/PLUGIN_SPEC.md §19.2 — Company-Context Routes
- * @see doc/plugins/PLUGIN_SPEC.md §24.4 — Company-Context Plugin Page
+ * @see doc/plugins/PLUGIN_SPEC.md §24.3 — Company-Context Plugin Page
  */
 export function PluginPage() {
   const params = useParams<{
     companyPrefix?: string;
-    pluginId?: string;
     pluginRoutePath?: string;
     "*": string | undefined;
   }>();
-  const { companyPrefix: routeCompanyPrefix, pluginId, pluginRoutePath } = params;
+  const { companyPrefix: routeCompanyPrefix, pluginRoutePath } = params;
   const pluginRouteSplat = params["*"];
   const { companies, selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -54,39 +52,26 @@ export function PluginPage() {
   const { data: contributions } = useQuery({
     queryKey: queryKeys.plugins.uiContributions,
     queryFn: () => pluginsApi.listUiContributions(),
-    enabled: !!resolvedCompanyId && (!!pluginId || !!pluginRoutePath),
+    enabled: !!resolvedCompanyId && !!pluginRoutePath,
   });
 
   const pageSlot = useMemo(() => {
     if (!contributions) return null;
-    if (pluginId) {
-      const contribution = contributions.find((c) => c.pluginId === pluginId);
-      if (!contribution) return null;
-      const slot = contribution.slots.find((s) => s.type === "page");
-      if (!slot) return null;
-      return {
-        ...slot,
-        pluginId: contribution.pluginId,
-        pluginKey: contribution.pluginKey,
-        pluginDisplayName: contribution.displayName,
-        pluginVersion: contribution.version,
-      };
-    }
     if (!pluginRoutePath) return null;
-    const matches = contributions.flatMap((contribution) => {
-      const slot = contribution.slots.find((entry) => entry.type === "page" && entry.routePath === pluginRoutePath);
-      if (!slot) return [];
-      return [{
-        ...slot,
-        pluginId: contribution.pluginId,
-        pluginKey: contribution.pluginKey,
-        pluginDisplayName: contribution.displayName,
-        pluginVersion: contribution.version,
-      }];
-    });
+    const matches = contributions.flatMap((contribution) =>
+      contribution.slots
+        .filter((entry) => entry.type === "page" && entry.routePath === pluginRoutePath)
+        .map((slot) => ({
+          ...slot,
+          pluginId: contribution.pluginId,
+          pluginUpdatedAt: contribution.updatedAt,
+          pluginKey: contribution.pluginKey,
+          pluginDisplayName: contribution.displayName,
+        })),
+    );
     if (matches.length !== 1) return null;
-    return matches[0] ?? null;
-  }, [pluginId, pluginRoutePath, contributions]);
+    return matches[0]!;
+  }, [pluginRoutePath, contributions]);
 
   const context = useMemo(
     () => ({
@@ -104,9 +89,9 @@ export function PluginPage() {
       contribution.slots.map((slot) => ({
         ...slot,
         pluginId: contribution.pluginId,
+        pluginUpdatedAt: contribution.updatedAt,
         pluginKey: contribution.pluginKey,
         pluginDisplayName: contribution.displayName,
-        pluginVersion: contribution.version,
       })),
     );
     return resolveRouteSidebarSlot(flattened, pluginRoutePath) !== null;
@@ -139,28 +124,8 @@ export function PluginPage() {
     return <div className="text-sm text-muted-foreground">Loading…</div>;
   }
 
-  if (!pluginId && pluginRoutePath) {
-    const duplicateMatches = contributions.filter((contribution) =>
-      contribution.slots.some((slot) => slot.type === "page" && slot.routePath === pluginRoutePath),
-    );
-    if (duplicateMatches.length > 1) {
-      return (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          Multiple plugins declare the route <code>{pluginRoutePath}</code>. Use the plugin-id route until the conflict is resolved.
-        </div>
-      );
-    }
-  }
-
   if (!pageSlot) {
-    if (pluginRoutePath) {
-      return <NotFoundPage scope="board" />;
-    }
-    // No page slot: redirect to plugin settings where plugin info is always shown
-    const settingsPath = pluginId
-      ? `/company/settings/instance/plugins/${pluginId}`
-      : "/company/settings/instance/plugins";
-    return <Navigate to={settingsPath} replace />;
+    return <NotFoundPage scope="board" />;
   }
 
   return (
@@ -187,7 +152,7 @@ export function PluginPage() {
 
 function resolveRouteSidebarPageTitle(pageSlot: ResolvedPluginSlot, routeSplat: string | undefined): string {
   const title = titleFromRouteSplat(routeSplat);
-  return title ?? pageSlot.displayName ?? pageSlot.pluginDisplayName;
+  return title ?? pageSlot.displayName;
 }
 
 function titleFromRouteSplat(routeSplat: string | undefined): string | null {
@@ -201,14 +166,14 @@ function titleFromRouteSplat(routeSplat: string | undefined): string | null {
     return titleFromPath(segments.slice(1).join("/"), { preserveCase: true });
   }
 
-  return titleFromPath(segments[0] ?? null);
+  return titleFromPath(segments[0]!);
 }
 
 function titleFromPath(path: string | null | undefined, options: { preserveCase?: boolean } = {}): string | null {
   const trimmed = path?.trim();
   if (!trimmed) return null;
   const basename = trimmed.split("/").filter(Boolean).at(-1) ?? trimmed;
-  const withoutNamespace = basename.split("::").at(-1) ?? basename;
+  const withoutNamespace = basename.split("::").at(-1)!;
   const withoutExtension = withoutNamespace.replace(/\.[^.]+$/, "");
   const normalized = withoutExtension.replace(/[-_]+/g, " ").trim();
   if (!normalized) return null;

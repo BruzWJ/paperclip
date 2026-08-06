@@ -21,7 +21,7 @@ pause controls, and consistent audits instead of hidden daemon behavior.
 pnpm paperclipai run
 
 # 2. Scaffold a plugin outside the Paperclip repo
-paperclipai plugin init @acme/hello-plugin --output ~/dev/paperclip-plugins
+paperclipai plugin init @acme/hello-plugin --category connector --output ~/dev/paperclip-plugins
 
 # 3. Install dependencies and start the watch build
 cd ~/dev/paperclip-plugins/hello-plugin
@@ -29,11 +29,11 @@ pnpm install
 pnpm dev
 
 # 4. In another terminal, install the plugin from its absolute path
-paperclipai plugin install ~/dev/paperclip-plugins/hello-plugin
+paperclipai plugin install --local ~/dev/paperclip-plugins/hello-plugin
 
 # 5. Confirm it loaded
 paperclipai plugin list
-paperclipai plugin inspect acme.hello-plugin
+paperclipai plugin inspect <plugin-installation-id>
 ```
 
 That's the loop. The rest of this page explains what each step does and what to expect when you edit code.
@@ -57,15 +57,15 @@ Paperclip listens on `http://127.0.0.1:3100` by default. The CLI talks to that s
 ### 2. Scaffold the plugin
 
 ```bash
-paperclipai plugin init @acme/hello-plugin --output ~/dev/paperclip-plugins
+paperclipai plugin init @acme/hello-plugin --category connector --output ~/dev/paperclip-plugins
 ```
 
 This creates `~/dev/paperclip-plugins/hello-plugin/` with `src/manifest.ts`, `src/worker.ts`, `src/ui/index.tsx`, an esbuild watch config, a Vitest config, and a snapshot of `@paperclipai/plugin-sdk` from your local Paperclip checkout. You can run the package and tests without publishing anything to npm.
 
 Useful flags:
 
-- `--template <default|connector|workspace|environment>` — starter shape.
-- `--category <connector|workspace|automation|ui|environment>` — manifest category.
+- `--category <connector|workspace|automation|ui>` — required manifest category.
+- `--template <standard|environment>` — generated structure; `standard` is the default, while `environment` adds the distinct environment-driver lifecycle.
 - `--display-name`, `--description`, `--author` — manifest metadata.
 - `--sdk-path <absolute-path>` — point at a specific `packages/plugins/sdk` checkout if you have more than one.
 
@@ -81,15 +81,19 @@ pnpm dev
 
 `pnpm dev` runs `esbuild --watch` against the plugin source and emits `dist/manifest.js`, `dist/worker.js`, and `dist/ui/`. Leave it running. Every time you save, esbuild rebuilds the affected output file.
 
-If your plugin has UI and you want a browser-side dev server with hot module replacement during local UI iteration, run `pnpm dev:ui` in a second terminal. It serves `dist/ui/` on `http://127.0.0.1:4177`. This is optional; Paperclip can load the built UI directly from `dist/ui/` without it.
-
 ### 4. Install from the absolute path
 
 ```bash
-paperclipai plugin install ~/dev/paperclip-plugins/hello-plugin
+paperclipai plugin install --local ~/dev/paperclip-plugins/hello-plugin
 ```
 
-The CLI auto-detects local paths (anything that looks absolute, starts with `./`, `../`, or `~`, or resolves to an existing folder relative to the current directory) and sends `{ isLocalPath: true }` to `POST /api/plugins/install` with the resolved absolute path. If you want to be explicit, pass `--local`.
+The install source is explicit. `--local` resolves the argument against the
+current working directory and sends
+`{ "source": "local", "path": "/absolute/path/to/plugin" }` to
+`POST /api/plugins/install`. Without `--local`, the argument is always an npm
+package name and the CLI sends
+`{ "source": "npm", "packageName": "@scope/package", "version": "..." }`.
+Paperclip does not infer the source from path syntax or filesystem contents.
 
 Before it installs, the CLI probes `GET /api/health` on the instance it is configured to talk to and prints the **target diagnostics** so you can confirm *which* Paperclip you are installing into. You will see a confirmation like:
 
@@ -110,16 +114,20 @@ before trusting the result. Pass `--no-verify-target` to skip the probe, or run
 `paperclipai plugin target` to see the same diagnostics without installing
 anything.
 
-Relative paths are resolved against the current working directory, so `paperclipai plugin install .` from inside the plugin folder works too.
+Relative local paths are resolved against the current working directory, so
+`paperclipai plugin install --local .` from inside the plugin folder works too.
 
 ### 5. Inspect
 
 ```bash
 paperclipai plugin list
-paperclipai plugin inspect acme.hello-plugin
+paperclipai plugin inspect <plugin-installation-id>
 ```
 
-`list` shows plugin key, status, version, and short error. `inspect` prints the same record with the full last error if there is one. Both accept `--json` if you want to script against them.
+`list` shows each installation UUID, plugin key, status, version, and short
+error. `inspect` accepts only that installation UUID and prints the same record
+with the full last error if there is one. Both accept `--json` if you want to
+script against them.
 
 ## Targeting a branch / issue-workspace runtime
 
@@ -155,13 +163,13 @@ paperclipai plugin target --api-base http://127.0.0.1:3120
 #   health: status=ok  version=<branch-version>  exposure=private
 
 # 3. Install the local-path plugin into that service (not the default host).
-paperclipai plugin install ~/dev/paperclip-plugins/hello-plugin \
+paperclipai plugin install --local ~/dev/paperclip-plugins/hello-plugin \
   --api-base http://127.0.0.1:3120
 
 # Prefer setting it once for the shell instead of repeating --api-base:
 export PAPERCLIP_BOARD_API_URL=http://127.0.0.1:3120
 paperclipai plugin target
-paperclipai plugin install ~/dev/paperclip-plugins/hello-plugin
+paperclipai plugin install --local ~/dev/paperclip-plugins/hello-plugin
 ```
 
 `plugin target` and the install-time probe both read `GET /api/health`, which
@@ -189,15 +197,15 @@ You can, but you usually should not. The control-plane host is shared and may be
 
 ## Reload semantics, honestly
 
-Paperclip watches the on-disk plugin package after a local install. The watcher targets the runtime entrypoints declared in the package's `paperclipPlugin` field (`dist/manifest.js`, `dist/worker.js`, `dist/ui/`).
+Paperclip watches the installed manifest's worker entrypoint after a local
+install. Declaration and UI artifacts have separate reload semantics.
 
 What that means in practice:
 
-- **Worker code:** save a `.ts` file → esbuild rewrites `dist/worker.js` → Paperclip debounces ~500ms and restarts the plugin worker. The next worker call uses the new code. There is no in-process hot module replacement for worker code; it is a worker restart.
-- **Manifest:** save `src/manifest.ts` → `dist/manifest.js` rewrites → the worker restarts and the host re-reads the manifest.
-- **Plugin UI:** save a `.tsx` file → esbuild rewrites `dist/ui/` → Paperclip reloads the UI bundle on its next mount. To get HMR during UI iteration, run `pnpm dev:ui` and point at the dev server with `devUiUrl` in your manifest while developing.
-- **Without `pnpm dev`:** the watcher only fires on `dist/*` changes. If you stop the watch build, source edits do not reach Paperclip. Restart `pnpm dev` (or run `pnpm build` once) before expecting changes.
-- **`node_modules`, `.git`, `.paperclip-sdk`, and other dotfolders are ignored.** Adding a dependency requires the new code to actually be imported and rebuilt before the worker sees it.
+- **Worker code:** save a `.ts` file → esbuild rewrites `dist/worker.js` → Paperclip debounces ~500ms and reloads the complete plugin runtime (host binding, migrations, jobs, and worker). The next worker call uses the new code. There is no in-process hot module replacement.
+- **Manifest:** rebuilding `dist/manifest.js` does not mutate the installed manifest. Reinstall or upgrade the plugin to apply declaration changes.
+- **Plugin UI:** save a `.tsx` file → esbuild rewrites `dist/ui/` → hard-reload the Paperclip page to load the rebuilt bundle.
+- **Without `pnpm dev`:** source edits do not reach the worker or UI artifacts. Restart `pnpm dev` (or run `pnpm build` once) before expecting changes.
 
 The package's own build scripts own compilation. Paperclip never compiles a
 local-path plugin during installation. Run the package's `dev` watcher or
@@ -214,15 +222,15 @@ When you are done iterating locally, publish the package and reinstall the npm-p
 
 ## Common things to do next
 
-- **Restart cleanly:** `paperclipai plugin disable <key>` pauses the plugin without uninstalling it. `paperclipai plugin enable <key>` brings that installation back. `paperclipai plugin uninstall <key>` terminalizes the installation and retains its immutable tombstone; add `--force` to also purge operational state, settings, jobs, webhooks, and custom database objects.
-- **Inspect installed plugins:** `paperclipai plugin list` and `paperclipai plugin inspect <key>` report the packages this instance actually installed.
+- **Restart cleanly:** `paperclipai plugin disable <plugin-installation-id>` pauses the plugin without uninstalling it. `paperclipai plugin enable <plugin-installation-id>` brings that installation back. `paperclipai plugin uninstall <plugin-installation-id>` deletes the installation, its managed package tree, operational state, settings, jobs, webhooks, and custom database objects.
+- **Inspect installed plugins:** `paperclipai plugin list` and `paperclipai plugin inspect <plugin-installation-id>` report the packages this instance actually installed.
 - **Go deeper:** [`PLUGIN_AUTHORING_GUIDE.md`](./PLUGIN_AUTHORING_GUIDE.md) covers worker capabilities, managed agents/projects/routines/skills, plugin database namespaces, scoped API routes, and the shared UI components in `@paperclipai/plugin-sdk/ui`. [`PLUGIN_SPEC.md`](./PLUGIN_SPEC.md) is the longer-form specification, including future ideas that are not yet implemented.
 - **Routine-first automation:** If your plugin should produce periodic issue work, prefer managed routines and `ctx.routines.managed` reconciliation over custom process loops or unobserved cron code.
 
 ## Troubleshooting
 
-- **`Plugin install returned no plugin record` or `error` status.** Run `paperclipai plugin inspect <key>` for the last error. The most common causes are (1) the plugin has not built yet — run `pnpm dev` or `pnpm build` first, (2) the `paperclipPlugin` entries in `package.json` point at files that do not exist on disk, or (3) the manifest failed validation. The Paperclip server log has the full validation error.
-- **Edits do not seem to reload.** Confirm `pnpm dev` is still running and writing to `dist/`. If you renamed entry files, update the `paperclipPlugin.manifest` / `paperclipPlugin.worker` / `paperclipPlugin.ui` fields in `package.json` so the watcher targets them.
-- **Worker restarts but UI is stale.** Hard-reload the page. If you want HMR, run `pnpm dev:ui` and set `devUiUrl` in your manifest to `http://127.0.0.1:4177` during development.
+- **Install fails or the installation enters `error` status.** Run `paperclipai plugin inspect <plugin-installation-id>` for the last error. The most common causes are (1) the plugin has not built yet — run `pnpm dev` or `pnpm build` first, (2) `paperclipPlugin.manifest` points at a module that does not exist, or (3) the manifest failed validation. The Paperclip server log has the full validation error.
+- **Edits do not seem to reload.** Confirm `pnpm dev` is still running and writing to the installed manifest's entrypoint paths. If you rename an entrypoint, update `src/manifest.ts`, rebuild, and reinstall or upgrade the plugin.
+- **Worker restarts but UI is stale.** Confirm the UI build rewrote `dist/ui/`, then hard-reload the page.
 - **Path arguments fail on Windows.** Quote paths that contain spaces, and prefer absolute paths over `~`-prefixed paths in non-bash shells.
 - **Plugin behaves as if a route or field is missing (e.g. `API route not found`, empty data, or a fallback path triggering unexpectedly).** You are probably installed into a Paperclip instance that does not run your branch code. Run `paperclipai plugin target` and compare the reported API URL and `version` against the branch service you meant to test. See [Targeting a branch / issue-workspace runtime](#targeting-a-branch--issue-workspace-runtime) to run the branch server and point the CLI at it explicitly.

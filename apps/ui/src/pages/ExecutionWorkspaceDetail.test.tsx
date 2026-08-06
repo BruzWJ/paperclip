@@ -205,7 +205,6 @@ function pluginSlot(overrides: Record<string, unknown> = {}) {
     pluginId: "plugin-1",
     pluginKey: "acme.execution-workspace-inspector",
     pluginDisplayName: "Workspace Inspector",
-    pluginVersion: "0.1.0",
     ...overrides,
   };
 }

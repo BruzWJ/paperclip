@@ -92,7 +92,9 @@ function buildUnavailableAdapterInfo(
     loaded: false,
     diagnostic: {
       code: diagnostic.code,
-      message: diagnostic.message,
+      message: diagnostic.code === "acpx_catalog_invalid"
+        ? "This local agent returned an invalid runtime configuration contract."
+        : "This local agent did not pass its readiness check.",
     },
     registryName: diagnostic.type,
   };
@@ -101,7 +103,7 @@ function buildUnavailableAdapterInfo(
 function acpxCatalogOnly(res: Response): void {
   res.status(410).json({
     error:
-      "Paperclip's agent catalog is supplied exclusively by ACPX. Install or authenticate an ACPX-compatible local CLI, then let the catalog refresh automatically.",
+      "Paperclip discovers compatible local agents automatically. Install or authenticate the local CLI, then let the catalog refresh.",
   });
 }
 
@@ -125,7 +127,7 @@ export function adapterRoutes() {
     await refreshAcpxAdapters();
     const adapter = findServerAdapter(req.params.type);
     if (!adapter) {
-      res.status(404).json({ error: `ACPX agent "${req.params.type}" is not available.` });
+      res.status(404).json({ error: `Local agent "${req.params.type}" is not available.` });
       return;
     }
     res.json(buildAdapterInfo(adapter));
@@ -145,14 +147,14 @@ export function adapterRoutes() {
     await refreshAcpxAdapters();
     const adapter = findActiveServerAdapter(req.params.type);
     if (!adapter) {
-      res.status(404).json({ error: `ACPX agent "${req.params.type}" is not available.` });
+      res.status(404).json({ error: `Local agent "${req.params.type}" is not available.` });
       return;
     }
     const parsedSchema = validateAdapterConfigSchema(
       adapter.definition.configSchema,
     );
     if (!parsedSchema.success) {
-      throw new Error(`ACPX agent "${req.params.type}" returned an invalid configuration schema`);
+      throw new Error(`Local agent "${req.params.type}" returned an invalid configuration schema`);
     }
     res.json(parsedSchema.data);
   });

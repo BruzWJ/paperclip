@@ -18,7 +18,8 @@ import {
 import type { StopReason, ToolCallStatus } from "@agentclientprotocol/sdk";
 import {
   assertAcpRegistryAgentName,
-  loadConfiguredAcpRegistry,
+  isAcpRegistryAgentLocallyAvailable,
+  loadAcpxAgentRegistry,
 } from "./agent-registry.js";
 import type {
   AcpPromptSettlement,
@@ -87,12 +88,12 @@ export interface AcpxOneShotPromptInput {
   readonly cwd: string;
   /**
    * Optional Paperclip ACPX configuration scope. When supplied, ACPX resolves
-   * its configured registry here while the provider session still runs in
+   * its registry and configured overrides here while the provider session runs in
    * `cwd`. This keeps catalog, revision validation, readiness, and execution
    * on one ACPX registry without treating an issue workspace as configuration.
    */
   readonly registryCwd?: string;
-  /** Must be an exact name in ACPX's resolved `agents` configuration. */
+  /** Must be an exact, locally available name in ACPX's registry. */
   readonly agentName: string;
   readonly start: AcpxRuntimeSessionStart;
   readonly message: string;
@@ -466,13 +467,18 @@ export async function executeAcpxOneShotPrompt(
   const timeoutMs = resolveTimeout(input.timeoutMs);
   const requestId = requestIdFor(input);
   const dependencies = input.dependencies;
-  const registry = await (dependencies?.loadAgentRegistry ?? loadConfiguredAcpRegistry)({
+  const registry = await (dependencies?.loadAgentRegistry ?? loadAcpxAgentRegistry)({
     cwd: registryCwd,
   });
   // ACPX intentionally supports a raw-command fallback. Admit the exact
-  // registry name before the runtime can reach it, but never inspect the
-  // ACPX-owned executable or argv.
+  // registry name and require local executable evidence before its runtime can
+  // reach a materializing package runner. ACPX still owns launch and execution.
   assertAcpRegistryAgentName(agentName, registry);
+  if (
+    !(await isAcpRegistryAgentLocallyAvailable(agentName, registry, { cwd }))
+  ) {
+    throw new Error(`ACPX agent is not locally available: ${agentName}`);
+  }
 
   const createTemporaryStateDir =
     dependencies?.createTemporaryStateDir ?? createDefaultTemporaryStateDir;

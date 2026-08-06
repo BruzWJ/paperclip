@@ -13,7 +13,10 @@ import {
   type AcpRuntimeStatus,
   type AcpSessionStore,
 } from "acpx/runtime";
-import { loadConfiguredAcpRegistry } from "./agent-registry.js";
+import {
+  isAcpRegistryAgentLocallyAvailable,
+  loadAcpxAgentRegistry,
+} from "./agent-registry.js";
 import type { AcpSessionConfigSelection } from "./contract.js";
 
 const TEMPORARY_STATE_DIRECTORY_PREFIX = "paperclip-acpx-readiness-";
@@ -232,9 +235,14 @@ export async function probeAcpxRuntimeReadiness(
   try {
     const registry = await (
       dependencies?.loadAgentRegistry ??
-      (({ cwd }: { readonly cwd: string }) => loadConfiguredAcpRegistry({ cwd }))
+      (({ cwd }: { readonly cwd: string }) => loadAcpxAgentRegistry({ cwd }))
     )({ cwd: registryCwd });
     assertRegistryListedAgent(registry, agentName);
+    if (
+      !(await isAcpRegistryAgentLocallyAvailable(agentName, registry, { cwd }))
+    ) {
+      throw new Error(`ACPX agent is not locally available: ${agentName}`);
+    }
     const sessionStore = (dependencies?.createRuntimeStore ?? createRuntimeStore)(
       { stateDir },
     );

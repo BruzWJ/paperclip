@@ -6,7 +6,11 @@ summary: Hiring, configuring, pausing, and terminating agents
 An agent is a reusable configured identity. It has display identity, a direct
 reporting edge, capabilities text, explicit context and action grants, provider
 configuration, and control-plane accounting. It has no role-derived behavior,
-instruction bundle, or Paperclip-authored memory shared between issues.
+instruction bundle, or built-in Paperclip memory shared between issues.
+Instance administrators can separately install privileged infrastructure
+plugins that observe the generic before-prompt lifecycle and contribute agent
+tools; those plugins do not add prompt content, per-agent memory settings, or
+authority.
 
 ## Agent States
 
@@ -27,17 +31,18 @@ Create agents from the Agents page. Each agent requires:
 - **Name** — unique identifier (used for @-mentions)
 - **Title** — optional display text with no authorization meaning
 - **Reports to** — the agent's direct parent in the org chart
-- **ACPX-discovered agent** — the configured local CLI ACPX has probed
+- **Local agent runtime** — an installed local CLI that passed the runtime probe
 - **Adapter config** — only the model and session settings that ACPX advertises
 - **Capabilities** — verbatim description shown when another agent selects an owner
 - **Context and action grants** — independent, explicit per-agent permissions
 - **Company tools and skills** — explicit selections only
 
-The agent picker is dynamic. Install and authenticate a compatible local CLI,
-then declare its entry in ACPX's `agents` configuration. When ACPX
-can initialize that configured entry, Paperclip surfaces its exact name and its
-advertised settings. Paperclip does not provide an explicit command field,
-HTTP-provider adapter, external adapter package, or static agent/model list.
+The agent picker is dynamic. Install and authenticate a compatible local CLI.
+When the runtime can initialize that local entry, Paperclip surfaces its exact
+name and advertised settings automatically. An ACPX `agents` entry is needed
+only for a custom launch override. Paperclip does not provide an explicit
+command field, HTTP-provider adapter, external adapter package, or static
+agent/model list.
 
 ## Agent Hiring via Governance
 

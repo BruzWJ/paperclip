@@ -243,7 +243,7 @@ describe("environment test harness", () => {
       environmentDriver: driver,
     });
 
-    harness.ctx.logger.info("test");
+    await harness.ctx.logger.info("test");
     expect(harness.logs).toHaveLength(1);
   });
 });

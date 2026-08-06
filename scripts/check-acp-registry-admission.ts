@@ -104,7 +104,7 @@ interface RegistryLike {
 }
 
 interface RegistryModule {
-  loadConfiguredAcpRegistry(input: { cwd: string }): Promise<RegistryLike>;
+  loadAcpxAgentRegistry(input: { cwd: string }): Promise<RegistryLike>;
   listAcpRegistryAgentNames(registry: RegistryLike): readonly string[];
   assertAcpRegistryAgentName(
     requestedName: string,
@@ -426,7 +426,10 @@ function scanRegistryOwner(
     contract: "dynamic ACPX registry bridge",
     fragments: [
       "createAgentRegistry",
+      "loadAcpxAgentRegistry",
       "listAcpRegistryAgentNames",
+      "listLocallyAvailableAcpRegistryAgentNames",
+      "isAcpRegistryAgentLocallyAvailable",
       "assertAcpRegistryAgentName",
       "candidateRegistry.list()",
       "includes(registryName)",
@@ -492,7 +495,7 @@ function scanDiscoveryAndCatalog(
     kind: "catalog",
     contract: "ACPX dynamic catalog projection",
     fragments: [
-      "listAcpRegistryAgentNames",
+      "listLocallyAvailableAcpRegistryAgentNames",
       "probeAcpxAgent",
       "acpxDiscoveryToServerAdapter",
       "discoverLocalAcpxAdapterCatalog",
@@ -523,7 +526,7 @@ function scanDiscoveryAndCatalog(
       "discoverLocalAcpxAdapterCatalog",
       "refreshAcpxAdapters",
       "assertAcpRegistryAgentName",
-      "exclusively by ACPX",
+      "loadAcpxAgentRegistry",
     ],
   });
 }
@@ -548,6 +551,7 @@ function scanAcpxRuntimeBridge(
       "cancel",
       "close",
       "assertAcpRegistryAgentName",
+      "isAcpRegistryAgentLocallyAvailable",
     ],
   });
   requireFragments({
@@ -577,6 +581,7 @@ function scanAcpxRuntimeBridge(
       "getStatus",
       "await runtime.setConfigOption!({",
       "close",
+      "isAcpRegistryAgentLocallyAvailable",
     ],
   });
   requireFragments({
@@ -741,7 +746,7 @@ export async function listAcpRegistryAdmissionFiles(
 }
 
 /**
- * Test model for the closed dynamic admission rule. ACPX configuration is the
+ * Test model for the closed dynamic admission rule. ACPX's registry is the
  * only catalog: a submitted name must be byte-exactly present before ACPX's
  * runtime receives it.
  */
@@ -750,7 +755,7 @@ export function assertExactRegistryCandidate(input: {
   readonly registryNames: readonly string[];
 }): string {
   if (!input.registryNames.includes(input.submittedName)) {
-    throw new Error("ACP registry name is not configured by ACPX");
+    throw new Error("ACP registry name is not listed by ACPX");
   }
   return input.submittedName;
 }
@@ -816,10 +821,10 @@ async function inspectInstalledRuntime(
       path.resolve(repositoryRoot, REGISTRY_PATH),
     ).href;
     const registryModule = (await import(moduleUrl)) as RegistryModule;
-    const configuredRegistry = await registryModule.loadConfiguredAcpRegistry({
+    const registry = await registryModule.loadAcpxAgentRegistry({
       cwd: repositoryRoot,
     });
-    const names = registryModule.listAcpRegistryAgentNames(configuredRegistry);
+    const names = registryModule.listAcpRegistryAgentNames(registry);
     if (
       !Array.isArray(names) ||
       names.some((name) => typeof name !== "string" || name.length === 0 || name !== name.trim())

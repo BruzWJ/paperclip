@@ -6,7 +6,7 @@ import {
 /**
  * Validate a draft against the adapter-owned form schema without starting a
  * process. The separate Test Agent action may apply this configuration to a
- * disposable ACPX session, but a draft still has no persisted run, target, or
+ * disposable local-agent session, but a draft still has no persisted run, target, or
  * workspace from which to make a full execution-readiness claim.
  */
 export function useStructuralAdapterConfiguration(input: {

@@ -5,7 +5,7 @@
  * The Paperclip plugin runtime uses JSON-RPC 2.0 over stdio to communicate
  * between the host process and each plugin worker process. This module defines:
  *
- * - Core JSON-RPC 2.0 envelope types (request, response, notification, error)
+ * - Core JSON-RPC 2.0 request and response envelope types
  * - Standard and plugin-specific error codes
  * - Typed method maps for host→worker and worker→host calls
  * - Helper functions for creating well-formed messages
@@ -19,8 +19,6 @@ import type {
   PaperclipPluginManifestV1,
   PluginLauncherBounds,
   PluginLauncherRenderContextSnapshot,
-  PluginLauncherRenderEnvironment,
-  PluginStateScopeKind,
   Company,
   Project,
   Issue,
@@ -32,21 +30,20 @@ import type {
   RoutineRun,
   Agent,
   Goal,
-  PluginLocalFolderDeclaration,
   PrincipalPermissionGrant,
   ExternalObjectStatusCategory,
   ExternalObjectStatusTone,
   ExternalObjectLivenessState,
   ExternalObjectMentionConfidence,
   ExternalObjectMentionSourceKind,
-  EnvSecretRefBinding,
   ProviderSafeRunTrace,
+  PluginWorkerLogLevel,
+  ContextAccess,
 } from "@paperclipai/shared";
 export type { PluginLauncherRenderContextSnapshot } from "@paperclipai/shared";
 
 import type {
   PluginEvent,
-  PluginContextAccess,
   PluginIssueUpdateInput,
   PluginIssueWithdrawalResult,
   PluginCreatorCallbackAcknowledgement,
@@ -68,6 +65,21 @@ import type {
   PluginAuthorizationDecisionResult,
   PluginAuthorizationPolicyRecord,
   PluginAuthorizationPolicySummary,
+  PluginBeforePromptInput,
+  PluginBeforePromptResult,
+  PluginCanonicalSessionReadInput,
+  PluginCanonicalSessionReadResult,
+  ScopeKey,
+  PluginEntityUpsert,
+  PluginEntityRecord,
+  PluginEntityQuery,
+  EventFilter,
+  PluginEventPattern,
+  PluginGoalsClient,
+  PluginCompaniesClient,
+  PluginProjectsClient,
+  PluginAgentsClient,
+  PluginRoutinesClient,
 } from "./types.js";
 import type {
   PluginHealthDiagnostics,
@@ -94,15 +106,6 @@ export type JsonRpcId = string | number;
  * Host-owned scope attached to a host→worker invocation. Workers may echo the
  * invocation id on nested worker→host calls, but they never author this scope.
  */
-export interface JsonRpcInvocationScope {
-  readonly companyId?: string | null;
-}
-
-export interface JsonRpcInvocationContext {
-  readonly id: string;
-  readonly scope: JsonRpcInvocationScope;
-}
-
 /**
  * A JSON-RPC 2.0 request message.
  *
@@ -174,36 +177,11 @@ export type JsonRpcResponse<TResult = unknown, TData = unknown> =
   | JsonRpcErrorResponse<TData>;
 
 /**
- * A JSON-RPC 2.0 notification (a request with no `id`).
- *
- * Notifications are fire-and-forget — no response is expected.
- */
-export interface JsonRpcNotification<
-  TMethod extends string = string,
-  TParams = unknown,
-> {
-  readonly jsonrpc: typeof JSONRPC_VERSION;
-  readonly id?: never;
-  /** The notification method name. */
-  readonly method: TMethod;
-  /** Structured parameters for the notification. */
-  readonly params: TParams;
-  /**
-   * Host-issued metadata for host→worker push notifications such as events.
-   * Worker→host notifications echo only `paperclipInvocationId`.
-   */
-  readonly paperclipInvocation?: PluginInvocationContext;
-  /** Opaque top-level invocation id echoed by worker→host notifications. */
-  readonly paperclipInvocationId?: string;
-}
-
-/**
- * Any well-formed JSON-RPC 2.0 message (request, response, or notification).
+ * Any well-formed JSON-RPC 2.0 message exchanged by the plugin transport.
  */
 export type JsonRpcMessage =
   | JsonRpcRequest
-  | JsonRpcResponse
-  | JsonRpcNotification;
+  | JsonRpcResponse;
 
 // ---------------------------------------------------------------------------
 // Error Codes
@@ -269,6 +247,15 @@ export type PluginRpcErrorCode =
 export interface PluginInvocationScope {
   companyId: string;
   /**
+   * Host-stamped boundary for canonical Session reads made while observing a
+   * provider prompt. Workers cannot widen or move this boundary.
+   */
+  canonicalSession?: {
+    readonly issueId: string;
+    readonly sessionId: string;
+    readonly snapshotHighWaterSeq: number;
+  };
+  /**
    * Present only for a direct plugin-tool invocation. The worker may echo
    * only the enclosing invocation id; run-serving host calls must also carry
    * the exact opaque handle from `ExecuteToolParams`.
@@ -312,8 +299,6 @@ export interface WorkerHostCallContext {
 export interface InitializeParams {
   /** Full plugin manifest snapshot. */
   manifest: PaperclipPluginManifestV1;
-  /** Bootstrap configuration. Company-scoped config is read via `ctx.config.get(companyId)`. */
-  config: Record<string, unknown>;
   /** Instance-level metadata. */
   instanceInfo: {
     /** UUID of this Paperclip instance. */
@@ -323,30 +308,16 @@ export interface InitializeParams {
   };
   /** Host API version. */
   apiVersion: number;
-  /** Host-derived plugin database namespace, when the manifest declares database access. */
-  databaseNamespace?: string | null;
+  /** Host-derived plugin database namespace, or `null` when no database is declared. */
+  databaseNamespace: string | null;
 }
 
 /**
  * Result returned by the `initialize` RPC method.
  */
 export interface InitializeResult {
-  /** Whether initialization succeeded. */
-  ok: boolean;
-  /** Optional methods the worker has implemented (e.g. "validateConfig", "onEvent"). */
-  supportedMethods?: string[];
-}
-
-/**
- * Input for the `configChanged` RPC method.
- *
- * @see PLUGIN_SPEC.md §13.4 — `configChanged`
- */
-export interface ConfigChangedParams {
-  /** The newly resolved company-scoped configuration. */
-  config: Record<string, unknown>;
-  /** Company whose plugin config changed. */
-  companyId?: string | null;
+  /** Exact optional methods implemented by this initialized worker. */
+  supportedMethods: HostToWorkerOptionalMethodName[];
 }
 
 /**
@@ -439,8 +410,6 @@ export type PluginPerformActionActorContext =
 export interface PluginPerformActionContext {
   /** Immutable authenticated actor context supplied by the host. */
   actor: Readonly<PluginPerformActionActorContext>;
-  /** Convenience alias for `actor.companyId`. */
-  companyId: string | null;
 }
 
 export interface PerformActionParams {
@@ -666,18 +635,6 @@ export type PluginExternalObjectResolveResult =
       retryAfterSeconds?: number;
     };
 
-export interface RefreshExternalObjectsParams {
-  companyId: string;
-  objects: PluginExternalObjectRecordSnapshot[];
-}
-
-export interface RefreshExternalObjectsResult {
-  results: Array<{
-    objectId: string;
-    result: PluginExternalObjectResolveResult;
-  }>;
-}
-
 export interface PluginEnvironmentDiagnostic {
   severity: "info" | "warning" | "error";
   message: string;
@@ -847,12 +804,7 @@ export interface PluginSyncOperation {
   files: PluginSyncFileMapping[];
 }
 
-export interface PluginEnvironmentSyncInParams extends PluginEnvironmentDriverBaseParams {
-  lease: PluginEnvironmentLease;
-  operations: PluginSyncOperation[];
-}
-
-export interface PluginEnvironmentSyncOutParams extends PluginEnvironmentDriverBaseParams {
+export interface PluginEnvironmentSyncParams extends PluginEnvironmentDriverBaseParams {
   lease: PluginEnvironmentLease;
   operations: PluginSyncOperation[];
 }
@@ -1020,8 +972,11 @@ export interface HostToWorkerMethods {
   shutdown: [params: Record<string, never>, result: void];
   /** @see PLUGIN_SPEC.md §13.3 */
   validateConfig: [params: ValidateConfigParams, result: PluginConfigValidationResult];
-  /** @see PLUGIN_SPEC.md §13.4 */
-  configChanged: [params: ConfigChangedParams, result: void];
+  /** Blocking hook before one exact provider prompt. */
+  beforePrompt: [
+    params: PluginBeforePromptInput,
+    result: PluginBeforePromptResult,
+  ];
   /** @see PLUGIN_SPEC.md §13.5 */
   onEvent: [params: OnEventParams, result: void];
   /** @see PLUGIN_SPEC.md §13.6 */
@@ -1051,10 +1006,6 @@ export interface HostToWorkerMethods {
   resolveExternalObject: [
     params: ResolveExternalObjectParams,
     result: PluginExternalObjectResolveResult,
-  ];
-  refreshExternalObjects: [
-    params: RefreshExternalObjectsParams,
-    result: RefreshExternalObjectsResult,
   ];
   environmentValidateConfig: [
     params: PluginEnvironmentValidateConfigParams,
@@ -1093,11 +1044,11 @@ export interface HostToWorkerMethods {
     result: PluginEnvironmentCancelExecutionResult,
   ];
   environmentSyncIn: [
-    params: PluginEnvironmentSyncInParams,
+    params: PluginEnvironmentSyncParams,
     result: PluginEnvironmentSyncResult,
   ];
   environmentSyncOut: [
-    params: PluginEnvironmentSyncOutParams,
+    params: PluginEnvironmentSyncParams,
     result: PluginEnvironmentSyncResult,
   ];
   environmentStartInteractiveSetup: [
@@ -1126,16 +1077,19 @@ export interface HostToWorkerMethods {
 export type HostToWorkerMethodName = keyof HostToWorkerMethods;
 
 /** Required methods the worker MUST implement. */
-export const HOST_TO_WORKER_REQUIRED_METHODS: readonly HostToWorkerMethodName[] = [
+export const HOST_TO_WORKER_REQUIRED_METHODS = [
   "initialize",
   "health",
   "shutdown",
-] as const;
+] as const satisfies readonly HostToWorkerMethodName[];
+
+export type HostToWorkerRequiredMethodName =
+  (typeof HOST_TO_WORKER_REQUIRED_METHODS)[number];
 
 /** Optional methods the worker MAY implement. */
-export const HOST_TO_WORKER_OPTIONAL_METHODS: readonly HostToWorkerMethodName[] = [
+export const HOST_TO_WORKER_OPTIONAL_METHODS = [
   "validateConfig",
-  "configChanged",
+  "beforePrompt",
   "onEvent",
   "runJob",
   "handleWebhook",
@@ -1146,7 +1100,6 @@ export const HOST_TO_WORKER_OPTIONAL_METHODS: readonly HostToWorkerMethodName[] 
   "issues.creatorCallback.deliver",
   "detectExternalObjects",
   "resolveExternalObject",
-  "refreshExternalObjects",
   "environmentValidateConfig",
   "environmentProbe",
   "environmentAcquireLease",
@@ -1163,7 +1116,10 @@ export const HOST_TO_WORKER_OPTIONAL_METHODS: readonly HostToWorkerMethodName[] 
   "environmentCaptureTemplate",
   "environmentCancelInteractiveSetup",
   "environmentDeleteTemplate",
-] as const;
+] as const satisfies readonly HostToWorkerMethodName[];
+
+export type HostToWorkerOptionalMethodName =
+  (typeof HOST_TO_WORKER_OPTIONAL_METHODS)[number];
 
 // ---------------------------------------------------------------------------
 // Worker → Host Method Signatures (SDK client calls)
@@ -1177,21 +1133,14 @@ export const HOST_TO_WORKER_OPTIONAL_METHODS: readonly HostToWorkerMethodName[] 
  */
 export interface WorkerToHostMethods {
   // Config
-  "config.get": [params: { companyId?: string }, result: Record<string, unknown>];
+  "config.get": [params: Record<string, never>, result: Record<string, unknown>];
 
   // Trusted local folders
-  "localFolders.declarations": [
-    params: Record<string, never>,
-    result: PluginLocalFolderDeclaration[],
-  ];
   "localFolders.configure": [
     params: {
       companyId: string;
       folderKey: string;
       path: string;
-      access?: "read" | "readWrite";
-      requiredDirectories?: string[];
-      requiredFiles?: string[];
     },
     result: PluginLocalFolderStatus,
   ];
@@ -1223,23 +1172,19 @@ export interface WorkerToHostMethods {
 
   // State
   "state.get": [
-    params: { scopeKind: string; scopeId?: string; namespace?: string; stateKey: string },
+    params: ScopeKey,
     result: unknown,
   ];
   "state.set": [
-    params: { scopeKind: string; scopeId?: string; namespace?: string; stateKey: string; value: unknown },
+    params: ScopeKey & { value: unknown },
     result: void,
   ];
   "state.delete": [
-    params: { scopeKind: string; scopeId?: string; namespace?: string; stateKey: string },
+    params: ScopeKey,
     result: void,
   ];
 
   // Restricted plugin database namespace
-  "db.namespace": [
-    params: Record<string, never>,
-    result: string,
-  ];
   "db.query": [
     params: { sql: string; params?: unknown[] },
     result: unknown[],
@@ -1251,49 +1196,12 @@ export interface WorkerToHostMethods {
 
   // Entities
   "entities.upsert": [
-    params: {
-      entityType: string;
-      scopeKind: PluginStateScopeKind;
-      scopeId?: string;
-      externalId?: string;
-      title?: string;
-      status?: string;
-      data: Record<string, unknown>;
-    },
-    result: {
-      id: string;
-      entityType: string;
-      scopeKind: PluginStateScopeKind;
-      scopeId: string | null;
-      externalId: string | null;
-      title: string | null;
-      status: string | null;
-      data: Record<string, unknown>;
-      createdAt: string;
-      updatedAt: string;
-    },
+    params: PluginEntityUpsert,
+    result: PluginEntityRecord,
   ];
   "entities.list": [
-    params: {
-      entityType?: string;
-      scopeKind?: PluginStateScopeKind;
-      scopeId?: string;
-      externalId?: string;
-      limit?: number;
-      offset?: number;
-    },
-    result: Array<{
-      id: string;
-      entityType: string;
-      scopeKind: PluginStateScopeKind;
-      scopeId: string | null;
-      externalId: string | null;
-      title: string | null;
-      status: string | null;
-      data: Record<string, unknown>;
-      createdAt: string;
-      updatedAt: string;
-    }>,
+    params: PluginEntityQuery,
+    result: PluginEntityRecord[],
   ];
 
   // Events
@@ -1302,7 +1210,7 @@ export interface WorkerToHostMethods {
     result: void,
   ];
   "events.subscribe": [
-    params: { eventPattern: string; filter?: Record<string, unknown> | null },
+    params: { eventPattern: PluginEventPattern; filter?: EventFilter | null },
     result: void,
   ];
 
@@ -1320,11 +1228,9 @@ export interface WorkerToHostMethods {
     params: { companyId: string; issueId: string; cursor?: string; limit?: number },
     result: PluginRunPage<PluginRunIssueCommentProjection>,
   ];
-
-  // Secrets
-  "secrets.resolve": [
-    params: { secretRef: string | EnvSecretRefBinding; companyId?: string; configPath?: string },
-    result: string,
+  "runtime.records.readSession": [
+    params: PluginCanonicalSessionReadInput,
+    result: PluginCanonicalSessionReadResult,
   ];
 
   // Activity
@@ -1360,7 +1266,7 @@ export interface WorkerToHostMethods {
   // Logger
   "log": [
     params: {
-      level: "info" | "warn" | "error" | "debug";
+      level: PluginWorkerLogLevel;
       message: string;
       meta?: Record<string, unknown>;
       /** Owning tenant for `plugin_logs.company_id` (cascade-delete scope). `null`/omitted = instance-scope. */
@@ -1371,7 +1277,7 @@ export interface WorkerToHostMethods {
 
   // Companies (read)
   "companies.list": [
-    params: { limit?: number; offset?: number },
+    params: Parameters<PluginCompaniesClient["list"]>[0],
     result: Company[],
   ];
   "companies.get": [
@@ -1381,7 +1287,7 @@ export interface WorkerToHostMethods {
 
   // Projects (read)
   "projects.list": [
-    params: { companyId: string; limit?: number; offset?: number },
+    params: Parameters<PluginProjectsClient["list"]>[0],
     result: Project[],
   ];
   "projects.get": [
@@ -1394,10 +1300,6 @@ export interface WorkerToHostMethods {
   ];
   "projects.getPrimaryWorkspace": [
     params: { projectId: string; companyId: string },
-    result: PluginWorkspace | null,
-  ];
-  "projects.getWorkspaceForIssue": [
-    params: { issueId: string; companyId: string },
     result: PluginWorkspace | null,
   ];
   "executionWorkspaces.get": [
@@ -1445,7 +1347,7 @@ export interface WorkerToHostMethods {
     params: {
       routineKey: string;
       companyId: string;
-      status?: string;
+      status?: Parameters<PluginRoutinesClient["managed"]["update"]>[2]["status"];
     },
     result: Routine,
   ];
@@ -1554,7 +1456,7 @@ export interface WorkerToHostMethods {
       goalId?: string;
       parentId?: string;
       priority?: string;
-      contextAccessMask?: PluginContextAccess | null;
+      contextAccessMask?: ContextAccess | null;
     },
     result: Issue,
   ];
@@ -1577,7 +1479,7 @@ export interface WorkerToHostMethods {
 
   // Agents (read)
   "agents.list": [
-    params: { companyId: string; status?: string; limit?: number; offset?: number },
+    params: Parameters<PluginAgentsClient["list"]>[0],
     result: Agent[],
   ];
   "agents.get": [
@@ -1609,7 +1511,7 @@ export interface WorkerToHostMethods {
 
   // Goals
   "goals.list": [
-    params: { companyId: string; level?: string; status?: string; limit?: number; offset?: number },
+    params: Parameters<PluginGoalsClient["list"]>[0],
     result: Goal[],
   ];
   "goals.get": [
@@ -1617,21 +1519,13 @@ export interface WorkerToHostMethods {
     result: Goal | null,
   ];
   "goals.create": [
-    params: {
-      companyId: string;
-      title: string;
-      description?: string;
-      level?: string;
-      status?: string;
-      parentId?: string;
-      ownerAgentId?: string;
-    },
+    params: Parameters<PluginGoalsClient["create"]>[0],
     result: Goal,
   ];
   "goals.update": [
     params: {
       goalId: string;
-      patch: Record<string, unknown>;
+      patch: Parameters<PluginGoalsClient["update"]>[1];
       companyId: string;
     },
     result: Goal,
@@ -1707,17 +1601,13 @@ export interface WorkerToHostMethods {
   "authorization.policies.update": [
     params: {
       companyId: string;
-      resourceType: "company" | "agent" | "project" | "issue";
+      resourceType: "project" | "issue";
       resourceId: string;
       policy: Record<string, unknown> | null;
     },
     result: PluginAuthorizationPolicyRecord,
   ];
   "authorization.policies.previewAssignment": [
-    params: PluginAssignmentPreviewInput,
-    result: PluginAuthorizationDecisionResult,
-  ];
-  "authorization.policies.explainAssignment": [
     params: PluginAssignmentPreviewInput,
     result: PluginAuthorizationDecisionResult,
   ];
@@ -1739,91 +1629,6 @@ export interface WorkerToHostMethods {
 
 /** Union of all worker→host method names. */
 export type WorkerToHostMethodName = keyof WorkerToHostMethods;
-
-// ---------------------------------------------------------------------------
-// Worker→Host Notification Types (fire-and-forget, no response)
-// ---------------------------------------------------------------------------
-
-/**
- * Typed parameter shapes for worker→host JSON-RPC notifications.
- *
- * Notifications are fire-and-forget — the worker does not wait for a response.
- * These are used for streaming events and logging, not for request-response RPCs.
- */
-export interface WorkerToHostNotifications {
-  /**
-   * Forward a stream event to connected SSE clients.
-   *
-   * Emitted by the worker for each event on a stream channel. The host
-   * publishes to the PluginStreamBus, which fans out to all SSE clients
-   * subscribed to the (pluginId, channel, companyId) tuple.
-   *
-   * The `event` payload is JSON-serializable and sent as SSE `data:`.
-   * The default SSE event type is `"message"`.
-   */
-  "streams.emit": {
-    channel: string;
-    companyId: string;
-    event: unknown;
-  };
-
-  /**
-   * Signal that a stream channel has been opened.
-   *
-   * Emitted when the worker calls `ctx.streams.open(channel, companyId)`.
-   * UI clients may use this to display a "connected" indicator or begin
-   * buffering input. The host tracks open channels so it can emit synthetic
-   * close events if the worker crashes.
-   */
-  "streams.open": {
-    channel: string;
-    companyId: string;
-  };
-
-  /**
-   * Signal that a stream channel has been closed.
-   *
-   * Emitted when the worker calls `ctx.streams.close(channel)`, or
-   * synthetically by the host when a worker process exits with channels
-   * still open. UI clients should treat this as terminal and disconnect
-   * the SSE connection.
-   */
-  "streams.close": {
-    channel: string;
-    companyId: string;
-  };
-}
-
-/** Union of all worker→host notification method names. */
-export type WorkerToHostNotificationName = keyof WorkerToHostNotifications;
-
-// ---------------------------------------------------------------------------
-// Typed Request / Response Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * A typed JSON-RPC request for a specific host→worker method.
- */
-export type HostToWorkerRequest<M extends HostToWorkerMethodName> =
-  JsonRpcRequest<M, HostToWorkerMethods[M][0]>;
-
-/**
- * A typed JSON-RPC success response for a specific host→worker method.
- */
-export type HostToWorkerResponse<M extends HostToWorkerMethodName> =
-  JsonRpcSuccessResponse<HostToWorkerMethods[M][1]>;
-
-/**
- * A typed JSON-RPC request for a specific worker→host method.
- */
-export type WorkerToHostRequest<M extends WorkerToHostMethodName> =
-  JsonRpcRequest<M, WorkerToHostMethods[M][0]>;
-
-/**
- * A typed JSON-RPC success response for a specific worker→host method.
- */
-export type WorkerToHostResponse<M extends WorkerToHostMethodName> =
-  JsonRpcSuccessResponse<WorkerToHostMethods[M][1]>;
 
 // ---------------------------------------------------------------------------
 // Message Factory Functions
@@ -1899,23 +1704,6 @@ export function createErrorResponse<TData = unknown>(
   return response;
 }
 
-/**
- * Create a JSON-RPC 2.0 notification (fire-and-forget, no response expected).
- *
- * @param method - The notification method name
- * @param params - Structured parameters
- */
-export function createNotification<TMethod extends string>(
-  method: TMethod,
-  params: unknown,
-): JsonRpcNotification<TMethod> {
-  return {
-    jsonrpc: JSONRPC_VERSION,
-    method,
-    params,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Type Guards
 // ---------------------------------------------------------------------------
@@ -1934,23 +1722,6 @@ export function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
     "id" in obj &&
     obj.id !== undefined &&
     obj.id !== null
-  );
-}
-
-/**
- * Check whether a value is a well-formed JSON-RPC 2.0 notification.
- *
- * A notification has `jsonrpc: "2.0"`, a string `method`, but no `id`.
- */
-export function isJsonRpcNotification(
-  value: unknown,
-): value is JsonRpcNotification {
-  if (typeof value !== "object" || value === null) return false;
-  const obj = value as Record<string, unknown>;
-  return (
-    obj.jsonrpc === JSONRPC_VERSION &&
-    typeof obj.method === "string" &&
-    !("id" in obj)
   );
 }
 
@@ -2001,7 +1772,7 @@ export const MESSAGE_DELIMITER = "\n" as const;
  * Serialize a JSON-RPC message to a newline-delimited string for transmission
  * over stdio.
  *
- * @param message - Any JSON-RPC message (request, response, or notification)
+ * @param message - A JSON-RPC request or response
  * @returns The JSON string terminated with a newline
  */
 export function serializeMessage(message: JsonRpcMessage): string {
@@ -2043,8 +1814,10 @@ export function parseMessage(line: string): JsonRpcMessage {
     );
   }
 
-  // It's a valid JSON-RPC 2.0 envelope — return as-is and let the caller
-  // use the type guards for more specific classification.
+  if (!isJsonRpcRequest(parsed) && !isJsonRpcResponse(parsed)) {
+    throw new JsonRpcParseError("Message must be a JSON-RPC request or response");
+  }
+
   return parsed as JsonRpcMessage;
 }
 
@@ -2079,17 +1852,4 @@ export class JsonRpcCallError extends Error {
     this.code = error.code;
     this.data = error.data;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Reset helper (testing only)
-// ---------------------------------------------------------------------------
-
-/**
- * Reset the internal request ID counter. **For testing only.**
- *
- * @internal
- */
-export function _resetIdCounter(): void {
-  _nextId = 1;
 }

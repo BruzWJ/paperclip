@@ -28,7 +28,6 @@ import {
 } from "./issue_execution_runtime.js";
 import { issues } from "./issues.js";
 import { issueSessions } from "./issue_sessions.js";
-import { plugins } from "./plugins.js";
 
 type CreatorDeliveryPolicySnapshot = {
   maxRetryAttempts: number;
@@ -466,9 +465,8 @@ export const pluginCreatorDeliveries = pgTable(
     issueId: uuid("issue_id").notNull(),
     sessionId: text("session_id").notNull(),
     creatorDeliveryId: uuid("creator_delivery_id").notNull(),
-    pluginInstallationId: uuid("plugin_installation_id")
-      .notNull()
-      .references(() => plugins.id, { onDelete: "restrict" }),
+    /** Immutable operation actor identity; intentionally not a live installation FK. */
+    pluginInstallationId: uuid("plugin_installation_id").notNull(),
     pluginKey: text("plugin_key").notNull(),
     callbackKey: text("callback_key").notNull(),
     callbackVersion: text("callback_version").notNull(),
@@ -582,9 +580,8 @@ export const pluginWithdrawalOperations = pgTable(
     companyId: uuid("company_id")
       .notNull()
       .references(() => companies.id, { onDelete: "cascade" }),
-    pluginInstallationId: uuid("plugin_installation_id")
-      .notNull()
-      .references(() => plugins.id, { onDelete: "restrict" }),
+    /** Immutable operation actor identity; intentionally not a live installation FK. */
+    pluginInstallationId: uuid("plugin_installation_id").notNull(),
     pluginKey: text("plugin_key").notNull(),
     hostRpcOperationId: text("host_rpc_operation_id").notNull(),
     identityDigest: text("identity_digest").notNull(),

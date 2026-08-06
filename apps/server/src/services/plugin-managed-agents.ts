@@ -84,7 +84,7 @@ async function lockPairedManagedAgentEntity(
   return entity;
 }
 
-export interface PausePluginManagedAgentsIntoTriageInput {
+interface PausePluginManagedAgentsIntoTriageInput {
   pluginId: string;
   pluginKey: string;
   reason: string;
@@ -92,7 +92,7 @@ export interface PausePluginManagedAgentsIntoTriageInput {
   actorId?: string | null;
 }
 
-export interface PausePluginManagedAgentsIntoTriageResult {
+interface PausePluginManagedAgentsIntoTriageResult {
   triagePausedAgentIds: string[];
   suspensionRequests: RequestedAgentSuspensions[];
 }
@@ -705,8 +705,7 @@ export async function pausePluginManagedAgentsIntoTriageInTransaction(
 
 interface PluginManagedAgentServiceOptions {
   pluginId: string;
-  pluginKey: string;
-  manifest?: PaperclipPluginManifestV1 | null;
+  manifest: PaperclipPluginManifestV1;
 }
 
 function bindingExternalId(companyId: string, agentKey: string) {
@@ -745,13 +744,14 @@ export function pluginManagedAgentService(
   db: Db,
   options: PluginManagedAgentServiceOptions,
 ) {
+  const pluginKey = options.manifest.id;
   const agentSvc = agentService(db);
   const runtimeAgents = createRuntimeAgentConfigurationService(db, {
     assertPluginAuthority: async (_tx, input) => {
       if (
         input.actor.pluginInstallationId !== options.pluginId ||
-        input.actor.actorId !== options.pluginKey ||
-        !options.manifest?.capabilities?.includes("agents.managed")
+        input.actor.actorId !== pluginKey ||
+        !options.manifest.capabilities.includes("agents.managed")
       ) {
         throw new RuntimeAgentConfigurationDenied(
           "Plugin does not hold the exact managed-agent creation authority",
@@ -762,7 +762,7 @@ export function pluginManagedAgentService(
   });
 
   function declarationFor(agentKey: string) {
-    const declaration = options.manifest?.agents?.find((agent) => agent.agentKey === agentKey);
+    const declaration = options.manifest.agents?.find((agent) => agent.agentKey === agentKey);
     if (!declaration) {
       throw notFound(`Managed agent declaration not found: ${agentKey}`);
     }
@@ -827,8 +827,8 @@ export function pluginManagedAgentService(
     );
     const originalDeclarationRef = {
       pluginInstallationId: options.pluginId,
-      pluginKey: options.pluginKey,
-      pluginVersion: options.manifest?.version ?? null,
+      pluginKey,
+      pluginVersion: options.manifest.version,
       resourceKind: "agent",
       resourceKey: declaration.agentKey,
       declaration,
@@ -844,7 +844,7 @@ export function pluginManagedAgentService(
           `Managed agent binding '${declaration.agentKey}' cannot be relinked to another agent`,
         );
       }
-      if (managedResource.pluginKey !== options.pluginKey) {
+      if (managedResource.pluginKey !== pluginKey) {
         throw conflict(
           `Managed agent binding '${declaration.agentKey}' crossed its immutable plugin key`,
         );
@@ -877,7 +877,7 @@ export function pluginManagedAgentService(
       await database.insert(pluginManagedResources).values({
         companyId,
         pluginId: options.pluginId,
-        pluginKey: options.pluginKey,
+        pluginKey,
         resourceKind: "agent",
         resourceKey: declaration.agentKey,
         resourceId: agentId,
@@ -889,7 +889,7 @@ export function pluginManagedAgentService(
 
     const externalId = bindingExternalId(companyId, declaration.agentKey);
     const data = {
-      pluginKey: options.pluginKey,
+      pluginKey,
       resourceKind: "agent",
       resourceKey: declaration.agentKey,
       agentId,
@@ -924,7 +924,7 @@ export function pluginManagedAgentService(
           `Managed agent entity '${declaration.agentKey}' cannot be relinked to another agent`,
         );
       }
-      if (managedEntityPluginKey(existing) !== options.pluginKey) {
+      if (managedEntityPluginKey(existing) !== pluginKey) {
         throw conflict(
           `Managed agent entity '${declaration.agentKey}' crossed its immutable plugin key`,
         );
@@ -980,7 +980,7 @@ export function pluginManagedAgentService(
     approvalId?: string | null,
   ): Promise<PluginManagedAgentResolution> {
     return {
-      pluginKey: options.pluginKey,
+      pluginKey,
       resourceKind: "agent",
       resourceKey: declaration.agentKey,
       companyId,
@@ -1005,7 +1005,7 @@ export function pluginManagedAgentService(
         companyId,
         actor: {
           kind: "plugin",
-          actorId: options.pluginKey,
+          actorId: pluginKey,
           pluginInstallationId: options.pluginId,
         },
         source: "plugin_control",
@@ -1064,7 +1064,7 @@ export function pluginManagedAgentService(
             type: "hire_agent",
             linkedAgentId: created.id,
             runtimeAgentConfigurationAuditId: createdResult.auditId,
-            sourcePluginKey: options.pluginKey,
+            sourcePluginKey: pluginKey,
             managedResourceKey: declaration.agentKey,
           },
         });
@@ -1088,7 +1088,7 @@ export function pluginManagedAgentService(
           entityType: "agent",
           entityId: created.id,
           details: {
-            sourcePluginKey: options.pluginKey,
+            sourcePluginKey: pluginKey,
             managedResourceKey: declaration.agentKey,
             runtimeAgentConfigurationAuditId: createdResult.auditId,
             requiresApproval: company.requireBoardApprovalForNewAgents,
@@ -1133,8 +1133,8 @@ export function pluginManagedAgentService(
       entity.status !== binding.lifecycleState ||
       entity.scopeKind !== "company" ||
       entity.scopeId !== companyId ||
-      binding.pluginKey !== options.pluginKey ||
-      managedEntityPluginKey(entity) !== options.pluginKey ||
+      binding.pluginKey !== pluginKey ||
+      managedEntityPluginKey(entity) !== pluginKey ||
       managedEntityAgentId(entity) !== binding.resourceId
     ) {
       throw conflict(

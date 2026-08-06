@@ -3,6 +3,10 @@ import type { AddressInfo } from "node:net";
 import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
 import { describe, expect, it } from "vitest";
 import { buildHostServices } from "../services/plugin-host-services.js";
+import {
+  createPluginHostServicesTestOptions,
+  noopPluginEventDelivery,
+} from "./helpers/plugin-host-services.js";
 
 function eventBusStub() {
   return {
@@ -45,15 +49,11 @@ function host(pluginManifest: PaperclipPluginManifestV1) {
   return buildHostServices(
     {} as never,
     "plugin-installation-id",
-    pluginManifest.id,
     eventBusStub(),
-    undefined,
-    {
+    noopPluginEventDelivery,
+    createPluginHostServicesTestOptions({
       manifest: pluginManifest,
-      ordinaryIssues: {} as never,
-      pluginIssueControlPlane: {} as never,
-      issueExecutionCancellation: {} as never,
-    },
+    }),
   );
 }
 
@@ -67,7 +67,7 @@ describe("plugin private-network HTTP capability", () => {
         "private/reserved ranges",
       );
     } finally {
-      services.dispose();
+      await services.dispose();
       await close(server);
     }
   });
@@ -85,7 +85,24 @@ describe("plugin private-network HTTP capability", () => {
         body: '{"status":"ok"}',
       });
     } finally {
-      services.dispose();
+      await services.dispose();
+      await close(server);
+    }
+  });
+
+  it("rejects oversized upstream responses before buffering them", async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-length": String(16 * 1024 * 1024 + 1) });
+      response.end();
+    });
+    const url = await listen(server);
+    const services = host(manifest(["http.outbound", "http.private-network"]));
+    try {
+      await expect(services.http.fetch({ url })).rejects.toThrow(
+        "Response body exceeded 16777216 bytes",
+      );
+    } finally {
+      await services.dispose();
       await close(server);
     }
   });

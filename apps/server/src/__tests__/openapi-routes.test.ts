@@ -421,6 +421,27 @@ describe("openapi routes", () => {
       actor: "board",
       instanceAdmin: true,
     });
+    const instanceAdminPluginOperations = [
+      ["delete", "/api/plugins/{pluginId}"],
+      ["post", "/api/plugins/{pluginId}/enable"],
+      ["post", "/api/plugins/{pluginId}/disable"],
+      ["get", "/api/plugins/{pluginId}/logs"],
+      ["post", "/api/plugins/{pluginId}/upgrade"],
+      ["get", "/api/plugins/{pluginId}/config"],
+      ["post", "/api/plugins/{pluginId}/config"],
+      ["post", "/api/plugins/{pluginId}/config/test"],
+      ["get", "/api/plugins/{pluginId}/jobs"],
+      ["get", "/api/plugins/{pluginId}/jobs/{jobId}/runs"],
+      ["post", "/api/plugins/{pluginId}/jobs/{jobId}/trigger"],
+      ["get", "/api/plugins/{pluginId}/dashboard"],
+    ] as const;
+    for (const [method, path] of instanceAdminPluginOperations) {
+      expect(spec.paths[path][method]["x-paperclip-authorization"]).toEqual({
+        actor: "board",
+        instanceAdmin: true,
+      });
+    }
+    expect(spec.paths["/api/plugins/{pluginId}/health"]).toBeUndefined();
     expect(spec.paths["/api/execution-workspaces/{id}/reconcile-branch"].post.security).toEqual([
       { BoardSessionAuth: [] },
       { BoardApiKeyAuth: [] },

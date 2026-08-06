@@ -54,9 +54,9 @@ Application-managed data is persisted under the bind mount (`./data/docker-paper
 The Paperclip image contains the common ACPX public-runtime execution bridge, not a bundled
 provider CLI or a Paperclip-owned adapter catalog. Install an
 ACPX-compatible CLI in the execution target and authenticate it through its
-native flow, then declare its entry in ACPX's resolved `agents`
-configuration. ACPX discovery probes only those configured entries and supplies
-their launch/configuration metadata.
+native flow. Paperclip discovers locally installed registry entries
+automatically and ACPX supplies their launch/configuration metadata. Add an
+ACPX `agents` entry only for a custom name or launch override.
 
 Provider credentials are not server-level Docker environment variables.
 Prepare provider-native configuration inside the declared execution target:

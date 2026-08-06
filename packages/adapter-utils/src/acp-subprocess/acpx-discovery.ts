@@ -14,7 +14,9 @@ import {
   type AcpSessionStore,
 } from "acpx/runtime";
 import {
-  loadConfiguredAcpRegistry,
+  isAcpRegistryAgentLocallyAvailable,
+  listLocallyAvailableAcpRegistryAgentNames,
+  loadAcpxAgentRegistry,
 } from "./agent-registry.js";
 import type { AcpSessionConfigSelection } from "./contract.js";
 
@@ -54,7 +56,7 @@ export interface AcpxDiscoveredConfigOption {
 }
 
 export interface AcpxAgentDiscovery {
-  /** Exact, configured ACPX agent name that was probed. */
+  /** Exact ACPX registry name that was probed. */
   readonly agentName: string;
   /** ACPX runtime controls advertised for the temporary session. */
   readonly controls: readonly string[];
@@ -109,8 +111,8 @@ export interface AcpxDiscoveryRuntime {
 export interface AcpxDiscoveryDependencies {
   /**
    * Primarily useful for tests and execution-target-specific ACPX registry
-   * suppliers. Production loads ACPX's resolved global/project configuration
-   * through its own `config show` interface before creating the registry.
+   * suppliers. Production loads ACPX's resolved global/project overrides
+   * through `config show`, then lets ACPX create its complete registry.
    */
   readonly createAgentRegistry?: () => AcpAgentRegistry;
   readonly createAcpRuntime?: (
@@ -273,6 +275,24 @@ function parseConfigOptions(value: unknown): readonly AcpxDiscoveredConfigOption
   return Object.freeze(parsed);
 }
 
+function completeConfigOptions(
+  options: readonly AcpxDiscoveredConfigOption[],
+  advertisedKeys: readonly string[],
+): readonly AcpxDiscoveredConfigOption[] {
+  const seen = new Set(options.map((option) => option.id));
+  return Object.freeze([
+    ...options,
+    ...advertisedKeys
+      .filter((id) => !seen.has(id))
+      .map((id) => Object.freeze({
+        id,
+        name: id,
+        type: "string",
+        options: Object.freeze([]),
+      })),
+  ]);
+}
+
 function parseCapabilities(
   capabilities: AcpRuntimeCapabilities | undefined,
 ): Pick<AcpxAgentDiscovery, "controls" | "configOptionKeys"> {
@@ -288,9 +308,12 @@ function parseStatus(
   capabilities: AcpRuntimeCapabilities | undefined,
 ): AcpxAgentDiscovery {
   const details = isRecord(status.details) ? status.details : undefined;
-  const configOptions = parseConfigOptions(details?.configOptions);
   const currentModelId = exactNonEmptyString(status.models?.currentModelId);
   const parsedCapabilities = parseCapabilities(capabilities);
+  const configOptions = completeConfigOptions(
+    parseConfigOptions(details?.configOptions),
+    parsedCapabilities.configOptionKeys,
+  );
   return Object.freeze({
     agentName,
     ...parsedCapabilities,
@@ -348,7 +371,7 @@ async function registryFrom(
   const supplied = input.dependencies?.createAgentRegistry;
   return supplied
     ? supplied()
-    : await loadConfiguredAcpRegistry({ cwd });
+    : await loadAcpxAgentRegistry({ cwd });
 }
 
 function listedAgentNames(registry: AcpAgentRegistry): readonly string[] {
@@ -356,14 +379,17 @@ function listedAgentNames(registry: AcpAgentRegistry): readonly string[] {
 }
 
 /**
- * Lists exactly the names ACPX's resolved `agents` configuration exposes.
- * Paperclip adds no catalog entries, aliases, launch argv, or model data here.
+ * Lists ACPX registry names with non-launching evidence of a local executable.
+ * Paperclip adds no catalog entries, aliases, launch argv, or model data.
  */
 export async function listAcpxAgentNames(
   input: ListAcpxAgentsInput = {},
 ): Promise<readonly string[]> {
   const cwd = resolveCwd(input.cwd ?? process.cwd());
-  return listedAgentNames(await registryFrom(input, cwd));
+  return await listLocallyAvailableAcpRegistryAgentNames(
+    await registryFrom(input, cwd),
+    { cwd },
+  );
 }
 
 async function closeProbeSession(
@@ -487,7 +513,7 @@ async function verifyDefaultAcpxRuntimeConfiguration(
 }
 
 /**
- * Creates a disposable, no-prompt ACPX session for one configured ACPX agent
+ * Creates a disposable, no-prompt ACPX session for one locally available ACPX agent
  * and returns the generic configuration it advertises. It never resolves an
  * arbitrary agent string, so ACPX's raw-command fallback is not reachable.
  *
@@ -504,6 +530,11 @@ export async function probeAcpxAgent(
   const registry = await registryFrom(input, cwd);
   if (!listedAgentNames(registry).includes(agentName)) {
     throw new Error(`ACPX discovery agent is not registry-listed: ${agentName}`);
+  }
+  if (
+    !(await isAcpRegistryAgentLocallyAvailable(agentName, registry, { cwd }))
+  ) {
+    throw new Error(`ACPX discovery agent is not locally available: ${agentName}`);
   }
 
   const dependencies = input.dependencies;

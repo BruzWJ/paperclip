@@ -27,16 +27,13 @@ function runRuntimeAssetGuard(root) {
 test("passes when all source runtime assets are present in dist", () => {
   const root = createFixtureRepo();
   try {
-    writeFixtureFile(root, "apps/server/src/built-ins/agents/default.md");
-    writeFixtureFile(root, "apps/server/dist/built-ins/agents/default.md");
     writeFixtureFile(root, "apps/server/src/onboarding-assets/welcome.txt");
     writeFixtureFile(root, "apps/server/dist/onboarding-assets/welcome.txt");
-    writeFixtureFile(root, "apps/server/src/built-ins/ignored.ts");
 
     const result = runRuntimeAssetGuard(root);
 
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /server runtime assets present in dist: 2 file\(s\)/);
+    assert.match(result.stdout, /server runtime assets present in dist: 1 file\(s\)/);
     assert.equal(result.stderr, "");
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -46,14 +43,14 @@ test("passes when all source runtime assets are present in dist", () => {
 test("fails with the missing source asset and expected dist path", () => {
   const root = createFixtureRepo();
   try {
-    writeFixtureFile(root, "apps/server/src/built-ins/agents/default.md");
+    writeFixtureFile(root, "apps/server/src/onboarding-assets/welcome.txt");
 
     const result = runRuntimeAssetGuard(root);
 
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Missing server runtime asset\(s\) in dist/);
-    assert.match(result.stderr, /source: apps\/server\/src\/built-ins\/agents\/default\.md/);
-    assert.match(result.stderr, /expected dist: apps\/server\/dist\/built-ins\/agents\/default\.md/);
+    assert.match(result.stderr, /source: apps\/server\/src\/onboarding-assets\/welcome\.txt/);
+    assert.match(result.stderr, /expected dist: apps\/server\/dist\/onboarding-assets\/welcome\.txt/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

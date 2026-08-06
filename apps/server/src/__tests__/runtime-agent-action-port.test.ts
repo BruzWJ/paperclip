@@ -150,10 +150,12 @@ describe("runtime agent action provider receipts", () => {
       companyToolIds: [],
     };
     await expect(call("agent_hire", arguments_)).resolves.toEqual({
-      status: "created",
+      source: "paperclip",
+      value: { status: "created" },
     });
     await expect(call("agent_hire", arguments_)).resolves.toEqual({
-      status: "created",
+      source: "paperclip",
+      value: { status: "created" },
     });
     expect(hireFromRun).toHaveBeenCalledTimes(1);
     expect(callLedger.complete).toHaveBeenCalledTimes(1);
@@ -179,11 +181,17 @@ describe("runtime agent action provider receipts", () => {
       await expect(call("agent_configure", {
         agentId,
         title: "Updated",
-      })).resolves.toEqual({ status: "configured" });
+      })).resolves.toEqual({
+        source: "paperclip",
+        value: { status: "configured" },
+      });
       await expect(call("agent_configure", {
         agentId,
         title: "Updated",
-      })).resolves.toEqual({ status: "configured" });
+      })).resolves.toEqual({
+        source: "paperclip",
+        value: { status: "configured" },
+      });
       expect(configureFromRun).toHaveBeenCalledTimes(1);
       expect(callLedger.complete).toHaveBeenCalledTimes(1);
       expect(callLedger.complete).toHaveBeenCalledWith(
@@ -202,11 +210,17 @@ describe("runtime agent action provider receipts", () => {
     await expect(call("agent_configure", {
       agentId: TARGET_AGENT_ID,
       title: "After",
-    })).resolves.toEqual({ status: "change_consent_requested" });
+    })).resolves.toEqual({
+      source: "paperclip",
+      value: { status: "change_consent_requested" },
+    });
     await expect(call("agent_configure", {
       agentId: TARGET_AGENT_ID,
       title: "After",
-    })).resolves.toEqual({ status: "change_consent_requested" });
+    })).resolves.toEqual({
+      source: "paperclip",
+      value: { status: "change_consent_requested" },
+    });
     expect(requestChangeConsent).toHaveBeenCalledTimes(1);
     expect(callLedger.complete).toHaveBeenCalledTimes(1);
     expect(callLedger.complete).toHaveBeenCalledWith(expect.objectContaining({

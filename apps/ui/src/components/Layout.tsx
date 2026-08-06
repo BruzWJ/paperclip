@@ -84,9 +84,7 @@ function getCompanyRouteSegment(
   pathname: string,
   companyPrefix: string | undefined,
 ): string | null {
-  return (
-    getCompanyPathSegments(pathname, companyPrefix)[0]?.toLowerCase() ?? null
-  );
+  return getCompanyPathSegments(pathname, companyPrefix)[0] ?? null;
 }
 
 function getCompanyPathSegments(
@@ -200,7 +198,7 @@ export function Layout() {
     !matchedCompany;
   const pluginRoutePath = useMemo(
     () =>
-      matchedPluginRoutePath?.toLowerCase() ??
+      matchedPluginRoutePath ??
       getCompanyRouteSegment(location.pathname, companyPrefix),
     [companyPrefix, location.pathname, matchedPluginRoutePath],
   );

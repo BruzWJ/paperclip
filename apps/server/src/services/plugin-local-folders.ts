@@ -1,5 +1,4 @@
 import { constants as fsConstants, promises as fs } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
@@ -11,15 +10,11 @@ import type {
 } from "@paperclipai/plugin-sdk";
 import { badRequest, forbidden, notFound } from "../errors.js";
 
-export interface StoredPluginLocalFolderConfig {
+interface StoredPluginLocalFolderConfig {
   path: string;
-  access?: "read" | "readWrite";
-  requiredDirectories?: string[];
-  requiredFiles?: string[];
-  updatedAt?: string;
 }
 
-export interface PluginLocalFolderSettingsJson {
+interface PluginLocalFolderSettingsJson {
   localFolders?: Record<string, StoredPluginLocalFolderConfig>;
   [key: string]: unknown;
 }
@@ -34,25 +29,18 @@ function problem(
   return { code, message, path: problemPath };
 }
 
-export function assertPluginLocalFolderKey(folderKey: string) {
+function assertPluginLocalFolderKey(folderKey: string) {
   if (!LOCAL_FOLDER_KEY_PATTERN.test(folderKey)) {
     throw badRequest("folderKey must start with a lowercase alphanumeric and contain only lowercase letters, digits, dots, colons, underscores, or hyphens");
   }
 }
 
-export function findLocalFolderDeclaration(
-  declarations: PluginLocalFolderDeclaration[] | undefined,
-  folderKey: string,
-) {
-  return declarations?.find((declaration) => declaration.folderKey === folderKey) ?? null;
-}
-
 export function requireLocalFolderDeclaration(
-  declarations: PluginLocalFolderDeclaration[] | undefined,
+  declarations: PluginLocalFolderDeclaration[],
   folderKey: string,
 ) {
   assertPluginLocalFolderKey(folderKey);
-  const declaration = findLocalFolderDeclaration(declarations, folderKey);
+  const declaration = declarations.find((candidate) => candidate.folderKey === folderKey);
   if (!declaration) {
     throw badRequest("Local folder key is not declared by this plugin manifest");
   }
@@ -90,71 +78,66 @@ function normalizeMaxEntries(value: number | undefined): number {
   return Math.max(1, Math.min(5000, Math.floor(value)));
 }
 
-function mergeFolderConfig(
-  declaration: PluginLocalFolderDeclaration | null,
-  stored: StoredPluginLocalFolderConfig | null,
-  override?: Partial<StoredPluginLocalFolderConfig>,
-): StoredPluginLocalFolderConfig | null {
-  const pathValue = override?.path ?? stored?.path;
-  if (!pathValue) return null;
-  return {
-    path: pathValue,
-    access: declaration?.access ?? override?.access ?? stored?.access ?? "readWrite",
-    requiredDirectories:
-      declaration?.requiredDirectories ?? override?.requiredDirectories ?? stored?.requiredDirectories ?? [],
-    requiredFiles:
-      declaration?.requiredFiles ?? override?.requiredFiles ?? stored?.requiredFiles ?? [],
-    updatedAt: stored?.updatedAt,
-  };
-}
-
 export function getStoredLocalFolders(settingsJson: Record<string, unknown> | null | undefined) {
-  const folders = (settingsJson as PluginLocalFolderSettingsJson | undefined)?.localFolders;
-  if (!folders || typeof folders !== "object") return {};
-  return folders;
+  const folders = settingsJson?.localFolders;
+  if (folders === undefined) return {};
+  if (typeof folders !== "object" || folders === null || Array.isArray(folders)) {
+    throw new Error("Stored plugin local folders must be an object");
+  }
+
+  const result: Record<string, StoredPluginLocalFolderConfig> = {};
+  for (const [folderKey, value] of Object.entries(folders)) {
+    assertPluginLocalFolderKey(folderKey);
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new Error(`Stored plugin local folder '${folderKey}' must be an object`);
+    }
+    const keys = Object.keys(value);
+    if (keys.some((key) => key !== "path")) {
+      throw new Error(`Stored plugin local folder '${folderKey}' contains undeclared fields`);
+    }
+    if (!("path" in value) || typeof value.path !== "string" || value.path.trim().length === 0) {
+      throw new Error(`Stored plugin local folder '${folderKey}' must contain a non-empty path`);
+    }
+    result[folderKey] = { path: value.path };
+  }
+  return result;
 }
 
 export function setStoredLocalFolder(
   settingsJson: Record<string, unknown> | null | undefined,
   folderKey: string,
-  config: StoredPluginLocalFolderConfig,
+  folderPath: string,
 ): PluginLocalFolderSettingsJson {
+  assertPluginLocalFolderKey(folderKey);
+  if (folderPath.trim().length === 0) {
+    throw badRequest("Local folder path must be a non-empty string");
+  }
   return {
     ...(settingsJson ?? {}),
     localFolders: {
       ...getStoredLocalFolders(settingsJson),
-      [folderKey]: {
-        ...config,
-        updatedAt: new Date().toISOString(),
-      },
+      [folderKey]: { path: folderPath },
     },
   };
 }
 
 export async function inspectPluginLocalFolder(input: {
-  folderKey: string;
-  declaration?: PluginLocalFolderDeclaration | null;
-  storedConfig?: StoredPluginLocalFolderConfig | null;
-  overrideConfig?: Partial<StoredPluginLocalFolderConfig>;
+  declaration: PluginLocalFolderDeclaration;
+  path: string | null;
 }): Promise<PluginLocalFolderStatus> {
-  assertPluginLocalFolderKey(input.folderKey);
-  const config = mergeFolderConfig(
-    input.declaration ?? null,
-    input.storedConfig ?? null,
-    input.overrideConfig,
-  );
-  const access = config?.access ?? input.declaration?.access ?? "readWrite";
-  const requiredDirectories = (config?.requiredDirectories ?? []).map((item) =>
+  assertPluginLocalFolderKey(input.declaration.folderKey);
+  const access = input.declaration.access ?? "readWrite";
+  const requiredDirectories = (input.declaration.requiredDirectories ?? []).map((item) =>
     validateRequiredPath(item, "requiredDirectories"),
   );
-  const requiredFiles = (config?.requiredFiles ?? []).map((item) =>
+  const requiredFiles = (input.declaration.requiredFiles ?? []).map((item) =>
     validateRequiredPath(item, "requiredFiles"),
   );
   const checkedAt = new Date().toISOString();
 
-  if (!config?.path) {
+  if (!input.path) {
     return {
-      folderKey: input.folderKey,
+      folderKey: input.declaration.folderKey,
       configured: false,
       path: null,
       realPath: null,
@@ -171,7 +154,7 @@ export async function inspectPluginLocalFolder(input: {
     };
   }
 
-  const configuredPath = path.resolve(config.path);
+  const configuredPath = path.resolve(input.path);
   const problems: PluginLocalFolderProblem[] = [];
   const missingDirectories: string[] = [];
   const missingFiles: string[] = [];
@@ -183,8 +166,8 @@ export async function inspectPluginLocalFolder(input: {
   let readable = false;
   let writable = false;
 
-  if (!path.isAbsolute(config.path)) {
-    problems.push(problem("not_absolute", "Local folder path must be absolute.", config.path));
+  if (!path.isAbsolute(input.path)) {
+    problems.push(problem("not_absolute", "Local folder path must be absolute.", input.path));
   }
 
   try {
@@ -248,7 +231,7 @@ export async function inspectPluginLocalFolder(input: {
   }
 
   return {
-    folderKey: input.folderKey,
+    folderKey: input.declaration.folderKey,
     configured: true,
     path: configuredPath,
     realPath,
@@ -278,7 +261,6 @@ async function assertPathInsideRoot(rootRealPath: string, candidatePath: string)
   if (!isInsideRoot(rootRealPath, candidateRealPath)) {
     throw forbidden("Local folder symlink escape is not allowed");
   }
-  return candidateRealPath;
 }
 
 async function ensureDirectoryInsideRoot(rootRealPath: string, relativePath: string) {
@@ -308,21 +290,13 @@ async function ensureDirectoryInsideRoot(rootRealPath: string, relativePath: str
 }
 
 export async function preparePluginLocalFolder(input: {
-  folderKey: string;
-  declaration?: PluginLocalFolderDeclaration | null;
-  storedConfig?: StoredPluginLocalFolderConfig | null;
-  overrideConfig?: Partial<StoredPluginLocalFolderConfig>;
+  declaration: PluginLocalFolderDeclaration;
+  path: string;
 }) {
-  assertPluginLocalFolderKey(input.folderKey);
-  const config = mergeFolderConfig(
-    input.declaration ?? null,
-    input.storedConfig ?? null,
-    input.overrideConfig,
-  );
-  const access = config?.access ?? input.declaration?.access ?? "readWrite";
-  if (!config?.path || access !== "readWrite" || !path.isAbsolute(config.path)) return;
+  assertPluginLocalFolderKey(input.declaration.folderKey);
+  if (input.declaration.access === "read" || !path.isAbsolute(input.path)) return;
 
-  const configuredPath = path.resolve(config.path);
+  const configuredPath = path.resolve(input.path);
   try {
     const stat = await fs.stat(configuredPath);
     if (!stat.isDirectory()) return;
@@ -337,9 +311,18 @@ export async function preparePluginLocalFolder(input: {
   }
   const rootRealPath = await fs.realpath(configuredPath);
 
-  for (const requiredDir of config.requiredDirectories ?? []) {
+  for (const requiredDir of input.declaration.requiredDirectories ?? []) {
     await ensureDirectoryInsideRoot(rootRealPath, validateRequiredPath(requiredDir, "requiredDirectories"));
   }
+}
+
+/** Prepare a configured folder, then return its canonical inspected status. */
+export async function prepareAndInspectPluginLocalFolder(input: {
+  declaration: PluginLocalFolderDeclaration;
+  path: string;
+}): Promise<PluginLocalFolderStatus> {
+  await preparePluginLocalFolder(input);
+  return inspectPluginLocalFolder(input);
 }
 
 async function inspectChildPath(
@@ -532,39 +515,17 @@ export async function writePluginLocalFolderTextAtomic(
       await dirHandle.close();
     }
   }
-
-  return inspectPluginLocalFolder({
-    folderKey: "write-result",
-    storedConfig: {
-      path: rootPath,
-      access: "readWrite",
-    },
-  });
 }
 
 export async function deletePluginLocalFolderFile(
   rootPath: string,
   relativePath: string,
-  folderKey: string,
 ) {
   const rootRealPath = await fs.realpath(rootPath);
-  let resolved: Awaited<ReturnType<typeof resolvePluginLocalFolderPath>>;
-  try {
-    resolved = await resolvePluginLocalFolderPath(rootRealPath, relativePath, {
-      mustExist: true,
-      allowMissingLeaf: true,
-    });
-  } catch (error) {
-    const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code) : "";
-    if (code !== "ENOENT") throw error;
-    return inspectPluginLocalFolder({
-      folderKey,
-      storedConfig: {
-        path: rootPath,
-        access: "readWrite",
-      },
-    });
-  }
+  const resolved = await resolvePluginLocalFolderPath(rootRealPath, relativePath, {
+    mustExist: true,
+    allowMissingLeaf: true,
+  });
 
   if (resolved.exists) {
     const stat = await fs.lstat(resolved.absolutePath);
@@ -581,18 +542,6 @@ export async function deletePluginLocalFolderFile(
       }
     }
   }
-
-  return inspectPluginLocalFolder({
-    folderKey,
-    storedConfig: {
-      path: rootPath,
-      access: "readWrite",
-    },
-  });
-}
-
-export function defaultLocalFolderBasePath(pluginKey: string, companyId: string) {
-  return path.join(os.homedir(), ".paperclip", "plugin-data", companyId, pluginKey);
 }
 
 export function assertConfiguredLocalFolder(status: PluginLocalFolderStatus) {
@@ -607,6 +556,9 @@ export function assertConfiguredLocalFolder(status: PluginLocalFolderStatus) {
 export function assertWritableConfiguredLocalFolder(status: PluginLocalFolderStatus) {
   if (!status.configured || !status.realPath || !status.readable) {
     throw notFound("Local folder is not configured or readable");
+  }
+  if (status.access !== "readWrite" || !status.writable) {
+    throw forbidden("Local folder is not configured for writes");
   }
   const onlyMissingRequiredPaths = status.problems.every((item) =>
     item.code === "missing_directory" || item.code === "missing_file"

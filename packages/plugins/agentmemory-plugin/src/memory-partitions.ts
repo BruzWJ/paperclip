@@ -27,17 +27,20 @@ function coordinates(input: {
   return {
     company: digest("company", input.companyId),
     issue: input.issueId ? digest("issue", input.issueId) : null,
-    agent: input.agentId ? digest("agent", input.agentId) : null,
+    agent: input.agentId
+      ? digest("company-agent", `${input.companyId}\0${input.agentId}`)
+      : null,
   };
 }
 
-function partitionAgentId(project: string): string {
-  return digest("partition-agent", project);
+function sharedAgentId(company: string): string {
+  return digest("company-shared", company);
 }
 
 /**
- * Builds opaque AgentMemory coordinates. Raw Paperclip tenant, issue, and
- * agent IDs never leave Paperclip through project or agent labels.
+ * Translates Paperclip's company/issue × agent/shared matrix onto
+ * AgentMemory's required project + agentId coordinates. `project` is only an
+ * AgentMemory namespace; it is unrelated to a Paperclip Project entity.
  */
 export function memoryPartition(
   kind: MemoryPartitionKind,
@@ -45,58 +48,71 @@ export function memoryPartition(
 ): MemoryPartition {
   const ids = coordinates(input);
   const cwd = `/paperclip/${ids.company}`;
+  const companyProject = `paperclip:company:${ids.company}`;
   switch (kind) {
     case "issue_agent":
       if (!ids.issue || !ids.agent) {
         throw new Error("issue_agent memory requires issueId and agentId");
       }
-      const issueAgentProject =
-        `paperclip:${ids.company}:issue:${ids.issue}:agent:${ids.agent}`;
+      const issueAgentProject = `${companyProject}:issue:${ids.issue}`;
       return {
         kind,
         project: issueAgentProject,
         cwd,
-        agentId: partitionAgentId(issueAgentProject),
+        agentId: ids.agent,
       };
     case "issue_shared":
       if (!ids.issue) throw new Error("issue_shared memory requires issueId");
-      const issueSharedProject =
-        `paperclip:${ids.company}:issue:${ids.issue}:shared`;
+      const issueSharedProject = `${companyProject}:issue:${ids.issue}`;
       return {
         kind,
         project: issueSharedProject,
         cwd,
-        agentId: partitionAgentId(issueSharedProject),
+        agentId: sharedAgentId(ids.company),
       };
     case "company_agent":
       if (!ids.agent) throw new Error("company_agent memory requires agentId");
-      const companyAgentProject =
-        `paperclip:${ids.company}:company:agent:${ids.agent}`;
       return {
         kind,
-        project: companyAgentProject,
+        project: companyProject,
         cwd,
-        agentId: partitionAgentId(companyAgentProject),
+        agentId: ids.agent,
       };
     case "company_shared": {
-      const companySharedProject = `paperclip:${ids.company}:company:shared`;
       return {
         kind,
-        project: companySharedProject,
+        project: companyProject,
         cwd,
-        agentId: partitionAgentId(companySharedProject),
+        agentId: sharedAgentId(ids.company),
       };
     }
   }
 }
 
-export function memorySessionId(input: {
+export function memoryObservationSessionId(input: {
   partition: MemoryPartition;
-  sourceKind: "run" | "comments";
-  sourceId: string;
+  observationIdentity: string;
 }): string {
-  return `pc_${digest(
-    "session",
-    `${input.partition.project}\0${input.sourceKind}\0${input.sourceId}`,
+  return `${memoryPartitionSessionPrefix(input.partition)}${digest(
+    "observation",
+    input.observationIdentity,
   )}`;
+}
+
+export function memoryPartitionSessionPrefix(
+  partition: MemoryPartition,
+): string {
+  return `pc_${digest(
+    "session-partition",
+    `${partition.project}\0${partition.agentId}`,
+  )}_`;
+}
+
+export function memoryPartitionOwnsSessionId(
+  partition: MemoryPartition,
+  sessionId: string,
+): boolean {
+  const prefix = memoryPartitionSessionPrefix(partition);
+  return sessionId.startsWith(prefix)
+    && /^[a-f0-9]{64}$/.test(sessionId.slice(prefix.length));
 }

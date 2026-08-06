@@ -34,13 +34,14 @@ describe("canonical issue comment projection schema", () => {
     );
     expect(columns(issueComments)).not.toContain("deleted_at");
     const config = getTableConfig(issueComments);
-    expect(config.foreignKeys.map((key) => key.getName())).toEqual(
-      expect.arrayContaining([
-        "issue_comments_author_plugin_installation_fk",
-        "issue_comments_run_scope_fk",
-        "issue_comments_reply_parent_fk",
-        "issue_comments_thread_root_fk",
-      ]),
+    const foreignKeyNames = config.foreignKeys.map((key) => key.getName());
+    expect(foreignKeyNames).toEqual(expect.arrayContaining([
+      "issue_comments_run_scope_fk",
+      "issue_comments_reply_parent_fk",
+      "issue_comments_thread_root_fk",
+    ]));
+    expect(foreignKeyNames).not.toContain(
+      "issue_comments_author_plugin_installation_fk",
     );
     expect(config.uniqueConstraints.map((value) => value.name)).toContain(
       "issue_comments_projected_identity_uq",

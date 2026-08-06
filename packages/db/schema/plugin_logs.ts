@@ -8,6 +8,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { plugins } from "./plugins.js";
+import type { PluginLogLevel } from "@paperclipai/shared";
 
 /**
  * `plugin_logs` table — structured log storage for plugin workers.
@@ -16,9 +17,8 @@ import { plugins } from "./plugins.js";
  * `ctx.logger.info(...)` etc. Logs are queryable by plugin, level, and
  * time range to support the operator logs panel and debugging workflows.
  *
- * Rows are inserted by the host when handling `log` notifications from
- * the worker process. A capped retention policy can be applied via
- * periodic cleanup (e.g. delete rows older than 7 days).
+ * Rows are inserted by the host when handling awaited `log` requests from
+ * the worker process.
  *
  * @see PLUGIN_SPEC.md §26 — Observability
  */
@@ -31,7 +31,7 @@ export const pluginLogs = pgTable(
       .references(() => plugins.id, { onDelete: "cascade" }),
     /** Company scope — NULL for instance-level logs. */
     companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
-    level: text("level").notNull().default("info"),
+    level: text("level").$type<PluginLogLevel>().notNull().default("info"),
     message: text("message").notNull(),
     meta: jsonb("meta").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -32,7 +32,7 @@ export const pluginEntities = pgTable(
     pluginId: uuid("plugin_id")
       .notNull()
       .references(() => plugins.id, { onDelete: "cascade" }),
-    /** Company scope — NULL for instance-level entities. */
+    /** Company tenant for company-scoped entities; NULL for other scope kinds. */
     companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
     entityType: text("entity_type").notNull(),
     scopeKind: text("scope_kind").$type<PluginStateScopeKind>().notNull(),
@@ -50,12 +50,13 @@ export const pluginEntities = pgTable(
     typeIdx: index("plugin_entities_type_idx").on(table.entityType),
     scopeIdx: index("plugin_entities_scope_idx").on(table.scopeKind, table.scopeId),
     /**
-     * Per-tenant uniqueness on (companyId, pluginId, entityType, externalId).
+     * Exact entity identity is
+     * (companyId, pluginId, entityType, scopeKind, scopeId, externalId).
      * `.nullsNotDistinct()` is required because companyId is nullable for
      * instance-scope entities (cron jobs, public webhooks): without it,
      * postgres treats two NULL company_ids as distinct and a tuple like
-     * `(NULL, pluginId, entityType, externalId)` can be inserted multiple
-     * times, losing the dedup guarantee. Same pattern as plugin_state.ts.
+     * tuples containing nullable companyId, scopeId, or externalId can be
+     * inserted multiple times, losing the upsert guarantee.
      * Requires PostgreSQL 15+.
      */
     externalIdx: unique("plugin_entities_external_idx")
@@ -63,6 +64,8 @@ export const pluginEntities = pgTable(
         table.companyId,
         table.pluginId,
         table.entityType,
+        table.scopeKind,
+        table.scopeId,
         table.externalId,
       )
       .nullsNotDistinct(),

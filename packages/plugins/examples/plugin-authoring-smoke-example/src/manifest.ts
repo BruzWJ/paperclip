@@ -9,9 +9,6 @@ const manifest: PaperclipPluginManifestV1 = {
   author: "Plugin Author",
   categories: ["connector"],
   capabilities: [
-    "events.subscribe",
-    "plugin.state.read",
-    "plugin.state.write",
     "ui.dashboardWidget.register"
   ],
   entrypoints: {

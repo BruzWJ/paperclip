@@ -107,7 +107,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * Prefer the immutable ACP revision's explicit selected model when an agent
  * response embeds it. Older agent records keep their flat `model` value.
- * Never infer a model from arbitrary session-config keys: ACPX may use any
+ * Never infer a model from arbitrary session-config keys: a provider may use any
  * config id for its model selector.
  */
 export function getConfiguredModel(agent: Agent): string | null {

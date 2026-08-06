@@ -6,10 +6,7 @@ import {
   type CurrentAcpPromptIdentity,
   type RoutedAcpPromptIdentity,
 } from "./issue-execution-plan-live.js";
-import {
-  publishGlobalLiveEvent,
-  subscribeCompanyLiveEvents,
-} from "./live-events.js";
+import { subscribeCompanyLiveEvents } from "./live-events.js";
 
 const routedPrompt: RoutedAcpPromptIdentity = {
   companyId: "company-live-plan",
@@ -264,22 +261,4 @@ describe("publishIssueExecutionLivePlan", () => {
     }
   });
 
-  it("rejects a global/unscoped plan publication even from untyped code", () => {
-    expect(() =>
-      Reflect.apply(publishGlobalLiveEvent, undefined, [
-        {
-          type: "issue.execution.plan.live",
-          payload: {
-            companyId: routedPrompt.companyId,
-            issueId: routedPrompt.issueId,
-            runId: routedPrompt.runId,
-            refId: routedPrompt.refId,
-            runOrdinal: routedPrompt.runOrdinal,
-            segmentOrdinal: routedPrompt.segmentOrdinal,
-            replacement: [],
-          },
-        },
-      ]),
-    ).toThrow("authenticated company scope only");
-  });
 });

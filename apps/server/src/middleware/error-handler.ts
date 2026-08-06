@@ -17,13 +17,13 @@ function isRedactedSkillPolicyDenial(details: Record<string, unknown> | null) {
   return details?.code === "skill_policy_denied";
 }
 
-function attachErrorContext(
+export function attachErrorContext(
   req: Request,
   res: Response,
   payload: ErrorContext["error"],
   rawError?: Error,
 ) {
-  (res as any).__errorContext = {
+  res.__errorContext = {
     error: payload,
     method: req.method,
     url: req.originalUrl,
@@ -32,7 +32,7 @@ function attachErrorContext(
     reqQuery: req.query,
   } satisfies ErrorContext;
   if (rawError) {
-    (res as any).err = rawError;
+    res.err = rawError;
   }
 }
 

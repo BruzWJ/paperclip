@@ -19,7 +19,7 @@ export function llmRoutes(_db: Db) {
     const lines = [
       "# Paperclip Agent Configuration Index",
       "",
-      "ACPX-discovered agents:",
+      "Available local agents:",
       ...adapters.map((adapter) => `- ${adapter.type}: /llms/agent-configuration/${adapter.type}.txt`),
       "",
       "Related API endpoints:",

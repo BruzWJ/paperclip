@@ -129,7 +129,7 @@ describe("InviteLandingPage", () => {
     vi.clearAllMocks();
   });
 
-  it("submits the ACPX agent name without legacy adapter or transport choices", async () => {
+  it("submits the local agent name without legacy adapter or transport choices", async () => {
     getInviteMock.mockResolvedValue({
       id: "invite-agent-1",
       companyId: "company-1",
@@ -169,28 +169,28 @@ describe("InviteLandingPage", () => {
     await flushReact();
     await flushReact();
 
-    // Agent invitations accept the exact ACPX-discovered agent name rather
+    // Agent invitations accept the exact server-discovered agent name rather
     // than selecting from Paperclip's former adapter catalog.
     expect(container.querySelector("select")).toBeNull();
     expect(container.textContent).not.toContain("Process");
     expect(container.textContent).not.toContain("HTTP Session");
 
     const agentNameInput = container.querySelector("input") as HTMLInputElement | null;
-    const acpxAgentNameInput = container.querySelector(
-      'input[placeholder="Exact name shown in ACP adapters"]',
+    const localAgentNameInput = container.querySelector(
+      'input[placeholder="Exact name shown in the local agent list"]',
     ) as HTMLInputElement | null;
     const inputValueSetter = Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype,
       "value",
     )?.set;
     expect(agentNameInput).not.toBeNull();
-    expect(acpxAgentNameInput).not.toBeNull();
+    expect(localAgentNameInput).not.toBeNull();
     expect(inputValueSetter).toBeTypeOf("function");
     await act(async () => {
       inputValueSetter!.call(agentNameInput, "Acme Ops Agent");
       agentNameInput!.dispatchEvent(new Event("input", { bubbles: true }));
-      inputValueSetter!.call(acpxAgentNameInput, "codex");
-      acpxAgentNameInput!.dispatchEvent(new Event("input", { bubbles: true }));
+      inputValueSetter!.call(localAgentNameInput, "codex");
+      localAgentNameInput!.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
     const submitButton = Array.from(container.querySelectorAll("button")).find(

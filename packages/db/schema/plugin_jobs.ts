@@ -4,11 +4,9 @@ import {
   text,
   integer,
   timestamp,
-  jsonb,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { companies } from "./companies.js";
 import { plugins } from "./plugins.js";
 import type { PluginJobStatus, PluginJobRunStatus, PluginJobRunTrigger } from "@paperclipai/shared";
 
@@ -18,13 +16,13 @@ import type { PluginJobStatus, PluginJobRunStatus, PluginJobRunTrigger } from "@
  *
  * Each row represents one scheduled job entry for a plugin. The
  * `job_key` matches the key declared in the manifest's `jobs` array.
- * The `schedule` column stores the cron expression or interval string
+ * The `schedule` column stores the required five-field cron expression
  * used by the job scheduler to decide when to fire the job.
  *
  * Status values:
  * - `active` — job is enabled and will run on schedule
- * - `paused` — job is temporarily disabled by the operator
- * - `error` — job has been disabled due to repeated failures
+ * - `removed` — the key is absent from the current manifest but retained so
+ *   its execution history remains inspectable
  *
  * @see PLUGIN_SPEC.md §21.3 — `plugin_jobs`
  */
@@ -38,12 +36,10 @@ export const pluginJobs = pgTable(
       .references(() => plugins.id, { onDelete: "cascade" }),
     /** Identifier matching the key in the plugin manifest's `jobs` array. */
     jobKey: text("job_key").notNull(),
-    /** Cron expression (e.g. `"0 * * * *"`) or interval string. */
+    /** Required five-field cron expression (e.g. `"0 * * * *"`). */
     schedule: text("schedule").notNull(),
     /** Current scheduling state. */
     status: text("status").$type<PluginJobStatus>().notNull().default("active"),
-    /** Timestamp of the most recent successful execution. */
-    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
     /** Pre-computed timestamp of the next scheduled execution. */
     nextRunAt: timestamp("next_run_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -64,8 +60,8 @@ export const pluginJobs = pgTable(
  * (`succeeded` | `failed` | `cancelled`).
  *
  * Trigger values:
- * - `scheduled` — fired automatically by the cron/interval scheduler
- * - `manual` — triggered by an operator via the admin UI or API
+ * - `schedule` — fired automatically by the cron scheduler
+ * - `manual` — triggered by an instance administrator through the API
  *
  * @see PLUGIN_SPEC.md §21.3 — `plugin_job_runs`
  */
@@ -81,18 +77,14 @@ export const pluginJobRuns = pgTable(
     pluginId: uuid("plugin_id")
       .notNull()
       .references(() => plugins.id, { onDelete: "cascade" }),
-    /** Company scope — NULL for instance-level jobs. */
-    companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
-    /** What caused this run to start (`"scheduled"` or `"manual"`). */
+    /** What caused this run to start (`"schedule"` or `"manual"`). */
     trigger: text("trigger").$type<PluginJobRunTrigger>().notNull(),
     /** Current lifecycle state of this run. */
-    status: text("status").$type<PluginJobRunStatus>().notNull().default("pending"),
+    status: text("status").$type<PluginJobRunStatus>().notNull().default("queued"),
     /** Wall-clock duration in milliseconds. Null until the run finishes. */
     durationMs: integer("duration_ms"),
     /** Error message if `status === "failed"`. */
     error: text("error"),
-    /** Ordered list of log lines emitted during this run. */
-    logs: jsonb("logs").$type<string[]>().notNull().default([]),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -100,7 +92,6 @@ export const pluginJobRuns = pgTable(
   (table) => ({
     jobIdx: index("plugin_job_runs_job_idx").on(table.jobId),
     pluginIdx: index("plugin_job_runs_plugin_idx").on(table.pluginId),
-    companyIdx: index("plugin_job_runs_company_idx").on(table.companyId),
     statusIdx: index("plugin_job_runs_status_idx").on(table.status),
   }),
 );

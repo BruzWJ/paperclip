@@ -32,7 +32,7 @@ export function isValidAdapterType(type: string): boolean {
 }
 
 /**
- * Every server-admitted ACPX adapter appears in card-style visual pickers.
+ * Every server-admitted local adapter appears in card-style visual pickers.
  */
 export function isVisualAdapterChoice(type: string): boolean {
   return isEnabledAdapterType(type);

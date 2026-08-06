@@ -64,9 +64,17 @@ rl.on("line", (line) => {
       jsonrpc: "2.0",
       id: message.id,
       result: {
-        ok: true,
         supportedMethods: ["getData"],
       },
+    });
+    return;
+  }
+
+  if (method === "health") {
+    send({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: { status: "ok" },
     });
     return;
   }

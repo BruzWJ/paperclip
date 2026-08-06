@@ -11,6 +11,7 @@ import {
 import type { AdapterConfigFieldsProps } from "./types";
 import { api } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
+import { publicRuntimeMessage } from "../lib/public-runtime-message";
 import {
   Field,
   DraftInput,
@@ -290,7 +291,10 @@ export function useAdapterConfigSchema(
     error:
       enabled && query.error
         ? query.error instanceof Error
-          ? query.error.message
+          ? publicRuntimeMessage(
+              query.error.message,
+              "Adapter configuration schema request failed.",
+            )
           : "Adapter configuration schema request failed."
         : null,
   };

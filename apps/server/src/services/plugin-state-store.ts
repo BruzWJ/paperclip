@@ -3,10 +3,11 @@ import type { Db } from "@paperclipai/db";
 import { plugins, pluginState } from "@paperclipai/db";
 import type {
   PluginStateScopeKind,
-  SetPluginState,
-  ListPluginState,
 } from "@paperclipai/shared";
+import type { WorkerToHostMethods } from "@paperclipai/plugin-sdk";
 import { notFound } from "../errors.js";
+
+type SetPluginState = WorkerToHostMethods["state.set"][0];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -53,13 +54,13 @@ function scopeConditions(
 /**
  * Plugin State Store — scoped key-value persistence for plugin workers.
  *
- * Provides `get`, `set`, `delete`, and `list` operations over the
- * `plugin_state` table. Each plugin's data is strictly namespaced by
+ * Provides `get`, `set`, and `delete` operations over the `plugin_state`
+ * table. Each plugin's data is strictly namespaced by
  * `pluginId` so plugins cannot read or write each other's state.
  *
  * This service implements the server-side backing for the `ctx.state` SDK
  * client exposed to plugin workers. The host is responsible for:
- * - enforcing `plugin.state.read` capability before calling `get` / `list`
+ * - enforcing `plugin.state.read` capability before calling `get`
  * - enforcing `plugin.state.write` capability before calling `set` / `delete`
  *
  * @see PLUGIN_SPEC.md §14 — SDK Surface (`ctx.state`)
@@ -194,38 +195,5 @@ export function pluginStateStore(db: Db) {
         .delete(pluginState)
         .where(scopeConditions(pluginId, scopeKind, scopeId, namespace, stateKey));
     },
-
-    /**
-     * List all state entries for a plugin, optionally filtered by scope.
-     *
-     * Returns all matching rows as `PluginStateRecord`-shaped objects.
-     * The `valueJson` field contains the stored value.
-     *
-     * Requires `plugin.state.read` capability (enforced by the caller).
-     *
-     * @param pluginId - UUID of the owning plugin
-     * @param filter - Optional scope filters (scopeKind, scopeId, namespace)
-     */
-    list: async (pluginId: string, filter: ListPluginState = {}): Promise<typeof pluginState.$inferSelect[]> => {
-      await assertPluginReady(pluginId);
-      const conditions = [eq(pluginState.pluginId, pluginId)];
-
-      if (filter.scopeKind !== undefined) {
-        conditions.push(eq(pluginState.scopeKind, filter.scopeKind));
-      }
-      if (filter.scopeId !== undefined) {
-        conditions.push(eq(pluginState.scopeId, filter.scopeId));
-      }
-      if (filter.namespace !== undefined) {
-        conditions.push(eq(pluginState.namespace, filter.namespace));
-      }
-
-      return db
-        .select()
-        .from(pluginState)
-        .where(and(...conditions));
-    },
   };
 }
-
-export type PluginStateStore = ReturnType<typeof pluginStateStore>;

@@ -88,7 +88,7 @@ adapter revision when the effective `carry_context` grant is true. Reassignment,
 revision change, explicit fresh-session action, or a false grant prevents reuse.
 
 Provider-native storage remains opaque and provider-owned. Paperclip stores no
-model-visible agent memory and never selects a handle from another issue.
+model-visible cross-issue continuity state and never selects a handle from another issue.
 
 ## ACP Backend Model
 
@@ -98,10 +98,12 @@ contains no execution callback, provider client, parser, session state,
 authentication hook, or tool implementation.
 
 Paperclip uses ACPX as the sole dynamic agent/model/configuration supplier: it
-probes the exact entries in ACPX's resolved `agents` configuration and does not
-maintain an approved agent catalog of its own. Unconfigured ACPX built-in
-shortcuts are not catalog membership. ACPX owns the one request/control/event
-path to the provider CLI and its native prompt/model/tool/history harness.
+enumerates ACPX's registry with its resolved launch overrides and does not
+maintain an approved agent catalog of its own. A generic local-install fence
+prevents package-backed shortcuts from materializing an absent CLI during
+discovery; each remaining candidate must then pass an ACPX session probe. ACPX
+owns the one request/control/event path to the provider CLI and its native
+prompt/model/tool/history harness.
 Paperclip owns durable authority, request MCP, redacted projection, and
 accounting.
 The current public ACPX runtime is local-only; SSH, sandbox, and plugin target

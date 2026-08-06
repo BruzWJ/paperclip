@@ -11,19 +11,21 @@ import {
   useState,
   type CSSProperties,
   type ErrorInfo,
-  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { PLUGIN_LAUNCHER_BOUNDS } from "@paperclipai/shared";
+import {
+  PLUGIN_LAUNCHER_BOUNDS,
+} from "@paperclipai/shared";
 import type {
   PluginLauncherBounds,
   PluginLauncherDeclaration,
   PluginLauncherPlacementZone,
+  PluginUiContribution,
   PluginUiSlotEntityType,
 } from "@paperclipai/shared";
-import { pluginsApi, type PluginUiContribution } from "@/api/plugins";
+import { pluginsApi } from "@/api/plugins";
 import { authApi } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 import { useOptionalToastActions } from "@/context/ToastContext";
@@ -33,6 +35,7 @@ import { cn } from "@/lib/utils";
 import {
   PluginBridgeContext,
   type PluginHostContext,
+  type PluginMountContext,
   type PluginModalBoundsRequest,
   type PluginRenderCloseEvent,
   type PluginRenderCloseHandler,
@@ -44,21 +47,11 @@ import {
   type RegisteredPluginComponent,
 } from "./slots";
 
-export type PluginLauncherContext = {
-  companyId?: string | null;
-  companyPrefix?: string | null;
-  projectId?: string | null;
-  projectRef?: string | null;
-  entityId?: string | null;
-  entityType?: PluginUiSlotEntityType | null;
-};
-
-export type ResolvedPluginLauncher = PluginLauncherDeclaration & {
+type ResolvedPluginLauncher = PluginLauncherDeclaration & {
   pluginId: string;
+  pluginUpdatedAt: string;
   pluginKey: string;
   pluginDisplayName: string;
-  pluginVersion: string;
-  uiEntryFile: string;
 };
 
 type UsePluginLaunchersFilters = {
@@ -71,7 +64,6 @@ type UsePluginLaunchersFilters = {
 type UsePluginLaunchersResult = {
   launchers: ResolvedPluginLauncher[];
   contributionsByPluginId: Map<string, PluginUiContribution>;
-  isLoading: boolean;
   errorMessage: string | null;
 };
 
@@ -85,34 +77,24 @@ type PluginLauncherRuntimeContextValue = {
    */
   activateLauncher(
     launcher: ResolvedPluginLauncher,
-    hostContext: PluginLauncherContext,
+    hostContext: PluginMountContext,
     contribution: PluginUiContribution,
-    sourceEl?: HTMLElement | null,
+    sourceEl: HTMLElement,
   ): Promise<void>;
 };
 
 type LauncherInstance = {
   key: string;
   launcher: ResolvedPluginLauncher;
-  hostContext: PluginLauncherContext;
-  contribution: PluginUiContribution;
-  component: RegisteredPluginComponent | null;
-  sourceElement: HTMLElement | null;
-  sourceRect: DOMRect | null;
-  bounds: PluginLauncherBounds | null;
+  hostContext: PluginMountContext;
+  component: RegisteredPluginComponent;
+  sourceElement: HTMLElement;
+  sourceRect: DOMRect;
+  bounds: PluginLauncherBounds;
   beforeCloseHandlers: Set<PluginRenderCloseHandler>;
   closeHandlers: Set<PluginRenderCloseHandler>;
 };
 
-const entityScopedZones = new Set<PluginLauncherPlacementZone>([
-  "detailTab",
-  "issueDetailView",
-  "contextMenuItem",
-  "commentAnnotation",
-  "commentContextMenuItem",
-  "projectSidebarItem",
-  "toolbarButton",
-]);
 const focusableElementSelector = [
   "button:not([disabled])",
   "[href]",
@@ -126,6 +108,11 @@ const supportedLauncherBounds = new Set<PluginLauncherBounds>(
   PLUGIN_LAUNCHER_BOUNDS,
 );
 
+type LauncherBoundsStyle = {
+  width: string;
+  height?: string;
+};
+
 const PluginLauncherRuntimeContext = createContext<PluginLauncherRuntimeContextValue | null>(null);
 
 function getErrorMessage(error: unknown): string {
@@ -134,7 +121,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 function buildLauncherHostContext(
-  context: PluginLauncherContext,
+  context: PluginMountContext,
   renderEnvironment: PluginRenderEnvironmentContext | null,
   userId: string | null,
 ): PluginHostContext {
@@ -142,6 +129,7 @@ function buildLauncherHostContext(
     companyId: context.companyId ?? null,
     companyPrefix: context.companyPrefix ?? null,
     projectId: context.projectId ?? (context.entityType === "project" ? context.entityId ?? null : null),
+    projectRef: context.projectRef ?? null,
     entityId: context.entityId ?? null,
     entityType: context.entityType ?? null,
     userId,
@@ -159,30 +147,15 @@ function focusFirstElement(container: HTMLElement | null): void {
   container.focus();
 }
 
-function resolveLauncherNavigationTarget(target: string, hostContext: PluginLauncherContext): string {
-  if (/^https?:\/\//.test(target) || target.startsWith("/") || target.startsWith("#") || target.startsWith(".") || target.startsWith("?")) {
+function resolveLauncherNavigationTarget(target: string, hostContext: PluginMountContext): string {
+  if (/^[a-z][a-z\d+.-]*:/i.test(target) || target.startsWith("//")) {
+    throw new Error("Plugin navigate launchers cannot target an absolute URL.");
+  }
+  if (target.startsWith("/") || target.startsWith("#") || target.startsWith(".") || target.startsWith("?")) {
     return target;
   }
   const companyPrefix = hostContext.companyPrefix?.trim();
   return companyPrefix ? `/${companyPrefix}/${target}` : target;
-}
-
-function launcherRoutePath(launcher: ResolvedPluginLauncher): string | null {
-  if (launcher.action.type !== "navigate" && launcher.action.type !== "deepLink") return null;
-  if (/^https?:\/\//.test(launcher.action.target)) return null;
-  const [pathOnly] = launcher.action.target.split(/[?#]/, 1);
-  const segment = pathOnly?.split("/").filter(Boolean).at(-1);
-  return segment ? segment.toLowerCase() : null;
-}
-
-function launcherDisplayName(launcher: ResolvedPluginLauncher, contribution: PluginUiContribution | undefined): string {
-  if (launcher.placementZone !== "sidebar" || !contribution) return launcher.displayName;
-  const routePath = launcherRoutePath(launcher);
-  if (!routePath) return launcher.displayName;
-  const routeSidebar = contribution.slots.find((slot) =>
-    slot.type === "routeSidebar" && slot.routePath?.toLowerCase() === routePath
-  );
-  return routeSidebar?.displayName ?? launcher.displayName;
 }
 
 function trapFocus(container: HTMLElement, event: KeyboardEvent): void {
@@ -214,24 +187,12 @@ function trapFocus(container: HTMLElement, event: KeyboardEvent): void {
 }
 
 function launcherTriggerClassName(placementZone: PluginLauncherPlacementZone): string {
-  switch (placementZone) {
-    case "projectSidebarItem":
-      return "justify-start h-auto px-3 py-1 text-[12px] font-normal text-muted-foreground hover:text-foreground";
-    case "contextMenuItem":
-    case "commentContextMenuItem":
-      return "justify-start h-7 w-full px-2 text-xs font-normal";
-    case "sidebar":
-    case "sidebarPanel":
-      return "justify-start h-8 w-full";
-    case "toolbarButton":
-    case "globalToolbarButton":
-      return "h-8";
-    default:
-      return "h-8";
-  }
+  return placementZone === "sidebar"
+    ? "justify-start h-8 w-full"
+    : "h-8";
 }
 
-function launcherShellBoundsStyle(bounds: PluginLauncherBounds | null): CSSProperties {
+function launcherShellBoundsStyle(bounds: PluginLauncherBounds): LauncherBoundsStyle {
   switch (bounds) {
     case "compact":
       return { width: "min(28rem, calc(100vw - 2rem))" };
@@ -249,17 +210,7 @@ function launcherShellBoundsStyle(bounds: PluginLauncherBounds | null): CSSPrope
 
 function launcherPopoverStyle(instance: LauncherInstance): CSSProperties {
   const rect = instance.sourceRect;
-  const baseWidth = launcherShellBoundsStyle(instance.bounds).width ?? "min(24rem, calc(100vw - 2rem))";
-  if (!rect) {
-    return {
-      width: baseWidth,
-      maxHeight: "min(70vh, 36rem)",
-      top: "4rem",
-      left: "50%",
-      transform: "translateX(-50%)",
-    };
-  }
-
+  const baseWidth = launcherShellBoundsStyle(instance.bounds).width;
   const top = Math.min(rect.bottom + 8, window.innerHeight - 32);
   const left = Math.min(
     Math.max(rect.left, 16),
@@ -282,17 +233,16 @@ function isPluginLauncherBounds(value: unknown): value is PluginLauncherBounds {
  * Discover launchers for the requested host placement zones from the normalized
  * `/api/plugins/ui-contributions` response.
  *
- * This is the shared discovery path for toolbar, sidebar, detail-view, and
- * context-menu launchers. The hook applies host-side entity filtering and
- * returns both the sorted launcher list and a contribution map so activation
- * can stay on cached metadata.
+ * The hook applies host-side placement and entity filtering and returns both
+ * the sorted launcher list and a contribution map so activation can stay on
+ * cached metadata.
  */
-export function usePluginLaunchers(
+function usePluginLaunchers(
   filters: UsePluginLaunchersFilters,
 ): UsePluginLaunchersResult {
   const queryEnabled = filters.enabled ?? true;
   const toast = useOptionalToastActions();
-  const { data, isLoading, error } = useQuery({
+  const { data, error } = useQuery({
     queryKey: queryKeys.plugins.uiContributions,
     queryFn: () => pluginsApi.listUiContributions(),
     enabled: queryEnabled,
@@ -330,17 +280,16 @@ export function usePluginLaunchers(
     for (const contribution of data ?? []) {
       for (const launcher of contribution.launchers) {
         if (!placementZones.has(launcher.placementZone)) continue;
-        if (entityScopedZones.has(launcher.placementZone)) {
-          if (!filters.entityType) continue;
-          if (!launcher.entityTypes?.includes(filters.entityType)) continue;
+        if (launcher.placementZone === "toolbarButton") {
+          if (filters.entityType !== "project" && filters.entityType !== "issue") continue;
+          if (!launcher.entityTypes.includes(filters.entityType)) continue;
         }
         rows.push({
           ...launcher,
           pluginId: contribution.pluginId,
+          pluginUpdatedAt: contribution.updatedAt,
           pluginKey: contribution.pluginKey,
           pluginDisplayName: contribution.displayName,
-          pluginVersion: contribution.version,
-          uiEntryFile: contribution.uiEntryFile,
         });
       }
     }
@@ -360,7 +309,6 @@ export function usePluginLaunchers(
   return {
     launchers,
     contributionsByPluginId,
-    isLoading: queryEnabled && isLoading,
     errorMessage: pluginError,
   };
 }
@@ -368,12 +316,26 @@ export function usePluginLaunchers(
 async function resolveLauncherComponent(
   contribution: PluginUiContribution,
   launcher: ResolvedPluginLauncher,
-): Promise<RegisteredPluginComponent | null> {
+): Promise<RegisteredPluginComponent> {
   const exportName = launcher.action.target;
-  const existing = resolveRegisteredPluginComponent(launcher.pluginKey, exportName);
+  const existing = resolveRegisteredPluginComponent(
+    launcher.pluginId,
+    launcher.pluginUpdatedAt,
+    exportName,
+  );
   if (existing) return existing;
   await ensurePluginContributionLoaded(contribution);
-  return resolveRegisteredPluginComponent(launcher.pluginKey, exportName);
+  const registered = resolveRegisteredPluginComponent(
+    launcher.pluginId,
+    launcher.pluginUpdatedAt,
+    exportName,
+  );
+  if (!registered) {
+    throw new Error(
+      `Plugin "${launcher.pluginKey}" loaded without declared launcher export "${exportName}".`,
+    );
+  }
+  return registered;
 }
 
 /**
@@ -456,37 +418,7 @@ function LauncherRenderContent({
     [instance.hostContext, renderEnvironment, userId],
   );
 
-  if (!component) {
-    if (renderEnvironment.environment === "iframe") {
-      return (
-        <iframe
-          src={`/_plugins/${encodeURIComponent(instance.launcher.pluginId)}/ui/${instance.launcher.action.target}`}
-          title="Embedded plugin launcher"
-          aria-label={`${instance.launcher.displayName} from ${instance.launcher.pluginDisplayName}`}
-          className="h-full min-h-[24rem] w-full rounded-md border border-border bg-background"
-        />
-      );
-    }
-
-    return (
-      <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-        {instance.launcher.pluginDisplayName}: could not resolve launcher target "{instance.launcher.action.target}".
-      </div>
-    );
-  }
-
-  if (component.kind === "web-component") {
-    return createElement(component.tagName, {
-      className: "block w-full",
-      pluginLauncher: instance.launcher,
-      pluginContext: hostContext,
-    });
-  }
-
-  const node = createElement(component.component as never, {
-    launcher: instance.launcher,
-    context: hostContext,
-  } as never);
+  const node = createElement(component.component, { context: hostContext });
 
   return (
     <LauncherErrorBoundary launcher={instance.launcher}>
@@ -537,7 +469,7 @@ function LauncherModalShell({
   }, [closeLauncher, instance.key, isTopmost]);
 
   const renderEnvironment = useMemo<PluginRenderEnvironmentContext>(() => ({
-    environment: instance.launcher.render?.environment ?? "hostOverlay",
+    environment: "hostOverlay",
     launcherId: instance.launcher.id,
     bounds: instance.bounds,
     requestModalBounds: (request) => requestBounds(instance.key, request),
@@ -589,7 +521,7 @@ function LauncherModalShell({
         style={{
           zIndex: baseZ + 1,
           ...(shellType === "openDrawer"
-            ? { width: containerStyle.width ?? "min(44rem, 100vw)" }
+            ? { width: containerStyle.width }
             : containerStyle),
         }}
         onMouseDown={(event) => event.stopPropagation()}
@@ -648,7 +580,7 @@ export function PluginLauncherProvider({ children }: { children: ReactNode }) {
         for (const handler of [...instance.closeHandlers]) {
           void handler(event);
         }
-        if (instance.sourceElement && document.contains(instance.sourceElement)) {
+        if (document.contains(instance.sourceElement)) {
           instance.sourceElement.focus();
         }
       });
@@ -667,10 +599,10 @@ export function PluginLauncherProvider({ children }: { children: ReactNode }) {
 
   const requestBounds = useCallback(
     async (key: string, request: PluginModalBoundsRequest) => {
-      // Bounds changes are host-validated. Unsupported presets are ignored so
-      // plugin UI cannot push the shell into an undefined layout state.
+      // Bounds changes are host-validated so plugin UI cannot push the shell
+      // into an undefined layout state.
       if (!isPluginLauncherBounds(request.bounds)) {
-        return;
+        throw new Error(`Unsupported plugin launcher bounds: ${String(request.bounds)}`);
       }
       setStack((current) =>
         current.map((entry) =>
@@ -686,20 +618,25 @@ export function PluginLauncherProvider({ children }: { children: ReactNode }) {
   const activateLauncher = useCallback(
     async (
       launcher: ResolvedPluginLauncher,
-      hostContext: PluginLauncherContext,
+      hostContext: PluginMountContext,
       contribution: PluginUiContribution,
-      sourceEl?: HTMLElement | null,
+      sourceEl: HTMLElement,
     ) => {
+      if (
+        contribution.pluginId !== launcher.pluginId
+        || contribution.updatedAt !== launcher.pluginUpdatedAt
+      ) {
+        throw new Error(`Stale contribution metadata for plugin "${launcher.pluginKey}".`);
+      }
       switch (launcher.action.type) {
         case "navigate":
           navigate(resolveLauncherNavigationTarget(launcher.action.target, hostContext));
           return;
         case "deepLink":
-          if (/^https?:\/\//.test(launcher.action.target)) {
-            window.open(launcher.action.target, "_blank", "noopener,noreferrer");
-          } else {
-            navigate(resolveLauncherNavigationTarget(launcher.action.target, hostContext));
+          if (!/^https?:\/\//.test(launcher.action.target)) {
+            throw new Error("Plugin deepLink launchers require an absolute HTTP(S) URL.");
           }
+          window.open(launcher.action.target, "_blank", "noopener,noreferrer");
           return;
         case "performAction":
           await pluginsApi.bridgePerformAction(
@@ -712,17 +649,19 @@ export function PluginLauncherProvider({ children }: { children: ReactNode }) {
         case "openModal":
         case "openDrawer":
         case "openPopover": {
+          if (!launcher.render || launcher.render.environment !== "hostOverlay") {
+            throw new Error("Plugin overlay launchers require hostOverlay render metadata.");
+          }
           const component = await resolveLauncherComponent(contribution, launcher);
-          const sourceRect = sourceEl?.getBoundingClientRect() ?? null;
+          const sourceRect = sourceEl.getBoundingClientRect();
           const nextEntry: LauncherInstance = {
             key: `${launcher.pluginId}:${launcher.id}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
             launcher,
             hostContext,
-            contribution,
             component,
-            sourceElement: sourceEl ?? null,
+            sourceElement: sourceEl,
             sourceRect,
-            bounds: launcher.render?.bounds ?? "default",
+            bounds: launcher.render.bounds ?? "default",
             beforeCloseHandlers: new Set(),
             closeHandlers: new Set(),
           };
@@ -756,7 +695,7 @@ export function PluginLauncherProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function usePluginLauncherRuntime(): PluginLauncherRuntimeContextValue {
+function usePluginLauncherRuntime(): PluginLauncherRuntimeContextValue {
   const value = useContext(PluginLauncherRuntimeContext);
   if (!value) {
     throw new Error("usePluginLauncherRuntime must be used within PluginLauncherProvider");
@@ -765,12 +704,10 @@ export function usePluginLauncherRuntime(): PluginLauncherRuntimeContextValue {
 }
 
 function DefaultLauncherTrigger({
-  displayName,
   launcher,
   placementZone,
   onClick,
 }: {
-  displayName?: string;
   launcher: ResolvedPluginLauncher;
   placementZone: PluginLauncherPlacementZone;
   onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
@@ -783,14 +720,14 @@ function DefaultLauncherTrigger({
       className={launcherTriggerClassName(placementZone)}
       onClick={onClick}
     >
-      {displayName ?? launcher.displayName}
+      {launcher.displayName}
     </Button>
   );
 }
 
 type PluginLauncherOutletProps = {
   placementZones: PluginLauncherPlacementZone[];
-  context: PluginLauncherContext;
+  context: PluginMountContext;
   entityType?: PluginUiSlotEntityType | null;
   className?: string;
   itemClassName?: string;
@@ -805,6 +742,7 @@ export function PluginLauncherOutlet({
   itemClassName,
   errorClassName,
 }: PluginLauncherOutletProps) {
+  const [activationError, setActivationError] = useState<string | null>(null);
   const { activateLauncher } = usePluginLauncherRuntime();
   const { launchers, contributionsByPluginId, errorMessage } = usePluginLaunchers({
     placementZones,
@@ -825,52 +763,41 @@ export function PluginLauncherOutlet({
 
   return (
     <div className={className}>
+      {activationError ? (
+        <div
+          className={cn("rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive", errorClassName)}
+          role="alert"
+        >
+          Plugin launcher failed: {activationError}
+        </div>
+      ) : null}
       {launchers.map((launcher) => (
-        <div key={`${launcher.pluginKey}:${launcher.id}`} className={itemClassName}>
+        <div
+          key={`${launcher.pluginId}:${launcher.pluginUpdatedAt}:${launcher.id}`}
+          className={itemClassName}
+        >
           <DefaultLauncherTrigger
-            displayName={launcherDisplayName(launcher, contributionsByPluginId.get(launcher.pluginId))}
             launcher={launcher}
             placementZone={launcher.placementZone}
             onClick={(event) => {
+              setActivationError(null);
               const contribution = contributionsByPluginId.get(launcher.pluginId);
-              if (!contribution) return;
-              void activateLauncher(launcher, context, contribution, event.currentTarget);
+              if (!contribution) {
+                setActivationError(`Missing contribution metadata for plugin "${launcher.pluginKey}".`);
+                return;
+              }
+              void activateLauncher(
+                launcher,
+                context,
+                contribution,
+                event.currentTarget,
+              ).catch((error: unknown) => {
+                setActivationError(getErrorMessage(error));
+              });
             }}
           />
         </div>
       ))}
-    </div>
-  );
-}
-
-type PluginLauncherButtonProps = {
-  launcher: ResolvedPluginLauncher;
-  context: PluginLauncherContext;
-  contribution: PluginUiContribution;
-  className?: string;
-  onActivated?: () => void;
-};
-
-export function PluginLauncherButton({
-  launcher,
-  context,
-  contribution,
-  className,
-  onActivated,
-}: PluginLauncherButtonProps) {
-  const { activateLauncher } = usePluginLauncherRuntime();
-
-  return (
-    <div className={className}>
-      <DefaultLauncherTrigger
-        launcher={launcher}
-        placementZone={launcher.placementZone}
-        onClick={(event) => {
-          event.preventDefault();
-          onActivated?.();
-          void activateLauncher(launcher, context, contribution, event.currentTarget);
-        }}
-      />
     </div>
   );
 }

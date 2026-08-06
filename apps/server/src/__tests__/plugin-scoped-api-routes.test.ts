@@ -6,11 +6,10 @@ import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockRegistry = vi.hoisted(() => ({
   getById: vi.fn(),
-  getByKey: vi.fn(),
 }));
 
 const mockLifecycle = vi.hoisted(() => ({
-  load: vi.fn(),
+  activate: vi.fn(),
   upgrade: vi.fn(),
 }));
 
@@ -28,10 +27,6 @@ vi.mock("../services/issues.js", () => ({
 
 vi.mock("../services/activity-log.js", () => ({
   logActivity: vi.fn(),
-}));
-
-vi.mock("../services/live-events.js", () => ({
-  publishGlobalLiveEvent: vi.fn(),
 }));
 
 function manifest(apiRoutes: NonNullable<PaperclipPluginManifestV1["apiRoutes"]>): PaperclipPluginManifestV1 {
@@ -66,7 +61,6 @@ async function createApp(input: {
   };
 
   mockRegistry.getById.mockResolvedValue(input.plugin ?? null);
-  mockRegistry.getByKey.mockResolvedValue(input.plugin ?? null);
 
   const app = express();
   app.use(express.json());
@@ -78,10 +72,7 @@ async function createApp(input: {
     "/api",
     pluginRoutes(
       {} as never,
-      { installPlugin: vi.fn() } as never,
       mockLifecycle as never,
-      undefined,
-      undefined,
       { workerManager } as never,
     ),
   );
@@ -105,8 +96,6 @@ describe.sequential("plugin scoped API routes", () => {
         routeKey: "summary.get",
         method: "GET",
         path: "/companies/:companySlug/summary",
-        auth: "board",
-        capability: "api.routes.register",
         companyResolution: { from: "query", key: "companyId" },
       },
     ]);
@@ -142,8 +131,7 @@ describe.sequential("plugin scoped API routes", () => {
       query: { companyId, view: "compact" },
       companyId,
       actor: {
-        actorType: "user",
-        actorId: "user-1",
+        type: "user",
         userId: "user-1",
       },
     }));
@@ -156,8 +144,6 @@ describe.sequential("plugin scoped API routes", () => {
         routeKey: "summary.get",
         method: "GET",
         path: "/companies/:companySlug/summary",
-        auth: "board",
-        capability: "api.routes.register",
         companyResolution: { from: "query", key: "companyId" },
       },
     ]);
@@ -205,8 +191,6 @@ describe.sequential("plugin scoped API routes", () => {
         routeKey: "summary.get",
         method: "GET",
         path: "/summary",
-        auth: "board",
-        capability: "api.routes.register",
         companyResolution: { from: "query", key: "companyId" },
       },
     ]);
@@ -232,7 +216,10 @@ describe.sequential("plugin scoped API routes", () => {
       .get(`/api/plugins/${pluginId}/api/summary?companyId=${companyId}`);
 
     expect(res.status).toBe(503);
-    expect(res.body.error).toContain("disabled");
+    expect(res.body).toMatchObject({
+      code: "WORKER_UNAVAILABLE",
+      message: expect.stringContaining("disabled"),
+    });
     expect(workerManager.call).not.toHaveBeenCalled();
   });
 
@@ -242,8 +229,6 @@ describe.sequential("plugin scoped API routes", () => {
         routeKey: "summary.get",
         method: "GET",
         path: "/summary",
-        auth: "board",
-        capability: "api.routes.register",
         companyResolution: { from: "query", key: "companyId" },
       },
     ]);
@@ -270,7 +255,10 @@ describe.sequential("plugin scoped API routes", () => {
       .get(`/api/plugins/${pluginId}/api/summary?companyId=${companyId}`);
 
     expect(res.status).toBe(503);
-    expect(res.body.error).toContain("worker is not running");
+    expect(res.body).toMatchObject({
+      code: "WORKER_UNAVAILABLE",
+      message: expect.stringContaining("worker is not running"),
+    });
     expect(workerManager.call).not.toHaveBeenCalled();
   });
 
@@ -280,8 +268,7 @@ describe.sequential("plugin scoped API routes", () => {
         routeKey: "bad.shadow",
         method: "POST",
         path: "/api/issues/:issueId",
-        auth: "board",
-        capability: "api.routes.register",
+        companyResolution: { from: "issue", param: "issueId" },
       },
     ]));
 

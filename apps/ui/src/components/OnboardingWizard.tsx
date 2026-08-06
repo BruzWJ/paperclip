@@ -182,7 +182,7 @@ function loadSavedCompanySkillPins(
 function loadSavedCompanySkillChannel(
   _saved: Record<string, unknown> | null,
 ): CompanySkillChannel {
-  // ACPX's public local runtime supports only the operator-native channel.
+  // The packaged local runtime supports only the operator-native channel.
   // Ignore old browser drafts instead of preserving an invalid creation value.
   return "operator_native";
 }
@@ -396,7 +396,7 @@ export function OnboardingWizard() {
       && adapterConfigResolution.error === null,
   });
 
-  // ACPX is the sole catalog supplier. Do not rank or withhold its currently
+  // The server is the sole catalog supplier. Do not rank or withhold its currently
   // admitted agents in onboarding: surface every selectable candidate.
   const availableAdapters = useMemo(() =>
     listUIAdapters()
@@ -1192,7 +1192,7 @@ export function OnboardingWizard() {
                         Operator-managed native skills
                       </div>
                       <span className="text-xs text-muted-foreground">
-                        ACPX uses the local CLI's native skill handling.
+                        The local CLI uses its native skill handling.
                         Paperclip performs no isolated skill-home materialization.
                       </span>
                     </div>
@@ -1267,17 +1267,17 @@ export function OnboardingWizard() {
                 </div>
               )}
 
-              {/* Step 4: Connect an ACPX agent and its runtime configuration. */}
+              {/* Step 4: Connect a local agent and its runtime configuration. */}
               {step === 4 && (
                 <div className="space-y-5">
                   <div>
                     <label className="text-xs text-muted-foreground mb-2 block">
-                      ACPX-discovered agent
+                      Local agent
                     </label>
                     {availableAdapters.length === 0 ? (
                       <p className="text-xs text-muted-foreground">
-                        No configured ACPX agent is currently available. Declare a local
-                        runtime in ACPX&apos;s agents configuration, authenticate it, then retry.
+                        No compatible local agent is currently available. Install and
+                        authenticate a compatible agent CLI on this host, then retry.
                       </p>
                     ) : (
                       <div className="grid grid-cols-2 gap-2">
@@ -1347,7 +1347,7 @@ export function OnboardingWizard() {
                     ) : (
                       <p className="text-xs text-muted-foreground">
                         Draft configuration is structurally valid. Test Agent
-                        applies these exact settings through a disposable ACPX
+                        applies these exact settings through a disposable local runtime
                         session; full workspace readiness is checked after the
                         execution context is persisted.
                       </p>

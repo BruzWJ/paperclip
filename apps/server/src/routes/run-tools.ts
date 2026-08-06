@@ -1,9 +1,11 @@
 import { Router, type Request } from "express";
 import { RUN_TOOLS_INGRESS_ORDINAL_HEADER } from "@paperclipai/adapter-utils/run-tools-stdio-proxy";
+import { decodeToolResult } from "@paperclipai/plugin-sdk";
 import {
   PromptCapabilityAuthenticationError,
   PromptCapabilityAuthorityError,
   type PromptCapabilityGateway,
+  type PromptCapabilityToolExecutionResult,
 } from "../services/prompt-capability-gateway.js";
 import { RuntimeToolUnavailable } from "../services/runtime-interface-compiler.js";
 
@@ -127,6 +129,37 @@ function jsonRpcError(
   };
 }
 
+function text(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value) ?? "null";
+}
+
+function structuredContent(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
+function mcpToolResult(result: PromptCapabilityToolExecutionResult) {
+  if (result.source !== "plugin") {
+    const structured = structuredContent(result.value);
+    return {
+      content: [{ type: "text" as const, text: text(result.value) }],
+      ...(structured ? { structuredContent: structured } : {}),
+    };
+  }
+
+  const value = decodeToolResult(result.value);
+  if (value.ok) {
+    return {
+      content: [{ type: "text" as const, text: value.content }],
+      ...(value.data === undefined ? {} : { structuredContent: value.data }),
+    };
+  }
+  return {
+    content: [{ type: "text" as const, text: value.error }],
+    ...(value.data === undefined ? {} : { structuredContent: value.data }),
+    isError: true,
+  };
+}
+
 /**
  * The only provider-facing Paperclip capability endpoint. It has no selector,
  * session-creation, generic API, profile, or named-gateway fallback.
@@ -173,7 +206,7 @@ export function runToolsRoutes(gateway: PromptCapabilityGateway) {
           id: body.id ?? null,
           result: {
             protocolVersion: "2025-03-26",
-            capabilities: { tools: { listChanged: true } },
+            capabilities: { tools: {} },
             serverInfo: {
               name: "paperclip.run-tools",
               version: "1",
@@ -233,18 +266,7 @@ export function runToolsRoutes(gateway: PromptCapabilityGateway) {
       res.json({
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: {
-          content: [
-            {
-              type: "text",
-              text:
-                typeof result === "string"
-                  ? result
-                  : JSON.stringify(result),
-            },
-          ],
-          structuredContent: result,
-        },
+        result: mcpToolResult(result),
       });
     } catch (error) {
       const id =

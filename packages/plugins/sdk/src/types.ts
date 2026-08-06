@@ -12,25 +12,18 @@
 import type {
   PaperclipPluginManifestV1,
   PluginStateScopeKind,
+  PluginJobRunTrigger,
   PluginEventType,
-  PluginToolDeclaration,
-  PluginLauncherDeclaration,
   Company,
   Project,
   Issue,
-  IssueComment,
-  IssueDocument,
-  IssueDocumentSummary,
-  IssueRelationIssueSummary,
-  PluginIssueOriginKind,
-  IssueSurfaceVisibility,
   PluginManagedAgentResolution,
   PluginManagedProjectResolution,
   PluginManagedRoutineResolution,
   PluginManagedSkillResolution,
-  CompanySkill,
   Routine,
   RoutineRun,
+  RoutineStatus,
   Agent,
   Goal,
   HumanCompanyMembershipRole,
@@ -40,11 +33,13 @@ import type {
   PermissionKey,
   PrincipalPermissionGrant,
   PrincipalType,
-  EnvSecretRefBinding,
   ProviderSafeIssueProjection,
   ProviderSafeRunTrace,
   PluginLocalFolderProblem,
   PluginLocalFolderStatus,
+  IssueExecutionSessionOperation,
+  AgentContextGrantKey,
+  ContextAccess,
 } from "@paperclipai/shared";
 import type { PluginPerformActionContext } from "./protocol.js";
 
@@ -72,7 +67,6 @@ export type {
   Routine,
   RoutineRun,
   PluginLocalFolderDeclaration,
-  PluginCompanySettings,
   PluginManagedResourceKind,
   PluginManagedResourceRef,
   PluginUiSlotDeclaration,
@@ -80,18 +74,12 @@ export type {
   PluginLauncherActionDeclaration,
   PluginLauncherRenderDeclaration,
   PluginLauncherDeclaration,
-  PluginMinimumHostVersion,
   PluginDatabaseDeclaration,
   PluginApiRouteDeclaration,
   PluginApiRouteCompanyResolution,
   PluginObjectReferenceRefreshPolicy,
   PluginObjectReferenceProviderDeclaration,
-  PluginRecord,
-  PluginDatabaseNamespaceRecord,
-  PluginMigrationRecord,
-  PluginConfig,
   JsonSchema,
-  PluginStatus,
   PluginCategory,
   PluginCapability,
   ProviderSafeRunTrace,
@@ -102,15 +90,8 @@ export type {
   PluginLauncherBounds,
   PluginLauncherRenderEnvironment,
   PluginStateScopeKind,
-  PluginJobStatus,
-  PluginJobRunStatus,
   PluginJobRunTrigger,
-  PluginWebhookDeliveryStatus,
   PluginDatabaseCoreReadTable,
-  PluginDatabaseMigrationStatus,
-  PluginDatabaseNamespaceMode,
-  PluginDatabaseNamespaceStatus,
-  PluginApiRouteAuthMode,
   PluginApiRouteMethod,
   PluginEventType,
   PluginBridgeErrorCode,
@@ -132,7 +113,7 @@ export type {
   PermissionKey,
   PrincipalPermissionGrant,
   PrincipalType,
-  EnvSecretRefBinding,
+  IssueExecutionSessionOperation,
 } from "@paperclipai/shared";
 
 // ---------------------------------------------------------------------------
@@ -150,16 +131,24 @@ export type {
  *
  * @see PLUGIN_SPEC.md §21.3 `plugin_state`
  */
-export interface ScopeKey {
-  /** What kind of Paperclip object this state is scoped to. */
-  scopeKind: PluginStateScopeKind;
-  /** UUID or text identifier for the scoped object. Omit for `instance` scope. */
-  scopeId?: string;
+export type PluginDataScope =
+  | {
+      /** Instance scope has no object identifier. */
+      scopeKind: "instance";
+      scopeId?: never;
+    }
+  | {
+      /** Every object-backed scope requires its exact identifier. */
+      scopeKind: Exclude<PluginStateScopeKind, "instance">;
+      scopeId: string;
+    };
+
+export type ScopeKey = PluginDataScope & {
   /** Optional sub-namespace within the scope to avoid key collisions. Defaults to `"default"`. */
   namespace?: string;
   /** The state key within the namespace. */
   stateKey: string;
-}
+};
 
 // ---------------------------------------------------------------------------
 // Event types
@@ -175,15 +164,14 @@ export interface ScopeKey {
  * @see PLUGIN_SPEC.md §16.1 — Event Filtering
  */
 export interface EventFilter {
-  /** Only receive events for this project. */
-  projectId?: string;
   /** Only receive events for this company. */
   companyId?: string;
-  /** Only receive events for this agent. */
+  /** Only receive terminal run events for this agent. */
   agentId?: string;
-  /** Additional arbitrary filter fields. */
-  [key: string]: unknown;
 }
+
+/** Exact core-event name or plugin-event pattern accepted by subscriptions. */
+export type PluginEventPattern = PluginEventType | `plugin.${string}`;
 
 /**
  * Envelope wrapping every domain event delivered to a plugin worker.
@@ -193,7 +181,7 @@ export interface EventFilter {
 export interface PluginEvent<TPayload = unknown> {
   /** Unique event identifier (UUID). */
   eventId: string;
-  /** The event type (e.g. `"issue.created"`). */
+  /** The event type (e.g. `"issue.board.comment.created"`). */
   eventType: PluginEventType | `plugin.${string}`;
   /** ISO 8601 timestamp when the event occurred. */
   occurredAt: string;
@@ -212,6 +200,47 @@ export interface PluginEvent<TPayload = unknown> {
 }
 
 // ---------------------------------------------------------------------------
+// Before-prompt lifecycle
+// ---------------------------------------------------------------------------
+
+/**
+ * Exact host-owned context delivered immediately before one provider prompt.
+ * `sourceText` is the immutable canonical Session message. A plugin may return
+ * a separate prompt prelude; Paperclip composes all preludes only for the
+ * outbound provider request and never writes them back to the Session.
+ */
+export interface PluginBeforePromptInput {
+  readonly companyId: string;
+  readonly issueId: string;
+  readonly sessionId: string;
+  readonly runId: string;
+  readonly agentId: string;
+  readonly projectId: string | null;
+  readonly sourceText: string;
+  readonly promptKind: "base" | "steering";
+  readonly sessionOperation: IssueExecutionSessionOperation;
+  readonly refId: string;
+  readonly refOrdinal: number;
+  readonly segmentOrdinal: number;
+  /** Exact canonical source message admitted for this prompt. */
+  readonly sourceMessageId: string;
+  /** Non-negative safe-integer global Session sequence of `sourceMessageId`. */
+  readonly sourceMessageSeq: number;
+  readonly contextAccess: PluginContextAccess;
+  /**
+   * Stable inclusive boundary for canonical Session reads during this hook.
+   * This equals `sourceMessageSeq`, so later queued or steering facts cannot
+   * leak into the prompt being observed.
+   */
+  readonly snapshotHighWaterSeq: number;
+}
+
+/** Optional contribution from one blocking before-prompt hook. */
+export type PluginBeforePromptResult =
+  | null
+  | { readonly prependText: string };
+
+// ---------------------------------------------------------------------------
 // Job context
 // ---------------------------------------------------------------------------
 
@@ -226,7 +255,7 @@ export interface PluginJobContext {
   /** UUID for this specific job run instance. */
   runId: string;
   /** What triggered this run. */
-  trigger: "schedule" | "manual" | "retry";
+  trigger: PluginJobRunTrigger;
   /** ISO 8601 timestamp when the run was scheduled to start. */
   scheduledAt: string;
 }
@@ -312,8 +341,9 @@ export interface PluginRunIssueReach {
 }
 
 /**
- * Worker-local facade for an opaque run-context handle. No Paperclip identity
- * or scope coordinate is exposed to the plugin.
+ * Worker-local facade for an opaque run-context handle. The handle itself has
+ * no client-derived coordinates; `resolve()` asks the host for the canonical
+ * identity bound to this exact live invocation.
  */
 export interface PluginToolRunContext {
   readonly handle: PluginRunContextHandle;
@@ -332,14 +362,25 @@ export interface PluginToolRunContext {
  *
  * @see PLUGIN_SPEC.md §13.10 — `executeTool`
  */
-export interface ToolResult {
-  /** String content returned to the agent. Required for success responses. */
-  content?: string;
-  /** Structured data returned alongside or instead of string content. */
-  data?: unknown;
-  /** If present, indicates the tool call failed. */
-  error?: string;
-}
+export type PluginToolStructuredData = Readonly<Record<string, PluginJsonValue>>;
+
+export type ToolResult =
+  | {
+      /** Explicit successful result discriminator. */
+      readonly ok: true;
+      /** String content returned to the agent. */
+      readonly content: string;
+      /** Optional JSON object returned as MCP structured content. */
+      readonly data?: PluginToolStructuredData;
+    }
+  | {
+      /** Explicit failed result discriminator. */
+      readonly ok: false;
+      /** Error text returned to the agent as a failed MCP tool result. */
+      readonly error: string;
+      /** Optional JSON object returned as MCP structured content. */
+      readonly data?: PluginToolStructuredData;
+    };
 
 // ---------------------------------------------------------------------------
 // Plugin entity store
@@ -350,13 +391,9 @@ export interface ToolResult {
  *
  * @see PLUGIN_SPEC.md §21.3 `plugin_entities`
  */
-export interface PluginEntityUpsert {
+export type PluginEntityUpsert = PluginDataScope & {
   /** Plugin-defined entity type (e.g. `"linear-issue"`, `"github-pr"`). */
   entityType: string;
-  /** Scope where this entity lives. */
-  scopeKind: PluginStateScopeKind;
-  /** Optional scope ID. */
-  scopeId?: string;
   /** External identifier in the remote system (e.g. Linear issue ID). */
   externalId?: string;
   /** Human-readable title for display in the Paperclip UI. */
@@ -365,7 +402,7 @@ export interface PluginEntityUpsert {
   status?: string;
   /** Full entity data blob. Must be JSON-serializable. */
   data: Record<string, unknown>;
-}
+};
 
 /**
  * A plugin-owned entity record as returned by `ctx.entities.list()`.
@@ -398,20 +435,22 @@ export interface PluginEntityRecord {
 /**
  * Query parameters for `ctx.entities.list()`.
  */
-export interface PluginEntityQuery {
+type PluginEntityQueryFilters = {
   /** Filter by entity type. */
   entityType?: string;
-  /** Filter by scope kind. */
-  scopeKind?: PluginStateScopeKind;
-  /** Filter by scope ID. */
-  scopeId?: string;
   /** Filter by external ID. */
   externalId?: string;
   /** Maximum number of results to return. */
   limit?: number;
   /** Number of results to skip (for pagination). */
   offset?: number;
-}
+};
+
+export type PluginEntityQuery = PluginEntityQueryFilters & (
+  | { scopeKind?: undefined; scopeId?: never }
+  | { scopeKind: "instance"; scopeId?: never }
+  | { scopeKind: Exclude<PluginStateScopeKind, "instance">; scopeId: string }
+);
 
 // ---------------------------------------------------------------------------
 // Project workspace metadata (read-only via ctx.projects)
@@ -489,19 +528,14 @@ export interface PluginExecutionWorkspaceMetadata {
  * `ctx.config` — read resolved operator configuration for this plugin.
  *
  * Plugin workers receive the resolved config at initialisation. Use `get()`
- * to access the current configuration at any time. The host calls
- * `configChanged` on the worker when the operator updates config at runtime.
+ * to access the current configuration. A saved configuration replaces the
+ * worker process so setup always observes one coherent configuration.
  *
  * @see PLUGIN_SPEC.md §13.3 — `validateConfig`
- * @see PLUGIN_SPEC.md §13.4 — `configChanged`
  */
 export interface PluginConfigClient {
-  /**
-   * Returns the resolved operator configuration for this plugin in a company.
-   * When called during a host-scoped invocation, the host may derive the
-   * companyId; otherwise callers must pass it explicitly.
-   */
-  get(companyId?: string): Promise<Record<string, unknown>>;
+  /** Returns the resolved instance configuration for this installed plugin. */
+  get(): Promise<Record<string, unknown>>;
 }
 
 export type { PluginLocalFolderProblem, PluginLocalFolderStatus };
@@ -510,9 +544,6 @@ export interface PluginLocalFolderConfigureInput {
   companyId: string;
   folderKey: string;
   path: string;
-  access?: "read" | "readWrite";
-  requiredDirectories?: string[];
-  requiredFiles?: string[];
 }
 
 export interface PluginLocalFolderListOptions {
@@ -537,8 +568,6 @@ export interface PluginLocalFolderListing {
 }
 
 export interface PluginLocalFoldersClient {
-  /** Manifest-declared local folders for this plugin. */
-  declarations(): import("@paperclipai/shared").PluginLocalFolderDeclaration[];
   /** Persist a company-scoped local folder path after validating it. */
   configure(input: PluginLocalFolderConfigureInput): Promise<PluginLocalFolderStatus>;
   /** Check the stored folder readiness for a company and folder key. */
@@ -570,10 +599,10 @@ export interface PluginEventsClient {
   /**
    * Subscribe to a core Paperclip domain event or a plugin-namespaced event.
    *
-   * @param name - Event type, e.g. `"issue.created"` or `"plugin.@acme/linear.sync-done"`
+   * @param name - Event type, e.g. `"issue.board.comment.created"` or `"plugin.@acme/linear.sync-done"`
    * @param fn - Async event handler
    */
-  on(name: PluginEventType | `plugin.${string}`, fn: (event: PluginEvent) => Promise<void>): () => void;
+  on(name: PluginEventPattern, fn: (event: PluginEvent) => Promise<void>): () => void;
 
   /**
    * Subscribe to an event with an optional server-side filter.
@@ -583,7 +612,7 @@ export interface PluginEventsClient {
    * @param fn - Async event handler
    * @returns An unsubscribe function that removes the handler
    */
-  on(name: PluginEventType | `plugin.${string}`, filter: EventFilter, fn: (event: PluginEvent) => Promise<void>): () => void;
+  on(name: PluginEventPattern, filter: EventFilter, fn: (event: PluginEvent) => Promise<void>): () => void;
 
   /**
    * Emit a plugin-namespaced event. Other plugins with `events.subscribe` can
@@ -616,31 +645,13 @@ export interface PluginJobsClient {
    * Register a handler for a scheduled job.
    *
    * The `key` must match a `jobKey` declared in the plugin manifest.
+   * Every declared job must have exactly one registered handler.
    * The host calls this handler according to the job's declared `schedule`.
    *
    * @param key - Job key matching the manifest declaration
    * @param fn - Async job handler
    */
   register(key: string, fn: (job: PluginJobContext) => Promise<void>): void;
-}
-
-/**
- * A runtime launcher registration uses the same declaration shape as a
- * manifest launcher entry.
- */
-export type PluginLauncherRegistration = PluginLauncherDeclaration;
-
-/**
- * `ctx.launchers` — register launcher declarations at runtime.
- */
-export interface PluginLaunchersClient {
-  /**
-   * Register launcher metadata for host discovery.
-   *
-   * If a launcher with the same id is registered more than once, the latest
-   * declaration replaces the previous one.
-   */
-  register(launcher: PluginLauncherRegistration): void;
 }
 
 export interface PluginDatabaseClient {
@@ -676,11 +687,122 @@ export interface PluginHttpClient {
   fetch(url: string, init?: RequestInit): Promise<Response>;
 }
 
+/** JSON value accepted across the host/worker RPC boundary. */
+export type PluginJsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly PluginJsonValue[]
+  | { readonly [key: string]: PluginJsonValue };
+
+/**
+ * Snapshot-safe identity for one canonical Paperclip issue Session.
+ * Mutable head-derived metadata is deliberately excluded because it cannot be
+ * represented truthfully at an older `snapshotHighWaterSeq`.
+ */
+export interface PluginCanonicalSessionIdentity {
+  readonly companyId: string;
+  readonly issueId: string;
+  readonly sessionId: string;
+  readonly parentSessionId: string | null;
+  readonly projectId: string;
+  readonly createdAt: string;
+}
+
+/** Physical row attribution retained beside a canonical Session message. */
+export interface PluginCanonicalSessionMessageRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly issueId: string;
+  readonly sessionId: string;
+  readonly seq: number;
+  readonly modelStateSeq: number;
+  readonly type: string;
+  readonly runId: string | null;
+  readonly ownershipEpoch: number | null;
+  readonly agentId: string | null;
+  readonly adapterConfigRevisionId: string | null;
+  readonly timeCreated: string;
+  readonly timeUpdated: string;
+}
+
+/** Canonical JSON encoding plus exact persisted attribution for one message. */
+export interface PluginCanonicalSessionMessage {
+  readonly row: PluginCanonicalSessionMessageRow;
+  readonly message: PluginJsonValue;
+}
+
+/** Physical row attribution retained beside a canonical durable Session event. */
+export interface PluginCanonicalSessionEventRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly issueId: string;
+  readonly sessionId: string;
+  readonly seq: number;
+  readonly versionedType: string;
+  readonly runId: string | null;
+  readonly ownershipEpoch: number | null;
+  readonly agentId: string | null;
+  readonly adapterConfigRevisionId: string | null;
+  readonly sourceKind: string | null;
+  readonly sourceId: string | null;
+  readonly immutableSourceKey: string | null;
+  readonly sourceRecordId: string | null;
+  readonly sourceIdentityDigest: string | null;
+  readonly createdAt: string;
+}
+
+/** Canonical JSON encoding plus exact persisted attribution for one event. */
+export interface PluginCanonicalSessionEvent {
+  readonly row: PluginCanonicalSessionEventRow;
+  readonly event: PluginJsonValue;
+}
+
+export interface PluginCanonicalSessionReadInput {
+  readonly companyId: string;
+  readonly sessionId: string;
+  /** Inclusive non-negative safe-integer global Session sequence bound. */
+  readonly snapshotHighWaterSeq: number;
+  readonly messages?: {
+    /**
+     * Exclusive message-creation sequence bound. Pages order by `(seq, id)`.
+     * Mutually exclusive with `changedAfterSeq`; defaults to `-1` when neither
+     * bound is supplied.
+     */
+    readonly afterSeq?: number;
+    /**
+     * Exclusive model-visible update sequence bound. Pages order by
+     * `(modelStateSeq, id)` and can re-emit a message whose state changed after
+     * an earlier checkpoint. Mutually exclusive with `afterSeq`.
+     */
+    readonly changedAfterSeq?: number;
+    readonly cursor?: string;
+    readonly limit?: number;
+  };
+  readonly events?: {
+    /** Exclusive safe-integer lower sequence bound, at least `-1`. Defaults to `-1`. */
+    readonly afterSeq?: number;
+    readonly cursor?: string;
+    readonly limit?: number;
+  };
+}
+
+export interface PluginCanonicalSessionReadResult {
+  readonly session: PluginCanonicalSessionIdentity;
+  readonly snapshotHighWaterSeq: number;
+  readonly messages: PluginRunPage<PluginCanonicalSessionMessage>;
+  readonly events: PluginRunPage<PluginCanonicalSessionEvent>;
+}
+
 /**
  * Canonical, redacted runtime records exposed to privileged infrastructure
  * plugins. Every request is company-scoped by the host invocation boundary.
  */
 export interface PluginRuntimeRecordsClient {
+  readSession(
+    input: PluginCanonicalSessionReadInput,
+  ): Promise<PluginCanonicalSessionReadResult>;
   readRun(input: {
     companyId: string;
     runId: string;
@@ -699,36 +821,6 @@ export interface PluginRuntimeClient {
 }
 
 /**
- * `ctx.secrets` — resolve secret references.
- *
- * Requires `secrets.read-ref` capability.
- *
- * Plugins store shared `{ type: "secret_ref", secretId, version? }` bindings in
- * company-scoped config. This client resolves a bound ref through the
- * Paperclip secret provider system at execution time.
- *
- * @see PLUGIN_SPEC.md §22 — Secrets
- */
-export interface PluginSecretsClient {
-  /**
-   * Resolve a secret reference to its current value.
-   *
-   * The reference must be the shared `secret_ref` object shape from plugin
-   * config. Legacy string UUID references fail closed.
-   *
-   * Secret values are resolved at call time and must never be cached or
-   * written to logs, config, or other persistent storage.
-   *
-   * @param secretRef - The secret reference object from plugin config
-   * @returns The resolved secret value
-   */
-  resolve(
-    secretRef: string | EnvSecretRefBinding,
-    options?: { companyId?: string; configPath?: string },
-  ): Promise<string>;
-}
-
-/**
  * Input for writing a plugin activity log entry.
  *
  * @see PLUGIN_SPEC.md §21.4 — Activity Log Changes
@@ -736,7 +828,7 @@ export interface PluginSecretsClient {
 export interface PluginActivityLogEntry {
   /** UUID of the company this activity belongs to. Required for auditing. */
   companyId: string;
-  /** Human-readable description of the activity. */
+  /** Human-readable description stored in the canonical activity details. */
   message: string;
   /** Optional entity type this activity relates to. */
   entityType?: string;
@@ -780,7 +872,7 @@ export interface PluginActivityClient {
  * | `"company"` | company UUID | Per-company sync cursors |
  * | `"project"` | project UUID | Per-project settings, branch tracking |
  * | `"project_workspace"` | workspace UUID | Per-workspace state |
- * | `"agent"` | agent UUID | Per-agent memory |
+ * | `"agent"` | agent UUID | Per-agent checkpoints |
  * | `"issue"` | issue UUID | Idempotency keys, linked external IDs |
  * | `"goal"` | goal UUID | Per-goal progress |
  * | `"run"` | run UUID | Per-run checkpoints |
@@ -790,11 +882,6 @@ export interface PluginActivityClient {
  * The optional `namespace` field (default: `"default"`) lets you group related
  * keys within a scope without risking collisions between different logical
  * subsystems inside the same plugin.
- *
- * **Security**
- *
- * Never store resolved secret values. Store only secret references and resolve
- * them at call time via `ctx.secrets.resolve()`.
  *
  * @example
  * ```ts
@@ -859,8 +946,8 @@ export interface PluginStateClient {
  */
 export interface PluginEntitiesClient {
   /**
-   * Create or update a plugin entity record (upsert by `externalId` within
-   * the given scope, or by `id` if provided).
+   * Create or update the exact `(entityType, scope, externalId | null)`
+   * plugin entity record.
    *
    * @param input - Entity data to upsert
    */
@@ -916,22 +1003,6 @@ export interface PluginProjectsClient {
    */
   getPrimaryWorkspace(projectId: string, companyId: string): Promise<PluginWorkspace | null>;
 
-  /**
-   * Resolve the primary workspace for an issue by looking up the issue's
-   * project and returning its primary workspace.
-   *
-   * This is a convenience method that combines `issues.get()` and
-   * `getPrimaryWorkspace()` in a single RPC call.
-   *
-   * @param issueId - UUID of the issue
-   * @param companyId - UUID of the company that owns the issue
-   * @returns The primary workspace for the issue's project, or `null` if
-   *   the issue has no project or the project has no workspace
-   *
-   * @see PLUGIN_SPEC.md §20 — Local Tooling
-   */
-  getWorkspaceForIssue(issueId: string, companyId: string): Promise<PluginWorkspace | null>;
-
   /** Resolve and reconcile manifest-declared plugin-managed projects by stable key. Requires `projects.managed`. */
   managed: {
     get(projectKey: string, companyId: string): Promise<PluginManagedProjectResolution>;
@@ -974,7 +1045,7 @@ export interface PluginRoutinesClient {
     update(
       routineKey: string,
       companyId: string,
-      patch: { status?: string },
+      patch: { status?: RoutineStatus },
     ): Promise<Routine>;
     run(
       routineKey: string,
@@ -1009,6 +1080,7 @@ export interface PluginSkillsClient {
 export interface PluginDataClient {
   /**
    * Register a handler for a plugin-defined data key.
+   * Registering the same key more than once is an error.
    *
    * @param key - Stable string identifier for this data type (e.g. `"sync-health"`)
    * @param handler - Async function that receives request params and returns JSON-serializable data
@@ -1025,6 +1097,7 @@ export interface PluginDataClient {
 export interface PluginActionsClient {
   /**
    * Register a handler for a plugin-defined action key.
+   * Registering the same key more than once is an error.
    *
    * @param key - Stable string identifier for this action (e.g. `"resync"`)
    * @param handler - Async function that receives action params plus immutable host actor context and returns a result
@@ -1040,7 +1113,8 @@ export interface PluginActionsClient {
  *
  * Requires `agent.tools.register` capability.
  *
- * Tool names are automatically namespaced by plugin ID at runtime.
+ * The provider-visible name is the MCP-safe `pluginId__toolName`; `__` is
+ * reserved and the combined name is limited to 128 characters.
  *
  * @see PLUGIN_SPEC.md §11 — Agent Tools
  */
@@ -1048,14 +1122,15 @@ export interface PluginToolsClient {
   /**
    * Register a handler for a plugin-contributed agent tool.
    *
+   * Tool metadata and the parameter schema come exclusively from the matching
+   * `manifest.tools` declaration.
+   *
    * @param name - Tool name matching the manifest declaration (without namespace prefix)
-   * @param declaration - Tool metadata (displayName, description, parametersSchema)
-   * @param fn - Async handler that executes the tool
+   * @param handler - Async handler that executes the tool
    */
   register(
     name: string,
-    declaration: Pick<PluginToolDeclaration, "displayName" | "description" | "parametersSchema">,
-    fn: (
+    handler: (
       params: unknown,
       runContext: PluginToolRunContext,
     ) => Promise<ToolResult>,
@@ -1072,13 +1147,13 @@ export interface PluginToolsClient {
  */
 export interface PluginLogger {
   /** Log an informational message. */
-  info(message: string, meta?: Record<string, unknown>): void;
+  info(message: string, meta?: Record<string, unknown>): Promise<void>;
   /** Log a warning. */
-  warn(message: string, meta?: Record<string, unknown>): void;
+  warn(message: string, meta?: Record<string, unknown>): Promise<void>;
   /** Log an error. */
-  error(message: string, meta?: Record<string, unknown>): void;
+  error(message: string, meta?: Record<string, unknown>): Promise<void>;
   /** Log a debug message (may be suppressed in production). */
-  debug(message: string, meta?: Record<string, unknown>): void;
+  debug(message: string, meta?: Record<string, unknown>): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1142,19 +1217,9 @@ export interface PluginCompaniesClient {
   get(companyId: string): Promise<Company | null>;
 }
 
-export type PluginContextAccess = Partial<
-  Record<
-    | "carry_context"
-    | "read_issue_comments"
-    | "read_issue_agent_run"
-    | "list_sub_issues"
-    | "read_sub_issue_comments"
-    | "read_sub_issue_agent_run"
-    | "list_company_issues"
-    | "read_company_issue_comments"
-    | "read_company_issue_agent_run",
-    boolean
-  >
+/** Complete effective context-access matrix for one active agent run. */
+export type PluginContextAccess = Readonly<
+  Record<AgentContextGrantKey, boolean>
 >;
 
 export interface PluginIssueCreateInput {
@@ -1168,7 +1233,7 @@ export interface PluginIssueCreateInput {
   goalId?: string;
   parentId?: string;
   priority?: Issue["priority"];
-  contextAccessMask?: PluginContextAccess | null;
+  contextAccessMask?: ContextAccess | null;
 }
 
 export type PluginIssueUpdateInput =
@@ -1444,12 +1509,11 @@ export interface PluginAuthorizationClient {
     get(input: { companyId: string; resourceType: PluginAuthorizationPolicyRecord["resourceType"]; resourceId: string }): Promise<PluginAuthorizationPolicyRecord | null>;
     update(input: {
       companyId: string;
-      resourceType: PluginAuthorizationPolicyRecord["resourceType"];
+      resourceType: "project" | "issue";
       resourceId: string;
       policy: Record<string, unknown> | null;
     }): Promise<PluginAuthorizationPolicyRecord>;
     previewAssignment(input: PluginAssignmentPreviewInput): Promise<PluginAuthorizationDecisionResult>;
-    explainAssignment(input: PluginAssignmentPreviewInput): Promise<PluginAuthorizationDecisionResult>;
   };
   audit: {
     search(input: {
@@ -1464,54 +1528,6 @@ export interface PluginAuthorizationClient {
       offset?: number;
     }): Promise<PluginAuthorizationAuditEntry[]>;
   };
-}
-
-// ---------------------------------------------------------------------------
-// Streaming (worker → UI push channel)
-// ---------------------------------------------------------------------------
-
-/**
- * `ctx.streams` — push real-time events from the worker to the plugin UI.
- *
- * The worker opens a named channel, emits events on it, and closes it when
- * done. On the UI side, `usePluginStream(channel)` receives these events in
- * real time via SSE.
- *
- * Streams are scoped to `(pluginId, channel, companyId)`. Multiple UI clients
- * can subscribe to the same channel concurrently.
- *
- * @example
- * ```ts
- * // Worker: stream chat tokens to the UI
- * ctx.streams.open("chat", companyId);
- * for await (const token of tokenStream) {
- *   ctx.streams.emit("chat", { type: "token", text: token });
- * }
- * ctx.streams.close("chat");
- * ```
- *
- * @see usePluginStream in `@paperclipai/plugin-sdk/ui`
- */
-export interface PluginStreamsClient {
-  /**
-   * Open a named stream channel. Optional — `emit()` implicitly opens if needed.
-   * Sends a `stream:open` event to connected UI clients.
-   */
-  open(channel: string, companyId: string): void;
-
-  /**
-   * Push an event to all UI clients subscribed to this channel.
-   *
-   * @param channel - Stream channel name (e.g. `"chat"`, `"logs"`)
-   * @param event - JSON-serializable event payload
-   */
-  emit(channel: string, event: unknown): void;
-
-  /**
-   * Close a stream channel. Sends a `stream:close` event to connected UI
-   * clients so they know no more events will arrive.
-   */
-  close(channel: string): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -1531,8 +1547,8 @@ export interface PluginStreamsClient {
  *
  * export default definePlugin({
  *   async setup(ctx) {
- *     ctx.events.on("issue.created", async (event) => {
- *       ctx.logger.info("Issue created", { issueId: event.entityId });
+ *     ctx.events.on("issue.board.comment.created", async (event) => {
+ *       await ctx.logger.info("Issue created", { issueId: event.entityId });
  *     });
  *
  *     ctx.data.register("sync-health", async ({ companyId }) => {
@@ -1561,9 +1577,6 @@ export interface PluginContext {
   /** Register handlers for scheduled jobs. Requires `jobs.schedule`. */
   jobs: PluginJobsClient;
 
-  /** Register launcher metadata that the host can surface in plugin UI entry points. */
-  launchers: PluginLaunchersClient;
-
   /** Restricted plugin-owned database namespace. Requires database namespace capabilities. */
   db: PluginDatabaseClient;
 
@@ -1572,9 +1585,6 @@ export interface PluginContext {
 
   /** Read canonical provider-safe execution records. Requires `runtime.records.read`. */
   runtime: PluginRuntimeClient;
-
-  /** Resolve secret references. Requires `secrets.read-ref`. */
-  secrets: PluginSecretsClient;
 
   /** Write activity log entries. Requires `activity.log.write`. */
   activity: PluginActivityClient;
@@ -1620,9 +1630,6 @@ export interface PluginContext {
 
   /** Register performAction handlers for the plugin's UI components. */
   actions: PluginActionsClient;
-
-  /** Push real-time events from the worker to the plugin UI via SSE. */
-  streams: PluginStreamsClient;
 
   /** Register agent tool handlers. Requires `agent.tools.register`. */
   tools: PluginToolsClient;

@@ -1,5 +1,5 @@
 /**
- * @fileoverview Frontend client for the immutable ACPX-supplied agent catalog.
+ * @fileoverview Frontend client for the immutable local-agent catalog.
  */
 
 import { api } from "./client";
@@ -12,7 +12,7 @@ import type {
 export interface AdapterCapabilities {
   supportsModelProfiles: boolean;
   contractVersion: "acpx-runtime/v1";
-  /** Exact public ACPX controls observed by the server's local probe. */
+  /** Exact public runtime controls observed by the server's local check. */
   runtimeControls: readonly string[];
 }
 
@@ -23,13 +23,13 @@ export interface ReadyAdapterInfo {
   modelsCount: number;
   loaded: true;
   capabilities: AdapterCapabilities;
-  /** Exact execution transports admitted for this agent by ACPX. */
+  /** Exact execution transports admitted for this agent by the server. */
   drivers: readonly EnvironmentDriver[];
   registryName: string;
 }
 
 /**
- * A name listed by ACPX whose disposable local probe or dynamic-contract
+ * A listed name whose disposable local check or dynamic-contract
  * admission failed. It is intentionally visible for operator diagnosis but
  * never becomes a picker option or executable adapter in Paperclip.
  */
@@ -49,10 +49,10 @@ export interface UnavailableAdapterInfo {
 export type AdapterInfo = ReadyAdapterInfo | UnavailableAdapterInfo;
 
 export const adaptersApi = {
-  /** List the exact ACPX-supplied entries admitted by the server. */
+  /** List the exact local-agent entries admitted by the server. */
   list: () => api.get<AdapterInfo[]>("/adapters"),
   /**
-   * Apply one unsaved generic configuration to a disposable, no-prompt ACPX
+   * Apply one unsaved generic configuration to a disposable, no-prompt runtime
    * session. This does not persist an agent or claim workspace readiness.
    */
   testConfiguration: (

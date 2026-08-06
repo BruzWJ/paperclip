@@ -21,6 +21,9 @@ import {
   type ProtectedAcpSessionCorrelation,
   type StoredAcpSessionCorrelation,
 } from "../services/native-correlation.js";
+import type {
+  PluginBeforePromptDispatcher,
+} from "../services/plugin-before-prompt-dispatcher.js";
 
 const acpxFixture = vi.hoisted(() =>
   Object.freeze({
@@ -143,7 +146,20 @@ function resolvedPrompt(input: {
       executionWorkspaceBindingId: "workspace-1",
     },
     sessionOperation,
+    sourceMessageId: "source-message-1",
+    sourceMessageSeq: 7,
     sourceText: "exact source message",
+    contextAccess: {
+      carry_context: input.carryContext,
+      read_issue_comments: true,
+      read_issue_agent_run: true,
+      list_sub_issues: true,
+      read_sub_issue_comments: true,
+      read_sub_issue_agent_run: true,
+      list_company_issues: true,
+      read_company_issue_comments: true,
+      read_company_issue_agent_run: true,
+    },
     carryContext: input.carryContext,
     storedCorrelation: stored,
     activationCorrelationScope: correlationScope({
@@ -282,6 +298,7 @@ function createHarness(input: {
     call: number,
     prompt: ResolvedIssueExecutionPrompt,
   ) => Promise<void> | void;
+  beforePrompt?: PluginBeforePromptDispatcher["dispatch"];
   executePromptFailureAfterTransmission?: Error;
   closePromptFailure?: Error;
   teardownFailure?: Error;
@@ -379,6 +396,13 @@ function createHarness(input: {
 
   const executor = createIssueExecutionAttemptExecutor({
     repository,
+    beforePrompt: {
+      async dispatch(promptInput) {
+        if (!input.beforePrompt) return promptInput.sourceText;
+        order.push("beforePrompt");
+        return input.beforePrompt(promptInput);
+      },
+    },
     sessionCorrelations,
     events: {
       async publish({ prompt, capability, event }) {
@@ -769,6 +793,68 @@ describe("canonical productive/consult ACP attempt executor", () => {
       kind: "error",
       promptTransmitted: true,
     }));
+  });
+
+  it("runs the blocking plugin barrier before capability mint and sends its outbound composition", async () => {
+    const prompt = resolvedPrompt({ carryContext: false });
+    const beforePrompt = vi.fn(async (
+      input: Parameters<PluginBeforePromptDispatcher["dispatch"]>[0],
+    ) => {
+      expect(input).toMatchObject({
+        companyId: prompt.identity.companyId,
+        issueId: prompt.identity.issueId,
+        sessionId: prompt.identity.sessionId,
+        runId: prompt.identity.runId,
+        agentId: prompt.identity.targetAgentId,
+        sourceMessageId: prompt.sourceMessageId,
+        sourceMessageSeq: prompt.sourceMessageSeq,
+        sourceText: prompt.sourceText,
+        contextAccess: prompt.contextAccess,
+      });
+      return `Plugin prelude\n\n${input.sourceText}`;
+    });
+    const harness = createHarness({ prompt, beforePrompt });
+
+    await expect(executeAttempt(harness, prompt)).resolves.toMatchObject({
+      kind: "terminal",
+      outcome: "succeeded",
+    });
+
+    expect(beforePrompt).toHaveBeenCalledOnce();
+    expect(harness.order.indexOf("beforePrompt")).toBeLessThan(
+      harness.order.indexOf("mint:1"),
+    );
+    expect(harness.messages).toEqual([
+      `Plugin prelude\n\n${prompt.sourceText}`,
+    ]);
+    expect(harness.launches[0]?.mcpServers).toEqual([
+      {
+        name: "paperclip",
+        command: "/target/bin/node",
+        args: [
+          "/runtime/run-tools-proxy.mjs",
+          "/runtime/run-tools.json",
+        ],
+        env: [],
+      },
+    ]);
+    expect(harness.renewedPrompts.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("fails closed before target acquisition when a before-prompt hook fails", async () => {
+    const prompt = resolvedPrompt({ carryContext: false });
+    const hookFailure = new Error("plugin synchronization failed");
+    const harness = createHarness({
+      prompt,
+      beforePrompt: async () => {
+        throw hookFailure;
+      },
+    });
+
+    await expect(executeAttempt(harness, prompt)).rejects.toBe(hookFailure);
+    expect(harness.order).toEqual(["beforePrompt"]);
+    expect(harness.launches).toEqual([]);
+    expect(harness.closures).toEqual([]);
   });
 
   it("uses exact-message session/new and steering-only retention for false carry", async () => {

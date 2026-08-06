@@ -23,21 +23,18 @@ type QualifiedRefPattern =
   | { pattern: RegExp; groups: "keyword-schema-table" }
   | { pattern: RegExp; groups: "schema-table"; keyword: string };
 
-export type PluginDatabaseRuntimeResult<T = Record<string, unknown>> = {
-  rows?: T[];
-  rowCount?: number;
-};
-
 function normalizedNamespaceSlug(
   pluginKey: string,
   namespaceSlug?: string,
 ): string {
-  return (namespaceSlug ?? pluginKey)
+  const slug = (namespaceSlug ?? pluginKey)
     .toLowerCase()
     .replace(/[^a-z0-9_]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .replace(/_+/g, "_")
-    .slice(0, 36) || "plugin";
+    .slice(0, 36);
+  if (!slug) throw new Error(`Invalid plugin database namespace: ${namespaceSlug ?? pluginKey}`);
+  return slug;
 }
 
 /**
@@ -236,7 +233,7 @@ export function validatePluginMigrationStatement(
 
   const normalized = normaliseSql(statement);
   if (/^\s*(drop|truncate)\b/.test(normalized)) {
-    throw new Error("Destructive plugin migrations are not allowed in Phase 1");
+    throw new Error("Destructive plugin migrations are not allowed");
   }
 
   if (/\bdelete\s+from\b/.test(normalized)) {
@@ -385,7 +382,7 @@ function resolveMigrationsDir(packageRoot: string, migrationsDir: string): strin
 type PluginDatabaseClient = Pick<Db, "select" | "insert" | "update" | "execute">;
 type PluginDatabaseRootClient = PluginDatabaseClient & Partial<Pick<Db, "transaction">>;
 
-export interface ApplyPluginMigrationsOptions {
+interface ApplyPluginMigrationsOptions {
   /**
    * Persist failed migration ledger rows. Fresh install uses false because the
    * caller owns a larger transaction and must roll back the plugin row and
@@ -420,7 +417,6 @@ export function pluginDatabaseService(db: PluginDatabaseRootClient) {
         pluginId,
         pluginKey: manifest.id,
         namespaceName,
-        namespaceMode: "schema",
         status: "active",
       })
       .onConflictDoUpdate({
@@ -428,7 +424,6 @@ export function pluginDatabaseService(db: PluginDatabaseRootClient) {
         set: {
           pluginKey: manifest.id,
           namespaceName,
-          namespaceMode: "schema",
           status: "active",
           updatedAt: new Date(),
         },
@@ -506,8 +501,6 @@ export function pluginDatabaseService(db: PluginDatabaseRootClient) {
   }
 
   return {
-    ensureNamespace,
-
     async applyMigrations(
       pluginId: string,
       manifest: PaperclipPluginManifestV1,
@@ -516,7 +509,9 @@ export function pluginDatabaseService(db: PluginDatabaseRootClient) {
     ) {
       if (!manifest.database) return null;
       const namespace = await ensureNamespace(pluginId, manifest);
-      if (!namespace) return null;
+      if (!namespace) {
+        throw new Error("Plugin database namespace creation returned no namespace");
+      }
 
       const migrationDir = resolveMigrationsDir(packageRoot, manifest.database.migrationsDir);
       const migrationFiles = await listSqlMigrationFiles(migrationDir);

@@ -2,9 +2,9 @@
  * Plugin UI bridge runtime — concrete implementations of the bridge hooks.
  *
  * Plugin UI bundles import `usePluginData`, `usePluginAction`, and
- * `useHostContext` from `@paperclipai/plugin-sdk/ui`.  Those are type-only
- * declarations in the SDK package. The host provides the real implementations
- * by injecting this bridge runtime into the plugin's module scope.
+ * `useHostContext` from `@paperclipai/plugin-sdk/ui`. The host module shim
+ * binds those SDK runtime exports to these concrete implementations through
+ * the initialized bridge registry.
  *
  * The bridge runtime communicates with plugin workers via HTTP REST endpoints:
  * - `POST /api/plugins/:pluginId/data/:key`     — proxies `getData` RPC
@@ -28,126 +28,55 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useLocation as useRouterLocation, useNavigate as useRouterNavigate, type NavigateOptions } from "react-router-dom";
 import type {
-  PluginBridgeErrorCode,
-  PluginLauncherBounds,
+  PluginBridgeError,
   PluginLauncherRenderContextSnapshot,
-  PluginLauncherRenderEnvironment,
+  PluginUiSlotEntityType,
 } from "@paperclipai/shared";
+import type {
+  HostLocation,
+  HostNavigation,
+  HostNavigationLinkOptions,
+  HostNavigationLinkProps,
+  HostNavigationOptions,
+  PluginDataResult,
+  PluginHostContext,
+  PluginRenderEnvironmentContext,
+  PluginToastFn,
+  PluginToastInput,
+} from "@paperclipai/plugin-sdk/ui";
+import { PLUGIN_BRIDGE_ERROR_CODES } from "@paperclipai/shared";
 import { pluginsApi } from "@/api/plugins";
 import { ApiError } from "@/api/client";
-import { useToastActions, type ToastInput } from "@/context/ToastContext";
+import { useToastActions } from "@/context/ToastContext";
 import { useSidebar } from "@/context/SidebarContext";
 import { isGlobalPath, normalizeCompanyPrefix } from "@/lib/company-routes";
 
-// ---------------------------------------------------------------------------
-// Bridge error type (mirrors the SDK's PluginBridgeError)
-// ---------------------------------------------------------------------------
+export type { PluginBridgeError } from "@paperclipai/shared";
+export type {
+  HostLocation,
+  HostNavigation,
+  HostNavigationLinkOptions,
+  HostNavigationLinkProps,
+  HostNavigationOptions,
+  PluginDataResult,
+  PluginHostContext,
+  PluginModalBoundsRequest,
+  PluginRenderCloseEvent,
+  PluginRenderCloseHandler,
+  PluginRenderCloseLifecycle,
+  PluginRenderEnvironmentContext,
+  PluginToastFn,
+  PluginToastInput,
+} from "@paperclipai/plugin-sdk/ui";
 
-/**
- * Structured error from the bridge, matching the SDK's `PluginBridgeError`.
- */
-export interface PluginBridgeError {
-  code: PluginBridgeErrorCode;
-  message: string;
-  details?: unknown;
-}
-
-// ---------------------------------------------------------------------------
-// Bridge data result type (mirrors the SDK's PluginDataResult)
-// ---------------------------------------------------------------------------
-
-export interface PluginDataResult<T = unknown> {
-  data: T | null;
-  loading: boolean;
-  error: PluginBridgeError | null;
-  refresh(): void;
-}
-
-export type PluginToastInput = ToastInput;
-export type PluginToastFn = (input: PluginToastInput) => string | null;
-
-export interface HostNavigationOptions {
-  replace?: boolean;
-  state?: unknown;
-}
-
-export interface HostNavigationLinkOptions extends HostNavigationOptions {
-  target?: string;
-  rel?: string;
-}
-
-export interface HostNavigationLinkProps {
-  href: string;
-  target?: string;
-  rel?: string;
-  onClick(event: ReactMouseEvent<HTMLAnchorElement>): void;
-}
-
-export interface HostNavigation {
-  resolveHref(to: string): string;
-  navigate(to: string, options?: HostNavigationOptions): void;
-  linkProps(to: string, options?: HostNavigationLinkOptions): HostNavigationLinkProps;
-}
-
-export interface HostLocation {
-  pathname: string;
-  search: string;
-  hash: string;
-  state?: unknown;
-}
-
-// ---------------------------------------------------------------------------
-// Host context type (mirrors the SDK's PluginHostContext)
-// ---------------------------------------------------------------------------
-
-export interface PluginHostContext {
-  companyId: string | null;
-  companyPrefix: string | null;
-  projectId: string | null;
-  entityId: string | null;
-  entityType: string | null;
-  parentEntityId?: string | null;
-  userId: string | null;
-  renderEnvironment?: PluginRenderEnvironmentContext | null;
-}
-
-export interface PluginModalBoundsRequest {
-  bounds: PluginLauncherBounds;
-  width?: number;
-  height?: number;
-  minWidth?: number;
-  minHeight?: number;
-  maxWidth?: number;
-  maxHeight?: number;
-}
-
-export interface PluginRenderCloseEvent {
-  reason:
-    | "escapeKey"
-    | "backdrop"
-    | "hostNavigation"
-    | "programmatic"
-    | "submit"
-    | "unknown";
-  nativeEvent?: unknown;
-}
-
-export type PluginRenderCloseHandler = (
-  event: PluginRenderCloseEvent,
-) => void | Promise<void>;
-
-export interface PluginRenderCloseLifecycle {
-  onBeforeClose?(handler: PluginRenderCloseHandler): () => void;
-  onClose?(handler: PluginRenderCloseHandler): () => void;
-}
-
-export interface PluginRenderEnvironmentContext {
-  environment: PluginLauncherRenderEnvironment | null;
-  launcherId: string | null;
-  bounds: PluginLauncherBounds | null;
-  requestModalBounds?(request: PluginModalBoundsRequest): Promise<void>;
-  closeLifecycle?: PluginRenderCloseLifecycle | null;
-}
+export type PluginMountContext = {
+  companyId?: string | null;
+  companyPrefix?: string | null;
+  projectId?: string | null;
+  projectRef?: string | null;
+  entityId?: string | null;
+  entityType?: PluginUiSlotEntityType | null;
+};
 
 // ---------------------------------------------------------------------------
 // Bridge context — React context for plugin identity and host scope
@@ -187,6 +116,13 @@ function usePluginBridgeContext(): PluginBridgeContextValue {
 // Error extraction helpers
 // ---------------------------------------------------------------------------
 
+function isPluginBridgeErrorCode(
+  value: unknown,
+): value is PluginBridgeError["code"] {
+  return typeof value === "string"
+    && PLUGIN_BRIDGE_ERROR_CODES.some((code) => code === value);
+}
+
 /**
  * Attempt to extract a structured PluginBridgeError from an API error.
  *
@@ -197,18 +133,14 @@ function usePluginBridgeContext(): PluginBridgeContextValue {
 function extractBridgeError(err: unknown): PluginBridgeError {
   if (err instanceof ApiError && err.body && typeof err.body === "object") {
     const body = err.body as Record<string, unknown>;
-    if (typeof body.code === "string" && typeof body.message === "string") {
+    if (
+      isPluginBridgeErrorCode(body.code)
+      && typeof body.message === "string"
+    ) {
       return {
-        code: body.code as PluginBridgeErrorCode,
+        code: body.code,
         message: body.message,
         details: body.details,
-      };
-    }
-    // Fallback: the server returned a plain { error: string } body
-    if (typeof body.error === "string") {
-      return {
-        code: "UNKNOWN",
-        message: body.error,
       };
     }
   }
@@ -223,21 +155,62 @@ function extractBridgeError(err: unknown): PluginBridgeError {
 // usePluginData — concrete implementation
 // ---------------------------------------------------------------------------
 
-/**
- * Stable serialization of params for use as a dependency key.
- * Returns a string that changes only when the params object content changes.
- */
-function serializeParams(params?: Record<string, unknown>): string {
-  if (!params) return "";
+function serializePluginBridgeJson(
+  value: unknown,
+  ancestors: Set<object>,
+): string {
+  if (value === null) return "null";
+  if (typeof value === "string" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new TypeError("Plugin bridge parameters must contain only finite numbers");
+    }
+    return JSON.stringify(value);
+  }
+  if (typeof value !== "object") {
+    throw new TypeError(`Plugin bridge parameters cannot contain ${typeof value} values`);
+  }
+  if (ancestors.has(value)) {
+    throw new TypeError("Plugin bridge parameters cannot contain circular references");
+  }
+
+  ancestors.add(value);
   try {
-    return JSON.stringify(params, Object.keys(params).sort());
-  } catch {
-    return "";
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => serializePluginBridgeJson(item, ancestors)).join(",")}]`;
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError("Plugin bridge parameters must contain only plain objects and arrays");
+    }
+    if (Object.getOwnPropertySymbols(value).length > 0) {
+      throw new TypeError("Plugin bridge parameters cannot contain symbol keys");
+    }
+
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${serializePluginBridgeJson(record[key], ancestors)}`)
+      .join(",")}}`;
+  } finally {
+    ancestors.delete(value);
   }
 }
 
+/** Stable, strict JSON serialization used as the request dependency key. */
+export function serializePluginBridgeParams(
+  params?: Record<string, unknown>,
+): string {
+  return params === undefined
+    ? ""
+    : serializePluginBridgeJson(params, new Set());
+}
+
 function serializeRenderEnvironment(
-  renderEnvironment?: PluginRenderEnvironmentContext | null,
+  renderEnvironment: PluginRenderEnvironmentContext | null,
 ): PluginLauncherRenderContextSnapshot | null {
   if (!renderEnvironment) return null;
   return {
@@ -352,14 +325,17 @@ export function usePluginData<T = unknown>(
   const [refreshCounter, setRefreshCounter] = useState(0);
 
   // Stable serialization for params change detection
-  const paramsKey = serializeParams(params);
+  const paramsKey = serializePluginBridgeParams(params);
 
   useEffect(() => {
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let retryCount = 0;
     const maxRetryCount = 2;
-    const retryableCodes: PluginBridgeErrorCode[] = ["WORKER_UNAVAILABLE", "TIMEOUT"];
+    const retryableCodes: PluginBridgeError["code"][] = [
+      "WORKER_UNAVAILABLE",
+      "TIMEOUT",
+    ];
     setLoading(true);
     const request = () => {
       pluginsApi
@@ -557,102 +533,4 @@ export function usePluginToast(): PluginToastFn {
     (input: PluginToastInput) => pushToast(input),
     [pushToast],
   );
-}
-
-// ---------------------------------------------------------------------------
-// usePluginStream — concrete implementation
-// ---------------------------------------------------------------------------
-
-export interface PluginStreamResult<T = unknown> {
-  events: T[];
-  lastEvent: T | null;
-  connecting: boolean;
-  connected: boolean;
-  error: Error | null;
-  close(): void;
-}
-
-export function usePluginStream<T = unknown>(
-  channel: string,
-  options?: { companyId?: string },
-): PluginStreamResult<T> {
-  const { pluginId, hostContext } = usePluginBridgeContext();
-  const effectiveCompanyId = options?.companyId ?? hostContext.companyId ?? undefined;
-  const [events, setEvents] = useState<T[]>([]);
-  const [lastEvent, setLastEvent] = useState<T | null>(null);
-  const [connecting, setConnecting] = useState<boolean>(Boolean(effectiveCompanyId));
-  const [connected, setConnected] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-  const sourceRef = useRef<EventSource | null>(null);
-
-  const close = useCallback(() => {
-    sourceRef.current?.close();
-    sourceRef.current = null;
-    setConnecting(false);
-    setConnected(false);
-  }, []);
-
-  useEffect(() => {
-    setEvents([]);
-    setLastEvent(null);
-    setError(null);
-
-    if (!effectiveCompanyId) {
-      close();
-      return;
-    }
-
-    const params = new URLSearchParams({ companyId: effectiveCompanyId });
-    const source = new EventSource(
-      `/api/plugins/${encodeURIComponent(pluginId)}/bridge/stream/${encodeURIComponent(channel)}?${params.toString()}`,
-      { withCredentials: true },
-    );
-    sourceRef.current = source;
-    setConnecting(true);
-    setConnected(false);
-
-    source.onopen = () => {
-      setConnecting(false);
-      setConnected(true);
-      setError(null);
-    };
-
-    source.onmessage = (event) => {
-      try {
-        const parsed = JSON.parse(event.data) as T;
-        setEvents((current) => [...current, parsed]);
-        setLastEvent(parsed);
-      } catch (nextError) {
-        setError(nextError instanceof Error ? nextError : new Error(String(nextError)));
-      }
-    };
-
-    source.addEventListener("close", () => {
-      source.close();
-      if (sourceRef.current === source) {
-        sourceRef.current = null;
-      }
-      setConnecting(false);
-      setConnected(false);
-    });
-
-    source.onerror = () => {
-      setConnecting(false);
-      setConnected(false);
-      setError(new Error(`Failed to connect to plugin stream "${channel}"`));
-      source.close();
-      if (sourceRef.current === source) {
-        sourceRef.current = null;
-      }
-    };
-
-    return () => {
-      source.close();
-      if (sourceRef.current === source) {
-        sourceRef.current = null;
-      }
-    };
-  }, [channel, close, effectiveCompanyId, pluginId]);
-
-  return { events, lastEvent, connecting, connected, error, close };
 }

@@ -8,44 +8,38 @@
  * @module apps/server/services/plugin-config-validator
  */
 
-import Ajv, { type ErrorObject } from "ajv";
-import addFormats from "ajv-formats";
+import { createRequire } from "node:module";
+import { Ajv, type ErrorObject } from "ajv";
+import type { FormatsPlugin } from "ajv-formats";
 import type { JsonSchema } from "@paperclipai/shared";
 
-export interface ConfigValidationResult {
+const addFormats: FormatsPlugin = createRequire(import.meta.url)("ajv-formats");
+
+interface ConfigValidationResult {
   valid: boolean;
   errors?: { field: string; message: string }[];
 }
 
-/**
- * Validate a config object against a JSON Schema.
- *
- * @param configJson - The configuration values to validate.
- * @param schema - The JSON Schema from the plugin manifest's `instanceConfigSchema`.
- * @returns Validation result with structured field errors on failure.
- */
-export function validateInstanceConfig(
-  configJson: Record<string, unknown>,
-  schema: JsonSchema,
-): ConfigValidationResult {
-  return validateJsonSchemaValue(configJson, schema);
+function compileJsonSchema(schema: JsonSchema) {
+  const ajv = new Ajv({ allErrors: true });
+  addFormats(ajv);
+  // Environment and runtime tool schemas may use Paperclip's secret-ref format.
+  // Plugin instance schemas reject it during manifest validation.
+  ajv.addFormat("secret-ref", { validate: () => true });
+  return ajv.compile(schema);
 }
 
+/** Fail immediately when a manifest-declared input schema cannot be compiled. */
+export function assertJsonSchemaCompiles(schema: JsonSchema): void {
+  compileJsonSchema(schema);
+}
+
+/** Validate one JSON value against a manifest-admitted JSON Schema. */
 export function validateJsonSchemaValue(
   value: unknown,
   schema: JsonSchema,
 ): ConfigValidationResult {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const AjvCtor = (Ajv as any).default ?? Ajv;
-  const ajv = new AjvCtor({ allErrors: true });
-  // ajv-formats v3 default export is a FormatsPlugin object; call it as a plugin.
-  const applyFormats = (addFormats as any).default ?? addFormats;
-  applyFormats(ajv);
-  // Register the secret-ref format used by plugin manifests to mark fields that
-  // hold a Paperclip secret UUID rather than a raw value. The format is a UI
-  // hint only — UUID validation happens in the secrets handler at resolve time.
-  ajv.addFormat("secret-ref", { validate: () => true });
-  const validate = ajv.compile(schema);
+  const validate = compileJsonSchema(schema);
   const valid = validate(value);
 
   if (valid) {
@@ -58,4 +52,15 @@ export function validateJsonSchemaValue(
   }));
 
   return { valid: false, errors };
+}
+
+/** Validate instance config against the manifest's sole configuration schema. */
+export function validatePluginInstanceConfig(
+  configJson: Record<string, unknown>,
+  schema: JsonSchema | undefined,
+): ConfigValidationResult {
+  if (!schema || Object.keys(schema).length === 0) {
+    return { valid: true };
+  }
+  return validateJsonSchemaValue(configJson, schema);
 }

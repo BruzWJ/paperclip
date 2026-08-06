@@ -15,9 +15,7 @@ const manifest: PaperclipPluginManifestV1 = {
   capabilities: [
     "ui.sidebar.register",
     "ui.detailTab.register",
-    "projects.read",
     "project.workspaces.read",
-    "plugin.state.read",
   ],
   instanceConfigSchema: {
     type: "object",

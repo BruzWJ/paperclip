@@ -1,7 +1,11 @@
 import type { Db } from "@paperclipai/db";
 import { principalPermissionGrants } from "@paperclipai/db";
-import type { PermissionKey, PrincipalType } from "@paperclipai/shared";
-import { grantsForHumanRole, normalizeHumanRole } from "./company-member-roles.js";
+import {
+  grantsForHumanRole,
+  type PermissionKey,
+  type PrincipalType,
+} from "@paperclipai/shared";
+import { normalizeHumanRole } from "./company-member-roles.js";
 
 type GrantInput = {
   permissionKey: PermissionKey;

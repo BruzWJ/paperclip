@@ -6,6 +6,7 @@ import {
   RuntimeToolUnavailable,
   type CompiledRunToolDescriptor,
   type RuntimeInterfaceCompileInput,
+  type RuntimeToolSource,
 } from "./runtime-interface-compiler.js";
 import type {
   IssueSessionDbTransaction,
@@ -141,6 +142,7 @@ export interface PromptCapabilityGatewayRepository {
     capability: PromptCapabilityBinding;
     runInterfaceToolCallId: string;
     pluginInstallationId: string;
+    pluginManifestIdentity: string;
     handleHash: string;
     createdAt: Date;
   }): Promise<void>;
@@ -177,11 +179,22 @@ export interface PromptCapabilityToolExecutor {
     mintPluginRunContext(input: {
       runInterfaceToolCallId: string;
       pluginInstallationId: string;
+      pluginManifestIdentity: string;
     }): Promise<string>;
     commitTerminalAudit?(
       transaction: IssueSessionDbTransaction,
     ): Promise<void>;
-  }): Promise<unknown>;
+  }): Promise<PromptCapabilityToolExecutionResult>;
+}
+
+/**
+ * Closed result boundary between the authoritative runtime dispatcher and its
+ * MCP transport. The source discriminator is compiler-owned, so plugin SDK
+ * results never have to be guessed from an arbitrary JSON value.
+ */
+export interface PromptCapabilityToolExecutionResult {
+  readonly source: RuntimeToolSource;
+  readonly value: unknown;
 }
 
 export class PromptCapabilityAuthenticationError extends Error {
@@ -383,6 +396,7 @@ export function createPromptCapabilityGateway(options: {
     capability: PromptCapabilityBinding;
     runInterfaceToolCallId: string;
     pluginInstallationId: string;
+    pluginManifestIdentity: string;
   }): Promise<string> {
     const current = await requireStillAuthoritative(input.capability);
     const handle = randomPluginRunContextHandle();
@@ -390,6 +404,7 @@ export function createPromptCapabilityGateway(options: {
       capability: current,
       runInterfaceToolCallId: input.runInterfaceToolCallId,
       pluginInstallationId: input.pluginInstallationId,
+      pluginManifestIdentity: input.pluginManifestIdentity,
       handleHash: sha256(handle),
       createdAt: now(),
     });
@@ -424,7 +439,7 @@ export function createPromptCapabilityGateway(options: {
       arguments: unknown;
       callIdentity: PromptCapabilityCallIdentity;
       ingressOrdinal: number;
-    }): Promise<unknown> {
+    }): Promise<PromptCapabilityToolExecutionResult> {
       assertIngressOrdinal(input.ingressOrdinal);
       const capability = await authenticate(input.bearer);
       const compileInput =

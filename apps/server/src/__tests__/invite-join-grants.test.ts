@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { grantsForHumanRole } from "@paperclipai/shared";
 import {
   agentJoinGrantsFromDefaults,
   humanJoinGrantsFromDefaults,
 } from "../services/invite-grants.js";
 import {
-  grantsForHumanRole,
   normalizeHumanRole,
   resolveHumanInviteRole,
 } from "../services/company-member-roles.js";

@@ -1,9 +1,10 @@
-import type {
-  PaperclipPluginManifestV1,
-  PluginToolDeclaration,
+import {
+  pluginAgentToolName,
+  type PaperclipPluginManifestV1,
+  type PluginToolDeclaration,
 } from "@paperclipai/shared";
 
-export interface PluginAgentToolManifest {
+interface PluginAgentToolManifest {
   pluginKey: string;
   manifest: PaperclipPluginManifestV1;
 }
@@ -11,10 +12,17 @@ export interface PluginAgentToolManifest {
 export function listAuthorizedPluginAgentTools(
   input: PluginAgentToolManifest,
 ): readonly PluginToolDeclaration[] {
-  if (
-    input.manifest.id !== input.pluginKey ||
-    !input.manifest.capabilities.includes("agent.tools.register")
-  ) {
+  if (input.manifest.id !== input.pluginKey) {
+    throw new Error(
+      `Plugin manifest identity '${input.manifest.id}' does not match installation key '${input.pluginKey}'`,
+    );
+  }
+  if (!input.manifest.capabilities.includes("agent.tools.register")) {
+    if ((input.manifest.tools?.length ?? 0) > 0) {
+      throw new Error(
+        `Plugin '${input.pluginKey}' declares agent tools without agent.tools.register`,
+      );
+    }
     return [];
   }
   return input.manifest.tools ?? [];
@@ -25,6 +33,6 @@ export function pluginManifestDeclaresAgentTool(
   namespacedToolName: string,
 ): boolean {
   return listAuthorizedPluginAgentTools(input).some(
-    (tool) => `${input.pluginKey}:${tool.name}` === namespacedToolName,
+    (tool) => pluginAgentToolName(input.pluginKey, tool.name) === namespacedToolName,
   );
 }

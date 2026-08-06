@@ -7,6 +7,7 @@ import {
   JsonRpcCallError,
   PLUGIN_RPC_ERROR_CODES,
   type HostServices,
+  type HostClientHandlers,
   type HostToWorkerMethods,
 } from "@paperclipai/plugin-sdk";
 import {
@@ -17,6 +18,7 @@ import {
 
 const FIXTURES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
 const DELAYED_WORKER_ENTRYPOINT = path.join(FIXTURES_DIR, "plugin-worker-delayed.cjs");
+const CONFIG_WORKER_ENTRYPOINT = path.join(FIXTURES_DIR, "plugin-worker-config.cjs");
 const INVOCATION_SCOPE_WORKER_ENTRYPOINT = path.join(
   FIXTURES_DIR,
   "plugin-worker-invocation-scope.cjs",
@@ -25,6 +27,14 @@ const TERMINATED_WORKER_ENTRYPOINT = path.join(FIXTURES_DIR, "plugin-worker-term
 const RPC_OPERATION_WORKER_ENTRYPOINT = path.join(
   FIXTURES_DIR,
   "plugin-worker-rpc-operation.cjs",
+);
+const LOG_REQUEST_WORKER_ENTRYPOINT = path.join(
+  FIXTURES_DIR,
+  "plugin-worker-log-request.cjs",
+);
+const MALFORMED_OUTPUT_WORKER_ENTRYPOINT = path.join(
+  FIXTURES_DIR,
+  "plugin-worker-malformed-output.cjs",
 );
 
 const TEST_MANIFEST: PaperclipPluginManifestV1 = {
@@ -39,6 +49,77 @@ const TEST_MANIFEST: PaperclipPluginManifestV1 = {
   entrypoints: { worker: "dist/worker.js" },
 };
 
+const TEST_TOOL = {
+  name: "lookup",
+  displayName: "Lookup",
+  description: "Lookup",
+  parametersSchema: {
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+  },
+} as const;
+
+const ENVIRONMENT_BASE_METHODS = [
+  "environmentValidateConfig",
+  "environmentProbe",
+  "environmentAcquireLease",
+  "environmentReleaseLease",
+  "environmentDestroyLease",
+  "environmentRealizeWorkspace",
+  "environmentExecute",
+  "environmentCancelExecution",
+] as const;
+
+function completeHostHandlers(
+  overrides: Partial<HostClientHandlers> = {},
+): HostClientHandlers {
+  return {
+    ...createHostClientHandlers({
+      pluginId: "test.plugin",
+      capabilities: [],
+      services: {} as HostServices,
+    }),
+    ...overrides,
+  };
+}
+
+function environmentManifest(
+  driver: Partial<NonNullable<PaperclipPluginManifestV1["environmentDrivers"]>[number]> = {},
+): PaperclipPluginManifestV1 {
+  return {
+    ...TEST_MANIFEST,
+    capabilities: ["environment.drivers.register"],
+    environmentDrivers: [{
+      driverKey: "sandbox",
+      kind: "sandbox_provider",
+      displayName: "Sandbox",
+      configSchema: { type: "object" },
+      ...driver,
+    }],
+  };
+}
+
+function configuredWorker(
+  manifest: PaperclipPluginManifestV1 = TEST_MANIFEST,
+  config: Record<string, unknown> = {},
+) {
+  return createPluginWorkerHandle("test.plugin", {
+    entrypointPath: CONFIG_WORKER_ENTRYPOINT,
+    manifest,
+    instanceInfo: {
+      instanceId: "instance-1",
+      hostVersion: "1.0.0",
+    },
+    apiVersion: 1,
+    databaseNamespace: null,
+    onTerminalCrash: () => undefined,
+    hostHandlers: completeHostHandlers({
+      "config.get": async () => config,
+    }),
+  });
+}
+
 describe("plugin-worker-manager stderr failure context", () => {
   it("appends worker stderr context to failure messages", () => {
     expect(
@@ -49,6 +130,95 @@ describe("plugin-worker-manager stderr failure context", () => {
     ).toBe(
       "Worker process exited (code=1, signal=null)\n\nWorker stderr:\nTypeError: Unknown file extension \".ts\"",
     );
+  });
+
+  it("routes worker logs through the acknowledged host request handler", async () => {
+    let acknowledgeLog: (() => void) | null = null;
+    const loggerLog = vi.fn(() => new Promise<void>((resolve) => {
+      acknowledgeLog = resolve;
+    }));
+    const handlers = createHostClientHandlers({
+      pluginId: "test.plugin",
+      capabilities: [],
+      services: {
+        logger: { log: loggerLog },
+      } as unknown as HostServices,
+    });
+    const handle = createPluginWorkerHandle("test.plugin", {
+      entrypointPath: LOG_REQUEST_WORKER_ENTRYPOINT,
+      manifest: TEST_MANIFEST,
+      instanceInfo: {
+        instanceId: "instance-1",
+        hostVersion: "1.0.0",
+      },
+      apiVersion: 1,
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
+      hostHandlers: handlers,
+    });
+    let startSettled = false;
+
+    try {
+      const startPromise = handle.start();
+      void startPromise.then(
+        () => {
+          startSettled = true;
+        },
+        () => undefined,
+      );
+
+      await vi.waitFor(() => expect(loggerLog).toHaveBeenCalledOnce());
+      expect(loggerLog).toHaveBeenCalledWith({
+        level: "info",
+        message: "Worker initialized",
+        meta: { phase: "setup" },
+      });
+      expect(startSettled).toBe(false);
+
+      acknowledgeLog?.();
+      await expect(startPromise).resolves.toBeUndefined();
+      expect(handle.status).toBe("running");
+    } finally {
+      acknowledgeLog?.();
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it("ignores blank stdout then terminates and restarts a worker after malformed output", async () => {
+    const handle = createPluginWorkerHandle("test.plugin", {
+      entrypointPath: MALFORMED_OUTPUT_WORKER_ENTRYPOINT,
+      manifest: TEST_MANIFEST,
+      instanceInfo: {
+        instanceId: "instance-1",
+        hostVersion: "1.0.0",
+      },
+      apiVersion: 1,
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
+      hostHandlers: completeHostHandlers(),
+      rpcTimeoutMs: 5_000,
+    });
+
+    try {
+      await handle.start();
+      expect(handle.status).toBe("running");
+
+      await expect(handle.call("getData", {
+        key: "malformed",
+        companyId: "company-1",
+        params: {},
+      })).rejects.toMatchObject({
+        code: PLUGIN_RPC_ERROR_CODES.WORKER_UNAVAILABLE,
+        message: expect.stringContaining("Worker protocol violation"),
+      });
+      expect(handle.diagnostics()).toMatchObject({
+        status: "backoff",
+        totalCrashes: 1,
+        pendingRequests: 0,
+      });
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
   });
 
   it("does not duplicate stderr that is already present", () => {
@@ -79,32 +249,493 @@ describe("plugin-worker-manager stderr failure context", () => {
     expect(excerpt.length).toBeLessThanOrEqual(8_000);
   });
 
-  it("times out environmentExecute calls using the handle default when no override is provided", async () => {
+  it("rejects prompt-hook workers whose manifest grant and advertised method disagree", async () => {
+    const cases = [
+      {
+        capabilities: ["runtime.prompt.observe"] as PaperclipPluginManifestV1["capabilities"],
+        config: {},
+        expected: 'capability "runtime.prompt.observe" requires the worker to advertise "beforePrompt"',
+      },
+      {
+        capabilities: [] as PaperclipPluginManifestV1["capabilities"],
+        config: { advertiseBeforePrompt: true },
+        expected: 'advertised "beforePrompt" without manifest capability "runtime.prompt.observe"',
+      },
+    ];
+
+    for (const testCase of cases) {
+      const handle = createPluginWorkerHandle("test.plugin", {
+        entrypointPath: CONFIG_WORKER_ENTRYPOINT,
+        manifest: {
+          ...TEST_MANIFEST,
+          capabilities: testCase.capabilities,
+        },
+        instanceInfo: {
+          instanceId: "instance-1",
+          hostVersion: "1.0.0",
+        },
+        apiVersion: 1,
+        databaseNamespace: null,
+        onTerminalCrash: () => undefined,
+        hostHandlers: completeHostHandlers({
+          "config.get": async () => testCase.config,
+        }),
+      });
+
+      try {
+        await expect(handle.start()).rejects.toThrow(testCase.expected);
+        expect(handle.status).not.toBe("running");
+      } finally {
+        await handle.stop().catch(() => undefined);
+      }
+    }
+  });
+
+  it("rejects tool workers whose manifest declarations and advertised method disagree", async () => {
+    const cases = [
+      {
+        manifest: {
+          ...TEST_MANIFEST,
+          capabilities: ["agent.tools.register"],
+          tools: [TEST_TOOL],
+        } as PaperclipPluginManifestV1,
+        config: {},
+        expected:
+          'Manifest tool declarations require the worker to advertise "executeTool"',
+      },
+      {
+        manifest: TEST_MANIFEST,
+        config: { extraSupportedMethods: ["executeTool"] },
+        expected:
+          'Worker advertised "executeTool" without manifest tool declarations',
+      },
+    ];
+
+    for (const testCase of cases) {
+      const handle = configuredWorker(testCase.manifest, testCase.config);
+
+      try {
+        await expect(handle.start()).rejects.toThrow(testCase.expected);
+        expect(handle.status).not.toBe("running");
+      } finally {
+        await handle.stop().catch(() => undefined);
+      }
+    }
+  });
+
+  it.each([
+    {
+      label: "jobs",
+      manifest: {
+        ...TEST_MANIFEST,
+        capabilities: ["jobs.schedule"],
+        jobs: [{ jobKey: "sync", displayName: "Sync" }],
+      } as PaperclipPluginManifestV1,
+      method: "runJob",
+      expectedDeclaration: "Manifest job declarations",
+      expectedAbsence: "without manifest job declarations",
+    },
+    {
+      label: "webhooks",
+      manifest: {
+        ...TEST_MANIFEST,
+        capabilities: ["webhooks.receive"],
+        webhooks: [{ endpointKey: "events", displayName: "Events" }],
+      } as PaperclipPluginManifestV1,
+      method: "handleWebhook",
+      expectedDeclaration: "Manifest webhook declarations",
+      expectedAbsence: "without manifest webhook declarations",
+    },
+    {
+      label: "API routes",
+      manifest: {
+        ...TEST_MANIFEST,
+        capabilities: ["api.routes.register"],
+        apiRoutes: [{
+          routeKey: "summary",
+          method: "GET",
+          path: "/summary",
+          companyResolution: { from: "query", key: "companyId" },
+        }],
+      } as PaperclipPluginManifestV1,
+      method: "handleApiRequest",
+      expectedDeclaration: "Manifest API route declarations",
+      expectedAbsence: "without manifest API route declarations",
+    },
+  ])("rejects $label declarations and advertised methods that disagree", async ({
+    manifest,
+    method,
+    expectedDeclaration,
+    expectedAbsence,
+  }) => {
+    for (const testCase of [
+      {
+        manifest,
+        config: {},
+        expected: `${expectedDeclaration} require the worker to advertise "${method}"`,
+      },
+      {
+        manifest: TEST_MANIFEST,
+        config: { extraSupportedMethods: [method] },
+        expected: `Worker advertised "${method}" ${expectedAbsence}`,
+      },
+    ]) {
+      const handle = configuredWorker(testCase.manifest, testCase.config);
+
+      try {
+        await expect(handle.start()).rejects.toThrow(testCase.expected);
+        expect(handle.status).not.toBe("running");
+      } finally {
+        await handle.stop().catch(() => undefined);
+      }
+    }
+  });
+
+  it.each([
+    [
+      ["resolveExternalObject"],
+      'Manifest object-reference declarations require the worker to advertise "detectExternalObjects"',
+    ],
+    [
+      ["detectExternalObjects"],
+      'Manifest object-reference declarations require the worker to advertise "resolveExternalObject"',
+    ],
+  ])("requires both external-object handlers for object-reference declarations", async (
+    extraSupportedMethods,
+    expected,
+  ) => {
+    const handle = configuredWorker({
+      ...TEST_MANIFEST,
+      capabilities: ["external.objects.detect", "external.objects.read"],
+      objectReferences: [{
+        providerKey: "tracker",
+        displayName: "Tracker",
+        objectTypes: ["issue"],
+      }],
+    }, { extraSupportedMethods });
+
+    try {
+      await expect(handle.start()).rejects.toThrow(expected);
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it("requires the complete environment-driver base lifecycle", async () => {
+    for (const testCase of [
+      {
+        methods: ENVIRONMENT_BASE_METHODS.filter(
+          (method) => method !== "environmentDestroyLease",
+        ),
+        expected:
+          'Manifest environment-driver declarations require the worker to advertise "environmentDestroyLease"',
+      },
+      {
+        methods: [...ENVIRONMENT_BASE_METHODS, "environmentResumeLease"],
+        expected:
+          'Worker advertised "environmentResumeLease" without manifest environment-driver reusable-lease declarations',
+      },
+    ]) {
+      const handle = configuredWorker(environmentManifest(), {
+        extraSupportedMethods: testCase.methods,
+      });
+
+      try {
+        await expect(handle.start()).rejects.toThrow(testCase.expected);
+      } finally {
+        await handle.stop().catch(() => undefined);
+      }
+    }
+
+    const complete = configuredWorker(environmentManifest(), {
+      extraSupportedMethods: ENVIRONMENT_BASE_METHODS,
+    });
+    try {
+      await expect(complete.start()).resolves.toBeUndefined();
+      expect(complete.status).toBe("running");
+    } finally {
+      await complete.stop().catch(() => undefined);
+    }
+  });
+
+  it.each([
+    {
+      flag: "supportsReusableLeases" as const,
+      methods: ["environmentResumeLease"] as const,
+      declaration: "reusable-lease",
+    },
+    {
+      flag: "supportsInteractiveSetup" as const,
+      methods: [
+        "environmentStartInteractiveSetup",
+        "environmentGetInteractiveSetup",
+        "environmentCancelInteractiveSetup",
+      ] as const,
+      declaration: "interactive-setup",
+    },
+    {
+      flag: "supportsTemplateCapture" as const,
+      methods: ["environmentCaptureTemplate"] as const,
+      declaration: "template-capture",
+    },
+    {
+      flag: "supportsTemplateDelete" as const,
+      methods: ["environmentDeleteTemplate"] as const,
+      declaration: "template-delete",
+    },
+  ])("enforces the $flag environment-driver method contract", async ({
+    flag,
+    methods,
+    declaration,
+  }) => {
+    const missingMethod = methods.at(-1)!;
+    const handle = configuredWorker(environmentManifest({ [flag]: true }), {
+      extraSupportedMethods: [
+        ...ENVIRONMENT_BASE_METHODS,
+        ...methods.filter((method) => method !== missingMethod),
+      ],
+    });
+
+    try {
+      await expect(handle.start()).rejects.toThrow(
+        `Manifest environment-driver ${declaration} declarations require the worker to advertise "${missingMethod}"`,
+      );
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it("requires paired environment sync hooks and allows the declared pair", async () => {
+    for (const methods of [
+      [...ENVIRONMENT_BASE_METHODS, "environmentSyncIn"],
+      [...ENVIRONMENT_BASE_METHODS, "environmentSyncOut"],
+    ]) {
+      const handle = configuredWorker(environmentManifest(), {
+        extraSupportedMethods: methods,
+      });
+      try {
+        await expect(handle.start()).rejects.toThrow(
+          "Worker environment sync hooks must advertise both",
+        );
+      } finally {
+        await handle.stop().catch(() => undefined);
+      }
+    }
+
+    const paired = configuredWorker(environmentManifest(), {
+      extraSupportedMethods: [
+        ...ENVIRONMENT_BASE_METHODS,
+        "environmentSyncIn",
+        "environmentSyncOut",
+      ],
+    });
+    try {
+      await expect(paired.start()).resolves.toBeUndefined();
+    } finally {
+      await paired.stop().catch(() => undefined);
+    }
+  });
+
+  it.each([
+    ["onEvent", "events.subscribe"],
+    ["issues.creatorCallback.deliver", "issues.create"],
+  ] as const)("rejects %s without its manifest capability", async (method, capability) => {
+    const handle = configuredWorker(TEST_MANIFEST, {
+      extraSupportedMethods: [method],
+    });
+
+    try {
+      await expect(handle.start()).rejects.toThrow(
+        `Worker advertised "${method}" without manifest capability "${capability}"`,
+      );
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it("accepts a tool worker only when its declaration and method agree", async () => {
     const handle = createPluginWorkerHandle("test.plugin", {
-      entrypointPath: DELAYED_WORKER_ENTRYPOINT,
-      manifest: TEST_MANIFEST,
-      config: {},
+      entrypointPath: CONFIG_WORKER_ENTRYPOINT,
+      manifest: {
+        ...TEST_MANIFEST,
+        capabilities: ["agent.tools.register"],
+        tools: [TEST_TOOL],
+      } as PaperclipPluginManifestV1,
       instanceInfo: {
         instanceId: "instance-1",
         hostVersion: "1.0.0",
       },
       apiVersion: 1,
-      hostHandlers: {},
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
+      hostHandlers: completeHostHandlers({
+        "config.get": async () => ({
+          extraSupportedMethods: ["executeTool"],
+        }),
+      }),
+    });
+
+    try {
+      await handle.start();
+      expect(handle.status).toBe("running");
+      expect(handle.supportedMethods).toContain("executeTool");
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it("starts a prompt-hook worker when its manifest grant and advertised method agree", async () => {
+    const handle = createPluginWorkerHandle("test.plugin", {
+      entrypointPath: CONFIG_WORKER_ENTRYPOINT,
+      manifest: {
+        ...TEST_MANIFEST,
+        capabilities: ["runtime.prompt.observe"],
+      },
+      instanceInfo: {
+        instanceId: "instance-1",
+        hostVersion: "1.0.0",
+      },
+      apiVersion: 1,
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
+      hostHandlers: completeHostHandlers({
+        "config.get": async () => ({ advertiseBeforePrompt: true }),
+      }),
+    });
+
+    try {
+      await handle.start();
+      expect(handle.status).toBe("running");
+      expect(handle.supportedMethods).toContain("beforePrompt");
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it.each([
+    [["notAWorkerMethod"], "unknown optional method"],
+    [["getData"], "duplicate supportedMethods"],
+  ])("rejects an invalid optional-method handshake: %s", async (extraSupportedMethods, error) => {
+    const handle = createPluginWorkerHandle("test.plugin", {
+      entrypointPath: CONFIG_WORKER_ENTRYPOINT,
+      manifest: TEST_MANIFEST,
+      instanceInfo: {
+        instanceId: "instance-1",
+        hostVersion: "1.0.0",
+      },
+      apiVersion: 1,
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
+      hostHandlers: completeHostHandlers({
+        "config.get": async () => ({ extraSupportedMethods }),
+      }),
+    });
+
+    try {
+      await expect(handle.start()).rejects.toThrow(error);
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it("rejects additional initialize result fields", async () => {
+    const handle = createPluginWorkerHandle("test.plugin", {
+      entrypointPath: CONFIG_WORKER_ENTRYPOINT,
+      manifest: TEST_MANIFEST,
+      instanceInfo: {
+        instanceId: "instance-1",
+        hostVersion: "1.0.0",
+      },
+      apiVersion: 1,
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
+      hostHandlers: completeHostHandlers({
+        "config.get": async () => ({ includeUnexpectedInitializeField: true }),
+      }),
+    });
+
+    try {
+      await expect(handle.start()).rejects.toThrow(
+        "must return exactly supportedMethods",
+      );
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it.each([
+    [
+      { rejectHealth: true },
+      "Health is not implemented",
+    ],
+    [
+      { healthResult: null },
+      "Worker health must return an object",
+    ],
+    [
+      { healthResult: { status: "ok", unexpected: true } },
+      "Worker health returned unexpected fields",
+    ],
+    [
+      { healthResult: { status: "degraded", message: "dependency lag" } },
+      'Worker health check failed with status "degraded": dependency lag',
+    ],
+  ])("requires an exact healthy startup response", async (config, expected) => {
+    const handle = configuredWorker(TEST_MANIFEST, config);
+
+    try {
+      await expect(handle.start()).rejects.toThrow(expected);
+      expect(handle.status).not.toBe("running");
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it("rejects optional calls the worker did not advertise", async () => {
+    const handle = configuredWorker();
+
+    try {
+      await handle.start();
+      await expect(handle.call("performAction", {
+        key: "unadvertised",
+        params: {},
+        actorContext: {
+          type: "system",
+          companyId: null,
+        },
+        renderEnvironment: null,
+      })).rejects.toMatchObject({
+        code: PLUGIN_RPC_ERROR_CODES.METHOD_NOT_IMPLEMENTED,
+        message: expect.stringContaining("did not advertise it during initialization"),
+      });
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it("times out advertised calls using the handle default when no override is provided", async () => {
+    const handle = createPluginWorkerHandle("test.plugin", {
+      entrypointPath: DELAYED_WORKER_ENTRYPOINT,
+      manifest: TEST_MANIFEST,
+      instanceInfo: {
+        instanceId: "instance-1",
+        hostVersion: "1.0.0",
+      },
+      apiVersion: 1,
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
+      hostHandlers: completeHostHandlers(),
       rpcTimeoutMs: 10,
     });
 
     try {
       await handle.start();
 
-      await expect(handle.call("environmentExecute", {
-        driverKey: "e2b",
+      await expect(handle.call("getData", {
+        key: "delayed",
         companyId: "company-1",
-        environmentId: "environment-1",
-        config: {},
-        lease: { providerLeaseId: "lease-1" },
-        command: "echo",
-        delayMs: 50,
-      } as HostToWorkerMethods["environmentExecute"][0])).rejects.toMatchObject({
+        params: { delayMs: 50 },
+      })).rejects.toMatchObject({
         message: expect.stringContaining("timed out after 10ms"),
       });
     } finally {
@@ -112,35 +743,81 @@ describe("plugin-worker-manager stderr failure context", () => {
     }
   });
 
-  it("honors per-call timeout overrides for environmentExecute", async () => {
+  it("honors per-call timeout overrides for advertised calls", async () => {
     const handle = createPluginWorkerHandle("test.plugin", {
       entrypointPath: DELAYED_WORKER_ENTRYPOINT,
       manifest: TEST_MANIFEST,
-      config: {},
       instanceInfo: {
         instanceId: "instance-1",
         hostVersion: "1.0.0",
       },
       apiVersion: 1,
-      hostHandlers: {},
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
+      hostHandlers: completeHostHandlers(),
       rpcTimeoutMs: 10,
     });
 
     try {
       await handle.start();
 
-      await expect(handle.call("environmentExecute", {
-        driverKey: "e2b",
+      await expect(handle.call("getData", {
+        key: "delayed",
         companyId: "company-1",
-        environmentId: "environment-1",
-        config: {},
-        lease: { providerLeaseId: "lease-1" },
-        command: "echo",
-        delayMs: 50,
-      } as HostToWorkerMethods["environmentExecute"][0], 100)).resolves.toMatchObject({
+        params: { delayMs: 50 },
+      }, 100)).resolves.toMatchObject({
         exitCode: 0,
         stdout: "ok\n",
       });
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it("fences new calls while stop drains an already-accepted request", async () => {
+    const handle = createPluginWorkerHandle("test.plugin", {
+      entrypointPath: DELAYED_WORKER_ENTRYPOINT,
+      manifest: TEST_MANIFEST,
+      instanceInfo: {
+        instanceId: "instance-1",
+        hostVersion: "1.0.0",
+      },
+      apiVersion: 1,
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
+      hostHandlers: completeHostHandlers(),
+      rpcTimeoutMs: 1_000,
+    });
+
+    try {
+      await handle.start();
+      const completionOrder: string[] = [];
+      const activeRequest = handle.call("getData", {
+        key: "accepted-before-stop",
+        companyId: "company-1",
+        params: { delayMs: 50 },
+      }).then((result) => {
+        completionOrder.push("request");
+        return result;
+      });
+      const stop = handle.stop().then(() => {
+        completionOrder.push("stop");
+      });
+
+      expect(handle.status).toBe("stopping");
+      await expect(handle.call("getData", {
+        key: "rejected-during-stop",
+        companyId: "company-1",
+        params: { delayMs: 0 },
+      })).rejects.toMatchObject({
+        code: PLUGIN_RPC_ERROR_CODES.WORKER_UNAVAILABLE,
+        message: expect.stringContaining("is stopping"),
+      });
+
+      await expect(activeRequest).resolves.toMatchObject({ stdout: "ok\n" });
+      await stop;
+      expect(completionOrder).toEqual(["request", "stop"]);
+      expect(handle.status).toBe("stopped");
     } finally {
       await handle.stop().catch(() => undefined);
     }
@@ -153,27 +830,25 @@ describe("plugin-worker-manager stderr failure context", () => {
     const handle = createPluginWorkerHandle("test.plugin", {
       entrypointPath: TERMINATED_WORKER_ENTRYPOINT,
       manifest: TEST_MANIFEST,
-      config: {},
       instanceInfo: {
         instanceId: "instance-1",
         hostVersion: "1.0.0",
       },
       apiVersion: 1,
-      hostHandlers: {},
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
+      hostHandlers: completeHostHandlers(),
     });
 
     try {
       await handle.start();
 
       const pendingCall = handle.call(
-        "environmentExecute" as keyof HostToWorkerMethods,
+        "getData" as keyof HostToWorkerMethods,
         {
-          driverKey: "e2b",
+          key: "terminated",
           companyId: "company-1",
-          environmentId: "environment-1",
-          config: {},
-          lease: { providerLeaseId: "lease-1" },
-          command: "echo",
+          params: {},
         } as HostToWorkerMethods[keyof HostToWorkerMethods][0],
       );
 
@@ -201,15 +876,16 @@ describe("plugin-worker-manager stderr failure context", () => {
     const handle = createPluginWorkerHandle("test.plugin", {
       entrypointPath: INVOCATION_SCOPE_WORKER_ENTRYPOINT,
       manifest: TEST_MANIFEST,
-      config: {},
       instanceInfo: {
         instanceId: "instance-1",
         hostVersion: "1.0.0",
       },
       apiVersion: 1,
-      hostHandlers: {
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
+      hostHandlers: completeHostHandlers({
         "companies.get": companiesGet as never,
-      },
+      }),
     });
 
     try {
@@ -249,15 +925,16 @@ describe("plugin-worker-manager stderr failure context", () => {
     const handle = createPluginWorkerHandle("test.plugin", {
       entrypointPath: INVOCATION_SCOPE_WORKER_ENTRYPOINT,
       manifest: TEST_MANIFEST,
-      config: {},
       instanceInfo: {
         instanceId: "instance-1",
         hostVersion: "1.0.0",
       },
       apiVersion: 1,
-      hostHandlers: {
-        "companies.get": companiesGet,
-      },
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
+      hostHandlers: completeHostHandlers({
+        "companies.get": companiesGet as never,
+      }),
     });
 
     try {
@@ -298,12 +975,13 @@ describe("plugin-worker-manager stderr failure context", () => {
     const handle = createPluginWorkerHandle("test.plugin", {
       entrypointPath: INVOCATION_SCOPE_WORKER_ENTRYPOINT,
       manifest: TEST_MANIFEST,
-      config: {},
       instanceInfo: {
         instanceId: "instance-1",
         hostVersion: "1.0.0",
       },
       apiVersion: 1,
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
       hostHandlers: handlers,
     });
 
@@ -345,12 +1023,13 @@ describe("plugin-worker-manager stderr failure context", () => {
     const handle = createPluginWorkerHandle("test.plugin", {
       entrypointPath: INVOCATION_SCOPE_WORKER_ENTRYPOINT,
       manifest: TEST_MANIFEST,
-      config: {},
       instanceInfo: {
         instanceId: "instance-1",
         hostVersion: "1.0.0",
       },
       apiVersion: 1,
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
       hostHandlers: handlers,
     });
 
@@ -394,12 +1073,13 @@ describe("plugin-worker-manager stderr failure context", () => {
     const handle = createPluginWorkerHandle("test.plugin", {
       entrypointPath: INVOCATION_SCOPE_WORKER_ENTRYPOINT,
       manifest: TEST_MANIFEST,
-      config: {},
       instanceInfo: {
         instanceId: "instance-1",
         hostVersion: "1.0.0",
       },
       apiVersion: 1,
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
       hostHandlers,
     });
 
@@ -441,15 +1121,16 @@ describe("plugin-worker-manager stderr failure context", () => {
     const handle = createPluginWorkerHandle("test.plugin", {
       entrypointPath: RPC_OPERATION_WORKER_ENTRYPOINT,
       manifest: TEST_MANIFEST,
-      config: {},
       instanceInfo: {
         instanceId: "instance-1",
         hostVersion: "1.0.0",
       },
       apiVersion: 1,
-      hostHandlers: {
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
+      hostHandlers: completeHostHandlers({
         "issues.withdraw": withdraw as never,
-      },
+      }),
     });
 
     try {
@@ -493,81 +1174,52 @@ describe("plugin-worker-manager stderr failure context", () => {
 });
 
 
-describe("plugin host company context guards", () => {
-  it("rejects config and secret calls without host-issued company context before host services run", async () => {
-    const configGet = vi.fn(async () => ({ apiKey: "unreachable" }));
-    const secretsResolve = vi.fn(async () => "unreachable");
+describe("plugin instance config host calls", () => {
+  it("allows instance config without company scope", async () => {
+    const configGet = vi.fn(async () => ({ apiKey: "configured" }));
     const handlers = createHostClientHandlers({
       pluginId: "test.plugin",
-      capabilities: ["secrets.read-ref"],
+      capabilities: [],
       services: {
         config: { get: configGet },
-        secrets: { resolve: secretsResolve },
       } as unknown as HostServices,
     });
 
-    await expect(handlers["config.get"]({})).rejects.toMatchObject({
-      name: "InvocationScopeDeniedError",
-      message: expect.stringContaining("company context is required"),
-    });
-    await expect(handlers["config.get"]({ companyId: "company-1" })).rejects.toMatchObject({
-      name: "InvocationScopeDeniedError",
-      message: expect.stringContaining("company context is required"),
-    });
-    await expect(
-      handlers["secrets.resolve"]({
-        secretRef: { type: "secret_ref", secretId: "11111111-1111-4111-8111-111111111111" },
-      }),
-    ).rejects.toMatchObject({
-      name: "InvocationScopeDeniedError",
-      message: expect.stringContaining("company context is required"),
-    });
-    await expect(
-      handlers["secrets.resolve"]({
-        companyId: "company-1",
-        secretRef: { type: "secret_ref", secretId: "11111111-1111-4111-8111-111111111111" },
-      }),
-    ).rejects.toMatchObject({
-      name: "InvocationScopeDeniedError",
-      message: expect.stringContaining("company context is required"),
-    });
-
-    expect(configGet).not.toHaveBeenCalled();
-    expect(secretsResolve).not.toHaveBeenCalled();
+    await expect(handlers["config.get"]({})).resolves.toEqual({ apiKey: "configured" });
+    expect(configGet).toHaveBeenCalledWith({}, undefined);
   });
 
-  it("rejects cross-company config and secret reads in scoped worker invocations before host services run", async () => {
-    const configGet = vi.fn(async () => ({ apiKeyRef: "unreachable" }));
-    const secretsResolve = vi.fn(async () => "unreachable");
+  it("keeps instance config independent from the invocation company", async () => {
+    const configGet = vi.fn(async () => ({ apiKey: "configured" }));
     const hostHandlers = createHostClientHandlers({
       pluginId: "test.plugin",
-      capabilities: ["secrets.read-ref"],
+      capabilities: [],
       services: {
         config: { get: configGet },
-        secrets: { resolve: secretsResolve },
       } as unknown as HostServices,
     });
     const handle = createPluginWorkerHandle("test.plugin", {
       entrypointPath: INVOCATION_SCOPE_WORKER_ENTRYPOINT,
       manifest: TEST_MANIFEST,
-      config: {},
       instanceInfo: {
         instanceId: "instance-1",
         hostVersion: "1.0.0",
       },
       apiVersion: 1,
+      databaseNamespace: null,
+      onTerminalCrash: () => undefined,
       hostHandlers,
     });
 
     try {
       await handle.start();
 
-      for (const hostMethod of ["config.get", "secrets.resolve"] as const) {
-        await expect(handle.call("performAction", {
+      await expect(
+        handle.call("performAction", {
           key: "probe",
           params: {
             mode: "echo",
-            hostMethod,
+            hostMethod: "config.get",
             requestedCompanyId: "company-b",
           },
           actorContext: {
@@ -577,14 +1229,10 @@ describe("plugin host company context guards", () => {
             companyId: "company-a",
           },
           renderEnvironment: null,
-        })).rejects.toMatchObject({
-          code: PLUGIN_RPC_ERROR_CODES.INVOCATION_SCOPE_DENIED,
-          message: expect.stringContaining('requested company "company-b"'),
-        });
-      }
+        }),
+      ).resolves.toEqual({ apiKey: "configured" });
 
-      expect(configGet).not.toHaveBeenCalled();
-      expect(secretsResolve).not.toHaveBeenCalled();
+      expect(configGet).toHaveBeenCalledWith({}, expect.any(Object));
     } finally {
       await handle.stop().catch(() => undefined);
     }

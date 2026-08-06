@@ -31,6 +31,10 @@ import {
 } from "./prompt-capability-gateway-postgres.js";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 import type { RuntimeInterfaceCompileInput } from "./runtime-interface-compiler.js";
+import {
+  createRuntimePluginToolPort,
+  createRuntimeToolExecutor,
+} from "./runtime-tool-executor.js";
 
 const now = new Date("2026-07-31T12:00:00.000Z");
 const capability: PromptCapabilityBinding = Object.freeze({
@@ -358,7 +362,7 @@ function setup(compile = compileInput()) {
     input: Parameters<PromptCapabilityToolExecutor["execute"]>[0],
   ) => {
     await input.commitTerminalAudit?.(terminalAuditTransaction);
-    return { accepted: true };
+    return { source: "paperclip" as const, value: { accepted: true } };
   });
   return {
     authenticateIngressBearerHash,
@@ -376,7 +380,186 @@ function setup(compile = compileInput()) {
   };
 }
 
+function composedPluginToolRuntime() {
+  const bearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(13));
+  const installation = { status: "ready", manifestIdentity: "manifest-v1" };
+  const compile: RuntimeInterfaceCompileInput = {
+    ...compileInput(),
+    actionGrants: {},
+    pluginTools: [{
+      installationId: "plugin-installation",
+      manifestIdentity: "manifest-v1",
+      name: "acme.search__lookup",
+      toolName: "lookup",
+      title: "Lookup",
+      description: "Look up an external record",
+      inputSchema: { type: "object" },
+    }],
+  };
+  const originalCall = vi.fn(async () => ({
+    ok: true as const,
+    content: "original worker",
+  }));
+  let selectedWorker = {
+    status: "running" as const,
+    manifestIdentity: "manifest-v1",
+    call: originalCall,
+  };
+  let afterWorkerSelection: (() => void) | undefined;
+  const getWorker = vi.fn(() => {
+    const worker = selectedWorker;
+    afterWorkerSelection?.();
+    afterWorkerSelection = undefined;
+    return worker;
+  });
+  const createPluginRunContext = vi.fn(async (
+    input: Parameters<
+      PromptCapabilityGatewayRepository["createPluginRunContext"]
+    >[0],
+  ) => {
+    if (
+      installation.status !== "ready" ||
+      installation.manifestIdentity !== input.pluginManifestIdentity
+    ) {
+      throw new Error("Plugin context is not bound to a ready tool");
+    }
+  });
+  const authenticated = async () => ({
+    kind: "authenticated" as const,
+    capability,
+  });
+  const repository = {
+    authenticateBearerHash: authenticated,
+    revalidate: authenticated,
+    resolveCompileInput: vi.fn(async () => compile),
+    createPluginRunContext,
+    writeAudit: vi.fn(async () => undefined),
+  } as unknown as PromptCapabilityGatewayRepository;
+  const unused = vi.fn(async () => undefined);
+  const executor = createRuntimeToolExecutor({
+    retrieval: {} as never,
+    retrievalScope: {} as never,
+    actions: {
+      issueCreate: unused,
+      issueAssign: unused,
+      issueUpdate: unused,
+      mentionAgent: unused,
+      mentionBoard: unused,
+      agentHire: unused,
+      agentConfigure: unused,
+    } as never,
+    companyTools: {} as never,
+    pluginTools: createRuntimePluginToolPort({ getWorker } as never),
+    callLedger: {
+      claim: vi.fn(async () => ({
+        state: "claimed" as const,
+        id: "plugin-call-1",
+      })),
+      classify: vi.fn(async () => undefined),
+      complete: vi.fn(async () => undefined),
+      fail: vi.fn(async () => undefined),
+    } as never,
+  });
+
+  return {
+    bearer,
+    createPluginRunContext,
+    gateway: createPromptCapabilityGateway({
+      repository,
+      executor,
+      now: () => now,
+    }),
+    originalCall,
+    stageChangeBeforeMint(
+      change: "status" | "manifest identity",
+      replacementCall: typeof originalCall,
+    ) {
+      afterWorkerSelection = () => {
+        installation.status = change === "status" ? "disabled" : "ready";
+        installation.manifestIdentity =
+          change === "manifest identity" ? "manifest-v2" : "manifest-v1";
+        selectedWorker = {
+          status: "running",
+          manifestIdentity:
+            change === "manifest identity" ? "manifest-v2" : "manifest-v1",
+          call: replacementCall,
+        };
+      };
+    },
+  };
+}
+
 describe("prompt-capability gateway", () => {
+  it.each(["stable", "status", "manifest identity"] as const)(
+    "composes an exact plugin tool binding across a %s runtime",
+    async (state) => {
+      const runtime = composedPluginToolRuntime();
+      const replacementCall = vi.fn(async () => ({
+        ok: true as const,
+        content: "replacement worker",
+      }));
+
+      await expect(runtime.gateway.listTools(runtime.bearer)).resolves.toEqual([
+        expect.objectContaining({
+          name: "acme.search__lookup",
+          source: "plugin",
+          pluginInstallationId: "plugin-installation",
+          pluginManifestIdentity: "manifest-v1",
+          pluginToolName: "lookup",
+        }),
+      ]);
+      if (state !== "stable") {
+        runtime.stageChangeBeforeMint(state, replacementCall);
+      }
+
+      const call = runtime.gateway.callTool({
+        bearer: runtime.bearer,
+        toolName: "acme.search__lookup",
+        arguments: { query: "record" },
+        callIdentity: { source: "jsonrpc", id: `plugin-${state}` },
+        ingressOrdinal: 0,
+      });
+      if (state !== "stable") {
+        await expect(call).rejects.toThrow(
+          "Plugin context is not bound to a ready tool",
+        );
+        expect(runtime.originalCall).not.toHaveBeenCalled();
+        expect(replacementCall).not.toHaveBeenCalled();
+        return;
+      }
+
+      await expect(call).resolves.toEqual({
+        source: "plugin",
+        value: { ok: true, content: "original worker" },
+      });
+      const rpcCall = runtime.originalCall.mock.calls[0] as unknown as readonly unknown[];
+      const rpcParams = rpcCall[1] as { runContextHandle: string };
+      const invocationScope = rpcCall[3] as {
+        pluginRunContextHandle: string;
+      };
+      expect(runtime.originalCall).toHaveBeenCalledWith(
+        "executeTool",
+        expect.objectContaining({
+          toolName: "lookup",
+          parameters: { query: "record" },
+          runContextHandle: expect.stringMatching(/^pc_plugin_ctx_v1_/),
+        }),
+        undefined,
+        expect.objectContaining({ companyId: capability.companyId }),
+      );
+      expect(invocationScope.pluginRunContextHandle).toBe(
+        rpcParams.runContextHandle,
+      );
+      expect(runtime.createPluginRunContext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pluginInstallationId: "plugin-installation",
+          pluginManifestIdentity: "manifest-v1",
+          runInterfaceToolCallId: "plugin-call-1",
+        }),
+      );
+    },
+  );
+
   it("authenticates only the SHA-256 hash and recompiles before list/call", async () => {
     const runtime = setup();
     const bearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(7));
@@ -417,7 +600,10 @@ describe("prompt-capability gateway", () => {
       arguments: { message: "Need Board direction" },
       callIdentity: { source: "jsonrpc", id: 8 },
       ingressOrdinal: 0,
-    })).resolves.toEqual({ accepted: true });
+    })).resolves.toEqual({
+      source: "paperclip",
+      value: { accepted: true },
+    });
 
     expect(runtime.writeAudit).toHaveBeenCalledOnce();
     expect(runtime.writeAudit.mock.calls[0]![1]).toBe(

@@ -14,6 +14,7 @@ import { RUN_TOOLS_STDIO_PROXY_SOURCE } from "@paperclipai/adapter-utils/run-too
 import type { LocalProcessSandboxOptions } from "@paperclipai/adapter-utils/local-process-sandbox";
 import type { SelectedCompanySkillLaunchChannel } from "@paperclipai/adapter-utils/selected-company-skills";
 import {
+  AGENT_CONTEXT_GRANT_KEYS,
   agentAdapterAcpConfigurationSchema,
   type AgentAdapterAcpConfiguration,
   type IssueExecutionSessionOperation,
@@ -33,6 +34,8 @@ import type {
 import type {
   ReapedCompanySkillMaterialization,
 } from "./company-skill-materialization-lifecycle.js";
+import type { ContextDial } from "./context-dial-resolver.js";
+import type { PluginBeforePromptDispatcher } from "./plugin-before-prompt-dispatcher.js";
 
 const RUN_TOOLS_PROXY_FILE = "run-tools-proxy.mjs";
 const RUN_TOOLS_SECRET_FILE = "run-tools.json";
@@ -84,7 +87,13 @@ export interface ResolvedIssueExecutionPrompt {
   readonly identity: IssueExecutionPromptIdentity;
   /** Immutable operation frozen on this exact attempt generation. */
   readonly sessionOperation: IssueExecutionSessionOperation;
+  /** Exact canonical Session message supplying this provider prompt. */
+  readonly sourceMessageId: string;
+  /** Global Session sequence of `sourceMessageId`; also the plugin snapshot cutoff. */
+  readonly sourceMessageSeq: number;
   readonly sourceText: string;
+  /** Exact effective context-access matrix compiled for this prompt. */
+  readonly contextAccess: ContextDial;
   readonly carryContext: boolean;
   /** Null only for a frozen new operation; every resume pins one exact target. */
   readonly storedCorrelation: StoredAcpSessionCorrelation | null;
@@ -383,6 +392,7 @@ function validatePrompt(prompt: ResolvedIssueExecutionPrompt): void {
     ["target agent id", identity.targetAgentId],
     ["adapter revision id", identity.adapterConfigRevisionId],
     ["workspace binding id", identity.executionWorkspaceBindingId],
+    ["source message id", prompt.sourceMessageId],
   ] as const) {
     exactIdentity(value, label);
   }
@@ -398,6 +408,11 @@ function validatePrompt(prompt: ResolvedIssueExecutionPrompt): void {
   exactDigest(prompt.effectiveToolsDigest, "effective tools digest");
   if (
     prompt.sourceText.length === 0 ||
+    !Number.isSafeInteger(prompt.sourceMessageSeq) ||
+    prompt.sourceMessageSeq < 0 ||
+    AGENT_CONTEXT_GRANT_KEYS.some(
+      (key) => typeof prompt.contextAccess[key] !== "boolean",
+    ) ||
     identity.ownershipEpoch < 1 ||
     identity.leaseGeneration < 1 ||
     identity.attemptGeneration < 1 ||
@@ -1004,6 +1019,7 @@ function assertTargetMatchesPrompt(
 
 export function createIssueExecutionAttemptExecutor(options: {
   readonly repository: IssueExecutionPromptCycleRepository;
+  readonly beforePrompt: PluginBeforePromptDispatcher;
   readonly targetAcquirer: IssueExecutionTargetAcquirer;
   readonly sessionCorrelations: Pick<
     NativeCorrelationService,
@@ -1422,6 +1438,26 @@ export function createIssueExecutionAttemptExecutor(options: {
       let operationFailure: unknown;
       let dispatchResult: IssueExecutionDispatchResult | null = null;
       try {
+        let outboundMessage = prompt.sourceText;
+        if (!executionController.signal.aborted) {
+          outboundMessage = await options.beforePrompt.dispatch({
+            companyId: prompt.identity.companyId,
+            issueId: prompt.identity.issueId,
+            sessionId: prompt.identity.sessionId,
+            runId: prompt.identity.runId,
+            agentId: prompt.identity.targetAgentId,
+            sourceText: prompt.sourceText,
+            promptKind: prompt.identity.promptKind,
+            sessionOperation: prompt.sessionOperation,
+            refId: prompt.identity.refId,
+            refOrdinal: prompt.identity.refOrdinal,
+            segmentOrdinal: prompt.identity.segmentOrdinal,
+            sourceMessageId: prompt.sourceMessageId,
+            sourceMessageSeq: prompt.sourceMessageSeq,
+            contextAccess: prompt.contextAccess,
+          });
+        }
+        if (renewalFailed) throw renewalFailure;
         const target = await options.targetAcquirer.acquire(prompt.target);
         assertTargetMatchesPrompt(prompt, target);
         let targetFailed = true;
@@ -1436,10 +1472,8 @@ export function createIssueExecutionAttemptExecutor(options: {
           let start:
             | { readonly kind: "new" }
             | { readonly kind: "resume"; readonly sessionId: string };
-          let message: string;
           if (prompt.sessionOperation === "new") {
             start = { kind: "new" };
-            message = prompt.sourceText;
           } else {
             const resolvedStart = await options.sessionCorrelations.resolveStart({
               promptKind: prompt.identity.promptKind,
@@ -1452,7 +1486,6 @@ export function createIssueExecutionAttemptExecutor(options: {
               );
             }
             start = resolvedStart.start;
-            message = prompt.sourceText;
           }
           if (renewalFailed) throw renewalFailure;
 
@@ -1460,7 +1493,7 @@ export function createIssueExecutionAttemptExecutor(options: {
             prompt,
             target,
             start,
-            message,
+            message: outboundMessage,
             signal: executionController.signal,
           });
           if (

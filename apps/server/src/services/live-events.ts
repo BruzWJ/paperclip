@@ -66,31 +66,7 @@ export function publishLiveEvent(input: {
   return event;
 }
 
-export function publishGlobalLiveEvent<Type extends NonPlanLiveEventType>(input: {
-  type: Type;
-  payload?: LiveEventPayloadMap[Type];
-}): LiveEventOf<Type> {
-  const eventType: string = input.type;
-  if (eventType === "issue.execution.plan.live") {
-    throw new TypeError(
-      "issue.execution.plan.live is authenticated company scope only",
-    );
-  }
-  const event = toLiveEvent({
-    companyId: "*",
-    type: input.type,
-    payload: input.payload ?? {},
-  });
-  emitter.emit("*", event);
-  return event;
-}
-
 export function subscribeCompanyLiveEvents(companyId: string, listener: LiveEventListener) {
   emitter.on(companyId, listener);
   return () => emitter.off(companyId, listener);
-}
-
-export function subscribeGlobalLiveEvents(listener: LiveEventListener) {
-  emitter.on("*", listener);
-  return () => emitter.off("*", listener);
 }

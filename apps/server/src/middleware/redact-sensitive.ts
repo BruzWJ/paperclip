@@ -56,7 +56,8 @@ const URLISH_KEYS = new Set<string>([
 ]);
 
 function isSensitiveKey(key: string): boolean {
-  return SENSITIVE_KEYS.has(key.toLowerCase());
+  const normalized = key.toLowerCase();
+  return SENSITIVE_KEYS.has(normalized) || normalized.endsWith("secret");
 }
 
 function isUrlishKey(key: string): boolean {

@@ -13,15 +13,15 @@ import type {
   HostServices,
   HostToWorkerMethods,
   WorkerToHostMethods,
-  Company,
-  Agent,
-  Project,
-  Issue,
-  Goal,
-  PluginWorkspace,
   PluginExecutionWorkspaceMetadata,
 } from "@paperclipai/plugin-sdk";
-import { isUuidLike, type InviteJoinType, type PermissionKey, type PrincipalType } from "@paperclipai/shared";
+import { normalizePluginScopeId } from "@paperclipai/plugin-sdk";
+import {
+  isUuidLike,
+  type InviteJoinType,
+  type PermissionKey,
+  type PrincipalType,
+} from "@paperclipai/shared";
 import { companyService } from "./companies.js";
 import {
   agentService,
@@ -31,7 +31,7 @@ import { projectService } from "./projects.js";
 import { executionWorkspaceService } from "./execution-workspaces.js";
 import { issueService } from "./issues.js";
 import { goalService } from "./goals.js";
-import { createHash, randomBytes } from "node:crypto";
+import { createCompanyInvite } from "./company-invite-creation.js";
 import { pluginRegistryService } from "./plugin-registry.js";
 import { pluginStateStore } from "./plugin-state-store.js";
 import { pluginDatabaseService } from "./plugin-database.js";
@@ -45,16 +45,15 @@ import {
   deletePluginLocalFolderFile,
   inspectPluginLocalFolder,
   listPluginLocalFolderEntries,
+  prepareAndInspectPluginLocalFolder,
   preparePluginLocalFolder,
   readPluginLocalFolderText,
   requireLocalFolderDeclaration,
   setStoredLocalFolder,
   writePluginLocalFolderTextAtomic,
 } from "./plugin-local-folders.js";
-import { createPluginSecretsHandler } from "./plugin-secrets-handler.js";
 import { logActivity } from "./activity-log.js";
 import type { PluginEventBus } from "./plugin-event-bus.js";
-import type { PluginWorkerManager } from "./plugin-worker-manager.js";
 import { lookup as dnsLookup } from "node:dns/promises";
 import type { IncomingMessage, RequestOptions as HttpRequestOptions } from "node:http";
 import { request as httpRequest } from "node:http";
@@ -66,10 +65,11 @@ import { accessService } from "./access.js";
 import { authorizationService, type AuthorizationActor } from "./authorization.js";
 import { sanitizeRecord } from "../redaction.js";
 import {
-  assertPluginInstallationAvailableForCompany,
+  assertPluginInstallationRequestScope,
   PluginIssueAuthorizationRejected,
 } from "./plugin-issue-authorization.js";
 import type { OrdinaryIssueRuntime } from "./ordinary-issue-runtime.js";
+import { badRequest } from "../errors.js";
 
 // ---------------------------------------------------------------------------
 // SSRF protection for plugin HTTP fetch
@@ -77,6 +77,9 @@ import type { OrdinaryIssueRuntime } from "./ordinary-issue-runtime.js";
 
 /** Maximum time (ms) a plugin fetch request may take before being aborted. */
 const PLUGIN_FETCH_TIMEOUT_MS = 30_000;
+
+/** Maximum response body retained for one managed plugin HTTP request. */
+const PLUGIN_FETCH_MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 
 /** Maximum time (ms) to wait for a DNS lookup before aborting. */
 const DNS_LOOKUP_TIMEOUT_MS = 5_000;
@@ -275,16 +278,28 @@ async function executePinnedHttpRequest(
     req.end();
   });
 
-  const MAX_RESPONSE_BODY_BYTES = 200 * 1024 * 1024; // 200 MB
+  const declaredLength = Number(response.headers["content-length"]);
+  if (
+    Number.isFinite(declaredLength)
+    && declaredLength > PLUGIN_FETCH_MAX_RESPONSE_BYTES
+  ) {
+    response.destroy();
+    throw new Error(
+      `Response body exceeded ${PLUGIN_FETCH_MAX_RESPONSE_BYTES} bytes`,
+    );
+  }
+
   const chunks: Buffer[] = [];
   let totalBytes = 0;
   await new Promise<void>((resolve, reject) => {
     response.on("data", (chunk: Buffer | string) => {
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       totalBytes += buf.length;
-      if (totalBytes > MAX_RESPONSE_BODY_BYTES) {
+      if (totalBytes > PLUGIN_FETCH_MAX_RESPONSE_BYTES) {
         chunks.length = 0;
-        response.destroy(new Error(`Response body exceeded ${MAX_RESPONSE_BODY_BYTES} bytes`));
+        response.destroy(new Error(
+          `Response body exceeded ${PLUGIN_FETCH_MAX_RESPONSE_BYTES} bytes`,
+        ));
         return;
       }
       chunks.push(buf);
@@ -343,16 +358,6 @@ function sanitizeWorkspaceName(name: string, fallbackPath: string): string {
   return segments[segments.length - 1] ?? "Workspace";
 }
 
-// ---------------------------------------------------------------------------
-// Buffered plugin log writes
-// ---------------------------------------------------------------------------
-
-/** How many buffered log entries trigger an immediate flush. */
-const LOG_BUFFER_FLUSH_SIZE = 100;
-
-/** How often (ms) the buffer is flushed regardless of size. */
-const LOG_BUFFER_FLUSH_INTERVAL_MS = 5_000;
-
 /** Max length for a single plugin log message (bytes/chars). */
 const MAX_LOG_MESSAGE_LENGTH = 10_000;
 
@@ -401,76 +406,6 @@ function sanitiseMeta(meta: Record<string, unknown> | null | undefined): Record<
   return cleaned;
 }
 
-interface BufferedLogEntry {
-  db: Db;
-  pluginId: string;
-  /**
-   * Owning tenant for `plugin_logs.company_id` — populated when the caller
-   * attributes the log/metric to a specific company so the row participates
-   * in the `ON DELETE CASCADE` from `companies`. `null` means instance-scope
-   * (cron jobs / public webhooks without a tenant); those rows survive
-   * company deletes but are still attributable.
-   */
-  companyId: string | null;
-  level: string;
-  message: string;
-  meta: Record<string, unknown> | null;
-}
-
-const _logBuffer: BufferedLogEntry[] = [];
-
-/**
- * Flush all buffered log entries to the database in a single batch insert per
- * unique db instance. Errors are swallowed with a console.error fallback so
- * flushing never crashes the process.
- */
-export async function flushPluginLogBuffer(): Promise<void> {
-  if (_logBuffer.length === 0) return;
-
-  // Drain the buffer atomically so concurrent flushes don't double-insert.
-  const entries = _logBuffer.splice(0, _logBuffer.length);
-
-  // Group entries by db identity so multi-db scenarios are handled correctly.
-  const byDb = new Map<Db, BufferedLogEntry[]>();
-  for (const entry of entries) {
-    const group = byDb.get(entry.db);
-    if (group) {
-      group.push(entry);
-    } else {
-      byDb.set(entry.db, [entry]);
-    }
-  }
-
-  for (const [dbInstance, group] of byDb) {
-    const values = group.map((e) => ({
-      pluginId: e.pluginId,
-      companyId: e.companyId,
-      level: e.level,
-      message: e.message,
-      meta: e.meta,
-    }));
-    try {
-      await dbInstance.insert(pluginLogs).values(values);
-    } catch (err) {
-      try {
-        logger.warn({ err, count: values.length }, "Failed to batch-persist plugin logs to DB");
-      } catch {
-        console.error("[plugin-host-services] Batch log flush failed:", err);
-      }
-    }
-  }
-}
-
-/** Interval handle for the periodic log flush. */
-const _logFlushInterval = setInterval(() => {
-  flushPluginLogBuffer().catch((err) => {
-    console.error("[plugin-host-services] Periodic log flush error:", err);
-  });
-}, LOG_BUFFER_FLUSH_INTERVAL_MS);
-
-// Allow the interval to be unref'd so it doesn't keep the process alive in tests.
-if (_logFlushInterval.unref) _logFlushInterval.unref();
-
 /**
  * buildHostServices — creates a concrete implementation of the `HostServices`
  * interface for a specific plugin.
@@ -480,7 +415,6 @@ if (_logFlushInterval.unref) _logFlushInterval.unref();
  *
  * @param db - Database connection instance.
  * @param pluginId - The UUID of the plugin installation record.
- * @param pluginKey - The unique identifier from the plugin manifest (e.g., "acme.linear").
  * @param eventBus - The system-wide event bus for publishing plugin events.
  * @returns An object implementing the HostServices interface for the plugin SDK.
  */
@@ -546,6 +480,10 @@ export interface PluginRunIssueContextReader {
 }
 
 export interface PluginRuntimeRecordsReader {
+  readSession(
+    params: WorkerToHostMethods["runtime.records.readSession"][0]
+      & PluginIssueInstallationContext,
+  ): Promise<WorkerToHostMethods["runtime.records.readSession"][1]>;
   readRun(
     params: WorkerToHostMethods["runtime.records.readRun"][0]
       & PluginIssueInstallationContext,
@@ -557,11 +495,10 @@ export interface PluginRuntimeRecordsReader {
 }
 
 export interface PluginHostServicesOptions {
-  pluginWorkerManager?: PluginWorkerManager;
-  manifest?: import("@paperclipai/shared").PaperclipPluginManifestV1;
+  manifest: import("@paperclipai/shared").PaperclipPluginManifestV1;
   pluginIssueControlPlane: PluginIssueControlPlane;
-  pluginRunIssueContextReader?: PluginRunIssueContextReader;
-  pluginRuntimeRecordsReader?: PluginRuntimeRecordsReader;
+  pluginRunIssueContextReader: PluginRunIssueContextReader;
+  pluginRuntimeRecordsReader: PluginRuntimeRecordsReader;
   ordinaryIssues: OrdinaryIssueRuntime;
   issueExecutionCancellation: AgentControlLifecycleService;
 }
@@ -569,34 +506,27 @@ export interface PluginHostServicesOptions {
 export function buildHostServices(
   db: Db,
   pluginId: string,
-  pluginKey: string,
   eventBus: PluginEventBus,
-  deliverEvent:
-    | ((params: HostToWorkerMethods["onEvent"][0]) => Promise<void>)
-    | undefined,
+  deliverEvent: (params: HostToWorkerMethods["onEvent"][0]) => Promise<void>,
   options: PluginHostServicesOptions,
-): HostServices & { dispose(): void } {
+): HostServices & { dispose(): Promise<void> } {
+  const pluginKey = options.manifest.id;
   const registry = pluginRegistryService(db);
   const stateStore = pluginStateStore(db);
   const pluginDb = pluginDatabaseService(db);
-  const secretsHandler = createPluginSecretsHandler({ db, pluginId });
   const companies = companyService(db);
   const agents = agentService(db);
   const managedAgents = pluginManagedAgentService(db, {
     pluginId,
-    pluginKey,
     manifest: options.manifest,
   });
   const managedRoutines = pluginManagedRoutineService(db, {
     pluginId,
-    pluginKey,
     manifest: options.manifest,
-    pluginWorkerManager: options.pluginWorkerManager,
     ordinaryIssues: options.ordinaryIssues,
   });
   const managedSkills = pluginManagedSkillService(db, {
     pluginId,
-    pluginKey,
     manifest: options.manifest,
   });
   const registeredCreatorCallbacks = new Set<string>();
@@ -609,6 +539,21 @@ export function buildHostServices(
   const scopedBus = eventBus.forPlugin(pluginKey);
 
   const pluginIssueRuntime = options.pluginIssueControlPlane;
+
+  const toPluginEntityRecord = (
+    entity: NonNullable<Awaited<ReturnType<typeof registry.upsertEntity>>>,
+  ): WorkerToHostMethods["entities.upsert"][1] => ({
+    id: entity.id,
+    entityType: entity.entityType,
+    scopeKind: entity.scopeKind,
+    scopeId: entity.scopeId,
+    externalId: entity.externalId,
+    title: entity.title,
+    status: entity.status,
+    data: entity.data,
+    createdAt: entity.createdAt.toISOString(),
+    updatedAt: entity.updatedAt.toISOString(),
+  });
 
   const ensureCompanyId = (companyId?: string) => {
     if (!companyId) throw new Error("companyId is required for this operation");
@@ -647,15 +592,29 @@ export function buildHostServices(
   };
 
   const ensurePluginAvailableForCompany = async (companyId: string) => {
-    await assertPluginInstallationAvailableForCompany(db, {
+    await assertPluginInstallationRequestScope(db, {
       companyId,
       pluginInstallationId: pluginId,
       pluginKey,
     });
   };
 
+  const deliverSubscribedEvent = async (
+    event: import("@paperclipai/plugin-sdk").PluginEvent,
+  ) => {
+    if (event.companyId) {
+      try {
+        await ensurePluginAvailableForCompany(event.companyId);
+      } catch (error) {
+        if (error instanceof PluginIssueAuthorizationRejected) return;
+        throw error;
+      }
+    }
+    await deliverEvent({ event });
+  };
+
   const getLocalFolderDeclaration = (folderKey: string) =>
-    requireLocalFolderDeclaration(options.manifest?.localFolders, folderKey);
+    requireLocalFolderDeclaration(options.manifest.localFolders ?? [], folderKey);
 
   const getStoredLocalFolderConfig = async (companyId: string, folderKey: string) => {
     ensureCompanyId(companyId);
@@ -664,12 +623,11 @@ export function buildHostServices(
     return getStoredLocalFolders(settings?.settingsJson)[folderKey] ?? null;
   };
 
-  const inspectStoredLocalFolder = async (companyId: string, folderKey: string) =>
-    inspectPluginLocalFolder({
-      folderKey,
-      declaration: getLocalFolderDeclaration(folderKey),
-      storedConfig: await getStoredLocalFolderConfig(companyId, folderKey),
-    });
+  const inspectStoredLocalFolder = async (companyId: string, folderKey: string) => {
+    const declaration = getLocalFolderDeclaration(folderKey);
+    const stored = await getStoredLocalFolderConfig(companyId, folderKey);
+    return inspectPluginLocalFolder({ declaration, path: stored?.path ?? null });
+  };
 
   const inCompany = <T extends { companyId: string | null | undefined }>(
     record: T | null | undefined,
@@ -731,8 +689,6 @@ export function buildHostServices(
       initiatingAgentId: actor?.actorAgentId ?? null,
       initiatingUserId: actor?.actorUserId ?? null,
       initiatingRunId: actor?.actorRunId ?? null,
-      pluginId,
-      pluginKey,
     };
   };
 
@@ -755,37 +711,6 @@ export function buildHostServices(
       entityId: input.entityId,
       details: pluginActivityDetails(input.details, input.actor),
     });
-  };
-
-  const INVITE_TOKEN_PREFIX = "pcp_invite_";
-  // 256 bits of entropy, base64url-encoded. Keep in sync with createInviteToken
-  // in routes/access.ts. The token is public, so it must not be brute-forceable.
-  const INVITE_TOKEN_ENTROPY_BYTES = 32;
-  const INVITE_TOKEN_MAX_RETRIES = 5;
-  const COMPANY_INVITE_TTL_MS = 72 * 60 * 60 * 1000;
-
-  const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
-
-  const createInviteToken = () => {
-    const suffix = randomBytes(INVITE_TOKEN_ENTROPY_BYTES).toString("base64url");
-    return `${INVITE_TOKEN_PREFIX}${suffix}`;
-  };
-
-  const isInviteTokenHashCollisionError = (error: unknown) => {
-    const candidates = [
-      error,
-      (error as { cause?: unknown } | null)?.cause ?? null,
-    ];
-    for (const candidate of candidates) {
-      if (!candidate || typeof candidate !== "object") continue;
-      const code = "code" in candidate && typeof candidate.code === "string" ? candidate.code : null;
-      const message = "message" in candidate && typeof candidate.message === "string" ? candidate.message : "";
-      const constraint = "constraint" in candidate && typeof candidate.constraint === "string" ? candidate.constraint : null;
-      if (code !== "23505") continue;
-      if (constraint === "invites_token_hash_unique_idx") return true;
-      if (message.includes("invites_token_hash_unique_idx")) return true;
-    }
-    return false;
   };
 
   const inviteState = (invite: typeof invites.$inferSelect) => {
@@ -821,25 +746,6 @@ export function buildHostServices(
       default:
         return undefined;
     }
-  };
-
-  const mergeInviteDefaults = (defaultsPayload: Record<string, unknown> | null | undefined, agentMessage: string | null, humanRole: string | null) => {
-    const defaults = defaultsPayload && typeof defaultsPayload === "object"
-      ? { ...defaultsPayload }
-      : {};
-    if (humanRole) {
-      defaults.human = {
-        ...(typeof defaults.human === "object" && defaults.human !== null ? defaults.human as Record<string, unknown> : {}),
-        role: humanRole,
-      };
-    }
-    if (agentMessage) {
-      defaults.agent = {
-        ...(typeof defaults.agent === "object" && defaults.agent !== null ? defaults.agent as Record<string, unknown> : {}),
-        message: agentMessage,
-      };
-    }
-    return sanitizeRecord(defaults);
   };
 
   type StoredGrant = typeof principalPermissionGrants.$inferSelect;
@@ -985,52 +891,36 @@ export function buildHostServices(
 
   return {
     config: {
-      async get(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const configRow = await registry.getConfig(pluginId, companyId);
+      async get() {
+        const configRow = await registry.getConfig(pluginId);
         return configRow?.configJson ?? {};
       },
     },
 
     localFolders: {
-      async declarations() {
-        return options.manifest?.localFolders ?? [];
-      },
-
       async configure(params) {
+        if (
+          typeof params !== "object"
+          || params === null
+          || Array.isArray(params)
+          || Object.keys(params).some((key) => key !== "companyId" && key !== "folderKey" && key !== "path")
+          || typeof params.path !== "string"
+          || params.path.trim().length === 0
+        ) {
+          throw badRequest("Local folder configuration accepts only companyId, folderKey, and a non-empty path");
+        }
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         const declaration = getLocalFolderDeclaration(params.folderKey);
         const existing = await registry.getCompanySettings(pluginId, companyId);
-        const existingConfig = getStoredLocalFolders(existing?.settingsJson)[params.folderKey] ?? null;
-        await preparePluginLocalFolder({
-          folderKey: params.folderKey,
+        const status = await prepareAndInspectPluginLocalFolder({
           declaration,
-          storedConfig: existingConfig,
-          overrideConfig: {
-            path: params.path,
-          },
-        });
-        const status = await inspectPluginLocalFolder({
-          folderKey: params.folderKey,
-          declaration,
-          storedConfig: existingConfig,
-          overrideConfig: {
-            path: params.path,
-          },
+          path: params.path,
         });
 
-        const nextSettings = setStoredLocalFolder(existing?.settingsJson, params.folderKey, {
-          path: params.path,
-          access: status.access,
-          requiredDirectories: status.requiredDirectories,
-          requiredFiles: status.requiredFiles,
-        });
+        const nextSettings = setStoredLocalFolder(existing?.settingsJson, params.folderKey, params.path);
         await registry.upsertCompanySettings(pluginId, companyId, {
-          enabled: existing?.enabled ?? true,
           settingsJson: nextSettings,
-          lastError: status.healthy ? null : status.problems.map((item: { message: string }) => item.message).join("; "),
         });
         return status;
       },
@@ -1058,54 +948,62 @@ export function buildHostServices(
 
       async writeTextAtomic(params) {
         const companyId = ensureCompanyId(params.companyId);
-        await preparePluginLocalFolder({
-          folderKey: params.folderKey,
-          declaration: getLocalFolderDeclaration(params.folderKey),
-          storedConfig: await getStoredLocalFolderConfig(companyId, params.folderKey),
+        const declaration = getLocalFolderDeclaration(params.folderKey);
+        const stored = await getStoredLocalFolderConfig(companyId, params.folderKey);
+        if (stored) {
+          await preparePluginLocalFolder({
+            declaration,
+            path: stored.path,
+          });
+        }
+        const status = await inspectPluginLocalFolder({
+          declaration,
+          path: stored?.path ?? null,
         });
-        const status = await inspectStoredLocalFolder(companyId, params.folderKey);
         assertWritableConfiguredLocalFolder(status);
         await writePluginLocalFolderTextAtomic(status.realPath!, params.relativePath, params.contents);
-        return inspectStoredLocalFolder(companyId, params.folderKey);
+        return inspectPluginLocalFolder({ declaration, path: stored!.path });
       },
 
       async deleteFile(params) {
         const companyId = ensureCompanyId(params.companyId);
-        const status = await inspectStoredLocalFolder(companyId, params.folderKey);
+        const declaration = getLocalFolderDeclaration(params.folderKey);
+        const stored = await getStoredLocalFolderConfig(companyId, params.folderKey);
+        const status = await inspectPluginLocalFolder({
+          declaration,
+          path: stored?.path ?? null,
+        });
         assertWritableConfiguredLocalFolder(status);
-        await deletePluginLocalFolderFile(status.realPath!, params.relativePath, params.folderKey);
-        return inspectStoredLocalFolder(companyId, params.folderKey);
+        await deletePluginLocalFolderFile(status.realPath!, params.relativePath);
+        return inspectPluginLocalFolder({ declaration, path: stored!.path });
       },
     },
 
     state: {
       async get(params) {
-        return stateStore.get(pluginId, params.scopeKind as any, params.stateKey, {
-          scopeId: params.scopeId,
+        const scopeId = normalizePluginScopeId(params.scopeKind, params.scopeId);
+        if (params.scopeKind === "company") await ensurePluginAvailableForCompany(scopeId!);
+        return stateStore.get(pluginId, params.scopeKind, params.stateKey, {
+          scopeId: scopeId ?? undefined,
           namespace: params.namespace,
         });
       },
       async set(params) {
-        await stateStore.set(pluginId, {
-          scopeKind: params.scopeKind as any,
-          scopeId: params.scopeId,
-          namespace: params.namespace,
-          stateKey: params.stateKey,
-          value: params.value,
-        });
+        const scopeId = normalizePluginScopeId(params.scopeKind, params.scopeId);
+        if (params.scopeKind === "company") await ensurePluginAvailableForCompany(scopeId!);
+        await stateStore.set(pluginId, params);
       },
       async delete(params) {
-        await stateStore.delete(pluginId, params.scopeKind as any, params.stateKey, {
-          scopeId: params.scopeId,
+        const scopeId = normalizePluginScopeId(params.scopeKind, params.scopeId);
+        if (params.scopeKind === "company") await ensurePluginAvailableForCompany(scopeId!);
+        await stateStore.delete(pluginId, params.scopeKind, params.stateKey, {
+          scopeId: scopeId ?? undefined,
           namespace: params.namespace,
         });
       },
     },
 
     db: {
-      async namespace() {
-        return pluginDb.getRuntimeNamespace(pluginId);
-      },
       async query(params) {
         return pluginDb.query(pluginId, params.sql, params.params);
       },
@@ -1116,10 +1014,25 @@ export function buildHostServices(
 
     entities: {
       async upsert(params) {
-        return registry.upsertEntity(pluginId, params as any) as any;
+        const scopeId = normalizePluginScopeId(params.scopeKind, params.scopeId);
+        const companyId = params.scopeKind === "company" ? scopeId : null;
+        if (companyId) await ensurePluginAvailableForCompany(companyId);
+        const entity = await registry.upsertEntity(pluginId, {
+          ...params,
+          companyId,
+        });
+        return toPluginEntityRecord(entity);
       },
       async list(params) {
-        return registry.listEntities(pluginId, params as any) as any;
+        if (params.scopeId !== undefined && params.scopeKind === undefined) {
+          throw new Error("Plugin entity scopeId requires scopeKind");
+        }
+        if (params.scopeKind !== undefined) {
+          const scopeId = normalizePluginScopeId(params.scopeKind, params.scopeId);
+          if (params.scopeKind === "company") await ensurePluginAvailableForCompany(scopeId!);
+        }
+        const entities = await registry.listEntities(pluginId, params);
+        return entities.map(toPluginEntityRecord);
       },
     },
 
@@ -1128,26 +1041,32 @@ export function buildHostServices(
         if (params.companyId) {
           await ensurePluginAvailableForCompany(params.companyId);
         }
-        await scopedBus.emit(params.name, params.companyId, params.payload);
+        const { errors } = await scopedBus.emit(
+          params.name,
+          params.companyId,
+          params.payload,
+        );
+        for (const { pluginId: subscriberPluginId, error } of errors) {
+          logger.warn(
+            {
+              pluginId: subscriberPluginId,
+              sourcePluginId: pluginId,
+              eventName: params.name,
+              err: error,
+            },
+            "plugin event handler failed",
+          );
+        }
       },
-      async subscribe(params: { eventPattern: string; filter?: Record<string, unknown> | null }) {
-        const handler = async (event: import("@paperclipai/plugin-sdk").PluginEvent) => {
-          if (event.companyId) {
-            try {
-              await ensurePluginAvailableForCompany(event.companyId);
-            } catch (error) {
-              if (error instanceof PluginIssueAuthorizationRejected) return;
-              throw error;
-            }
-          }
-          if (deliverEvent) {
-            await deliverEvent({ event });
-          }
-        };
+      async subscribe(params) {
         if (params.filter) {
-          scopedBus.subscribe(params.eventPattern as any, params.filter as any, handler);
+          scopedBus.subscribe(
+            params.eventPattern,
+            params.filter,
+            deliverSubscribedEvent,
+          );
         } else {
-          scopedBus.subscribe(params.eventPattern as any, handler);
+          scopedBus.subscribe(params.eventPattern, deliverSubscribedEvent);
         }
       },
     },
@@ -1158,8 +1077,7 @@ export function buildHostServices(
         // Resolve once, then connect directly to that IP to prevent DNS rebinding.
         const target = await validateAndResolveFetchUrl(params.url, {
           allowPrivateNetwork:
-            options.manifest?.capabilities.includes("http.private-network")
-            ?? false,
+            options.manifest.capabilities.includes("http.private-network"),
         });
 
         const controller = new AbortController();
@@ -1175,12 +1093,19 @@ export function buildHostServices(
     },
 
     runtimeRecords: {
+      async readSession(params) {
+        const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
+        return options.pluginRuntimeRecordsReader.readSession({
+          ...params,
+          companyId,
+          pluginInstallationId: pluginId,
+          pluginKey,
+        });
+      },
       async readRun(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        if (!options.pluginRuntimeRecordsReader) {
-          throw new Error("Plugin runtime record reader is not configured");
-        }
         return options.pluginRuntimeRecordsReader.readRun({
           ...params,
           companyId,
@@ -1191,23 +1116,12 @@ export function buildHostServices(
       async readIssueComments(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        if (!options.pluginRuntimeRecordsReader) {
-          throw new Error("Plugin runtime record reader is not configured");
-        }
         return options.pluginRuntimeRecordsReader.readIssueComments({
           ...params,
           companyId,
           pluginInstallationId: pluginId,
           pluginKey,
         });
-      },
-    },
-
-    secrets: {
-      async resolve(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        return secretsHandler.resolve({ ...params, companyId });
       },
     },
 
@@ -1219,10 +1133,13 @@ export function buildHostServices(
           companyId,
           actorType: "plugin",
           actorId: pluginId,
-          action: params.message,
+          action: "activity.logged",
           entityType: params.entityType ?? "plugin",
           entityId: params.entityId ?? pluginId,
-          details: pluginActivityDetails(params.metadata),
+          details: pluginActivityDetails({
+            ...(params.metadata ?? {}),
+            message: params.message,
+          }),
         });
       },
     },
@@ -1232,23 +1149,15 @@ export function buildHostServices(
         const safeName = truncStr(String(params.name ?? ""), MAX_METRIC_NAME_LENGTH);
         logger.debug({ pluginId, name: safeName, value: params.value, tags: params.tags }, "Plugin metric write");
 
-        // Persist metrics to plugin_logs via the batch buffer (same path as
-        // logger.log) so they benefit from batched writes and are flushed
-        // reliably on shutdown. Using level "metric" makes them queryable
-        // alongside regular logs via the same API (§26).
-        _logBuffer.push({
-          db,
+        // The RPC acknowledgement follows the durable write. Using level
+        // "metric" keeps metrics queryable through the same operator surface.
+        await db.insert(pluginLogs).values({
           pluginId,
           companyId: params.companyId ?? null,
           level: "metric",
           message: safeName,
           meta: sanitiseMeta({ value: params.value, tags: params.tags ?? null }),
         });
-        if (_logBuffer.length >= LOG_BUFFER_FLUSH_SIZE) {
-          flushPluginLogBuffer().catch((err) => {
-            console.error("[plugin-host-services] Triggered metric flush failed:", err);
-          });
-        }
       },
     },
 
@@ -1283,31 +1192,24 @@ export function buildHostServices(
         else if (level === "debug") pluginLogger.debug(logFields, `[plugin] ${safeMessage}`);
         else pluginLogger.info(logFields, `[plugin] ${safeMessage}`);
 
-        // Persist to plugin_logs table via the module-level batch buffer (§26.1).
-        // Fire-and-forget — logging should never block the worker.
-        _logBuffer.push({
-          db,
+        // A worker log request is acknowledged only after its row is durable.
+        await db.insert(pluginLogs).values({
           pluginId,
           companyId: params.companyId ?? null,
-          level: level ?? "info",
+          level,
           message: safeMessage,
           meta: safeMeta,
         });
-        if (_logBuffer.length >= LOG_BUFFER_FLUSH_SIZE) {
-          flushPluginLogBuffer().catch((err) => {
-            console.error("[plugin-host-services] Triggered log flush failed:", err);
-          });
-        }
       },
     },
 
     companies: {
       async list(params) {
-        return applyWindow((await companies.list()) as Company[], params);
+        return applyWindow(await companies.list(), params);
       },
       async get(params) {
         await ensurePluginAvailableForCompany(params.companyId);
-        return (await companies.getById(params.companyId)) as Company;
+        return companies.getById(params.companyId);
       },
     },
 
@@ -1315,13 +1217,13 @@ export function buildHostServices(
       async list(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        return applyWindow((await projects.list(companyId)) as Project[], params);
+        return applyWindow(await projects.list(companyId), params);
       },
       async get(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         const project = await projects.getById(params.projectId);
-        return (inCompany(project, companyId) ? project : null) as Project | null;
+        return inCompany(project, companyId) ? project : null;
       },
       async listWorkspaces(params) {
         const companyId = ensureCompanyId(params.companyId);
@@ -1368,31 +1270,6 @@ export function buildHostServices(
         };
       },
 
-      async getWorkspaceForIssue(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const issue = await issues.getById(params.issueId);
-        if (!inCompany(issue, companyId)) return null;
-        const projectId = (issue as Record<string, unknown>).projectId as string | null;
-        if (!projectId) return null;
-        const project = await projects.getById(projectId);
-        if (!inCompany(project, companyId)) return null;
-        const row = project.primaryWorkspace;
-        const path = sanitizeWorkspacePath(project.codebase.effectiveLocalFolder);
-        const name = sanitizeWorkspaceName(row?.name ?? project.name, path);
-        return {
-          id: row?.id ?? `${project.id}:managed`,
-          projectId: project.id,
-          name,
-          path,
-          repoUrl: row?.repoUrl ?? project.codebase.repoUrl,
-          repoRef: row?.repoRef ?? project.codebase.repoRef,
-          defaultRef: row?.defaultRef ?? project.codebase.defaultRef,
-          isPrimary: true,
-          createdAt: (row?.createdAt ?? project.createdAt).toISOString(),
-          updatedAt: (row?.updatedAt ?? project.updatedAt).toISOString(),
-        };
-      },
       async getManaged(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
@@ -1577,9 +1454,6 @@ export function buildHostServices(
 
     runIssues: {
       async resolveContext(params) {
-        if (!options.pluginRunIssueContextReader) {
-          throw new Error("Plugin run-serving context is not configured");
-        }
         return options.pluginRunIssueContextReader.resolveContext({
           ...params,
           pluginInstallationId: pluginId,
@@ -1587,9 +1461,6 @@ export function buildHostServices(
         });
       },
       async issueReach(params) {
-        if (!options.pluginRunIssueContextReader) {
-          throw new Error("Plugin run-serving context is not configured");
-        }
         return options.pluginRunIssueContextReader.issueReach({
           ...params,
           pluginInstallationId: pluginId,
@@ -1597,11 +1468,6 @@ export function buildHostServices(
         });
       },
       async listCompanyIssues(params) {
-        if (!options.pluginRunIssueContextReader) {
-          throw new Error(
-            "Plugin run-serving issue context is not configured",
-          );
-        }
         return options.pluginRunIssueContextReader.listCompanyIssues({
           ...params,
           pluginInstallationId: pluginId,
@@ -1609,11 +1475,6 @@ export function buildHostServices(
         });
       },
       async listSubIssues(params) {
-        if (!options.pluginRunIssueContextReader) {
-          throw new Error(
-            "Plugin run-serving issue context is not configured",
-          );
-        }
         return options.pluginRunIssueContextReader.listSubIssues({
           ...params,
           pluginInstallationId: pluginId,
@@ -1621,11 +1482,6 @@ export function buildHostServices(
         });
       },
       async readIssueComments(params) {
-        if (!options.pluginRunIssueContextReader) {
-          throw new Error(
-            "Plugin run-serving issue context is not configured",
-          );
-        }
         return options.pluginRunIssueContextReader.readIssueComments({
           ...params,
           pluginInstallationId: pluginId,
@@ -1633,11 +1489,6 @@ export function buildHostServices(
         });
       },
       async readIssueAgentRun(params) {
-        if (!options.pluginRunIssueContextReader) {
-          throw new Error(
-            "Plugin run-serving issue context is not configured",
-          );
-        }
         return options.pluginRunIssueContextReader.readIssueAgentRun({
           ...params,
           pluginInstallationId: pluginId,
@@ -1652,7 +1503,7 @@ export function buildHostServices(
         await ensurePluginAvailableForCompany(companyId);
         const rows = await agents.list(companyId);
         return applyWindow(
-          rows.filter((agent) => !params.status || agent.status === params.status) as Agent[],
+          rows.filter((agent) => !params.status || agent.status === params.status),
           params,
         );
       },
@@ -1660,27 +1511,31 @@ export function buildHostServices(
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         const agent = await agents.getById(params.agentId);
-        return (inCompany(agent, companyId) ? agent : null) as Agent | null;
+        return inCompany(agent, companyId) ? agent : null;
       },
       async pause(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         const agent = await agents.getById(params.agentId);
         requireInCompany("Agent", agent, companyId);
-        return (await agents.pause(params.agentId, {
+        const updated = await agents.pause(params.agentId, {
           actor: { kind: "system" },
           issueExecutionCancellation: options.issueExecutionCancellation,
-        })) as Agent;
+        });
+        if (!updated) throw new Error("Agent not found after pause");
+        return updated;
       },
       async resume(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         const agent = await agents.getById(params.agentId);
         requireInCompany("Agent", agent, companyId);
-        return (await agents.resume(
+        const updated = await agents.resume(
           params.agentId,
           options.issueExecutionCancellation,
-        )) as Agent;
+        );
+        if (!updated) throw new Error("Agent not found after resume");
+        return updated;
       },
       async managedGet(params) {
         const companyId = ensureCompanyId(params.companyId);
@@ -1708,7 +1563,7 @@ export function buildHostServices(
           rows.filter((goal) =>
             (!params.level || goal.level === params.level) &&
             (!params.status || goal.status === params.status),
-          ) as Goal[],
+          ),
           params,
         );
       },
@@ -1716,25 +1571,27 @@ export function buildHostServices(
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         const goal = await goals.getById(params.goalId);
-        return (inCompany(goal, companyId) ? goal : null) as Goal | null;
+        return inCompany(goal, companyId) ? goal : null;
       },
       async create(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        return (await goals.create(companyId, {
+        return goals.create(companyId, {
           title: params.title,
           description: params.description,
-          level: params.level as any,
-          status: params.status as any,
+          level: params.level,
+          status: params.status,
           parentId: params.parentId,
           ownerAgentId: params.ownerAgentId,
-        })) as Goal;
+        });
       },
       async update(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         requireInCompany("Goal", await goals.getById(params.goalId), companyId);
-        return (await goals.update(params.goalId, params.patch as any)) as Goal;
+        const updated = await goals.update(params.goalId, params.patch);
+        if (!updated) throw new Error("Goal not found");
+        return updated;
       },
     },
 
@@ -1811,40 +1668,15 @@ export function buildHostServices(
       async createInvite(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        const normalizedAgentMessage = typeof params.agentMessage === "string"
-          ? params.agentMessage.trim() || null
-          : null;
-        const allowedJoinTypes = params.allowedJoinTypes ?? "both";
-        const humanRole = allowedJoinTypes === "agent" ? null : params.humanRole ?? "operator";
-        const insertValues = {
-          companyId,
-          inviteType: "company_join" as const,
-          allowedJoinTypes,
-          defaultsPayload: mergeInviteDefaults(params.defaultsPayload ?? null, normalizedAgentMessage, humanRole),
-          expiresAt: new Date(Date.now() + COMPANY_INVITE_TTL_MS),
-          source: "plugin_host" as const,
-          invitedByUserId: null,
-        };
-        let token: string | null = null;
-        let created: typeof invites.$inferSelect | null = null;
-        for (let attempt = 0; attempt < INVITE_TOKEN_MAX_RETRIES; attempt += 1) {
-          const candidateToken = createInviteToken();
-          try {
-            created = await db
-              .insert(invites)
-              .values({
-                ...insertValues,
-                tokenHash: hashToken(candidateToken),
-              })
-              .returning()
-              .then((rows) => rows[0] ?? null);
-            token = candidateToken;
-            break;
-          } catch (error) {
-            if (!isInviteTokenHashCollisionError(error)) throw error;
-          }
-        }
-        if (!token || !created) throw new Error("Failed to generate a unique invite token");
+        const { token, invite: created, normalizedAgentMessage } =
+          await createCompanyInvite(db, {
+            companyId,
+            provenance: { source: "plugin_host" },
+            allowedJoinTypes: params.allowedJoinTypes,
+            humanRole: params.humanRole,
+            defaultsPayload: params.defaultsPayload,
+            agentMessage: params.agentMessage,
+          });
         await logPluginActivity({
           companyId,
           action: "invite.created_by_plugin",
@@ -1872,9 +1704,15 @@ export function buildHostServices(
         const revoked = await db
           .update(invites)
           .set({ revokedAt: new Date(), updatedAt: new Date() })
-          .where(eq(invites.id, invite.id))
+          .where(and(
+            eq(invites.id, invite.id),
+            eq(invites.companyId, companyId),
+            isNull(invites.revokedAt),
+            isNull(invites.acceptedAt),
+          ))
           .returning()
-          .then((rows) => rows[0] ?? invite);
+          .then((rows) => rows[0] ?? null);
+        if (!revoked) throw new Error("Invite was not revoked");
         await logPluginActivity({
           companyId,
           action: "invite.revoked_by_plugin",
@@ -1983,9 +1821,9 @@ export function buildHostServices(
       async updatePolicy(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        if (params.resourceType === "agent") {
+        if (params.resourceType !== "project" && params.resourceType !== "issue") {
           throw new Error(
-            "Plugins cannot overwrite board-owned agent governance or grants.",
+            "Plugin authorization policy updates only support project or issue resources.",
           );
         }
         const policy = params.policy ? sanitizeRecord(params.policy) : null;
@@ -2011,10 +1849,6 @@ export function buildHostServices(
             .update(issuesTable)
             .set({ executionPolicy, updatedAt: new Date() })
             .where(eq(issuesTable.id, issue.id));
-        } else {
-          const company = await companies.getById(params.resourceId);
-          if (!company || company.id !== companyId) throw new Error("Company not found");
-          throw new Error("Company authorization policy updates are not supported by the current core schema");
         }
         await logPluginActivity({
           companyId,
@@ -2028,19 +1862,6 @@ export function buildHostServices(
         return updated;
       },
       async previewAssignment(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        return authorization.decide({
-          actor: await resolvePluginTargetManagementSubject(params.subject),
-          action: "agent_config:update",
-          resource: { type: "agent", companyId, agentId: params.targetAgentId },
-          scope: {
-            requiresChangeGrant: true,
-            targetAgentId: params.targetAgentId,
-          },
-        });
-      },
-      async explainAssignment(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         return authorization.decide({
@@ -2086,17 +1907,12 @@ export function buildHostServices(
       },
     },
 
-    /** Release plugin event subscriptions and flush buffered log entries. */
-    dispose() {
+    /** Release plugin event subscriptions owned by this worker runtime. */
+    async dispose() {
       registeredCreatorCallbacks.clear();
       // Clear event bus subscriptions to prevent accumulation on worker restart.
       // Without this, each crash/restart cycle adds duplicate subscriptions.
       scopedBus.clear();
-
-      // Flush any buffered log entries synchronously-as-possible on dispose.
-      flushPluginLogBuffer().catch((err) => {
-        console.error("[plugin-host-services] dispose() log flush failed:", err);
-      });
     },
   };
 }

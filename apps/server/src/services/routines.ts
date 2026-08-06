@@ -800,7 +800,7 @@ export function routineService(
         id: row.id,
         pluginId: row.pluginId,
         pluginKey: row.pluginKey,
-        pluginDisplayName: row.manifestJson.displayName ?? row.pluginKey,
+        pluginDisplayName: row.manifestJson.displayName,
         resourceKind: "routine",
         resourceKey: row.resourceKey,
         defaultsJson: row.defaultsJson,

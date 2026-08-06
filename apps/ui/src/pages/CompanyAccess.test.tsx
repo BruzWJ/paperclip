@@ -4,14 +4,12 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CompanyAccess, CompanyAccessLegacyRoute } from "./CompanyAccess";
+import { CompanyAccess } from "./CompanyAccess";
 
 const listMembersMock = vi.hoisted(() => vi.fn());
 const listJoinRequestsMock = vi.hoisted(() => vi.fn());
 const updateMemberMock = vi.hoisted(() => vi.fn());
 const archiveMemberMock = vi.hoisted(() => vi.fn());
-const mockUsePluginSlots = vi.hoisted(() => vi.fn());
-const mockNavigate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/api/access", () => ({
   accessApi: {
@@ -26,18 +24,6 @@ vi.mock("@/api/access", () => ({
     approveJoinRequest: vi.fn(),
     rejectJoinRequest: vi.fn(),
   },
-}));
-
-vi.mock("@/lib/router", () => ({
-  Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={to}>{children}</a>,
-  Navigate: ({ to, replace }: { to: string; replace?: boolean }) => {
-    mockNavigate(to, replace);
-    return <div data-testid="navigate">{to}</div>;
-  },
-}));
-
-vi.mock("@/plugins/slots", () => ({
-  usePluginSlots: mockUsePluginSlots,
 }));
 
 vi.mock("@/context/CompanyContext", () => ({
@@ -148,11 +134,6 @@ describe("CompanyAccess", () => {
     ]);
     updateMemberMock.mockResolvedValue({});
     archiveMemberMock.mockResolvedValue({ archived: true });
-    mockUsePluginSlots.mockReturnValue({
-      slots: [],
-      isLoading: false,
-      ["error" + "Message"]: null,
-    });
   });
 
   afterEach(() => {
@@ -366,64 +347,4 @@ describe("CompanyAccess", () => {
     });
   });
 
-  it("redirects legacy access deep links to the permissions extension route when installed", async () => {
-    mockUsePluginSlots.mockReturnValue({
-      slots: [
-        {
-          type: "companySettingsPage",
-          id: "permissions",
-          displayName: "Permissions",
-          routePath: "permissions",
-          pluginKey: "permissions-extension",
-        },
-      ],
-      isLoading: false,
-      ["error" + "Message"]: null,
-    });
-    const root = createRoot(container);
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <CompanyAccessLegacyRoute />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-
-    expect(mockNavigate).toHaveBeenCalledWith("/company/settings/permissions", true);
-    expect(container.textContent).toContain("/company/settings/permissions");
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
-
-  it("shows a read-only unavailable fallback for legacy access deep links", async () => {
-    const root = createRoot(container);
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <CompanyAccessLegacyRoute />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-
-    expect(container.textContent).toContain("Advanced Permissions");
-    expect(container.textContent).toContain("Advanced permissions unavailable");
-    expect(container.textContent).toContain("Open Members");
-    expect(container.textContent).toContain("Open Invites");
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
 });

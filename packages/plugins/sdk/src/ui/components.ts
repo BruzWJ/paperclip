@@ -95,32 +95,6 @@ export interface DataTableProps<T = Record<string, unknown>> {
   onSort?: (key: string, direction: "asc" | "desc") => void;
 }
 
-/** A single data point for `TimeseriesChart`. */
-export interface TimeseriesDataPoint {
-  /** ISO 8601 timestamp. */
-  timestamp: string;
-  /** Numeric value. */
-  value: number;
-  /** Optional label for the point. */
-  label?: string;
-}
-
-/** Props for `TimeseriesChart`. */
-export interface TimeseriesChartProps {
-  /** Series data. */
-  data: TimeseriesDataPoint[];
-  /** Chart title. */
-  title?: string;
-  /** Y-axis label. */
-  yLabel?: string;
-  /** Chart type. Defaults to `"line"`. */
-  type?: "line" | "bar";
-  /** Height of the chart in pixels. Defaults to `200`. */
-  height?: number;
-  /** Whether the chart is currently loading. */
-  loading?: boolean;
-}
-
 /** Props for `MarkdownBlock`. */
 export interface MarkdownBlockProps {
   /** Markdown content to render. */
@@ -171,56 +145,6 @@ export interface KeyValueListProps {
   pairs: KeyValuePair[];
 }
 
-/** A single action button for `ActionBar`. */
-export interface ActionBarItem {
-  /** Button label. */
-  label: string;
-  /** Action key to call via the plugin bridge. */
-  actionKey: string;
-  /** Optional parameters to pass to the action handler. */
-  params?: Record<string, unknown>;
-  /** Button variant. Defaults to `"default"`. */
-  variant?: "default" | "primary" | "destructive";
-  /** Whether to show a confirmation dialog before executing. */
-  confirm?: boolean;
-  /** Text for the confirmation dialog (used when `confirm` is true). */
-  confirmMessage?: string;
-}
-
-/** Props for `ActionBar`. */
-export interface ActionBarProps {
-  /** Action definitions. */
-  actions: ActionBarItem[];
-  /** Called after an action succeeds. Use to trigger data refresh. */
-  onSuccess?: (actionKey: string, result: unknown) => void;
-  /** Called when an action fails. */
-  onError?: (actionKey: string, error: unknown) => void;
-}
-
-/** A single log line for `LogView`. */
-export interface LogViewEntry {
-  /** ISO 8601 timestamp. */
-  timestamp: string;
-  /** Log level. */
-  level: "info" | "warn" | "error" | "debug";
-  /** Log message. */
-  message: string;
-  /** Optional structured metadata. */
-  meta?: Record<string, unknown>;
-}
-
-/** Props for `LogView`. */
-export interface LogViewProps {
-  /** Log entries to display. */
-  entries: LogViewEntry[];
-  /** Maximum height of the scrollable container (CSS value). Defaults to `"400px"`. */
-  maxHeight?: string;
-  /** Whether to auto-scroll to the latest entry. */
-  autoScroll?: boolean;
-  /** Whether the log is currently loading. */
-  loading?: boolean;
-}
-
 /** Props for `JsonTree`. */
 export interface JsonTreeProps {
   /** The data to render as a collapsible JSON tree. */
@@ -261,13 +185,10 @@ export interface FileTreeNode {
   action?: string | null;
 }
 
-/** Badge status variants supported by `FileTree`. */
-export type FileTreeBadgeVariant = "ok" | "warning" | "error" | "info" | "pending";
-
 /** Serializable badge metadata keyed by file path. */
 export interface FileTreeBadge {
   label: string;
-  status: FileTreeBadgeVariant;
+  status: StatusBadgeVariant;
   tooltip?: string;
 }
 
@@ -488,13 +409,6 @@ export const StatusBadge = createSdkUiComponent<StatusBadgeProps>("StatusBadge")
 export const DataTable = createSdkUiComponent<DataTableProps>("DataTable");
 
 /**
- * Line or bar chart for time-series data.
- *
- * @see PLUGIN_SPEC.md §19.6 — Shared Components
- */
-export const TimeseriesChart = createSdkUiComponent<TimeseriesChartProps>("TimeseriesChart");
-
-/**
  * Renders Markdown text as HTML.
  *
  * @see PLUGIN_SPEC.md §19.6 — Shared Components
@@ -514,20 +428,6 @@ export const MarkdownEditor = createSdkUiComponent<MarkdownEditorProps>("Markdow
  * @see PLUGIN_SPEC.md §19.6 — Shared Components
  */
 export const KeyValueList = createSdkUiComponent<KeyValueListProps>("KeyValueList");
-
-/**
- * Row of action buttons wired to the plugin bridge's `performAction` handlers.
- *
- * @see PLUGIN_SPEC.md §19.6 — Shared Components
- */
-export const ActionBar = createSdkUiComponent<ActionBarProps>("ActionBar");
-
-/**
- * Scrollable, timestamped log output viewer.
- *
- * @see PLUGIN_SPEC.md §19.6 — Shared Components
- */
-export const LogView = createSdkUiComponent<LogViewProps>("LogView");
 
 /**
  * Collapsible JSON tree for debugging or raw data inspection.

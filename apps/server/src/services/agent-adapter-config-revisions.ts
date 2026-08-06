@@ -445,7 +445,7 @@ export function deriveAgentAdapterConfigRevision(input: {
   }
   if (input.skillChannel === "isolated_skills_home") {
     throw unprocessable(
-      "ACPX public runtime does not expose a generic isolated skills-home contract. Select operator_native skills for this ACPX agent.",
+      "This local agent runtime does not support isolated skills homes. Select operator_native skills.",
       {
         code: "acpx_isolated_skills_home_unsupported",
         adapterType: input.adapterType,

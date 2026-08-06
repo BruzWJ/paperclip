@@ -32,6 +32,8 @@ import type {
   PluginRuntimeRecordsReader,
 } from "./plugin-host-services.js";
 import type { IssueExecutionRunService } from "./issue-execution-run-service.js";
+import type { IssueSessionStore } from "./issue-session/store.js";
+import { createPluginCanonicalSessionReader } from "./plugin-canonical-session-reader.js";
 
 export interface PostgresPromptCapabilityRuntimeOptions {
   /**
@@ -48,6 +50,8 @@ export interface PostgresPromptCapabilityRuntimeOptions {
    * authenticated independently from the prompt-capability bearer.
    */
   cursorSecret: string;
+  /** Canonical redacted Session read authority shared with runtime plugins. */
+  issueSessionStore: IssueSessionStore;
   actions: RuntimeActionPort;
   companyTools: RuntimeCompanyToolPort;
   pluginTools: RuntimePluginToolPort;
@@ -207,7 +211,14 @@ export function createPostgresPromptCapabilityRuntime(
   const privilegedRuntimeDial = Object.freeze(
     Object.fromEntries(AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, true])),
   ) as Record<(typeof AGENT_CONTEXT_GRANT_KEYS)[number], boolean>;
+  const canonicalSessions = createPluginCanonicalSessionReader(
+    db,
+    options.issueSessionStore,
+  );
   const pluginRuntimeRecordsReader: PluginRuntimeRecordsReader = {
+    readSession(input) {
+      return canonicalSessions.readSession(input);
+    },
     async readRun(input) {
       const run = await retrievalRepository.runIssue({
         companyId: input.companyId,

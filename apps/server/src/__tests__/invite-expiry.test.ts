@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { companyInviteExpiresAt } from "../routes/access.js";
+import { companyInviteExpiresAt } from "../services/company-invite-creation.js";
 
 describe("companyInviteExpiresAt", () => {
   it("sets invite expiration to 72 hours after invite creation time", () => {

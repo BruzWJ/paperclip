@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import type { CompanyStatus, PauseReason } from "@paperclipai/shared";
 import {
   bigint,
   boolean,
@@ -26,8 +27,8 @@ export const companies = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
     description: text("description"),
-    status: text("status").notNull().default("active"),
-    pauseReason: text("pause_reason"),
+    status: text("status").$type<CompanyStatus>().notNull().default("active"),
+    pauseReason: text("pause_reason").$type<PauseReason>(),
     pausedAt: timestamp("paused_at", { withTimezone: true }),
     issuePrefix: text("issue_prefix").notNull().default("PAP"),
     issueCounter: integer("issue_counter").notNull().default(0),

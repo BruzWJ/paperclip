@@ -139,8 +139,8 @@ const plugin = definePlugin({
       };
     });
 
-    ctx.actions.register("initialize-smoke", async (params) => {
-      const companyId = stringField(params.companyId);
+    ctx.actions.register("initialize-smoke", async (params, context) => {
+      const companyId = context.actor.companyId;
       const issueId = stringField(params.issueId);
       if (!companyId || !issueId) throw new Error("companyId and issueId are required");
       if (!initializeSmoke) throw new Error("Smoke initializer is not ready");

@@ -43,6 +43,9 @@ import {
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
 import { choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
+import { createPluginEventBus } from "./services/plugin-event-bus.js";
+import { createPluginDomainEventPublisher } from "./services/plugin-domain-event-publisher.js";
+import { createPostgresPluginBeforePromptDispatcher } from "./services/plugin-before-prompt-dispatcher.js";
 import { createDevServerRestartCoordinator } from "./services/dev-server-restart-coordinator.js";
 import { environmentRuntimeService } from "./services/environment-runtime.js";
 import { environmentRunOrchestrator } from "./services/environment-run-orchestrator.js";
@@ -53,10 +56,15 @@ import { initTelemetry, getTelemetryClient } from "./telemetry.js";
 import { conflict } from "./errors.js";
 import { loadRuntimeEnvironmentFiles } from "./runtime-environment.js";
 import { deriveInstancePrivateSecret } from "./secrets/local-encrypted-provider.js";
+import {
+  resolvePaperclipInstanceId,
+  resolvePaperclipInstanceRoot,
+} from "./home-paths.js";
+import { serverVersion } from "./version.js";
 import type { ToolGatewayService } from "./services/tool-gateway.js";
-import type {
-  RuntimeCompanyToolPort,
-  RuntimePluginToolPort,
+import {
+  createRuntimePluginToolPort,
+  type RuntimeCompanyToolPort,
 } from "./services/runtime-tool-executor.js";
 import { createIssueExecutionSteeringResultBroker } from "./services/issue-execution-steering-results.js";
 import type {
@@ -137,6 +145,11 @@ export async function startServer(): Promise<StartedServer> {
   // connection or the HTTP server exists — see instrumentation.ts.
   await instrumentationReady;
   let config = loadConfig();
+  const instanceId = resolvePaperclipInstanceId();
+  const localPluginDir = resolve(
+    resolvePaperclipInstanceRoot({ instanceId }),
+    "plugins",
+  );
   initTelemetry({ enabled: config.telemetryEnabled });
   if (process.env.PAPERCLIP_SECRETS_PROVIDER === undefined) {
     process.env.PAPERCLIP_SECRETS_PROVIDER = config.secretsProvider;
@@ -276,6 +289,12 @@ export async function startServer(): Promise<StartedServer> {
     }
   };
   const pluginWorkerManager = createPluginWorkerManager();
+  const pluginEventBus = createPluginEventBus();
+  const pluginDomainEvents = createPluginDomainEventPublisher(pluginEventBus);
+  const pluginBeforePrompt = createPostgresPluginBeforePromptDispatcher(
+    db as any,
+    pluginWorkerManager,
+  );
   const runtimeListenHost = config.host;
   const runtimeApiUrl = choosePrimaryRuntimeApiUrl({
     authPublicBaseUrl: config.authPublicBaseUrl ?? null,
@@ -380,19 +399,9 @@ export async function startServer(): Promise<StartedServer> {
       });
     },
   };
-  let executePromptCapabilityPluginTool:
-    | RuntimePluginToolPort["execute"]
-    | null = null;
-  const promptCapabilityPluginTools: RuntimePluginToolPort = {
-    execute(input) {
-      if (!executePromptCapabilityPluginTool) {
-        throw new Error(
-          "Prompt-capability plugin-tool executor is not initialized",
-        );
-      }
-      return executePromptCapabilityPluginTool(input);
-    },
-  };
+  const promptCapabilityPluginTools = createRuntimePluginToolPort(
+    pluginWorkerManager,
+  );
   // Warm the ACPX catalog without making server availability depend on every
   // locally configured provider CLI completing a probe. All selectable paths
   // (catalog reads, configuration, approval, and execution readiness) refresh
@@ -438,6 +447,8 @@ export async function startServer(): Promise<StartedServer> {
         actions,
         companyTools: promptCapabilityCompanyTools,
         pluginTools: promptCapabilityPluginTools,
+        pluginDomainEvents,
+        beforePrompt: pluginBeforePrompt,
         steeringResults: issueExecutionSteeringResults,
       },
     );
@@ -516,10 +527,15 @@ export async function startServer(): Promise<StartedServer> {
     bindHost: config.host,
     authReady,
     companyDeletionEnabled: config.companyDeletionEnabled,
+    instanceId,
+    hostVersion: serverVersion,
+    localPluginDir,
     pluginMigrationDb: pluginMigrationDb as any,
     betterAuthHandler,
     resolveSession,
     pluginWorkerManager,
+    pluginEventBus,
+    pluginDomainEvents,
     promptCapabilityGateway:
       issueExecution.promptCapabilities.gateway,
     pluginRunIssueContextReader:
@@ -529,9 +545,6 @@ export async function startServer(): Promise<StartedServer> {
     issueSessionStore,
     bindPromptCapabilityCompanyTools(execute) {
       executePromptCapabilityTool = execute;
-    },
-    bindPromptCapabilityPluginTools(execute) {
-      executePromptCapabilityPluginTool = execute;
     },
     ordinaryIssueRuntime: ordinaryIssues,
     issueExecutionRunService: issueExecution.runService,
@@ -856,8 +869,14 @@ export async function startServer(): Promise<StartedServer> {
         );
       }
 
-      const appShutdown = (app as { locals?: { paperclipShutdown?: () => void } }).locals?.paperclipShutdown;
-      appShutdown?.();
+      const appShutdown = (
+        app as { locals?: { paperclipShutdown?: () => Promise<void> } }
+      ).locals?.paperclipShutdown;
+      try {
+        await appShutdown?.();
+      } catch (err) {
+        logger.error({ err }, "Failed to shut down application services cleanly");
+      }
 
       try {
         await Promise.all(

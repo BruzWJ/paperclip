@@ -7,11 +7,12 @@ The ACPX public runtime is Paperclip's only AI execution path. ACPX runs the
 selected compatible local CLI (including CLIs that are not ACP-native) and
 exposes its generic runtime/session contract to Paperclip.
 
-ACPX is Paperclip's sole agent catalog supplier. At runtime Paperclip asks the
-ACPX CLI for its resolved `agents` configuration, opens a temporary discarded
-ACPX session for each exact configured candidate, and surfaces only candidates
-that initialize successfully. ACPX's unconfigured built-in shortcuts are not
-catalog membership. The agent name, models, configuration fields, choices, and
+ACPX is Paperclip's sole agent catalog supplier. At runtime Paperclip loads the
+ACPX registry and its resolved launch overrides, filters out entries that would
+need to materialize an absent local CLI, opens a temporary discarded ACPX
+session for each remaining candidate, and surfaces only candidates that
+initialize successfully. A built-in registry name alone is not local
+availability. The agent name, models, configuration fields, choices, and
 defaults are ACPX data; Paperclip does not maintain a parallel agent, model,
 frontend, or provider catalog.
 

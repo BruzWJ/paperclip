@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import * as React from "react";
 import * as ReactDOM from "react-dom";
+import * as ReactDOMClient from "react-dom/client";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   FileTree as SdkFileTree,
   ManagedRoutinesList as SdkManagedRoutinesList,
@@ -18,12 +19,20 @@ import { SidebarProvider, useSidebar } from "@/context/SidebarContext";
 import {
   PluginBridgeContext,
   resolveHostNavigationHref,
+  serializePluginBridgeParams,
   shouldHandleHostNavigationClick,
   useHostNavigation,
   type PluginBridgeContextValue,
 } from "./bridge";
 import { initPluginBridge } from "./bridge-init";
-import { _createReactShimSourceForTests } from "./slots";
+import {
+  _createBridgeModuleShimSourceForTests,
+  _rewriteBareSpecifiersForTests,
+} from "./slots";
+
+vi.mock("@/components/MarkdownEditor", () => ({
+  MarkdownEditor: () => null,
+}));
 
 function clickEvent(
   overrides: Partial<ReactMouseEvent<HTMLAnchorElement>> = {},
@@ -77,6 +86,32 @@ describe("plugin host navigation", () => {
   });
 });
 
+describe("plugin bridge parameter serialization", () => {
+  it("canonicalizes nested object keys recursively", () => {
+    expect(serializePluginBridgeParams({
+      z: [{ beta: 2, alpha: 1 }],
+      a: { two: true, one: false },
+    })).toBe(serializePluginBridgeParams({
+      a: { one: false, two: true },
+      z: [{ alpha: 1, beta: 2 }],
+    }));
+  });
+
+  it("distinguishes nested keys and values", () => {
+    const baseline = serializePluginBridgeParams({ query: { issueId: "issue-1" } });
+    expect(serializePluginBridgeParams({ query: { issueId: "issue-2" } })).not.toBe(baseline);
+    expect(serializePluginBridgeParams({ query: { runId: "issue-1" } })).not.toBe(baseline);
+  });
+
+  it("rejects circular and non-JSON values", () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(() => serializePluginBridgeParams(circular)).toThrow("circular references");
+    expect(() => serializePluginBridgeParams({ value: undefined })).toThrow("undefined values");
+    expect(() => serializePluginBridgeParams({ value: new Date() })).toThrow("plain objects");
+  });
+});
+
 describe("useHostNavigation mobile drawer behavior", () => {
   // React 19's `act` requires the env flag and React DOM client.
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -88,9 +123,11 @@ describe("useHostNavigation mobile drawer behavior", () => {
         companyId: "co",
         companyPrefix: "PAP",
         projectId: null,
+        projectRef: null,
         entityId: null,
         entityType: null,
         userId: null,
+        renderEnvironment: null,
       },
     };
   }
@@ -225,7 +262,7 @@ describe("plugin SDK FileTree bridge", () => {
   ];
 
   it("injects the host FileTree implementation through the bridge runtime", () => {
-    initPluginBridge(React, ReactDOM);
+    initPluginBridge(React, ReactDOM, ReactDOMClient);
 
     const html = renderToStaticMarkup(
       React.createElement(SdkFileTree, {
@@ -242,44 +279,27 @@ describe("plugin SDK FileTree bridge", () => {
     expect(html).toContain("index.md");
   });
 
-  it("throws a clear error when the host FileTree implementation is missing", () => {
-    globalThis.__paperclipPluginBridge__ = {
-      react: React,
-      reactDom: ReactDOM,
-      sdkUi: {},
-    };
-
-    expect(() =>
-      renderToStaticMarkup(
-        React.createElement(SdkFileTree, {
-          nodes,
-          expandedPaths: ["wiki"],
-          onToggleDir: () => undefined,
-          onSelectFile: () => undefined,
-        }),
-      ),
-    ).toThrow('Paperclip plugin UI runtime is not initialized for "FileTree"');
-  });
 });
 
 describe("plugin SDK markdown component bridge", () => {
   it("injects markdown display and editor components through the bridge runtime", () => {
-    initPluginBridge(React, ReactDOM);
+    initPluginBridge(React, ReactDOM, ReactDOMClient);
 
-    const registry = globalThis.__paperclipPluginBridge__?.sdkUi ?? {};
-    expect(registry.MarkdownBlock).toBeTypeOf("function");
-    expect(registry.MarkdownEditor).toBeTypeOf("function");
-    expect(registry.IssuesList).toBeTypeOf("function");
-    expect(registry.OwnerPicker).toBeTypeOf("function");
-    expect(registry.ProjectPicker).toBeTypeOf("function");
-    expect(registry.ManagedRoutinesList).toBeTypeOf("function");
+    const registry = globalThis.__paperclipPluginBridge__?.sdkUi;
+    expect(registry?.MarkdownBlock).toBeTypeOf("function");
+    expect(registry?.MarkdownEditor).toBeTypeOf("function");
+    expect(registry?.IssuesList).toBeTypeOf("function");
+    expect(registry?.OwnerPicker).toBeTypeOf("function");
+    expect(registry?.ProjectPicker).toBeTypeOf("function");
+    expect(registry?.ManagedRoutinesList).toBeTypeOf("function");
   });
 
   it("renders plugin-provided markdown components when registered by the host", () => {
+    initPluginBridge(React, ReactDOM, ReactDOMClient);
     globalThis.__paperclipPluginBridge__ = {
-      react: React,
-      reactDom: ReactDOM,
+      ...globalThis.__paperclipPluginBridge__!,
       sdkUi: {
+        ...globalThis.__paperclipPluginBridge__!.sdkUi,
         MarkdownBlock: ({ content, enableWikiLinks, wikiLinkRoot }: { content: string; enableWikiLinks?: boolean; wikiLinkRoot?: string }) =>
           React.createElement("article", {
             "data-wiki-links": enableWikiLinks ? "true" : "false",
@@ -308,19 +328,56 @@ describe("plugin SDK markdown component bridge", () => {
 });
 
 describe("plugin React shim", () => {
-  it("re-exports every named export from the host React module", () => {
-    const source = _createReactShimSourceForTests(React);
+  it.each([
+    ["React", React, "globalThis.__paperclipPluginBridge__?.react"],
+    ["ReactDOM", ReactDOM, "globalThis.__paperclipPluginBridge__?.reactDom"],
+    ["ReactDOM client", ReactDOMClient, "globalThis.__paperclipPluginBridge__?.reactDomClient"],
+  ])("re-exports every named export from the host %s module", (_name, module, bridgeExpression) => {
+    const source = _createBridgeModuleShimSourceForTests(
+      module,
+      bridgeExpression,
+      "missing",
+    );
 
-    for (const name of Object.keys(React).sort()) {
+    for (const name of Object.keys(module).sort()) {
       if (name === "default") continue;
       if (!/^[A-Za-z_$][\w$]*$/.test(name)) continue;
-      expect(source).toContain(`export const ${name} = R.${name};`);
+      expect(source).toContain(`export const ${name} = M.${name};`);
     }
 
-    expect(source).toContain("export default R;");
-    expect(source).toContain("export const useInsertionEffect = R.useInsertionEffect;");
-    expect(source).toContain("export const useId = R.useId;");
-    expect(source).toContain("export const useSyncExternalStore = R.useSyncExternalStore;");
-    expect(source).toContain("export const startTransition = R.startTransition;");
+    expect(source).toContain("export default M.default;");
+  });
+
+  it("rewrites only the canonical plugin SDK UI subpath", () => {
+    initPluginBridge(React, ReactDOM, ReactDOMClient);
+    const canonical = 'import { usePluginData } from "@paperclipai/plugin-sdk/ui";';
+    const nonCanonicalSpecifiers = [
+      'import { usePluginData } from "@paperclipai/plugin-sdk";',
+      'import { usePluginData } from "@paperclipai/plugin-sdk/ui/hooks";',
+      'import type { PluginHostContext } from "@paperclipai/plugin-sdk/ui/types";',
+    ];
+
+    expect(_rewriteBareSpecifiersForTests(canonical)).not.toContain('from "@paperclipai/plugin-sdk/ui"');
+    for (const source of nonCanonicalSpecifiers) {
+      expect(_rewriteBareSpecifiersForTests(source)).toBe(source);
+    }
+  });
+
+  it("re-exports the exact canonical SDK UI runtime without a default or component fallbacks", () => {
+    const sdkUi = {
+      useHostContext: () => null,
+      MetricCard: () => null,
+    };
+    const source = _createBridgeModuleShimSourceForTests(
+      sdkUi,
+      "globalThis.__paperclipPluginBridge__?.sdkUi",
+      "missing",
+    );
+
+    expect(source).toContain("export const MetricCard = M.MetricCard;");
+    expect(source).toContain("export const useHostContext = M.useHostContext;");
+    expect(source).not.toContain("export default");
+    expect(source).not.toContain("fallback");
+    expect(source).not.toContain("MissingPaperclipSdkUiComponent");
   });
 });

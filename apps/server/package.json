@@ -40,7 +40,7 @@
     "dev": "tsx src/runtime-entry.ts",
     "dev:watch": "tsx ./scripts/dev-watch.ts",
     "prepare:ui-dist": "bash ../../scripts/prepare-server-ui-dist.sh",
-    "build": "pnpm run clean && tsc && mkdir -p dist/onboarding-assets dist/built-ins && if [ -d src/onboarding-assets ]; then cp -R src/onboarding-assets/. dist/onboarding-assets/; fi && if [ -d src/built-ins ]; then cp -R src/built-ins/. dist/built-ins/; fi",
+    "build": "pnpm run clean && tsc && mkdir -p dist/onboarding-assets && if [ -d src/onboarding-assets ]; then cp -R src/onboarding-assets/. dist/onboarding-assets/; fi",
     "prepack": "pnpm run prepare:ui-dist",
     "postpack": "rm -rf ui-dist",
     "clean": "rm -rf dist",

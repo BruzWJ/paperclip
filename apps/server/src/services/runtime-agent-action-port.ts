@@ -9,10 +9,10 @@ import {
   type RuntimeAgentConfigurationService,
 } from "./runtime-agent-configuration.js";
 import {
-  RuntimeToolArgumentsInvalid,
   type RuntimeActionInvocation,
   type RuntimeActionPort,
 } from "./runtime-tool-executor.js";
+import { RuntimeToolArgumentsInvalid } from "./runtime-interface-compiler.js";
 
 export type RuntimeAgentActionPort = Pick<
   RuntimeActionPort,

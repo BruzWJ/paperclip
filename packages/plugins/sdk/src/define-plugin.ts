@@ -1,10 +1,9 @@
 /**
  * `definePlugin` — the top-level helper for authoring a Paperclip plugin.
  *
- * Plugin authors call `definePlugin()` and export the result as the default
- * export from their worker entrypoint. The host imports the worker module,
- * calls `setup()` with a `PluginContext`, and from that point the plugin
- * responds to events, jobs, webhooks, and UI requests through the context.
+ * Plugin authors call `definePlugin()` and pass the result to `runWorker()` in
+ * their worker entrypoint. Paperclip starts that worker as an isolated process
+ * and communicates with it through the SDK's JSON-RPC bridge.
  *
  * @see PLUGIN_SPEC.md §14.1 — Example SDK Shape
  *
@@ -15,13 +14,12 @@
  *
  * export default definePlugin({
  *   async setup(ctx) {
- *     ctx.logger.info("Linear sync plugin starting");
+ *     await ctx.logger.info("Linear sync plugin starting");
  *
  *     // Subscribe to events
- *     ctx.events.on("issue.created", async (event) => {
- *       const companyId = event.companyId;
- *       const config = await ctx.config.get(companyId);
- *       const apiKey = await ctx.secrets.resolve(config.apiKeyRef, { companyId, configPath: "apiKeyRef" });
+ *     ctx.events.on("issue.board.comment.created", async (event) => {
+ *       const config = await ctx.config.get();
+ *       const apiKey = String(config.apiKey ?? "");
  *       await ctx.http.fetch(`https://api.linear.app/...`, {
  *         method: "POST",
  *         headers: { Authorization: `Bearer ${apiKey}` },
@@ -31,7 +29,7 @@
  *
  *     // Register a job handler
  *     ctx.jobs.register("full-sync", async (job) => {
- *       ctx.logger.info("Running full-sync job", { runId: job.runId });
+ *       await ctx.logger.info("Running full-sync job", { runId: job.runId });
  *       // ... sync logic
  *     });
  *
@@ -45,11 +43,19 @@
  *       return { lastSync: state };
  *     });
  *   },
+ *
+ *   async onHealth() {
+ *     return { status: "ok" };
+ *   },
  * });
  * ```
  */
 
-import type { PluginContext } from "./types.js";
+import type {
+  PluginBeforePromptInput,
+  PluginBeforePromptResult,
+  PluginContext,
+} from "./types.js";
 import type {
   PluginEnvironmentAcquireLeaseParams,
   PluginEnvironmentDestroyLeaseParams,
@@ -57,8 +63,7 @@ import type {
   PluginEnvironmentExecuteResult,
   PluginEnvironmentCancelExecutionParams,
   PluginEnvironmentCancelExecutionResult,
-  PluginEnvironmentSyncInParams,
-  PluginEnvironmentSyncOutParams,
+  PluginEnvironmentSyncParams,
   PluginEnvironmentSyncResult,
   PluginEnvironmentStartInteractiveSetupParams,
   PluginEnvironmentInteractiveSetupSession,
@@ -82,8 +87,6 @@ import type {
   DetectExternalObjectsResult,
   ResolveExternalObjectParams,
   PluginExternalObjectResolveResult,
-  RefreshExternalObjectsParams,
-  RefreshExternalObjectsResult,
 } from "./protocol.js";
 
 // ---------------------------------------------------------------------------
@@ -152,8 +155,7 @@ export interface PluginApiRequestInput {
   query: Record<string, string | string[]>;
   body: unknown;
   actor: {
-    actorType: "user";
-    actorId: string;
+    type: "user";
     userId: string;
   };
   companyId: string;
@@ -173,13 +175,9 @@ export interface PluginApiResponse {
 /**
  * The plugin definition shape passed to `definePlugin()`.
  *
- * The only required field is `setup`, which receives the `PluginContext` and
- * is where the plugin registers its handlers (events, jobs, data, actions,
- * tools, etc.).
- *
- * All other lifecycle hooks are optional. If a hook is not implemented the
- * host applies default behaviour (e.g. restarting the worker on config change
- * instead of calling `onConfigChanged`).
+ * The required fields are `setup`, which receives the `PluginContext` and
+ * registers handlers, and `onHealth`, which reports explicit diagnostics.
+ * All other lifecycle hooks are optional.
  *
  * @see PLUGIN_SPEC.md §13 — Host-Worker Protocol
  */
@@ -200,42 +198,36 @@ export interface PluginDefinition {
    * Called when the host wants to know if the plugin is healthy.
    *
    * The host polls this on a regular interval and surfaces the result in the
-   * plugin health dashboard. If not implemented, the host infers health from
-   * worker process liveness.
+   * plugin health dashboard.
    *
    * @see PLUGIN_SPEC.md §13.2 — `health`
    */
-  onHealth?(): Promise<PluginHealthDiagnostics>;
+  onHealth(): Promise<PluginHealthDiagnostics>;
 
   /**
-   * Called when the operator updates this plugin's company-scoped configuration
-   * at runtime, without restarting the worker.
-   *
-   * If not implemented, the host restarts the worker to apply the new config.
-   *
-   * @param newConfig - The newly resolved configuration
-   * @see PLUGIN_SPEC.md §13.4 — `configChanged`
+   * Called immediately before Paperclip sends one exact message to a provider.
+   * The hook is a blocking barrier. It may return one prompt prelude without
+   * mutating or replacing the canonical source message, or `null` when it has
+   * no text to contribute.
+   * Requires `runtime.prompt.observe`.
    */
-  onConfigChanged?(newConfig: Record<string, unknown>): Promise<void>;
+  onBeforePrompt?(
+    input: PluginBeforePromptInput,
+  ): Promise<PluginBeforePromptResult>;
 
   /**
    * Called when the host is about to shut down the plugin worker.
    *
-   * The worker has at most 10 seconds (configurable via plugin config) to
-   * finish in-flight work and resolve this promise. After the deadline the
-   * host sends SIGTERM, then SIGKILL.
+   * The worker manager owns the bounded stop deadline. The SDK drains the
+   * already-accepted handlers before invoking this hook; after the manager's
+   * deadline the host sends SIGTERM, then SIGKILL.
    *
    * @see PLUGIN_SPEC.md §12.5 — Graceful Shutdown Policy
    */
   onShutdown?(): Promise<void>;
 
   /**
-   * Called to validate the current plugin configuration.
-   *
-   * The host calls this:
-   * - after the plugin starts (to surface config errors immediately)
-   * - after the operator saves a new config (to validate before persisting)
-   * - via the "Test Connection" button in the settings UI
+   * Called when an instance administrator explicitly validates a draft.
    *
    * @param config - The configuration to validate
    * @see PLUGIN_SPEC.md §13.3 — `validateConfig`
@@ -247,10 +239,11 @@ export interface PluginDefinition {
    *
    * The host routes `POST /api/plugins/:pluginId/webhooks/:endpointKey` to
    * this handler. The plugin is responsible for signature verification using
-   * a resolved secret ref.
+   * its configured credentials.
    *
-   * If not implemented but webhooks are declared in the manifest, the host
-   * returns HTTP 501 for webhook deliveries.
+   * A plugin that declares webhooks must implement this hook, and a plugin
+   * with no webhook declarations must omit it. The worker rejects activation
+   * when the declaration and handler do not agree.
    *
    * @param input - Webhook delivery metadata and payload
    * @see PLUGIN_SPEC.md §13.7 — `handleWebhook`
@@ -261,6 +254,8 @@ export interface PluginDefinition {
    * Called for manifest-declared scoped JSON API routes under
    * `/api/plugins/:pluginId/api/*` after the host has enforced auth, company
    * access, capabilities, and route scope.
+   * A plugin that declares API routes must implement this hook, and a plugin
+   * with no API route declarations must omit it.
    */
   onApiRequest?(input: PluginApiRequestInput): Promise<PluginApiResponse>;
 
@@ -285,16 +280,6 @@ export interface PluginDefinition {
   onResolveExternalObject?(
     params: ResolveExternalObjectParams,
   ): Promise<PluginExternalObjectResolveResult>;
-
-  /**
-   * Optional batch resolver used by providers that can refresh many objects
-   * more efficiently than individual `onResolveExternalObject` calls.
-   *
-   * Requires `external.objects.refresh`.
-   */
-  onRefreshExternalObjects?(
-    params: RefreshExternalObjectsParams,
-  ): Promise<RefreshExternalObjectsResult>;
 
   /**
    * Called to validate provider-specific configuration for a plugin-hosted
@@ -355,7 +340,7 @@ export interface PluginDefinition {
    * keeps the byte-identical fallback. See `doc/plugins/SANDBOX_FILE_SYNC_HOOKS.md`.
    */
   onEnvironmentSyncIn?(
-    params: PluginEnvironmentSyncInParams,
+    params: PluginEnvironmentSyncParams,
   ): Promise<PluginEnvironmentSyncResult>;
 
   /**
@@ -365,7 +350,7 @@ export interface PluginDefinition {
    * See `doc/plugins/SANDBOX_FILE_SYNC_HOOKS.md`.
    */
   onEnvironmentSyncOut?(
-    params: PluginEnvironmentSyncOutParams,
+    params: PluginEnvironmentSyncParams,
   ): Promise<PluginEnvironmentSyncResult>;
 
   /** Called to start an interactive setup sandbox and return redacted connection metadata. */
@@ -401,8 +386,7 @@ export interface PluginDefinition {
 /**
  * The sealed plugin object returned by `definePlugin()`.
  *
- * Plugin authors export this as the default export from their worker
- * entrypoint. The host imports it and calls the lifecycle methods.
+ * Plugin authors pass this object to `runWorker()` in their worker entrypoint.
  *
  * @see PLUGIN_SPEC.md §14 — SDK Surface
  */
@@ -431,8 +415,8 @@ export interface PaperclipPlugin {
  *
  * export default definePlugin({
  *   async setup(ctx) {
- *     ctx.logger.info("Plugin started");
- *     ctx.events.on("issue.created", async (event) => {
+ *     await ctx.logger.info("Plugin started");
+ *     ctx.events.on("issue.board.comment.created", async (event) => {
  *       // handle event
  *     });
  *   },

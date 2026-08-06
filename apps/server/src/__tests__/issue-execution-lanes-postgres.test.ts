@@ -114,6 +114,7 @@ function repositoryOptions(db: ReturnType<typeof createMockDb>["db"]) {
     now: () => now,
     idFactory: () => "00000000-0000-4000-8000-000000000809",
     leaseTtlMs: 60_000,
+    pluginDomainEvents: { publish: async () => undefined },
   };
 }
 

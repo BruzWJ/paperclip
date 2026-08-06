@@ -49,13 +49,11 @@ function fixtureRoot(): string {
       "",
     ].join("\n"),
   );
-  write(root, COMPILER_PATH, 'pluginDescriptors; source: "plugin"; pluginInstallationId\n');
-  write(root, EXECUTOR_PATH, "options.pluginTools.execute({ runInterfaceToolCallId: claim.id, mintPluginRunContext, pluginInstallationId });\n");
+  write(root, COMPILER_PATH, 'pluginDescriptors; source: "plugin"; pluginInstallationId; pluginToolName\n');
+  write(root, EXECUTOR_PATH, "createRuntimePluginToolPort; options.pluginTools.execute({ runInterfaceToolCallId: claim.id, mintPluginRunContext, pluginInstallationId }); workerManager.call(installation, \"executeTool\", { toolName: input.toolName, pluginRunContextHandle: runContextHandle });\n");
   write(root, GATEWAY_PATH, "randomPluginRunContextHandle(); createPluginRunContext({ handleHash: sha256(handle) }); resolvePluginRunContext();\n");
   write(root, GATEWAY_REPOSITORY_PATH, ".insert(pluginRunContexts); resolvePluginRunContextHash; pluginInstallationId; runInterfaceToolCallId;\n");
-  write(root, APP_PATH, "bindPromptCapabilityPluginTools; pluginToolDispatcher.executeTool( pluginInstallationId: input.pluginInstallationId, await input.mintPluginRunContext() );\n");
-  write(root, DISPATCHER_PATH, "PluginToolExecutionScope; registry.executeTool(\n");
-  write(root, REGISTRY_PATH, "registered.pluginDbId !== scope.pluginInstallationId; runContextHandle: scope.runContextHandle; workerManager.call(\"executeTool\", { pluginRunContextHandle: scope.runContextHandle });\n");
+  write(root, INDEX_PATH, "createRuntimePluginToolPort( pluginWorkerManager ); pluginTools: promptCapabilityPluginTools;\n");
   write(
     root,
     "packages/plugins/sdk/src/protocol.ts",
@@ -144,9 +142,7 @@ const COMPILER_PATH = "apps/server/src/services/runtime-interface-compiler.ts";
 const EXECUTOR_PATH = "apps/server/src/services/runtime-tool-executor.ts";
 const GATEWAY_PATH = "apps/server/src/services/prompt-capability-gateway.ts";
 const GATEWAY_REPOSITORY_PATH = "apps/server/src/services/prompt-capability-gateway-postgres.ts";
-const APP_PATH = "apps/server/src/app.ts";
-const DISPATCHER_PATH = "apps/server/src/services/plugin-tool-dispatcher.ts";
-const REGISTRY_PATH = "apps/server/src/services/plugin-tool-registry.ts";
+const INDEX_PATH = "apps/server/src/index.ts";
 
 afterEach(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });

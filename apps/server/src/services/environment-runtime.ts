@@ -652,12 +652,14 @@ function createSandboxEnvironmentDriver(
   const environmentsSvc = environmentService(db);
 
   async function resolveSandboxProviderPlugin(input: { provider: string }) {
-    const running = await resolvePluginSandboxProviderDriverByKey({
-      db,
-      driverKey: input.provider,
-      workerManager: pluginWorkerManager,
-      requireRunning: true,
-    });
+    const running = pluginWorkerManager
+      ? await resolvePluginSandboxProviderDriverByKey({
+          db,
+          driverKey: input.provider,
+          workerManager: pluginWorkerManager,
+          requireRunning: true,
+        })
+      : null;
     if (running) {
       return { state: "running" as const, resolved: running };
     }
@@ -665,7 +667,6 @@ function createSandboxEnvironmentDriver(
     const installed = await resolvePluginSandboxProviderDriverByKey({
       db,
       driverKey: input.provider,
-      workerManager: pluginWorkerManager,
       requireRunning: false,
     });
     if (!installed) {
@@ -878,7 +879,7 @@ function createSandboxEnvironmentDriver(
                   id: pluginProvider.resolved.plugin.id,
                   pluginKey: pluginProvider.resolved.plugin.pluginKey,
                   packageName: pluginProvider.resolved.plugin.packageName,
-                  version: pluginProvider.resolved.plugin.version,
+                  version: pluginProvider.resolved.plugin.manifestJson.version,
                 },
               })
             : null;

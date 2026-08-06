@@ -147,7 +147,7 @@ describe("ACPX adapter routes", () => {
       loaded: false,
       diagnostic: {
         code: "acpx_probe_failed",
-        message: "fixture local CLI is not authenticated",
+        message: "This local agent did not pass its readiness check.",
       },
       registryName: "fixture-agent-unavailable",
     });
@@ -191,7 +191,7 @@ describe("ACPX adapter routes", () => {
       .send({ disabled: true });
 
     expect(res.status, JSON.stringify(res.body)).toBe(410);
-    expect(res.body.error).toMatch(/supplied exclusively by ACPX/i);
+    expect(res.body.error).toMatch(/discovers compatible local agents/i);
   });
 
   it("rejects legacy adapter package management because ACPX owns the catalog", async () => {
@@ -200,6 +200,6 @@ describe("ACPX adapter routes", () => {
       .send({ packageName: "irrelevant-adapter-package" });
 
     expect(res.status, JSON.stringify(res.body)).toBe(410);
-    expect(res.body.error).toMatch(/supplied exclusively by ACPX/i);
+    expect(res.body.error).toMatch(/discovers compatible local agents/i);
   });
 });

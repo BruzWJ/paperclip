@@ -1,8 +1,6 @@
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { Command } from "commander";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   scaffoldPluginProject: vi.fn((options: { outputDir: string }) => options.outputDir),
@@ -28,21 +26,6 @@ import {
   registerPluginCommands,
 } from "../commands/client/plugin.js";
 
-const tempDirs: string[] = [];
-
-function makeTempDir(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-cli-plugin-"));
-  tempDirs.push(dir);
-  return dir;
-}
-
-afterEach(() => {
-  while (tempDirs.length > 0) {
-    const dir = tempDirs.pop();
-    if (dir) fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 describe("plugin init", () => {
   beforeEach(() => {
     mocks.scaffoldPluginProject.mockClear();
@@ -54,7 +37,7 @@ describe("plugin init", () => {
       "@acme/plugin-linear",
       {
         output: "plugins",
-        template: "connector",
+        template: "standard",
         category: "automation",
         displayName: "Linear Bridge",
         description: "Syncs Linear issues",
@@ -67,7 +50,7 @@ describe("plugin init", () => {
     expect(options).toEqual({
       pluginName: "@acme/plugin-linear",
       outputDir: path.resolve(cwd, "plugins", "plugin-linear"),
-      template: "connector",
+      template: "standard",
       category: "automation",
       displayName: "Linear Bridge",
       description: "Syncs Linear issues",
@@ -81,7 +64,7 @@ describe("plugin init", () => {
       "cd '/tmp/acme plugin'",
       "pnpm install",
       "pnpm dev",
-      "paperclipai plugin install '/tmp/acme plugin'",
+      "paperclipai plugin install --local '/tmp/acme plugin'",
     ]);
   });
 
@@ -99,7 +82,7 @@ describe("plugin init", () => {
         "--output",
         "/tmp/paperclip-init-output",
         "--template",
-        "workspace",
+        "standard",
         "--category",
         "workspace",
         "--display-name",
@@ -118,7 +101,7 @@ describe("plugin init", () => {
     expect(mocks.scaffoldPluginProject).toHaveBeenCalledWith({
       pluginName: "demo-plugin",
       outputDir: path.resolve("/tmp/paperclip-init-output", "demo-plugin"),
-      template: "workspace",
+      template: "standard",
       category: "workspace",
       displayName: "Demo Plugin",
       description: "Demo description",
@@ -126,42 +109,59 @@ describe("plugin init", () => {
       sdkPath: "/repo/packages/plugins/sdk",
     });
   });
+
+  it("exposes only local scaffold options", () => {
+    const program = new Command();
+    registerPluginCommands(program);
+
+    const pluginCommand = program.commands.find((command) => command.name() === "plugin");
+    const initCommand = pluginCommand?.commands.find((command) => command.name() === "init");
+    const optionNames = initCommand?.options.map((option) => option.long) ?? [];
+
+    expect(optionNames).toEqual([
+      "--output",
+      "--template",
+      "--category",
+      "--display-name",
+      "--description",
+      "--author",
+      "--sdk-path",
+      "--json",
+    ]);
+    for (const networkOption of ["--api-base", "--api-key", "--config", "--context", "--profile"]) {
+      expect(optionNames).not.toContain(networkOption);
+    }
+  });
 });
 
 describe("plugin install", () => {
-  it("resolves an existing relative local path to an absolute local install request", () => {
-    const cwd = makeTempDir();
-    const pluginDir = path.join(cwd, "demo-plugin");
-    fs.mkdirSync(pluginDir);
+  it("builds an explicit local-source request and resolves its path", () => {
+    const cwd = path.resolve("/tmp/paperclip-cli-plugin-test");
 
-    expect(buildPluginInstallRequest("demo-plugin", {}, { cwd })).toEqual({
-      packageName: pluginDir,
-      version: undefined,
-      isLocalPath: true,
+    expect(buildPluginInstallRequest("demo-plugin", { local: true }, { cwd })).toEqual({
+      source: "local",
+      path: path.join(cwd, "demo-plugin"),
     });
   });
 
-  it("keeps an absolute local path absolute and marks it as local", () => {
-    const pluginDir = path.join(makeTempDir(), "demo-plugin");
-    fs.mkdirSync(pluginDir);
-
-    expect(buildPluginInstallRequest(pluginDir, {}, { cwd: "/" })).toEqual({
-      packageName: pluginDir,
-      version: undefined,
-      isLocalPath: true,
-    });
+  it("requires --local for filesystem paths", () => {
+    expect(() => buildPluginInstallRequest("./demo-plugin")).toThrow(
+      "Local plugin paths require --local",
+    );
   });
 
-  it("preserves npm package installs when no local path exists", () => {
-    expect(
-      buildPluginInstallRequest("@acme/plugin-linear", { version: "1.2.3" }, {
-        cwd: makeTempDir(),
-      }),
-    ).toEqual({
+  it("builds an exact npm-source request", () => {
+    expect(buildPluginInstallRequest("@acme/plugin-linear", { version: "1.2.3" })).toEqual({
+      source: "npm",
       packageName: "@acme/plugin-linear",
       version: "1.2.3",
-      isLocalPath: false,
     });
+  });
+
+  it("rejects an npm version on an explicit local install", () => {
+    expect(() =>
+      buildPluginInstallRequest("./demo-plugin", { local: true, version: "1.2.3" }),
+    ).toThrow("--version is only supported for npm package installs");
   });
 });
 

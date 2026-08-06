@@ -5,9 +5,14 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockDb } from "./helpers/mock-db.js";
+import {
+  createPluginHostServicesTestOptions,
+  createPluginManifestFake,
+  noopPluginEventDelivery,
+} from "./helpers/plugin-host-services.js";
 
 const hostMocks = vi.hoisted(() => ({
-  assertPluginInstallationAvailableForCompany: vi.fn(async () => undefined),
+  assertPluginInstallationRequestScope: vi.fn(async () => undefined),
   getCompanySettings: vi.fn(async () => null as Record<string, unknown> | null),
   upsertCompanySettings: vi.fn(async () => undefined),
   getExecutionWorkspaceById: vi.fn(async () => null as Record<string, unknown> | null),
@@ -19,8 +24,8 @@ const hostMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../services/plugin-issue-authorization.js", () => ({
-  assertPluginInstallationAvailableForCompany:
-    hostMocks.assertPluginInstallationAvailableForCompany,
+    assertPluginInstallationRequestScope:
+      hostMocks.assertPluginInstallationRequestScope,
 }));
 
 vi.mock("../services/plugin-registry.js", () => ({
@@ -89,16 +94,17 @@ function services(input: {
   return buildHostServices(
     createMockDb().db,
     pluginId,
-    input.pluginKey ?? "paperclip.missions",
     createEventBusStub(),
-    undefined,
-    {
-      manifest: input.manifest as never,
+    noopPluginEventDelivery,
+    createPluginHostServicesTestOptions({
+      manifest: input.manifest
+        ? input.manifest as never
+        : createPluginManifestFake({
+            id: input.pluginKey ?? "paperclip.missions",
+          }),
       pluginIssueControlPlane:
         input.pluginIssueControlPlane ?? createPluginIssueControlPlaneStub(),
-      ordinaryIssues: {} as never,
-      issueExecutionCancellation: {} as never,
-    },
+    }),
   );
 }
 
@@ -317,9 +323,6 @@ describe("plugin orchestration APIs without a database process", () => {
       companyId,
       folderKey: "content-root",
       path: root,
-      access: "readWrite",
-      requiredDirectories: declaration.requiredDirectories,
-      requiredFiles: declaration.requiredFiles,
     });
     expect(configured).toMatchObject({
       healthy: false,
@@ -328,8 +331,18 @@ describe("plugin orchestration APIs without a database process", () => {
     });
 
     const persistedSettings = hostMocks.upsertCompanySettings.mock.calls[0]?.[2];
+    expect((persistedSettings as { settingsJson: { localFolders: Record<string, unknown> } })
+      .settingsJson.localFolders["content-root"]).toEqual({
+        path: root,
+      });
+    await expect(host.localFolders.configure({
+      companyId,
+      folderKey: "content-root",
+      path: root,
+      access: "read",
+    } as never)).rejects.toThrow("accepts only companyId, folderKey, and a non-empty path");
+    expect(hostMocks.upsertCompanySettings).toHaveBeenCalledTimes(1);
     hostMocks.getCompanySettings.mockResolvedValue({
-      enabled: true,
       settingsJson: (persistedSettings as { settingsJson: Record<string, unknown> })
         .settingsJson,
     });
@@ -386,7 +399,6 @@ describe("plugin orchestration APIs without a database process", () => {
       companyId,
       folderKey: "ssh",
       path: "/tmp",
-      access: "read",
     })).rejects.toThrow("Local folder key is not declared");
     await expect(host.localFolders.status({ companyId, folderKey: "ssh" }))
       .rejects.toThrow("Local folder key is not declared");

@@ -64,7 +64,6 @@ import { companies } from "./companies.js";
 import { executionWorkspaces } from "./execution_workspaces.js";
 import { issueExecutionRuns } from "./issue_execution_runs.js";
 import { issues } from "./issues.js";
-import { plugins } from "./plugins.js";
 import { projects } from "./projects.js";
 import { projectWorkspaces } from "./project_workspaces.js";
 
@@ -348,7 +347,7 @@ export const agentCompanyToolSelections = pgTable(
     }),
     selectedByPluginInstallationId: uuid(
       "selected_by_plugin_installation_id",
-    ).references(() => plugins.id, { onDelete: "set null" }),
+    ),
     selectedAt: timestamp("selected_at", { withTimezone: true }).notNull().defaultNow(),
     revokedByKind: text("revoked_by_kind").$type<
       "user" | "agent" | "plugin" | "migration"
@@ -361,7 +360,7 @@ export const agentCompanyToolSelections = pgTable(
     }),
     revokedByPluginInstallationId: uuid(
       "revoked_by_plugin_installation_id",
-    ).references(() => plugins.id, { onDelete: "set null" }),
+    ),
     revocationReason: text("revocation_reason"),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -7,8 +7,7 @@ import type { PluginAccessInvite } from "../src/types.js";
 describe("plugin public actor and invite contracts", () => {
   it("exposes only canonical board identity on generic plugin API requests", () => {
     expectTypeOf<PluginApiRequestInput["actor"]>().toEqualTypeOf<{
-      actorType: "user";
-      actorId: string;
+      type: "user";
       userId: string;
     }>();
   });

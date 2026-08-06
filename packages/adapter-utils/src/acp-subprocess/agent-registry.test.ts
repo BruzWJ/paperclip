@@ -1,13 +1,14 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AcpAgentRegistry } from "acpx/runtime";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertAcpRegistryAgentName,
-  configuredAcpRegistryView,
+  isAcpRegistryAgentLocallyAvailable,
   listAcpRegistryAgentNames,
-  loadConfiguredAcpRegistry,
+  listLocallyAvailableAcpRegistryAgentNames,
+  loadAcpxAgentRegistry,
   resolveAcpRegistryLaunch,
   sameAcpRegistryLaunch,
 } from "./agent-registry.js";
@@ -23,30 +24,7 @@ function registry(input: {
 }
 
 describe("ACPX launch registry", () => {
-  it("exposes only ACPX-configured names while delegating their resolution", () => {
-    const resolve = vi.fn((name: string) => ["acpx-resolved", name]);
-    const configured = configuredAcpRegistryView(
-      registry({
-        // Mirrors ACPX's public registry behavior: static built-ins are mixed
-        // with configured overrides in its unfiltered list.
-        names: ["codex", "kilocode", "mux", "custom-runner"],
-        resolve,
-      }),
-      ["custom-runner"],
-    );
-
-    expect(listAcpRegistryAgentNames(configured)).toEqual(["custom-runner"]);
-    expect(configured.resolve("custom-runner")).toEqual([
-      "acpx-resolved",
-      "custom-runner",
-    ]);
-    expect(() => configured.resolve("mux")).toThrow(
-      "ACP registry name is not configured by ACPX",
-    );
-    expect(resolve).toHaveBeenCalledExactlyOnceWith("custom-runner");
-  });
-
-  it("loads a project-configured custom agent through ACPX's resolved config", async () => {
+  it("treats project-configured agents as ACPX overrides within the complete registry", async () => {
     const cwd = await mkdtemp(path.join(tmpdir(), "paperclip-acpx-config-"));
     try {
       await writeFile(
@@ -60,11 +38,10 @@ describe("ACPX launch registry", () => {
         }),
         "utf8",
       );
-      const configured = await loadConfiguredAcpRegistry({ cwd });
+      const configured = await loadAcpxAgentRegistry({ cwd });
 
       expect(listAcpRegistryAgentNames(configured)).toContain("custom-runner");
-      expect(listAcpRegistryAgentNames(configured)).not.toContain("kilocode");
-      expect(listAcpRegistryAgentNames(configured)).not.toContain("mux");
+      expect(listAcpRegistryAgentNames(configured)).toContain("codex");
       expect(resolveAcpRegistryLaunch("custom-runner", configured)).toEqual({
         registryName: "custom-runner",
         command: "./bin/custom-acp",
@@ -75,7 +52,108 @@ describe("ACPX launch registry", () => {
     }
   });
 
-  it("lists exact ACPX-configured names without assigning a Paperclip catalog", () => {
+  it("filters ACPX package-runner entries by the exact locally installed registry name", async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), "paperclip-acpx-path-"));
+    try {
+      const bin = path.join(cwd, "bin");
+      await mkdir(bin);
+      await Promise.all(
+        ["codex", "direct-acp", "fast-agent"].map((name) =>
+          writeFile(path.join(bin, name), "#!/bin/sh\nexit 0\n", {
+            mode: 0o755,
+          }),
+        ),
+      );
+      const candidate = registry({
+        names: [
+          "codex",
+          "kilocode",
+          "direct-runtime",
+          "fast-agent",
+          "missing-fast-agent",
+        ],
+        resolve: (name) => {
+          if (name === "codex" || name === "kilocode") {
+            return ["npx", "-y", `@example/${name}`];
+          }
+          if (name === "fast-agent" || name === "missing-fast-agent") {
+            return ["uvx", `${name}-package`];
+          }
+          return ["direct-acp", "--stdio"];
+        },
+      });
+
+      await expect(
+        listLocallyAvailableAcpRegistryAgentNames(candidate, {
+          cwd,
+          env: { PATH: bin },
+        }),
+      ).resolves.toEqual(["codex", "direct-runtime", "fast-agent"]);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    [["npx", "-y", "some-package"]],
+    [["uvx", "some-package"]],
+    [["pnpm", "dlx", "some-package"]],
+    [["npm", "exec", "--", "some-package"]],
+    [["yarn", "dlx", "some-package"]],
+    [["bun", "x", "some-package"]],
+    [["uv", "tool", "run", "some-package"]],
+    [["pipx", "run", "some-package"]],
+    [["corepack", "pnpm", "dlx", "some-package"]],
+    [["corepack", "--install-directory", "/tmp/corepack", "pnpm", "dlx", "some-package"]],
+    [["env", "npx", "-y", "some-package"]],
+    [["env", "AGENT_MODE=stdio", "pnpm", "--silent", "dlx", "some-package"]],
+    [["sh", "-c", "npx -y some-package"]],
+    [["nice", "npx", "-y", "some-package"]],
+    [["timeout", "30", "npx", "-y", "some-package"]],
+    [["nohup", "pnpm", "dlx", "some-package"]],
+    [["setsid", "wrapped", "uvx some-package"]],
+    [["nice", "sh", "-c", "npx${IFS}-y${IFS}some-package"]],
+  ])("does not mistake a materializing runner %j for an installed agent", async (argv) => {
+    const candidate = registry({
+      names: ["not-installed-agent"],
+      resolve: () => argv,
+    });
+
+    await expect(
+      isAcpRegistryAgentLocallyAvailable(
+        "not-installed-agent",
+        candidate,
+        { cwd: process.cwd(), env: { PATH: "" } },
+      ),
+    ).resolves.toBe(false);
+  });
+
+  it("rejects an ACPX-configured relative executable that would change meaning in an execution workspace", async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), "paperclip-acpx-relative-"));
+    try {
+      await mkdir(path.join(cwd, "bin"));
+      await writeFile(
+        path.join(cwd, "bin", "custom-acp"),
+        "#!/bin/sh\nexit 0\n",
+        { mode: 0o755 },
+      );
+      const candidate = registry({
+        names: ["custom-runtime"],
+        resolve: () => ["./bin/custom-acp", "serve", "--stdio"],
+      });
+
+      await expect(
+        isAcpRegistryAgentLocallyAvailable("custom-runtime", candidate, {
+          cwd,
+          env: { PATH: "" },
+        }),
+      ).resolves.toBe(false);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("lists exact ACPX registry names without assigning a Paperclip catalog", () => {
     expect(
       listAcpRegistryAgentNames(
         registry({

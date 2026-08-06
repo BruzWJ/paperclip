@@ -13,7 +13,6 @@ import {
   issueExecutionSessions,
   issueExecutionWorkspaceBindings,
   issues,
-  pluginCompanySettings,
   pluginRunContexts,
   plugins,
   runInterfaceToolCalls,
@@ -33,8 +32,9 @@ import type {
   IssueSessionDbTransaction,
 } from "./issue-session/event-store.js";
 import { activeIssueTreePauseHoldExistsSql } from "./issue-execution-lifecycle-gate.js";
-import { lockPluginCompanySettingScopeInTransaction } from "./plugin-authorization-locks.js";
+import { lockPluginInstallationCompanyScopeInTransaction } from "./plugin-authorization-locks.js";
 import { pluginManifestDeclaresAgentTool } from "./plugin-agent-tool-authority.js";
+import { pluginManifestIdentity } from "./plugin-manifest-identity.js";
 
 interface PromptCapabilityCompiler {
   resolve(
@@ -785,7 +785,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
             "Plugin context is not bound to the exact active tool call",
           );
         }
-        const pluginScope = await lockPluginCompanySettingScopeInTransaction(
+        const pluginScope = await lockPluginInstallationCompanyScopeInTransaction(
           tx,
           {
             pluginInstallationId: input.pluginInstallationId,
@@ -796,7 +796,8 @@ export function createPostgresPromptCapabilityGatewayRepository(
         if (
           installation?.status !== "ready" ||
           !pluginScope.company ||
-          pluginScope.companySetting?.enabled === false ||
+          pluginManifestIdentity(installation.manifestJson) !==
+            input.pluginManifestIdentity ||
           !pluginManifestDeclaresAgentTool(
             {
               pluginKey: installation.pluginKey,
@@ -806,7 +807,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
           )
         ) {
           throw new Error(
-            "Plugin context is not bound to a ready company-enabled tool",
+            "Plugin context is not bound to a ready tool",
           );
         }
         await tx.insert(pluginRunContexts).values({
@@ -879,18 +880,8 @@ export function createPostgresPromptCapabilityGatewayRepository(
         )
         .limit(1)
         .then((rows) => rows[0] ?? null);
-      const companySetting = await db
-        .select({ enabled: pluginCompanySettings.enabled })
-        .from(pluginCompanySettings)
-        .where(and(
-          eq(pluginCompanySettings.pluginId, child.pluginInstallationId),
-          eq(pluginCompanySettings.companyId, result.capability.companyId),
-        ))
-        .limit(1)
-        .then((rows) => rows[0] ?? null);
       if (
         installation?.status !== "ready" ||
-        companySetting?.enabled === false ||
         !pluginManifestDeclaresAgentTool(
           {
             pluginKey: installation.pluginKey,

@@ -371,7 +371,7 @@ describe("AgentConfigForm environment selector", () => {
     expect(result.container.querySelector("select")).toBeNull();
   });
 
-  it("filters environments to the exact ACPX-admitted driver set", async () => {
+  it("filters environments to the exact server-admitted driver set", async () => {
     mockAdapterDrivers.value = ["local"];
     const result = await renderForm([
       makeEnvironment({ id: "local-1", name: "Local", driver: "local" }),
@@ -404,7 +404,7 @@ describe("AgentConfigForm environment selector", () => {
     expect(result.container.textContent).toContain("Server schema fields");
   });
 
-  it("tests the exact unsaved ACPX configuration without saving the agent", async () => {
+  it("tests the exact unsaved local-agent configuration without saving the agent", async () => {
     const result = await renderCreateForm(
       [makeEnvironment({ id: "local-1", name: "Local", driver: "local" })],
       {
@@ -435,7 +435,7 @@ describe("AgentConfigForm environment selector", () => {
       },
     );
     expect(result.container.textContent).toContain(
-      "ACPX accepted this exact draft configuration.",
+      "The local agent accepted this exact draft configuration.",
     );
   });
 
@@ -458,7 +458,7 @@ describe("AgentConfigForm environment selector", () => {
     });
     await flushReact();
     expect(result.container.textContent).toContain(
-      "ACPX accepted this exact draft configuration.",
+      "The local agent accepted this exact draft configuration.",
     );
 
     await result.rerender({
@@ -466,12 +466,12 @@ describe("AgentConfigForm environment selector", () => {
       reasoning_effort: "low",
     });
     expect(result.container.textContent).not.toContain(
-      "ACPX accepted this exact draft configuration.",
+      "The local agent accepted this exact draft configuration.",
     );
 
     await result.rerender(originalConfiguration);
     expect(result.container.textContent).not.toContain(
-      "ACPX accepted this exact draft configuration.",
+      "The local agent accepted this exact draft configuration.",
     );
     expect(mockAdaptersApi.testConfiguration).toHaveBeenCalledTimes(1);
   });
@@ -506,7 +506,7 @@ describe("AgentConfigForm environment selector", () => {
     await flushReact();
 
     expect(result.container.textContent).not.toContain(
-      "ACPX accepted this exact draft configuration.",
+      "The local agent accepted this exact draft configuration.",
     );
     expect(mockAdaptersApi.testConfiguration).toHaveBeenCalledTimes(1);
   });

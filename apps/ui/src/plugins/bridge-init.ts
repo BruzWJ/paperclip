@@ -18,20 +18,19 @@ import {
   useHostContext,
   useHostLocation,
   useHostNavigation,
-  usePluginStream,
   usePluginToast,
 } from "./bridge.js";
-import { Component, createElement, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Component, createElement, useMemo, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   FileTree,
-  type FileTreeProps as HostFileTreeProps,
 } from "@/components/FileTree";
 import { AgentIcon } from "@/components/AgentIconPicker";
 import { InlineEntitySelector, type InlineEntityOption } from "@/components/InlineEntitySelector";
 import { IssuesList as HostIssuesList } from "@/components/IssuesList";
 import { ManagedRoutinesList as HostManagedRoutinesList } from "@/components/ManagedRoutinesList";
 import { MarkdownBody } from "@/components/MarkdownBody";
+import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { agentsApi } from "@/api/agents";
 import { authApi } from "@/api/auth";
 import { ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, runsApi } from "@/api/runs";
@@ -42,6 +41,22 @@ import { useProjectOrder } from "@/hooks/useProjectOrder";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "@/hooks/useSharedPolling";
 import { queryKeys } from "@/lib/queryKeys";
 import { getRecentProjectIds, trackRecentProject } from "@/lib/recent-projects";
+import type {
+  DataTableProps,
+  FileTreePathCollection,
+  FileTreeProps,
+  IssuesListFilters,
+  IssuesListProps,
+  JsonTreeProps,
+  KeyValueListProps,
+  MarkdownBlockProps,
+  MarkdownEditorProps,
+  MetricCardProps,
+  OwnerPickerProps,
+  ProjectPickerProps,
+  SpinnerProps,
+  StatusBadgeProps,
+} from "@paperclipai/plugin-sdk/ui";
 
 // ---------------------------------------------------------------------------
 // Global bridge registry
@@ -53,10 +68,13 @@ import { getRecentProjectIds, trackRecentProject } from "@/lib/recent-projects";
  * This is placed on `globalThis.__paperclipPluginBridge__` and consumed by
  * the plugin module loader to provide implementations for external imports.
  */
+type PluginSdkUiRuntime = typeof import("@paperclipai/plugin-sdk/ui");
+
 export interface PluginBridgeRegistry {
   react: unknown;
   reactDom: unknown;
-  sdkUi: Record<string, unknown>;
+  reactDomClient: unknown;
+  sdkUi: PluginSdkUiRuntime;
 }
 
 declare global {
@@ -64,28 +82,7 @@ declare global {
   var __paperclipPluginBridge__: PluginBridgeRegistry | undefined;
 }
 
-type PluginFileTreePathCollection = ReadonlySet<string> | readonly string[];
-
-type PluginFileTreeProps = Omit<
-  HostFileTreeProps,
-  | "expandedDirs"
-  | "checkedFiles"
-  | "renderFileExtra"
-  | "fileRowClassName"
-  | "selectedFile"
-  | "showCheckboxes"
-  | "onToggleDir"
-  | "onSelectFile"
-> & {
-  selectedFile?: string | null;
-  expandedPaths?: PluginFileTreePathCollection;
-  checkedPaths?: PluginFileTreePathCollection;
-  showCheckboxes?: boolean;
-  onToggleDir?: (path: string) => void;
-  onSelectFile?: (path: string) => void;
-};
-
-function toPathSet(paths?: PluginFileTreePathCollection | null): Set<string> {
+function toPathSet(paths?: FileTreePathCollection | null): Set<string> {
   return new Set(paths ?? []);
 }
 
@@ -97,7 +94,7 @@ function PluginSdkFileTree({
   onToggleDir,
   onSelectFile,
   ...props
-}: PluginFileTreeProps) {
+}: FileTreeProps) {
   return createElement(FileTree, {
     ...props,
     selectedFile,
@@ -109,109 +106,16 @@ function PluginSdkFileTree({
   });
 }
 
-type PluginMarkdownBlockProps = {
-  content: string;
-  className?: string;
-  enableWikiLinks?: boolean;
-  wikiLinkRoot?: string;
-  resolveWikiLinkHref?: (target: string, label: string) => string | null | undefined;
-};
-
-type PluginMarkdownEditorProps = {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  className?: string;
-  contentClassName?: string;
-  onBlur?: () => void;
-  bordered?: boolean;
-  readOnly?: boolean;
-  onSubmit?: () => void;
-};
-
-type PluginIssuesListFilters = {
-  status?: "open" | "blocked" | "done" | "cancelled";
-  projectId?: string;
-  parentId?: string;
-  ownerAgentId?: string;
-  participantAgentId?: string;
-  labelId?: string;
-  workspaceId?: string;
-  descendantOf?: string;
-  includeRoutineExecutions?: boolean;
-};
-
-type PluginIssuesListProps = {
-  companyId: string | null;
-  projectId?: string | null;
-  filters?: PluginIssuesListFilters;
-  viewStateKey?: string;
-  initialSearch?: string;
-  createIssueLabel?: string;
-  searchWithinLoadedIssues?: boolean;
-};
-
-type PluginOwnerPickerSelection = {
-  ownerAgentId: string | null;
-};
-
-type PluginOwnerPickerProps = {
-  companyId?: string | null;
-  value: string;
-  onChange: (value: string, selection: PluginOwnerPickerSelection) => void;
-  placeholder?: string;
-  noneLabel?: string;
-  searchPlaceholder?: string;
-  emptyMessage?: string;
-  includeTerminatedAgents?: boolean;
-  className?: string;
-  onConfirm?: () => void;
-};
-
-type PluginProjectPickerProps = {
-  companyId?: string | null;
-  value: string;
-  onChange: (projectId: string) => void;
-  placeholder?: string;
-  noneLabel?: string;
-  searchPlaceholder?: string;
-  emptyMessage?: string;
-  includeArchived?: boolean;
-  className?: string;
-  onConfirm?: () => void;
-};
-
-function PluginSdkMarkdownEditor(props: PluginMarkdownEditorProps) {
-  const [Editor, setEditor] = useState<ComponentType<PluginMarkdownEditorProps> | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    import("@/components/MarkdownEditor").then((module) => {
-      if (!cancelled) setEditor(() => module.MarkdownEditor as ComponentType<PluginMarkdownEditorProps>);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (Editor) return createElement(Editor, props);
-
-  return createElement("textarea", {
-    className: props.className,
-    value: props.value,
-    placeholder: props.placeholder,
-    readOnly: props.readOnly,
-    onBlur: props.onBlur,
-    onChange: (event) => props.onChange((event.currentTarget as HTMLTextAreaElement).value),
-  });
+function PluginSdkMarkdownEditor(props: MarkdownEditorProps) {
+  return createElement(MarkdownEditor, props);
 }
 
-function compactIssueFilters(filters: PluginIssuesListFilters): PluginIssuesListFilters {
+function compactIssueFilters(filters: IssuesListFilters): IssuesListFilters {
   return Object.fromEntries(
     Object.entries(filters).filter(([, value]) =>
       value !== undefined && value !== null && value !== "" && value !== false,
     ),
-  ) as PluginIssuesListFilters;
+  ) as IssuesListFilters;
 }
 
 function PluginSdkIssuesList({
@@ -222,8 +126,7 @@ function PluginSdkIssuesList({
   initialSearch,
   createIssueLabel,
   searchWithinLoadedIssues = true,
-}: PluginIssuesListProps) {
-  const queryClient = useQueryClient();
+}: IssuesListProps) {
   const issueFilters = useMemo(
     () => compactIssueFilters({
       ...(filters ?? {}),
@@ -302,7 +205,7 @@ function PluginSdkOwnerPicker({
   includeTerminatedAgents = false,
   className,
   onConfirm,
-}: PluginOwnerPickerProps) {
+}: OwnerPickerProps) {
   const hostContext = useHostContext();
   const resolvedCompanyId = companyId ?? hostContext.companyId ?? null;
   const { data: agents } = useQuery({
@@ -374,7 +277,7 @@ function PluginSdkProjectPicker({
   includeArchived = false,
   className,
   onConfirm,
-}: PluginProjectPickerProps) {
+}: ProjectPickerProps) {
   const hostContext = useHostContext();
   const resolvedCompanyId = companyId ?? hostContext.companyId ?? null;
   const { data: session } = useQuery({
@@ -455,12 +358,7 @@ function FragmentSafe({ children }: { children?: ReactNode }) {
   return createElement("span", { className: "contents" }, children);
 }
 
-type PluginStatusBadgeProps = {
-  label: string;
-  status: "ok" | "warning" | "error" | "info" | "pending";
-};
-
-function PluginSdkStatusBadge({ label, status }: PluginStatusBadgeProps) {
+function PluginSdkStatusBadge({ label, status }: StatusBadgeProps) {
   const className = {
     ok: "border-emerald-300 bg-emerald-50 text-emerald-700",
     warning: "border-amber-300 bg-amber-50 text-amber-800",
@@ -475,21 +373,7 @@ function PluginSdkStatusBadge({ label, status }: PluginStatusBadgeProps) {
   );
 }
 
-type PluginDataTableColumn = {
-  key: string;
-  header: string;
-  render?: (value: unknown, row: Record<string, unknown>) => ReactNode;
-  width?: string;
-};
-
-type PluginDataTableProps = {
-  columns: PluginDataTableColumn[];
-  rows: Array<Record<string, unknown> & { id?: string }>;
-  loading?: boolean;
-  emptyMessage?: string;
-};
-
-function PluginSdkDataTable({ columns, rows, loading, emptyMessage = "No rows." }: PluginDataTableProps) {
+function PluginSdkDataTable({ columns, rows, loading, emptyMessage = "No rows." }: DataTableProps) {
   if (loading) return createElement("div", { className: "text-sm text-muted-foreground" }, "Loading...");
   if (!rows.length) return createElement("div", { className: "text-sm text-muted-foreground" }, emptyMessage);
   const gridColumns = columns.map((column) => column.width ?? "minmax(0, 1fr)").join(" ");
@@ -525,11 +409,7 @@ function PluginSdkDataTable({ columns, rows, loading, emptyMessage = "No rows." 
   );
 }
 
-type PluginKeyValueListProps = {
-  pairs: Array<{ label: string; value: ReactNode }>;
-};
-
-function PluginSdkKeyValueList({ pairs }: PluginKeyValueListProps) {
+function PluginSdkKeyValueList({ pairs }: KeyValueListProps) {
   return createElement(
     "dl",
     { className: "grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[max-content_minmax(0,1fr)]" },
@@ -540,7 +420,7 @@ function PluginSdkKeyValueList({ pairs }: PluginKeyValueListProps) {
   );
 }
 
-function PluginSdkMetricCard({ label, value, unit }: { label: string; value: string | number; unit?: string }) {
+function PluginSdkMetricCard({ label, value, unit }: MetricCardProps) {
   return createElement(
     "div",
     { className: "rounded-md border bg-card p-3" },
@@ -549,11 +429,11 @@ function PluginSdkMetricCard({ label, value, unit }: { label: string; value: str
   );
 }
 
-function PluginSdkJsonTree({ data }: { data: unknown }) {
+function PluginSdkJsonTree({ data }: JsonTreeProps) {
   return createElement("pre", { className: "max-h-80 overflow-auto rounded-md border bg-muted/30 p-2 text-xs" }, JSON.stringify(data, null, 2));
 }
 
-function PluginSdkSpinner({ label = "Loading" }: { size?: "sm" | "md" | "lg"; label?: string }) {
+function PluginSdkSpinner({ label = "Loading" }: SpinnerProps) {
   return createElement("span", {
     className: "inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground align-middle",
     role: "status",
@@ -579,27 +459,29 @@ class PluginSdkErrorBoundary extends Component<{ children: ReactNode; fallback?:
 /**
  * Initialize the plugin bridge global registry.
  *
- * Registers the host's React, ReactDOM, and SDK UI bridge implementations
+ * Registers the host's React, ReactDOM, ReactDOM client, and SDK UI bridge implementations
  * on `globalThis.__paperclipPluginBridge__` so the plugin module loader
  * can provide them to plugin bundles.
  *
  * @param react - The host's React module
  * @param reactDom - The host's ReactDOM module
+ * @param reactDomClient - The host's ReactDOM client module
  */
 export function initPluginBridge(
   react: typeof import("react"),
   reactDom: typeof import("react-dom"),
+  reactDomClient: typeof import("react-dom/client"),
 ): void {
   globalThis.__paperclipPluginBridge__ = {
     react,
     reactDom,
+    reactDomClient,
     sdkUi: {
       usePluginData,
       usePluginAction,
       useHostContext,
       useHostLocation,
       useHostNavigation,
-      usePluginStream,
       usePluginToast,
       MarkdownBlock: ({
         content,
@@ -607,7 +489,7 @@ export function initPluginBridge(
         enableWikiLinks,
         wikiLinkRoot,
         resolveWikiLinkHref,
-      }: PluginMarkdownBlockProps) =>
+      }: MarkdownBlockProps) =>
         createElement(MarkdownBody, {
           className,
           softBreaks: false,

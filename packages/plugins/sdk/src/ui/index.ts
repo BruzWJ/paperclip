@@ -13,9 +13,9 @@
  * ```tsx
  * // Plugin UI bundle entry (dist/ui/index.tsx)
  * import { usePluginData, usePluginAction } from "@paperclipai/plugin-sdk/ui";
- * import type { PluginWidgetProps } from "@paperclipai/plugin-sdk/ui";
+ * import type { PluginHostContextProps } from "@paperclipai/plugin-sdk/ui";
  *
- * export function DashboardWidget({ context }: PluginWidgetProps) {
+ * export function DashboardWidget({ context }: PluginHostContextProps) {
  *   const { data, loading, error } = usePluginData("sync-health", {
  *     companyId: context.companyId,
  *   });
@@ -28,7 +28,7 @@
  *     <div style={{ display: "grid", gap: 8 }}>
  *       <strong>Synced Issues</strong>
  *       <div>{data!.syncedCount}</div>
- *       <button onClick={() => resync({ companyId: context.companyId })}>
+ *       <button onClick={() => resync({})}>
  *         Resync Now
  *       </button>
  *     </div>
@@ -45,7 +45,6 @@
  * - `useHostContext()` — read the current active company, project, entity, and user IDs
  * - `useHostNavigation()` — navigate Paperclip-internal links through the host router
  * - `useHostLocation()` — observe the current host pathname/search/hash for URL-driven UI
- * - `usePluginStream(channel)` — subscribe to real-time SSE events from the worker
  */
 export {
   usePluginData,
@@ -53,7 +52,6 @@ export {
   useHostContext,
   useHostNavigation,
   useHostLocation,
-  usePluginStream,
   usePluginToast,
 } from "./hooks.js";
 
@@ -61,12 +59,9 @@ export {
   MetricCard,
   StatusBadge,
   DataTable,
-  TimeseriesChart,
   MarkdownBlock,
   MarkdownEditor,
   KeyValueList,
-  ActionBar,
-  LogView,
   JsonTree,
   Spinner,
   ErrorBoundary,
@@ -84,21 +79,14 @@ export type {
   StatusBadgeProps,
   DataTableColumn,
   DataTableProps,
-  TimeseriesDataPoint,
-  TimeseriesChartProps,
   MarkdownBlockProps,
   MarkdownEditorProps,
   KeyValuePair,
   KeyValueListProps,
-  ActionBarItem,
-  ActionBarProps,
-  LogViewEntry,
-  LogViewProps,
   JsonTreeProps,
   SpinnerProps,
   ErrorBoundaryProps,
   FileTreeNode,
-  FileTreeBadgeVariant,
   FileTreeBadge,
   FileTreeTone,
   FileTreeEmptyState,
@@ -127,6 +115,7 @@ export type {
   HostNavigationLinkProps,
   HostLocation,
   PluginHostContext,
+  PluginHostContextProps,
   PluginModalBoundsRequest,
   PluginRenderCloseEvent,
   PluginRenderCloseHandler,
@@ -136,23 +125,13 @@ export type {
   PluginLauncherRenderEnvironment,
   PluginDataResult,
   PluginActionFn,
-  PluginStreamResult,
   PluginToastTone,
   PluginToastAction,
   PluginToastInput,
   PluginToastFn,
 } from "./types.js";
 
-// Slot component prop interfaces
 export type {
-  PluginPageProps,
-  PluginCompanySettingsPageProps,
-  PluginWidgetProps,
   PluginDetailTabProps,
-  PluginSidebarProps,
-  PluginRouteSidebarProps,
   PluginProjectSidebarItemProps,
-  PluginCommentAnnotationProps,
-  PluginCommentContextMenuItemProps,
-  PluginSettingsPageProps,
 } from "./types.js";

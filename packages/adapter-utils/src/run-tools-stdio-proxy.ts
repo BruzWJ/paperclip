@@ -36,8 +36,6 @@ try {
   failStartup();
 }
 
-let sessionId = null;
-
 function emit(value) {
   const text =
     typeof value === "string" ? value.trim() : JSON.stringify(value);
@@ -81,24 +79,6 @@ function emitFailure(id) {
   });
 }
 
-function emitSse(text) {
-  let data = [];
-  const flush = () => {
-    if (data.length === 0) return;
-    const payload = data.join("\\n").trim();
-    data = [];
-    if (payload && payload !== "[DONE]") emit(payload);
-  };
-  for (const line of text.split(/\\r?\\n/)) {
-    if (line.length === 0) {
-      flush();
-    } else if (line.startsWith("data:")) {
-      data.push(line.slice(5).trimStart());
-    }
-  }
-  flush();
-}
-
 async function forward(line, ingressOrdinal) {
   let message;
   try {
@@ -111,10 +91,9 @@ async function forward(line, ingressOrdinal) {
     const response = await fetch(config.endpoint, {
       method: "POST",
       headers: {
-        accept: "application/json, text/event-stream",
+        accept: "application/json",
         authorization: "Bearer " + config.bearer,
         "content-type": "application/json",
-        ...(sessionId ? { "mcp-session-id": sessionId } : {}),
         ...(ingressOrdinal === null
           ? {}
           : {
@@ -124,21 +103,25 @@ async function forward(line, ingressOrdinal) {
       },
       body: line,
     });
-    const nextSessionId = response.headers.get("mcp-session-id");
-    if (nextSessionId) sessionId = nextSessionId;
-    if (!response.ok) {
-      emitFailure(requestId(message));
+    const body = await response.text();
+    if (!body.trim()) {
+      if (!response.ok) emitFailure(requestId(message));
       return;
     }
-    if (response.status === 202 || response.status === 204) return;
-    const body = await response.text();
-    if (!body.trim()) return;
-    const contentType =
-      response.headers.get("content-type")?.toLowerCase() ?? "";
-    if (contentType.includes("text/event-stream")) {
-      emitSse(body);
-    } else {
-      emit(body);
+    try {
+      const parsed = JSON.parse(body);
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        Array.isArray(parsed) ||
+        parsed.jsonrpc !== "2.0"
+      ) {
+        emitFailure(requestId(message));
+        return;
+      }
+      emit(parsed);
+    } catch {
+      emitFailure(requestId(message));
     }
   } catch {
     emitFailure(requestId(message));
@@ -188,25 +171,20 @@ for await (const line of input) {
     launchCall(line, message);
     continue;
   }
-  // Initialization, discovery, notifications, ping/control, and any future
-  // non-call operation are barriers around the concurrently forwarded calls.
+  if (requestMethod(message) === "notifications/initialized") {
+    await awaitInFlight();
+    continue;
+  }
+  if (requestMethod(message) === "ping") {
+    await awaitInFlight();
+    if (Object.prototype.hasOwnProperty.call(message, "id")) {
+      emit({ jsonrpc: "2.0", id: message.id, result: {} });
+    }
+    continue;
+  }
+  // Initialization and discovery are barriers around concurrent calls.
   await awaitInFlight();
   await forward(line, null);
 }
 await awaitInFlight();
-
-if (sessionId) {
-  try {
-    await fetch(config.endpoint, {
-      method: "DELETE",
-      headers: {
-        authorization: "Bearer " + config.bearer,
-        "mcp-session-id": sessionId,
-      },
-    });
-  } catch {
-    // Session cleanup is best effort; the attempt-scoped bearer is revoked by
-    // the Paperclip run boundary independently.
-  }
-}
 `;

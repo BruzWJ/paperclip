@@ -180,7 +180,7 @@ describe("TeamCatalog adapter-schema readiness", () => {
     ).toBe(true);
   });
 
-  it("fails closed when the selected environment is no longer in the ACPX-filtered list", () => {
+  it("fails closed when the selected environment is no longer in the server-filtered list", () => {
     expect(
       catalogAdapterConfigurationIsReady({
         ...base,

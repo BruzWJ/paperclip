@@ -3538,7 +3538,7 @@ export function IssueDetail() {
       </div>
 
       <PluginSlotOutlet
-        slotTypes={["toolbarButton", "contextMenuItem"]}
+        slotTypes={["toolbarButton"]}
         entityType="issue"
         context={{
           companyId: issue.companyId,

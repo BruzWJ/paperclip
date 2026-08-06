@@ -35,10 +35,12 @@ import {
   type InvokableIssueOwnerRevision,
 } from "../services/agent-invokability.js";
 import type { IssueSessionDbTransaction } from "../services/issue-session/event-store.js";
-import { lockPluginCompanySettingScopeInTransaction } from "../services/plugin-authorization-locks.js";
+import {
+  lockPluginInstallationCompanyScopeInTransaction,
+} from "../services/plugin-authorization-locks.js";
 import { pluginRegistryService } from "../services/plugin-registry.js";
 import {
-  assertPluginInstallationAvailableForCompany,
+  assertPluginInstallationRequestScope,
   assertPluginPermittedIssueOwnerInTransaction,
   PluginIssueAuthorizationRejected,
   resolvePluginPermittedIssueOwnerCatalog,
@@ -71,13 +73,13 @@ function company(): typeof companies.$inferSelect {
 }
 
 function setting(
-  enabled: boolean,
+  settingsJson: Record<string, unknown> = {},
 ): typeof pluginCompanySettings.$inferSelect {
   return {
     id: "00000000-0000-4000-8000-000000000003",
     companyId: COMPANY_ID,
     pluginId: INSTALLATION_ID,
-    enabled,
+    settingsJson,
   } as typeof pluginCompanySettings.$inferSelect;
 }
 
@@ -148,7 +150,6 @@ function resolve(
     operation: "issues.create",
     installation: installation(),
     company: company(),
-    companySetting: null,
     invokableOwnerCatalog: canonicalInvokableCatalog(),
     ...overrides,
   });
@@ -203,23 +204,10 @@ describe("plugin issue owner authorization", () => {
     ).toBe(1);
   });
 
-  it("honors explicit company disable while preserving schema-defined absence-as-enabled", () => {
-    expect(resolve({ companySetting: null }).size).toBe(1);
-    expect(resolve({ companySetting: setting(true) }).size).toBe(1);
-    expect(() =>
-      resolve({ companySetting: setting(false) }),
-    ).toThrowError(
-      expect.objectContaining({
-        reason: "plugin_company_disabled",
-      }),
-    );
-  });
-
-  it("uses persisted company availability for the plugin host read-side gate", async () => {
+  it("uses instance installation and company availability for the plugin host read-side gate", async () => {
     const rows = new Map<unknown, unknown[]>([
       [plugins, [installation()]],
       [companies, [company()]],
-      [pluginCompanySettings, [setting(false)]],
     ]);
     const db = {
       select() {
@@ -235,15 +223,11 @@ describe("plugin issue owner authorization", () => {
       },
     } as unknown as Db;
 
-    await expect(
-      assertPluginInstallationAvailableForCompany(db, {
-        companyId: COMPANY_ID,
-        pluginInstallationId: INSTALLATION_ID,
-        pluginKey: PLUGIN_KEY,
-      }),
-    ).rejects.toMatchObject({
-      reason: "plugin_company_disabled",
-    });
+    await expect(assertPluginInstallationRequestScope(db, {
+      companyId: COMPANY_ID,
+      pluginInstallationId: INSTALLATION_ID,
+      pluginKey: PLUGIN_KEY,
+    })).resolves.toMatchObject({ id: INSTALLATION_ID });
   });
 
   it.each([
@@ -291,12 +275,11 @@ describe("plugin issue owner authorization", () => {
     }
   });
 
-  it("locks installation, company, then the exact setting row", async () => {
+  it("locks only the instance installation and target company for authorization", async () => {
     const lockOrder: unknown[] = [];
     const rows = new Map<unknown, unknown[]>([
       [plugins, [installation()]],
       [companies, [company()]],
-      [pluginCompanySettings, []],
     ]);
     const tx = {
       select() {
@@ -317,7 +300,7 @@ describe("plugin issue owner authorization", () => {
       },
     } as unknown as IssueSessionDbTransaction;
 
-    const scope = await lockPluginCompanySettingScopeInTransaction(tx, {
+    const scope = await lockPluginInstallationCompanyScopeInTransaction(tx, {
       pluginInstallationId: INSTALLATION_ID,
       companyId: COMPANY_ID,
     });
@@ -325,21 +308,19 @@ describe("plugin issue owner authorization", () => {
     expect(lockOrder).toEqual([
       plugins,
       companies,
-      pluginCompanySettings,
     ]);
     expect(scope).toMatchObject({
       installation: { id: INSTALLATION_ID },
       company: { id: COMPANY_ID },
-      companySetting: null,
     });
   });
 
   it("uses the shared installation-company-setting prefix for company setting mutations", async () => {
     const lockOrder: unknown[] = [];
-    const currentSetting = setting(true);
+    const currentSetting = setting({ localFolders: {} });
     const updatedSetting = {
       ...currentSetting,
-      enabled: false,
+      settingsJson: { localFolders: { content: { path: "/tmp/content" } } },
     };
     const rows = new Map<unknown, unknown[]>([
       [plugins, [installation()]],
@@ -398,8 +379,7 @@ describe("plugin issue owner authorization", () => {
         INSTALLATION_ID,
         COMPANY_ID,
         {
-          enabled: false,
-          settingsJson: {},
+          settingsJson: updatedSetting.settingsJson,
         },
       ),
     ).resolves.toEqual(updatedSetting);
@@ -426,7 +406,6 @@ describe("plugin issue owner authorization", () => {
     const rows = new Map<unknown, unknown[]>([
       [plugins, [installation()]],
       [companies, [company()]],
-      [pluginCompanySettings, [setting(true)]],
       [agents, [owner]],
       [agentAdapterConfigRevisions, [revision]],
     ]);
@@ -467,7 +446,6 @@ describe("plugin issue owner authorization", () => {
     expect(lockOrder).toEqual([
       plugins,
       companies,
-      pluginCompanySettings,
       agents,
       agentAdapterConfigRevisions,
     ]);

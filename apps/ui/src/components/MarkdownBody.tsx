@@ -866,7 +866,7 @@ function MarkdownBodyImpl({
               : parsed.kind === "routine"
                 ? `/routines/${parsed.routineId}`
                 : parsed.kind === "user"
-                  ? "/company/settings/access"
+                  ? "/company/settings/members"
                   : `/agents/${parsed.agentId}`;
         return (
           <a

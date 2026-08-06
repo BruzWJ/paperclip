@@ -16,7 +16,7 @@ describe("adapter metadata", () => {
     syncServerAdapters([{ type: "codex", label: "Codex" }]);
   });
 
-  it("exposes only the exact server-admitted ACPX catalog", () => {
+  it("exposes only the exact server-admitted local-agent catalog", () => {
     expect(isEnabledAdapterType("codex")).toBe(true);
     expect(isValidAdapterType("codex")).toBe(true);
     expect(isVisualAdapterChoice("codex")).toBe(true);

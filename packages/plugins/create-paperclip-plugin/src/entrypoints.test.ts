@@ -44,6 +44,8 @@ describe("create-paperclip-plugin entrypoints", () => {
         process.execPath,
         "create-paperclip-plugin",
         "demo-plugin",
+        "--category",
+        "connector",
         "--output",
         outputRoot,
         "--sdk-path",
@@ -62,16 +64,158 @@ describe("create-paperclip-plugin entrypoints", () => {
 
     expect(result).toBe(outputDir);
     expect(stdout).toEqual([`Created plugin scaffold at ${outputDir}`]);
-    expect(JSON.parse(fs.readFileSync(path.join(outputDir, "package.json"), "utf8"))).toMatchObject({
+    const packageJson = JSON.parse(fs.readFileSync(path.join(outputDir, "package.json"), "utf8"));
+    expect(packageJson).toMatchObject({
       name: "demo-plugin",
       paperclipPlugin: {
         manifest: "./dist/manifest.js",
-        worker: "./dist/worker.js",
-        ui: "./dist/ui/",
       },
     });
-    expect(
-      fs.readFileSync(path.join(outputDir, "tests", "plugin.spec.ts"), "utf8"),
-    ).toContain('{ actor: { type: "system", companyId: null } }');
+    expect(packageJson).not.toHaveProperty("private");
+    expect(packageJson.devDependencies).not.toHaveProperty("@paperclipai/shared");
+    const test = fs.readFileSync(path.join(outputDir, "tests", "plugin.spec.ts"), "utf8");
+    expect(test).toContain(
+      'import { pluginManifestV1Schema } from "@paperclipai/plugin-sdk"',
+    );
+    expect(test).not.toContain('from "@paperclipai/shared"');
+    expect(test).toContain('pluginManifestV1Schema.parse(manifest)');
+    expect(test).toContain(
+      '{ actor: { type: "user", userId: "user-1", companyId: "company-1" } }',
+    );
+  });
+
+  it("requires an explicit category in the standalone CLI", async () => {
+    const { runCli } = await import("./bin.js");
+    const stderr: string[] = [];
+
+    expect(() =>
+      runCli(
+        [process.execPath, "create-paperclip-plugin", "demo-plugin"],
+        {
+          stderr: (message) => stderr.push(message),
+          exit: (code) => {
+            throw new Error(`exit ${code}`);
+          },
+        },
+      )).toThrow("exit 1");
+    expect(stderr).toEqual(["--category is required"]);
+  });
+
+  it("uses one standard template for every non-environment category", async () => {
+    const { pluginPackageDirectoryName, scaffoldPluginProject } = await import("./index.js");
+    const outputRoot = makeTempDir();
+    const outputDir = path.join(outputRoot, "workspace-plugin");
+
+    expect(pluginPackageDirectoryName("@acme/workspace-plugin")).toBe("workspace-plugin");
+
+    scaffoldPluginProject({
+      pluginName: "@acme/workspace-plugin",
+      outputDir,
+      template: "standard",
+      category: "workspace",
+      sdkPath: path.resolve("packages/plugins/sdk"),
+    });
+
+    const manifest = fs.readFileSync(path.join(outputDir, "src", "manifest.ts"), "utf8");
+    const worker = fs.readFileSync(path.join(outputDir, "src", "worker.ts"), "utf8");
+    expect(manifest).toContain('categories: ["workspace"]');
+    expect(manifest).not.toContain("environmentDrivers");
+    expect(manifest).not.toContain("events.subscribe");
+    expect(manifest).not.toContain("plugin.state");
+    expect(worker).not.toContain("ctx.events");
+    expect(worker).not.toContain("ctx.state");
+  });
+
+  it("keeps the environment template for its distinct driver contract", async () => {
+    const { scaffoldPluginProject } = await import("./index.js");
+    const outputRoot = makeTempDir();
+    const outputDir = path.join(outputRoot, "environment-plugin");
+
+    scaffoldPluginProject({
+      pluginName: "@acme/environment-plugin",
+      outputDir,
+      template: "environment",
+      category: "workspace",
+      sdkPath: path.resolve("packages/plugins/sdk"),
+    });
+
+    const manifest = fs.readFileSync(path.join(outputDir, "src", "manifest.ts"), "utf8");
+    const worker = fs.readFileSync(path.join(outputDir, "src", "worker.ts"), "utf8");
+    const test = fs.readFileSync(path.join(outputDir, "tests", "plugin.spec.ts"), "utf8");
+    expect(manifest).toContain("environmentDrivers");
+    expect(manifest).toContain('configSchema: {\n        type: "object"');
+    expect(worker).toContain("onEnvironmentAcquireLease");
+    expect(worker).toContain("onEnvironmentExecute");
+    expect(worker).toContain("Environment provider probe is not implemented");
+    expect(worker).not.toContain("Environment is reachable");
+    expect(worker).not.toContain("exitCode: 0");
+    expect(test).toContain(
+      'import { pluginManifestV1Schema } from "@paperclipai/plugin-sdk"',
+    );
+    expect(test).not.toContain('from "@paperclipai/shared"');
+    for (const hook of [
+      "onEnvironmentValidateConfig",
+      "onEnvironmentProbe",
+      "onEnvironmentAcquireLease",
+      "onEnvironmentResumeLease",
+      "onEnvironmentReleaseLease",
+      "onEnvironmentDestroyLease",
+      "onEnvironmentRealizeWorkspace",
+      "onEnvironmentExecute",
+      "onEnvironmentCancelExecution",
+    ]) {
+      expect(test).toContain(`plugin.definition.${hook}`);
+    }
+    expect(test).toContain("fails closed until the provider placeholders are implemented");
+    expect(test).not.toContain("createFakeEnvironmentDriver");
+  });
+
+  it("rejects removed template aliases", async () => {
+    const { scaffoldPluginProject } = await import("./index.js");
+    const outputRoot = makeTempDir();
+
+    expect(() =>
+      scaffoldPluginProject({
+        pluginName: "@acme/connector-plugin",
+        outputDir: path.join(outputRoot, "connector-plugin"),
+        template: "connector" as never,
+        category: "connector",
+        sdkPath: path.resolve("packages/plugins/sdk"),
+      })).toThrow("Expected one of: standard, environment");
+  });
+
+  it("rejects categories outside the canonical manifest contract", async () => {
+    const { scaffoldPluginProject } = await import("./index.js");
+    const outputRoot = makeTempDir();
+
+    expect(() =>
+      scaffoldPluginProject({
+        pluginName: "@acme/environment-plugin",
+        outputDir: path.join(outputRoot, "environment-plugin"),
+        template: "environment",
+        category: "environment" as never,
+        sdkPath: path.resolve("packages/plugins/sdk"),
+      })).toThrow("Expected one of: connector, workspace, automation, ui");
+  });
+
+  it("uses the canonical shared npm package-name contract", async () => {
+    const { scaffoldPluginProject } = await import("./index.js");
+    const outputRoot = makeTempDir();
+
+    for (const pluginName of [
+      "-invalid",
+      "@-invalid/plugin",
+      "Invalid",
+      `p${"a".repeat(214)}`,
+    ]) {
+      expect(() =>
+        scaffoldPluginProject({
+          pluginName,
+          outputDir: path.join(outputRoot, "invalid"),
+          category: "connector",
+          sdkPath: path.resolve("packages/plugins/sdk"),
+        }),
+      ).toThrow("packageName");
+    }
   });
 });

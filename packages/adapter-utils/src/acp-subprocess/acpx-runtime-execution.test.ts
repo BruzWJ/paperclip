@@ -51,7 +51,7 @@ function runtimeTurn(input: {
 function registry(): AcpAgentRegistry {
   return {
     list: () => ["fixture"],
-    resolve: (name) => ["fixture-command", name],
+    resolve: (name) => [process.execPath, name],
   };
 }
 
@@ -622,6 +622,34 @@ describe("ACPX one-shot runtime bridge", () => {
         },
       }),
     ).rejects.toThrow(/ACPX config fast-mode value/);
+    expect(createAcpRuntime).not.toHaveBeenCalled();
+  });
+
+  it("rejects an uninstalled package-runner agent before ACPX creates a runtime", async () => {
+    const createAcpRuntime = vi.fn();
+
+    await expect(
+      executeAcpxOneShotPrompt({
+        cwd: process.cwd(),
+        agentName: "definitely-not-installed-agent",
+        start: { kind: "new" },
+        message: "must not materialize a package",
+        configSelections: [],
+        permissionMode: "deny-all",
+        dependencies: {
+          loadAgentRegistry: async () => ({
+            list: () => ["definitely-not-installed-agent"],
+            resolve: () => [
+              "npx",
+              "-y",
+              "definitely-not-installed-package",
+            ],
+          }),
+          createAcpRuntime,
+        },
+      }),
+    ).rejects.toThrow("ACPX agent is not locally available");
+
     expect(createAcpRuntime).not.toHaveBeenCalled();
   });
 });

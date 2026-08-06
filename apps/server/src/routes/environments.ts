@@ -53,7 +53,7 @@ import { listServerAdapters, refreshAcpxAdapters } from "../adapters/index.js";
 
 export function environmentRoutes(
   db: Db,
-  options: { pluginWorkerManager?: PluginWorkerManager } = {},
+  options: { pluginWorkerManager: PluginWorkerManager },
 ) {
   const router = Router();
   const svc = environmentService(db);

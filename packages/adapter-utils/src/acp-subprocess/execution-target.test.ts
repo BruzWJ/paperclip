@@ -189,6 +189,6 @@ describe("ACPX execution-target subprocess preparation", () => {
         targetAdditionalDirectories: [],
         companySkills: { channel: "operator_native" },
       }),
-    ).rejects.toThrow("ACP registry name is not configured by ACPX");
+    ).rejects.toThrow("ACP registry name is not listed by ACPX");
   });
 });

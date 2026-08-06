@@ -6,7 +6,6 @@ import {
   agentMentionReachGrants,
   agents,
   issues,
-  pluginCompanySettings,
   plugins,
   principalPermissionGrants,
   toolApplications,
@@ -19,8 +18,10 @@ import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
+  pluginAgentToolName,
   type AgentContextGrantKey,
   type AgentMentionReachGrantKey,
+  type JsonSchema,
   type PaperclipPluginManifestV1,
   type PaperclipActionKey,
   type RuntimeAgentCompanyToolOption,
@@ -40,7 +41,6 @@ import type {
   AgentCatalogEntry,
   IssueAssignOwnerCatalog,
   IssueCreateOwnerCatalogEntry,
-  JsonSchema,
   RuntimeAgentConfigureTarget,
   RuntimeInterfaceCompileInput,
   RuntimePluginTool,
@@ -48,6 +48,7 @@ import type {
 } from "./runtime-interface-compiler.js";
 import type { RuntimeRetrievalScopeResolver } from "./runtime-tool-executor.js";
 import { listAuthorizedPluginAgentTools } from "./plugin-agent-tool-authority.js";
+import { pluginManifestIdentity } from "./plugin-manifest-identity.js";
 import { resolveExecutionModeContextMask } from "./execution-mode-context-mask.js";
 import {
   resolveMentionReach,
@@ -247,21 +248,21 @@ export function readyPluginTools(
     pluginKey: string;
     manifestJson: PaperclipPluginManifestV1;
   }[],
-  disabledPluginIds: ReadonlySet<string>,
 ): RuntimePluginTool[] {
-  return rows.flatMap((row) => {
-    if (disabledPluginIds.has(row.id)) return [];
-    return listAuthorizedPluginAgentTools({
+  return rows.flatMap((row) =>
+    listAuthorizedPluginAgentTools({
       pluginKey: row.pluginKey,
       manifest: row.manifestJson,
     }).map((tool) => ({
       installationId: row.id,
-      name: `${row.pluginKey}:${tool.name}`,
+      manifestIdentity: pluginManifestIdentity(row.manifestJson),
+      name: pluginAgentToolName(row.pluginKey, tool.name),
+      toolName: tool.name,
       title: tool.displayName,
       description: tool.description,
       inputSchema: tool.parametersSchema as JsonSchema,
-    }));
-  }).sort((left, right) =>
+    })),
+  ).sort((left, right) =>
     left.name.localeCompare(right.name) ||
     left.installationId.localeCompare(right.installationId),
   );
@@ -526,7 +527,6 @@ async function loadSnapshot(
     agentHireCompanyToolOptions,
     selectedTools,
     readyPlugins,
-    companyPluginSettings,
   ] = await Promise.all([
     db
       .select({
@@ -700,13 +700,6 @@ async function loadSnapshot(
       })
       .from(plugins)
       .where(eq(plugins.status, "ready")),
-    db
-      .select({
-        pluginId: pluginCompanySettings.pluginId,
-        enabled: pluginCompanySettings.enabled,
-      })
-      .from(pluginCompanySettings)
-      .where(eq(pluginCompanySettings.companyId, capability.companyId)),
   ]);
   const issue = issueRows[0];
   if (!issue) throw new Error("Prompt-capability issue no longer exists");
@@ -734,14 +727,7 @@ async function loadSnapshot(
     ) as unknown as MentionReachIssue[],
     agentHireCompanyToolOptions,
     selectedTools,
-    pluginTools: readyPluginTools(
-      readyPlugins,
-      new Set(
-        companyPluginSettings
-          .filter((setting) => !setting.enabled)
-          .map((setting) => setting.pluginId),
-      ),
-    ),
+    pluginTools: readyPluginTools(readyPlugins),
   };
 }
 

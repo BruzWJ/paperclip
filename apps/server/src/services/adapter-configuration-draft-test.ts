@@ -109,7 +109,7 @@ export function createAdapterConfigurationDraftTestService(
           adapterType: input.adapterType,
           reason: "acp_initialization_failed",
           message:
-            "Paperclip could not prepare an isolated workspace for the ACPX agent test.",
+            "Paperclip could not prepare an isolated workspace for the local agent test.",
           now,
         });
       }
@@ -137,7 +137,7 @@ export function createAdapterConfigurationDraftTestService(
             adapterType: input.adapterType,
             reason: "acp_cleanup_failed",
             message:
-              "ACPX could not prove cleanup of the disposable test session.",
+              "Paperclip could not verify cleanup of the disposable test session.",
             now,
           });
         } else if (error instanceof AcpxRuntimeReadinessCapabilityError) {
@@ -145,7 +145,7 @@ export function createAdapterConfigurationDraftTestService(
             adapterType: input.adapterType,
             reason: "acp_capability_incompatible",
             message:
-              "The ACPX agent does not expose the runtime controls required by this configuration.",
+              "The local agent runtime does not expose the controls required by this configuration.",
             now,
           });
         } else {
@@ -153,7 +153,7 @@ export function createAdapterConfigurationDraftTestService(
             adapterType: input.adapterType,
             reason: "acp_initialization_failed",
             message:
-              "ACPX could not initialize the agent with this configuration.",
+              "Paperclip could not initialize the local agent with this configuration.",
             now,
           });
         }
@@ -166,7 +166,7 @@ export function createAdapterConfigurationDraftTestService(
           adapterType: input.adapterType,
           reason: "acp_cleanup_failed",
           message:
-            "Paperclip could not remove the isolated ACPX agent test workspace.",
+            "Paperclip could not remove the isolated local agent test workspace.",
           now,
         });
       }

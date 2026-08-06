@@ -25,7 +25,7 @@ export interface AdapterConfigFieldsProps {
 export interface UIAdapterModule {
   type: string;
   label: string;
-  /** Exact driver membership supplied by the current server ACPX catalog. */
+  /** Exact driver membership supplied by the current server agent catalog. */
   drivers: readonly EnvironmentDriver[];
   ConfigFields: ComponentType<AdapterConfigFieldsProps>;
   buildAdapterConfig: (values: CreateConfigValues) => Record<string, unknown>;

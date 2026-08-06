@@ -1,6 +1,8 @@
 import esbuild from "esbuild";
+import { rmSync } from "node:fs";
 import { createPluginBundlerPresets } from "@paperclipai/plugin-sdk/bundlers";
 
+rmSync("dist", { recursive: true, force: true });
 const presets = createPluginBundlerPresets();
 const watch = process.argv.includes("--watch");
 

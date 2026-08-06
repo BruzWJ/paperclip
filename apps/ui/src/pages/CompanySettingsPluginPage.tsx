@@ -36,7 +36,7 @@ export function CompanySettingsPluginPage() {
     return slots.filter((slot) => slot.routePath === settingsRoutePath);
   }, [settingsRoutePath, slots]);
 
-  const pageSlot = pageSlots.length === 1 ? pageSlots[0] : null;
+  const pageSlot = pageSlots.length === 1 ? pageSlots[0]! : null;
 
   useEffect(() => {
     if (!pageSlot) return;

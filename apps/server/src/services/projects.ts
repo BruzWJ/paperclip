@@ -291,7 +291,7 @@ async function attachWorkspaces(db: Db, rows: ProjectWithGoals[]): Promise<Proje
       id: row.id,
       pluginId: row.pluginId,
       pluginKey: row.pluginKey,
-      pluginDisplayName: row.manifestJson.displayName ?? row.pluginKey,
+      pluginDisplayName: row.manifestJson.displayName,
       resourceKind: "project",
       resourceKey: row.resourceKey,
       defaultsJson: row.defaultsJson,

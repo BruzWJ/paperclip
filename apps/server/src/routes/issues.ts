@@ -106,7 +106,7 @@ import {
   workProductService,
 } from "../services/index.js";
 import { issueWatchdogService } from "../services/issue-watchdogs.js";
-import { publishPluginDomainEvent } from "../services/activity-log.js";
+import type { PluginDomainEventPublisher } from "../services/plugin-domain-event-publisher.js";
 import { logger } from "../middleware/logger.js";
 import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import {
@@ -1302,6 +1302,7 @@ export function issueRoutes(
     pluginWorkerManager?: PluginWorkerManager;
     issueListDiagnostics?: IssueListDiagnostics;
     ordinaryIssues: OrdinaryIssueRuntime;
+    pluginDomainEvents: PluginDomainEventPublisher;
   },
 ) {
   const router = Router();
@@ -4124,9 +4125,9 @@ export function issueRoutes(
             "board_comment_projection_missing",
           );
         }
-        await publishPluginDomainEvent({
+        await opts.pluginDomainEvents.publish({
           eventId: comment.id,
-          eventType: "issue.comment.created",
+          eventType: "issue.board.comment.created",
           occurredAt: new Date().toISOString(),
           actorId: actorUserId,
           actorType: "user",

@@ -59,7 +59,7 @@ export function NewAgentDialog() {
 
   const inviteHistoryQueryKey = queryKeys.access.invites(selectedCompanyId ?? "", "all", 5);
 
-  // The synchronized UI registry contains only server-admitted ACPX agents.
+  // The synchronized UI registry contains only server-admitted local agents.
   const adapterGrid = useMemo(() => {
     const registered = listUIAdapters()
       .filter((a) => isVisualAdapterChoice(a.type));
@@ -230,13 +230,13 @@ export function NewAgentDialog() {
                   Back
                 </button>
                 <p className="text-sm text-muted-foreground">
-                  Choose the ACPX-configured runtime Paperclip should use for this agent.
+                  Choose the local agent runtime Paperclip should use for this agent.
                 </p>
               </div>
 
               {adapterCatalog.isLoading ? (
                 <p role="status" className="text-sm text-muted-foreground">
-                  Checking ACPX-configured runtimes…
+                  Checking local agent runtimes…
                 </p>
               ) : adapterCatalog.isError ? (
                 <div
@@ -244,7 +244,7 @@ export function NewAgentDialog() {
                   className="space-y-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-3 text-sm text-destructive"
                 >
                   <p>
-                    Paperclip could not refresh the ACPX runtime catalog. Check ACPX agent diagnostics, then retry.
+                    Paperclip could not refresh the local agent catalog. Check local agent diagnostics, then retry.
                   </p>
                   <Button
                     size="sm"
@@ -258,7 +258,7 @@ export function NewAgentDialog() {
                 </div>
               ) : adapterGrid.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No configured ACPX runtime is currently available. Declare a local runtime in ACPX&apos;s agents configuration, authenticate it, then retry.
+                  No compatible local agent is currently available. Install and authenticate a compatible agent CLI on this host, then retry.
                 </p>
               ) : (
                 <div className="grid grid-cols-2 gap-2">

@@ -1,27 +1,21 @@
 import express from "express";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockRegistry = vi.hoisted(() => ({
   getById: vi.fn(),
-  getByKey: vi.fn(),
-  getConfig: vi.fn(),
 }));
 
 vi.mock("../services/plugin-registry.js", () => ({
   pluginRegistryService: () => mockRegistry,
 }));
 
-const companyA = "22222222-2222-4222-8222-222222222222";
-const companyB = "33333333-3333-4333-8333-333333333333";
 const pluginId = "11111111-1111-4111-8111-111111111111";
 const tempDirs: string[] = [];
-let originalNodeEnv: string | undefined;
 
 function createPluginPackage(source = "export default {};\n") {
   const packageRoot = path.join(
@@ -35,29 +29,22 @@ function createPluginPackage(source = "export default {};\n") {
   return packageRoot;
 }
 
-function readyPlugin(packageRoot: string) {
+function readyPlugin(
+  packageRoot: string,
+  uiEntrypoint = "./dist/ui",
+) {
   mockRegistry.getById.mockResolvedValue({
     id: pluginId,
     pluginKey: "paperclip.example",
     packageName: "paperclip-plugin-example",
     packagePath: packageRoot,
-    version: "1.0.0",
     status: "ready",
     manifestJson: {
       id: "paperclip.example",
       entrypoints: {
-        ui: "./dist/ui",
+        ui: uiEntrypoint,
       },
     },
-  });
-  mockRegistry.getByKey.mockResolvedValue(null);
-}
-
-function boardActor(companyIds: string[]) {
-  return testBoardSessionActor({
-    userId: "board-user",
-    isInstanceAdmin: false,
-    companyIds,
   });
 }
 
@@ -72,32 +59,24 @@ async function createApp(actor: Record<string, unknown>) {
     req.actor = actor as typeof req.actor;
     next();
   });
-  app.use(pluginUiStaticRoutes({} as never, { localPluginDir: tmpdir() }));
+  app.use(pluginUiStaticRoutes({} as never));
   app.use(errorHandler);
   return app;
 }
 
 describe("plugin UI static route", () => {
   beforeEach(() => {
-    originalNodeEnv = process.env.NODE_ENV;
     vi.resetAllMocks();
-    vi.unstubAllGlobals();
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
-    if (originalNodeEnv === undefined) {
-      delete process.env.NODE_ENV;
-    } else {
-      process.env.NODE_ENV = originalNodeEnv;
-    }
     while (tempDirs.length > 0) {
       const dir = tempDirs.pop();
       if (dir) rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it("serves built UI assets publicly when no company context is requested", async () => {
+  it("serves a built UI asset from the installation's persisted package path", async () => {
     readyPlugin(createPluginPackage("export const marker = 'static-bundle';\n"));
     const app = await createApp({ type: "none", source: "none" });
 
@@ -105,59 +84,77 @@ describe("plugin UI static route", () => {
 
     expect(res.status).toBe(200);
     expect(res.text).toContain("static-bundle");
-    expect(mockRegistry.getConfig).not.toHaveBeenCalled();
+    expect(mockRegistry.getById).toHaveBeenCalledExactlyOnceWith(pluginId);
   });
 
-  it("requires authentication before reading company-scoped devUiUrl config", async () => {
-    readyPlugin(createPluginPackage());
+  it("rejects a plugin key instead of treating it as an installation ID alias", async () => {
     const app = await createApp({ type: "none", source: "none" });
 
-    const res = await request(app)
-      .get(`/_plugins/${pluginId}/ui/index.js`)
-      .query({ companyId: companyA });
+    const res = await request(app).get(
+      "/_plugins/paperclip.example/ui/index.js",
+    );
 
-    expect(res.status).toBe(401);
-    expect(mockRegistry.getConfig).not.toHaveBeenCalled();
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "Invalid plugin installation ID" });
+    expect(mockRegistry.getById).not.toHaveBeenCalled();
   });
 
-  it("rejects cross-company companyId before reading devUiUrl config", async () => {
-    readyPlugin(createPluginPackage());
-    const app = await createApp(boardActor([companyA]));
+  it("requires packagePath to be an absolute persisted package root", async () => {
+    const packageRoot = createPluginPackage();
+    readyPlugin(path.relative(process.cwd(), packageRoot));
+    const app = await createApp({ type: "none", source: "none" });
 
-    const res = await request(app)
-      .get(`/_plugins/${pluginId}/ui/index.js`)
-      .query({ companyId: companyB });
+    const res = await request(app).get(`/_plugins/${pluginId}/ui/index.js`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects UI entrypoints that escape or bypass the package root", async () => {
+    const packageRoot = createPluginPackage();
+    const outsideRoot = createPluginPackage("export const outside = true;\n");
+    const app = await createApp({ type: "none", source: "none" });
+
+    readyPlugin(
+      packageRoot,
+      path.relative(packageRoot, path.join(outsideRoot, "dist", "ui")),
+    );
+    const escaped = await request(app).get(`/_plugins/${pluginId}/ui/index.js`);
+
+    readyPlugin(packageRoot, path.join(packageRoot, "dist", "ui"));
+    const absolute = await request(app).get(`/_plugins/${pluginId}/ui/index.js`);
+
+    expect(escaped.status).toBe(403);
+    expect(absolute.status).toBe(403);
+  });
+
+  it("rejects a UI directory symlink that escapes the package root", async () => {
+    const packageRoot = createPluginPackage();
+    const outsideRoot = createPluginPackage("export const outside = true;\n");
+    const uiDir = path.join(packageRoot, "dist", "ui");
+    rmSync(uiDir, { recursive: true });
+    symlinkSync(path.join(outsideRoot, "dist", "ui"), uiDir, "dir");
+    readyPlugin(packageRoot);
+    const app = await createApp({ type: "none", source: "none" });
+
+    const res = await request(app).get(`/_plugins/${pluginId}/ui/index.js`);
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/does not have access/i);
-    expect(mockRegistry.getConfig).not.toHaveBeenCalled();
   });
 
-  it("proxies devUiUrl only after company access succeeds", async () => {
-    process.env.NODE_ENV = "development";
-    readyPlugin(createPluginPackage());
-    mockRegistry.getConfig.mockResolvedValue({
-      configJson: {
-        devUiUrl: "http://localhost:5173/",
-      },
-    });
-    const fetchMock = vi.fn().mockResolvedValue(new Response("hot bundle", {
-      status: 200,
-      headers: { "content-type": "application/javascript" },
-    }));
-    vi.stubGlobal("fetch", fetchMock);
-    const app = await createApp(boardActor([companyA]));
-
-    const res = await request(app)
-      .get(`/_plugins/${pluginId}/ui/index.js`)
-      .query({ companyId: companyA });
-
-    expect(res.status).toBe(200);
-    expect(res.text).toBe("hot bundle");
-    expect(mockRegistry.getConfig).toHaveBeenCalledWith(pluginId, companyA);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:5173/index.js",
-      expect.objectContaining({ signal: expect.any(Object) }),
+  it("rejects an asset symlink that escapes the declared UI directory", async () => {
+    const packageRoot = createPluginPackage();
+    const outsideRoot = createPluginPackage("export const outside = true;\n");
+    symlinkSync(
+      path.join(outsideRoot, "dist", "ui", "index.js"),
+      path.join(packageRoot, "dist", "ui", "escape.js"),
+      "file",
     );
+    readyPlugin(packageRoot);
+    const app = await createApp({ type: "none", source: "none" });
+
+    const res = await request(app).get(`/_plugins/${pluginId}/ui/escape.js`);
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: "Access denied" });
   });
 });

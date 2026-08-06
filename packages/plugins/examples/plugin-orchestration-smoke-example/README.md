@@ -30,8 +30,9 @@ Use an absolute local path during development:
 
 ```bash
 curl -X POST http://127.0.0.1:3100/api/plugins/install \
+  -H "Authorization: Bearer <instance-admin-board-key>" \
   -H "Content-Type: application/json" \
-  -d '{"packageName":"/absolute/path/to/paperclip/packages/plugins/examples/plugin-orchestration-smoke-example","isLocalPath":true}'
+  -d '{"source":"local","path":"/absolute/path/to/paperclip/packages/plugins/examples/plugin-orchestration-smoke-example"}'
 ```
 
 ## Scoped Route Smoke
@@ -39,7 +40,8 @@ curl -X POST http://127.0.0.1:3100/api/plugins/install \
 After the plugin is ready, run the scoped route against an existing issue:
 
 ```bash
-curl -X POST http://127.0.0.1:3100/api/plugins/paperclipai.plugin-orchestration-smoke-example/api/issues/<issue-id>/smoke \
+curl -X POST http://127.0.0.1:3100/api/plugins/<plugin-installation-id>/api/issues/<issue-id>/smoke \
+  -H "Authorization: Bearer <board-key>" \
   -H "Content-Type: application/json" \
   -d '{"ownerAgentId":"<agent-id>"}'
 ```

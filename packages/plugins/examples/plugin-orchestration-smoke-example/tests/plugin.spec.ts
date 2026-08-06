@@ -22,7 +22,7 @@ function issue(input: Partial<Issue> & Pick<Issue, "id" | "companyId" | "title">
     parentId: null,
     title,
     request: "Run the plugin issue control-plane smoke flow.",
-    status: "todo",
+    boardPresentationStatus: "todo",
     lifecycleStatus: "open",
     workMode: "standard",
     priority: "medium",
@@ -104,10 +104,10 @@ describe("issue runtime smoke plugin", () => {
     expect(manifest.capabilities).toEqual(expect.arrayContaining([
       "issues.read",
       "issues.create",
-      "issues.update",
-      "issues.withdraw",
     ]));
     expect(manifest.capabilities).not.toEqual(expect.arrayContaining([
+      "issues.update",
+      "issues.withdraw",
       "issue.relations.read",
       "issue.documents.read",
       "issues.orchestration.read",
@@ -139,7 +139,6 @@ describe("issue runtime smoke plugin", () => {
       request: string;
       childStatus: string;
     }>("initialize-smoke", {
-      companyId,
       issueId: rootIssueId,
       ownerAgentId: agentId,
     }, {
@@ -188,8 +187,7 @@ describe("issue runtime smoke plugin", () => {
       query: {},
       body: { ownerAgentId: agentId },
       actor: {
-        actorType: "user",
-        actorId: "board",
+        type: "user",
         userId: "board",
       },
       companyId,

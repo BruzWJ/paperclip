@@ -27,7 +27,7 @@ import {
 } from "../selected-company-skills.js";
 import { buildSshSpawnTarget, shellQuote } from "../ssh.js";
 import {
-  loadConfiguredAcpRegistry,
+  loadAcpxAgentRegistry,
   resolveAcpRegistryLaunch,
   sameAcpRegistryLaunch,
   type AcpRegistryLaunch,
@@ -664,7 +664,7 @@ export async function prepareAcpExecutionTargetSubprocess(
     );
   }
   const cleanupTimeoutMs = requireCleanupTimeout(input.cleanupTimeoutMs);
-  const registry = input.agentRegistry ?? await loadConfiguredAcpRegistry({
+  const registry = input.agentRegistry ?? await loadAcpxAgentRegistry({
     cwd: hostCwd,
   });
   const acpxLaunch = resolveAcpRegistryLaunch(

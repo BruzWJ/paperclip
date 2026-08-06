@@ -20,6 +20,7 @@ import {
   normalizeAgentUrlKey,
   type AgentRuntimeState,
   type AgentEligibilityAgent,
+  type MoneyAmount,
 } from "@paperclipai/shared";
 import { conflict, notFound } from "../errors.js";
 import { normalizeAgentGovernancePolicy } from "./agent-governance-policy.js";
@@ -553,7 +554,7 @@ export function agentService(db: Db) {
     };
   }
 
-  function normalizeAgentBaseRow(row: typeof agents.$inferSelect) {
+  function normalizeAgentBaseRow<T extends typeof agents.$inferSelect>(row: T) {
     const { permissions, ...agent } = row;
     return withUrlKey({
       ...agent,
@@ -571,7 +572,10 @@ export function agentService(db: Db) {
     };
   }
 
-  function normalizeAgentRows(rows: (typeof agents.$inferSelect)[], allCompanyRows = rows) {
+  function normalizeAgentRows<T extends typeof agents.$inferSelect>(
+    rows: T[],
+    allCompanyRows: (typeof agents.$inferSelect)[] = rows,
+  ) {
     const eligibilityAgents = allCompanyRows.map(toEligibilityAgent);
     return rows.map((row) => {
       const base = normalizeAgentBaseRow(row);
@@ -585,7 +589,10 @@ export function agentService(db: Db) {
     });
   }
 
-  function normalizeAgentRow(row: typeof agents.$inferSelect, allCompanyRows?: (typeof agents.$inferSelect)[]) {
+  function normalizeAgentRow<T extends typeof agents.$inferSelect>(
+    row: T,
+    allCompanyRows?: (typeof agents.$inferSelect)[],
+  ) {
     return normalizeAgentRows([row], allCompanyRows)[0]!;
   }
 
@@ -597,10 +604,12 @@ export function agentService(db: Db) {
     return budgets.getAgentMonthlyKnownSpend(companyId, agentIds);
   }
 
-  async function hydrateAgentSpend<T extends { id: string; companyId: string }>(rows: T[]) {
+  async function hydrateAgentSpend<T extends { id: string; companyId: string }>(
+    rows: T[],
+  ): Promise<Array<T & { knownSpendAmount: MoneyAmount }>> {
+    if (rows.length === 0) return [];
     const agentIds = rows.map((row) => row.id);
-    const companyId = rows[0]?.companyId;
-    if (!companyId || agentIds.length === 0) return rows;
+    const companyId = rows[0]!.companyId;
     const spendByAgentId = await getMonthlySpendByAgentIds(companyId, agentIds);
     return rows.map((row) => ({
       ...row,

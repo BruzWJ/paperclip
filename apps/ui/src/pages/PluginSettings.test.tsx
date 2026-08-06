@@ -8,15 +8,24 @@ import { PluginSettings } from "./PluginSettings";
 
 const mockPluginsApi = vi.hoisted(() => ({
   get: vi.fn(),
-  health: vi.fn(),
   dashboard: vi.fn(),
   logs: vi.fn(),
   getConfig: vi.fn(),
+  saveConfig: vi.fn(),
+  testConfig: vi.fn(),
   listLocalFolders: vi.fn(),
   configureLocalFolder: vi.fn(),
 }));
 
 const mockSetBreadcrumbs = vi.hoisted(() => vi.fn());
+const mockCompanyContext = vi.hoisted(() => ({
+  selectedCompany: { id: "company-1", name: "Paperclip", issuePrefix: "PAP" } as {
+    id: string;
+    name: string;
+    issuePrefix: string;
+  } | null,
+  selectedCompanyId: "company-1" as string | null,
+}));
 
 vi.mock("@/api/plugins", () => ({
   pluginsApi: mockPluginsApi,
@@ -29,10 +38,7 @@ vi.mock("@/context/BreadcrumbContext", () => ({
 }));
 
 vi.mock("@/context/CompanyContext", () => ({
-  useCompany: () => ({
-    selectedCompany: { id: "company-1", name: "Paperclip", issuePrefix: "PAP" },
-    selectedCompanyId: "company-1",
-  }),
+  useCompany: () => mockCompanyContext,
 }));
 
 vi.mock("@/lib/router", () => ({
@@ -47,7 +53,21 @@ vi.mock("@/plugins/slots", () => ({
 }));
 
 vi.mock("@/components/PageTabBar", () => ({
-  PageTabBar: () => null,
+  PageTabBar: ({
+    items,
+    onValueChange,
+  }: {
+    items: Array<{ value: string; label: string }>;
+    onValueChange: (value: string) => void;
+  }) => (
+    <div>
+      {items.map((item) => (
+        <button key={item.value} type="button" onClick={() => onValueChange(item.value)}>
+          {item.label}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,14 +85,14 @@ function basePlugin(overrides: Record<string, unknown> = {}) {
     id: "plugin-1",
     pluginKey: "acme.remote-sandbox-provider",
     packageName: "@acme/remote-sandbox-provider",
-    version: "0.1.0",
     status: "error",
-    categories: ["automation"],
+    supportsConfigTest: false,
     manifestJson: {
       displayName: "Remote Sandbox Provider",
       version: "0.1.0",
       description: "Remote sandbox environments for Paperclip.",
       author: "Paperclip",
+      categories: ["automation"],
       capabilities: ["environment.drivers.register"],
       environmentDrivers: [
         {
@@ -145,12 +165,14 @@ describe("PluginSettings", () => {
 
     mockPluginsApi.get.mockResolvedValue(basePlugin());
     mockPluginsApi.dashboard.mockResolvedValue(null);
-    mockPluginsApi.health.mockResolvedValue({ pluginId: "plugin-1", status: "ready", healthy: true, checks: [] });
     mockPluginsApi.logs.mockResolvedValue([]);
+    mockPluginsApi.getConfig.mockResolvedValue(null);
+    mockPluginsApi.testConfig.mockResolvedValue({ valid: true });
+    mockCompanyContext.selectedCompany = { id: "company-1", name: "Paperclip", issuePrefix: "PAP" };
+    mockCompanyContext.selectedCompanyId = "company-1";
     mockPluginsApi.listLocalFolders.mockResolvedValue({
       pluginId: "plugin-1",
       companyId: "company-1",
-      declarations: [],
       folders: [],
     });
   });
@@ -165,9 +187,146 @@ describe("PluginSettings", () => {
     const root = await renderSettings(container);
 
     expect(container.textContent).toContain("Configure this plugin from Instance Settings → Environments.");
-    expect(container.textContent).toContain("secret bindings still resolve through the selected company context");
+    expect(container.textContent).toContain("registers its instance-scoped environment runtime settings there");
     const link = container.querySelector('a[href="/company/settings/instance/environments"]');
     expect(link?.textContent).toContain("Open Environments");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("loads, tests, and saves instance config without a selected company", async () => {
+    const initialConfig = {
+      baseUrl: "https://connector.example",
+      apiSecret: "plugin-secret",
+    };
+    mockCompanyContext.selectedCompany = null;
+    mockCompanyContext.selectedCompanyId = null;
+    mockPluginsApi.get.mockResolvedValue(basePlugin({
+      status: "ready",
+      supportsConfigTest: true,
+      manifestJson: {
+        displayName: "Example Connector",
+        version: "0.1.0",
+        description: "Instance-wide external service connector.",
+        author: "Paperclip",
+        categories: ["automation"],
+        capabilities: [],
+        instanceConfigSchema: {
+          type: "object",
+          properties: {
+            baseUrl: { type: "string", title: "Service URL" },
+            apiSecret: {
+              type: "string",
+              title: "Service API secret",
+            },
+          },
+          required: ["baseUrl", "apiSecret"],
+        },
+      },
+    }));
+    mockPluginsApi.getConfig.mockResolvedValue({
+      id: "config-1",
+      pluginId: "plugin-1",
+      configJson: initialConfig,
+    });
+    mockPluginsApi.saveConfig.mockResolvedValue({
+      id: "config-1",
+      pluginId: "plugin-1",
+      configJson: {
+        ...initialConfig,
+        baseUrl: "https://new-connector.example",
+      },
+    });
+
+    const root = await renderSettings(container);
+
+    expect(mockPluginsApi.getConfig).toHaveBeenCalledWith("plugin-1");
+    expect(container.querySelector<HTMLInputElement>(
+      'input[aria-label="Service API secret"]',
+    )?.value).toBe("plugin-secret");
+    expect(container.textContent).not.toContain("Select a company before");
+
+    const testButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Test Configuration"),
+    );
+    expect(testButton).toBeDefined();
+    expect(testButton?.hasAttribute("disabled")).toBe(false);
+
+    await act(async () => {
+      testButton!.click();
+    });
+    await flushReact();
+
+    expect(mockPluginsApi.testConfig).toHaveBeenCalledWith("plugin-1", initialConfig);
+
+    const baseUrlInput = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Service URL"]',
+    );
+    const setInputValue = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    expect(baseUrlInput).not.toBeNull();
+    expect(setInputValue).toBeTruthy();
+
+    await act(async () => {
+      setInputValue!.call(baseUrlInput!, "https://new-connector.example");
+      baseUrlInput!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const saveButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Save Configuration"),
+    );
+    expect(saveButton).toBeDefined();
+    expect(saveButton?.hasAttribute("disabled")).toBe(false);
+
+    await act(async () => {
+      saveButton!.click();
+    });
+    await flushReact();
+
+    expect(mockPluginsApi.saveConfig).toHaveBeenCalledWith("plugin-1", {
+      ...initialConfig,
+      baseUrl: "https://new-connector.example",
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("renders health from the dashboard response", async () => {
+    mockPluginsApi.get.mockResolvedValue(basePlugin({ status: "ready" }));
+    mockPluginsApi.dashboard.mockResolvedValue({
+      pluginId: "plugin-1",
+      worker: null,
+      recentJobRuns: [],
+      recentWebhookDeliveries: [],
+      health: {
+        pluginId: "plugin-1",
+        status: "ready",
+        healthy: true,
+        checks: [{ name: "Remote service", passed: true }],
+      },
+      checkedAt: "2026-08-05T12:00:00.000Z",
+    });
+
+    const root = await renderSettings(container);
+    const statusButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Status",
+    );
+    expect(statusButton).toBeDefined();
+
+    await act(async () => {
+      statusButton!.click();
+    });
+    await flushReact();
+
+    expect(mockPluginsApi.dashboard).toHaveBeenCalledWith("plugin-1");
+    expect(container.textContent).toContain("ready");
+    expect(container.textContent).toContain("Remote service");
 
     await act(async () => {
       root.unmount();
@@ -185,6 +344,7 @@ describe("PluginSettings", () => {
         version: "0.1.0",
         description: "Local-file knowledge-base plugin.",
         author: "Paperclip",
+        categories: ["automation"],
         capabilities: ["local.folders"],
         localFolders: [declaration],
       },
@@ -192,7 +352,6 @@ describe("PluginSettings", () => {
     mockPluginsApi.listLocalFolders.mockResolvedValue({
       pluginId: "plugin-1",
       companyId: "company-1",
-      declarations: [declaration],
       folders: [folderStatus()],
     });
 
@@ -218,6 +377,7 @@ describe("PluginSettings", () => {
         version: "0.1.0",
         description: "Local-file knowledge-base plugin.",
         author: "Paperclip",
+        categories: ["automation"],
         capabilities: ["local.folders"],
         localFolders: [declaration],
       },
@@ -225,7 +385,6 @@ describe("PluginSettings", () => {
     mockPluginsApi.listLocalFolders.mockResolvedValue({
       pluginId: "plugin-1",
       companyId: "company-1",
-      declarations: [declaration],
       folders: [folderStatus({
         configured: true,
         path: "/tmp/content",
@@ -260,6 +419,7 @@ describe("PluginSettings", () => {
         version: "0.1.0",
         description: "Local-file knowledge-base plugin.",
         author: "Paperclip",
+        categories: ["automation"],
         capabilities: ["local.folders"],
         localFolders: [declaration],
       },
@@ -267,7 +427,6 @@ describe("PluginSettings", () => {
     mockPluginsApi.listLocalFolders.mockResolvedValue({
       pluginId: "plugin-1",
       companyId: "company-1",
-      declarations: [declaration],
       folders: [folderStatus({
         configured: true,
         path: "/tmp/content-missing",
@@ -299,6 +458,7 @@ describe("PluginSettings", () => {
         version: "0.1.0",
         description: "Local-file knowledge-base plugin.",
         author: "Paperclip",
+        categories: ["automation"],
         capabilities: ["local.folders"],
         localFolders: [declaration],
       },
@@ -306,7 +466,6 @@ describe("PluginSettings", () => {
     mockPluginsApi.listLocalFolders.mockResolvedValue({
       pluginId: "plugin-1",
       companyId: "company-1",
-      declarations: [declaration],
       folders: [folderStatus({
         configured: true,
         path: "/tmp/content",
@@ -329,6 +488,45 @@ describe("PluginSettings", () => {
     expect(container.textContent).toContain("WritableYes");
     expect(container.textContent).toContain("Present");
     expect(container.textContent).not.toContain("Validation problems");
+
+    mockPluginsApi.configureLocalFolder.mockResolvedValue(folderStatus({
+      configured: true,
+      path: "/tmp/new-content",
+      realPath: "/tmp/new-content",
+      readable: true,
+      writable: true,
+      missingDirectories: [],
+      missingFiles: [],
+      healthy: true,
+      problems: [],
+    }));
+    const pathInput = container.querySelector<HTMLInputElement>("#local-folder-content-root");
+    const setInputValue = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    expect(pathInput).not.toBeNull();
+    expect(setInputValue).toBeTruthy();
+    await act(async () => {
+      setInputValue!.call(pathInput!, "/tmp/new-content");
+      pathInput!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const saveButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Save",
+    );
+    expect(saveButton).toBeDefined();
+    await act(async () => {
+      saveButton!.click();
+    });
+    await flushReact();
+
+    expect(mockPluginsApi.configureLocalFolder).toHaveBeenCalledWith(
+      "plugin-1",
+      "company-1",
+      "content-root",
+      { path: "/tmp/new-content" },
+    );
 
     await act(async () => {
       root.unmount();

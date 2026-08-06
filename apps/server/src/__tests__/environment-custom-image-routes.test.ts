@@ -188,7 +188,9 @@ function createApp(actor: Record<string, unknown>) {
     (req as typeof req & { actor: Record<string, unknown> }).actor = actor;
     next();
   });
-  app.use("/api", environmentRoutes({} as never));
+  app.use("/api", environmentRoutes({} as never, {
+    pluginWorkerManager: undefined as never,
+  }));
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status((err as { status?: number }).status ?? 500).json({
       error: err instanceof Error ? err.message : String(err),

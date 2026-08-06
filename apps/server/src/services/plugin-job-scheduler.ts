@@ -16,9 +16,8 @@
  *    cron parser ({@link parseCron}, {@link nextCronTick}) to compute the
  *    `nextRunAt` timestamp after each run or when a new job is registered.
  *
- * 3. **Overlap prevention** — Before dispatching a job, the scheduler checks
- *    for an existing `running` run for the same job. If one exists, the job
- *    is skipped for that tick.
+ * 3. **Overlap prevention** — Durable run admission serializes on the job row
+ *    so queued and running executions cannot overlap across server instances.
  *
  * 4. **Job run recording** — Every execution creates a `plugin_job_runs` row:
  *    `queued` → `running` → `succeeded` | `failed`. Duration and error are
@@ -34,12 +33,13 @@
  * @see ./cron.ts — Cron parsing utilities
  */
 
-import { and, eq, lte, or } from "drizzle-orm";
+import { and, eq, lte } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { pluginJobs, pluginJobRuns } from "@paperclipai/db";
+import { pluginJobs } from "@paperclipai/db";
+import type { PluginJobRunTrigger } from "@paperclipai/shared";
 import type { PluginJobStore } from "./plugin-job-store.js";
 import type { PluginWorkerManager } from "./plugin-worker-manager.js";
-import { parseCron, nextCronTick, validateCron } from "./cron.js";
+import { parseCron, nextCronTick } from "./cron.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@ const DEFAULT_MAX_CONCURRENT_JOBS = 10;
 /**
  * Options for creating a PluginJobScheduler.
  */
-export interface PluginJobSchedulerOptions {
+interface PluginJobSchedulerOptions {
   /** Drizzle database instance. */
   db: Db;
   /** Persistence layer for jobs and runs. */
@@ -80,7 +80,7 @@ export interface PluginJobSchedulerOptions {
 /**
  * Result of a manual job trigger.
  */
-export interface TriggerJobResult {
+interface TriggerJobResult {
   /** The created run ID. */
   runId: string;
   /** The job ID that was triggered. */
@@ -90,7 +90,7 @@ export interface TriggerJobResult {
 /**
  * Diagnostic information about the scheduler.
  */
-export interface SchedulerDiagnostics {
+interface SchedulerDiagnostics {
   /** Whether the tick loop is running. */
   running: boolean;
   /** Number of jobs currently executing. */
@@ -140,7 +140,9 @@ export interface PluginJobScheduler {
   /**
    * Unregister a plugin from the scheduler.
    *
-   * Cancels any in-flight runs for the plugin and removes tracking state.
+   * Fences new local admission immediately, waits already-admitted local
+   * executions through their terminal database writes, then cancels only
+   * residual non-terminal runs and removes tracking state.
    *
    * @param pluginId - UUID of the plugin
    */
@@ -153,11 +155,10 @@ export interface PluginJobScheduler {
    * respecting the overlap prevention check.
    *
    * @param jobId - UUID of the job to trigger
-   * @param trigger - What triggered this run (default: "manual")
    * @returns The created run info
    * @throws {Error} if the job is not found, not active, or already running
    */
-  triggerJob(jobId: string, trigger?: "manual" | "retry"): Promise<TriggerJobResult>;
+  triggerJob(jobId: string): Promise<TriggerJobResult>;
 
   /**
    * Run a single scheduler tick immediately (for testing).
@@ -227,6 +228,18 @@ export function createPluginJobScheduler(
   /** Set of job IDs currently being executed (for overlap prevention). */
   const activeJobs = new Set<string>();
 
+  /** Plugin ids whose job admission is closed during runtime teardown. */
+  const fencedPlugins = new Set<string>();
+
+  interface ActiveExecution {
+    readonly pluginId: string;
+    readonly completion: Promise<void>;
+    finish(): void;
+  }
+
+  /** Local executions include durable admission through terminal DB write. */
+  const activeExecutions = new Map<string, ActiveExecution>();
+
   /** Total number of ticks since start. */
   let tickCount = 0;
 
@@ -257,9 +270,9 @@ export function createPluginJobScheduler(
     try {
       const now = new Date();
 
-      // Query for jobs whose nextRunAt has passed and are active.
-      // We include jobs with null nextRunAt since they may have just been
-      // registered and need their first run calculated.
+      // Query only active scheduled jobs whose persisted nextRunAt has passed.
+      // Registration computes schedule pointers. Removed jobs keep nextRunAt
+      // null and are intentionally absent from this scan.
       const dueJobs = await db
         .select()
         .from(pluginJobs)
@@ -280,6 +293,10 @@ export function createPluginJobScheduler(
       const dispatches: Promise<void>[] = [];
 
       for (const job of dueJobs) {
+        if (fencedPlugins.has(job.pluginId)) {
+          continue;
+        }
+
         // Concurrency limit
         if (activeJobs.size >= maxConcurrentJobs) {
           log.warn(
@@ -307,16 +324,7 @@ export function createPluginJobScheduler(
           continue;
         }
 
-        // Validate cron expression before dispatching
-        if (!job.schedule) {
-          log.warn(
-            { jobId: job.id, jobKey: job.jobKey },
-            "skipping job — no schedule defined",
-          );
-          continue;
-        }
-
-        dispatches.push(dispatchJob(job));
+        dispatches.push(dispatchScheduledJob(job));
       }
 
       if (dispatches.length > 0) {
@@ -336,37 +344,87 @@ export function createPluginJobScheduler(
   // Core: dispatch a single job
   // -----------------------------------------------------------------------
 
-  /**
-   * Dispatch a single job run — create the run record, call the worker,
-   * record the result, and advance the schedule pointer.
-   */
-  async function dispatchJob(
-    job: typeof pluginJobs.$inferSelect,
-  ): Promise<void> {
-    const { id: jobId, pluginId, jobKey, schedule } = job;
-    const jobLog = log.child({ jobId, pluginId, jobKey });
+  type JobRecord = typeof pluginJobs.$inferSelect;
 
-    // Mark as active (overlap prevention)
-    activeJobs.add(jobId);
+  function computeNextRunAt(job: JobRecord, after: Date): Date {
+    const nextRunAt = nextCronTick(parseCron(job.schedule), after);
+    if (nextRunAt === null) {
+      throw new Error(
+        `Job "${job.jobKey}" has no cron occurrence in the supported search window`,
+      );
+    }
+    return nextRunAt;
+  }
 
-    let runId: string | undefined;
+  function beginExecution(job: JobRecord): ActiveExecution | null {
+    if (fencedPlugins.has(job.pluginId) || activeJobs.has(job.id)) return null;
+
+    activeJobs.add(job.id);
+    let resolveCompletion!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      resolveCompletion = resolve;
+    });
+    let finished = false;
+    const execution: ActiveExecution = {
+      pluginId: job.pluginId,
+      completion,
+      finish() {
+        if (finished) return;
+        finished = true;
+        activeJobs.delete(job.id);
+        if (activeExecutions.get(job.id) === execution) {
+          activeExecutions.delete(job.id);
+        }
+        resolveCompletion();
+      },
+    };
+    activeExecutions.set(job.id, execution);
+    return execution;
+  }
+
+  async function reserveRun(
+    job: JobRecord,
+    trigger: PluginJobRunTrigger,
+  ) {
+    const execution = beginExecution(job);
+    if (!execution) return null;
+    try {
+      const run = await jobStore.createRunIfIdle({
+        jobId: job.id,
+        pluginId: job.pluginId,
+        trigger,
+      });
+      if (!run) {
+        execution.finish();
+        return null;
+      }
+      return { run, execution };
+    } catch (error) {
+      execution.finish();
+      throw error;
+    }
+  }
+
+  /** Execute one already-admitted run through its only lifecycle path. */
+  async function executeReservedRun(input: {
+    job: JobRecord;
+    runId: string;
+    trigger: PluginJobRunTrigger;
+    scheduledAt: Date;
+    advanceSchedule: boolean;
+    execution: ActiveExecution;
+  }): Promise<void> {
+    const { job, runId, trigger } = input;
+    const { id: jobId, pluginId, jobKey } = job;
+    const jobLog = log.child({ jobId, pluginId, jobKey, runId, trigger });
     const startedAt = Date.now();
 
     try {
-      // 1. Create run record
-      const run = await jobStore.createRun({
-        jobId,
-        pluginId,
-        trigger: "schedule",
-      });
-      runId = run.id;
+      if (!await jobStore.markRunning(runId)) {
+        jobLog.info("job run was cancelled before worker dispatch");
+        return;
+      }
 
-      jobLog.info({ runId }, "dispatching scheduled job");
-
-      // 2. Mark run as running
-      await jobStore.markRunning(runId);
-
-      // 3. Call worker via RPC
       await workerManager.call(
         pluginId,
         "runJob",
@@ -374,72 +432,95 @@ export function createPluginJobScheduler(
           job: {
             jobKey,
             runId,
-            trigger: "schedule" as const,
-            scheduledAt: (job.nextRunAt ?? new Date()).toISOString(),
+            trigger,
+            scheduledAt: input.scheduledAt.toISOString(),
           },
         },
         jobTimeoutMs,
       );
 
-      // 4. Mark run as succeeded
       const durationMs = Date.now() - startedAt;
-      await jobStore.completeRun(runId, {
+      const completed = await jobStore.completeRun(runId, {
         status: "succeeded",
         durationMs,
       });
-
-      jobLog.info({ runId, durationMs }, "job completed successfully");
+      if (completed) {
+        jobLog.info({ durationMs }, "job completed successfully");
+      } else {
+        jobLog.info({ durationMs }, "job completed after its run was already terminal");
+      }
     } catch (err) {
       const durationMs = Date.now() - startedAt;
       const errorMessage = err instanceof Error ? err.message : String(err);
 
-      jobLog.error(
-        { runId, durationMs, err: errorMessage },
-        "job execution failed",
-      );
-
-      // Record the failure
-      if (runId) {
-        try {
-          await jobStore.completeRun(runId, {
-            status: "failed",
-            error: errorMessage,
+      try {
+        const completed = await jobStore.completeRun(runId, {
+          status: "failed",
+          error: errorMessage,
+          durationMs,
+        });
+        if (completed) {
+          jobLog.error({ durationMs, err: errorMessage }, "job execution failed");
+        } else {
+          jobLog.info(
+            { durationMs, err: errorMessage },
+            "job execution ended after its run was already terminal",
+          );
+        }
+      } catch (completeErr) {
+        jobLog.error(
+          {
             durationMs,
-          });
-        } catch (completeErr) {
+            err: errorMessage,
+            completionError: completeErr instanceof Error
+              ? completeErr.message
+              : String(completeErr),
+          },
+          "job execution failed and its failure could not be recorded",
+        );
+      }
+    } finally {
+      if (input.advanceSchedule) {
+        try {
+          await advanceSchedulePointer(job);
+        } catch (err) {
           jobLog.error(
-            {
-              runId,
-              err: completeErr instanceof Error ? completeErr.message : String(completeErr),
-            },
-            "failed to record job failure",
+            { err: err instanceof Error ? err.message : String(err) },
+            "failed to advance schedule pointer",
           );
         }
       }
-    } finally {
-      // Remove from active set
-      activeJobs.delete(jobId);
-
-      // 5. Always advance the schedule pointer (even on failure)
-      try {
-        await advanceSchedulePointer(job);
-      } catch (err) {
-        jobLog.error(
-          { err: err instanceof Error ? err.message : String(err) },
-          "failed to advance schedule pointer",
-        );
-      }
+      input.execution.finish();
     }
+  }
+
+  async function dispatchScheduledJob(job: JobRecord): Promise<void> {
+    if (job.nextRunAt === null) {
+      throw new Error(`Due job "${job.jobKey}" has no nextRunAt pointer`);
+    }
+    const run = await reserveRun(job, "schedule");
+    if (!run) {
+      log.debug(
+        { jobId: job.id, jobKey: job.jobKey, pluginId: job.pluginId },
+        "skipping job — another run is already queued or running",
+      );
+      return;
+    }
+    await executeReservedRun({
+      job,
+      runId: run.run.id,
+      trigger: "schedule",
+      scheduledAt: job.nextRunAt,
+      advanceSchedule: true,
+      execution: run.execution,
+    });
   }
 
   // -----------------------------------------------------------------------
   // Core: manual trigger
   // -----------------------------------------------------------------------
 
-  async function triggerJob(
-    jobId: string,
-    trigger: "manual" | "retry" = "manual",
-  ): Promise<TriggerJobResult> {
+  async function triggerJob(jobId: string): Promise<TriggerJobResult> {
     const job = await jobStore.getJobById(jobId);
     if (!job) {
       throw new Error(`Job not found: ${jobId}`);
@@ -451,27 +532,9 @@ export function createPluginJobScheduler(
       );
     }
 
-    // Overlap prevention
-    if (activeJobs.has(jobId)) {
+    if (fencedPlugins.has(job.pluginId)) {
       throw new Error(
-        `Job "${job.jobKey}" is already running — cannot trigger while in progress`,
-      );
-    }
-
-    // Also check DB for running runs (defensive — covers multi-instance)
-    const existingRuns = await db
-      .select()
-      .from(pluginJobRuns)
-      .where(
-        and(
-          eq(pluginJobRuns.jobId, jobId),
-          eq(pluginJobRuns.status, "running"),
-        ),
-      );
-
-    if (existingRuns.length > 0) {
-      throw new Error(
-        `Job "${job.jobKey}" already has a running execution — cannot trigger while in progress`,
+        `Plugin "${job.pluginId}" is unregistering — cannot trigger job`,
       );
     }
 
@@ -482,79 +545,25 @@ export function createPluginJobScheduler(
       );
     }
 
-    // Create the run and dispatch (non-blocking)
-    const run = await jobStore.createRun({
-      jobId,
-      pluginId: job.pluginId,
-      trigger,
+    const run = await reserveRun(job, "manual");
+    if (!run) {
+      throw new Error(
+        `Job "${job.jobKey}" is already queued or running — cannot trigger while in progress`,
+      );
+    }
+
+    // Execute in the background after durable admission; the caller only
+    // needs the run identity.
+    void executeReservedRun({
+      job,
+      runId: run.run.id,
+      trigger: "manual",
+      scheduledAt: new Date(),
+      advanceSchedule: false,
+      execution: run.execution,
     });
 
-    // Dispatch in background — don't block the caller
-    void dispatchManualRun(job, run.id, trigger);
-
-    return { runId: run.id, jobId };
-  }
-
-  /**
-   * Dispatch a manually triggered job run.
-   */
-  async function dispatchManualRun(
-    job: typeof pluginJobs.$inferSelect,
-    runId: string,
-    trigger: "manual" | "retry",
-  ): Promise<void> {
-    const { id: jobId, pluginId, jobKey } = job;
-    const jobLog = log.child({ jobId, pluginId, jobKey, runId, trigger });
-
-    activeJobs.add(jobId);
-    const startedAt = Date.now();
-
-    try {
-      await jobStore.markRunning(runId);
-
-      await workerManager.call(
-        pluginId,
-        "runJob",
-        {
-          job: {
-            jobKey,
-            runId,
-            trigger,
-            scheduledAt: new Date().toISOString(),
-          },
-        },
-        jobTimeoutMs,
-      );
-
-      const durationMs = Date.now() - startedAt;
-      await jobStore.completeRun(runId, {
-        status: "succeeded",
-        durationMs,
-      });
-
-      jobLog.info({ durationMs }, "manual job completed successfully");
-    } catch (err) {
-      const durationMs = Date.now() - startedAt;
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      jobLog.error({ durationMs, err: errorMessage }, "manual job failed");
-
-      try {
-        await jobStore.completeRun(runId, {
-          status: "failed",
-          error: errorMessage,
-          durationMs,
-        });
-      } catch (completeErr) {
-        jobLog.error(
-          {
-            err: completeErr instanceof Error ? completeErr.message : String(completeErr),
-          },
-          "failed to record manual job failure",
-        );
-      }
-    } finally {
-      activeJobs.delete(jobId);
-    }
+    return { runId: run.run.id, jobId };
   }
 
   // -----------------------------------------------------------------------
@@ -562,28 +571,27 @@ export function createPluginJobScheduler(
   // -----------------------------------------------------------------------
 
   /**
-   * Advance the `lastRunAt` and `nextRunAt` timestamps on a job after a run.
+   * Advance the job's next scheduled execution after one scheduled run.
    */
   async function advanceSchedulePointer(
     job: typeof pluginJobs.$inferSelect,
   ): Promise<void> {
-    const now = new Date();
-    let nextRunAt: Date | null = null;
-
-    if (job.schedule) {
-      const validationError = validateCron(job.schedule);
-      if (validationError) {
-        log.warn(
-          { jobId: job.id, schedule: job.schedule, error: validationError },
-          "invalid cron schedule — cannot compute next run",
-        );
-      } else {
-        const cron = parseCron(job.schedule);
-        nextRunAt = nextCronTick(cron, now);
-      }
+    if (job.nextRunAt === null) {
+      throw new Error(`Scheduled job "${job.jobKey}" has no nextRunAt pointer`);
     }
-
-    await jobStore.updateRunTimestamps(job.id, now, nextRunAt);
+    const now = new Date();
+    const advanced = await jobStore.advanceNextRunAt({
+      jobId: job.id,
+      schedule: job.schedule,
+      currentNextRunAt: job.nextRunAt,
+      nextRunAt: computeNextRunAt(job, now),
+    });
+    if (!advanced) {
+      log.debug(
+        { jobId: job.id, jobKey: job.jobKey },
+        "schedule changed while the job was running; leaving its new pointer untouched",
+      );
+    }
   }
 
   /**
@@ -599,34 +607,12 @@ export function createPluginJobScheduler(
         continue;
       }
 
-      // Skip jobs without a schedule
-      if (!job.schedule) {
-        continue;
-      }
-
-      const validationError = validateCron(job.schedule);
-      if (validationError) {
-        log.warn(
-          { jobId: job.id, jobKey: job.jobKey, schedule: job.schedule, error: validationError },
-          "skipping job with invalid cron schedule",
-        );
-        continue;
-      }
-
-      const cron = parseCron(job.schedule);
-      const nextRunAt = nextCronTick(cron, new Date());
-
-      if (nextRunAt) {
-        await jobStore.updateRunTimestamps(
-          job.id,
-          job.lastRunAt ?? new Date(0),
-          nextRunAt,
-        );
-        log.debug(
-          { jobId: job.id, jobKey: job.jobKey, nextRunAt: nextRunAt.toISOString() },
-          "computed nextRunAt for job",
-        );
-      }
+      const nextRunAt = computeNextRunAt(job, new Date());
+      await jobStore.updateNextRunAt(job.id, nextRunAt);
+      log.debug(
+        { jobId: job.id, jobKey: job.jobKey, nextRunAt: nextRunAt.toISOString() },
+        "computed nextRunAt for job",
+      );
     }
   }
 
@@ -637,50 +623,31 @@ export function createPluginJobScheduler(
   async function registerPlugin(pluginId: string): Promise<void> {
     log.info({ pluginId }, "registering plugin with job scheduler");
     await ensureNextRunTimestamps(pluginId);
+    fencedPlugins.delete(pluginId);
   }
 
   async function unregisterPlugin(pluginId: string): Promise<void> {
     log.info({ pluginId }, "unregistering plugin from job scheduler");
 
-    // Cancel any in-flight run records for this plugin that are still
-    // queued or running. Active jobs in-memory will finish naturally.
-    try {
-      const runningRuns = await db
-        .select()
-        .from(pluginJobRuns)
-        .where(
-          and(
-            eq(pluginJobRuns.pluginId, pluginId),
-            or(
-              eq(pluginJobRuns.status, "running"),
-              eq(pluginJobRuns.status, "queued"),
-            ),
-          ),
-        );
+    // This executes synchronously before the first await, closing every local
+    // admission path while preserving work that was already admitted.
+    fencedPlugins.add(pluginId);
 
-      for (const run of runningRuns) {
-        await jobStore.completeRun(run.id, {
-          status: "cancelled",
-          error: "Plugin unregistered",
-          durationMs: run.startedAt
-            ? Date.now() - run.startedAt.getTime()
-            : null,
-        });
-      }
-    } catch (err) {
-      log.error(
-        {
-          pluginId,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        "error cancelling in-flight runs during unregister",
-      );
-    }
+    const localCompletions = [...activeExecutions.values()]
+      .filter((execution) => execution.pluginId === pluginId)
+      .map((execution) => execution.completion);
+    await Promise.all(localCompletions);
 
-    // Remove any active tracking for jobs owned by this plugin
     const jobs = await jobStore.listJobs(pluginId);
-    for (const job of jobs) {
-      activeJobs.delete(job.id);
+
+    try {
+      await jobStore.cancelNonTerminalRuns(pluginId, "Plugin unregistered");
+    } finally {
+      // In-memory dispatch admission must be removed even when durable run
+      // cancellation fails. The durable error still propagates to the caller.
+      for (const job of jobs) {
+        activeJobs.delete(job.id);
+      }
     }
   }
 

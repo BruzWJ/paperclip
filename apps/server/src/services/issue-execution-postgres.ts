@@ -29,6 +29,8 @@ import type {
   RuntimeCompanyToolPort,
   RuntimePluginToolPort,
 } from "./runtime-tool-executor.js";
+import type { PluginBeforePromptDispatcher } from "./plugin-before-prompt-dispatcher.js";
+import type { PluginDomainEventPublisher } from "./plugin-domain-event-publisher.js";
 
 export interface PostgresIssueExecutionProductionRuntimeOptions {
   readonly workerId: string;
@@ -43,6 +45,10 @@ export interface PostgresIssueExecutionProductionRuntimeOptions {
   readonly actions: RuntimeActionPort;
   readonly companyTools: RuntimeCompanyToolPort;
   readonly pluginTools: RuntimePluginToolPort;
+  /** App-owned, awaited post-commit plugin event publisher. */
+  readonly pluginDomainEvents: PluginDomainEventPublisher;
+  /** Generic blocking plugin lifecycle run before every provider prompt. */
+  readonly beforePrompt: PluginBeforePromptDispatcher;
   readonly steeringResults: IssueExecutionSteeringResultBroker;
   readonly now?: () => Date;
   readonly idFactory?: () => string;
@@ -133,6 +139,7 @@ export function createPostgresIssueExecutionProductionRuntime(
   const promptCapabilities = createPostgresPromptCapabilityRuntime(database, {
     runService,
     cursorSecret: options.capabilityCursorSecret,
+    issueSessionStore: options.issueSessionStore,
     actions: options.actions,
     companyTools: options.companyTools,
     pluginTools: options.pluginTools,
@@ -150,6 +157,7 @@ export function createPostgresIssueExecutionProductionRuntime(
     leaseTtlMs: options.leaseTtlMs,
     now,
     idFactory,
+    pluginDomainEvents: options.pluginDomainEvents,
   });
   const targetSessionAcquirer = createIssueExecutionTargetAcquirer({
     environmentOrchestrator: options.environmentOrchestrator,
@@ -183,6 +191,7 @@ export function createPostgresIssueExecutionProductionRuntime(
   });
   const attemptExecutor = createIssueExecutionAttemptExecutor({
     repository: promptCycle,
+    beforePrompt: options.beforePrompt,
     targetAcquirer: targetSessionAcquirer,
     sessionCorrelations: targetSessions,
     events: eventProjector,
@@ -201,6 +210,7 @@ export function createPostgresIssueExecutionProductionRuntime(
     settlement: repository,
     now,
     idFactory,
+    pluginDomainEvents: options.pluginDomainEvents,
   });
 
   return Object.freeze({

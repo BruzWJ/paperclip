@@ -27,7 +27,6 @@ COPY packages/kv-demo-mcp-server/package.json packages/kv-demo-mcp-server/
 COPY packages/skills-catalog/package.json packages/skills-catalog/
 COPY packages/teams-catalog/package.json packages/teams-catalog/
 COPY packages/plugins/sdk/package.json packages/plugins/sdk/
-COPY packages/plugins/agentmemory-plugin/package.json packages/plugins/agentmemory-plugin/
 COPY patches/ patches/
 COPY scripts/link-plugin-dev-sdk.mjs scripts/
 

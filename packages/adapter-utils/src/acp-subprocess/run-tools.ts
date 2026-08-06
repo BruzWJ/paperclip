@@ -36,7 +36,3 @@ export function createPaperclipRunToolsMcpServer(input: {
     env: [],
   };
 }
-
-export function noAcpMcpServers(): readonly McpServer[] {
-  return Object.freeze([]);
-}

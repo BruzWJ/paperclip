@@ -290,7 +290,7 @@ export interface SecretAccessEvent {
   credentialSubjectId: string | null;
   actorType: "agent" | "user" | "system" | "plugin";
   actorId: string | null;
-  consumerType: SecretBindingTargetType | "agent_api" | "plugin_worker";
+  consumerType: SecretBindingTargetType | "agent_api";
   consumerId: string;
   configPath: string | null;
   issueId: string | null;

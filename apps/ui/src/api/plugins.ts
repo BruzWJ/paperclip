@@ -13,143 +13,28 @@
  */
 
 import type {
-  PluginLauncherDeclaration,
   PluginLauncherRenderContextSnapshot,
-  PluginUiSlotDeclaration,
-  PluginLocalFolderDeclaration,
   PluginLocalFolderProblem,
   PluginLocalFolderStatus,
-  PluginRecord,
-  PluginConfig,
+  PluginRecordDto,
+  PluginDetailDto,
+  PluginUiContribution,
+  PluginDashboardData,
+  PluginConfigDto,
+  PluginInstallRequest,
+  PluginLocalFolderPathRequest,
+  PluginLogDto,
+  PluginLogLevel,
   PluginStatus,
 } from "@paperclipai/shared";
 import { api } from "./client";
 
 export type { PluginLocalFolderProblem, PluginLocalFolderStatus };
 
-/**
- * Normalized UI contribution record returned by `GET /api/plugins/ui-contributions`.
- *
- * Only populated for plugins in `ready` state that declare at least one UI slot
- * or launcher. The `slots` array is sourced from `manifest.ui.slots`. The
- * `launchers` array aggregates both legacy `manifest.launchers` and
- * `manifest.ui.launchers`.
- */
-export type PluginUiContribution = {
-  pluginId: string;
-  pluginKey: string;
-  displayName: string;
-  version: string;
-  updatedAt?: string;
-  /**
-   * Relative filename of the UI entry module within the plugin's UI directory.
-   * The host constructs the full import URL as
-   * `/_plugins/${pluginId}/ui/${uiEntryFile}`.
-   */
-  uiEntryFile: string;
-  slots: PluginUiSlotDeclaration[];
-  launchers: PluginLauncherDeclaration[];
-};
-
-/**
- * Health check result returned by `GET /api/plugins/:pluginId/health`.
- *
- * The `healthy` flag summarises whether all checks passed. Individual check
- * results are available in `checks` for detailed diagnostics display.
- */
-export interface PluginHealthCheckResult {
-  pluginId: string;
-  /** The plugin's current lifecycle status at time of check. */
-  status: string;
-  /** True if all health checks passed. */
-  healthy: boolean;
-  /** Individual diagnostic check results. */
-  checks: Array<{
-    name: string;
-    passed: boolean;
-    /** Human-readable description of a failure, if any. */
-    message?: string;
-  }>;
-  /** The most recent error message if the plugin is in `error` state. */
-  lastError?: string;
-}
-
-/**
- * Worker diagnostics returned as part of the dashboard response.
- */
-export interface PluginWorkerDiagnostics {
-  status: string;
-  pid: number | null;
-  uptime: number | null;
-  consecutiveCrashes: number;
-  totalCrashes: number;
-  pendingRequests: number;
-  lastCrashAt: number | null;
-  nextRestartAt: number | null;
-}
-
-/**
- * A recent job run entry returned in the dashboard response.
- */
-export interface PluginDashboardJobRun {
-  id: string;
-  jobId: string;
-  jobKey?: string;
-  trigger: string;
-  status: string;
-  durationMs: number | null;
-  error: string | null;
-  startedAt: string | null;
-  finishedAt: string | null;
-  createdAt: string;
-}
-
-/**
- * A recent webhook delivery entry returned in the dashboard response.
- */
-export interface PluginDashboardWebhookDelivery {
-  id: string;
-  webhookKey: string;
-  status: string;
-  durationMs: number | null;
-  error: string | null;
-  startedAt: string | null;
-  finishedAt: string | null;
-  createdAt: string;
-}
-
-/**
- * Aggregated health dashboard data returned by `GET /api/plugins/:pluginId/dashboard`.
- *
- * Contains worker diagnostics, recent job runs, recent webhook deliveries,
- * and the current health check result — all in a single response.
- */
-export interface PluginDashboardData {
-  pluginId: string;
-  /** Worker process diagnostics, or null if no worker is registered. */
-  worker: PluginWorkerDiagnostics | null;
-  /** Recent job execution history (newest first, max 10). */
-  recentJobRuns: PluginDashboardJobRun[];
-  /** Recent inbound webhook deliveries (newest first, max 10). */
-  recentWebhookDeliveries: PluginDashboardWebhookDelivery[];
-  /** Current health check results. */
-  health: PluginHealthCheckResult;
-  /** ISO 8601 timestamp when the dashboard data was generated. */
-  checkedAt: string;
-}
-
 export interface PluginLocalFoldersResponse {
   pluginId: string;
   companyId: string;
-  declarations: PluginLocalFolderDeclaration[];
   folders: PluginLocalFolderStatus[];
-}
-
-export interface PluginLocalFolderSaveInput {
-  path: string;
-  access?: "read" | "readWrite";
-  requiredDirectories?: string[];
-  requiredFiles?: string[];
 }
 
 /**
@@ -175,71 +60,55 @@ export const pluginsApi = {
    *   Invalid values are rejected by the server with HTTP 400.
    */
   list: (status?: PluginStatus) =>
-    api.get<PluginRecord[]>(`/plugins${status ? `?status=${status}` : ""}`),
+    api.get<PluginRecordDto[]>(`/plugins${status ? `?status=${status}` : ""}`),
 
   /**
-   * Fetch a single plugin record by its UUID or plugin key.
+   * Fetch a single plugin record by its installation UUID.
    *
-   * @param pluginId - The plugin's UUID (from `PluginRecord.id`) or plugin key.
+   * @param pluginId - The plugin installation UUID from `PluginRecordDto.id`.
    */
   get: (pluginId: string) =>
-    api.get<PluginRecord>(`/plugins/${pluginId}`),
+    api.get<PluginDetailDto>(`/plugins/${pluginId}`),
 
   /**
    * Install a plugin from npm or a local path.
    *
-   * On success, the plugin is registered in the database and transitioned to
-   * `ready` state. The response is the newly created `PluginRecord`.
+   * On success, the plugin is registered as `ready` when its empty instance
+   * configuration is valid; otherwise it remains `disabled` until configured.
+   * The response is the newly created `PluginRecordDto`.
    *
-   * @param params.packageName - npm package name (e.g. `@paperclip/plugin-linear`)
-   *   or a filesystem path when `isLocalPath` is `true`.
-   * @param params.version - Target npm version tag/range (optional; defaults to latest).
-   * @param params.isLocalPath - Set to `true` when `packageName` is a local path.
+   * npm installs use `{ source: "npm", packageName, version? }`. Local installs
+   * use `{ source: "local", path }`.
    */
-  install: (params: { packageName: string; version?: string; isLocalPath?: boolean }) =>
-    api.post<PluginRecord>("/plugins/install", params),
+  install: (params: PluginInstallRequest) =>
+    api.post<PluginRecordDto>("/plugins/install", params),
 
   /**
-   * Uninstall a plugin.
+   * Uninstall a plugin and delete all installation-owned operational data.
    *
    * @param pluginId - Immutable installation UUID of the plugin to uninstall.
-   * @param purge - If `true`, also remove operational config, state, jobs,
-   *   webhooks, and custom database objects. The installation tombstone and
-   *   provenance are always retained.
    */
-  uninstall: (pluginId: string, purge?: boolean) =>
-    api.delete<PluginRecord>(`/plugins/${pluginId}${purge ? "?purge=true" : ""}`),
+  uninstall: (pluginId: string) =>
+    api.delete<void>(`/plugins/${pluginId}`),
 
   /**
-   * Transition a plugin from `error` state back to `ready`.
-   * No-ops if the plugin is already enabled.
+   * Transition a `disabled` or `error` plugin to `ready` and activate it.
+   * Other lifecycle states are rejected.
    *
    * @param pluginId - UUID of the plugin to enable.
    */
   enable: (pluginId: string) =>
-    api.post<{ ok: boolean }>(`/plugins/${pluginId}/enable`, {}),
+    api.post<PluginRecordDto>(`/plugins/${pluginId}/enable`, {}),
 
   /**
-   * Disable a plugin (transition to `error` state with an operator sentinel).
+   * Disable a plugin (transition to the `disabled` lifecycle state).
    * The plugin's worker is stopped; it will not process events until re-enabled.
    *
    * @param pluginId - UUID of the plugin to disable.
-   * @param reason - Optional human-readable reason stored in `lastError`.
+   * @param reason - Optional human-readable reason recorded in lifecycle activity.
    */
   disable: (pluginId: string, reason?: string) =>
-    api.post<{ ok: boolean }>(`/plugins/${pluginId}/disable`, reason ? { reason } : {}),
-
-  /**
-   * Run health diagnostics for a plugin.
-   *
-   * Only meaningful for plugins in `ready` state. Returns the result of all
-   * registered health checks. Called on a 30-second polling interval by
-   * {@link PluginSettings}.
-   *
-   * @param pluginId - UUID of the plugin to health-check.
-   */
-  health: (pluginId: string) =>
-    api.get<PluginHealthCheckResult>(`/plugins/${pluginId}/health`),
+    api.post<PluginRecordDto>(`/plugins/${pluginId}/disable`, reason ? { reason } : {}),
 
   /**
    * Fetch aggregated health dashboard data for a plugin.
@@ -259,13 +128,13 @@ export const pluginsApi = {
    * @param pluginId - UUID of the plugin.
    * @param options - Optional filters: limit, level, since.
    */
-  logs: (pluginId: string, options?: { limit?: number; level?: string; since?: string }) => {
+  logs: (pluginId: string, options?: { limit?: number; level?: PluginLogLevel; since?: string }) => {
     const params = new URLSearchParams();
     if (options?.limit) params.set("limit", String(options.limit));
     if (options?.level) params.set("level", options.level);
     if (options?.since) params.set("since", options.since);
     const qs = params.toString();
-    return api.get<Array<{ id: string; pluginId: string; level: string; message: string; meta: Record<string, unknown> | null; createdAt: string }>>(
+    return api.get<PluginLogDto[]>(
       `/plugins/${pluginId}/logs${qs ? `?${qs}` : ""}`,
     );
   },
@@ -273,14 +142,13 @@ export const pluginsApi = {
   /**
    * Upgrade a plugin to a newer version.
    *
-   * If the new version declares additional capabilities, the plugin is
-   * transitioned to `upgrade_pending` state awaiting operator approval.
+   * An upgrade that declares additional capabilities is rejected.
    *
    * @param pluginId - UUID of the plugin to upgrade.
    * @param version - Target version (optional; defaults to latest published).
    */
   upgrade: (pluginId: string, version?: string) =>
-    api.post<{ ok: boolean }>(`/plugins/${pluginId}/upgrade`, version ? { version } : {}),
+    api.post<PluginRecordDto>(`/plugins/${pluginId}/upgrade`, version ? { version } : {}),
 
   /**
    * Returns normalized UI contribution declarations for ready plugins.
@@ -288,8 +156,7 @@ export const pluginsApi = {
    *
    * Response shape:
    * - `slots`: concrete React mount declarations from `manifest.ui.slots`
-   * - `launchers`: host-owned entry points from `manifest.ui.launchers` plus
-   *   the legacy top-level `manifest.launchers`
+   * - `launchers`: host-owned entry points from `manifest.ui.launchers`
    *
    * @example
    * ```ts
@@ -309,25 +176,25 @@ export const pluginsApi = {
   /**
    * Fetch the current configuration for a plugin.
    *
-   * Returns the `PluginConfig` record if one exists, or `null` if the plugin
+   * Returns the `PluginConfigDto` if one exists, or `null` if the plugin
    * has not yet been configured.
    *
    * @param pluginId - UUID of the plugin.
    */
-  getConfig: (pluginId: string, companyId: string) =>
-    api.get<PluginConfig | null>(`/plugins/${pluginId}/config?companyId=${encodeURIComponent(companyId)}`),
+  getConfig: (pluginId: string) =>
+    api.get<PluginConfigDto | null>(`/plugins/${pluginId}/config`),
 
   /**
    * Save (create or update) the configuration for a plugin.
    *
    * The server validates `configJson` against the plugin's `instanceConfigSchema`
-   * and returns the persisted `PluginConfig` record on success.
+   * and returns the persisted `PluginConfigDto` on success.
    *
    * @param pluginId - UUID of the plugin.
    * @param configJson - Configuration values matching the plugin's `instanceConfigSchema`.
    */
-  saveConfig: (pluginId: string, companyId: string, configJson: Record<string, unknown>) =>
-    api.post<PluginConfig>(`/plugins/${pluginId}/config`, { companyId, configJson }),
+  saveConfig: (pluginId: string, configJson: Record<string, unknown>) =>
+    api.post<PluginConfigDto>(`/plugins/${pluginId}/config`, { configJson }),
 
   /**
    * Call the plugin's `validateConfig` RPC method to test the configuration
@@ -341,8 +208,8 @@ export const pluginsApi = {
    * @param pluginId - UUID of the plugin.
    * @param configJson - Configuration values to validate.
    */
-  testConfig: (pluginId: string, companyId: string, configJson: Record<string, unknown>) =>
-    api.post<{ valid: boolean; message?: string }>(`/plugins/${pluginId}/config/test`, { companyId, configJson }),
+  testConfig: (pluginId: string, configJson: Record<string, unknown>) =>
+    api.post<{ valid: boolean; message?: string }>(`/plugins/${pluginId}/config/test`, { configJson }),
 
   /**
    * List manifest-declared and stored company-scoped local folders for a plugin.
@@ -365,7 +232,7 @@ export const pluginsApi = {
     pluginId: string,
     companyId: string,
     folderKey: string,
-    input: PluginLocalFolderSaveInput,
+    input: PluginLocalFolderPathRequest,
   ) =>
     api.post<PluginLocalFolderStatus>(
       `/plugins/${pluginId}/companies/${companyId}/local-folders/${encodeURIComponent(folderKey)}/validate`,
@@ -379,7 +246,7 @@ export const pluginsApi = {
     pluginId: string,
     companyId: string,
     folderKey: string,
-    input: PluginLocalFolderSaveInput,
+    input: PluginLocalFolderPathRequest,
   ) =>
     api.put<PluginLocalFolderStatus>(
       `/plugins/${pluginId}/companies/${companyId}/local-folders/${encodeURIComponent(folderKey)}`,

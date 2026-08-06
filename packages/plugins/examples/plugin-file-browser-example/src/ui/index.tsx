@@ -2,8 +2,6 @@ import type {
   FileTreeNode,
   PluginProjectSidebarItemProps,
   PluginDetailTabProps,
-  PluginCommentAnnotationProps,
-  PluginCommentContextMenuItemProps,
 } from "@paperclipai/plugin-sdk/ui";
 import { FileTree, usePluginAction, usePluginData } from "@paperclipai/plugin-sdk/ui";
 import { useCallback, useMemo, useState, useEffect, useRef, type MouseEvent, type RefObject } from "react";
@@ -15,6 +13,10 @@ import { tags } from "@lezer/highlight";
 
 const PLUGIN_KEY = "paperclip-file-browser-example";
 const FILES_TAB_SLOT_ID = "files-tab";
+
+type PluginConfig = {
+  showFilesInSidebar: boolean;
+};
 
 const editorBaseTheme = {
   "&": {
@@ -264,9 +266,7 @@ export function FilesLink({ context }: PluginProjectSidebarItemProps) {
   }
 
   const projectId = context.entityId;
-  const projectRef = (context as PluginProjectSidebarItemProps["context"] & { projectRef?: string | null })
-    .projectRef
-    ?? projectId;
+  const projectRef = context.projectRef ?? projectId;
   const prefix = context.companyPrefix ? `/${context.companyPrefix}` : "";
   const tabValue = `plugin:${PLUGIN_KEY}:${FILES_TAB_SLOT_ID}`;
   const href = `${prefix}/projects/${projectRef}?tab=${encodeURIComponent(tabValue)}`;
@@ -378,7 +378,6 @@ export function FilesTab({ context }: PluginDetailTabProps) {
       setLoadingDirs((current) => new Set(current).add(dirPath));
       void loadFileList({
         projectId,
-        companyId,
         workspaceId: selectedWorkspace.id,
         directoryPath: dirPath,
       })
@@ -396,7 +395,7 @@ export function FilesTab({ context }: PluginDetailTabProps) {
           });
         });
     },
-    [companyId, loadFileList, loadedDirs, loadingDirs, projectId, selectedWorkspace],
+    [loadFileList, loadedDirs, loadingDirs, projectId, selectedWorkspace],
   );
 
   // Track the `?file=` query parameter across navigations (popstate).
@@ -516,7 +515,6 @@ export function FilesTab({ context }: PluginDetailTabProps) {
     try {
       await writeFile({
         projectId,
-        companyId,
         workspaceId: selectedWorkspace.id,
         filePath: selectedPath,
         content,
@@ -640,134 +638,6 @@ export function FilesTab({ context }: PluginDetailTabProps) {
           <div ref={editorRef} className="min-h-0 flex-1 overflow-auto overscroll-contain" />
         </div>
       </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Comment Annotation: renders detected file links below each comment
-// ---------------------------------------------------------------------------
-
-type PluginConfig = {
-  showFilesInSidebar?: boolean;
-  commentAnnotationMode: "annotation" | "contextMenu" | "both" | "none";
-};
-
-/**
- * Per-comment annotation showing file-path-like links extracted from the
- * comment body. Each link navigates to the project Files tab with the
- * matching path pre-selected.
- *
- * Respects the `commentAnnotationMode` instance config — hidden when mode
- * is `"contextMenu"` or `"none"`.
- */
-function buildFileBrowserHref(prefix: string, projectId: string | null, filePath: string): string {
-  if (!projectId) return "#";
-  const tabValue = `plugin:${PLUGIN_KEY}:${FILES_TAB_SLOT_ID}`;
-  return `${prefix}/projects/${projectId}?tab=${encodeURIComponent(tabValue)}&file=${encodeURIComponent(filePath)}`;
-}
-
-function navigateToFileBrowser(href: string, event: MouseEvent<HTMLAnchorElement>) {
-  if (
-    event.defaultPrevented
-    || event.button !== 0
-    || event.metaKey
-    || event.ctrlKey
-    || event.altKey
-    || event.shiftKey
-  ) {
-    return;
-  }
-  event.preventDefault();
-  window.history.pushState({}, "", href);
-  window.dispatchEvent(new PopStateEvent("popstate"));
-}
-
-export function CommentFileLinks({ context }: PluginCommentAnnotationProps) {
-  const { data: config } = usePluginData<PluginConfig>("plugin-config", {});
-  const mode = config?.commentAnnotationMode ?? "both";
-
-  const { data } = usePluginData<{ links: string[] }>("comment-file-links", {
-    commentId: context.entityId,
-    issueId: context.parentEntityId,
-    companyId: context.companyId,
-  });
-
-  if (mode === "contextMenu" || mode === "none") return null;
-  if (!data?.links?.length) return null;
-
-  const prefix = context.companyPrefix ? `/${context.companyPrefix}` : "";
-  const projectId = context.projectId;
-
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Files:</span>
-      {data.links.map((link) => {
-        const href = buildFileBrowserHref(prefix, projectId, link);
-        return (
-          <a
-            key={link}
-            href={href}
-            onClick={(e) => navigateToFileBrowser(href, e)}
-            className="inline-flex items-center rounded-md border border-border bg-accent/30 px-1.5 py-0.5 text-xs font-mono text-primary hover:bg-accent/60 hover:underline transition-colors"
-            title={`Open ${link} in file browser`}
-          >
-            {link}
-          </a>
-        );
-      })}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Comment Context Menu Item: "Open in Files" action per comment
-// ---------------------------------------------------------------------------
-
-/**
- * Per-comment context menu item that appears in the comment "more" (⋮) menu.
- * Extracts file paths from the comment body and, if any are found, renders
- * a button to open the first file in the project Files tab.
- *
- * Respects the `commentAnnotationMode` instance config — hidden when mode
- * is `"annotation"` or `"none"`.
- */
-export function CommentOpenFiles({ context }: PluginCommentContextMenuItemProps) {
-  const { data: config } = usePluginData<PluginConfig>("plugin-config", {});
-  const mode = config?.commentAnnotationMode ?? "both";
-
-  const { data } = usePluginData<{ links: string[] }>("comment-file-links", {
-    commentId: context.entityId,
-    issueId: context.parentEntityId,
-    companyId: context.companyId,
-  });
-
-  if (mode === "annotation" || mode === "none") return null;
-  if (!data?.links?.length) return null;
-
-  const prefix = context.companyPrefix ? `/${context.companyPrefix}` : "";
-  const projectId = context.projectId;
-
-  return (
-    <div>
-      <div className="px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-        Files
-      </div>
-      {data.links.map((link) => {
-        const href = buildFileBrowserHref(prefix, projectId, link);
-        const fileName = link.split("/").pop() ?? link;
-        return (
-          <a
-            key={link}
-            href={href}
-            onClick={(e) => navigateToFileBrowser(href, e)}
-            className="flex w-full items-center gap-2 rounded px-2 py-1 text-xs text-foreground hover:bg-accent transition-colors"
-            title={`Open ${link} in file browser`}
-          >
-            <span className="truncate font-mono">{fileName}</span>
-          </a>
-        );
-      })}
     </div>
   );
 }

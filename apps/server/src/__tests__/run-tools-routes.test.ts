@@ -28,13 +28,26 @@ function service(): PromptCapabilityGateway {
         source: "paperclip",
       },
     ]),
-    callTool: vi.fn(async () => ({ items: [] })),
+    callTool: vi.fn(async () => ({
+      source: "paperclip" as const,
+      value: { items: [] },
+    })),
     registerTerminalInvalidToolCall: vi.fn(async () => undefined),
     resolvePluginRunContext: vi.fn(),
   };
 }
 
 describe("run-tools routes", () => {
+  it("advertises only the static tools capability it actually implements", async () => {
+    const response = await request(app(service()))
+      .post("/api/run-tools")
+      .set("authorization", "Bearer pc_run_v1_secret")
+      .send({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.result.capabilities).toEqual({ tools: {} });
+  });
+
   it("provides dynamic MCP discovery with no selector or identity payload", async () => {
     const runtime = service();
     const response = await request(app(runtime))
@@ -127,7 +140,10 @@ describe("run-tools routes", () => {
     "serializes the closed %s action receipt identically as text and structured content",
     async (status) => {
       const runtime = service();
-      runtime.callTool = vi.fn(async () => ({ status }));
+      runtime.callTool = vi.fn(async () => ({
+        source: "paperclip" as const,
+        value: { status },
+      }));
       const response = await request(app(runtime))
         .post("/api/run-tools")
         .set("authorization", "Bearer pc_run_v1_secret")
@@ -149,6 +165,88 @@ describe("run-tools routes", () => {
       });
     },
   );
+
+  it("translates the plugin ToolResult contract into MCP content", async () => {
+    const runtime = service();
+    runtime.callTool = vi.fn(async () => ({
+      source: "plugin" as const,
+      value: {
+        ok: true,
+        content: "record found",
+        data: { records: ["one"] },
+      },
+    }));
+    const response = await request(app(runtime))
+      .post("/api/run-tools")
+      .set("authorization", "Bearer pc_run_v1_secret")
+      .set(RUN_TOOLS_INGRESS_ORDINAL_HEADER, "0")
+      .send({
+        jsonrpc: "2.0",
+        id: "plugin-success",
+        method: "tools/call",
+        params: {
+          name: "acme.search__find_record",
+          arguments: {},
+        },
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.result).toEqual({
+      content: [{ type: "text", text: "record found" }],
+      structuredContent: { records: ["one"] },
+    });
+  });
+
+  it("returns a plugin-declared failure as an MCP tool error", async () => {
+    const runtime = service();
+    runtime.callTool = vi.fn(async () => ({
+      source: "plugin" as const,
+      value: { ok: false, error: "query is required" },
+    }));
+    const response = await request(app(runtime))
+      .post("/api/run-tools")
+      .set("authorization", "Bearer pc_run_v1_secret")
+      .set(RUN_TOOLS_INGRESS_ORDINAL_HEADER, "0")
+      .send({
+        jsonrpc: "2.0",
+        id: "plugin-error",
+        method: "tools/call",
+        params: {
+          name: "acme.search__find_record",
+          arguments: {},
+        },
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.result).toEqual({
+      content: [{ type: "text", text: "query is required" }],
+      isError: true,
+    });
+  });
+
+  it("rejects ambiguous plugin tool results at MCP translation", async () => {
+    const runtime = service();
+    runtime.callTool = vi.fn(async () => ({
+      source: "plugin" as const,
+      value: { content: "legacy", error: "ambiguous" },
+    }));
+    const response = await request(app(runtime))
+      .post("/api/run-tools")
+      .set("authorization", "Bearer pc_run_v1_secret")
+      .set(RUN_TOOLS_INGRESS_ORDINAL_HEADER, "0")
+      .send({
+        jsonrpc: "2.0",
+        id: "plugin-invalid",
+        method: "tools/call",
+        params: {
+          name: "acme.search__find_record",
+          arguments: {},
+        },
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.message).toContain("Invalid plugin ToolResult");
+  });
 
   it("terminal-registers every malformed tools/call before the next ordinal", async () => {
     const runtime = service();

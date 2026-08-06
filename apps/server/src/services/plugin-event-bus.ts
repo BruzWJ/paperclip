@@ -10,18 +10,20 @@
  *   another plugin's subscriptions.
  * - Support wildcard subscriptions via prefix matching (e.g. `plugin.acme.linear.*`).
  *
- * The bus operates in-process. In the full out-of-process architecture the host
- * calls `bus.emit()` after receiving events from the DB/queue layer, and the bus
- * forwards to handlers that proxy the call to the relevant worker process via IPC.
- * That IPC layer is separate; this module only handles routing and filtering.
+ * The bus operates in-process. Explicit post-commit producers call the app-owned
+ * publisher, which awaits this router while each subscription handler proxies the
+ * event to its worker over IPC. Events are not durable, replayed, or retried.
  *
  * @see PLUGIN_SPEC.md §16 — Event System
  * @see PLUGIN_SPEC.md §16.1 — Event Filtering
  * @see PLUGIN_SPEC.md §16.2 — Plugin-to-Plugin Events
  */
 
-import type { PluginEventType } from "@paperclipai/shared";
-import type { PluginEvent, EventFilter } from "@paperclipai/plugin-sdk";
+import {
+  assertPluginEventSubscription,
+  pluginEventMatchesFilter,
+} from "@paperclipai/plugin-sdk";
+import type { PluginEvent, EventFilter, PluginEventPattern } from "@paperclipai/plugin-sdk";
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -62,7 +64,7 @@ function stableFilterKey(value: unknown): string {
  * Returns true if the event type matches the subscription pattern.
  *
  * Matching rules:
- * - Exact match: `"issue.created"` matches `"issue.created"`.
+ * - Exact match: `"issue.board.comment.created"` matches `"issue.board.comment.created"`.
  * - Wildcard suffix: `"plugin.acme.*"` matches any event type that starts with
  *   `"plugin.acme."`. The wildcard `*` is only supported as a trailing token.
  *
@@ -86,47 +88,12 @@ function matchesPattern(eventType: string, pattern: string): boolean {
  *
  * **Resolution strategy per field:**
  *
- * - `projectId` — checked against `event.entityId` when `entityType === "project"`,
- *   otherwise against `payload.projectId`. This covers both direct project events
- *   (e.g. `project.created`) and secondary events that embed a project reference in
- *   their payload (e.g. `issue.created` with `payload.projectId`).
+ * - `companyId` — resolved from the required top-level event company ID.
  *
- * - `companyId` — always resolved from `payload.companyId`. Core domain events that
- *   belong to a company embed the company ID in their payload.
- *
- * - `agentId` — checked against `event.entityId` when `entityType === "agent"`,
- *   otherwise against `payload.agentId`. Covers both direct agent lifecycle events
- *   (e.g. `agent.created`) and run-level events with `payload.agentId` (e.g.
- *   `agent.run.started`).
+ * - `agentId` — resolved from the canonical terminal-run `payload.agentId`.
  *
  * Multiple filter fields are ANDed — all specified fields must match.
  */
-function passesFilter(event: PluginEvent, filter: EventFilter | null): boolean {
-  if (!filter) return true;
-
-  const payload = event.payload as Record<string, unknown> | null;
-
-  if (filter.projectId !== undefined) {
-    const projectId = event.entityType === "project"
-      ? event.entityId
-      : (typeof payload?.projectId === "string" ? payload.projectId : undefined);
-    if (projectId !== filter.projectId) return false;
-  }
-
-  if (filter.companyId !== undefined) {
-    if (event.companyId !== filter.companyId) return false;
-  }
-
-  if (filter.agentId !== undefined) {
-    const agentId = event.entityType === "agent"
-      ? event.entityId
-      : (typeof payload?.agentId === "string" ? payload.agentId : undefined);
-    if (agentId !== filter.agentId) return false;
-  }
-
-  return true;
-}
-
 // ---------------------------------------------------------------------------
 // Event bus factory
 // ---------------------------------------------------------------------------
@@ -146,18 +113,18 @@ function passesFilter(event: PluginEvent, filter: EventFilter | null): boolean {
  * const linearBus = bus.forPlugin("acme.linear");
  *
  * // Subscribe from the plugin's perspective
- * linearBus.subscribe("issue.created", async (event) => {
+ * linearBus.subscribe("issue.board.comment.created", async (event) => {
  *   // handle event
  * });
  *
  * // Emit a core domain event (called by the host, not the plugin)
  * await bus.emit({
  *   eventId: "evt-1",
- *   eventType: "issue.created",
+ *   eventType: "issue.board.comment.created",
  *   occurredAt: new Date().toISOString(),
- *   entityId: "iss-1",
- *   entityType: "issue",
- *   payload: { title: "Fix login bug", projectId: "proj-1" },
+ *   entityId: "comment-1",
+ *   entityType: "issue_comment",
+ *   payload: { issueId: "iss-1", commentId: "comment-1" },
  * });
  * ```
  */
@@ -180,19 +147,23 @@ export function createPluginEventBus(): PluginEventBus {
   /**
    * Emit an event envelope to all matching subscribers across all plugins.
    *
-   * Subscribers are called concurrently (Promise.all). Each handler's errors
-   * are caught individually and collected in the returned `errors` array so a
-   * single misbehaving plugin cannot interrupt delivery to other plugins.
+   * Unique matching handlers are called concurrently. Registering the same
+   * handler under overlapping patterns or filters never duplicates delivery.
+   * Each handler's errors are collected so one plugin cannot interrupt others.
    */
   async function emit(event: PluginEvent): Promise<PluginEventBusEmitResult> {
     const errors: Array<{ pluginId: string; error: unknown }> = [];
     const promises: Promise<void>[] = [];
 
     for (const [pluginId, subs] of registry) {
+      const handlers = new Set<(event: PluginEvent) => Promise<void>>();
       for (const sub of subs) {
         if (!matchesPattern(event.eventType, sub.eventPattern)) continue;
-        if (!passesFilter(event, sub.filter)) continue;
+        if (!pluginEventMatchesFilter(event, sub.filter)) continue;
+        handlers.add(sub.handler);
+      }
 
+      for (const handler of handlers) {
         // Use Promise.resolve().then() so that synchronous throws from handlers
         // are also caught inside the promise chain. Calling
         // Promise.resolve(syncThrowingFn()) does NOT catch sync throws — the
@@ -201,7 +172,7 @@ export function createPluginEventBus(): PluginEventBus {
         // exceptions become rejections. Each .catch() swallows the rejection
         // and records it — the promise always resolves, so Promise.all never rejects.
         promises.push(
-          Promise.resolve().then(() => sub.handler(event)).catch((error: unknown) => {
+          Promise.resolve().then(() => handler(event)).catch((error: unknown) => {
             errors.push({ pluginId, error });
           }),
         );
@@ -235,7 +206,7 @@ export function createPluginEventBus(): PluginEventBus {
        * done by the host layer before calling this method).
        */
       subscribe(
-        eventPattern: PluginEventType | `plugin.${string}`,
+        eventPattern: PluginEventPattern,
         fnOrFilter: EventFilter | ((event: PluginEvent) => Promise<void>),
         maybeFn?: (event: PluginEvent) => Promise<void>,
       ): void {
@@ -249,6 +220,8 @@ export function createPluginEventBus(): PluginEventBus {
           if (!maybeFn) throw new Error("Handler function is required when a filter is provided");
           handler = maybeFn;
         }
+
+        assertPluginEventSubscription(eventPattern, filter);
 
         const subscriptions = subsFor(pluginId);
         const key = `${eventPattern}\0${stableFilterKey(filter)}`;
@@ -335,7 +308,7 @@ export function createPluginEventBus(): PluginEventBus {
  * rather than thrown so a single misbehaving plugin cannot block delivery to
  * other plugins.
  */
-export interface PluginEventBusEmitResult {
+interface PluginEventBusEmitResult {
   /** Errors thrown by individual handlers, keyed by the plugin that failed. */
   errors: Array<{ pluginId: string; error: unknown }>;
 }
@@ -349,8 +322,8 @@ export interface PluginEventBus {
   /**
    * Emit a typed domain event to all matching subscribers.
    *
-   * Called by the host when a domain event occurs (e.g. from the DB layer or
-   * message queue). All registered subscriptions across all plugins are checked.
+   * Called by the app-owned post-commit publisher. All registered subscriptions
+   * across all plugins are checked.
    */
   emit(event: PluginEvent): Promise<PluginEventBusEmitResult>;
 
@@ -387,12 +360,12 @@ export interface PluginEventBus {
  * than `void` so the host layer can inspect handler errors; the SDK-facing
  * `PluginEventsClient.emit()` wraps this and returns `void`.
  */
-export interface ScopedPluginEventBus {
+interface ScopedPluginEventBus {
   /**
    * Subscribe to a core domain event or a plugin-namespaced event.
    *
    * **Pattern syntax:**
-   * - Exact match: `"issue.created"` — receives only that event type.
+   * - Exact match: `"issue.board.comment.created"` — receives only that event type.
    * - Wildcard suffix: `"plugin.acme.linear.*"` — receives all events emitted by
    *   the `acme.linear` plugin. The `*` is supported only as a trailing token after
    *   a `.` separator; no other glob syntax is supported.
@@ -400,17 +373,17 @@ export interface ScopedPluginEventBus {
    *   regardless of which plugin emitted them.
    *
    * Wildcards apply only to the `plugin.*` namespace. Core domain events must be
-   * subscribed to by exact name (e.g. `"issue.created"`, not `"issue.*"`).
+   * subscribed to by exact name (e.g. `"issue.board.comment.created"`, not `"issue.*"`).
    *
    * An optional `EventFilter` can be passed as the second argument to perform
    * server-side pre-filtering; filtered-out events are never delivered to the handler.
    */
   subscribe(
-    eventPattern: PluginEventType | `plugin.${string}`,
+    eventPattern: PluginEventPattern,
     fn: (event: PluginEvent) => Promise<void>,
   ): void;
   subscribe(
-    eventPattern: PluginEventType | `plugin.${string}`,
+    eventPattern: PluginEventPattern,
     filter: EventFilter,
     fn: (event: PluginEvent) => Promise<void>,
   ): void;

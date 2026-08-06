@@ -503,7 +503,7 @@ type CanonicalEnvBinding =
       allowMissingOverride: boolean;
     };
 
-type SecretAccessConsumerType = SecretBindingTargetType | "plugin_worker";
+type SecretAccessConsumerType = SecretBindingTargetType;
 
 type SecretConsumerContext = {
   consumerType: SecretAccessConsumerType;
@@ -562,7 +562,6 @@ export type MissingRuntimeBinding = {
 };
 
 function missingRuntimeConsumerType(consumerType: SecretAccessConsumerType): SecretBindingTargetType {
-  if (consumerType === "plugin_worker") return "plugin";
   return consumerType;
 }
 

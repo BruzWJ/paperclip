@@ -5,12 +5,9 @@ import {
   PAPERCLIP_ACTION_KEYS,
 } from "@paperclipai/shared";
 import {
-  RuntimeDescriptorArgumentsInvalid,
-  RuntimeRetrievalArgumentsInvalid,
-  RuntimeToolUnavailable,
+  RuntimeToolArgumentsInvalid,
   buildRuntimeRetrievalAbi,
   compileRuntimeInterface,
-  createDynamicRuntimeInterface,
 } from "../services/runtime-interface-compiler.ts";
 import { resolveContextDial } from "../services/context-dial-resolver.ts";
 
@@ -143,7 +140,7 @@ describe("runtime interface compiler", () => {
       } else {
         expect(() =>
           abi.parse("read_issue_comments", {}),
-        ).toThrow(RuntimeRetrievalArgumentsInvalid);
+        ).toThrow(RuntimeToolArgumentsInvalid);
       }
     },
   );
@@ -181,7 +178,7 @@ describe("runtime interface compiler", () => {
       });
       expect(() =>
         abi.parse("read_issue_agent_run", {}),
-      ).toThrow(RuntimeRetrievalArgumentsInvalid);
+      ).toThrow(RuntimeToolArgumentsInvalid);
     },
   );
 
@@ -437,7 +434,7 @@ describe("runtime interface compiler", () => {
       agentId: "agent-2",
       message: "Please review",
       mentionRunId: "8710c164-9694-42cf-9538-2f17fd665891",
-    })).toThrow(RuntimeDescriptorArgumentsInvalid);
+    })).toThrow(RuntimeToolArgumentsInvalid);
   });
 
   it("compiles an owner-only collective Board request without a target catalog", () => {
@@ -464,7 +461,7 @@ describe("runtime interface compiler", () => {
     expect(() => descriptor?.validateArguments?.({
       message: "Need direction",
       reason: "clarification",
-    })).toThrow(RuntimeDescriptorArgumentsInvalid);
+    })).toThrow(RuntimeToolArgumentsInvalid);
     expect(
       compileRuntimeInterface(
         compileInput({ mode: "consult", actionGrants: { mention_board: true } }),
@@ -624,17 +621,21 @@ describe("runtime interface compiler", () => {
       compileInput({
         pluginTools: [{
           installationId: "plugin-installation-1",
-          name: "paperclip.agentmemory:read_issue_agent_memory",
-          title: "Read issue agent memory",
-          description: "Recall issue memory",
+          manifestIdentity: "manifest-1",
+          name: "acme.search__lookup_issue",
+          toolName: "lookup_issue",
+          title: "Look up issue",
+          description: "Query the external issue index",
           inputSchema: { type: "object" },
         }],
       }),
-    ).byName.get("paperclip.agentmemory:read_issue_agent_memory");
+    ).byName.get("acme.search__lookup_issue");
 
     expect(descriptor).toMatchObject({
       source: "plugin",
       pluginInstallationId: "plugin-installation-1",
+      pluginManifestIdentity: "manifest-1",
+      pluginToolName: "lookup_issue",
     });
     expect(descriptor?.validateArguments?.({})).toEqual({});
   });
@@ -643,9 +644,11 @@ describe("runtime interface compiler", () => {
     const descriptor = compileRuntimeInterface(compileInput({
       pluginTools: [{
         installationId: "plugin-installation-1",
-        name: "acme.memory:recall",
-        title: "Recall",
-        description: "Recall memory",
+        manifestIdentity: "manifest-1",
+        name: "acme.search__query",
+        toolName: "query",
+        title: "Search",
+        description: "Query an external index",
         inputSchema: {
           type: "object",
           required: ["query"],
@@ -653,14 +656,28 @@ describe("runtime interface compiler", () => {
           properties: { query: { type: "string", minLength: 1 } },
         },
       }],
-    })).byName.get("acme.memory:recall");
+    })).byName.get("acme.search__query");
 
     expect(() => descriptor?.validateArguments?.({ query: "" }))
-      .toThrow(RuntimeDescriptorArgumentsInvalid);
+      .toThrow(RuntimeToolArgumentsInvalid);
     expect(() => descriptor?.validateArguments?.({ query: "memory", extra: true }))
-      .toThrow(RuntimeDescriptorArgumentsInvalid);
+      .toThrow(RuntimeToolArgumentsInvalid);
     expect(descriptor?.validateArguments?.({ query: "memory" }))
       .toEqual({ query: "memory" });
+  });
+
+  it("rejects provider-unsafe tool names before ACPX", () => {
+    expect(() => compileRuntimeInterface(compileInput({
+      pluginTools: [{
+        installationId: "plugin-installation-1",
+        manifestIdentity: "manifest-1",
+        name: "acme.search:query",
+        toolName: "query",
+        title: "Search",
+        description: "Query an external index",
+        inputSchema: { type: "object" },
+      }],
+    }))).toThrow("Compiled tool name is not provider-safe");
   });
 
   it("rejects duplicate tool names across plugin installations", () => {
@@ -668,78 +685,23 @@ describe("runtime interface compiler", () => {
       pluginTools: [
         {
           installationId: "plugin-installation-1",
-          name: "paperclip.example:lookup",
+          manifestIdentity: "manifest-1",
+          name: "paperclip.example__lookup",
+          toolName: "lookup",
           title: "Lookup",
           description: "Lookup",
           inputSchema: { type: "object" },
         },
         {
           installationId: "plugin-installation-2",
-          name: "paperclip.example:lookup",
+          manifestIdentity: "manifest-2",
+          name: "paperclip.example__lookup",
+          toolName: "lookup",
           title: "Lookup",
           description: "Lookup",
           inputSchema: { type: "object" },
         },
       ],
     }))).toThrow(/Duplicate compiled tool name/);
-  });
-
-  it("re-resolves narrowing and widening before every list and call", async () => {
-    let enabled = true;
-    const dynamic = createDynamicRuntimeInterface({
-      async resolve() {
-        return compileInput({
-          actionGrants: { issue_create: enabled },
-        });
-      },
-    });
-
-    expect((await dynamic.list()).map((tool) => tool.name)).toEqual([
-      "issue_create",
-    ]);
-    enabled = false;
-    await expect(dynamic.resolveCall("issue_create")).rejects.toBeInstanceOf(
-      RuntimeToolUnavailable,
-    );
-    enabled = true;
-    await expect(dynamic.resolveCall("issue_create")).resolves.toMatchObject({
-      name: "issue_create",
-    });
-  });
-
-  it("rebuilds the live agent-hire company-tool id catalog before a call", async () => {
-    const firstId = "11111111-1111-4111-8111-111111111111";
-    const secondId = "22222222-2222-4222-8222-222222222222";
-    let catalogEntryId = firstId;
-    const dynamic = createDynamicRuntimeInterface({
-      async resolve() {
-        return compileInput({
-          actionGrants: { agent_hire: true },
-          agentHireCompanyToolOptions: [
-            {
-              catalogEntryId,
-              connectionId:
-                "33333333-3333-4333-8333-333333333333",
-              connectionName: "Records",
-              title: "Lookup record",
-              description: "Look up a record",
-              catalogVersionHash: "catalog-v1",
-            },
-          ],
-        });
-      },
-    });
-    const listed = (await dynamic.list()).find(
-      (tool) => tool.name === "agent_hire",
-    )!;
-    expect(
-      listed.inputSchema.properties?.companyToolIds.items?.enum,
-    ).toEqual([firstId]);
-
-    catalogEntryId = secondId;
-    const call = await dynamic.resolveCall("agent_hire");
-    expect(
-      call.inputSchema.properties?.companyToolIds.items?.enum,
-    ).toEqual([secondId]);
   });
 });

@@ -28,7 +28,6 @@ import type {
   TrustAuthorizationPolicy,
 } from "../trust-policy.js";
 import type {
-  AgentContextGrantKey,
   AgentVisibleIssueStatus,
   ContextAccess,
   IssueDisposition,

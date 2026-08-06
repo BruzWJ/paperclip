@@ -1646,7 +1646,7 @@ export async function terminalizePluginCreatorEdgesInTransaction(
           status:
             input.reason === "plugin_disabled"
               ? "disabled"
-              : "uninstalled",
+              : "deleted",
         },
         audit: {
           pluginInstallationId: input.pluginInstallationId,
@@ -1797,12 +1797,12 @@ async function inspectEndpointTerminality(
           .limit(1)
           .then((rows) => rows[0] ?? null)
       : null;
-    if (!plugin || plugin.status === "uninstalled") {
+    if (!plugin) {
       return {
         reason: "plugin_uninstalled",
         tombstone: {
           pluginInstallationId: edge.endpointId,
-          status: plugin?.status ?? "missing",
+          status: "missing",
         },
       };
     }

@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { PluginRecord } from "@paperclipai/shared";
+import type { PluginInstallRequest, PluginRecordDto } from "@paperclipai/shared";
 import { Link } from "@/lib/router";
 import { AlertTriangle, Plus, Power, Puzzle, Settings, Trash } from "lucide-react";
 import { useCompany } from "@/context/CompanyContext";
@@ -39,7 +39,7 @@ function firstNonEmptyLine(value: string | null | undefined): string | null {
   return line ?? null;
 }
 
-function getPluginErrorSummary(plugin: PluginRecord): string {
+function getPluginErrorSummary(plugin: PluginRecordDto): string {
   return firstNonEmptyLine(plugin.lastError) ?? "Plugin entered an error state without a stored error message.";
 }
 
@@ -70,7 +70,7 @@ export function PluginManager() {
   const [installDialogOpen, setInstallDialogOpen] = useState(false);
   const [uninstallPluginId, setUninstallPluginId] = useState<string | null>(null);
   const [uninstallPluginName, setUninstallPluginName] = useState<string>("");
-  const [errorDetailsPlugin, setErrorDetailsPlugin] = useState<PluginRecord | null>(null);
+  const [errorDetailsPlugin, setErrorDetailsPlugin] = useState<PluginRecordDto | null>(null);
 
   useEffect(() => {
     setBreadcrumbs([
@@ -92,8 +92,7 @@ export function PluginManager() {
   };
 
   const installMutation = useMutation({
-    mutationFn: (params: { packageName: string; version?: string; isLocalPath?: boolean }) =>
-      pluginsApi.install(params),
+    mutationFn: (params: PluginInstallRequest) => pluginsApi.install(params),
     onSuccess: () => {
       invalidatePluginQueries();
       setInstallDialogOpen(false);
@@ -196,8 +195,13 @@ export function PluginManager() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setInstallDialogOpen(false)}>Cancel</Button>
               <Button
-                onClick={() => installMutation.mutate({ packageName: installPackage })}
-                disabled={!installPackage || installMutation.isPending}
+                onClick={() =>
+                  installMutation.mutate({
+                    source: "npm",
+                    packageName: installPackage.trim(),
+                  })
+                }
+                disabled={!installPackage.trim() || installMutation.isPending}
               >
                 {installMutation.isPending ? "Installing..." : "Install"}
               </Button>
@@ -245,18 +249,18 @@ export function PluginManager() {
                       <Link
                         to={`/company/settings/instance/plugins/${plugin.id}`}
                         className="font-medium hover:underline truncate block"
-                        title={plugin.manifestJson.displayName ?? plugin.packageName}
+                        title={plugin.manifestJson.displayName}
                       >
-                        {plugin.manifestJson.displayName ?? plugin.packageName}
+                        {plugin.manifestJson.displayName}
                       </Link>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground mt-0.5 truncate" title={plugin.packageName}>
-                        {plugin.packageName} · v{plugin.manifestJson.version ?? plugin.version}
+                        {plugin.packageName} · v{plugin.manifestJson.version}
                       </p>
                     </div>
                     <p className="text-sm text-muted-foreground truncate mt-0.5" title={plugin.manifestJson.description}>
-                      {plugin.manifestJson.description || "No description provided."}
+                      {plugin.manifestJson.description}
                     </p>
                     {plugin.status === "error" && (
                       <div className="mt-3 rounded-md border border-red-500/25 bg-red-500/[0.06] px-3 py-2" role="alert">
@@ -326,7 +330,7 @@ export function PluginManager() {
                           title="Uninstall"
                           onClick={() => {
                             setUninstallPluginId(plugin.id);
-                            setUninstallPluginName(plugin.manifestJson.displayName ?? plugin.packageName);
+                            setUninstallPluginName(plugin.manifestJson.displayName);
                           }}
                           disabled={uninstallMutation.isPending}
                         >
@@ -387,7 +391,7 @@ export function PluginManager() {
           <DialogHeader>
             <DialogTitle>Error Details</DialogTitle>
             <DialogDescription>
-              {errorDetailsPlugin?.manifestJson.displayName ?? errorDetailsPlugin?.packageName ?? "Plugin"} hit an error state.
+              {errorDetailsPlugin?.manifestJson.displayName ?? "Plugin"} hit an error state.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

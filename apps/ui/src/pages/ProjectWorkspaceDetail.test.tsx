@@ -178,7 +178,6 @@ function pluginSlot(overrides: Record<string, unknown> = {}) {
     pluginId: "plugin-1",
     pluginKey: "paperclip.quality",
     pluginDisplayName: "Quality Plugin",
-    pluginVersion: "0.1.0",
     ...overrides,
   };
 }

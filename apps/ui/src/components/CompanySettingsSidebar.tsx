@@ -14,7 +14,7 @@ import {
   UserRoundPen,
   Users,
 } from "lucide-react";
-import type { PluginRecord } from "@paperclipai/shared";
+import type { PluginRecordDto } from "@paperclipai/shared";
 import { sidebarBadgesApi } from "@/api/sidebarBadges";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { pluginsApi } from "@/api/plugins";
@@ -34,7 +34,7 @@ import { SidebarNavItem } from "./SidebarNavItem";
  * here. Plugins that mix a sandbox provider with other contributions still
  * appear.
  */
-function isSandboxProviderOnly(plugin: PluginRecord): boolean {
+function isSandboxProviderOnly(plugin: PluginRecordDto): boolean {
   const drivers = plugin.manifestJson.environmentDrivers ?? [];
   if (drivers.length === 0) return false;
   return drivers.every((d) => d.kind === "sandbox_provider");
@@ -121,17 +121,15 @@ export function CompanySettingsSidebar() {
               badge={badges?.joinRequests ?? 0}
               end
             />
-            {companySettingsPluginSlots
-              .filter((slot) => slot.routePath)
-              .map((slot) => (
-                <SidebarNavItem
-                  key={`${slot.pluginKey}:${slot.id}`}
-                  to={`/company/settings/${slot.routePath}`}
-                  label={slot.displayName}
-                  icon={Puzzle}
-                  end
-                />
-              ))}
+            {companySettingsPluginSlots.map((slot) => (
+              <SidebarNavItem
+                key={`${slot.pluginKey}:${slot.id}`}
+                to={`/company/settings/${slot.routePath}`}
+                label={slot.displayName}
+                icon={Puzzle}
+                end
+              />
+            ))}
             <SidebarNavItem to="/company/settings/invites" label="Invites" icon={MailPlus} end />
             <SidebarNavItem to="/company/settings/secrets" label="Secrets" icon={KeyRound} end />
           </div>
@@ -196,7 +194,7 @@ export function CompanySettingsSidebar() {
                     ].join(" ")
                   }
                 >
-                  {plugin.manifestJson.displayName ?? plugin.packageName}
+                  {plugin.manifestJson.displayName}
                 </NavLink>
               ))}
             </div>

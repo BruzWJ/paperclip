@@ -70,31 +70,26 @@ import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { readBrandedStaticIndexHtml } from "./static-index-html.js";
 import { applyUiBranding } from "./ui-branding.js";
 import { logger } from "./middleware/logger.js";
-import { DEFAULT_LOCAL_PLUGIN_DIR, pluginLoader } from "./services/plugin-loader.js";
-import { createPluginWorkerManager, type PluginWorkerManager } from "./services/plugin-worker-manager.js";
+import { pluginLoader } from "./services/plugin-loader.js";
+import type { PluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
 import { pluginJobStore } from "./services/plugin-job-store.js";
-import { createPluginToolDispatcher } from "./services/plugin-tool-dispatcher.js";
 import {
   createToolGatewayService,
   type ToolGatewayService,
 } from "./services/tool-gateway.js";
 import type { PromptCapabilityGateway } from "./services/prompt-capability-gateway.js";
-import type { RuntimePluginToolPort } from "./services/runtime-tool-executor.js";
 import type { IssueExecutionRunService } from "./services/issue-execution-run-service.js";
 import { pluginLifecycleManager } from "./services/plugin-lifecycle.js";
-import { createPluginJobCoordinator } from "./services/plugin-job-coordinator.js";
 import {
   buildHostServices,
-  flushPluginLogBuffer,
   type PluginRunIssueContextReader,
   type PluginRuntimeRecordsReader,
 } from "./services/plugin-host-services.js";
 import { createPluginIssueControlPlane } from "./services/plugin-issue-control-plane.js";
-import { createPluginEventBus } from "./services/plugin-event-bus.js";
-import { setPluginEventBus } from "./services/activity-log.js";
+import type { PluginEventBus } from "./services/plugin-event-bus.js";
+import type { PluginDomainEventPublisher } from "./services/plugin-domain-event-publisher.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
-import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
 import type { OrdinaryIssueRuntime } from "./services/ordinary-issue-runtime.js";
 import {
@@ -187,22 +182,21 @@ export async function createApp(
     bindHost: string;
     authReady: boolean;
     companyDeletionEnabled: boolean;
-    instanceId?: string;
-    hostVersion?: string;
-    localPluginDir?: string;
-    pluginMigrationDb?: Db;
-    pluginWorkerManager?: PluginWorkerManager;
+    instanceId: string;
+    hostVersion: string;
+    localPluginDir: string;
+    pluginMigrationDb: Db;
+    pluginWorkerManager: PluginWorkerManager;
+    pluginEventBus: PluginEventBus;
+    pluginDomainEvents: PluginDomainEventPublisher;
     betterAuthHandler: express.RequestHandler;
     resolveSession: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
-    promptCapabilityGateway?: PromptCapabilityGateway;
-    pluginRunIssueContextReader?: PluginRunIssueContextReader;
-    pluginRuntimeRecordsReader?: PluginRuntimeRecordsReader;
+    promptCapabilityGateway: PromptCapabilityGateway;
+    pluginRunIssueContextReader: PluginRunIssueContextReader;
+    pluginRuntimeRecordsReader: PluginRuntimeRecordsReader;
     issueSessionStore?: IssueSessionStore;
-    bindPromptCapabilityCompanyTools?: (
+    bindPromptCapabilityCompanyTools: (
       execute: ToolGatewayService["executePromptCapabilityTool"],
-    ) => void;
-    bindPromptCapabilityPluginTools?: (
-      execute: RuntimePluginToolPort["execute"],
     ) => void;
     ordinaryIssueRuntime: OrdinaryIssueRuntime;
     issueExecutionRunService: Pick<
@@ -270,9 +264,7 @@ export async function createApp(
   app.use(httpLogger);
   // Prompt-capability authentication is intentionally isolated from the
   // generic API actor middleware and from named-gateway credentials.
-  if (opts.promptCapabilityGateway) {
-    app.use("/api", runToolsRoutes(opts.promptCapabilityGateway));
-  }
+  app.use("/api", runToolsRoutes(opts.promptCapabilityGateway));
   app.use("/api", rejectRunInterfaceBearerFromGenericApi());
   app.use(
     actorMiddleware(db, {
@@ -286,8 +278,7 @@ export async function createApp(
   app.use("/api", denyGenericAgentRest("REST"));
   app.use(llmRoutes(db));
 
-  const hostServicesDisposers = new Map<string, () => void>();
-  const workerManager = opts.pluginWorkerManager ?? createPluginWorkerManager();
+  const workerManager = opts.pluginWorkerManager;
   const adapterReadinessEnvironmentOrchestrator =
     opts.adapterReadinessEnvironmentOrchestrator ??
     environmentRunOrchestrator(db, {
@@ -386,16 +377,18 @@ export async function createApp(
     api.use(instanceDatabaseBackupRoutes(opts.databaseBackupService));
   }
   const pluginRegistry = pluginRegistryService(db);
-  const eventBus = createPluginEventBus();
-  setPluginEventBus(eventBus);
+  const eventBus = opts.pluginEventBus;
   const jobStore = pluginJobStore(db);
+  const requestedLocalPluginDir = path.resolve(opts.localPluginDir);
+  const localPluginDir = fs.existsSync(requestedLocalPluginDir)
+    ? fs.realpathSync(requestedLocalPluginDir)
+    : requestedLocalPluginDir;
   const loader = pluginLoader(db, {
-    localPluginDir: opts.localPluginDir ?? DEFAULT_LOCAL_PLUGIN_DIR,
+    localPluginDir,
     migrationDb: opts.pluginMigrationDb,
   });
   const lifecycle = pluginLifecycleManager(db, {
     loader,
-    workerManager,
     dispatchRef: ordinaryIssues.dispatchRef,
     issueExecutionCancellation: opts.issueExecutionCancellation,
   });
@@ -404,28 +397,20 @@ export async function createApp(
     jobStore,
     workerManager,
   });
-  const toolDispatcher = createPluginToolDispatcher({
-    workerManager,
-    lifecycleManager: lifecycle,
-    db,
-  });
   loader.bindRuntimeServices({
     workerManager,
-    eventBus,
     jobScheduler: scheduler,
     jobStore,
-    toolDispatcher,
     lifecycleManager: lifecycle,
     instanceInfo: {
-      instanceId: opts.instanceId ?? "default",
-      hostVersion: opts.hostVersion ?? "0.0.0",
+      instanceId: opts.instanceId,
+      hostVersion: opts.hostVersion,
       deploymentExposure: opts.deploymentExposure,
     },
-    buildHostHandlers: (pluginId, manifest) => {
+    buildHostBinding: (pluginId, manifest) => {
       const deliverEvent = (params: HostToWorkerMethods["onEvent"][0]) =>
         workerManager.call(pluginId, "onEvent", params, 15 * 60 * 1_000);
-      const services = buildHostServices(db, pluginId, manifest.id, eventBus, deliverEvent, {
-        pluginWorkerManager: workerManager,
+      const services = buildHostServices(db, pluginId, eventBus, deliverEvent, {
         manifest,
         pluginIssueControlPlane,
         pluginRunIssueContextReader: opts.pluginRunIssueContextReader,
@@ -433,34 +418,23 @@ export async function createApp(
         ordinaryIssues,
         issueExecutionCancellation: opts.issueExecutionCancellation,
       });
-      hostServicesDisposers.set(pluginId, () => services.dispose());
-      return createHostClientHandlers({
-        pluginId,
-        capabilities: manifest.capabilities,
-        services,
-      });
+      return {
+        handlers: createHostClientHandlers({
+          pluginId,
+          capabilities: manifest.capabilities,
+          services,
+        }),
+        dispose: () => services.dispose(),
+      };
     },
   });
   const toolGateway = createToolGatewayService(db, {
     deploymentExposure: opts.deploymentExposure,
     trustedLocalStdioRuntimeHost,
   });
-  opts.bindPromptCapabilityCompanyTools?.(
+  opts.bindPromptCapabilityCompanyTools(
     toolGateway.executePromptCapabilityTool.bind(toolGateway),
   );
-  opts.bindPromptCapabilityPluginTools?.(async (input) => {
-    return (
-      await toolDispatcher.executeTool(
-        input.toolName,
-        input.arguments,
-        {
-          companyId: input.capability.companyId,
-          pluginInstallationId: input.pluginInstallationId,
-          runContextHandle: await input.mintPluginRunContext(),
-        },
-      )
-    ).result;
-  });
   // Issue routes are intentionally mounted after the gateway is constructed because
   // issue approval endpoints delegate to it. The intervening routers use distinct
   // route prefixes, so this dependency does not change issue-route precedence.
@@ -468,6 +442,7 @@ export async function createApp(
     feedbackExportService: opts.feedbackExportService,
     pluginWorkerManager: workerManager,
     ordinaryIssues,
+    pluginDomainEvents: opts.pluginDomainEvents,
   }));
   app.use(mcpGatewayProtocolRoutes(toolGateway));
   api.use(toolAccessRoutes(db, {
@@ -479,13 +454,6 @@ export async function createApp(
   api.use(smokeLabRoutes(db, {
     deploymentExposure: opts.deploymentExposure,
   }));
-  const jobCoordinator = createPluginJobCoordinator({
-    db,
-    lifecycle,
-    scheduler,
-    jobStore,
-  });
-  const hostServiceCleanup = createPluginHostServiceCleanup(lifecycle, hostServicesDisposers);
   let viteHtmlRenderer: ReturnType<typeof createCachedViteHtmlRenderer> | null = null;
   api.use(
     toolGatewayRoutes(db, toolGateway),
@@ -493,11 +461,8 @@ export async function createApp(
   api.use(
     pluginRoutes(
       db,
-      loader,
       lifecycle,
-      { scheduler, jobStore },
-      { workerManager },
-      { workerManager },
+      { scheduler, jobStore, workerManager },
     ),
   );
   api.use(adapterRoutes());
@@ -510,9 +475,7 @@ export async function createApp(
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });
   });
-  app.use(pluginUiStaticRoutes(db, {
-    localPluginDir: opts.localPluginDir ?? DEFAULT_LOCAL_PLUGIN_DIR,
-  }));
+  app.use(pluginUiStaticRoutes(db));
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   if (opts.uiMode === "static") {
@@ -626,7 +589,6 @@ export async function createApp(
 
   app.use(errorHandler);
 
-  jobCoordinator.start();
   scheduler.start();
   let feedbackExportShuttingDown = false;
   let feedbackExportTimer: ReturnType<typeof setInterval> | null = null;
@@ -660,40 +622,53 @@ export async function createApp(
   if (opts.feedbackExportService) {
     void flushPendingFeedbackExports();
   }
-  void toolDispatcher.initialize().catch((err) => {
-    logger.error({ err }, "Failed to initialize plugin tool dispatcher");
-  });
   const devWatcher = createPluginDevWatcher(
     lifecycle,
-    async (pluginId) => (await pluginRegistry.getById(pluginId))?.packagePath ?? null,
-  );
-  void loader.loadAll()
-    .then((result) => {
-    if (!result) return;
-    for (const loaded of result.results) {
-      if (devWatcher && loaded.success && loaded.plugin.packagePath) {
-        devWatcher.watch(loaded.plugin.id, loaded.plugin.packagePath);
+    async (pluginId) => {
+      const plugin = await pluginRegistry.getById(pluginId);
+      if (!plugin) return null;
+      if (plugin.source !== "local") return null;
+      if (!path.isAbsolute(plugin.packagePath)) {
+        throw new Error(`Plugin installation package root is not absolute: ${pluginId}`);
       }
-    }
-  }).catch((err) => {
-    logger.error({ err }, "Failed to load ready plugins on startup");
-  });
-  let appServicesShutdown = false;
-  const shutdownAppServices = () => {
-    if (appServicesShutdown) return;
-    appServicesShutdown = true;
+      return {
+        packagePath: plugin.packagePath,
+        manifest: plugin.manifestJson,
+      };
+    },
+  );
+  let appServicesShutdown: Promise<void> | null = null;
+  const shutdownAppServices = (): Promise<void> => {
+    if (appServicesShutdown) return appServicesShutdown;
     disableFeedbackExportFlushes();
-    devWatcher?.close();
-    viteHtmlRenderer?.dispose();
-    hostServiceCleanup.disposeAll();
-    hostServiceCleanup.teardown();
+    appServicesShutdown = Promise.allSettled([
+      Promise.resolve().then(() => devWatcher.close()),
+      Promise.resolve().then(() => viteHtmlRenderer?.dispose()),
+      loader.shutdownAll(),
+    ]).then((results) => {
+      const failures = results.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
+      if (failures.length > 0) {
+        throw new AggregateError(failures, "Failed to shut down application services");
+      }
+    });
+    return appServicesShutdown;
   };
+  try {
+    await lifecycle.activateReadyPlugins();
+  } catch (err) {
+    try {
+      await shutdownAppServices();
+    } catch (shutdownErr) {
+      throw new AggregateError(
+        [err, shutdownErr],
+        "Plugin startup activation and cleanup failed",
+      );
+    }
+    throw err;
+  }
   app.locals.paperclipShutdown = shutdownAppServices;
-
-  process.once("exit", shutdownAppServices);
-  process.once("beforeExit", () => {
-    void flushPluginLogBuffer();
-  });
 
   return app;
 }

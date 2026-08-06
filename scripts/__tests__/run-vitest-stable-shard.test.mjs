@@ -52,7 +52,6 @@ const REQUIRED_ADDED_PROJECT_PATHS = [
   "packages/teams-catalog",
   "packages/plugins/examples/plugin-authoring-smoke-example",
   "packages/plugins/examples/plugin-orchestration-smoke-example",
-  "packages/plugins/agentmemory-plugin",
 ];
 const RAW_CENSUS_ROOTS = ["apps", "packages"];
 const RAW_CENSUS_IGNORED_DIRECTORIES = new Set([

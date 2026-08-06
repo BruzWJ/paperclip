@@ -61,7 +61,7 @@ describe("useAdapterCatalogSync", () => {
     expect(mockAdaptersApi.list).not.toHaveBeenCalled();
   });
 
-  it("synchronizes exactly the server-admitted ACPX catalog", async () => {
+  it("synchronizes exactly the server-admitted local-agent catalog", async () => {
     mockAdaptersApi.list.mockResolvedValue([
       {
         type: "codex",
@@ -97,7 +97,7 @@ describe("useAdapterCatalogSync", () => {
     ]);
   });
 
-  it("does not synchronize a failed ACPX probe into selectable UI adapters", async () => {
+  it("does not synchronize a failed local readiness check into selectable UI adapters", async () => {
     mockAdaptersApi.list.mockResolvedValue([
       {
         type: "visible-agent",

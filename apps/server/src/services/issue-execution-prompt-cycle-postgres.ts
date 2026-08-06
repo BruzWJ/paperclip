@@ -1028,6 +1028,8 @@ export function createPostgresIssueExecutionPromptCycleRepository(
           ...identity,
           runBatchDigest: member.batchDigest,
         });
+        let sourceMessageId = source.sourceMessageId;
+        let sourceMessageSeq: number;
         let sourceText = source.exactMessage;
         let steeringResumeSourceCorrelationId: string | null = null;
         if (attempt.promptKind === "steering") {
@@ -1075,6 +1077,8 @@ export function createPostgresIssueExecutionPromptCycleRepository(
             "steering segment lost its canonical Session message",
           );
           const sourceMessage = issueSessionMessageFromRow(sourceMessageRow);
+          sourceMessageId = sourceMessageRow.id;
+          sourceMessageSeq = sourceMessageRow.seq;
           if (sourceMessage.type === "user") {
             if (
               segment.sourceInputId !== sourceMessage.id ||
@@ -1118,6 +1122,39 @@ export function createPostgresIssueExecutionPromptCycleRepository(
             reject("steering source must be one canonical user or synthetic message");
           }
           steeringResumeSourceCorrelationId = segment.resumeSourceCorrelationId;
+        } else {
+          const sourceMessageRow = exactlyOne(
+            await transaction
+              .select()
+              .from(issueSessionMessages)
+              .where(
+                and(
+                  eq(issueSessionMessages.companyId, identity.companyId),
+                  eq(issueSessionMessages.issueId, identity.issueId),
+                  eq(issueSessionMessages.sessionId, identity.sessionId),
+                  eq(issueSessionMessages.id, sourceMessageId),
+                ),
+              )
+              .limit(2)
+              .for("update"),
+            "current prompt lost its canonical Session source message",
+          );
+          const sourceMessage = issueSessionMessageFromRow(sourceMessageRow);
+          const sourceShapeMatches = source.messageKind === "user"
+            ? sourceMessage.type === "user" &&
+              sourceMessage.id === source.inputId &&
+              sourceMessage.text === source.exactMessage
+            : source.messageKind === "synthetic" &&
+              sourceMessage.type === "synthetic" &&
+              source.inputId === null &&
+              sourceMessage.text === source.exactMessage;
+          if (!sourceShapeMatches) {
+            reject("current prompt source changed after immutable admission");
+          }
+          sourceMessageSeq = sourceMessageRow.seq;
+        }
+        if (!Number.isSafeInteger(sourceMessageSeq) || sourceMessageSeq < 0) {
+          reject("current prompt source has an invalid Session sequence");
         }
         const acpConfiguration = agentAdapterAcpConfigurationSchema.parse(
           revision.acpConfiguration,
@@ -1210,7 +1247,10 @@ export function createPostgresIssueExecutionPromptCycleRepository(
         return Object.freeze({
           identity: completeIdentity,
           sessionOperation: attempt.sessionOperation,
+          sourceMessageId,
+          sourceMessageSeq,
           sourceText,
+          contextAccess: Object.freeze({ ...compileInput.contextDial }),
           carryContext,
           storedCorrelation: selectedCorrelation
             ? storedCorrelation(selectedCorrelation)

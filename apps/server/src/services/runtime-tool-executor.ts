@@ -1,7 +1,14 @@
 import { createHash } from "node:crypto";
+import {
+  decodeToolResult,
+  type ExecuteToolParams,
+  type ToolResult,
+} from "@paperclipai/plugin-sdk";
 import type { ContextRetrievalScope } from "./context-retrieval.js";
 import {
   buildRuntimeRetrievalAbi,
+  RuntimeInterfaceConflict,
+  RuntimeToolArgumentsInvalid,
   type CompiledRunToolDescriptor,
   type PaperclipRuntimeToolName,
   type RuntimeMentionArguments,
@@ -17,6 +24,7 @@ import {
   type RuntimeToolCallLedger,
   type RuntimeToolCallTransaction,
 } from "./runtime-tool-call-ledger.js";
+import type { PluginWorkerManager } from "./plugin-worker-manager.js";
 
 type ContextRetrievalService = ReturnType<
   typeof import("./context-retrieval.js").createContextRetrievalService
@@ -59,24 +67,57 @@ export interface RuntimePluginToolPort {
     capability: PromptCapabilityBinding;
     toolName: string;
     pluginInstallationId: string;
+    pluginManifestIdentity: string;
     arguments: unknown;
     mintPluginRunContext(): Promise<string>;
-  }): Promise<unknown>;
+  }): Promise<ToolResult>;
+}
+
+/**
+ * Direct transport from the dynamically compiled run-tools interface to the
+ * exact installed plugin worker. Discovery, namespacing, schema validation,
+ * and installation binding remain owned by the per-call DB compiler; this
+ * port deliberately has no manifest registry or lifecycle catalog.
+ */
+export function createRuntimePluginToolPort(
+  workerManager: Pick<PluginWorkerManager, "getWorker">,
+): RuntimePluginToolPort {
+  return {
+    async execute(input) {
+      const worker = workerManager.getWorker(input.pluginInstallationId);
+      if (
+        worker?.status !== "running" ||
+        worker.manifestIdentity !== input.pluginManifestIdentity
+      ) {
+        throw new Error(
+          `Cannot execute plugin tool "${input.toolName}" — its exact compiled plugin runtime is not running.`,
+        );
+      }
+
+      const runContextHandle = await input.mintPluginRunContext();
+      const rpcParams: ExecuteToolParams = {
+        toolName: input.toolName,
+        parameters: input.arguments,
+        runContextHandle,
+      };
+      const result = await worker.call(
+        "executeTool",
+        rpcParams,
+        undefined,
+        {
+          companyId: input.capability.companyId,
+          pluginRunContextHandle: runContextHandle,
+        },
+      );
+      return decodeToolResult(result);
+    },
+  };
 }
 
 export interface RuntimeRetrievalScopeResolver {
   resolve(
     capability: PromptCapabilityBinding,
   ): Promise<ContextRetrievalScope>;
-}
-
-export class RuntimeToolArgumentsInvalid extends Error {
-  readonly code = "runtime_tool_arguments_invalid";
-
-  constructor(message: string) {
-    super(message);
-    this.name = "RuntimeToolArgumentsInvalid";
-  }
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -215,7 +256,14 @@ export function createRuntimeToolExecutor(options: {
         ingressOrdinal,
         arguments: args,
       });
-      if (claim.state === "completed") return claim.result;
+      if (claim.state === "completed") {
+        return {
+          source: descriptor.source,
+          value: descriptor.source === "plugin"
+            ? decodeToolResult(claim.result)
+            : claim.result,
+        };
+      }
       if (claim.state === "executing") {
         throw new RuntimeToolCallInProgress();
       }
@@ -287,24 +335,30 @@ export function createRuntimeToolExecutor(options: {
         ) {
           result = await retrieval(capability, descriptor, validatedArguments);
         } else if (descriptor.source === "plugin") {
-          if (!descriptor.pluginInstallationId) {
-            throw new RuntimeToolArgumentsInvalid(
-              "Plugin tool is missing its immutable installation id",
+          if (
+            !descriptor.pluginInstallationId ||
+            !descriptor.pluginManifestIdentity ||
+            !descriptor.pluginToolName
+          ) {
+            throw new RuntimeInterfaceConflict(
+              "Plugin tool is missing its immutable installation binding",
             );
           }
           result = await options.pluginTools.execute({
             capability,
-            toolName: descriptor.name,
+            toolName: descriptor.pluginToolName,
             pluginInstallationId: descriptor.pluginInstallationId,
+            pluginManifestIdentity: descriptor.pluginManifestIdentity,
             arguments: validatedArguments,
             mintPluginRunContext: () => mintPluginRunContext({
               runInterfaceToolCallId: claim.id,
               pluginInstallationId: descriptor.pluginInstallationId!,
+              pluginManifestIdentity: descriptor.pluginManifestIdentity!,
             }),
           });
         } else if (descriptor.source === "company") {
           if (!descriptor.selectedCompanyToolSelectionId) {
-            throw new RuntimeToolArgumentsInvalid(
+            throw new RuntimeInterfaceConflict(
               "Selected company tool is missing its immutable selection id",
             );
           }
@@ -319,7 +373,7 @@ export function createRuntimeToolExecutor(options: {
         } else {
           const handler = action[descriptor.name as keyof typeof action];
           if (!handler) {
-            throw new RuntimeToolArgumentsInvalid(
+            throw new RuntimeInterfaceConflict(
               `Unknown Paperclip action ${descriptor.name}`,
             );
           }
@@ -369,7 +423,7 @@ export function createRuntimeToolExecutor(options: {
             result,
           });
         }
-        return result;
+        return { source: descriptor.source, value: result };
       } catch (error) {
         await options.callLedger.fail({
           capability,

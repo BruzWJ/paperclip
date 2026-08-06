@@ -11,7 +11,7 @@ describe("adapter display registry", () => {
     const display = getAdapterDisplay("fixture_acp");
     expect(display).toMatchObject({
       label: "Fixture Acp",
-      description: "Discovered from ACPX at runtime",
+      description: "Available from a local agent runtime",
     });
     expect(display).not.toHaveProperty("icon");
   });

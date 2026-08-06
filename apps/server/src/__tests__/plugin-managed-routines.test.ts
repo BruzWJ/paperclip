@@ -99,7 +99,6 @@ function routine(overrides: Record<string, unknown> = {}) {
 function service(db: ReturnType<typeof createMockDb>["db"]) {
   return pluginManagedRoutineService(db, {
     pluginId,
-    pluginKey,
     manifest: manifest(),
     ordinaryIssues: {} as never,
   });

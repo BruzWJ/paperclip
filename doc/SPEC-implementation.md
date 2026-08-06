@@ -212,12 +212,16 @@ sessions, or patch unrelated issue state.
 
 Administrator-approved infrastructure plugins may declare generic elevated
 worker capabilities for direct all-agent tools, exact live run-context
-resolution, canonical redacted runtime-record reads, and managed private-network
-HTTP. Those capabilities are install-time visible, company-fenced, and
-revalidated at invocation time. They do not add a plugin-specific REST route,
-provider credential, provider session, or prompt injection path; contributed
-tools remain inside the canonical prompt-capability and audit boundary without
-being projected into the company-tool policy system.
+resolution, canonical redacted Session/runtime-record reads, blocking
+before-prompt observation, and managed private-network HTTP. Those
+capabilities are install-time visible, company-fenced, and revalidated at
+invocation time. They do not add a plugin-specific REST route, provider
+credential, or provider-session authority. Contributed tools remain inside the
+canonical prompt-capability and audit boundary without being projected into the
+company-tool policy system. Before-prompt hooks receive only Paperclip-owned
+identities and an immutable source-message snapshot; they return no provider
+content, run in deterministic installation order, and fail closed before
+provider transmission. Core sends the canonical source message byte-for-byte.
 
 Routine executions create ordinary issues with immutable request and configured
 owner. Derived summary cards/projectors link to the canonical source

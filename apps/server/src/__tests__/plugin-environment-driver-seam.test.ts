@@ -9,7 +9,6 @@ import {
 import { definePlugin } from "../../../../packages/plugins/sdk/src/define-plugin.js";
 import { startWorkerRpcHost } from "../../../../packages/plugins/sdk/src/worker-rpc-host.js";
 import { pluginManifestV1Schema, type PaperclipPluginManifestV1 } from "@paperclipai/shared";
-import { pluginCapabilityValidator } from "../services/plugin-capability-validator.js";
 
 const baseManifest: PaperclipPluginManifestV1 = {
   id: "test.environment-driver",
@@ -67,34 +66,12 @@ describe("plugin environment driver seam", () => {
     );
   });
 
-  it("enforces environment driver capability requirements", () => {
-    const validator = pluginCapabilityValidator();
-    expect(validator.getRequiredCapabilities("environment.acquireLease")).toEqual([
-      "environment.drivers.register",
-    ]);
-    expect(validator.getRequiredCapabilities("environment.captureTemplate")).toEqual([
-      "environment.drivers.register",
-    ]);
-    expect(validator.checkOperation(baseManifest, "environment.execute").allowed).toBe(true);
-
-    const withoutCapability = {
-      ...baseManifest,
-      capabilities: ["http.outbound"],
-    } satisfies PaperclipPluginManifestV1;
-
-    expect(validator.checkOperation(withoutCapability, "environment.execute")).toMatchObject({
-      allowed: false,
-      missing: ["environment.drivers.register"],
-    });
-    expect(validator.validateManifestCapabilities(withoutCapability)).toMatchObject({
-      allowed: false,
-      missing: ["environment.drivers.register"],
-    });
-  });
-
   it("dispatches the execution lifecycle and reports exact worker support", async () => {
     const plugin = definePlugin({
       async setup() {},
+      async onHealth() {
+        return { status: "ok" };
+      },
       async onEnvironmentProbe(params) {
         return {
           ok: true,
@@ -427,34 +404,12 @@ describe("plugin external object provider seam", () => {
     );
   });
 
-  it("enforces provider capability requirements", () => {
-    const validator = pluginCapabilityValidator();
-    expect(validator.getRequiredCapabilities("external.objects.detect")).toEqual([
-      "external.objects.detect",
-    ]);
-    expect(validator.getRequiredCapabilities("external.objects.read")).toEqual([
-      "external.objects.read",
-    ]);
-    expect(validator.checkOperation(objectReferenceManifest, "external.objects.read").allowed).toBe(true);
-
-    const withoutCapability = {
-      ...objectReferenceManifest,
-      capabilities: ["external.objects.detect"],
-    } satisfies PaperclipPluginManifestV1;
-
-    expect(validator.checkOperation(withoutCapability, "external.objects.read")).toMatchObject({
-      allowed: false,
-      missing: ["external.objects.read"],
-    });
-    expect(validator.validateManifestCapabilities(withoutCapability)).toMatchObject({
-      allowed: false,
-      missing: ["external.objects.read"],
-    });
-  });
-
   it("dispatches provider detection and resolution worker hooks", async () => {
     const plugin = definePlugin({
       async setup() {},
+      async onHealth() {
+        return { status: "ok" };
+      },
       async onDetectExternalObjects(params) {
         return {
           detections: params.urls.map((url) => ({

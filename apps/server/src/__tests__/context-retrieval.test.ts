@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import type { WorkerToHostMethods } from "@paperclipai/plugin-sdk/protocol";
+import type { WorkerToHostMethods } from "@paperclipai/plugin-sdk";
 import { resolveContextDial } from "../services/context-dial-resolver.ts";
 import {
   ContextRetrievalDenied,

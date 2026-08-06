@@ -181,7 +181,6 @@ describe("plugin database service without a database process", () => {
       pluginId,
       pluginKey: pluginManifest.id,
       namespaceName: derivePluginDatabaseNamespace(pluginManifest.id, pluginId),
-      namespaceMode: "schema",
       status: "active",
     };
   }

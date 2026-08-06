@@ -353,10 +353,9 @@ export {
 } from "./creator-delivery.js";
 export { createPluginIssueControlPlane } from "./plugin-issue-control-plane.js";
 export {
-  assertPluginInstallationAvailableForCompany,
+  assertPluginInstallationRequestScope,
   assertPluginPermittedIssueOwnerInTransaction,
   resolvePluginPermittedIssueOwnerCatalog,
-  resolvePluginPermittedIssueOwnerCatalogFromDb,
   resolvePluginPermittedIssueOwnerCatalogInTransaction,
   selectPluginPermittedIssueOwner,
   PluginIssueAuthorizationRejected,

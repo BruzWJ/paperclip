@@ -32,9 +32,11 @@ configuration includes:
 - lifecycle and operational accounting.
 
 There is no agent role field, privileged first or root agent, role-derived
-grant, Paperclip instruction fallback, or agent-wide model-visible memory. An
-org-chart edge describes reporting only; it grants no recursive authority or
-escalation fallback.
+grant, Paperclip instruction fallback, or built-in agent-wide model-visible
+memory. An administrator-approved infrastructure plugin may observe the generic
+before-prompt lifecycle and contribute agent tools, but cannot alter provider
+prompt content or the agent's Paperclip authority. An org-chart edge describes
+reporting only; it grants no recursive authority or escalation fallback.
 
 ## Issues
 

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createIssueExecutionCancellationService } from "./issue-execution-cancellation.js";
 
+const pluginDomainEvents = {
+  publish: async () => undefined,
+};
+
 function fixture() {
   const fenceRevokedExecutionAuthorityInTransaction = vi.fn(async () => ({
     refIds: ["ref-budget"],
@@ -23,6 +27,7 @@ function fixture() {
       fenceRevokedExecutionAuthorityInTransaction,
       releaseBudgetScopeDeliveriesInTransaction,
     } as never,
+    pluginDomainEvents,
     now: () => new Date("2026-07-31T12:00:00.000Z"),
   });
   return {
@@ -37,6 +42,7 @@ function scopedFixture(input: {
   runs?: readonly unknown[];
   onRunsLocked?: () => void;
   fencedRefIds?: () => readonly string[];
+  pluginDomainEvents?: { publish(event: unknown): Promise<void> };
 }) {
   const events: string[] = [];
   const lockActiveRunsForScopeInTransaction = vi.fn(async () => {
@@ -62,6 +68,7 @@ function scopedFixture(input: {
         fenceRevokedExecutionAuthorityInTransaction,
         terminalizeDetachedCancelledRunInTransaction,
       } as never,
+      pluginDomainEvents: input.pluginDomainEvents ?? pluginDomainEvents,
     }),
     events,
     lockActiveRunsForScopeInTransaction,
@@ -220,7 +227,11 @@ describe("scoped execution cancellation", () => {
   });
 
   it("carries a post-commit event for a detached run terminalized in the transaction", async () => {
-    const value = scopedFixture({ runs: [activeRun("run-queued", "queued")] });
+    const publish = vi.fn(async () => undefined);
+    const value = scopedFixture({
+      runs: [activeRun("run-queued", "queued")],
+      pluginDomainEvents: { publish },
+    });
     const now = new Date("2026-08-05T12:00:00.000Z");
 
     const requested = await value.service.requestScopeCancellationsInTransaction(
@@ -236,6 +247,7 @@ describe("scoped execution cancellation", () => {
     );
 
     expect(value.terminalizeDetachedCancelledRunInTransaction).toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
     expect(requested.requests).toEqual([expect.objectContaining({
       runId: "run-queued",
       state: "terminalized",
@@ -249,5 +261,12 @@ describe("scoped execution cancellation", () => {
         occurredAt: now,
       },
     })]);
+
+    await value.service.reconcileRequestedScopeCancellations(requested);
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "agent.run.cancelled",
+      companyId: "company-1",
+      entityId: "run-queued",
+    }));
   });
 });

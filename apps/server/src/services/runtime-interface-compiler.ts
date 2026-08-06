@@ -1,15 +1,14 @@
 import { createHash } from "node:crypto";
 import {
-  AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
-  PAPERCLIP_RUN_TOOLS_KIND,
   runtimeAgentConfigureActionSchemaForTargets,
   runtimeAgentHireConfigurationSchemaForCompanyTools,
+  isMcpToolName,
   type AgentMentionReachGrantKey,
   type IssueExecutionRefMode,
+  type JsonSchema,
   type PaperclipActionKey,
-  type PaperclipRunTools,
   type RuntimeAgentCompanyToolOption,
 } from "@paperclipai/shared";
 import { z } from "zod";
@@ -23,17 +22,17 @@ import type {
 } from "./context-retrieval.js";
 import { validateJsonSchemaValue } from "./plugin-config-validator.js";
 
-export const PAPERCLIP_RETRIEVAL_TOOL_NAMES = [
+const PAPERCLIP_RETRIEVAL_TOOL_NAMES = [
   "list_company_issues",
   "list_sub_issues",
   "read_issue_comments",
   "read_issue_agent_run",
 ] as const;
 
-export type PaperclipRetrievalToolName =
+type PaperclipRetrievalToolName =
   (typeof PAPERCLIP_RETRIEVAL_TOOL_NAMES)[number];
 
-export const PAPERCLIP_RUNTIME_TOOL_NAMES = [
+const PAPERCLIP_RUNTIME_TOOL_NAMES = [
   ...PAPERCLIP_RETRIEVAL_TOOL_NAMES,
   ...PAPERCLIP_ACTION_KEYS,
 ] as const;
@@ -42,25 +41,6 @@ export type PaperclipRuntimeToolName =
   (typeof PAPERCLIP_RUNTIME_TOOL_NAMES)[number];
 
 export type RuntimeToolSource = "paperclip" | "company" | "plugin";
-
-export interface JsonSchema {
-  type?: string;
-  title?: string;
-  description?: string;
-  properties?: Record<string, JsonSchema>;
-  required?: string[];
-  additionalProperties?: boolean;
-  enum?: readonly (string | number | boolean | null)[];
-  const?: string | number | boolean | null;
-  oneOf?: JsonSchema[];
-  anyOf?: JsonSchema[];
-  items?: JsonSchema;
-  minLength?: number;
-  maxLength?: number;
-  minimum?: number;
-  maximum?: number;
-  [key: string]: unknown;
-}
 
 export interface CompiledRunToolDescriptor {
   name: string;
@@ -71,6 +51,10 @@ export interface CompiledRunToolDescriptor {
   selectedCompanyToolSelectionId?: string;
   /** Server-only immutable installation identity for a direct plugin tool. */
   pluginInstallationId?: string;
+  /** Server-only exact manifest identity compiled with this declaration. */
+  pluginManifestIdentity?: string;
+  /** Server-only bare manifest tool name dispatched to that installation. */
+  pluginToolName?: string;
   /**
    * Server-only validator paired with the serialized JSON Schema. It is never
    * sent to a provider, but makes the exact dynamic descriptor authoritative
@@ -103,7 +87,7 @@ export interface IssueAssignOwnerCatalog {
   )[];
 }
 
-export interface CreatorUpdateTargetCatalogEntry {
+interface CreatorUpdateTargetCatalogEntry {
   issueId: string;
 }
 
@@ -119,7 +103,11 @@ export interface SelectedCompanyTool {
 /** A tool declared by a ready administrator-installed plugin. */
 export interface RuntimePluginTool {
   installationId: string;
+  manifestIdentity: string;
+  /** Provider-visible, plugin-key namespaced tool name. */
   name: string;
+  /** Bare manifest declaration name used only for worker dispatch. */
+  toolName: string;
   title: string;
   description: string;
   inputSchema: JsonSchema;
@@ -144,7 +132,7 @@ export interface RuntimeInterfaceCompileInput {
   pluginTools: readonly RuntimePluginTool[];
 }
 
-export interface CompiledRuntimeInterface {
+interface CompiledRuntimeInterface {
   mode: IssueExecutionRefMode;
   descriptors: readonly CompiledRunToolDescriptor[];
   byName: ReadonlyMap<string, CompiledRunToolDescriptor>;
@@ -168,25 +156,16 @@ export class RuntimeToolUnavailable extends Error {
   }
 }
 
-export class RuntimeRetrievalArgumentsInvalid extends Error {
+export class RuntimeToolArgumentsInvalid extends Error {
   readonly code = "runtime_tool_arguments_invalid";
 
   constructor(message: string) {
     super(message);
-    this.name = "RuntimeRetrievalArgumentsInvalid";
+    this.name = "RuntimeToolArgumentsInvalid";
   }
 }
 
-export class RuntimeDescriptorArgumentsInvalid extends Error {
-  readonly code = "runtime_tool_arguments_invalid";
-
-  constructor(message: string) {
-    super(message);
-    this.name = "RuntimeDescriptorArgumentsInvalid";
-  }
-}
-
-export type RuntimeRetrievalInvocation =
+type RuntimeRetrievalInvocation =
   | {
       name: "list_company_issues";
       filters?: RetrievalIssueFilters;
@@ -208,7 +187,7 @@ export type RuntimeRetrievalInvocation =
       cursor?: string;
     };
 
-export interface RuntimeRetrievalAbi {
+interface RuntimeRetrievalAbi {
   descriptors: readonly CompiledRunToolDescriptor[];
   parse(
     toolName: PaperclipRetrievalToolName,
@@ -240,7 +219,7 @@ export function parseRuntimeMentionArguments(
 ): RuntimeMentionArguments {
   const parsed = runtimeMentionArgumentsSchema.safeParse(value);
   if (!parsed.success) {
-    throw new RuntimeDescriptorArgumentsInvalid(
+    throw new RuntimeToolArgumentsInvalid(
       zodValidationMessage(parsed.error),
     );
   }
@@ -391,17 +370,13 @@ function canonicalActionDescriptor(input: {
     validateArguments(value) {
       const parsed = input.schema.safeParse(value);
       if (!parsed.success) {
-        throw new RuntimeDescriptorArgumentsInvalid(
+        throw new RuntimeToolArgumentsInvalid(
           zodValidationMessage(parsed.error),
         );
       }
       return parsed.data;
     },
   };
-}
-
-function optionalIssueIdSchema(): JsonSchema {
-  return objectSchema({ issueId: STRING_ID });
 }
 
 function cursorSchema(): JsonSchema {
@@ -430,7 +405,7 @@ function strictRecord(
   label = "Tool arguments",
 ): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new RuntimeRetrievalArgumentsInvalid(
+    throw new RuntimeToolArgumentsInvalid(
       `${label} must be an object`,
     );
   }
@@ -447,7 +422,7 @@ function assertExactKeys(
     (key) => !allow.has(key),
   );
   if (unknown.length > 0) {
-    throw new RuntimeRetrievalArgumentsInvalid(
+    throw new RuntimeToolArgumentsInvalid(
       `Unsupported ${label}: ${unknown.join(", ")}`,
     );
   }
@@ -459,7 +434,7 @@ function parseOptionalString(
 ): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "string" || value.length === 0) {
-    throw new RuntimeRetrievalArgumentsInvalid(
+    throw new RuntimeToolArgumentsInvalid(
       `${name} must be a non-empty string`,
     );
   }
@@ -481,7 +456,7 @@ function parseIssueFilters(
     status !== undefined &&
     !["open", "blocked", "done", "cancelled"].includes(status)
   ) {
-    throw new RuntimeRetrievalArgumentsInvalid(
+    throw new RuntimeToolArgumentsInvalid(
       "filters.status is not an allowed issue status",
     );
   }
@@ -489,7 +464,7 @@ function parseIssueFilters(
     priority !== undefined &&
     !["critical", "high", "medium", "low"].includes(priority)
   ) {
-    throw new RuntimeRetrievalArgumentsInvalid(
+    throw new RuntimeToolArgumentsInvalid(
       "filters.priority is not an allowed issue priority",
     );
   }
@@ -648,7 +623,7 @@ export function buildRuntimeRetrievalAbi(
             "issueId",
           );
           if (policy.comments.issueIdRequired && !issueId) {
-            throw new RuntimeRetrievalArgumentsInvalid(
+            throw new RuntimeToolArgumentsInvalid(
               "issueId is required without the active-issue comment grant",
             );
           }
@@ -662,7 +637,7 @@ export function buildRuntimeRetrievalAbi(
           assertExactKeys(input, ["runId", "cursor"]);
           const runId = parseOptionalString(input.runId, "runId");
           if (!runId) {
-            throw new RuntimeRetrievalArgumentsInvalid(
+            throw new RuntimeToolArgumentsInvalid(
               "runId is required",
             );
           }
@@ -865,7 +840,7 @@ function mentionDescriptor(
     validateArguments(value) {
       const parsed = parseRuntimeMentionArguments(value);
       if (!targetIds.has(parsed.agentId)) {
-        throw new RuntimeDescriptorArgumentsInvalid(
+        throw new RuntimeToolArgumentsInvalid(
           "agentId is not in the current mention target catalog",
         );
       }
@@ -894,7 +869,7 @@ function mentionBoardDescriptor(): CompiledRunToolDescriptor {
     validateArguments(value) {
       const parsed = runtimeMentionBoardArgumentsSchema.safeParse(value);
       if (!parsed.success) {
-        throw new RuntimeDescriptorArgumentsInvalid(
+        throw new RuntimeToolArgumentsInvalid(
           zodValidationMessage(parsed.error),
         );
       }
@@ -1001,13 +976,15 @@ function pluginDescriptors(
     inputSchema: tool.inputSchema,
     source: "plugin",
     pluginInstallationId: tool.installationId,
+    pluginManifestIdentity: tool.manifestIdentity,
+    pluginToolName: tool.toolName,
     validateArguments(argumentsValue) {
       const validation = validateJsonSchemaValue(
         argumentsValue,
         tool.inputSchema,
       );
       if (!validation.valid) {
-        throw new RuntimeDescriptorArgumentsInvalid(
+        throw new RuntimeToolArgumentsInvalid(
           `Invalid arguments for ${tool.name}: ${validation.errors
             ?.map((error) => `${error.field} ${error.message}`)
             .join("; ") ?? "schema validation failed"}`,
@@ -1048,6 +1025,11 @@ export function compileRuntimeInterface(
   ];
   const byName = new Map<string, CompiledRunToolDescriptor>();
   for (const descriptor of descriptors) {
+    if (!isMcpToolName(descriptor.name)) {
+      throw new RuntimeInterfaceConflict(
+        `Compiled tool name is not provider-safe: ${descriptor.name}`,
+      );
+    }
     if (byName.has(descriptor.name)) {
       throw new RuntimeInterfaceConflict(
         `Duplicate compiled tool name: ${descriptor.name}`,
@@ -1110,7 +1092,7 @@ function canonicalDescriptorJson(value: unknown): string {
  * excluded; their schema and immutable selections are the canonical
  * provider-visible and call-time contract.
  */
-export function compiledRuntimeInterfaceDigest(
+function compiledRuntimeInterfaceDigest(
   compiled: CompiledRuntimeInterface,
 ): string {
   const contract = {
@@ -1124,6 +1106,8 @@ export function compiledRuntimeInterfaceDigest(
       selectedCompanyToolSelectionId:
         descriptor.selectedCompanyToolSelectionId,
       pluginInstallationId: descriptor.pluginInstallationId,
+      pluginManifestIdentity: descriptor.pluginManifestIdentity,
+      pluginToolName: descriptor.pluginToolName,
     })),
   };
   return createHash("sha256")
@@ -1136,44 +1120,4 @@ export function runtimeInterfaceDigest(
   input: RuntimeInterfaceCompileInput,
 ): string {
   return compiledRuntimeInterfaceDigest(compileRuntimeInterface(input));
-}
-
-export interface DynamicRuntimeInterfaceResolver {
-  resolve(): Promise<RuntimeInterfaceCompileInput>;
-}
-
-/**
- * Recompiles before every list and call. A stale descriptor is inert as soon
- * as grants, dials, mode, ownership, or catalogs narrow.
- */
-export function createDynamicRuntimeInterface(
-  resolver: DynamicRuntimeInterfaceResolver,
-) {
-  return {
-    async list(): Promise<readonly CompiledRunToolDescriptor[]> {
-      return compileRuntimeInterface(await resolver.resolve()).descriptors;
-    },
-    async resolveCall(toolName: string): Promise<CompiledRunToolDescriptor> {
-      const compiled = compileRuntimeInterface(await resolver.resolve());
-      const descriptor = compiled.byName.get(toolName);
-      if (!descriptor) throw new RuntimeToolUnavailable(toolName);
-      return descriptor;
-    },
-  };
-}
-
-export function buildPaperclipRunToolsDescriptor(input: {
-  endpoint: string;
-  bearer: string;
-}): PaperclipRunTools {
-  if (!input.endpoint || !input.bearer) {
-    throw new RuntimeInterfaceConflict(
-      "A run-tools descriptor requires both endpoint and bearer",
-    );
-  }
-  return {
-    kind: PAPERCLIP_RUN_TOOLS_KIND,
-    endpoint: input.endpoint,
-    bearer: input.bearer,
-  };
 }

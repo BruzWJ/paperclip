@@ -24,7 +24,6 @@ import { agents } from "./agents.js";
 import { authUsers } from "./auth.js";
 import { issueSessions } from "./issue_sessions.js";
 import { issueExecutionRuns } from "./issue_execution_runs.js";
-import { plugins } from "./plugins.js";
 
 export const issueComments = pgTable(
   "issue_comments",
@@ -36,6 +35,7 @@ export const issueComments = pgTable(
     authorUserId: text("author_user_id").references(() => authUsers.id, {
       onDelete: "restrict",
     }),
+    /** Immutable actor identity; intentionally not a live installation FK. */
     authorPluginInstallationId: uuid("author_plugin_installation_id"),
     authorPluginKey: text("author_plugin_key"),
     authorType: text("author_type")
@@ -165,11 +165,6 @@ export const issueComments = pgTable(
       columns: [table.companyId, table.authorAgentId],
       foreignColumns: [agents.companyId, agents.id],
       name: "issue_comments_author_agent_scope_fk",
-    }).onDelete("restrict"),
-    authorPluginInstallationFk: foreignKey({
-      columns: [table.authorPluginInstallationId],
-      foreignColumns: [plugins.id],
-      name: "issue_comments_author_plugin_installation_fk",
     }).onDelete("restrict"),
     runScopeFk: foreignKey({
       columns: [table.companyId, table.issueId, table.runId],

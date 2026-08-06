@@ -832,7 +832,7 @@ export function ProjectDetail() {
       />
 
       <PluginSlotOutlet
-        slotTypes={["toolbarButton", "contextMenuItem"]}
+        slotTypes={["toolbarButton"]}
         entityType="project"
         context={{
           companyId: resolvedCompanyId ?? null,

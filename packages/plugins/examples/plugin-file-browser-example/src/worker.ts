@@ -29,13 +29,12 @@ function resolveWorkspace(workspacePath: string, requestedPath?: string): string
 
 const plugin = definePlugin({
   async setup(ctx) {
-    ctx.logger.info(`${PLUGIN_NAME} plugin setup`);
+    await ctx.logger.info(`${PLUGIN_NAME} plugin setup`);
 
-    // Expose the current company-scoped plugin config so UI components can read
+    // Expose the installed plugin's instance config so UI components can read
     // operator settings from the canonical config store.
-    ctx.data.register("plugin-config", async (params) => {
-      const companyId = typeof params.companyId === "string" ? params.companyId : "";
-      const config = companyId ? await ctx.config.get(companyId) : null;
+    ctx.data.register("plugin-config", async () => {
+      const config = await ctx.config.get();
       return {
         showFilesInSidebar: config?.showFilesInSidebar === true,
       };
@@ -55,9 +54,13 @@ const plugin = definePlugin({
       }));
     });
 
-    async function readFileList(params: Record<string, unknown>) {
+    async function readFileList(
+      params: Record<string, unknown>,
+      authorizedCompanyId?: string,
+    ) {
       const projectId = params.projectId as string;
-      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const companyId = authorizedCompanyId
+        ?? (typeof params.companyId === "string" ? params.companyId : "");
       const workspaceId = params.workspaceId as string;
       const directoryPath = typeof params.directoryPath === "string" ? params.directoryPath : "";
       if (!projectId || !companyId || !workspaceId) return { entries: [] };
@@ -94,7 +97,11 @@ const plugin = definePlugin({
 
     // Mirror `fileList` as an action so the UI can lazily fetch directory
     // children on tree expand without spawning a usePluginData hook per dir.
-    ctx.actions.register("loadFileList", readFileList);
+    ctx.actions.register("loadFileList", async (params, context) => {
+      const companyId = context.actor.companyId;
+      if (!companyId) throw new Error("This action requires an authenticated company context");
+      return readFileList(params, companyId);
+    });
 
     ctx.data.register(
       "fileContent",
@@ -127,9 +134,9 @@ const plugin = definePlugin({
 
     ctx.actions.register(
       "writeFile",
-      async (params: Record<string, unknown>) => {
+      async (params: Record<string, unknown>, context) => {
         const projectId = params.projectId as string;
-        const companyId = typeof params.companyId === "string" ? params.companyId : "";
+        const companyId = context.actor.companyId;
         const workspaceId = params.workspaceId as string;
         const filePath = typeof params.filePath === "string" ? params.filePath.trim() : "";
         if (!filePath) {

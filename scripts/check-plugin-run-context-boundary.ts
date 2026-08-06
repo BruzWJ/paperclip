@@ -13,9 +13,7 @@ const EXECUTOR = "apps/server/src/services/runtime-tool-executor.ts";
 const GATEWAY = "apps/server/src/services/prompt-capability-gateway.ts";
 const GATEWAY_REPOSITORY =
   "apps/server/src/services/prompt-capability-gateway-postgres.ts";
-const APP = "apps/server/src/app.ts";
-const DISPATCHER = "apps/server/src/services/plugin-tool-dispatcher.ts";
-const REGISTRY = "apps/server/src/services/plugin-tool-registry.ts";
+const INDEX = "apps/server/src/index.ts";
 const SDK_PROTOCOL = "packages/plugins/sdk/src/protocol.ts";
 const SDK_TYPES = "packages/plugins/sdk/src/types.ts";
 const SDK_WORKER = "packages/plugins/sdk/src/worker-rpc-host.ts";
@@ -118,6 +116,7 @@ export function pluginRunContextBoundaryViolations(
     ...requireFileTokens(repositoryRoot, COMPILER, [
       'source: "plugin"',
       "pluginInstallationId",
+      "pluginToolName",
       "pluginDescriptors",
     ]),
     ...requireFileTokens(repositoryRoot, EXECUTOR, [
@@ -125,6 +124,11 @@ export function pluginRunContextBoundaryViolations(
       "runInterfaceToolCallId: claim.id",
       "mintPluginRunContext",
       "pluginInstallationId",
+      "createRuntimePluginToolPort",
+      'workerManager.call(',
+      '"executeTool"',
+      "toolName: input.toolName",
+      "pluginRunContextHandle: runContextHandle",
     ]),
     ...requireFileTokens(repositoryRoot, GATEWAY, [
       "randomPluginRunContextHandle",
@@ -138,22 +142,10 @@ export function pluginRunContextBoundaryViolations(
       "pluginInstallationId",
       "runInterfaceToolCallId",
     ]),
-    ...requireFileTokens(repositoryRoot, APP, [
-      "bindPromptCapabilityPluginTools",
-      "pluginToolDispatcher.executeTool(",
-      "pluginInstallationId: input.pluginInstallationId",
-      "await input.mintPluginRunContext()",
-    ]),
-    ...requireFileTokens(repositoryRoot, DISPATCHER, [
-      "registry.executeTool(",
-      "PluginToolExecutionScope",
-    ]),
-    ...requireFileTokens(repositoryRoot, REGISTRY, [
-      "runContextHandle: scope.runContextHandle",
-      "registered.pluginDbId !== scope.pluginInstallationId",
-      'workerManager.call(',
-      '"executeTool"',
-      "pluginRunContextHandle: scope.runContextHandle",
+    ...requireFileTokens(repositoryRoot, INDEX, [
+      "createRuntimePluginToolPort(",
+      "pluginWorkerManager",
+      "pluginTools: promptCapabilityPluginTools",
     ]),
     ...requireFileTokens(repositoryRoot, SDK_WORKER, [
       "async function handleExecuteTool",

@@ -49,7 +49,7 @@ describe("AdapterManager", () => {
     vi.clearAllMocks();
   });
 
-  it("shows ACPX probe failures as non-selectable diagnostics", async () => {
+  it("shows local readiness failures as non-selectable diagnostics", async () => {
     mockAdaptersApi.list.mockResolvedValue([
       {
         type: "ready-agent",
@@ -72,7 +72,7 @@ describe("AdapterManager", () => {
         loaded: false,
         diagnostic: {
           code: "acpx_probe_failed",
-          message: "fixture local CLI is not authenticated",
+          message: "ACPX reports that the fixture local CLI is not authenticated",
         },
         registryName: "failed-agent",
       },
@@ -90,11 +90,12 @@ describe("AdapterManager", () => {
       expect(container.textContent).toContain("Ready agent");
       expect(container.textContent).toContain("Probe failed");
       expect(container.textContent).toContain(
-        "not selectable until its local ACPX probe and catalog admission succeed",
+        "not selectable until its local readiness check and catalog admission succeed",
       );
       expect(container.textContent).toContain(
-        "fixture local CLI is not authenticated",
+        "local agent runtime reports that the fixture local CLI is not authenticated",
       );
+      expect(container.textContent).not.toContain("ACPX");
     });
   });
 });

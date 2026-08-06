@@ -11,12 +11,10 @@ describe("server package build script", () => {
     };
     const buildScript = packageJson.scripts?.build ?? "";
 
-    expect(buildScript).toContain("mkdir -p dist/onboarding-assets dist/built-ins");
+    expect(buildScript).toContain("mkdir -p dist/onboarding-assets");
     expect(buildScript).toContain(
       "if [ -d src/onboarding-assets ]; then cp -R src/onboarding-assets/. dist/onboarding-assets/; fi",
     );
-    expect(buildScript).toContain(
-      "if [ -d src/built-ins ]; then cp -R src/built-ins/. dist/built-ins/; fi",
-    );
+    expect(buildScript).not.toContain("built-ins");
   });
 });

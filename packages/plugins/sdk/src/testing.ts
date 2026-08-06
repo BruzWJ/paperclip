@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import {
+  AGENT_CONTEXT_GRANT_KEYS,
   canonicalizeMoneyAmount,
+  grantsForHumanRole,
   normalizeContextAccess,
 } from "@paperclipai/shared";
-export { canonicalizeMoneyAmount };
 import type {
   PaperclipPluginManifestV1,
   PluginCapability,
-  PluginEventType,
   PluginManagedAgentResolution,
   PluginManagedRoutineResolution,
   PluginManagedSkillResolution,
@@ -19,14 +19,16 @@ import type {
   Issue,
   Agent,
   Goal,
+  PluginWorkerLogLevel,
 } from "@paperclipai/shared";
 import type {
   EventFilter,
+  PluginEventPattern,
+  PluginDataScope,
   PluginContext,
   PluginEntityRecord,
   PluginEntityUpsert,
   PluginJobContext,
-  PluginLauncherRegistration,
   PluginEvent,
   ScopeKey,
   ToolResult,
@@ -36,10 +38,20 @@ import type {
   PluginLocalFolderEntry,
   PluginLocalFolderStatus,
   PluginAccessMember,
+  PluginAccessInvite,
   PrincipalPermissionGrant,
   PermissionKey,
   PrincipalType,
+  PluginBeforePromptInput,
+  PluginBeforePromptResult,
+  PluginContextAccess,
 } from "./types.js";
+import {
+  assertPluginEventSubscription,
+  pluginEventMatchesFilter,
+} from "./event-filter.js";
+import { normalizePluginScopeId } from "./plugin-scope.js";
+import type { PaperclipPlugin } from "./define-plugin.js";
 import type {
   PluginEnvironmentValidateConfigParams,
   PluginEnvironmentValidationResult,
@@ -71,17 +83,19 @@ import type {
 import { decodePluginPerformActionActorContext } from "./protocol.js";
 import { createEnvironmentExecutionCancellationRegistry } from "./environment-execution-control.js";
 
+const TEST_CONTEXT_ACCESS = Object.freeze(Object.fromEntries(
+  AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false]),
+)) as PluginContextAccess;
+
 export interface TestHarnessOptions {
   /** Plugin manifest used to seed capability checks and metadata. */
   manifest: PaperclipPluginManifestV1;
-  /** Optional capability override. Defaults to `manifest.capabilities`. */
-  capabilities?: PluginCapability[];
-  /** Initial config returned by `ctx.config.get(companyId)`. */
+  /** Initial config returned by `ctx.config.get()`. */
   config?: Record<string, unknown>;
 }
 
 export interface TestHarnessLogEntry {
-  level: "info" | "warn" | "error" | "debug";
+  level: PluginWorkerLogLevel;
   message: string;
   meta?: Record<string, unknown>;
 }
@@ -110,7 +124,7 @@ export interface TestHarness {
   }): void;
   setConfig(config: Record<string, unknown>): void;
   /** Dispatch a host or plugin event to registered handlers. */
-  emit(eventType: PluginEventType | `plugin.${string}`, payload: unknown, base?: Partial<PluginEvent>): Promise<void>;
+  emit(eventType: PluginEventPattern, payload: unknown, base?: Partial<PluginEvent>): Promise<void>;
   /** Execute a previously-registered scheduled job handler. */
   runJob(jobKey: string, partial?: Partial<PluginJobContext>): Promise<void>;
   /** Invoke a `ctx.data.register(...)` handler by key. */
@@ -127,6 +141,11 @@ export interface TestHarness {
     params: unknown,
     runContextHandle?: string,
   ): Promise<T>;
+  /** Invoke a plugin's blocking before-prompt hook. */
+  beforePrompt(
+    plugin: PaperclipPlugin,
+    input: PluginBeforePromptInput,
+  ): Promise<PluginBeforePromptResult>;
   /** Read raw in-memory state for assertions. */
   getState(input: ScopeKey): unknown;
   logs: TestHarnessLogEntry[];
@@ -431,15 +450,21 @@ export function createFakeEnvironmentDriver(options: FakeEnvironmentDriverOption
 }
 
 type EventRegistration = {
-  name: PluginEventType | `plugin.${string}`;
+  name: PluginEventPattern;
   filter?: EventFilter;
   fn: (event: PluginEvent) => Promise<void>;
 };
 
-function normalizeScope(input: ScopeKey): Required<Pick<ScopeKey, "scopeKind" | "stateKey">> & Pick<ScopeKey, "scopeId" | "namespace"> {
+function normalizeScope(input: ScopeKey): {
+  scopeKind: PluginDataScope["scopeKind"];
+  scopeId?: string;
+  namespace: string;
+  stateKey: string;
+} {
+  const scopeId = normalizePluginScopeId(input.scopeKind, input.scopeId);
   return {
     scopeKind: input.scopeKind,
-    scopeId: input.scopeId,
+    scopeId: scopeId ?? undefined,
     namespace: input.namespace ?? "default",
     stateKey: input.stateKey,
   };
@@ -448,14 +473,6 @@ function normalizeScope(input: ScopeKey): Required<Pick<ScopeKey, "scopeKind" | 
 function stateMapKey(input: ScopeKey): string {
   const normalized = normalizeScope(input);
   return `${normalized.scopeKind}|${normalized.scopeId ?? ""}|${normalized.namespace}|${normalized.stateKey}`;
-}
-
-function allowsEvent(filter: EventFilter | undefined, event: PluginEvent): boolean {
-  if (!filter) return true;
-  if (filter.companyId && filter.companyId !== String((event.payload as Record<string, unknown> | undefined)?.companyId ?? "")) return false;
-  if (filter.projectId && filter.projectId !== String((event.payload as Record<string, unknown> | undefined)?.projectId ?? "")) return false;
-  if (filter.agentId && filter.agentId !== String((event.payload as Record<string, unknown> | undefined)?.agentId ?? "")) return false;
-  return true;
 }
 
 function requireCapability(manifest: PaperclipPluginManifestV1, allowed: Set<PluginCapability>, capability: PluginCapability) {
@@ -484,7 +501,7 @@ function isInCompany<T extends { companyId: string | null | undefined }>(
 export function createTestHarness(options: TestHarnessOptions): TestHarness {
   const manifest = options.manifest;
   const pluginInstallationId = randomUUID();
-  const capabilitySet = new Set(options.capabilities ?? manifest.capabilities);
+  const capabilitySet = new Set(manifest.capabilities);
   let currentConfig = { ...(options.config ?? {}) };
 
   const logs: TestHarnessLogEntry[] = [];
@@ -511,6 +528,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
   const agents = new Map<string, Agent>();
   const goals = new Map<string, Goal>();
   const accessMembers = new Map<string, PluginAccessMember>();
+  const accessInvites = new Map<string, PluginAccessInvite>();
   const principalGrants = new Map<string, PrincipalPermissionGrant[]>();
 
   function principalGrantsKey(companyId: string, principalType: PrincipalType, principalId: string) {
@@ -550,7 +568,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
 
   const events: EventRegistration[] = [];
   const jobs = new Map<string, (job: PluginJobContext) => Promise<void>>();
-  const launchers = new Map<string, PluginLauncherRegistration>();
   const dataHandlers = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
   const actionHandlers = new Map<
     string,
@@ -577,20 +594,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         (options as TestHarnessPerformActionOptions | undefined)?.actor,
       ),
     );
-    return Object.freeze({ actor, companyId: actor.companyId });
-  }
-
-  function paramsWithHostCompanyScope(
-    params: Record<string, unknown>,
-    context: PluginPerformActionContext,
-  ): Record<string, unknown> {
-    const scoped = { ...params };
-    if (context.companyId === null) {
-      delete scoped.companyId;
-    } else {
-      scoped.companyId = context.companyId;
-    }
-    return scoped;
+    return Object.freeze({ actor });
   }
 
   function normalizeLocalFolderRelativePath(relativePath: string): string {
@@ -603,19 +607,29 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
     return parts.join("/");
   }
 
+  function localFolderDeclaration(folderKey: string) {
+    const declaration = manifest.localFolders?.find((candidate) => candidate.folderKey === folderKey);
+    if (!declaration) throw new Error(`Local folder declaration not found: ${folderKey}`);
+    return declaration;
+  }
+
   function notConfiguredLocalFolderStatus(folderKey: string): PluginLocalFolderStatus {
+    const declaration = localFolderDeclaration(folderKey);
+    const access = declaration.access ?? "readWrite";
+    const requiredDirectories = declaration.requiredDirectories ?? [];
+    const requiredFiles = declaration.requiredFiles ?? [];
     return {
       folderKey,
       configured: false,
       path: null,
       realPath: null,
-      access: "readWrite",
+      access,
       readable: false,
       writable: false,
-      requiredDirectories: [],
-      requiredFiles: [],
-      missingDirectories: [],
-      missingFiles: [],
+      requiredDirectories,
+      requiredFiles,
+      missingDirectories: requiredDirectories,
+      missingFiles: requiredFiles,
       healthy: false,
       problems: [{ code: "not_configured", message: "No local folder path is configured." }],
       checkedAt: new Date().toISOString(),
@@ -787,21 +801,20 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       },
     },
     localFolders: {
-      declarations() {
-        return manifest.localFolders ?? [];
-      },
       async configure(input) {
         requireCapability(manifest, capabilitySet, "local.folders");
+        const declaration = localFolderDeclaration(input.folderKey);
+        const access = declaration.access ?? "readWrite";
         const status = {
           folderKey: input.folderKey,
           configured: true,
           path: input.path,
           realPath: input.path,
-          access: input.access ?? "readWrite",
+          access,
           readable: true,
-          writable: input.access === "read" ? false : true,
-          requiredDirectories: input.requiredDirectories ?? [],
-          requiredFiles: input.requiredFiles ?? [],
+          writable: access === "readWrite",
+          requiredDirectories: declaration.requiredDirectories ?? [],
+          requiredFiles: declaration.requiredFiles ?? [],
           missingDirectories: [],
           missingFiles: [],
           healthy: true,
@@ -817,6 +830,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       },
       async list(companyId, folderKey, options) {
         requireCapability(manifest, capabilitySet, "local.folders");
+        localFolderDeclaration(folderKey);
         const status = localFolderStatuses.get(localFolderKey(companyId, folderKey));
         if (!status?.configured) throw new Error("Local folder is not configured");
         const prefix = normalizeLocalFolderRelativePath(options?.relativePath ?? "");
@@ -861,6 +875,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       },
       async readText(companyId, folderKey, relativePath) {
         requireCapability(manifest, capabilitySet, "local.folders");
+        localFolderDeclaration(folderKey);
         const normalizedPath = normalizeLocalFolderRelativePath(relativePath);
         const contents = localFolderFiles.get(localFolderFileKey(companyId, folderKey, normalizedPath));
         if (contents === undefined) throw new Error(`Local folder file not found: ${relativePath}`);
@@ -868,33 +883,21 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       },
       async writeTextAtomic(companyId, folderKey, relativePath, contents) {
         requireCapability(manifest, capabilitySet, "local.folders");
-        const status = localFolderStatuses.get(localFolderKey(companyId, folderKey)) ?? {
-          folderKey,
-          configured: true,
-          path: `memory://${manifest.id}/${companyId}/${folderKey}`,
-          realPath: `memory://${manifest.id}/${companyId}/${folderKey}`,
-          access: "readWrite",
-          readable: true,
-          writable: true,
-          requiredDirectories: [],
-          requiredFiles: [],
-          missingDirectories: [],
-          missingFiles: [],
-          healthy: true,
-          problems: [],
-          checkedAt: new Date().toISOString(),
-        } satisfies PluginLocalFolderStatus;
+        localFolderDeclaration(folderKey);
+        const status = localFolderStatuses.get(localFolderKey(companyId, folderKey));
+        if (!status?.configured) throw new Error("Local folder is not configured");
         if (status.access !== "readWrite" || !status.writable) {
           throw new Error("Local folder is not configured for writes");
         }
-        localFolderStatuses.set(localFolderKey(companyId, folderKey), status);
         localFolderFiles.set(localFolderFileKey(companyId, folderKey, normalizeLocalFolderRelativePath(relativePath)), contents);
         return status;
       },
       async deleteFile(companyId, folderKey, relativePath) {
         requireCapability(manifest, capabilitySet, "local.folders");
-        const status = localFolderStatuses.get(localFolderKey(companyId, folderKey)) ?? notConfiguredLocalFolderStatus(folderKey);
-        if (status.configured && (status.access !== "readWrite" || !status.writable)) {
+        localFolderDeclaration(folderKey);
+        const status = localFolderStatuses.get(localFolderKey(companyId, folderKey));
+        if (!status?.configured) throw new Error("Local folder is not configured");
+        if (status.access !== "readWrite" || !status.writable) {
           throw new Error("Local folder is not configured for writes");
         }
         localFolderFiles.delete(localFolderFileKey(companyId, folderKey, normalizeLocalFolderRelativePath(relativePath)));
@@ -902,7 +905,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       },
     },
     events: {
-      on(name: PluginEventType | `plugin.${string}`, filterOrFn: EventFilter | ((event: PluginEvent) => Promise<void>), maybeFn?: (event: PluginEvent) => Promise<void>): () => void {
+      on(name: PluginEventPattern, filterOrFn: EventFilter | ((event: PluginEvent) => Promise<void>), maybeFn?: (event: PluginEvent) => Promise<void>): () => void {
         requireCapability(manifest, capabilitySet, "events.subscribe");
         let registration: EventRegistration;
         if (typeof filterOrFn === "function") {
@@ -911,6 +914,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           if (!maybeFn) throw new Error("event handler is required");
           registration = { name, filter: filterOrFn, fn: maybeFn };
         }
+        assertPluginEventSubscription(name, registration.filter);
         events.push(registration);
         return () => {
           const idx = events.indexOf(registration);
@@ -925,16 +929,24 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
     jobs: {
       register(key, fn) {
         requireCapability(manifest, capabilitySet, "jobs.schedule");
+        if (!(manifest.jobs ?? []).some((job) => job.jobKey === key)) {
+          throw new Error(`Job handler "${key}" is not declared in manifest.jobs`);
+        }
+        if (jobs.has(key)) {
+          throw new Error(`Job handler "${key}" is registered more than once`);
+        }
         jobs.set(key, fn);
       },
     },
-    launchers: {
-      register(launcher) {
-        launchers.set(launcher.id, launcher);
-      },
-    },
     db: {
-      namespace: manifest.database ? `test_${manifest.id.replace(/[^a-z0-9_]+/g, "_")}` : "",
+      get namespace() {
+        if (!manifest.database) {
+          throw new Error(
+            "Plugin database namespace is unavailable because the manifest does not declare a database",
+          );
+        }
+        return `test_${manifest.id.replace(/[^a-z0-9_]+/g, "_")}`;
+      },
       async query(sql, params) {
         requireCapability(manifest, capabilitySet, "database.namespace.read");
         dbQueries.push({ sql, params });
@@ -954,6 +966,12 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
     },
     runtime: {
       records: {
+        async readSession() {
+          requireCapability(manifest, capabilitySet, "runtime.records.read");
+          throw new Error(
+            "No canonical Session record is configured in the plugin test harness",
+          );
+        },
         async readRun() {
           requireCapability(manifest, capabilitySet, "runtime.records.read");
           throw new Error(
@@ -964,12 +982,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           requireCapability(manifest, capabilitySet, "runtime.records.read");
           return { items: [], nextCursor: null };
         },
-      },
-    },
-    secrets: {
-      async resolve(secretRef) {
-        requireCapability(manifest, capabilitySet, "secrets.read-ref");
-        return `resolved:${secretRef}`;
       },
     },
     activity: {
@@ -994,21 +1006,30 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
     },
     entities: {
       async upsert(input: PluginEntityUpsert) {
-        const externalKey = input.externalId
-          ? `${input.entityType}|${input.scopeKind}|${input.scopeId ?? ""}|${input.externalId}`
-          : null;
-        const existingId = externalKey ? entityExternalIndex.get(externalKey) : undefined;
+        const scopeId = normalizePluginScopeId(input.scopeKind, input.scopeId);
+        const externalKey = JSON.stringify([
+          input.entityType,
+          input.scopeKind,
+          scopeId,
+          input.externalId ?? null,
+        ]);
+        const existingId = entityExternalIndex.get(externalKey);
         const existing = existingId ? entities.get(existingId) : undefined;
         const now = new Date().toISOString();
-        const previousExternalKey = existing?.externalId
-          ? `${existing.entityType}|${existing.scopeKind}|${existing.scopeId ?? ""}|${existing.externalId}`
+        const previousExternalKey = existing
+          ? JSON.stringify([
+              existing.entityType,
+              existing.scopeKind,
+              existing.scopeId,
+              existing.externalId,
+            ])
           : null;
         const record: PluginEntityRecord = existing
           ? {
             ...existing,
             entityType: input.entityType,
             scopeKind: input.scopeKind,
-            scopeId: input.scopeId ?? null,
+            scopeId,
             externalId: input.externalId ?? null,
             title: input.title ?? null,
             status: input.status ?? null,
@@ -1019,7 +1040,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
             id: randomUUID(),
             entityType: input.entityType,
             scopeKind: input.scopeKind,
-            scopeId: input.scopeId ?? null,
+            scopeId,
             externalId: input.externalId ?? null,
             title: input.title ?? null,
             status: input.status ?? null,
@@ -1031,15 +1052,22 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         if (previousExternalKey && previousExternalKey !== externalKey) {
           entityExternalIndex.delete(previousExternalKey);
         }
-        if (externalKey) entityExternalIndex.set(externalKey, record.id);
+        entityExternalIndex.set(externalKey, record.id);
         return record;
       },
       async list(query) {
         let out = [...entities.values()];
         if (query.entityType) out = out.filter((r) => r.entityType === query.entityType);
-        if (query.scopeKind) out = out.filter((r) => r.scopeKind === query.scopeKind);
-        if (query.scopeId) out = out.filter((r) => r.scopeId === query.scopeId);
-        if (query.externalId) out = out.filter((r) => r.externalId === query.externalId);
+        if (query.scopeId !== undefined && query.scopeKind === undefined) {
+          throw new Error("Plugin entity scopeId requires scopeKind");
+        }
+        if (query.scopeKind !== undefined) {
+          const scopeId = normalizePluginScopeId(query.scopeKind, query.scopeId);
+          out = out.filter((record) =>
+            record.scopeKind === query.scopeKind && record.scopeId === scopeId
+          );
+        }
+        if (query.externalId !== undefined) out = out.filter((r) => r.externalId === query.externalId);
         if (query.offset) out = out.slice(query.offset);
         if (query.limit) out = out.slice(0, query.limit);
         return out;
@@ -1067,16 +1095,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       },
       async getPrimaryWorkspace(projectId, companyId) {
         requireCapability(manifest, capabilitySet, "project.workspaces.read");
-        if (!isInCompany(projects.get(projectId), companyId)) return null;
-        const workspaces = projectWorkspaces.get(projectId) ?? [];
-        return workspaces.find((workspace) => workspace.isPrimary) ?? null;
-      },
-      async getWorkspaceForIssue(issueId, companyId) {
-        requireCapability(manifest, capabilitySet, "project.workspaces.read");
-        const issue = issues.get(issueId);
-        if (!isInCompany(issue, companyId)) return null;
-        const projectId = (issue as unknown as Record<string, unknown>)?.projectId as string | undefined;
-        if (!projectId) return null;
         if (!isInCompany(projects.get(projectId), companyId)) return null;
         const workspaces = projectWorkspaces.get(projectId) ?? [];
         return workspaces.find((workspace) => workspace.isPrimary) ?? null;
@@ -1163,7 +1181,12 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
             updatedAt: now,
           } as Project;
           projects.set(project.id, project);
-          const externalKey = `managed_resource|company|${companyId}|${externalId}`;
+          const externalKey = JSON.stringify([
+            "managed_resource",
+            "company",
+            companyId,
+            externalId,
+          ]);
           const nowIso = now.toISOString();
           const record: PluginEntityRecord = {
             id: randomUUID(),
@@ -1981,18 +2004,87 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       invites: {
         async list(input) {
           requireCapability(manifest, capabilitySet, "access.invites.read");
-          requireCompanyId(input.companyId);
-          return { invites: [], nextOffset: null };
+          const companyId = requireCompanyId(input.companyId);
+          const now = Date.now();
+          const state = (invite: PluginAccessInvite): PluginAccessInvite["state"] => {
+            if (invite.revokedAt) return "revoked";
+            if (invite.acceptedAt) return "accepted";
+            return new Date(invite.expiresAt).getTime() <= now ? "expired" : "active";
+          };
+          const offset = Math.max(0, input.offset ?? 0);
+          const limit = Math.min(100, Math.max(1, input.limit ?? 20));
+          const matching = [...accessInvites.values()]
+            .filter((invite) => invite.companyId === companyId)
+            .map((invite) => ({ ...invite, state: state(invite) }))
+            .filter((invite) => input.state === undefined || invite.state === input.state)
+            .sort((left, right) =>
+              new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+              || right.id.localeCompare(left.id),
+            );
+          const invites = matching.slice(offset, offset + limit);
+          return {
+            invites,
+            nextOffset: offset + limit < matching.length ? offset + limit : null,
+          };
         },
         async create(input) {
           requireCapability(manifest, capabilitySet, "access.invites.write");
-          requireCompanyId(input.companyId);
-          throw new Error("Invite creation is not implemented in the plugin test harness");
+          const companyId = requireCompanyId(input.companyId);
+          const allowedJoinTypes = input.allowedJoinTypes ?? "both";
+          const humanRole = allowedJoinTypes === "agent"
+            ? null
+            : input.humanRole ?? "operator";
+          const defaultsPayload = { ...(input.defaultsPayload ?? {}) };
+          if (humanRole) {
+            defaultsPayload.human = {
+              ...(defaultsPayload.human && typeof defaultsPayload.human === "object"
+                ? defaultsPayload.human as Record<string, unknown>
+                : {}),
+              role: humanRole,
+              grants: grantsForHumanRole(humanRole),
+            };
+          }
+          const agentMessage = input.agentMessage?.trim();
+          if (agentMessage) {
+            defaultsPayload.agentMessage = agentMessage;
+          }
+          const now = new Date();
+          const invite: PluginAccessInvite = {
+            id: randomUUID(),
+            companyId,
+            inviteType: "company_join",
+            allowedJoinTypes,
+            defaultsPayload,
+            expiresAt: new Date(now.getTime() + 72 * 60 * 60 * 1000).toISOString(),
+            source: "plugin_host",
+            invitedByUserId: null,
+            revokedAt: null,
+            acceptedAt: null,
+            createdAt: now.toISOString(),
+            updatedAt: now.toISOString(),
+            state: "active",
+          };
+          accessInvites.set(invite.id, invite);
+          return { ...invite, token: randomUUID() };
         },
         async revoke(inviteId, companyId) {
           requireCapability(manifest, capabilitySet, "access.invites.write");
-          requireCompanyId(companyId);
-          throw new Error(`Invite not found: ${inviteId}`);
+          const scopedCompanyId = requireCompanyId(companyId);
+          const invite = accessInvites.get(inviteId);
+          if (!invite || invite.companyId !== scopedCompanyId) {
+            throw new Error(`Invite not found: ${inviteId}`);
+          }
+          if (invite.acceptedAt) throw new Error("Invite already consumed");
+          if (invite.revokedAt) return invite;
+          const now = new Date().toISOString();
+          const revoked: PluginAccessInvite = {
+            ...invite,
+            revokedAt: now,
+            updatedAt: now,
+            state: "revoked",
+          };
+          accessInvites.set(invite.id, revoked);
+          return revoked;
         },
       },
     },
@@ -2060,11 +2152,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           requireCompanyId(input.companyId);
           return previewTargetAgentManagement(input);
         },
-        async explainAssignment(input) {
-          requireCapability(manifest, capabilitySet, "authorization.policies.read");
-          requireCompanyId(input.companyId);
-          return previewTargetAgentManagement(input);
-        },
       },
       audit: {
         async search(input) {
@@ -2076,32 +2163,30 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
     },
     data: {
       register(key, handler) {
+        if (dataHandlers.has(key)) {
+          throw new Error(`Data handler "${key}" is registered more than once`);
+        }
         dataHandlers.set(key, handler);
       },
     },
     actions: {
       register(key, handler) {
+        if (actionHandlers.has(key)) {
+          throw new Error(`Action handler "${key}" is registered more than once`);
+        }
         actionHandlers.set(key, handler);
       },
     },
-    streams: (() => {
-      const channelCompanyMap = new Map<string, string>();
-      return {
-        open(channel: string, companyId: string) {
-          channelCompanyMap.set(channel, companyId);
-        },
-        emit(_channel: string, _event: unknown) {
-          // No-op in test harness — events are not forwarded
-        },
-        close(channel: string) {
-          channelCompanyMap.delete(channel);
-        },
-      };
-    })(),
     tools: {
-      register(name, _decl, fn) {
+      register(name, handler) {
         requireCapability(manifest, capabilitySet, "agent.tools.register");
-        toolHandlers.set(name, fn);
+        if (!(manifest.tools ?? []).some((tool) => tool.name === name)) {
+          throw new Error(`Tool handler "${name}" is not declared in manifest.tools`);
+        }
+        if (toolHandlers.has(name)) {
+          throw new Error(`Tool handler "${name}" is registered more than once`);
+        }
+        toolHandlers.set(name, handler);
       },
     },
     metrics: {
@@ -2117,16 +2202,16 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       },
     },
     logger: {
-      info(message, meta) {
+      async info(message, meta) {
         logs.push({ level: "info", message, meta });
       },
-      warn(message, meta) {
+      async warn(message, meta) {
         logs.push({ level: "warn", message, meta });
       },
-      error(message, meta) {
+      async error(message, meta) {
         logs.push({ level: "error", message, meta });
       },
-      debug(message, meta) {
+      async debug(message, meta) {
         logs.push({ level: "debug", message, meta });
       },
     },
@@ -2181,7 +2266,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         const wildcardPluginOne = String(handler.name).endsWith(".*")
           && String(event.eventType).startsWith(String(handler.name).slice(0, -1));
         if (!exactMatch && !wildcardPluginAll && !wildcardPluginOne) continue;
-        if (!allowsEvent(handler.filter, event)) continue;
+        if (!pluginEventMatchesFilter(event, handler.filter)) continue;
         await handler.fn(event);
       }
     },
@@ -2208,7 +2293,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       const context = actionContextFor(options);
       const handler = actionHandlers.get(key);
       if (!handler) throw new Error(`No action handler registered for '${key}'`);
-      return await handler(paramsWithHostCompanyScope(params, context), context) as T;
+      return await handler(params, context) as T;
     },
     async executeTool<T = ToolResult>(
       name: string,
@@ -2227,7 +2312,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
             agentId: "00000000-0000-4000-8000-000000000003",
             runId: "00000000-0000-4000-8000-000000000004",
             projectId: null,
-            contextAccess: {},
+            contextAccess: TEST_CONTEXT_ACCESS,
           };
         },
         async issueReach(issueId) {
@@ -2255,6 +2340,12 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         },
       };
       return await handler(params, ctxToPass) as T;
+    },
+    async beforePrompt(plugin, input) {
+      requireCapability(manifest, capabilitySet, "runtime.prompt.observe");
+      const handler = plugin.definition.onBeforePrompt;
+      if (!handler) throw new Error("Plugin does not implement onBeforePrompt");
+      return handler(input);
     },
     getState(input) {
       return state.get(stateMapKey(input));

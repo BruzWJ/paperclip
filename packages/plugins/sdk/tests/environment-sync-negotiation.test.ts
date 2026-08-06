@@ -3,19 +3,35 @@ import { PassThrough } from "node:stream";
 
 import { describe, expect, it } from "vitest";
 
-import { definePlugin } from "../src/define-plugin.js";
+import {
+  definePlugin as defineSdkPlugin,
+  type PluginDefinition,
+} from "../src/define-plugin.js";
 import {
   createRequest,
   isJsonRpcResponse,
   parseMessage,
   PLUGIN_RPC_ERROR_CODES,
   serializeMessage,
+  type InitializeParams,
   type JsonRpcResponse,
-  type PluginEnvironmentSyncInParams,
-  type PluginEnvironmentSyncOutParams,
+  type PluginEnvironmentSyncParams,
   type PluginEnvironmentSyncResult,
 } from "../src/protocol.js";
 import { startWorkerRpcHost } from "../src/worker-rpc-host.js";
+import type {
+  PluginBeforePromptInput,
+  PluginBeforePromptResult,
+} from "../src/types.js";
+
+function definePlugin(definition: Omit<PluginDefinition, "onHealth">) {
+  return defineSdkPlugin({
+    ...definition,
+    async onHealth() {
+      return { status: "ok" };
+    },
+  });
+}
 
 const MANIFEST = {
   id: "paperclip.sync-negotiation-test",
@@ -25,9 +41,16 @@ const MANIFEST = {
   description: "Test plugin",
   author: "Paperclip",
   categories: ["automation"],
-  capabilities: [],
-  entrypoints: {},
+  capabilities: ["environment.drivers.register"],
+  entrypoints: { worker: "dist/worker.js" },
 } as const;
+
+const INITIALIZE_PARAMS: InitializeParams = {
+  manifest: MANIFEST,
+  instanceInfo: { instanceId: "test", hostVersion: "0.0.0" },
+  apiVersion: 1,
+  databaseNamespace: null,
+};
 
 function startTestWorker(plugin: ReturnType<typeof definePlugin>) {
   const hostToWorker = new PassThrough();
@@ -84,9 +107,9 @@ describe("environment sync verb negotiation", () => {
       }),
     );
     try {
-      const result = await withHooks.callWorker<{ ok: boolean; supportedMethods: string[] }>(
+      const result = await withHooks.callWorker<{ supportedMethods: string[] }>(
         "initialize",
-        { manifest: MANIFEST, config: {}, databaseNamespace: null },
+        INITIALIZE_PARAMS,
       );
       expect(result.supportedMethods).toContain("environmentSyncIn");
       expect(result.supportedMethods).toContain("environmentSyncOut");
@@ -96,9 +119,9 @@ describe("environment sync verb negotiation", () => {
 
     const withoutHooks = startTestWorker(definePlugin({ async setup() {} }));
     try {
-      const result = await withoutHooks.callWorker<{ ok: boolean; supportedMethods: string[] }>(
+      const result = await withoutHooks.callWorker<{ supportedMethods: string[] }>(
         "initialize",
-        { manifest: MANIFEST, config: {}, databaseNamespace: null },
+        INITIALIZE_PARAMS,
       );
       expect(result.supportedMethods).not.toContain("environmentSyncIn");
       expect(result.supportedMethods).not.toContain("environmentSyncOut");
@@ -135,7 +158,7 @@ describe("environment sync verb negotiation", () => {
       }),
     );
     try {
-      await worker.callWorker("initialize", { manifest: MANIFEST, config: {}, databaseNamespace: null });
+      await worker.callWorker("initialize", INITIALIZE_PARAMS);
       const baseParams = {
         driverKey: "sandbox",
         companyId: "company",
@@ -143,7 +166,7 @@ describe("environment sync verb negotiation", () => {
         config: {},
         lease: { providerLeaseId: "lease-1" },
       };
-      const inParams: PluginEnvironmentSyncInParams = {
+      const inParams: PluginEnvironmentSyncParams = {
         ...baseParams,
         operations: [
           { operationId: "op-a", files: [{ sourcePath: "/host/a", targetPath: "/remote/a", kind: "file" }] },
@@ -152,7 +175,7 @@ describe("environment sync verb negotiation", () => {
       const inResult = await worker.callWorker<PluginEnvironmentSyncResult>("environmentSyncIn", inParams);
       expect(inResult.operations[0]).toMatchObject({ operationId: "op-a", filesTransferred: 1 });
 
-      const outParams: PluginEnvironmentSyncOutParams = {
+      const outParams: PluginEnvironmentSyncParams = {
         ...baseParams,
         operations: [
           { operationId: "op-b", files: [{ sourcePath: "/remote/b", targetPath: "/host/b", kind: "directory" }] },
@@ -169,7 +192,7 @@ describe("environment sync verb negotiation", () => {
   it("throws METHOD_NOT_IMPLEMENTED when the sync hooks are absent", async () => {
     const worker = startTestWorker(definePlugin({ async setup() {} }));
     try {
-      await worker.callWorker("initialize", { manifest: MANIFEST, config: {}, databaseNamespace: null });
+      await worker.callWorker("initialize", INITIALIZE_PARAMS);
       const params = {
         driverKey: "sandbox",
         companyId: "company",
@@ -182,6 +205,76 @@ describe("environment sync verb negotiation", () => {
         code: PLUGIN_RPC_ERROR_CODES.METHOD_NOT_IMPLEMENTED,
       });
       await expect(worker.callWorker("environmentSyncOut", params)).rejects.toMatchObject({
+        code: PLUGIN_RPC_ERROR_CODES.METHOD_NOT_IMPLEMENTED,
+      });
+    } finally {
+      worker.stop();
+    }
+  });
+});
+
+describe("before-prompt lifecycle negotiation", () => {
+  const input = {
+    companyId: "company-a",
+    issueId: "issue-a",
+    sessionId: "session-a",
+    runId: "run-a",
+    agentId: "agent-a",
+    projectId: null,
+    sourceText: "Canonical source",
+    promptKind: "base",
+    sessionOperation: "new",
+    refId: "ref-a",
+    refOrdinal: 0,
+    segmentOrdinal: 0,
+    sourceMessageId: "msg_source",
+    sourceMessageSeq: 9,
+    contextAccess: {
+      carry_context: false,
+      read_issue_comments: false,
+      read_issue_agent_run: false,
+      list_sub_issues: false,
+      read_sub_issue_comments: false,
+      read_sub_issue_agent_run: false,
+      list_company_issues: false,
+      read_company_issue_comments: false,
+      read_company_issue_agent_run: false,
+    },
+    snapshotHighWaterSeq: 9,
+  } satisfies PluginBeforePromptInput;
+
+  it("advertises and dispatches one exact prompt contribution", async () => {
+    const worker = startTestWorker(definePlugin({
+      async setup() {},
+      async onBeforePrompt() {
+        return { prependText: "Plugin prelude" };
+      },
+    }));
+    try {
+      const initialized = await worker.callWorker<{
+        ok: boolean;
+        supportedMethods: string[];
+      }>("initialize", INITIALIZE_PARAMS);
+      expect(initialized.supportedMethods).toContain("beforePrompt");
+
+      await expect(worker.callWorker<PluginBeforePromptResult>(
+        "beforePrompt",
+        input,
+      )).resolves.toEqual({ prependText: "Plugin prelude" });
+    } finally {
+      worker.stop();
+    }
+  });
+
+  it("does not advertise the lifecycle when the hook is absent", async () => {
+    const worker = startTestWorker(definePlugin({ async setup() {} }));
+    try {
+      const initialized = await worker.callWorker<{
+        ok: boolean;
+        supportedMethods: string[];
+      }>("initialize", INITIALIZE_PARAMS);
+      expect(initialized.supportedMethods).not.toContain("beforePrompt");
+      await expect(worker.callWorker("beforePrompt", input)).rejects.toMatchObject({
         code: PLUGIN_RPC_ERROR_CODES.METHOD_NOT_IMPLEMENTED,
       });
     } finally {

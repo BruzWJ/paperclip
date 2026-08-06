@@ -17,13 +17,11 @@ This is a repo-local example plugin for development. It should not be assumed to
 ## Settings
 
 - `Show Files in Sidebar` — toggles the project sidebar link on or off. Defaults to off.
-- `Comment File Links` — controls whether comment annotations and the comment context-menu action are shown.
 
 ## Capabilities
 
 - `ui.sidebar.register` — project sidebar item
 - `ui.detailTab.register` — project detail tab
-- `projects.read` — resolve project
 - `project.workspaces.read` — list workspaces and read paths for file access
 
 ## Worker
@@ -39,21 +37,19 @@ From the repo root, build the plugin and install it by local path:
 
 ```bash
 pnpm --filter @paperclipai/plugin-file-browser-example build
-pnpm paperclipai plugin install ./packages/plugins/examples/plugin-file-browser-example
+pnpm paperclipai plugin install --local ./packages/plugins/examples/plugin-file-browser-example
 ```
 
 To uninstall:
 
 ```bash
-pnpm paperclipai plugin uninstall paperclip-file-browser-example --force
+pnpm paperclipai plugin uninstall <plugin-installation-id>
 ```
 
 **Local development notes:**
 
 - **Build first.** The host resolves the worker from the manifest `entrypoints.worker` (e.g. `./dist/worker.js`). Run `pnpm build` in the plugin directory before installing so the worker file exists.
 - **Dev-only install path.** This local-path install flow assumes this monorepo checkout is present on disk. For deployed installs, publish an npm package instead of depending on `packages/plugins/examples/...` existing on the host.
-- **Reinstall after pulling.** If you installed a plugin by local path before the server stored `package_path`, the plugin may show status **error** (worker not found). Uninstall and install again so the server persists the path and can activate the plugin.
-- Optional: use `paperclip-plugin-dev-server` for UI hot-reload with `devUiUrl` in plugin config.
 
 ## Structure
 

@@ -7,18 +7,18 @@
  * @example
  * ```ts
  * // Plugin worker entrypoint (dist/worker.ts)
- * import { definePlugin, runWorker, z } from "@paperclipai/plugin-sdk";
+ * import { definePlugin, runWorker } from "@paperclipai/plugin-sdk";
  *
  * const plugin = definePlugin({
  *   async setup(ctx) {
- *     ctx.logger.info("Plugin starting up");
+ *     await ctx.logger.info("Plugin starting up");
  *
- *     ctx.events.on("issue.created", async (event) => {
- *       ctx.logger.info("Issue created", { issueId: event.entityId });
+ *     ctx.events.on("issue.board.comment.created", async (event) => {
+ *       await ctx.logger.info("Issue created", { issueId: event.entityId });
  *     });
  *
  *     ctx.jobs.register("full-sync", async (job) => {
- *       ctx.logger.info("Starting full sync", { runId: job.runId });
+ *       await ctx.logger.info("Starting full sync", { runId: job.runId });
  *       // ... sync implementation
  *     });
  *
@@ -50,21 +50,14 @@
 // ---------------------------------------------------------------------------
 
 export { definePlugin } from "./define-plugin.js";
-export { createTestHarness, createEnvironmentTestHarness, createFakeEnvironmentDriver, filterEnvironmentEvents, assertEnvironmentEventOrder, assertLeaseLifecycle, assertWorkspaceRealizationLifecycle, assertExecutionLifecycle, assertEnvironmentError } from "./testing.js";
-export { createPluginBundlerPresets } from "./bundlers.js";
+export { runWorker } from "./worker-rpc-host.js";
+export { decodeToolResult } from "./tool-result.js";
 export {
-  createEnvironmentExecutionCancellationRegistry,
-  wrapCancellableEnvironmentShellCommand,
-  buildCancelEnvironmentShellCommand,
-} from "./environment-execution-control.js";
-export { startPluginDevServer, getUiBuildSnapshot } from "./dev-server.js";
-export { startWorkerRpcHost, runWorker } from "./worker-rpc-host.js";
-export {
-  createHostClientHandlers,
-  getRequiredCapability,
-  CapabilityDeniedError,
-  InvocationScopeDeniedError,
-} from "./host-client-factory.js";
+  assertPluginEventSubscription,
+  pluginEventMatchesFilter,
+} from "./event-filter.js";
+export { normalizePluginScopeId } from "./plugin-scope.js";
+export { createHostClientHandlers } from "./host-client-factory.js";
 
 // JSON-RPC protocol helpers and constants
 export {
@@ -73,22 +66,13 @@ export {
   PLUGIN_RPC_ERROR_CODES,
   HOST_TO_WORKER_REQUIRED_METHODS,
   HOST_TO_WORKER_OPTIONAL_METHODS,
-  MESSAGE_DELIMITER,
   createRequest,
-  createSuccessResponse,
   createErrorResponse,
-  createNotification,
-  isJsonRpcRequest,
-  isJsonRpcNotification,
   isJsonRpcResponse,
   isJsonRpcSuccessResponse,
-  isJsonRpcErrorResponse,
   serializeMessage,
   parseMessage,
-  decodePluginPerformActionActorContext,
-  JsonRpcParseError,
   JsonRpcCallError,
-  _resetIdCounter,
 } from "./protocol.js";
 
 // ---------------------------------------------------------------------------
@@ -106,44 +90,18 @@ export type {
   PluginApiResponse,
 } from "./define-plugin.js";
 export type {
-  TestHarness,
-  TestHarnessOptions,
-  TestHarnessLogEntry,
-  EnvironmentTestHarness,
-  EnvironmentTestHarnessOptions,
-  EnvironmentEventRecord,
-  FakeEnvironmentDriverOptions,
-} from "./testing.js";
-export type {
-  PluginBundlerPresetInput,
-  PluginBundlerPresets,
-  EsbuildLikeOptions,
-  RollupLikeConfig,
-} from "./bundlers.js";
-export type { PluginDevServer, PluginDevServerOptions } from "./dev-server.js";
-export type {
-  WorkerRpcHostOptions,
-  WorkerRpcHost,
-  RunWorkerOptions,
-} from "./worker-rpc-host.js";
-export type {
   HostServices,
-  HostRpcOperationContext,
-  HostClientFactoryOptions,
   HostClientHandlers,
 } from "./host-client-factory.js";
 
 // JSON-RPC protocol types
 export type {
   JsonRpcId,
-  JsonRpcInvocationScope,
-  JsonRpcInvocationContext,
   JsonRpcRequest,
   JsonRpcSuccessResponse,
   JsonRpcError,
   JsonRpcErrorResponse,
   JsonRpcResponse,
-  JsonRpcNotification,
   JsonRpcMessage,
   JsonRpcErrorCode,
   PluginRpcErrorCode,
@@ -152,7 +110,6 @@ export type {
   WorkerHostCallContext,
   InitializeParams,
   InitializeResult,
-  ConfigChangedParams,
   ValidateConfigParams,
   OnEventParams,
   RunJobParams,
@@ -171,8 +128,6 @@ export type {
   ResolveExternalObjectParams,
   PluginExternalObjectResolvedSnapshot,
   PluginExternalObjectResolveResult,
-  RefreshExternalObjectsParams,
-  RefreshExternalObjectsResult,
   PluginEnvironmentDiagnostic,
   PluginEnvironmentDriverBaseParams,
   PluginEnvironmentValidateConfigParams,
@@ -192,8 +147,7 @@ export type {
   PluginEnvironmentCancelExecutionResult,
   PluginSyncFileMapping,
   PluginSyncOperation,
-  PluginEnvironmentSyncInParams,
-  PluginEnvironmentSyncOutParams,
+  PluginEnvironmentSyncParams,
   PluginEnvironmentSyncResult,
   PluginEnvironmentInteractiveSetupStatus,
   PluginEnvironmentInteractiveSetupConnectionType,
@@ -214,14 +168,10 @@ export type {
   PluginLauncherRenderContextSnapshot,
   HostToWorkerMethods,
   HostToWorkerMethodName,
+  HostToWorkerRequiredMethodName,
+  HostToWorkerOptionalMethodName,
   WorkerToHostMethods,
   WorkerToHostMethodName,
-  HostToWorkerRequest,
-  HostToWorkerResponse,
-  WorkerToHostRequest,
-  WorkerToHostResponse,
-  WorkerToHostNotifications,
-  WorkerToHostNotificationName,
 } from "./protocol.js";
 
 // Plugin context and all client interfaces
@@ -237,15 +187,14 @@ export type {
   PluginLocalFoldersClient,
   PluginEventsClient,
   PluginJobsClient,
-  PluginLaunchersClient,
   PluginHttpClient,
-  PluginSecretsClient,
   PluginActivityClient,
   PluginActivityLogEntry,
   PluginStateClient,
   PluginEntitiesClient,
   PluginProjectsClient,
   PluginExecutionWorkspacesClient,
+  PluginRoutinesClient,
   PluginSkillsClient,
   PluginCompaniesClient,
   PluginIssuesClient,
@@ -253,6 +202,10 @@ export type {
   PluginIssueCreateInput,
   PluginIssueUpdateInput,
   PluginIssueWithdrawalResult,
+  PluginCreatorCallbackRegistration,
+  PluginCreatorCallbackDelivery,
+  PluginCreatorCallbackAcknowledgement,
+  PluginCreatorCallbackHandler,
   PluginAgentsClient,
   PluginAccessClient,
   PluginAccessMembersClient,
@@ -268,7 +221,6 @@ export type {
   PluginGoalsClient,
   PluginDataClient,
   PluginActionsClient,
-  PluginStreamsClient,
   PluginToolsClient,
   PluginMetricsClient,
   PluginTelemetryClient,
@@ -278,10 +230,13 @@ export type {
 // Supporting types for context clients
 export type {
   ScopeKey,
+  PluginDataScope,
   EventFilter,
+  PluginEventPattern,
   PluginEvent,
   PluginJobContext,
-  PluginLauncherRegistration,
+  PluginBeforePromptInput,
+  PluginBeforePromptResult,
   PluginRunContextHandle,
   PluginRunIssueProjection,
   PluginRunIssueCommentProjection,
@@ -293,6 +248,15 @@ export type {
   PluginRunIssueReach,
   PluginRuntimeClient,
   PluginRuntimeRecordsClient,
+  PluginJsonValue,
+  PluginToolStructuredData,
+  PluginCanonicalSessionIdentity,
+  PluginCanonicalSessionMessageRow,
+  PluginCanonicalSessionMessage,
+  PluginCanonicalSessionEventRow,
+  PluginCanonicalSessionEvent,
+  PluginCanonicalSessionReadInput,
+  PluginCanonicalSessionReadResult,
   ToolResult,
   PluginEntityUpsert,
   PluginEntityRecord,
@@ -312,7 +276,7 @@ export type {
   PluginDatabaseClient,
   HumanCompanyMembershipRole,
   MembershipStatus,
-  EnvSecretRefBinding,
+  IssueExecutionSessionOperation,
 } from "./types.js";
 
 // Manifest and constant types re-exported from @paperclipai/shared
@@ -342,20 +306,13 @@ export type {
   PluginLauncherActionDeclaration,
   PluginLauncherRenderDeclaration,
   PluginLauncherDeclaration,
-  PluginMinimumHostVersion,
   PluginDatabaseDeclaration,
   PluginApiRouteCompanyResolution,
   PluginApiRouteDeclaration,
   PluginLocalFolderDeclaration,
-  PluginCompanySettings,
   PluginObjectReferenceRefreshPolicy,
   PluginObjectReferenceProviderDeclaration,
-  PluginRecord,
-  PluginDatabaseNamespaceRecord,
-  PluginMigrationRecord,
-  PluginConfig,
   JsonSchema,
-  PluginStatus,
   PluginCategory,
   PluginCapability,
   PluginUiSlotType,
@@ -365,63 +322,30 @@ export type {
   PluginLauncherBounds,
   PluginLauncherRenderEnvironment,
   PluginStateScopeKind,
-  PluginJobStatus,
-  PluginJobRunStatus,
   PluginJobRunTrigger,
-  PluginWebhookDeliveryStatus,
   PluginDatabaseCoreReadTable,
-  PluginDatabaseMigrationStatus,
-  PluginDatabaseNamespaceMode,
-  PluginDatabaseNamespaceStatus,
-  PluginApiRouteAuthMode,
   PluginApiRouteMethod,
   PluginEventType,
   PluginBridgeErrorCode,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
-// Zod re-export
-// ---------------------------------------------------------------------------
-
-/**
- * Zod is re-exported for plugin authors to use when defining their
- * `instanceConfigSchema` and tool `parametersSchema`.
- *
- * Plugin authors do not need to add a separate `zod` dependency.
- *
- * @see PLUGIN_SPEC.md §14.1 — Example SDK Shape
- *
- * @example
- * ```ts
- * import { z } from "@paperclipai/plugin-sdk";
- *
- * const configSchema = z.object({
- *   apiKey: z.string().describe("Your API key"),
- *   workspace: z.string().optional(),
- * });
- * ```
- */
-export { z } from "zod";
-
-// ---------------------------------------------------------------------------
 // Constants re-exports (for plugin code that needs to check values at runtime)
 // ---------------------------------------------------------------------------
 
 export {
+  pluginManifestV1Schema,
   PLUGIN_API_VERSION,
-  PLUGIN_STATUSES,
   PLUGIN_CATEGORIES,
   PLUGIN_CAPABILITIES,
   PLUGIN_UI_SLOT_TYPES,
   PLUGIN_UI_SLOT_ENTITY_TYPES,
   PLUGIN_RESERVED_COMPANY_SETTINGS_ROUTE_SEGMENTS,
   PLUGIN_STATE_SCOPE_KINDS,
-  PLUGIN_JOB_STATUSES,
-  PLUGIN_JOB_RUN_STATUSES,
   PLUGIN_JOB_RUN_TRIGGERS,
-  PLUGIN_WEBHOOK_DELIVERY_STATUSES,
   PLUGIN_EVENT_TYPES,
   PLUGIN_BRIDGE_ERROR_CODES,
+  pluginAgentToolName,
   PERMISSION_KEYS,
   HUMAN_COMPANY_MEMBERSHIP_ROLES,
   HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS,

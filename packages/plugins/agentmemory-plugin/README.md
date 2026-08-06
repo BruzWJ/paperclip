@@ -2,96 +2,130 @@
 
 First-party Paperclip adapter for a separately hosted
 [`@agentmemory/agentmemory`](https://www.npmjs.com/package/@agentmemory/agentmemory)
-service. Paperclip captures canonical work automatically and exposes four
-read-only recall tools through the normal ACP tool gateway. Agents never write
-memory directly, and memory content is not inserted into user or system
-messages.
+service. The plugin automatically records canonical Paperclip work, injects
+relevant memory before each provider request, and exposes four read-only recall
+tools through Paperclip's normal agent-tool gateway. Paperclip core has no
+AgentMemory or memory-specific API.
 
 ## Memory matrix
 
-| Reach | Agent-private memory | Shared memory |
+| Paperclip memory cell | Read tool | AgentMemory namespace |
 | --- | --- | --- |
-| Current or otherwise visible issue | `read_issue_agent_memory(issueId, query)` — current agent + issue | `read_issue_shared_memory(issueId, query)` — company + issue |
-| Company-wide | `read_company_agent_memory(query)` — current agent + company | `read_company_shared_memory(query)` — company |
+| Issue + current agent | `read_issue_agent_memory(issueId, query)` | issue scope + company-scoped agent principal |
+| Issue shared | `read_issue_shared_memory(issueId, query)` | issue scope + company-scoped shared principal |
+| Company + current agent | `read_company_agent_memory(query)` | company scope + company-scoped agent principal |
+| Company shared | `read_company_shared_memory(query)` | company scope + company-scoped shared principal |
 
-Sub-issues and other company issues use the same two issue tools. Agents first
-obtain an issue ID through Paperclip's ordinary issue tools. Paperclip derives
-memory reach from the existing context-access matrix:
+The provider-visible MCP names are prefixed with
+`paperclip.agentmemory__`. Sub-issues and other company issues use the same two
+issue tools after the agent obtains an issue ID through Paperclip's ordinary
+issue tools.
 
-- The active issue is always reachable.
-- Descendants are reachable with `list_sub_issues` or `list_company_issues`.
-- Other issues and both company-wide partitions require
-  `list_company_issues`.
-- Cross-company access is always rejected by the host.
+There is no separate memory-access configuration. Paperclip derives authority
+from the agent's existing context-access matrix on every tool call:
 
-There is no separate per-agent memory setting and no memory-specific Paperclip
-HTTP endpoint.
+- issue-agent memory requires the matching current, descendant, or company
+  agent-run detail grant;
+- issue-shared memory requires the matching comment detail grant;
+- company-agent memory requires company issue listing plus company agent-run
+  detail;
+- company-shared memory requires company issue listing plus company comment
+  detail.
 
-## Automatic updates
+Knowing an issue ID is not authority. The host must also resolve that issue as
+visible within the current agent run.
 
-| Trigger | Partitions updated | Canonical input |
+## AgentMemory coordinate translation
+
+AgentMemory's REST API accepts `project` and `agentId`; those names are transport
+fields, not Paperclip Project ownership. The adapter translates the matrix
+directly:
+
+| Paperclip coordinates | AgentMemory `project` | AgentMemory `agentId` |
 | --- | --- | --- |
-| Agent run reaches a terminal state | issue-agent and company-agent | Provider-safe user turns, assistant text, and bounded completed/failed non-memory tool calls from the run trace |
-| Issue comment is committed, or a run finishes with projected comments | issue-shared and company-shared | Canonical issue comment bodies, including board comments and agent output projected as comments |
+| `companyId + agentId` | opaque company scope | opaque company-scoped agent |
+| `companyId` | opaque company scope | opaque company-scoped shared principal |
+| `companyId + issueId + agentId` | opaque issue scope | opaque company-scoped agent |
+| `companyId + issueId` | opaque issue scope | opaque company-scoped shared principal |
 
-Reasoning, provider metadata, secrets removed by Paperclip's canonical
-projection, and AgentMemory recall calls/results are excluded. A projected
-assistant result can intentionally exist in both the agent-private trace and
-the shared issue-comment history.
+Raw Paperclip IDs never leave the plugin. Every coordinate is hashed, and every
+observation session ID carries an opaque scope prefix. Searches use both the
+exact AgentMemory project and exact agent principal; the plugin also rejects
+results whose session ID is not owned by that scope. This second check is
+required because AgentMemory 0.9.28 can let an orphaned search-index entry pass
+its project filter when its original session row is missing.
 
-Capture follows Paperclip's generic plugin event semantics: delivery is
-in-process, eventually consistent, and currently best-effort rather than a
-durable outbox. AgentMemory sanitizes observations on ingestion, but comment
-bodies cross the administrator-configured connection before that sanitization.
+## Automatic updates and injection
 
-## Security boundary
+Immediately before each provider request, the blocking plugin hook:
 
-The plugin hashes every Paperclip company, issue, agent, and source identifier
-before sending AgentMemory project/session coordinates. Paperclip remains the
-authorization boundary: each tool call is tied to the exact active run,
-bound to the installed plugin in the prompt-capability call ledger, and
-revalidated against company enablement and the context-access matrix. Calls use
-the direct plugin runtime and remain auditable; they are not company-tool
-catalog entries.
+1. reads the canonical Session through the exact source-message snapshot;
+2. records newly visible current-agent prompts, finalized assistant text, and
+   bounded completed/failed non-memory tool results into issue-agent and
+   company-agent memory;
+3. records canonical issue comments through the same projection boundary into
+   issue-shared and company-shared memory;
+4. searches only the current issue and company partitions authorized by the
+   context-access matrix, using the canonical source text as the query; and
+5. returns the filtered narratives as a prompt prelude. Paperclip composes that
+   prelude only for the outbound request and never changes the canonical Session
+   source message.
 
-Hashed project names are logical partitioning, not a hard storage tenant
-boundary inside AgentMemory. For hard multi-company storage isolation, run a
-separate AgentMemory service and data directory for each company and configure
-that company's plugin settings with its own URL and secret.
+The current source and any later comment are excluded from their own prelude.
+Identical narratives returned by overlapping issue/company partitions are
+deduplicated. A capture or search failure stops provider transmission, so an
+agent never advances past a memory update that the plugin could not confirm.
 
-The plugin requests elevated generic capabilities because it is trusted
-infrastructure:
+Terminal run events eagerly warm issue-agent and company-agent memory so a
+later request can recall the completed run even from another provider session.
+Shared comments need no second event path: the next blocking prompt catches
+them up before searching.
 
-- direct tools available to all agents in enabled companies;
-- canonical run-context and redacted runtime-record reads;
-- outbound access to an operator-hosted private-network service;
-- secret-reference resolution.
+Reasoning, provider metadata, Paperclip-redacted secrets, and AgentMemory recall
+tool calls/results are excluded from capture.
 
-Only an administrator should install or approve this plugin.
+## Receipt and retry contract
+
+Each canonical source item has a deterministic, opaque one-observation
+AgentMemory session ID that includes its canonical source identity. Equal text
+or timestamps from different messages, comments, runs, or turns therefore do
+not collapse.
+
+AgentMemory writes a raw observation before compression/indexing. The plugin
+does not treat that raw row as success: it polls the exact session until the row
+has the compressed shape, expected timestamp, expected observation ID when one
+was returned, and exact AgentMemory transport `agentId`. Only then may Paperclip
+advance its checkpoint. A checkpoint also stores the latest receipt for both
+partitions and revalidates those receipts before reuse, so resetting an
+AgentMemory database behind the same URL causes a canonical backfill.
+
+The adapter never calls `/agentmemory/context`: AgentMemory 0.9.28 can include
+global pinned slots and projectless lessons there. It also never calls
+`/agentmemory/session/end` for deterministic observation sessions, because
+retries of that endpoint retrigger summarization, reflection, graph extraction,
+and consolidation. Safe recall uses `/agentmemory/search` with exact project,
+agent, and Paperclip session ownership checks.
 
 ## Configure
 
-Start AgentMemory separately. Version `0.9.28` is the locally verified API
-contract for this adapter.
+Start AgentMemory separately. Version `0.9.28` is the verified API contract.
 
 ```bash
 AGENTMEMORY_SECRET='<strong-random-secret>' \
   npx -y @agentmemory/agentmemory@0.9.28 \
-  --data-dir /absolute/path/to/company-agentmemory-data
+  --data-dir /absolute/path/to/paperclip-agentmemory-data
 ```
 
-In the plugin settings for each Paperclip company, set:
+Open **Instance Settings → Plugins → AgentMemory** and configure the one
+instance-wide installation:
 
 - `baseUrl`: AgentMemory REST origin, default `http://127.0.0.1:3111`;
-- `apiSecret`: a Paperclip company secret reference containing
-  `AGENTMEMORY_SECRET`.
+- `apiSecret`: the same bearer secret as `AGENTMEMORY_SECRET`, stored in the
+  plugin installation config.
 
-Plain HTTP is accepted only for loopback. Use HTTPS when AgentMemory runs on a
-different host or network namespace so the bearer secret and memory payloads
-are encrypted in transit.
-
-For separate local instances, allocate a distinct AgentMemory port and data
-directory per company.
+All companies use this connection. No company secret or per-agent setting is
+required. Plain HTTP is accepted only for loopback; use HTTPS for any remote or
+container-network endpoint.
 
 ## Build and install from this checkout
 
@@ -99,10 +133,10 @@ directory per company.
 pnpm --filter @paperclipai/plugin-agentmemory typecheck
 pnpm --filter @paperclipai/plugin-agentmemory test
 pnpm --filter @paperclipai/plugin-agentmemory build
-paperclipai plugin install \
-  /home/goose/TradingGoose/projects/paperclip/packages/plugins/agentmemory-plugin
+pnpm paperclipai plugin install --local ./packages/plugins/agentmemory-plugin
 ```
 
-The built entrypoints are `dist/manifest.js` and `dist/worker.js`. Paperclip
-does not discover or build repository plugins automatically; the explicit
-administrator install above is required.
+A workspace package is source code, not an installed plugin. The Plugin Manager
+lists only administrator-created installation records. The CLI command above
+is a client for Paperclip's generic plugin-install API; runtime memory traffic
+always uses the AgentMemory REST API.

@@ -21,16 +21,13 @@ import { ROUTINE_STATUSES } from "@paperclipai/shared";
 import { notFound, unprocessable } from "../errors.js";
 import { logActivity } from "./activity-log.js";
 import { routineService } from "./routines.js";
-import type { PluginWorkerManager } from "./plugin-worker-manager.js";
 import type { OrdinaryIssueRuntime } from "./ordinary-issue-runtime.js";
 
 const MANAGED_ROUTINE_RESOURCE_KIND = "routine";
 
 interface PluginManagedRoutineServiceOptions {
   pluginId: string;
-  pluginKey: string;
-  manifest?: import("@paperclipai/shared").PaperclipPluginManifestV1 | null;
-  pluginWorkerManager?: PluginWorkerManager;
+  manifest: import("@paperclipai/shared").PaperclipPluginManifestV1;
   ordinaryIssues: OrdinaryIssueRuntime;
 }
 
@@ -76,7 +73,7 @@ function managedByPlugin(row: {
   id: string;
   pluginId: string;
   pluginKey: string;
-  manifestJson: { displayName?: string } | null;
+  manifestJson: { displayName: string };
   resourceKey: string;
   defaultsJson: Record<string, unknown>;
   createdAt: Date;
@@ -86,7 +83,7 @@ function managedByPlugin(row: {
     id: row.id,
     pluginId: row.pluginId,
     pluginKey: row.pluginKey,
-    pluginDisplayName: row.manifestJson?.displayName ?? row.pluginKey,
+    pluginDisplayName: row.manifestJson.displayName,
     resourceKind: "routine",
     resourceKey: row.resourceKey,
     defaultsJson: row.defaultsJson,
@@ -128,12 +125,13 @@ export function pluginManagedRoutineService(
   db: Db,
   options: PluginManagedRoutineServiceOptions,
 ) {
+  const pluginKey = options.manifest.id;
   const routinesSvc = routineService(db, {
     ordinaryIssues: options.ordinaryIssues,
   });
 
   function declarationFor(routineKey: string) {
-    const declaration = options.manifest?.routines?.find((routine) => routine.routineKey === routineKey);
+    const declaration = options.manifest.routines?.find((routine) => routine.routineKey === routineKey);
     if (!declaration) {
       throw notFound(`Managed routine declaration not found: ${routineKey}`);
     }
@@ -192,7 +190,7 @@ export function pluginManagedRoutineService(
       .values({
         companyId,
         pluginId: options.pluginId,
-        pluginKey: options.pluginKey,
+        pluginKey,
         resourceKind: MANAGED_ROUTINE_RESOURCE_KIND,
         resourceKey: declaration.routineKey,
         resourceId: routineId,
@@ -233,7 +231,7 @@ export function pluginManagedRoutineService(
       return { agentId: row.id, missingRef: null };
     }
 
-    const ref = normalizeRef(options.pluginKey, declaration.assigneeRef, "agent");
+    const ref = normalizeRef(pluginKey, declaration.assigneeRef, "agent");
     if (!ref) return { agentId: null, missingRef: null };
     const binding = await db
       .select({ resourceId: pluginManagedResources.resourceId })
@@ -273,7 +271,7 @@ export function pluginManagedRoutineService(
       return { projectId: row.id, missingRef: null };
     }
 
-    const ref = normalizeRef(options.pluginKey, declaration.projectRef, "project");
+    const ref = normalizeRef(pluginKey, declaration.projectRef, "project");
     if (!ref) return { projectId: null, missingRef: null };
     const binding = await db
       .select({ resourceId: pluginManagedResources.resourceId })
@@ -323,7 +321,7 @@ export function pluginManagedRoutineService(
     missingRefs: PluginManagedResourceRef[] = [],
   ): PluginManagedRoutineResolution {
     return {
-      pluginKey: options.pluginKey,
+      pluginKey,
       resourceKind: "routine",
       resourceKey: declaration.routineKey,
       companyId,
@@ -391,7 +389,7 @@ export function pluginManagedRoutineService(
       entityType: "routine",
       entityId: created.id,
       details: {
-        sourcePluginKey: options.pluginKey,
+        sourcePluginKey: pluginKey,
         managedResourceKey: declaration.routineKey,
         assigneeAgentId: refs.assigneeAgentId,
         projectId: refs.projectId,
@@ -453,7 +451,7 @@ export function pluginManagedRoutineService(
       entityType: "routine",
       entityId: updated.id,
       details: {
-        sourcePluginKey: options.pluginKey,
+        sourcePluginKey: pluginKey,
         managedResourceKey: declaration.routineKey,
         assigneeAgentId: refs.assigneeAgentId,
         projectId: refs.projectId,
@@ -465,17 +463,17 @@ export function pluginManagedRoutineService(
   async function update(
     routineKey: string,
     companyId: string,
-    patch: { status?: string },
+    patch: { status?: RoutineStatus },
   ) {
     const declaration = declarationFor(routineKey);
     const current = await get(routineKey, companyId);
     if (!current.routine) throw notFound("Managed routine not found");
     const updatePatch: { status?: RoutineStatus } = {};
     if (patch.status !== undefined) {
-      if (!ROUTINE_STATUSES.includes(patch.status as RoutineStatus)) {
+      if (!ROUTINE_STATUSES.includes(patch.status)) {
         throw unprocessable("Invalid routine status");
       }
-      updatePatch.status = patch.status as RoutineStatus;
+      updatePatch.status = patch.status;
     }
     const updated = await routinesSvc.update(
       current.routine.id,
@@ -491,13 +489,16 @@ export function pluginManagedRoutineService(
       entityType: "routine",
       entityId: updated.id,
       details: {
-        sourcePluginKey: options.pluginKey,
+        sourcePluginKey: pluginKey,
         managedResourceKey: declaration.routineKey,
         status: updated.status,
       },
     });
     const routine = await getRoutineWithManagedBy(companyId, declaration);
-    return routine ?? updated;
+    if (!routine) {
+      throw new Error(`Updated managed routine disappeared: ${updated.id}`);
+    }
+    return routine;
   }
 
   async function run(routineKey: string, companyId: string, overrides?: RoutineOverrides) {
@@ -517,7 +518,7 @@ export function pluginManagedRoutineService(
       entityType: "routine_run",
       entityId: run.id,
       details: {
-        sourcePluginKey: options.pluginKey,
+        sourcePluginKey: pluginKey,
         managedResourceKey: declaration.routineKey,
         routineId: current.routine.id,
         status: run.status,

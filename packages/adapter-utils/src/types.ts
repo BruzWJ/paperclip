@@ -159,6 +159,7 @@ export interface AcpSubprocessAdapterDefinition {
   readonly configOptions: readonly AcpAdapterConfigOption[];
   /** Null when the ACPX target does not expose a configurable model option. */
   readonly modelConfigOptionId: string | null;
+  /** Selectable models, or one ACPX-reported fixed current model. */
   readonly models: readonly AdapterModel[];
   readonly modelProfiles: readonly AdapterModelProfileDefinition[];
   readonly configurationDoc: string;

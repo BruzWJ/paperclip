@@ -187,4 +187,28 @@ describe("generated PostgreSQL migration contract", () => {
     expect(source).toContain(`'{issueTemplate,contextAccessMask}'`);
   });
 
+  it("makes plugin uninstall one terminal cascade without live audit FKs", () => {
+    const file = migrationFiles().find((entry) => entry.startsWith("0007_"));
+    expect(file).toBeDefined();
+    const source = migrationSql(file!);
+
+    for (const constraint of [
+      "agent_company_tool_selections_selected_by_plugin_installation_id_plugins_id_fk",
+      "agent_company_tool_selections_revoked_by_plugin_installation_id_plugins_id_fk",
+      "issue_comments_author_plugin_installation_fk",
+      "plugin_creator_deliveries_plugin_installation_id_plugins_id_fk",
+      "plugin_withdrawal_operations_plugin_installation_id_plugins_id_fk",
+      "run_interface_tool_calls_plugin_installation_id_plugins_id_fk",
+    ]) {
+      expect(source).toContain(`DROP CONSTRAINT "${constraint}"`);
+    }
+    expect(source).toMatch(
+      /"plugin_run_contexts_plugin_installation_id_plugins_id_fk"[^;]+ON DELETE cascade/,
+    );
+    expect(source).toContain(
+      `CREATE UNIQUE INDEX "plugins_plugin_key_idx" ON "plugins" USING btree ("plugin_key");`,
+    );
+    expect(source).not.toContain(`status" <> 'uninstalled'`);
+  });
+
 });

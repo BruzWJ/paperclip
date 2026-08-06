@@ -24,7 +24,7 @@ describe("dynamic ACPX discovery", () => {
   it("returns only names supplied by the ACPX registry", async () => {
     const createRegistry = vi.fn(() => ({
       list: () => ["runner-a", "runner-b", "runner-a", " malformed "],
-      resolve: () => "not-used",
+      resolve: () => process.execPath,
     }));
 
     await expect(
@@ -150,7 +150,7 @@ describe("dynamic ACPX discovery", () => {
     await expect(fs.access(stateDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("keeps an agent compatible when it advertises no model selector", async () => {
+  it("keeps an agent compatible without a model selector and preserves capability-only settings", async () => {
     const handle: AcpRuntimeHandle = {
       sessionKey: "memory-probe",
       backend: "acpx",
@@ -163,7 +163,7 @@ describe("dynamic ACPX discovery", () => {
     });
     const capabilities: AcpRuntimeCapabilities = {
       controls: ["session/status", "session/set_config_option"],
-      configOptionKeys: ["enabled"],
+      configOptionKeys: ["enabled", "runtime_hint"],
     };
     const runtime: AcpxDiscoveryRuntime = {
       ensureSession: vi.fn(async () => handle),
@@ -191,7 +191,7 @@ describe("dynamic ACPX discovery", () => {
       dependencies: {
         createAgentRegistry: () => ({
           list: () => ["boolean-only"],
-          resolve: () => "not-used-by-the-fake-runtime",
+          resolve: () => process.execPath,
         }),
         createRuntimeStore: () => ({
           load: async () => undefined,
@@ -207,7 +207,7 @@ describe("dynamic ACPX discovery", () => {
     expect(result).toEqual({
       agentName: "boolean-only",
       controls: ["session/status", "session/set_config_option"],
-      configOptionKeys: ["enabled"],
+      configOptionKeys: ["enabled", "runtime_hint"],
       models: [],
       configOptions: [
         {
@@ -215,6 +215,12 @@ describe("dynamic ACPX discovery", () => {
           name: "Enabled",
           type: "boolean",
           currentValue: true,
+          options: [],
+        },
+        {
+          id: "runtime_hint",
+          name: "runtime_hint",
+          type: "string",
           options: [],
         },
       ],
@@ -283,7 +289,7 @@ describe("dynamic ACPX discovery", () => {
       dependencies: {
         createAgentRegistry: () => ({
           list: () => ["display-metadata-agent"],
-          resolve: () => "not-used-by-the-fake-runtime",
+          resolve: () => process.execPath,
         }),
         createRuntimeStore: () => ({
           load: async () => undefined,
@@ -329,7 +335,7 @@ describe("dynamic ACPX discovery", () => {
         dependencies: {
           createAgentRegistry: () => ({
             list: () => ["unavailable"],
-            resolve: () => "not-used-by-the-fake-runtime",
+            resolve: () => process.execPath,
           }),
           createRuntimeStore: () => ({
             load: async () => undefined,

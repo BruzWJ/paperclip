@@ -5,7 +5,10 @@ import { pinoHttp } from "pino-http";
 import { readConfigFile } from "../config-file.js";
 import { resolveDefaultLogsDir, resolveHomeAwarePath } from "../home-paths.js";
 import { HTTP_LOG_REDACT_PATHS } from "./http-log-redaction.js";
-import { shouldSilenceHttpSuccessLog } from "./http-log-policy.js";
+import {
+  shouldSilenceHttpSuccessLog,
+  shouldSuppressHttpRequestBodyLog,
+} from "./http-log-policy.js";
 import { redactSensitive } from "./redact-sensitive.js";
 
 function resolveServerLogDir(): string {
@@ -67,18 +70,19 @@ export const httpLogger = pinoHttp({
   },
   customProps(req, res) {
     if (res.statusCode >= 400) {
+      const suppressRequestBody = shouldSuppressHttpRequestBodyLog(req.url);
       const ctx = (res as any).__errorContext;
       if (ctx) {
         return {
           errorContext: ctx.error,
-          reqBody: redactSensitive(ctx.reqBody),
+          ...(!suppressRequestBody ? { reqBody: redactSensitive(ctx.reqBody) } : {}),
           reqParams: redactSensitive(ctx.reqParams),
           reqQuery: redactSensitive(ctx.reqQuery),
         };
       }
       const props: Record<string, unknown> = {};
       const { body, params, query } = req as any;
-      if (body && typeof body === "object" && Object.keys(body).length > 0) {
+      if (!suppressRequestBody && body && typeof body === "object" && Object.keys(body).length > 0) {
         props.reqBody = redactSensitive(body);
       }
       if (params && typeof params === "object" && Object.keys(params).length > 0) {

@@ -201,7 +201,7 @@ describe("canonical ACP adapter configuration revision", () => {
         skillChannel: "isolated_skills_home",
         runtimeMetadata,
       }),
-    ).toThrow(/isolated skills-home contract/);
+    ).toThrow(/does not support isolated skills homes/);
     expect(() =>
       deriveAgentAdapterConfigRevision({
         adapterType: FIXTURE_AGENT,

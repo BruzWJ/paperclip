@@ -75,10 +75,6 @@ function isRuntimeAsset(filePath) {
 function checkServerRuntimeAssets() {
   const runtimeAssetTrees = [
     {
-      sourceDir: path.join(repoRoot, "apps", "server", "src", "built-ins"),
-      distDir: path.join(repoRoot, "apps", "server", "dist", "built-ins"),
-    },
-    {
       sourceDir: path.join(repoRoot, "apps", "server", "src", "onboarding-assets"),
       distDir: path.join(repoRoot, "apps", "server", "dist", "onboarding-assets"),
     },

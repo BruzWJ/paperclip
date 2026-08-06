@@ -965,7 +965,7 @@ export function ExecutionWorkspaceDetail() {
         {!runtimeActionErrorMessage && runtimeActionMessage ? <p className="text-sm text-muted-foreground" role="status">{runtimeActionMessage}</p> : null}
 
         <PluginSlotOutlet
-          slotTypes={["toolbarButton", "contextMenuItem"]}
+          slotTypes={["toolbarButton"]}
           entityType="execution_workspace"
           context={pluginSlotContext}
           className="flex flex-wrap gap-2"

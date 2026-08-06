@@ -65,7 +65,7 @@ async function resolveCurrentAcpxEnvironmentDrivers(
   const adapter = registry.findServerAdapter(adapterType);
   if (!adapter) {
     throw unprocessable(
-      `Agent adapter "${adapterType}" is not currently supplied by ACPX.`,
+      `Agent runtime "${adapterType}" is not currently available in the local catalog.`,
       {
         code: "agent_join_adapter_unavailable",
         adapterType,
