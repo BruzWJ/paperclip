@@ -6,10 +6,6 @@ import type { DeploymentExposure } from "@paperclipai/shared";
 import { readPersistedDevServerStatus, toDevServerHealthStatus, writeDevServerRestartRequest } from "../dev-server-status.js";
 import { logger } from "../middleware/logger.js";
 import { getServerInfoSnapshot, type ServerInfoSnapshot } from "../server-info.js";
-import {
-  inspectDatabaseBackupHealth,
-  type InspectDatabaseBackupHealthOptions,
-} from "../services/database-backup-health.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import {
   listIssueExecutionRunsForActivity,
@@ -51,7 +47,6 @@ export function healthRoutes(
     authReady: boolean;
     companyDeletionEnabled: boolean;
     serverInfo?: ServerInfoSnapshot;
-    databaseBackupHealth?: InspectDatabaseBackupHealthOptions;
   } = {
     deploymentExposure: "private",
     authReady: true,
@@ -181,11 +176,6 @@ export function healthRoutes(
       });
     }
 
-    const databaseBackup = opts.databaseBackupHealth
-      ? inspectDatabaseBackupHealth(opts.databaseBackupHealth)
-      : undefined;
-    const warnings = databaseBackup?.warnings.length ? databaseBackup.warnings : undefined;
-
     res.json({
       status: "ok",
       version: serverVersion,
@@ -198,8 +188,6 @@ export function healthRoutes(
         companyDeletionEnabled: opts.companyDeletionEnabled,
       },
       serverInfo,
-      ...(databaseBackup ? { databaseBackup } : {}),
-      ...(warnings ? { warnings } : {}),
       ...(devServer ? { devServer } : {}),
     });
   });

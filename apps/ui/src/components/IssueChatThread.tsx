@@ -29,9 +29,6 @@ import {
 import { Link, useLocation } from "@/lib/router";
 import type {
   Agent,
-  FeedbackDataSharingPreference,
-  FeedbackVote,
-  FeedbackVoteValue,
   IssueAttachment,
   IssueBlockerAttention,
   IssueRelationIssueSummary,
@@ -158,23 +155,15 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { IssueChatFeedbackButtons } from "./AgentBubbleActionRow";
 import { IssueBlockedNotice } from "./IssueBlockedNotice";
 import { IssueOwnerBacklogNotice } from "./IssueOwnerBacklogNotice";
 import { SourceTrustBadge } from "./SourceTrustBadge";
 
 interface IssueChatMessageContext {
-  feedbackDataSharingPreference: FeedbackDataSharingPreference;
-  feedbackTermsUrl: string | null;
   agentMap?: Map<string, Agent>;
   currentUserId?: string | null;
   userLabelMap?: ReadonlyMap<string, string> | null;
   userProfileMap?: ReadonlyMap<string, CompanyUserProfile> | null;
-  onVote?: (
-    commentId: string,
-    vote: FeedbackVoteValue,
-    options?: { allowSharing?: boolean; reason?: string },
-  ) => Promise<void>;
   onStopRun?: (runId: string) => Promise<void>;
   stopRunLabel?: string;
   stoppingRunLabel?: string;
@@ -193,8 +182,6 @@ interface IssueChatMessageContext {
 }
 
 const IssueChatCtx = createContext<IssueChatMessageContext>({
-  feedbackDataSharingPreference: "prompt",
-  feedbackTermsUrl: null,
   issueStatus: undefined,
 });
 
@@ -383,9 +370,6 @@ interface IssueChatComposerProps {
 
 interface IssueChatThreadProps {
   comments: IssueChatComment[];
-  feedbackVotes?: FeedbackVote[];
-  feedbackDataSharingPreference?: FeedbackDataSharingPreference;
-  feedbackTermsUrl?: string | null;
   timelineEvents?: IssueTimelineEvent[];
   hasActiveRun?: boolean;
   issueId?: string | null;
@@ -403,11 +387,6 @@ interface IssueChatThreadProps {
   currentUserId?: string | null;
   userLabelMap?: ReadonlyMap<string, string> | null;
   userProfileMap?: ReadonlyMap<string, CompanyUserProfile> | null;
-  onVote?: (
-    commentId: string,
-    vote: FeedbackVoteValue,
-    options?: { allowSharing?: boolean; reason?: string },
-  ) => Promise<void>;
   onAdd: (
     body: string,
     ownerChange?: CommentOwnerChange,
@@ -1589,19 +1568,14 @@ function IssueChatUserMessage({
 
 function IssueChatAssistantMessage({
   message,
-  activeVote,
   isRunActive,
   isStoppingRun,
 }: {
   message: ThreadMessage;
-  activeVote: FeedbackVoteValue | null;
   isRunActive: boolean;
   isStoppingRun: boolean;
 }) {
   const {
-    feedbackDataSharingPreference,
-    feedbackTermsUrl,
-    onVote,
     agentMap,
     onStopRun,
     stopRunLabel = "Stop run",
@@ -1686,13 +1660,6 @@ function IssueChatAssistantMessage({
     }
   }
 
-  const handleVote = async (
-    vote: FeedbackVoteValue,
-    options?: { allowSharing?: boolean; reason?: string },
-  ) => {
-    if (!commentId || !onVote) return;
-    await onVote(commentId, vote, options);
-  };
 
   const followUpRequested = custom.followUpRequested === true;
 
@@ -1753,14 +1720,6 @@ function IssueChatAssistantMessage({
           <Copy className="h-3.5 w-3.5" />
         )}
       </button>
-      {commentId && onVote ? (
-        <IssueChatFeedbackButtons
-          activeVote={activeVote}
-          sharingPreference={feedbackDataSharingPreference}
-          termsUrl={feedbackTermsUrl ?? null}
-          onVote={handleVote}
-        />
-      ) : null}
       <Tooltip>
         <TooltipTrigger asChild>
           <a
@@ -2499,13 +2458,6 @@ function issueChatMessageQueueTargetRunId(
     : null;
 }
 
-function issueChatMessageActiveVote(
-  message: ThreadMessage,
-  feedbackVoteByTargetId: ReadonlyMap<string, FeedbackVoteValue>,
-): FeedbackVoteValue | null {
-  const commentId = issueChatMessageCommentId(message);
-  return commentId ? (feedbackVoteByTargetId.get(commentId) ?? null) : null;
-}
 
 function issueChatMessageRunIsActive(
   message: ThreadMessage,
@@ -2534,7 +2486,7 @@ function issueChatMessageQueuedRunIsInterrupting(
 }
 
 // Above ~150 merged rows the direct render path forces React to mount and
-// re-render hundreds of Markdown bodies, feedback controls, and avatars on
+// re-render hundreds of Markdown bodies, action controls, and avatars on
 // unrelated parent updates. Above this threshold we switch to a windowed
 // render path so only visible rows plus overscan stay mounted.
 export const VIRTUALIZED_THREAD_ROW_THRESHOLD = 150;
@@ -2547,7 +2499,6 @@ const VIRTUALIZED_THREAD_GAP_EMBEDDED_PX = 12;
 
 interface VirtualizedIssueChatThreadListProps {
   messages: readonly ThreadMessage[];
-  feedbackVoteByTargetId: ReadonlyMap<string, FeedbackVoteValue>;
   activeRunIds: ReadonlySet<string>;
   stoppingRunId?: string | null;
   interruptingQueuedRunId?: string | null;
@@ -2847,7 +2798,6 @@ const VirtualizedIssueChatThreadListInner = forwardRef<
 >(function VirtualizedIssueChatThreadListInner(
   {
     messages,
-    feedbackVoteByTargetId,
     activeRunIds,
     stoppingRunId,
     interruptingQueuedRunId,
@@ -3024,7 +2974,6 @@ const VirtualizedIssueChatThreadListInner = forwardRef<
           >
             <IssueChatMessageRow
               message={message}
-              feedbackVoteByTargetId={feedbackVoteByTargetId}
               activeRunIds={activeRunIds}
               stoppingRunId={stoppingRunId}
               interruptingQueuedRunId={interruptingQueuedRunId}
@@ -3038,7 +2987,6 @@ const VirtualizedIssueChatThreadListInner = forwardRef<
 
 interface IssueChatMessageRowProps {
   message: ThreadMessage;
-  feedbackVoteByTargetId: ReadonlyMap<string, FeedbackVoteValue>;
   activeRunIds: ReadonlySet<string>;
   stoppingRunId?: string | null;
   interruptingQueuedRunId?: string | null;
@@ -3094,7 +3042,6 @@ function IssueChatCommentGroupContinuation({
 
 const IssueChatMessageRow = memo(function IssueChatMessageRow({
   message,
-  feedbackVoteByTargetId,
   activeRunIds,
   stoppingRunId,
   interruptingQueuedRunId,
@@ -3104,10 +3051,6 @@ const IssueChatMessageRow = memo(function IssueChatMessageRow({
   const isGroupedEntry =
     typeof custom.boardGroupRootId === "string" &&
     custom.boardIsRoot !== true;
-  const activeVote = issueChatMessageActiveVote(
-    message,
-    feedbackVoteByTargetId,
-  );
   const isRunActive = issueChatMessageRunIsActive(message, activeRunIds);
   const isStoppingRun = issueChatMessageRunIsStopping(message, stoppingRunId);
   const isInterruptingQueuedRun = issueChatMessageQueuedRunIsInterrupting(
@@ -3123,7 +3066,6 @@ const IssueChatMessageRow = memo(function IssueChatMessageRow({
     ) : message.role === "assistant" ? (
       <IssueChatAssistantMessage
         message={message}
-        activeVote={activeVote}
         isRunActive={isRunActive}
         isStoppingRun={isStoppingRun}
       />
@@ -3152,11 +3094,6 @@ function areIssueChatMessageRowPropsEqual(
   next: IssueChatMessageRowProps,
 ) {
   if (prev.message !== next.message) return false;
-  if (
-    issueChatMessageActiveVote(prev.message, prev.feedbackVoteByTargetId) !==
-    issueChatMessageActiveVote(next.message, next.feedbackVoteByTargetId)
-  )
-    return false;
   if (
     issueChatMessageRunIsActive(prev.message, prev.activeRunIds) !==
     issueChatMessageRunIsActive(next.message, next.activeRunIds)
@@ -3927,9 +3864,6 @@ const IssueChatComposer = forwardRef<
 
 export function IssueChatThread({
   comments,
-  feedbackVotes = [],
-  feedbackDataSharingPreference = "prompt",
-  feedbackTermsUrl = null,
   timelineEvents = [],
   hasActiveRun = false,
   issueId = null,
@@ -3943,7 +3877,6 @@ export function IssueChatThread({
   currentUserId,
   userLabelMap,
   userProfileMap,
-  onVote,
   onAdd,
   onLoadMoreCommentGroup,
   onCancelRun,
@@ -4079,14 +4012,6 @@ export function IssueChatThread({
     const ownerAgentId = currentOwnerValue.slice("agent:".length);
     return agentMap?.get(ownerAgentId) ?? null;
   }, [agentMap, currentOwnerValue]);
-  const feedbackVoteByTargetId = useMemo(() => {
-    const map = new Map<string, FeedbackVoteValue>();
-    for (const feedbackVote of feedbackVotes) {
-      if (feedbackVote.targetType !== "issue_comment") continue;
-      map.set(feedbackVote.targetId, feedbackVote.vote);
-    }
-    return map;
-  }, [feedbackVotes]);
   const useVirtualizedThread =
     messages.length >= VIRTUALIZED_THREAD_ROW_THRESHOLD;
   const messageAnchorIndex = useMemo(() => {
@@ -4490,7 +4415,6 @@ export function IssueChatThread({
     scrollToLatestCommentWithSettle(latestMessagesRef.current);
   }
 
-  const stableOnVote = useStableEvent(onVote);
   const stableOnStopRun = useStableEvent(onStopRun);
   const stableOnInterruptQueued = useStableEvent(onInterruptQueued);
   const stableOnCancelQueued = useStableEvent(onCancelQueued);
@@ -4499,13 +4423,9 @@ export function IssueChatThread({
 
   const chatCtx = useMemo<IssueChatMessageContext>(
     () => ({
-      feedbackDataSharingPreference,
-      feedbackTermsUrl,
       agentMap,
       currentUserId,
       userLabelMap,
-      userProfileMap,
-      onVote: stableOnVote,
       onStopRun: stableOnStopRun,
       stopRunLabel,
       stoppingRunLabel,
@@ -4522,13 +4442,10 @@ export function IssueChatThread({
       onLoadMoreCommentGroup,
     }),
     [
-      feedbackDataSharingPreference,
-      feedbackTermsUrl,
       agentMap,
       currentUserId,
       userLabelMap,
       userProfileMap,
-      stableOnVote,
       stableOnStopRun,
       stopRunLabel,
       stoppingRunLabel,
@@ -4605,7 +4522,6 @@ export function IssueChatThread({
                   <VirtualizedIssueChatThreadList
                     ref={virtualizedThreadRef}
                     messages={messages}
-                    feedbackVoteByTargetId={feedbackVoteByTargetId}
                     activeRunIds={activeRunIds}
                     stoppingRunId={stoppingRunId}
                     interruptingQueuedRunId={interruptingQueuedRunId}
@@ -4619,7 +4535,6 @@ export function IssueChatThread({
                     <IssueChatMessageRow
                       key={message.id}
                       message={message}
-                      feedbackVoteByTargetId={feedbackVoteByTargetId}
                       activeRunIds={activeRunIds}
                       stoppingRunId={stoppingRunId}
                       interruptingQueuedRunId={interruptingQueuedRunId}

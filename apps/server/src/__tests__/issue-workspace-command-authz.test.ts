@@ -27,11 +27,6 @@ const mockExecutionWorkspaceService = vi.hoisted(() => ({
   getById: vi.fn(),
 }));
 
-const mockFeedbackService = vi.hoisted(() => ({
-  listIssueVotesForUser: vi.fn(),
-  saveIssueVote: vi.fn(),
-}));
-
 const mockInstanceSettingsService = vi.hoisted(() => ({
   get: vi.fn(),
   listCompanyIds: vi.fn(),
@@ -73,10 +68,6 @@ function registerRouteMocks() {
     executionWorkspaceService: () => mockExecutionWorkspaceService,
   }));
 
-  vi.doMock("../services/feedback.js", () => ({
-    feedbackService: () => mockFeedbackService,
-  }));
-
   vi.doMock("../services/instance-settings.js", () => ({
     instanceSettingsService: () => mockInstanceSettingsService,
   }));
@@ -103,7 +94,6 @@ function registerRouteMocks() {
     documentAnnotationService: () => ({ remapOpenThreadsForDocument: async () => [] }),
     documentService: () => ({}),
     executionWorkspaceService: () => mockExecutionWorkspaceService,
-    feedbackService: () => mockFeedbackService,
     goalService: () => ({}),
     instanceSettingsService: () => ({
       ...mockInstanceSettingsService,
@@ -183,7 +173,6 @@ describe("issue workspace command authorization", () => {
     vi.doUnmock("../services/activity-log.js");
     vi.doUnmock("../services/agents.js");
     vi.doUnmock("../services/execution-workspaces.js");
-    vi.doUnmock("../services/feedback.js");
     vi.doUnmock("../services/index.js");
     vi.doUnmock("../services/instance-settings.js");
     vi.doUnmock("../services/issues.js");
@@ -214,17 +203,10 @@ describe("issue workspace command authorization", () => {
       permissions: null,
     });
     mockExecutionWorkspaceService.getById.mockResolvedValue(null);
-    mockFeedbackService.listIssueVotesForUser.mockResolvedValue([]);
-    mockFeedbackService.saveIssueVote.mockResolvedValue({
-      vote: null,
-      consentEnabledNow: false,
-      sharingEnabled: false,
-    });
     mockInstanceSettingsService.get.mockResolvedValue({
       id: "instance-settings-1",
       general: {
         censorUsernameInLogs: false,
-        feedbackDataSharingPreference: "prompt",
       },
     });
     mockInstanceSettingsService.listCompanyIds.mockResolvedValue(["company-1"]);

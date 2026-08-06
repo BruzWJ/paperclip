@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { FeedbackVote } from "@paperclipai/shared";
 import { IssueChatThread } from "@/components/IssueChatThread";
 import type { MarkdownExternalReferenceMap } from "@/components/MarkdownBody";
 import type { InlineEntityOption } from "@/components/InlineEntitySelector";
@@ -151,25 +150,6 @@ const singleComment = [
     body: "Please make the issue chat states reviewable in Storybook before the next UI pass.",
     createdAt: new Date("2026-04-20T13:12:00.000Z"),
   }),
-];
-
-const feedbackVotes: FeedbackVote[] = [
-  {
-    id: "feedback-chat-comment-01",
-    companyId,
-    issueId,
-    targetType: "issue_comment",
-    targetId: "comment-issue-agent",
-    authorUserId: currentUserId,
-    vote: "up",
-    reason: null,
-    sharedWithLabs: false,
-    sharedAt: null,
-    consentVersion: null,
-    redactionSummary: null,
-    createdAt: new Date("2026-04-20T13:52:00.000Z"),
-    updatedAt: new Date("2026-04-20T13:52:00.000Z"),
-  },
 ];
 
 const issueChatComments: IssueChatComment[] = [
@@ -324,8 +304,6 @@ function IssueChatMatrix() {
             comments={issueChatComments}
             timelineEvents={issueTimelineEvents}
             hasActiveRun
-            feedbackVotes={feedbackVotes}
-            feedbackDataSharingPreference="allowed"
             companyId={companyId}
             projectId={projectId}
             issueStatus="in_progress"
@@ -333,7 +311,6 @@ function IssueChatMatrix() {
             currentUserId={currentUserId}
             userLabelMap={boardUserLabels}
             onAdd={async () => {}}
-            onVote={async () => {}}
             onStopRun={async () => {}}
             enableOwnerChange
             ownerOptions={ownerOptions}

@@ -4,7 +4,6 @@ import { groupWarningsByStage, LOW_TRUST_REVIEW_PRESET } from "@paperclipai/shar
 import type {
   Agent,
   BoardIssueCommentGroupPage,
-  FeedbackVote,
   Issue,
   ContextAccess,
   IssueExecutionRunListPageRecord,
@@ -81,7 +80,6 @@ import {
 import { accessApi } from "../api/access";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
-import { instanceSettingsApi } from "../api/instanceSettings";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { EmptyState } from "../components/EmptyState";
@@ -2116,17 +2114,6 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
     queryFn: () => projectsApi.list(conversationCompanyId!),
     enabled: Boolean(conversationCompanyId),
   });
-  const { data: feedbackVotes } = useQuery({
-    queryKey: conversationIssueId ? queryKeys.issues.feedbackVotes(conversationIssueId) : ["pipeline-item", caseId, "missing-conversation-feedback"],
-    queryFn: () => issuesApi.listFeedbackVotes(conversationIssueId!),
-    enabled: Boolean(conversationIssueId),
-  });
-  const { data: instanceGeneralSettings } = useQuery({
-    queryKey: queryKeys.instance.generalSettings,
-    queryFn: () => instanceSettingsApi.getGeneral(),
-    enabled: Boolean(conversationIssueId),
-    retry: false,
-  });
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
   useEffect(() => {
     if (
@@ -2149,7 +2136,6 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
     issueOwnerCatalogQuery.data,
     issueOwnerCatalogQuery.isSuccess,
   ]);
-  const feedbackDataSharingPreference = instanceGeneralSettings?.feedbackDataSharingPreference ?? "prompt";
   const { orderedProjects } = useProjectOrder({
     projects: projects ?? [],
     companyId: conversationCompanyId,
@@ -2279,7 +2265,6 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(conversationIssueId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(conversationIssueId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(conversationIssueId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.feedbackVotes(conversationIssueId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.runs(conversationIssueId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.caseIssueLinks(caseId) }),
     ]);
@@ -2331,22 +2316,6 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
     conversationRunningRun?.id,
     invalidateConversation,
   ]);
-
-  const handleConversationVote = useCallback(async (
-    commentId: string,
-    vote: "up" | "down",
-    options?: { allowSharing?: boolean; reason?: string },
-  ) => {
-    if (!conversationIssueId) return;
-    await issuesApi.upsertFeedbackVote(conversationIssueId, {
-      targetType: "issue_comment",
-      targetId: commentId,
-      vote,
-      reason: options?.reason,
-      allowSharing: options?.allowSharing,
-    });
-    await queryClient.invalidateQueries({ queryKey: queryKeys.issues.feedbackVotes(conversationIssueId) });
-  }, [conversationIssueId, queryClient]);
 
   const handleConversationImageUpload = useCallback(async (file: File) => {
     if (!conversationIssueId || !conversationCompanyId) {
@@ -3273,9 +3242,6 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
                 />
                 <IssueChatThread
                   comments={conversationThreadComments}
-                  feedbackVotes={feedbackVotes ?? []}
-                  feedbackDataSharingPreference={feedbackDataSharingPreference}
-                  feedbackTermsUrl={null}
                   timelineEvents={conversationTimelineEvents}
                   hasActiveRun={conversationHasLiveRuns}
                   issueId={activeConversationIssue.id}
@@ -3295,7 +3261,6 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
                   currentOwnerValue={currentOwnerValue}
                   mentions={mentionOptions}
                   onAdd={addConversationComment}
-                  onVote={handleConversationVote}
                   imageUploadHandler={handleConversationImageUpload}
                   onAttachImage={handleConversationAttachImage}
                   issueWorkMode={activeConversationIssue.workMode ?? "standard"}

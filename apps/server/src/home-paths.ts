@@ -2,7 +2,6 @@ import path from "node:path";
 const FRIENDLY_PATH_SEGMENT_RE = /[^a-zA-Z0-9._-]+/g;
 import {
   expandHomePrefix,
-  resolveDefaultBackupDir as resolveSharedDefaultBackupDir,
   resolveDefaultLogsDir as resolveSharedDefaultLogsDir,
   resolveDefaultSecretsKeyFilePath as resolveSharedDefaultSecretsKeyFilePath,
   resolveDefaultStorageDir as resolveSharedDefaultStorageDir,
@@ -35,10 +34,6 @@ export function resolveDefaultSecretsKeyFilePath(): string {
 
 export function resolveDefaultStorageDir(): string {
   return resolveSharedDefaultStorageDir();
-}
-
-export function resolveDefaultBackupDir(): string {
-  return resolveSharedDefaultBackupDir();
 }
 
 function sanitizeFriendlyPathSegment(value: string | null | undefined, fallback = "_default"): string {

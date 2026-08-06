@@ -34,7 +34,6 @@ import { buildPresetServerConfig } from "../config/server-bind.js";
 import {
   describeLocalInstancePaths,
   expandHomePrefix,
-  resolveDefaultBackupDir,
   resolveDefaultLogsDir,
   resolvePaperclipInstanceId,
 } from "../config/home.js";
@@ -63,10 +62,6 @@ const TAILNET_BIND_WARNING =
 const ONBOARD_ENV_KEYS = [
   "PAPERCLIP_PUBLIC_URL",
   "DATABASE_URL",
-  "PAPERCLIP_DB_BACKUP_ENABLED",
-  "PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES",
-  "PAPERCLIP_DB_BACKUP_RETENTION_DAYS",
-  "PAPERCLIP_DB_BACKUP_DIR",
   "PAPERCLIP_DEPLOYMENT_EXPOSURE",
   "PAPERCLIP_BIND",
   "PAPERCLIP_BIND_HOST",
@@ -94,13 +89,6 @@ function parseBooleanFromEnv(rawValue: string | undefined): boolean | null {
   if (lower === "true" || lower === "1" || lower === "yes") return true;
   if (lower === "false" || lower === "0" || lower === "no") return false;
   return null;
-}
-
-function parseNumberFromEnv(rawValue: string | undefined): number | null {
-  if (!rawValue) return null;
-  const parsed = Number(rawValue);
-  if (!Number.isFinite(parsed)) return null;
-  return parsed;
 }
 
 function parseEnumFromEnv<T extends string>(rawValue: string | undefined, allowedValues: readonly T[]): T | null {
@@ -186,24 +174,8 @@ function quickstartDefaultsFromEnv(opts?: { preferLoopback?: boolean }): {
   const secretsProvider =
     parseEnumFromEnv<SecretProvider>(process.env.PAPERCLIP_SECRETS_PROVIDER, SECRET_PROVIDERS) ??
     defaultSecrets.provider;
-  const databaseBackupEnabled = parseBooleanFromEnv(process.env.PAPERCLIP_DB_BACKUP_ENABLED) ?? true;
-  const databaseBackupIntervalMinutes = Math.max(
-    1,
-    parseNumberFromEnv(process.env.PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES) ?? 60,
-  );
-  const databaseBackupRetentionDays = Math.max(
-    1,
-    parseNumberFromEnv(process.env.PAPERCLIP_DB_BACKUP_RETENTION_DAYS) ?? 30,
-  );
   const defaults: OnboardDefaults = {
-    database: {
-      backup: {
-        enabled: databaseBackupEnabled,
-        intervalMinutes: databaseBackupIntervalMinutes,
-        retentionDays: databaseBackupRetentionDays,
-        dir: resolvePathFromEnv(process.env.PAPERCLIP_DB_BACKUP_DIR) ?? resolveDefaultBackupDir(instanceId),
-      },
-    },
+    database: {},
     logging: {
       mode: "file",
       logDir: resolveDefaultLogsDir(instanceId),

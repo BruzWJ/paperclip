@@ -55,7 +55,6 @@ function registerRouteMocks() {
     documentAnnotationService: () => ({}),
     documentService: () => ({}),
     executionWorkspaceService: () => ({}),
-    feedbackService: () => ({}),
     goalService: () => ({}),
     issueApprovalService: () => ({}),
     issueReferenceService: () => ({

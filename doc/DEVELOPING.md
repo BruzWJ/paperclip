@@ -258,7 +258,6 @@ Every local install keeps runtime state directly under the selected instance roo
   .env                                           # instance env file
   data/
     storage/                                     # local_disk uploads
-    backups/                                     # automatic DB backups
   logs/
   secrets/master.key                             # local_encrypted master key
   projects/                                      # managed project and issue-execution workspaces
@@ -396,10 +395,9 @@ changed, unavailable, same-target, or wrong-permission metadata fails closed.
 Discard the failed target and provision a new empty database;
 Paperclip does not modify existing worktree metadata or database state.
 
-After creation, normal commands such as `pnpm dev`, `paperclipai doctor`, and
-`paperclipai db:backup` remain scoped to that worktree. The first human signs up
-through the ordinary Better Auth flow and explicitly claims instance-admin
-authorization.
+After creation, normal commands such as `pnpm dev` and `paperclipai doctor`
+remain scoped to that worktree. The first human signs up through the ordinary
+Better Auth flow and explicitly claims instance-admin authorization.
 
 ### Worktree CLI Reference
 
@@ -536,69 +534,12 @@ PostgreSQL database, point Paperclip at that target, and run `pnpm db:migrate`.
 Further schema work uses `pnpm db:generate` to append ordinary forward
 migrations.
 
-## Automatic DB Backups
+## Database backups
 
-Paperclip can run complete manifested database backups on a timer. Each backup
-is a custom-format PostgreSQL payload plus a required external JSON manifest.
-Together they cover the canonical schema, migration journal, tables, sequences,
-constraints, rows, physical source identity, checksum, table set, and a salted
-one-way `BETTER_AUTH_SECRET` fingerprint. The server
-host must provide compatible `pg_dump` and `pg_restore` client tools. Defaults:
-
-- enabled
-- every 60 minutes
-- retain 30 days
-- backup dir: `~/.paperclip/instances/default/data/backups`
-
-Configure these in:
-
-```sh
-pnpm paperclipai configure --section database
-```
-
-Run a one-off backup manually:
-
-```sh
-pnpm paperclipai db:backup
-# or:
-pnpm db:backup
-```
-
-To restore later canonical state, provision a physically distinct empty
-database and use the one supported operator command:
-
-```sh
-pnpm paperclipai db:restore \
-  --database-url 'postgresql://operator@new-db.example/paperclip' \
-  --backup-file /secure/backups/paperclip-20260729T120000Z.dump \
-  --manifest-file /secure/backups/paperclip-20260729T120000Z.dump.manifest.json \
-  --better-auth-secret-file /secure/backups/better-auth-secret
-```
-
-The secret file must contain the same durable deployment secret and should be
-mode `0600`. Restore has no config/env target fallback, raw-SQL input, selective
-transform, target clearing, worktree caller, or former-lineage compatibility
-path. It validates every input before mutation, restores once transactionally,
-and then applies only remaining forward migrations.
-
-Environment overrides:
-
-- `PAPERCLIP_DB_BACKUP_ENABLED=true|false`
-- `PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES=<minutes>`
-- `PAPERCLIP_DB_BACKUP_RETENTION_DAYS=<days>`
-- `PAPERCLIP_DB_BACKUP_DIR=/absolute/or/~/path`
-- `PAPERCLIP_DB_BACKUP_MAX_AGE_HOURS=<hours>` controls the `/api/health`
-  stale-backup warning threshold
-- `PAPERCLIP_DB_BACKUP_ALERT_FILE=/path/to/failure-marker` lets external cron
-  wrappers surface the last failed backup in `/api/health`
-
-Without `PAPERCLIP_DB_BACKUP_ALERT_FILE`, health checks look for
-`db-backup-to-s3.failure` in the backup directory, beside the backup directory,
-and in the default sibling `health/` directory.
-
-DB backups are not full instance filesystem backups. For full local disaster
-recovery, also back up local storage files and the local encrypted secrets key if
-those providers are enabled.
+Paperclip does not manage database backups. Use your external PostgreSQL
+provider's backup tooling (snapshots, PITR, managed backups) and separately
+preserve local secrets key material and storage files when those providers are
+enabled.
 
 ## Secrets in Dev
 

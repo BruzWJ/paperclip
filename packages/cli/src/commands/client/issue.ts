@@ -10,7 +10,6 @@ import {
   createIssueWorkProductSchema,
   type BoardIssueComment,
   type BoardIssueCommentGroupPage,
-  type FeedbackTrace,
   type IssueExecutionRunListPageRecord,
   linkIssueApprovalSchema,
   previewIssueTreeControlSchema,
@@ -22,7 +21,6 @@ import {
   updateIssueWorkProductSchema,
   type Issue,
   upsertIssueDocumentSchema,
-  upsertIssueFeedbackVoteSchema,
 } from "@paperclipai/shared";
 import {
   addCommonClientOptions,
@@ -34,11 +32,6 @@ import {
   resolveCommandContext,
   type BaseClientOptions,
 } from "./common.js";
-import {
-  buildFeedbackTraceQuery,
-  normalizeFeedbackTraceExportFormat,
-  serializeFeedbackTraces,
-} from "./feedback.js";
 
 interface IssueBaseOptions extends BaseClientOptions {
   status?: string;
@@ -87,17 +80,6 @@ interface IssueCommentListOptions extends BaseClientOptions {
   entryLimit?: string;
 }
 
-interface IssueFeedbackOptions extends BaseClientOptions {
-  targetType?: string;
-  vote?: string;
-  status?: string;
-  from?: string;
-  to?: string;
-  sharedOnly?: boolean;
-  includePayload?: boolean;
-  out?: string;
-  format?: string;
-}
 
 interface JsonPayloadOptions extends BaseClientOptions {
   payloadJson: string;
@@ -857,40 +839,6 @@ export function registerIssueCommands(program: Command): void {
       }),
   );
 
-  addCommonClientOptions(
-    issue
-      .command("feedback:votes")
-      .description("List feedback votes for an issue")
-      .argument("<issueId>", "Issue ID")
-      .action(async (issueId: string, opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const votes = await ctx.api.get(apiPath`/api/issues/${issueId}/feedback-votes`);
-          printOutput(votes, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
-      .command("feedback:vote")
-      .description("Create or update a feedback vote")
-      .argument("<issueId>", "Issue ID")
-      .requiredOption("--payload-json <json>", "UpsertIssueFeedbackVote JSON payload")
-      .action(async (issueId: string, opts: JsonPayloadOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const payload = upsertIssueFeedbackVoteSchema.parse(parseJson(opts.payloadJson));
-          const vote = await ctx.api.post(apiPath`/api/issues/${issueId}/feedback-votes`, payload);
-          printOutput(vote, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
   for (const [name, pathSuffix, description] of [
     ["document:delete", "", "Delete an issue document"],
     ["document:lock", "/lock", "Lock an issue document"],
@@ -956,45 +904,6 @@ export function registerIssueCommands(program: Command): void {
 
   addCommonClientOptions(
     issue
-      .command("feedback:list")
-      .description("List feedback traces for an issue")
-      .argument("<issueId>", "Issue ID")
-      .option("--target-type <type>", "Filter by target type")
-      .option("--vote <vote>", "Filter by vote value")
-      .option("--status <status>", "Filter by trace status")
-      .option("--from <iso8601>", "Only include traces created at or after this timestamp")
-      .option("--to <iso8601>", "Only include traces created at or before this timestamp")
-      .option("--shared-only", "Only include traces eligible for sharing/export")
-      .option("--include-payload", "Include stored payload snapshots in the response")
-      .action(async (issueId: string, opts: IssueFeedbackOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const traces = (await ctx.api.get<FeedbackTrace[]>(
-            `${apiPath`/api/issues/${issueId}/feedback-traces`}${buildFeedbackTraceQuery(opts)}`,
-          )) ?? [];
-          if (ctx.json) {
-            printOutput(traces, { json: true });
-            return;
-          }
-          printOutput(
-            traces.map((trace) => ({
-              id: trace.id,
-              issue: trace.issueIdentifier ?? trace.issueId,
-              vote: trace.vote,
-              status: trace.status,
-              targetType: trace.targetType,
-              target: trace.targetSummary.label,
-            })),
-            { json: false },
-          );
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
       .command("runs")
       .description("List issue-execution runs associated with an issue")
       .argument("<issueId>", "Issue ID or identifier")
@@ -1007,46 +916,6 @@ export function registerIssueCommands(program: Command): void {
           printOutput(page ?? { items: [], nextCursor: null }, {
             json: ctx.json,
           });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
-      .command("feedback:export")
-      .description("Export feedback traces for an issue")
-      .argument("<issueId>", "Issue ID")
-      .option("--target-type <type>", "Filter by target type")
-      .option("--vote <vote>", "Filter by vote value")
-      .option("--status <status>", "Filter by trace status")
-      .option("--from <iso8601>", "Only include traces created at or after this timestamp")
-      .option("--to <iso8601>", "Only include traces created at or before this timestamp")
-      .option("--shared-only", "Only include traces eligible for sharing/export")
-      .option("--include-payload", "Include stored payload snapshots in the export")
-      .option("--out <path>", "Write export to a file path instead of stdout")
-      .option("--format <format>", "Export format: json or ndjson", "ndjson")
-      .action(async (issueId: string, opts: IssueFeedbackOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const traces = (await ctx.api.get<FeedbackTrace[]>(
-            `${apiPath`/api/issues/${issueId}/feedback-traces`}${buildFeedbackTraceQuery(opts, opts.includePayload ?? true)}`,
-          )) ?? [];
-            const serialized = serializeFeedbackTraces(traces, opts.format);
-            if (opts.out?.trim()) {
-              await writeFile(opts.out, serialized, "utf8");
-              if (ctx.json) {
-                printOutput(
-                  { out: opts.out, count: traces.length, format: normalizeFeedbackTraceExportFormat(opts.format) },
-                  { json: true },
-                );
-                return;
-              }
-              console.log(`Wrote ${traces.length} feedback trace(s) to ${opts.out}`);
-            return;
-          }
-          process.stdout.write(`${serialized}${serialized.endsWith("\n") ? "" : "\n"}`);
         } catch (err) {
           handleCommandError(err);
         }

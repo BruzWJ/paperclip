@@ -34,13 +34,7 @@ function createTempConfig(): string {
       source: "configure",
     },
     database: {
-      connectionString: TEST_DATABASE_URL,
-      backup: {
-        enabled: true,
-        intervalMinutes: 60,
-        retentionDays: 30,
-        dir: path.join(runtimeRoot, "backups"),
-      },
+      connectionString: TEST_DATABASE_URL
     },
     logging: {
       mode: "file",

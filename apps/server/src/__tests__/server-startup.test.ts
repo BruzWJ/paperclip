@@ -11,11 +11,11 @@ const {
   creatorDeliveryServiceFactoryMock,
   creatorDeliveryServiceMock,
   createDbMock,
+  createDevServerRestartCoordinatorMock,
   detectPortMock,
+  devServerRestartCoordinatorMock,
   environmentCustomImagesServiceMock,
   environmentCustomImagesServiceFactoryMock,
-  feedbackExportServiceMock,
-  feedbackServiceFactoryMock,
   fakeServer,
   loadConfigMock,
   routineServiceFactoryMock,
@@ -37,8 +37,16 @@ const {
   });
   const createBetterAuthInstanceMock = vi.fn(() => ({}));
   const createDbMock = vi.fn(() => ({}) as never);
+  const devServerRestartCoordinatorMock = {
+    start: vi.fn(),
+    stop: vi.fn(),
+  };
+  const createDevServerRestartCoordinatorMock = vi.fn(
+    () => devServerRestartCoordinatorMock,
+  );
   const detectPortMock = vi.fn(async (port: number) => port);
   const creatorDeliveryServiceMock = {
+    notifyPersistedDelivery: vi.fn(async () => undefined),
     drainQueued: vi.fn(async () => ({
       delivered: 0,
       deferred: 0,
@@ -58,10 +66,6 @@ const {
     tickScheduledTriggers: vi.fn(async () => ({ triggered: 0 })),
   };
   const routineServiceFactoryMock = vi.fn(() => routineServiceMock);
-  const feedbackExportServiceMock = {
-    flushPendingFeedbackTraces: vi.fn(async () => ({ attempted: 0, sent: 0, failed: 0 })),
-  };
-  const feedbackServiceFactoryMock = vi.fn(() => feedbackExportServiceMock);
   const fakeServer = {
     once: vi.fn().mockReturnThis(),
     off: vi.fn().mockReturnThis(),
@@ -79,11 +83,11 @@ const {
     creatorDeliveryServiceFactoryMock,
     creatorDeliveryServiceMock,
     createDbMock,
+    createDevServerRestartCoordinatorMock,
+    devServerRestartCoordinatorMock,
     detectPortMock,
     environmentCustomImagesServiceMock,
     environmentCustomImagesServiceFactoryMock,
-    feedbackExportServiceMock,
-    feedbackServiceFactoryMock,
     fakeServer,
     loadConfigMock,
     routineServiceFactoryMock,
@@ -104,10 +108,6 @@ function buildTestConfig(overrides: Record<string, unknown> = {}) {
     databaseUrl: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
     databaseTargetSource: "DATABASE_URL",
     databaseMigrationUrl: undefined,
-    databaseBackupEnabled: false,
-    databaseBackupIntervalMinutes: 60,
-    databaseBackupRetentionDays: 30,
-    databaseBackupDir: "/tmp/paperclip-test-backups",
     serveUi: false,
     uiDevMiddleware: false,
     secretsProvider: "local_encrypted",
@@ -120,8 +120,6 @@ function buildTestConfig(overrides: Record<string, unknown> = {}) {
     storageS3Endpoint: undefined,
     storageS3Prefix: "",
     storageS3ForcePathStyle: false,
-    feedbackExportBackendUrl: "https://telemetry.example.com",
-    feedbackExportBackendToken: "telemetry-token",
     issueExecutionSchedulerEnabled: false,
     issueExecutionSchedulerIntervalMs: 30000,
     companyDeletionEnabled: false,
@@ -139,8 +137,6 @@ vi.mock("detect-port", () => ({
 
 vi.mock("@paperclipai/db", () => ({
   createDb: createDbMock,
-  formatDatabaseBackupResult: vi.fn(() => "ok"),
-  runDatabaseBackup: vi.fn(),
   authUsers: {},
   companies: {},
   companyMemberships: {},
@@ -169,6 +165,10 @@ vi.mock("../middleware/logger.js", () => ({
 
 vi.mock("../realtime/live-events-ws.js", () => ({
   setupLiveEventsWebSocketServer: vi.fn(),
+}));
+
+vi.mock("../realtime/environment-custom-image-terminal-ws.js", () => ({
+  setupEnvironmentCustomImageTerminalWebSocketServer: vi.fn(),
 }));
 
 vi.mock("../services/index.js", () => ({
@@ -221,17 +221,9 @@ vi.mock("../services/index.js", () => ({
   createRuntimeAgentActionPort: vi.fn((service) => service),
   createRuntimeAgentConfigurationService: vi.fn(() => ({})),
   createRuntimeIssueActionPort: vi.fn((service) => service),
-  feedbackService: feedbackServiceFactoryMock,
+  environmentRuntimeService: vi.fn(() => ({})),
+  environmentRunOrchestrator: vi.fn(() => ({})),
   environmentCustomImageService: environmentCustomImagesServiceFactoryMock,
-  instanceSettingsService: vi.fn(() => ({
-    getGeneral: vi.fn(async () => ({
-      backupRetention: {
-        dailyDays: 7,
-        weeklyWeeks: 4,
-        monthlyMonths: 1,
-      },
-    })),
-  })),
   reconcileCloudUpstreamRunsOnStartup: vi.fn(async () => ({ reconciled: 0 })),
   runIssueSessionCutoversOnStartup: vi.fn(async () => ({
     applied: [],
@@ -260,16 +252,59 @@ vi.mock("../storage/index.js", () => ({
   createStorageServiceFromConfig: vi.fn(() => ({ id: "storage-service" })),
 }));
 
-vi.mock("../services/feedback-share-client.js", () => ({
-  createFeedbackTraceShareClientFromConfig: vi.fn(() => ({ id: "feedback-share-client" })),
-}));
-
 vi.mock("../services/plugin-worker-manager.js", () => ({
   createPluginWorkerManager: vi.fn(() => ({ id: "plugin-worker-manager" })),
 }));
 
+vi.mock("../services/dev-server-restart-coordinator.js", () => ({
+  createDevServerRestartCoordinator: createDevServerRestartCoordinatorMock,
+}));
+
+vi.mock("../services/environment-runtime.js", () => ({
+  environmentRuntimeService: vi.fn(() => ({})),
+}));
+
+vi.mock("../services/environment-run-orchestrator.js", () => ({
+  environmentRunOrchestrator: vi.fn(() => ({})),
+}));
+
 vi.mock("../startup-banner.js", () => ({
   printStartupBanner: vi.fn(),
+}));
+
+vi.mock("../instrumentation.js", () => ({
+  instrumentationReady: Promise.resolve(),
+  shutdownInstrumentation: vi.fn(async () => undefined),
+}));
+
+vi.mock("../telemetry.js", () => ({
+  initTelemetry: vi.fn(),
+  getTelemetryClient: vi.fn(() => null),
+}));
+
+vi.mock("../runtime-environment.js", () => ({
+  loadRuntimeEnvironmentFiles: vi.fn(),
+}));
+
+vi.mock("../worktree-config.js", () => ({
+  maybePersistWorktreeServerPort: vi.fn(),
+}));
+
+vi.mock("../secrets/local-encrypted-provider.js", () => ({
+  deriveInstancePrivateSecret: vi.fn(() => Buffer.from("test-secret")),
+}));
+
+vi.mock("../services/change-consent-gate.js", () => ({
+  agentProfileChangeTargetKey: vi.fn((agentId: string) => agentId),
+  CHANGE_CONSENT_DEFAULT_TTL_MS: 60_000,
+  changeConsentGateService: vi.fn(() => ({
+    request: vi.fn(async () => undefined),
+  })),
+  consumeAcceptedChangeConsentInTransaction: vi.fn(async () => undefined),
+}));
+
+vi.mock("../adapters/registry.js", () => ({
+  refreshAcpxAdapters: vi.fn(async () => undefined),
 }));
 
 vi.mock("../auth/better-auth.js", () => ({
@@ -281,28 +316,12 @@ vi.mock("../auth/better-auth.js", () => ({
 
 import { startServer } from "../index.ts";
 
-describe("startServer feedback export wiring", () => {
+describe("startServer scheduler wiring", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     loadConfigMock.mockReturnValue(buildTestConfig());
     createBetterAuthInstanceMock.mockReturnValue({});
     process.env.BETTER_AUTH_SECRET = "test-secret";
-  });
-
-  it("passes the feedback export service into createApp so pending traces flush in runtime", async () => {
-    const started = await startServer();
-
-    expect(started.server).toBe(fakeServer);
-    expect(createDbMock).toHaveBeenCalledWith(
-      "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
-    );
-    expect(feedbackServiceFactoryMock).toHaveBeenCalledTimes(1);
-    expect(createAppMock).toHaveBeenCalledTimes(1);
-    expect(createAppMock.mock.calls[0]?.[1]).toMatchObject({
-      feedbackExportService: feedbackExportServiceMock,
-      storageService: { id: "storage-service" },
-      serverPort: 3210,
-    });
   });
 
   it("keeps routine ticks and setup cleanup active in the issue-execution scheduler", async () => {

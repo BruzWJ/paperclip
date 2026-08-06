@@ -250,24 +250,10 @@ immutable facts and never rewrites them.
 
 ## Complete disaster recovery
 
-`backup-lib.ts` creates one complete custom-format PostgreSQL payload and one
-external manifest. The manifest carries format/version, source physical
-identity, exact table set, payload checksum/size, and a salted one-way
-fingerprint of the durable Better Auth secret.
-
-Restore accepts explicit payload, manifest, target URL, and secret-file inputs.
-Before mutation it verifies:
-
-- supported manifest shape
-- checksum, payload size, and table set
-- matching Better Auth secret fingerprint
-- a physically distinct empty target
-- unchanged source and target physical identities
-
-Only a complete, checksummed restore may populate that target. Ordinary
-forward migrations may advance it. Raw SQL, selective table/column transforms,
-a nonempty target, source reuse, or an edited payload fails before the first
-target mutation.
+Paperclip does not ship application-managed database backup/restore. Operators
+recover from their external PostgreSQL provider backups (or other host-level
+backups) and must separately preserve secrets key material and local storage
+files when those providers are enabled.
 
 ## Static gates
 

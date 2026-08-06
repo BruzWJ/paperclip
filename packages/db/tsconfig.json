@@ -7,7 +7,6 @@
   "include": [
     "index.ts",
     "schema.ts",
-    "backup-lib.ts",
     "database-identity.ts",
     "drizzle.config.ts",
     "runtime-config.ts",

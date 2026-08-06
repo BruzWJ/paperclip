@@ -163,7 +163,7 @@ async function inspectLocalEncryptedHealth(): Promise<SecretProviderHealthCheck>
       message: `Secrets key file does not exist yet: ${keyPath}`,
       warnings: ["The first managed secret write will create this key file with 0600 permissions."],
       backupGuidance: [
-        "Back up the key file together with database backups.",
+        "Back up the key file separately from the database.",
         "The database alone cannot restore local encrypted secret values.",
       ],
       details: { keySource: "file", keyFilePath: keyPath },
@@ -211,7 +211,7 @@ async function inspectLocalEncryptedHealth(): Promise<SecretProviderHealthCheck>
     message: `Local encrypted provider configured with key file ${keyPath}`,
     warnings,
     backupGuidance: [
-      "Back up the key file together with database backups.",
+      "Back up the key file separately from the database.",
       "The database alone cannot restore local encrypted secret values.",
     ],
     details: { keySource: "file", keyFilePath: keyPath },

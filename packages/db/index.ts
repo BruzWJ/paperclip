@@ -28,20 +28,4 @@ export {
   type ResolvedDatabaseTarget,
   type ResolveDatabaseTargetOptions,
 } from "./runtime-config.js";
-export {
-  PAPERCLIP_DATABASE_BACKUP_FORMAT,
-  PAPERCLIP_DATABASE_BACKUP_FORMAT_VERSION,
-  runDatabaseBackup,
-  runDatabaseRestore,
-  formatDatabaseBackupResult,
-  parseDatabaseBackupManifest,
-  type BackupRetentionPolicy,
-  type DatabaseMigrationJournalEntry,
-  type DatabaseBackupSecretFingerprint,
-  type PaperclipDatabaseBackupManifest,
-  type RunDatabaseBackupOptions,
-  type RunDatabaseBackupResult,
-  type RunDatabaseRestoreOptions,
-  type RunDatabaseRestoreResult,
-} from "./backup-lib.js";
 export * from "./schema.js";

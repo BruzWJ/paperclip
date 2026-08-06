@@ -86,7 +86,7 @@ describe("secret routes", () => {
         provider: "local_encrypted",
         status: "ok",
         message: "Local encrypted provider configured",
-        backupGuidance: ["Back up the key file together with database backups."],
+        backupGuidance: ["Back up the key file separately from the database."],
       },
     ]);
 
@@ -99,7 +99,7 @@ describe("secret routes", () => {
           provider: "local_encrypted",
           status: "ok",
           message: "Local encrypted provider configured",
-          backupGuidance: ["Back up the key file together with database backups."],
+          backupGuidance: ["Back up the key file separately from the database."],
         },
       ],
     });

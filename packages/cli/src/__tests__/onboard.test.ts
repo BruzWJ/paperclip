@@ -46,13 +46,7 @@ function createExistingConfigFixture() {
       source: "configure",
     },
     database: {
-      connectionString: TEST_DATABASE_URL,
-      backup: {
-        enabled: true,
-        intervalMinutes: 60,
-        retentionDays: 30,
-        dir: path.join(runtimeRoot, "backups"),
-      },
+      connectionString: TEST_DATABASE_URL
     },
     logging: {
       mode: "file",
@@ -115,10 +109,6 @@ describe("onboard", () => {
     process.env = { ...ORIGINAL_ENV };
     delete process.env.PAPERCLIP_SECRETS_MASTER_KEY;
     delete process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
-    delete process.env.PAPERCLIP_DB_BACKUP_DIR;
-    delete process.env.PAPERCLIP_DB_BACKUP_ENABLED;
-    delete process.env.PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES;
-    delete process.env.PAPERCLIP_DB_BACKUP_RETENTION_DAYS;
     delete process.env.PAPERCLIP_STORAGE_PROVIDER;
     delete process.env.PAPERCLIP_STORAGE_LOCAL_DIR;
     delete process.env.PAPERCLIP_SECRETS_PROVIDER;
@@ -204,7 +194,7 @@ describe("onboard", () => {
     const raw = JSON.parse(fs.readFileSync(configPath, "utf8")) as PaperclipConfig;
 
     expect(raw.database.connectionString).toBeUndefined();
-    expect(raw.database.backup.dir).toBe(path.join(instanceRoot, "data", "backups"));
+    expect(raw.database).not.toHaveProperty("backup");
     expect(raw.logging.logDir).toBe(path.join(instanceRoot, "logs"));
     expect(raw.storage.localDisk.baseDir).toBe(path.join(instanceRoot, "data", "storage"));
     expect(raw.secrets.localEncrypted.keyFilePath).toBe(path.join(instanceRoot, "secrets", "master.key"));

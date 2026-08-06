@@ -606,26 +606,20 @@ describe("Better Auth table writer boundary", () => {
     );
   });
 
-  it("permits only the Better Auth adapter and validated whole-database restore owner", () => {
+  it("permits only the Better Auth adapter as a Better Auth table writer", () => {
     const allowed = scanBetterAuthTableWriters(
       files({
         "apps/server/src/auth/better-auth.ts": `
           import { authUsers } from "@paperclipai/db";
           db.insert(authUsers).values(input);
         `,
-        "packages/db/backup-lib.ts": `
-          import { authSessions } from "./schema/auth.js";
-          export async function restoreCompleteArchive() {
-            db.insert(authSessions).values(input);
-          }
-        `,
       }),
     );
     assert.deepEqual(allowed, []);
 
-    const unrelatedRestoreCode = scanBetterAuthTableWriters(
+    const unrelatedWriter = scanBetterAuthTableWriters(
       files({
-        "packages/db/backup-lib.ts": `
+        "packages/db/other.ts": `
           import { authSessions } from "./schema/auth.js";
           export async function rewriteOneSession() {
             db.update(authSessions).set(input);
@@ -633,7 +627,7 @@ describe("Better Auth table writer boundary", () => {
         `,
       }),
     );
-    assert.equal(unrelatedRestoreCode.length, 1);
+    assert.equal(unrelatedWriter.length, 1);
   });
 
   it("permits direct rows only as test-local setup", () => {

@@ -45,7 +45,7 @@ describe("paperclip config schema", () => {
     expect(parsed.database.connectionString).toBe(
       "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
     );
-    expect(parsed.database.backup.dir).toBe("~/.paperclip/instances/default/data/backups");
+    expect(parsed.database).not.toHaveProperty("backup");
     expect(parsed.logging.logDir).toBe("~/.paperclip/instances/default/logs");
     expect(parsed.storage.localDisk.baseDir).toBe("~/.paperclip/instances/default/data/storage");
     expect(parsed.secrets.localEncrypted.keyFilePath).toBe("~/.paperclip/instances/default/secrets/master.key");
@@ -65,6 +65,29 @@ describe("paperclip config schema", () => {
         server: {},
       }),
     ).toThrow(/unrecognized key/i);
+  });
+
+  it("accepts and strips legacy database-backup configuration", () => {
+    const parsed = paperclipConfigSchema.parse({
+      $meta: {
+        version: 1,
+        updatedAt: "2026-08-06T00:00:00.000Z",
+        source: "configure",
+      },
+      database: {
+        connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
+        backup: {
+          enabled: true,
+          intervalMinutes: 60,
+          retentionDays: 7,
+          dir: "~/.paperclip/instances/default/data/backups",
+        },
+      },
+      logging: { mode: "file" },
+      server: {},
+    });
+
+    expect(parsed.database).not.toHaveProperty("backup");
   });
 
   it("uses bind and exposure without a deployment identity mode", () => {

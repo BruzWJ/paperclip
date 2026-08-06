@@ -16,13 +16,7 @@ function makeConfigPath(root: string, enabled: boolean): string {
       source: "configure",
     },
     database: {
-      connectionString: "postgresql://operator:secret@database.example.com/paperclip",
-      backup: {
-        enabled: true,
-        intervalMinutes: 60,
-        retentionDays: 30,
-        dir: path.join(root, "runtime", "backups"),
-      },
+      connectionString: "postgresql://operator:secret@database.example.com/paperclip"
     },
     logging: {
       mode: "file",

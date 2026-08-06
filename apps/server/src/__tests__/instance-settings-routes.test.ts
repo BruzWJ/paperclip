@@ -67,7 +67,6 @@ describe("instance settings routes", () => {
       general: {
         censorUsernameInLogs: false,
         keyboardShortcuts: false,
-        feedbackDataSharingPreference: "prompt",
       },
       experimental: {
         enableEnvironments: false,
@@ -90,7 +89,6 @@ describe("instance settings routes", () => {
     mockInstanceSettingsService.getGeneral.mockResolvedValue({
       censorUsernameInLogs: false,
       keyboardShortcuts: false,
-      feedbackDataSharingPreference: "prompt",
     });
     mockInstanceSettingsService.getExperimental.mockResolvedValue({
       enableEnvironments: false,
@@ -114,7 +112,6 @@ describe("instance settings routes", () => {
       general: {
         censorUsernameInLogs: false,
         keyboardShortcuts: false,
-        feedbackDataSharingPreference: "prompt",
       },
       experimental: {
         enableEnvironments: true,
@@ -139,7 +136,6 @@ describe("instance settings routes", () => {
       general: {
         censorUsernameInLogs: true,
         keyboardShortcuts: true,
-        feedbackDataSharingPreference: "allowed",
       },
     });
     mockInstanceSettingsService.updateExperimental.mockResolvedValue({
@@ -437,7 +433,6 @@ describe("instance settings routes", () => {
     expect(getRes.body).toEqual({
       censorUsernameInLogs: false,
       keyboardShortcuts: false,
-      feedbackDataSharingPreference: "prompt",
     });
 
     const patchRes = await request(app)
@@ -445,14 +440,12 @@ describe("instance settings routes", () => {
       .send({
         censorUsernameInLogs: true,
         keyboardShortcuts: true,
-        feedbackDataSharingPreference: "allowed",
       });
 
     expect(patchRes.status).toBe(200);
     expect(mockInstanceSettingsService.updateGeneral).toHaveBeenCalledWith({
       censorUsernameInLogs: true,
       keyboardShortcuts: true,
-      feedbackDataSharingPreference: "allowed",
     });
     expect(mockLogActivity).toHaveBeenCalledTimes(2);
   });
@@ -470,7 +463,6 @@ describe("instance settings routes", () => {
     expect(res.body).toEqual({
       censorUsernameInLogs: false,
       keyboardShortcuts: false,
-      feedbackDataSharingPreference: "prompt",
     });
   });
 
@@ -513,7 +505,7 @@ describe("instance settings routes", () => {
 
     const res = await request(app)
       .patch("/api/instance/settings/general")
-      .send({ feedbackDataSharingPreference: "not_allowed" });
+      .send({ censorUsernameInLogs: true });
 
     expect(res.status).toBe(403);
     expect(mockInstanceSettingsService.updateGeneral).not.toHaveBeenCalled();

@@ -1,4 +1,4 @@
-import { canonicalizeMoneyAmount, type Agent, type FeedbackVote } from "@paperclipai/shared";
+import { canonicalizeMoneyAmount, type Agent } from "@paperclipai/shared";
 import type { InlineEntityOption } from "../components/InlineEntitySelector";
 import type { MentionOption } from "../components/MarkdownEditor";
 import type { IssueChatComment } from "../lib/issue-chat-messages";
@@ -230,24 +230,5 @@ export const issueChatUxReviewEvents: IssueTimelineEvent[] = [
       from: { ownerKind: "agent", ownerAgentId: primaryAgent.id, ownerUserId: null },
       to: { ownerKind: "agent", ownerAgentId: reviewAgent.id, ownerUserId: null },
     },
-  },
-];
-
-export const issueChatUxFeedbackVotes: FeedbackVote[] = [
-  {
-    id: "feedback-1",
-    companyId: "company-ux",
-    issueId: "issue-ux",
-    targetType: "issue_comment",
-    targetId: "comment-review-agent",
-    authorUserId: "user-1",
-    vote: "up",
-    reason: null,
-    sharedWithLabs: false,
-    sharedAt: null,
-    consentVersion: null,
-    redactionSummary: null,
-    createdAt: new Date("2026-04-06T12:35:00.000Z"),
-    updatedAt: new Date("2026-04-06T12:35:00.000Z"),
   },
 ];

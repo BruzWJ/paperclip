@@ -6,8 +6,6 @@ import { configure } from "./commands/configure.js";
 import { addAllowedHostname } from "./commands/allowed-hostname.js";
 import { runCommand } from "./commands/run.js";
 import { bootstrapAdminInvite } from "./commands/auth-bootstrap-admin.js";
-import { dbBackupCommand } from "./commands/db-backup.js";
-import { dbRestoreCommand } from "./commands/db-restore.js";
 import { registerEnvLabCommands } from "./commands/env-lab.js";
 import { registerContextCommands } from "./commands/client/context.js";
 import { registerCompanyCommands } from "./commands/client/company.js";
@@ -20,7 +18,6 @@ import { registerActivityCommands } from "./commands/client/activity.js";
 import { registerDashboardCommands } from "./commands/client/dashboard.js";
 import { registerRoutineCommands } from "./commands/routines.js";
 import { registerPipelineCommands } from "./commands/pipelines.js";
-import { registerFeedbackCommands } from "./commands/client/feedback.js";
 import { registerSecretCommands } from "./commands/client/secrets.js";
 import { registerCloudCommands } from "./commands/client/cloud.js";
 import { registerSkillsCommands } from "./commands/client/skills.js";
@@ -99,45 +96,6 @@ program
   .action(configure);
 
 program
-  .command("db:backup")
-  .description("Create a one-off database backup using current config")
-  .option("-c, --config <path>", "Path to config file")
-  .option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP)
-  .option("--dir <path>", "Backup output directory (overrides config)")
-  .option("--retention-days <days>", "Retention window used for pruning", (value) => Number(value))
-  .option("--filename-prefix <prefix>", "Backup filename prefix", "paperclip")
-  .option("--json", "Print backup metadata as JSON")
-  .action(async (opts) => {
-    await dbBackupCommand(opts);
-  });
-
-program
-  .command("db:restore")
-  .description(
-    "Restore a manifested database backup to a physically distinct empty PostgreSQL database",
-  )
-  .requiredOption(
-    "--database-url <url>",
-    "Explicit empty external PostgreSQL restore target",
-  )
-  .requiredOption(
-    "--backup-file <path>",
-    "Complete Paperclip backup payload",
-  )
-  .requiredOption(
-    "--manifest-file <path>",
-    "External Paperclip backup manifest",
-  )
-  .requiredOption(
-    "--better-auth-secret-file <path>",
-    "File containing the target deployment Better Auth secret",
-  )
-  .option("--json", "Print only the redacted verified restore result")
-  .action(async (opts) => {
-    await dbRestoreCommand(opts);
-  });
-
-program
   .command("allowed-hostname")
   .description("Allow a hostname for private exposure")
   .argument("<host>", "Hostname to allow (for example dotta-macbook-pro)")
@@ -179,7 +137,6 @@ registerAssetCommands(program);
 registerSkillCommands(program);
 registerRoutineCommands(program);
 registerPipelineCommands(program);
-registerFeedbackCommands(program);
 registerSecretCommands(program);
 registerCloudCommands(program);
 registerSkillsCommands(program);

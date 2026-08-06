@@ -38,13 +38,6 @@ const mockCompanyArtifactsService = vi.hoisted(() => ({
 }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
-const mockFeedbackService = vi.hoisted(() => ({
-  listIssueVotesForUser: vi.fn(),
-  listFeedbackTraces: vi.fn(),
-  getFeedbackTraceById: vi.fn(),
-  saveIssueVote: vi.fn(),
-}));
-
 vi.mock("../services/access.js", () => ({
   accessService: () => mockAccessService,
 }));
@@ -69,10 +62,6 @@ vi.mock("../services/company-portability.js", () => ({
   companyPortabilityService: () => mockCompanyPortabilityService,
 }));
 
-vi.mock("../services/feedback.js", () => ({
-  feedbackService: () => mockFeedbackService,
-}));
-
 vi.mock("../services/index.js", () => ({
   accessService: () => mockAccessService,
   agentService: () => mockAgentService,
@@ -80,7 +69,6 @@ vi.mock("../services/index.js", () => ({
   companyArtifactsService: () => mockCompanyArtifactsService,
   companyPortabilityService: () => mockCompanyPortabilityService,
   companyService: () => mockCompanyService,
-  feedbackService: () => mockFeedbackService,
   logActivity: mockLogActivity,
 }));
 
@@ -92,7 +80,6 @@ function registerCompanyRouteMocks() {
     companyArtifactsService: () => mockCompanyArtifactsService,
     companyPortabilityService: () => mockCompanyPortabilityService,
     companyService: () => mockCompanyService,
-    feedbackService: () => mockFeedbackService,
     logActivity: mockLogActivity,
   }));
 }

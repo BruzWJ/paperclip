@@ -108,7 +108,7 @@ function parentConfig(root: string): string {
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(
     configPath,
-    `${JSON.stringify({ database: { backup: {} } })}\n`,
+    `${JSON.stringify({ database: {} })}\n`,
     { mode: 0o600 },
   );
   fs.writeFileSync(

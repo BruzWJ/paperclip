@@ -170,7 +170,7 @@ Paperclip best-effort enforces `0600` permissions when it creates or loads the
 key file. `paperclipai doctor` and the provider health API warn when the file is
 readable by group or other users.
 
-Back up the key file together with database backups. A database backup without
+Back up the key file separately from the database. A database restore without
 the key cannot decrypt local secrets, and a key backup without the database
 metadata is not enough to restore named secret versions.
 
@@ -439,8 +439,9 @@ Each provider family has a different backup story:
   user-scoped values. The full restore checklist lives in
   `doc/SECRETS-AWS-PROVIDER.md`.
 - `gcp_secret_manager` and `vault`: while these are coming soon, only the
-  draft vault config exists in Paperclip. Database backups capture it. There
-  is nothing to restore on the provider side until runtime support lands.
+  draft vault config exists in Paperclip. Persist that draft config with your
+  other instance recovery material. There is nothing to restore on the
+  provider side until runtime support lands.
 
 ### AWS Provider Bootstrap Boundary
 

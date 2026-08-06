@@ -4,15 +4,11 @@ import { z } from "zod";
 import type { Db } from "@paperclipai/db";
 import { agents as agentsTable } from "@paperclipai/db";
 import {
-  DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION,
   companyArtifactsQuerySchema,
   companyPortabilityExportSchema,
   companyPortabilityImportSchema,
   companyPortabilityPreviewSchema,
   createCompanySchema,
-  feedbackTargetTypeSchema,
-  feedbackTraceStatusSchema,
-  feedbackVoteValueSchema,
   updateCompanyBrandingSchema,
   updateCompanySchema,
 } from "@paperclipai/shared";
@@ -24,7 +20,6 @@ import {
   companyArtifactsService,
   companyPortabilityService,
   companyService,
-  feedbackService,
   logActivity,
   workTimelineService,
 } from "../services/index.js";
@@ -44,7 +39,6 @@ export function companyRoutes(
   const portability = companyPortabilityService(db, storage, ordinaryIssues);
   const access = accessService(db);
   const artifacts = companyArtifactsService(db, storage);
-  const feedback = feedbackService(db);
 
   function parseBooleanQuery(value: unknown) {
     return value === true || value === "true" || value === "1";
@@ -199,34 +193,6 @@ export function companyRoutes(
     res.json(company);
   });
 
-  router.get("/:companyId/feedback-traces", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    assertBoard(req);
-
-    const targetTypeRaw = typeof req.query.targetType === "string" ? req.query.targetType : undefined;
-    const voteRaw = typeof req.query.vote === "string" ? req.query.vote : undefined;
-    const statusRaw = typeof req.query.status === "string" ? req.query.status : undefined;
-    const issueId = typeof req.query.issueId === "string" && req.query.issueId.trim().length > 0 ? req.query.issueId : undefined;
-    const projectId = typeof req.query.projectId === "string" && req.query.projectId.trim().length > 0
-      ? req.query.projectId
-      : undefined;
-
-    const traces = await feedback.listFeedbackTraces({
-      companyId,
-      issueId,
-      projectId,
-      targetType: targetTypeRaw ? feedbackTargetTypeSchema.parse(targetTypeRaw) : undefined,
-      vote: voteRaw ? feedbackVoteValueSchema.parse(voteRaw) : undefined,
-      status: statusRaw ? feedbackTraceStatusSchema.parse(statusRaw) : undefined,
-      from: parseDateQuery(req.query.from, "from"),
-      to: parseDateQuery(req.query.to, "to"),
-      sharedOnly: parseBooleanQuery(req.query.sharedOnly),
-      includePayload: parseBooleanQuery(req.query.includePayload),
-    });
-    res.json(traces);
-  });
-
   router.post("/:companyId/export", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertBoardCompanyManagement(req, companyId);
@@ -372,24 +338,12 @@ export function companyRoutes(
     assertBoardCompanyManagement(req, companyId);
     assertBoard(req);
 
-    let body: Record<string, unknown> = updateCompanySchema.parse(req.body);
+    const body = updateCompanySchema.parse(req.body);
 
     const existingCompany = await svc.getById(companyId);
     if (!existingCompany) {
       res.status(404).json({ error: "Company not found" });
       return;
-    }
-
-    if (body.feedbackDataSharingEnabled === true && !existingCompany.feedbackDataSharingEnabled) {
-      body = {
-        ...body,
-        feedbackDataSharingConsentAt: new Date(),
-        feedbackDataSharingConsentByUserId: req.actor.userId,
-        feedbackDataSharingTermsVersion:
-          typeof body.feedbackDataSharingTermsVersion === "string" && body.feedbackDataSharingTermsVersion.length > 0
-            ? body.feedbackDataSharingTermsVersion
-            : DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION,
-      };
     }
 
     const transitionsToArchived =

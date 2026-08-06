@@ -18,7 +18,6 @@ export type WorktreeLocalPaths = {
   homeDir: string;
   instanceId: string;
   instanceRoot: string;
-  backupDir: string;
   logDir: string;
   secretsKeyFilePath: string;
   storageDir: string;
@@ -122,7 +121,6 @@ export function resolveWorktreeLocalPaths(input: {
     homeDir,
     instanceId: input.instanceId,
     instanceRoot,
-    backupDir: path.resolve(instanceRoot, "data", "backups"),
     logDir: path.resolve(instanceRoot, "logs"),
     secretsKeyFilePath: path.resolve(
       instanceRoot,
@@ -144,14 +142,7 @@ export function buildWorktreeConfig(input: {
       updatedAt: (input.now ?? new Date()).toISOString(),
       source: "configure",
     },
-    database: {
-      backup: {
-        enabled: true,
-        intervalMinutes: 60,
-        retentionDays: 30,
-        dir: input.paths.backupDir,
-      },
-    },
+    database: {},
     logging: {
       mode: "file",
       logDir: input.paths.logDir,

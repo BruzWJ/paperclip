@@ -10,8 +10,6 @@ import { pathToFileURL } from "node:url";
 import type { Request as ExpressRequest, RequestHandler } from "express";
 import {
   createDb,
-  formatDatabaseBackupResult,
-  runDatabaseBackup,
 } from "@paperclipai/db";
 import detectPort from "detect-port";
 import { createApp } from "./app.js";
@@ -20,7 +18,6 @@ import { logger } from "./middleware/logger.js";
 import { setupEnvironmentCustomImageTerminalWebSocketServer } from "./realtime/environment-custom-image-terminal-ws.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import {
-  feedbackService,
   environmentCustomImageService,
   composeRuntimeActionPort,
   createOrdinaryIssueRuntime,
@@ -34,13 +31,11 @@ import {
   createRuntimeAgentActionPort,
   createRuntimeAgentConfigurationService,
   createRuntimeIssueActionPort,
-  instanceSettingsService,
   reconcileCloudUpstreamRunsOnStartup,
   reconcilePersistedRuntimeServicesOnStartup,
   routineService,
   toolAccessService,
 } from "./services/index.js";
-import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
 import { choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createPluginEventBus } from "./services/plugin-event-bus.js";
@@ -53,7 +48,6 @@ import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { maybePersistWorktreeServerPort } from "./worktree-config.js";
 import { initTelemetry, getTelemetryClient } from "./telemetry.js";
-import { conflict } from "./errors.js";
 import { loadRuntimeEnvironmentFiles } from "./runtime-environment.js";
 import { deriveInstancePrivateSecret } from "./secrets/local-encrypted-provider.js";
 import {
@@ -67,10 +61,6 @@ import {
   type RuntimeCompanyToolPort,
 } from "./services/runtime-tool-executor.js";
 import { createIssueExecutionSteeringResultBroker } from "./services/issue-execution-steering-results.js";
-import type {
-  InstanceDatabaseBackupRunResult,
-  InstanceDatabaseBackupTrigger,
-} from "./routes/instance-database-backups.js";
 import type { RequestAuthorityBoundary } from "./http/request-authority.js";
 import {
   agentProfileChangeTargetKey,
@@ -204,90 +194,6 @@ export async function startServer(): Promise<StartedServer> {
   maybePersistWorktreeServerPort({ serverPort: listenPort });
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
   const storageService = createStorageServiceFromConfig(config);
-  const backupSettingsSvc = instanceSettingsService(db);
-  const databaseBackupMaxAgeHours = Math.max(
-    1,
-    Number(process.env.PAPERCLIP_DB_BACKUP_MAX_AGE_HOURS) ||
-      Math.max(26, Math.ceil((config.databaseBackupIntervalMinutes / 60) * 2)),
-  );
-  const databaseBackupAlertFile =
-    process.env.PAPERCLIP_DB_BACKUP_ALERT_FILE ||
-    resolve(config.databaseBackupDir, "..", "health", "db-backup-to-s3.failure");
-  const databaseBackupAlertFiles = [
-    databaseBackupAlertFile,
-    resolve(config.databaseBackupDir, "db-backup-to-s3.failure"),
-    resolve(config.databaseBackupDir, "..", "db-backup-to-s3.failure"),
-  ];
-  let databaseBackupInFlight = false;
-  const runServerDatabaseBackup = async (
-    trigger: InstanceDatabaseBackupTrigger,
-  ): Promise<InstanceDatabaseBackupRunResult | null> => {
-    if (databaseBackupInFlight) {
-      const message = "Database backup already in progress";
-      if (trigger === "scheduled") {
-        logger.warn("Skipping scheduled database backup because a previous backup is still running");
-        return null;
-      }
-      throw conflict(message);
-    }
-
-    databaseBackupInFlight = true;
-    const startedAt = new Date();
-    const startedAtMs = Date.now();
-    const label = trigger === "scheduled" ? "Automatic" : "Manual";
-    try {
-      logger.info({ backupDir: config.databaseBackupDir, trigger }, `${label} database backup starting`);
-      // Read retention from Instance Settings (DB) so changes take effect without restart.
-      const generalSettings = await backupSettingsSvc.getGeneral();
-      const retention = generalSettings.backupRetention;
-      const betterAuthSecret = process.env.BETTER_AUTH_SECRET;
-      if (!betterAuthSecret?.trim()) {
-        throw new Error(
-          "BETTER_AUTH_SECRET is required to create a restorable database backup.",
-        );
-      }
-
-      const result = await runDatabaseBackup({
-        connectionString: activeDatabaseConnectionString,
-        betterAuthSecret,
-        backupDir: config.databaseBackupDir,
-        retention,
-        filenamePrefix: "paperclip",
-      });
-      const finishedAt = new Date();
-      const response: InstanceDatabaseBackupRunResult = {
-        ...result,
-        trigger,
-        backupDir: config.databaseBackupDir,
-        retention,
-        startedAt: startedAt.toISOString(),
-        finishedAt: finishedAt.toISOString(),
-        durationMs: Date.now() - startedAtMs,
-      };
-      logger.info(
-        {
-          backupFile: result.backupFile,
-          manifestFile: result.manifestFile,
-          manifestFormat: result.manifestFormat,
-          manifestFormatVersion: result.manifestFormatVersion,
-          payloadChecksum: result.payloadChecksum,
-          sizeBytes: result.sizeBytes,
-          prunedCount: result.prunedCount,
-          backupDir: config.databaseBackupDir,
-          retention,
-          trigger,
-          durationMs: response.durationMs,
-        },
-        `${label} database backup complete: ${formatDatabaseBackupResult(result)}`,
-      );
-      return response;
-    } catch (err) {
-      logger.error({ err, backupDir: config.databaseBackupDir, trigger }, `${label} database backup failed`);
-      throw err;
-    } finally {
-      databaseBackupInFlight = false;
-    }
-  };
   const pluginWorkerManager = createPluginWorkerManager();
   const pluginEventBus = createPluginEventBus();
   const pluginDomainEvents = createPluginDomainEventPublisher(pluginEventBus);
@@ -452,10 +358,6 @@ export async function startServer(): Promise<StartedServer> {
         steeringResults: issueExecutionSteeringResults,
       },
     );
-  const feedback = feedbackService(db as any, {
-    shareClient: createFeedbackTraceShareClientFromConfig(config),
-    runService: issueExecution.runService,
-  });
   const dispatchPersistedRef = async (refId: string) => {
     await composition.prepareAndNotifyPersistedRef(
       refId,
@@ -502,25 +404,6 @@ export async function startServer(): Promise<StartedServer> {
     uiMode,
     serverPort: listenPort,
     storageService,
-    feedbackExportService: feedback,
-    databaseBackupService: {
-      runManualBackup: async () => {
-        const result = await runServerDatabaseBackup("manual");
-        if (!result) {
-          throw conflict("Database backup already in progress");
-        }
-        return result;
-      },
-    },
-    databaseBackupHealth: config.databaseBackupEnabled
-      ? {
-          enabled: config.databaseBackupEnabled,
-          backupDir: config.databaseBackupDir,
-          maxAgeHours: databaseBackupMaxAgeHours,
-          alertFile: databaseBackupAlertFile,
-          alertFiles: databaseBackupAlertFiles,
-        }
-      : undefined,
     deploymentExposure: config.deploymentExposure,
     canonicalPublicUrl: config.authPublicBaseUrl,
     allowedHostnames: config.allowedHostnames,
@@ -770,24 +653,6 @@ export async function startServer(): Promise<StartedServer> {
     );
   }, 1_000);
   
-  if (config.databaseBackupEnabled) {
-    const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
-
-    logger.info(
-      {
-        intervalMinutes: config.databaseBackupIntervalMinutes,
-        retentionSource: "instance-settings-db",
-        backupDir: config.databaseBackupDir,
-      },
-      "Automatic database backups enabled",
-    );
-    setInterval(() => {
-      void runServerDatabaseBackup("scheduled").catch(() => {
-        // runServerDatabaseBackup already logs the failure with context.
-      });
-    }, backupIntervalMs);
-  }
-  
   await new Promise<void>((resolveListen, rejectListen) => {
     const onError = (err: Error) => {
       server.off("error", onError);
@@ -821,10 +686,6 @@ export async function startServer(): Promise<StartedServer> {
         db: startupDbInfo,
         issueExecutionSchedulerEnabled: config.issueExecutionSchedulerEnabled,
         issueExecutionSchedulerIntervalMs: config.issueExecutionSchedulerIntervalMs,
-        databaseBackupEnabled: config.databaseBackupEnabled,
-        databaseBackupIntervalMinutes: config.databaseBackupIntervalMinutes,
-        databaseBackupRetentionDays: config.databaseBackupRetentionDays,
-        databaseBackupDir: config.databaseBackupDir,
       });
 
       resolveListen();

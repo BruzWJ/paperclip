@@ -196,12 +196,6 @@ function makeInstanceSettings({
     general: {
       censorUsernameInLogs: true,
       keyboardShortcuts: true,
-      feedbackDataSharingPreference: "prompt",
-      backupRetention: {
-        dailyDays: 7,
-        weeklyWeeks: 4,
-        monthlyMonths: 1,
-      },
     },
     experimental: {
       enableEnvironments,

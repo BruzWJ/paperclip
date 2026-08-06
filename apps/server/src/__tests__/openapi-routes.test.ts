@@ -36,7 +36,6 @@ const apiPrefixes: Record<string, string> = {
   "health.ts": "/api/health",
   "inbox-agent-policy.ts": "/api",
   "inbox-dismissals.ts": "/api",
-  "instance-database-backups.ts": "/api",
   "instance-settings.ts": "/api",
   "issues.ts": "/api",
   "issue-tree-control.ts": "/api",
@@ -454,7 +453,7 @@ describe("openapi routes", () => {
     expect(costEventsPath.get.responses["200"]).toBeDefined();
     expect(costEventsPath.get.responses["401"]).toBeDefined();
     expect(costEventsPath.post).toBeUndefined();
-    expect(spec.paths["/api/instance/database-backups"].post.responses["201"]).toBeDefined();
+    expect(spec.paths["/api/instance/database-backups"]).toBeUndefined();
     expect(spec.paths["/api/invites/{token}/accept"].post.responses["202"]).toBeDefined();
     expect(spec.paths["/api/board-api-keys"].post.responses["201"]).toBeDefined();
     expect(spec.paths["/api/companies/import"].post.responses["202"]).toBeDefined();

@@ -24,7 +24,6 @@
     "db:generate": "pnpm --filter @paperclipai/db generate",
     "db:migrate": "pnpm --filter @paperclipai/db migrate",
     "db:studio": "pnpm --filter @paperclipai/db studio",
-    "db:backup": "./scripts/backup-db.sh",
     "paperclipai": "node packages/cli/node_modules/tsx/dist/cli.mjs packages/cli/src/index.ts",
     "build:npm": "./scripts/build-npm.sh",
     "release": "./scripts/release.sh",

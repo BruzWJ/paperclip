@@ -4,7 +4,6 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Db } from "@paperclipai/db";
 import type { DeploymentExposure } from "@paperclipai/shared";
-import type { InspectDatabaseBackupHealthOptions } from "./services/database-backup-health.js";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
@@ -55,10 +54,6 @@ import { resourceMembershipRoutes } from "./routes/resource-memberships.js";
 import { inboxDismissalRoutes } from "./routes/inbox-dismissals.js";
 import { instanceSettingsRoutes } from "./routes/instance-settings.js";
 import { openApiRoutes } from "./routes/openapi.js";
-import {
-  instanceDatabaseBackupRoutes,
-  type InstanceDatabaseBackupService,
-} from "./routes/instance-database-backups.js";
 import { llmRoutes } from "./routes/llms.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
@@ -69,7 +64,6 @@ import { adapterRoutes } from "./routes/adapters.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { readBrandedStaticIndexHtml } from "./static-index-html.js";
 import { applyUiBranding } from "./ui-branding.js";
-import { logger } from "./middleware/logger.js";
 import { pluginLoader } from "./services/plugin-loader.js";
 import type { PluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
@@ -114,7 +108,6 @@ import {
 } from "./services/adapter-configuration-preflight.js";
 
 type UiMode = "none" | "static" | "vite-dev";
-const FEEDBACK_EXPORT_FLUSH_INTERVAL_MS = 5_000;
 const VITE_DEV_ASSET_PREFIXES = [
   "/@fs/",
   "/@id/",
@@ -133,12 +126,6 @@ const VITE_DEV_STATIC_PATHS = new Set([
   "/site.webmanifest",
   "/sw.js",
 ]);
-
-export function isDatabaseConnectionUnavailableError(err: unknown): boolean {
-  const error = err as { code?: unknown; message?: unknown; cause?: unknown };
-  if (error?.code === "ECONNREFUSED") return true;
-  return Boolean(error?.cause && isDatabaseConnectionUnavailableError(error.cause));
-}
 
 export function resolveViteHmrPort(serverPort: number): number {
   if (serverPort <= 55_535) {
@@ -166,16 +153,6 @@ export async function createApp(
     uiMode: UiMode;
     serverPort: number;
     storageService: StorageService;
-    feedbackExportService?: {
-      flushPendingFeedbackTraces(input?: {
-        companyId?: string;
-        traceId?: string;
-        limit?: number;
-        now?: Date;
-      }): Promise<unknown>;
-    };
-    databaseBackupService?: InstanceDatabaseBackupService;
-    databaseBackupHealth?: InspectDatabaseBackupHealthOptions;
     deploymentExposure: DeploymentExposure;
     canonicalPublicUrl?: string;
     allowedHostnames: string[];
@@ -299,7 +276,6 @@ export async function createApp(
       deploymentExposure: opts.deploymentExposure,
       authReady: opts.authReady,
       companyDeletionEnabled: opts.companyDeletionEnabled,
-      databaseBackupHealth: opts.databaseBackupHealth,
     }),
   );
   api.use(openApiRoutes());
@@ -373,9 +349,6 @@ export async function createApp(
   api.use(resourceMembershipRoutes(db));
   api.use(inboxDismissalRoutes(db));
   api.use(instanceSettingsRoutes(db));
-  if (opts.databaseBackupService) {
-    api.use(instanceDatabaseBackupRoutes(opts.databaseBackupService));
-  }
   const pluginRegistry = pluginRegistryService(db);
   const eventBus = opts.pluginEventBus;
   const jobStore = pluginJobStore(db);
@@ -439,7 +412,6 @@ export async function createApp(
   // issue approval endpoints delegate to it. The intervening routers use distinct
   // route prefixes, so this dependency does not change issue-route precedence.
   api.use(issueRoutes(db, opts.storageService, {
-    feedbackExportService: opts.feedbackExportService,
     pluginWorkerManager: workerManager,
     ordinaryIssues,
     pluginDomainEvents: opts.pluginDomainEvents,
@@ -590,38 +562,6 @@ export async function createApp(
   app.use(errorHandler);
 
   scheduler.start();
-  let feedbackExportShuttingDown = false;
-  let feedbackExportTimer: ReturnType<typeof setInterval> | null = null;
-  const disableFeedbackExportFlushes = () => {
-    feedbackExportShuttingDown = true;
-    if (feedbackExportTimer) {
-      clearInterval(feedbackExportTimer);
-      feedbackExportTimer = null;
-    }
-  };
-  const flushPendingFeedbackExports = async () => {
-    if (feedbackExportShuttingDown) return;
-    try {
-      await opts.feedbackExportService?.flushPendingFeedbackTraces();
-    } catch (err) {
-      if (isDatabaseConnectionUnavailableError(err)) {
-        disableFeedbackExportFlushes();
-        logger.warn({ err }, "Disabling pending feedback export flushes because the database is unavailable");
-        return;
-      }
-      logger.error({ err }, "Failed to flush pending feedback exports");
-    }
-  };
-
-  feedbackExportTimer = opts.feedbackExportService
-    ? setInterval(() => {
-      void flushPendingFeedbackExports();
-    }, FEEDBACK_EXPORT_FLUSH_INTERVAL_MS)
-    : null;
-  feedbackExportTimer?.unref?.();
-  if (opts.feedbackExportService) {
-    void flushPendingFeedbackExports();
-  }
   const devWatcher = createPluginDevWatcher(
     lifecycle,
     async (pluginId) => {
@@ -640,7 +580,6 @@ export async function createApp(
   let appServicesShutdown: Promise<void> | null = null;
   const shutdownAppServices = (): Promise<void> => {
     if (appServicesShutdown) return appServicesShutdown;
-    disableFeedbackExportFlushes();
     appServicesShutdown = Promise.allSettled([
       Promise.resolve().then(() => devWatcher.close()),
       Promise.resolve().then(() => viteHtmlRenderer?.dispose()),

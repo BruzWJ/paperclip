@@ -5,7 +5,6 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import type {
   Company,
-  FeedbackTrace,
   CompanyPortabilityFileEntry,
   CompanyPortabilityExportResult,
   CompanyPortabilityInclude,
@@ -25,11 +24,6 @@ import {
   resolveCommandContext,
   type BaseClientOptions,
 } from "./common.js";
-import {
-  buildFeedbackTraceQuery,
-  normalizeFeedbackTraceExportFormat,
-  serializeFeedbackTraces,
-} from "./feedback.js";
 import { parseExplicitAdapterOverrides } from "./adapter-overrides.js";
 
 interface CompanyCommandOptions extends BaseClientOptions {}
@@ -57,19 +51,6 @@ interface CompanyExportOptions extends BaseClientOptions {
   expandReferencedSkills?: boolean;
 }
 
-interface CompanyFeedbackOptions extends BaseClientOptions {
-  targetType?: string;
-  vote?: string;
-  status?: string;
-  projectId?: string;
-  issueId?: string;
-  from?: string;
-  to?: string;
-  sharedOnly?: boolean;
-  includePayload?: boolean;
-  out?: string;
-  format?: string;
-}
 
 interface CompanyImportOptions extends BaseClientOptions {
   include?: string;
@@ -1215,91 +1196,6 @@ export function registerCompanyCommands(program: Command): void {
   addCompanyJsonPost(company, "export:api", "Export a company through the raw API route", "exports");
   addCompanyJsonPost(company, "import:preview", "Preview a safe company import through the raw API route", "imports/preview");
   addCompanyJsonPost(company, "import:apply", "Apply a safe company import through the raw API route", "imports/apply");
-
-  addCommonClientOptions(
-    company
-      .command("feedback:list")
-      .description("List feedback traces for a company")
-      .requiredOption("-C, --company-id <id>", "Company ID")
-      .option("--target-type <type>", "Filter by target type")
-      .option("--vote <vote>", "Filter by vote value")
-      .option("--status <status>", "Filter by trace status")
-      .option("--project-id <id>", "Filter by project ID")
-      .option("--issue-id <id>", "Filter by issue ID")
-      .option("--from <iso8601>", "Only include traces created at or after this timestamp")
-      .option("--to <iso8601>", "Only include traces created at or before this timestamp")
-      .option("--shared-only", "Only include traces eligible for sharing/export")
-      .option("--include-payload", "Include stored payload snapshots in the response")
-      .action(async (opts: CompanyFeedbackOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts, { requireCompany: true });
-          const traces = (await ctx.api.get<FeedbackTrace[]>(
-            `${apiPath`/api/companies/${ctx.companyId}/feedback-traces`}${buildFeedbackTraceQuery(opts)}`,
-          )) ?? [];
-          if (ctx.json) {
-            printOutput(traces, { json: true });
-            return;
-          }
-          printOutput(
-            traces.map((trace) => ({
-              id: trace.id,
-              issue: trace.issueIdentifier ?? trace.issueId,
-              vote: trace.vote,
-              status: trace.status,
-              targetType: trace.targetType,
-              target: trace.targetSummary.label,
-            })),
-            { json: false },
-          );
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-    { includeCompany: false },
-  );
-
-  addCommonClientOptions(
-    company
-      .command("feedback:export")
-      .description("Export feedback traces for a company")
-      .requiredOption("-C, --company-id <id>", "Company ID")
-      .option("--target-type <type>", "Filter by target type")
-      .option("--vote <vote>", "Filter by vote value")
-      .option("--status <status>", "Filter by trace status")
-      .option("--project-id <id>", "Filter by project ID")
-      .option("--issue-id <id>", "Filter by issue ID")
-      .option("--from <iso8601>", "Only include traces created at or after this timestamp")
-      .option("--to <iso8601>", "Only include traces created at or before this timestamp")
-      .option("--shared-only", "Only include traces eligible for sharing/export")
-      .option("--include-payload", "Include stored payload snapshots in the export")
-      .option("--out <path>", "Write export to a file path instead of stdout")
-      .option("--format <format>", "Export format: json or ndjson", "ndjson")
-      .action(async (opts: CompanyFeedbackOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts, { requireCompany: true });
-          const traces = (await ctx.api.get<FeedbackTrace[]>(
-            `${apiPath`/api/companies/${ctx.companyId}/feedback-traces`}${buildFeedbackTraceQuery(opts, opts.includePayload ?? true)}`,
-          )) ?? [];
-          const serialized = serializeFeedbackTraces(traces, opts.format);
-          if (opts.out?.trim()) {
-            await writeFile(opts.out, serialized, "utf8");
-            if (ctx.json) {
-              printOutput(
-                { out: opts.out, count: traces.length, format: normalizeFeedbackTraceExportFormat(opts.format) },
-                { json: true },
-              );
-              return;
-            }
-            console.log(`Wrote ${traces.length} feedback trace(s) to ${opts.out}`);
-            return;
-          }
-          process.stdout.write(`${serialized}${serialized.endsWith("\n") ? "" : "\n"}`);
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-    { includeCompany: false },
-  );
 
   addCommonClientOptions(
     company

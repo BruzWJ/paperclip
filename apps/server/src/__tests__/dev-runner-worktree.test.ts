@@ -111,7 +111,7 @@ function setupLinkedWorktree(root: string): {
   writeMode0600(
     parentConfigPath,
     `${JSON.stringify({
-      database: { backup: {} },
+      database: { },
     })}\n`,
   );
   writeMode0600(

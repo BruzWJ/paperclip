@@ -50,7 +50,6 @@ function registerModuleMocks() {
     documentAnnotationService: () => ({ remapOpenThreadsForDocument: async () => [] }),
     documentService: () => ({}),
     executionWorkspaceService: () => ({}),
-    feedbackService: () => ({}),
     goalService: () => ({}),
     instanceSettingsService: () => ({}),
     issueApprovalService: () => ({}),

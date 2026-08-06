@@ -28,43 +28,20 @@ pooled URL, set `DATABASE_MIGRATION_URL` to the provider's direct connection.
 Paperclip validates the protocol and fails before startup when neither target
 is valid.
 
-## Complete disaster-recovery backups
+## Backups and recovery
 
-`paperclipai db:backup` creates two inseparable files: a complete custom-format
-PostgreSQL payload and an external Paperclip manifest. The payload includes the
-canonical schema, migration journal, tables, sequences, constraints, and all
-rows. The manifest records the source physical database identity, complete
-table set, payload checksum, and a salted one-way fingerprint of
-`BETTER_AUTH_SECRET`.
+Paperclip does not manage database backups. Use your external PostgreSQL
+provider's snapshots, PITR, or managed backup features. When restoring, also
+restore any local encrypted secrets key and local storage files if those
+providers are enabled on the instance.
 
-The host running the command must have compatible `pg_dump` and `pg_restore`
-client tools installed. `DATABASE_URL` (or the configured external connection)
-and the deployment's durable `BETTER_AUTH_SECRET` must be present:
+### Upgrade note
 
-```sh
-paperclipai db:backup
-```
-
-Restore is a disaster-recovery operation, not initialization, repair, reset,
-reseed, worktree cloning, or selective import. Provision a physically distinct
-empty PostgreSQL database and put the same deployment Better Auth secret in a
-mode-`0600` file, then supply every input explicitly:
-
-```sh
-paperclipai db:restore \
-  --database-url 'postgresql://operator@new-db.example/paperclip' \
-  --backup-file /secure/backups/paperclip-20260729T120000Z.dump \
-  --manifest-file /secure/backups/paperclip-20260729T120000Z.dump.manifest.json \
-  --better-auth-secret-file /secure/backups/better-auth-secret
-```
-
-Paperclip validates the manifest, payload checksum, archive table set, secret
-fingerprint, target emptiness, and physical source/target inequality before
-mutation. It restores the archive exactly once in a transaction, applies only
-ordinary remaining forward migrations, and returns verified non-secret facts.
-Raw SQL, an inferred sidecar manifest, an initialized target, a different
-deployment secret, and a partial backup are rejected without clearing the
-target.
+The migration that retires AI-sharing feedback deletes its historical vote,
+export, and consent records, along with the retired instance sharing-preference
+and backup-retention settings. Take and retain an external database snapshot
+before applying it if those records must be preserved for audit, export, or
+retention requirements.
 
 ## Tests
 

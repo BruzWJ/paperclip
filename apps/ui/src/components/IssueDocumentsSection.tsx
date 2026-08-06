@@ -12,9 +12,6 @@ import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import type {
   Agent,
   DocumentRevision,
-  FeedbackDataSharingPreference,
-  FeedbackVote,
-  FeedbackVoteValue,
   Issue,
   IssueDocument,
 } from "@paperclipai/shared";
@@ -38,7 +35,6 @@ import {
   type MarkdownExternalReferenceMap,
 } from "./MarkdownBody";
 import { MarkdownEditor, type MentionOption } from "./MarkdownEditor";
-import { OutputFeedbackButtons } from "./OutputFeedbackButtons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -321,12 +317,8 @@ export function IssueDocumentsSection({
   subject,
   canDeleteDocuments,
   canManageDocumentLocks = false,
-  feedbackVotes = [],
-  feedbackDataSharingPreference = "prompt",
-  feedbackTermsUrl = null,
   mentions,
   imageUploadHandler,
-  onVote,
   extraActions,
   agentMap,
   userProfileMap,
@@ -339,16 +331,8 @@ export function IssueDocumentsSection({
   subject?: DocumentSubjectConfig;
   canDeleteDocuments: boolean;
   canManageDocumentLocks?: boolean;
-  feedbackVotes?: FeedbackVote[];
-  feedbackDataSharingPreference?: FeedbackDataSharingPreference;
-  feedbackTermsUrl?: string | null;
   mentions?: MentionOption[];
   imageUploadHandler?: (file: File) => Promise<string>;
-  onVote?: (
-    revisionId: string,
-    vote: FeedbackVoteValue,
-    options?: { allowSharing?: boolean; reason?: string },
-  ) => Promise<void>;
   extraActions?: ReactNode;
   agentMap?: ReadonlyMap<
     string,
@@ -587,14 +571,6 @@ export function IssueDocumentsSection({
       });
   }, [documentSubject.hideSystemDocuments, documents]);
 
-  const feedbackVoteByTargetId = useMemo(() => {
-    const map = new Map<string, FeedbackVoteValue>();
-    for (const feedbackVote of feedbackVotes) {
-      if (feedbackVote.targetType !== "issue_document_revision") continue;
-      map.set(feedbackVote.targetId, feedbackVote.vote);
-    }
-    return map;
-  }, [feedbackVotes]);
 
   const isEmpty = sortedDocuments.length === 0;
   const newDocumentKeyError =
@@ -1318,12 +1294,6 @@ export function IssueDocumentsSection({
             !isPlanKey(doc.key) &&
             !!displayedTitle.trim() &&
             !titlesMatchKey(displayedTitle, doc.key);
-          const canVoteOnDocument = Boolean(
-            doc.latestRevisionId &&
-            doc.updatedByAgentId &&
-            !doc.updatedByUserId &&
-            onVote,
-          );
           const lockActionPending =
             setDocumentLock.isPending &&
             setDocumentLock.variables?.key === doc.key;
@@ -1786,22 +1756,6 @@ export function IssueDocumentsSection({
                           : ""}
                     </span>
                   </div>
-                  {canVoteOnDocument && doc.latestRevisionId ? (
-                    <OutputFeedbackButtons
-                      activeVote={
-                        feedbackVoteByTargetId.get(doc.latestRevisionId) ?? null
-                      }
-                      sharingPreference={feedbackDataSharingPreference}
-                      termsUrl={feedbackTermsUrl}
-                      onVote={(
-                        vote: FeedbackVoteValue,
-                        options?: { allowSharing?: boolean; reason?: string },
-                      ) =>
-                        onVote?.(doc.latestRevisionId!, vote, options) ??
-                        Promise.resolve()
-                      }
-                    />
-                  ) : null}
                 </div>
               ) : null}
 

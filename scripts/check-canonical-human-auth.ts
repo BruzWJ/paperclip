@@ -1621,14 +1621,9 @@ function enclosingFunctionName(node: ts.Node): string | null {
 
 function isAllowedAuthWriterOwner(
   file: string,
-  node: ts.Node,
+  _node: ts.Node,
 ): boolean {
-  if (file === "apps/server/src/auth/better-auth.ts") return true;
-  if (file !== "packages/db/backup-lib.ts") return false;
-  return new Set([
-    "restoreCompleteArchive",
-    "runDatabaseRestore",
-  ]).has(enclosingFunctionName(node) ?? "");
+  return file === "apps/server/src/auth/better-auth.ts";
 }
 
 const RAW_AUTH_MUTATION =

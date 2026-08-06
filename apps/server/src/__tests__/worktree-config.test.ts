@@ -38,13 +38,7 @@ function buildExternalConfig(
     },
     database: {
       connectionString:
-        "postgres://worktree:secret@db.example.test:5432/paperclip_worktree",
-      backup: {
-        enabled: true,
-        intervalMinutes: 60,
-        retentionDays: 30,
-        dir: path.join(root, "data", "backups"),
-      },
+        "postgres://worktree:secret@db.example.test:5432/paperclip_worktree"
     },
     logging: {
       mode: "file",

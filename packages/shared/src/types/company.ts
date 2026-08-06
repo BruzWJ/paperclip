@@ -16,10 +16,6 @@ export interface Company {
   attachmentMaxBytes: number;
   defaultResponsibleUserId: string | null;
   requireBoardApprovalForNewAgents: boolean;
-  feedbackDataSharingEnabled: boolean;
-  feedbackDataSharingConsentAt: Date | null;
-  feedbackDataSharingConsentByUserId: string | null;
-  feedbackDataSharingTermsVersion: string | null;
   brandColor: string | null;
   logoAssetId: string | null;
   logoUrl: string | null;

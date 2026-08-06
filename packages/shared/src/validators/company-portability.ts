@@ -51,21 +51,32 @@ export const portabilityFileEntrySchema = z.union([
   }).strict(),
 ]);
 
-export const portabilityCompanyManifestEntrySchema = z.object({
-  path: z.string().min(1),
-  name: z.string().min(1),
-  description: z.string().nullable(),
-  brandColor: z.string().nullable(),
-  logoPath: z.string().nullable(),
-  budgetCurrency: budgetCurrencySchema,
-  budgetMonthlyAmount: moneyAmountSchema,
-  attachmentMaxBytes: z.number().int().min(1).max(MAX_COMPANY_ATTACHMENT_MAX_BYTES).nullable().default(null),
-  requireBoardApprovalForNewAgents: z.boolean(),
-  feedbackDataSharingEnabled: z.boolean().default(false),
-  feedbackDataSharingConsentAt: z.string().datetime().nullable().default(null),
-  feedbackDataSharingConsentByUserId: z.string().nullable().default(null),
-  feedbackDataSharingTermsVersion: z.string().nullable().default(null),
-}).strict();
+export const portabilityCompanyManifestEntrySchema = z
+  .object({
+    path: z.string().min(1),
+    name: z.string().min(1),
+    description: z.string().nullable(),
+    brandColor: z.string().nullable(),
+    logoPath: z.string().nullable(),
+    budgetCurrency: budgetCurrencySchema,
+    budgetMonthlyAmount: moneyAmountSchema,
+    attachmentMaxBytes: z.number().int().min(1).max(MAX_COMPANY_ATTACHMENT_MAX_BYTES).nullable().default(null),
+    requireBoardApprovalForNewAgents: z.boolean(),
+    // Accept older company export bundles while keeping the retired fields out
+    // of the current manifest contract.
+    feedbackDataSharingEnabled: z.boolean().optional(),
+    feedbackDataSharingConsentAt: z.string().datetime().nullable().optional(),
+    feedbackDataSharingConsentByUserId: z.string().nullable().optional(),
+    feedbackDataSharingTermsVersion: z.string().nullable().optional(),
+  })
+  .strict()
+  .transform(({
+    feedbackDataSharingEnabled: _feedbackDataSharingEnabled,
+    feedbackDataSharingConsentAt: _feedbackDataSharingConsentAt,
+    feedbackDataSharingConsentByUserId: _feedbackDataSharingConsentByUserId,
+    feedbackDataSharingTermsVersion: _feedbackDataSharingTermsVersion,
+    ...company
+  }) => company);
 
 export const portabilitySidebarOrderSchema = z.object({
   agents: z.array(z.string().min(1)).default([]),

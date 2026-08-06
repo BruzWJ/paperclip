@@ -47,10 +47,6 @@ const databaseRuntimeExportsByOwner = Object.freeze({
     "probeDatabaseIdentity",
     "revalidateDatabaseIdentity",
   ]),
-  "backup-lib": Object.freeze([
-    "runDatabaseBackup",
-    "runDatabaseRestore",
-  ]),
 });
 const databaseRuntimeExports = Object.freeze([
   ...new Set(Object.values(databaseRuntimeExportsByOwner).flat()),

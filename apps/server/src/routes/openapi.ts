@@ -35,7 +35,6 @@ import {
   updateIssueWorkProductSchema,
   upsertIssueDocumentSchema,
   restoreIssueDocumentRevisionSchema,
-  upsertIssueFeedbackVoteSchema,
   upsertIssueWatchdogSchema,
   // Project
   createProjectSchema,
@@ -1056,7 +1055,6 @@ const INSTANCE_ADMIN_OPERATIONS = new Set([
   "GET /api/plugins/{pluginId}/jobs/{jobId}/runs",
   "POST /api/plugins/{pluginId}/jobs/{jobId}/trigger",
   "GET /api/plugins/{pluginId}/dashboard",
-  "POST /api/instance/database-backups",
   "POST /api/admin/users/{userId}/promote-instance-admin",
   "POST /api/admin/users/{userId}/demote-instance-admin",
   "PUT /api/admin/users/{userId}/company-access",
@@ -1103,7 +1101,6 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/skills/import",
   "POST /api/admin/users/{userId}/promote-instance-admin",
   "POST /api/plugins/install",
-  "POST /api/instance/database-backups",
   "POST /api/companies/{companyId}/tools/applications",
   "POST /api/companies/{companyId}/tools/connections",
   "POST /api/companies/{companyId}/tools/action-requests/{actionRequestId}/trust-rule",
@@ -1238,37 +1235,6 @@ registry.registerPath({
       version: z.string().optional(),
       bootstrapStatus: z.enum(["ready", "bootstrap_pending"]).optional(),
       bootstrapInviteActive: z.boolean().optional(),
-      databaseBackup: z.object({
-        enabled: z.boolean(),
-        status: z.enum(["ok", "warning"]),
-        backupDir: z.string().optional(),
-        maxAgeHours: z.number().optional(),
-        latestBackup: z.object({
-          name: z.string(),
-          path: z.string(),
-          mtime: z.string().datetime(),
-          ageHours: z.number(),
-          sizeBytes: z.number(),
-        }).nullable().optional(),
-        lastFailure: z.object({
-          path: z.string(),
-          mtime: z.string().datetime(),
-          message: z.string(),
-        }).nullable().optional(),
-        warnings: z.array(z.object({
-          code: z.enum([
-            "database_backup_check_failed",
-            "database_backup_last_failure",
-            "database_backup_missing",
-            "database_backup_stale",
-          ]),
-          message: z.string(),
-        })),
-      }).optional(),
-      warnings: z.array(z.object({
-        code: z.string(),
-        message: z.string(),
-      })).optional(),
       serverInfo: z.object({
         processStartedAt: z.string().datetime(),
         git: z.union([
@@ -1443,14 +1409,6 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
 });
 
-registry.registerPath({
-  method: "get",
-  path: "/api/companies/{companyId}/feedback-traces",
-  tags: ["companies"],
-  summary: "List company feedback traces",
-  request: { params: z.object({ companyId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
 
 registry.registerPath({
   method: "post",
@@ -2365,53 +2323,6 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
-registry.registerPath({
-  method: "get",
-  path: "/api/issues/{id}/feedback-votes",
-  tags: ["issues"],
-  summary: "List issue feedback votes",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/issues/{id}/feedback-votes",
-  tags: ["issues"],
-  summary: "Upsert a feedback vote",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(upsertIssueFeedbackVoteSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/issues/{id}/feedback-traces",
-  tags: ["issues"],
-  summary: "List issue feedback traces",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/feedback-traces/{traceId}",
-  tags: ["issues"],
-  summary: "Get a feedback trace",
-  request: { params: z.object({ traceId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/feedback-traces/{traceId}/bundle",
-  tags: ["issues"],
-  summary: "Get a feedback trace bundle",
-  request: { params: z.object({ traceId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
 
 registry.registerPath({
   method: "get",
@@ -5209,16 +5120,6 @@ registry.registerPath({
     body: jsonBody(pluginBridgeRequestSchema),
   },
   responses: { 200: r.ok(), 401: r.unauthorized, 502: pluginBridgeErrorResponse },
-});
-
-// ─── Instance database backups ────────────────────────────────────────────────
-
-registry.registerPath({
-  method: "post",
-  path: "/api/instance/database-backups",
-  tags: ["instance"],
-  summary: "Trigger a database backup",
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
 // ─── LLM text endpoints ───────────────────────────────────────────────────────

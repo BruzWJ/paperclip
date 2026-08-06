@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   instanceExperimentalSettingsSchema,
+  instanceGeneralSettingsSchema,
   patchInstanceExperimentalSettingsSchema,
+  patchInstanceGeneralSettingsSchema,
 } from "./instance.js";
+
+describe("instance general settings validation", () => {
+  it("rejects unknown public settings fields", () => {
+    expect(instanceGeneralSettingsSchema.safeParse({ unexpected: true }).success).toBe(false);
+    expect(
+      patchInstanceGeneralSettingsSchema.safeParse({
+        feedbackDataSharingPreference: "allowed",
+      }).success,
+    ).toBe(false);
+  });
+});
 
 describe("instance experimental settings validators", () => {
   it("defaults the server info debug view off", () => {

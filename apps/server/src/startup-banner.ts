@@ -19,10 +19,6 @@ type StartupBannerOptions = {
   db: ExternalPostgresInfo;
   issueExecutionSchedulerEnabled: boolean;
   issueExecutionSchedulerIntervalMs: number;
-  databaseBackupEnabled: boolean;
-  databaseBackupIntervalMinutes: number;
-  databaseBackupRetentionDays: number;
-  databaseBackupDir: string;
 };
 
 const ansi = {
@@ -69,9 +65,6 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
   const issueExecution = opts.issueExecutionSchedulerEnabled
     ? `enabled ${color(`(${opts.issueExecutionSchedulerIntervalMs}ms)`, "dim")}`
     : color("disabled", "yellow");
-  const dbBackup = opts.databaseBackupEnabled
-    ? `enabled ${color(`(every ${opts.databaseBackupIntervalMinutes}m, keep ${opts.databaseBackupRetentionDays}d)`, "dim")}`
-    : color("disabled", "yellow");
 
   const art = [
     color("██████╗  █████╗ ██████╗ ███████╗██████╗  ██████╗██╗     ██╗██████╗ ", "cyan"),
@@ -95,8 +88,6 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
     row("UI", uiUrl),
     row("Database", dbDetails),
     row("Issue execution", issueExecution),
-    row("DB Backup", dbBackup),
-    row("Backup Dir", opts.databaseBackupDir),
     row("Config", configPath),
     color("  ───────────────────────────────────────────────────────", "blue"),
     "",

@@ -61,13 +61,7 @@ function makeConfig(input: {
       source: "configure",
     },
     database: {
-      connectionString: "postgresql://paperclip.invalid/paperclip",
-      backup: {
-        enabled: true,
-        intervalMinutes: 60,
-        retentionDays: 30,
-        dir: path.join(root, "backups"),
-      },
+      connectionString: "postgresql://paperclip.invalid/paperclip"
     },
     logging: { mode: "file", logDir: path.join(root, "logs") },
     server: {

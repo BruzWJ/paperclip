@@ -56,13 +56,7 @@ function writeTestConfig(configPath: string, tempRoot: string) {
       source: "doctor" as const,
     },
     database: {
-      connectionString: TEST_DATABASE_URL,
-      backup: {
-        enabled: false,
-        intervalMinutes: 60,
-        retentionDays: 30,
-        dir: path.join(tempRoot, "backups"),
-      },
+      connectionString: TEST_DATABASE_URL
     },
     logging: {
       mode: "file" as const,

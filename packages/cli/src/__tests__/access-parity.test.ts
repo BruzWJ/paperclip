@@ -107,7 +107,6 @@ describe("access parity commands", () => {
     await run(["openapi"]);
     await run(["instance", "settings:general"]);
     await run(["instance", "settings:general:update", "--payload-json", "{}"]);
-    await run(["instance", "database-backup"]);
     await run(["sidebar", "preferences"]);
     await run(["sidebar", "preferences:update", "--payload-json", "{}"]);
     await run(["sidebar", "project-preferences", "--company-id", COMPANY_ID]);
@@ -122,7 +121,6 @@ describe("access parity commands", () => {
       ["GET", "http://localhost:3100/api/openapi.json"],
       ["GET", "http://localhost:3100/api/instance/settings/general"],
       ["PATCH", "http://localhost:3100/api/instance/settings/general"],
-      ["POST", "http://localhost:3100/api/instance/database-backups"],
       ["GET", "http://localhost:3100/api/sidebar-preferences/me"],
       ["PUT", "http://localhost:3100/api/sidebar-preferences/me"],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/sidebar-preferences/me`],

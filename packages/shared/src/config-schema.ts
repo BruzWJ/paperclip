@@ -14,24 +14,14 @@ export const configMetaSchema = z.object({
   source: z.enum(["onboard", "configure", "doctor"]),
 });
 
-export const databaseBackupConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  intervalMinutes: z.number().int().min(1).max(7 * 24 * 60).default(60),
-  retentionDays: z.number().int().min(1).max(3650).default(7),
-  dir: z.string().default("~/.paperclip/instances/default/data/backups"),
-});
-
 export const databaseConfigSchema = z
   .object({
     connectionString: z.string().optional(),
-    backup: databaseBackupConfigSchema.default({
-      enabled: true,
-      intervalMinutes: 60,
-      retentionDays: 7,
-      dir: "~/.paperclip/instances/default/data/backups",
-    }),
+    // Legacy field accepted from older config files and ignored.
+    backup: z.unknown().optional(),
   })
-  .strict();
+  .strict()
+  .transform(({ backup: _ignored, ...rest }) => rest);
 
 export const loggingConfigSchema = z.object({
   mode: z.enum(["file", "cloud"]),
@@ -181,4 +171,3 @@ export type SecretsLocalEncryptedConfig = z.infer<typeof secretsLocalEncryptedCo
 export type AuthConfig = z.infer<typeof authConfigSchema>;
 export type TelemetryConfig = z.infer<typeof telemetryConfigSchema>;
 export type ConfigMeta = z.infer<typeof configMetaSchema>;
-export type DatabaseBackupConfig = z.infer<typeof databaseBackupConfigSchema>;

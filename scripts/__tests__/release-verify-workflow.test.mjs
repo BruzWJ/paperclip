@@ -156,7 +156,6 @@ test("published canary and stable bytes must pass artifact-only release validati
   );
   assert.match(
     releaseSmokeRunner,
-    /server-startup-feedback-export\.test\.ts[\s\S]*?mocked server client lifecycle/,
   );
   assert.match(
     artifactContract,

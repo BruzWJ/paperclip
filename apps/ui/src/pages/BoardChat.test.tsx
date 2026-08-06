@@ -28,7 +28,6 @@ const mockGoalsApi = vi.hoisted(() => ({ list: vi.fn() }));
 const mockIssuesApi = vi.hoisted(() => ({
   get: vi.fn(),
   listComments: vi.fn(),
-  listFeedbackVotes: vi.fn(),
   commitCreatorFormUpdate: vi.fn(),
   selfAssignForWithdrawal: vi.fn(),
   commitOwnerFormUpdate: vi.fn(),
@@ -217,7 +216,6 @@ describe("BoardChat staged typing intro", () => {
     ]);
     mockIssuesApi.get.mockResolvedValue(BOARD_ISSUE);
     mockIssuesApi.listComments.mockResolvedValue(EMPTY_COMMENT_PAGE);
-    mockIssuesApi.listFeedbackVotes.mockResolvedValue([]);
     mockIssuesApi.selfAssignForWithdrawal.mockResolvedValue({
       issue: {
         ...BOARD_ISSUE,

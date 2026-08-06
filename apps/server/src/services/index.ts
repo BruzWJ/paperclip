@@ -2,7 +2,6 @@ export { companyService } from "./companies.js";
 export { companyArtifactsService } from "./company-artifacts.js";
 export { companySearchService } from "./company-search.js";
 export { companySearchExtractService } from "./company-search-extract.js";
-export { feedbackService } from "./feedback.js";
 export { companySkillService } from "./company-skills.js";
 export { companySkillPolicyService, normalizeSkillPolicySourceType } from "./company-skill-policy.js";
 export { folderService } from "./folders.js";

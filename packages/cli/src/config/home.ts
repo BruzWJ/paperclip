@@ -1,7 +1,6 @@
 import path from "node:path";
 import {
   expandHomePrefix,
-  resolveDefaultBackupDir as resolveSharedDefaultBackupDir,
   resolveDefaultLogsDir as resolveSharedDefaultLogsDir,
   resolveDefaultSecretsKeyFilePath as resolveSharedDefaultSecretsKeyFilePath,
   resolveDefaultStorageDir as resolveSharedDefaultStorageDir,
@@ -47,10 +46,6 @@ export function resolveDefaultStorageDir(instanceId?: string): string {
   return resolveSharedDefaultStorageDir({ instanceId });
 }
 
-export function resolveDefaultBackupDir(instanceId?: string): string {
-  return resolveSharedDefaultBackupDir({ instanceId });
-}
-
 export function describeLocalInstancePaths(instanceId?: string) {
   const resolvedInstanceId = resolvePaperclipInstanceId(instanceId);
   const instanceRoot = resolvePaperclipInstanceRoot(resolvedInstanceId);
@@ -59,7 +54,6 @@ export function describeLocalInstancePaths(instanceId?: string) {
     instanceId: resolvedInstanceId,
     instanceRoot,
     configPath: resolveDefaultConfigPath(resolvedInstanceId),
-    backupDir: resolveDefaultBackupDir(resolvedInstanceId),
     logDir: resolveDefaultLogsDir(resolvedInstanceId),
     secretsKeyFilePath: resolveDefaultSecretsKeyFilePath(resolvedInstanceId),
     storageDir: resolveDefaultStorageDir(resolvedInstanceId),

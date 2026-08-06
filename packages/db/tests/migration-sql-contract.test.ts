@@ -208,7 +208,34 @@ describe("generated PostgreSQL migration contract", () => {
     expect(source).toContain(
       `CREATE UNIQUE INDEX "plugins_plugin_key_idx" ON "plugins" USING btree ("plugin_key");`,
     );
-    expect(source).not.toContain(`status" <> 'uninstalled'`);
+    expect(source).not.toContain(
+      `CREATE UNIQUE INDEX "plugins_plugin_key_idx" ON "plugins" USING btree ("plugin_key") WHERE "status" <> 'uninstalled';`,
+    );
+    const legacyPluginBarrier = source.indexOf(
+      "Legacy plugin installations must be uninstalled before this migration",
+    );
+    const firstPluginSchemaChange = source.indexOf(
+      `ALTER TABLE "plugin_entities" DROP CONSTRAINT`,
+    );
+    expect(legacyPluginBarrier).toBeGreaterThanOrEqual(0);
+    expect(firstPluginSchemaChange).toBeGreaterThan(legacyPluginBarrier);
+    expect(source).toContain(
+      `DELETE FROM "plugins" WHERE "status" = 'uninstalled';`,
+    );
+  });
+
+  it("retires feedback tables without cascading into operator-owned dependencies", () => {
+    const file = migrationFiles().find((entry) => entry.startsWith("0007_"));
+    expect(file).toBeDefined();
+    const source = migrationSql(file!);
+
+    expect(source).toContain(`UPDATE "instance_settings"`);
+    expect(source).toContain(
+      `"general" = "general" - 'feedbackDataSharingPreference' - 'backupRetention'`,
+    );
+    expect(source).toContain('DROP TABLE "feedback_exports";');
+    expect(source).toContain('DROP TABLE "feedback_votes";');
+    expect(source).not.toMatch(/DROP TABLE "feedback_(exports|votes)" CASCADE/);
   });
 
 });

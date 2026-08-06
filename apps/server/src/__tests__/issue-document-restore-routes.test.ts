@@ -33,11 +33,9 @@ const mockInstanceSettingsService = vi.hoisted(() => ({
     id: "instance-settings-1",
     general: {
       censorUsernameInLogs: false,
-      feedbackDataSharingPreference: "prompt",
     },
   })),
   getExperimental: vi.fn(async () => ({})),
-  getGeneral: vi.fn(async () => ({ feedbackDataSharingPreference: "prompt" })),
   listCompanyIds: vi.fn(async () => [companyId]),
 }));
 const mockRoutineService = vi.hoisted(() => ({
@@ -111,7 +109,6 @@ function registerModuleMocks() {
     documentAnnotationService: () => ({ remapOpenThreadsForDocument: async () => [] }),
     documentService: () => mockDocumentsService,
     executionWorkspaceService: () => ({}),
-    feedbackService: () => ({}),
     goalService: () => ({}),
     instanceSettingsService: () => mockInstanceSettingsService,
     issueApprovalService: () => ({}),
@@ -243,11 +240,9 @@ describe("issue document revision routes", () => {
       id: "instance-settings-1",
       general: {
         censorUsernameInLogs: false,
-        feedbackDataSharingPreference: "prompt",
       },
     });
     mockInstanceSettingsService.getExperimental.mockResolvedValue({});
-    mockInstanceSettingsService.getGeneral.mockResolvedValue({ feedbackDataSharingPreference: "prompt" });
     mockInstanceSettingsService.listCompanyIds.mockResolvedValue([companyId]);
     mockRoutineService.syncRunStatusForIssue.mockResolvedValue(undefined);
     mockLogActivity.mockResolvedValue(undefined);

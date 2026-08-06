@@ -210,8 +210,6 @@ pnpm paperclipai issue attachment:delete <attachment-id>
 pnpm paperclipai issue label:list --company-id <company-id>
 pnpm paperclipai issue label:create --company-id <company-id> --name bug --color '#ff0000'
 pnpm paperclipai issue label:delete <label-id>
-pnpm paperclipai issue feedback:votes <issue-id>
-pnpm paperclipai issue feedback:vote <issue-id> --payload-json '{"targetType":"issue_comment","targetId":"...","vote":"up"}'
 ```
 
 ## Project Commands
@@ -630,7 +628,6 @@ pnpm paperclipai instance settings:general
 pnpm paperclipai instance settings:general:update --payload-json '{...}'
 pnpm paperclipai instance settings:experimental
 pnpm paperclipai instance settings:experimental:update --payload-json '{...}'
-pnpm paperclipai instance database-backup
 ```
 
 Experimental features are opt-in and are provided without compatibility guarantees. They may break, change, or be removed at any time. Use them at your own risk.
@@ -775,13 +772,6 @@ pnpm paperclipai plugin local-folder:validate <plugin-installation-id> <folder-k
 pnpm paperclipai plugin local-folder:set <plugin-installation-id> <folder-key> --company-id <company-id> --payload-json '{...}'
 ```
 
-Feedback traces can be fetched directly by ID when automating export workflows:
-
-```sh
-pnpm paperclipai feedback trace <trace-id>
-pnpm paperclipai feedback bundle <trace-id>
-```
-
 ## Local Storage Defaults
 
 Local Paperclip data lives under the selected instance root. `PAPERCLIP_HOME` chooses the home directory and `PAPERCLIP_INSTANCE_ID` chooses the instance.
@@ -793,8 +783,7 @@ Local Paperclip data lives under the selected instance root. `PAPERCLIP_HOME` ch
         ├── config.json                           # runtime config
         ├── .env                                  # instance env file
         ├── data/
-        │   ├── storage/                          # local_disk uploads
-        │   └── backups/                          # automatic DB backups
+        │   └── storage/                          # local_disk uploads
         ├── logs/
         ├── secrets/
         │   └── master.key                        # local_encrypted master key

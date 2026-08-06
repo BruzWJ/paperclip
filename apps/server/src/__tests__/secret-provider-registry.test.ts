@@ -65,6 +65,6 @@ describe("secret provider registry", () => {
       details: { keyFilePath: keyFile },
     });
     expect(local?.warnings?.join("\n")).toContain("chmod 600");
-    expect(local?.backupGuidance?.join("\n")).toContain("database");
+    expect(local?.backupGuidance?.join("\n")).toMatch(/key file/i);
   });
 });

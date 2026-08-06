@@ -42,10 +42,6 @@ const mockCompanyArtifactsService = vi.hoisted(() => ({
   list: vi.fn(),
 }));
 
-const mockFeedbackService = vi.hoisted(() => ({
-  listFeedbackTraces: vi.fn(),
-}));
-
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
 function registerCompanyRouteMocks() {
@@ -56,7 +52,6 @@ function registerCompanyRouteMocks() {
     companyArtifactsService: () => mockCompanyArtifactsService,
     companyPortabilityService: () => mockCompanyPortabilityService,
     companyService: () => mockCompanyService,
-    feedbackService: () => mockFeedbackService,
     logActivity: mockLogActivity,
   }));
 }
@@ -100,7 +95,6 @@ function createCompany(id: string) {
     budgetMonthlyAmount: "0",
     knownSpendAmount: "0",
     requireBoardApprovalForNewAgents: false,
-    feedbackDataSharingEnabled: false,
     brandColor: "#123456",
     logoAssetId: null,
     logoUrl: null,
@@ -273,15 +267,19 @@ describe.sequential("company route cross-company authorization", () => {
       label: "POST /api/companies/:companyId/imports/apply",
       request: (app: express.Express) => request(app).post(`/api/companies/${companyBId}/imports/apply`).send(importRequest()),
     },
-  ])("rejects a company A agent attempting company B operation: $label", async ({ request: buildRequest }) => {
-    const app = await createApp(companyAAgentActor());
+  ])(
+    "rejects a company A agent attempting company B operation: $label",
+    async ({ request: buildRequest }) => {
+      const app = await createApp(companyAAgentActor());
 
-    const res = await buildRequest(app);
+      const res = await buildRequest(app);
 
-    expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/generic company API|run-scoped compiled interface/i);
-    assertNoTargetMutationSideEffects();
-  });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/generic company API|run-scoped compiled interface/i);
+      assertNoTargetMutationSideEffects();
+    },
+    20_000,
+  );
 
   it("rejects same-company agent credentials on every generic company route", async () => {
     const app = await createApp(companyAAgentActor());

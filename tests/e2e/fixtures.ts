@@ -354,10 +354,10 @@ export class MockPaperclipApi {
       return { body: this.settings };
     }
     if (path === "/instance/settings/general") {
-      return { body: { censorUsernameInLogs: false, keyboardShortcuts: true, feedbackDataSharingPreference: "ask", backupRetention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 }, ...body } };
+      return { body: { censorUsernameInLogs: false, keyboardShortcuts: true, ...body } };
     }
     if (path === "/instance/settings") {
-      return { body: { id: "00000000-0000-4000-8000-000000000001", defaultEnvironmentId: null, general: { censorUsernameInLogs: false, keyboardShortcuts: true, feedbackDataSharingPreference: "ask", backupRetention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 } }, experimental: this.settings, createdAt: now(), updatedAt: now() } };
+      return { body: { id: "00000000-0000-4000-8000-000000000001", defaultEnvironmentId: null, general: { censorUsernameInLogs: false, keyboardShortcuts: true }, experimental: this.settings, createdAt: now(), updatedAt: now() } };
     }
 
     if (path === "/companies/stats") {
@@ -368,7 +368,7 @@ export class MockPaperclipApi {
       this.companyOrdinal += 1;
       const companyId = id();
       const prefix = `E${String(this.companyOrdinal).padStart(2, "0")}`;
-      const company = { id: companyId, name: body.name ?? `Company ${this.companyOrdinal}`, description: body.description ?? null, status: "active", issuePrefix: prefix, prefix, urlKey: prefix, budgetCurrency: "USD", budgetMonthlyAmount: "0", attachmentMaxBytes: 10_000_000, requireBoardApprovalForNewAgents: false, feedbackDataSharingEnabled: false, brandColor: null, logoAssetId: null, createdAt: now(), updatedAt: now() };
+      const company = { id: companyId, name: body.name ?? `Company ${this.companyOrdinal}`, description: body.description ?? null, status: "active", issuePrefix: prefix, prefix, urlKey: prefix, budgetCurrency: "USD", budgetMonthlyAmount: "0", attachmentMaxBytes: 10_000_000, requireBoardApprovalForNewAgents: false, brandColor: null, logoAssetId: null, createdAt: now(), updatedAt: now() };
       this.companies.push(company);
       this.goals.push({ id: id(), companyId, level: "company", title: body.name ?? company.name, description: null, status: "active", createdAt: now(), updatedAt: now() });
       this.environments.push({ id: id(), companyId, name: "Local", description: null, driver: "local", status: "active", config: {}, metadata: null, createdAt: now(), updatedAt: now() });

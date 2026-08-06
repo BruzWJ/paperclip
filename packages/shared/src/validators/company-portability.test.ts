@@ -156,10 +156,6 @@ describe("company portability money contract", () => {
     budgetMonthlyAmount: "900719925474099312345678.000000001",
     attachmentMaxBytes: null,
     requireBoardApprovalForNewAgents: false,
-    feedbackDataSharingEnabled: false,
-    feedbackDataSharingConsentAt: null,
-    feedbackDataSharingConsentByUserId: null,
-    feedbackDataSharingTermsVersion: null,
   };
 
   it("preserves exact currency and canonical decimal-string amounts", () => {
@@ -168,6 +164,21 @@ describe("company portability money contract", () => {
     expect(parsed.budgetMonthlyAmount).toBe(
       "900719925474099312345678.000000001",
     );
+  });
+
+  it("accepts and strips retired feedback-sharing fields from older bundles", () => {
+    const parsed = portabilityCompanyManifestEntrySchema.parse({
+      ...portableCompany,
+      feedbackDataSharingEnabled: true,
+      feedbackDataSharingConsentAt: "2026-08-06T12:00:00.000Z",
+      feedbackDataSharingConsentByUserId: "user-1",
+      feedbackDataSharingTermsVersion: "v1",
+    });
+
+    expect(parsed).not.toHaveProperty("feedbackDataSharingEnabled");
+    expect(parsed).not.toHaveProperty("feedbackDataSharingConsentAt");
+    expect(parsed).not.toHaveProperty("feedbackDataSharingConsentByUserId");
+    expect(parsed).not.toHaveProperty("feedbackDataSharingTermsVersion");
   });
 
   it("rejects normalized currencies and noncanonical or numeric amounts", () => {

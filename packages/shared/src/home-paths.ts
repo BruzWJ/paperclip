@@ -73,13 +73,6 @@ export function resolveDefaultStorageDir(input: {
   return path.resolve(resolvePaperclipInstanceRoot(input), "data", "storage");
 }
 
-export function resolveDefaultBackupDir(input: {
-  homeDir?: string;
-  instanceId?: string;
-} = {}): string {
-  return path.resolve(resolvePaperclipInstanceRoot(input), "data", "backups");
-}
-
 export function resolveHomeAwarePath(value: string): string {
   return path.resolve(expandHomePrefix(value));
 }

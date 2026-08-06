@@ -43,15 +43,6 @@ export const companies = pgTable(
     requireBoardApprovalForNewAgents: boolean("require_board_approval_for_new_agents")
       .notNull()
       .default(false),
-    feedbackDataSharingEnabled: boolean("feedback_data_sharing_enabled")
-      .notNull()
-      .default(false),
-    feedbackDataSharingConsentAt: timestamp("feedback_data_sharing_consent_at", { withTimezone: true }),
-    feedbackDataSharingConsentByUserId: text("feedback_data_sharing_consent_by_user_id").references(
-      () => authUsers.id,
-      { onDelete: "set null" },
-    ),
-    feedbackDataSharingTermsVersion: text("feedback_data_sharing_terms_version"),
     sessionIntegrityState: text("session_integrity_state")
       .$type<
         "ready" | "archive_fenced" | "hard_delete_fenced"

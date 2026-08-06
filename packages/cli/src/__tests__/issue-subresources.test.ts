@@ -190,7 +190,7 @@ describe("issue subresource commands", () => {
     ]);
   });
 
-  it("wraps tree holds, labels, feedback votes, and attachments", async () => {
+  it("wraps tree holds, labels, and attachments", async () => {
     const tmp = await mkdtemp(join(tmpdir(), "paperclip-cli-test-"));
     const filePath = join(tmp, "attachment.txt");
     await writeFile(filePath, "hello", "utf8");
@@ -214,11 +214,6 @@ describe("issue subresource commands", () => {
       await run(["issue", "label:list", "--company-id", COMPANY_ID]);
       await run(["issue", "label:create", "--company-id", COMPANY_ID, "--name", "bug", "--color", "#ff0000"]);
       await run(["issue", "label:delete", LABEL_ID]);
-      await run(["issue", "feedback:votes", ISSUE_ID]);
-      await run([
-        "issue", "feedback:vote", ISSUE_ID,
-        "--payload-json", JSON.stringify({ targetType: "issue_comment", targetId: COMMENT_ID, vote: "up" }),
-      ]);
     } finally {
       await rm(tmp, { recursive: true, force: true });
     }
@@ -237,8 +232,6 @@ describe("issue subresource commands", () => {
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/labels`],
       ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/labels`],
       ["DELETE", `http://localhost:3100/api/labels/${LABEL_ID}`],
-      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/feedback-votes`],
-      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/feedback-votes`],
     ]);
   });
 

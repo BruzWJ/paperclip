@@ -32,7 +32,6 @@ import {
 import { AgentIcon } from "../components/AgentIconPicker";
 import { cn, formatDateTime } from "../lib/utils";
 import type {
-  FeedbackVoteValue,
   Issue,
   ContextAccess,
 } from "@paperclipai/shared";
@@ -379,43 +378,6 @@ export function BoardChat() {
   const agentMap = useMemo(
     () => new Map((agents ?? []).map((a) => [a.id, a] as const)),
     [agents],
-  );
-
-  // Feedback votes for the board issue power the 👍/👎 affordance — the same
-  // store the task thread reads (PAP-105 shares the action row).
-  const { data: feedbackVotes } = useQuery({
-    queryKey: queryKeys.issues.feedbackVotes(boardIssueId ?? ""),
-    queryFn: () => issuesApi.listFeedbackVotes(boardIssueId!),
-    enabled: !!boardIssueId,
-  });
-
-  const voteByComment = useMemo(() => {
-    const map = new Map<string, FeedbackVoteValue>();
-    for (const vote of feedbackVotes ?? []) {
-      if (vote.targetType === "issue_comment") map.set(vote.targetId, vote.vote);
-    }
-    return map;
-  }, [feedbackVotes]);
-
-  const handleCommentVote = useCallback(
-    async (
-      commentId: string,
-      vote: FeedbackVoteValue,
-      options?: { allowSharing?: boolean; reason?: string },
-    ) => {
-      if (!boardIssueId) return;
-      await issuesApi.upsertFeedbackVote(boardIssueId, {
-        targetType: "issue_comment",
-        targetId: commentId,
-        vote,
-        reason: options?.reason,
-        allowSharing: options?.allowSharing,
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.issues.feedbackVotes(boardIssueId),
-      });
-    },
-    [boardIssueId, queryClient],
   );
 
   // Reset the staged reveal on mount AND whenever the active company
@@ -993,17 +955,6 @@ export function BoardChat() {
                       dateLabel={agentBubbleDateLabel(comment.createdAt)}
                       dateTitle={formatDateTime(comment.createdAt)}
                       anchorHref={`#comment-${comment.id}`}
-                      feedback={
-                        boardIssueId
-                          ? {
-                              activeVote: voteByComment.get(comment.id) ?? null,
-                              sharingPreference: "prompt",
-                              termsUrl: null,
-                              onVote: (vote, options) =>
-                                handleCommentVote(comment.id, vote, options),
-                            }
-                          : null
-                      }
                     />
                   </div>
                 );

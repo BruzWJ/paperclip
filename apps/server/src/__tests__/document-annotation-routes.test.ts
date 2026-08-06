@@ -122,7 +122,6 @@ function registerModuleMocks() {
     documentService: () => mockDocumentService,
     environmentService: () => ({}),
     executionWorkspaceService: () => ({}),
-    feedbackService: () => ({}),
     goalService: () => ({}),
     instanceSettingsService: () => ({
       get: vi.fn(async () => ({ id: "settings", general: {} })),

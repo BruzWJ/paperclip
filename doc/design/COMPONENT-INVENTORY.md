@@ -231,7 +231,6 @@ Grouped by rough domain area. One line each; variants column is props-based wher
 | `AsciiArtAnimation.tsx` | Decorative ASCII animation (boot/loading) |
 | `OpenCodeLogoIcon.tsx` | Static logo icon |
 | `StarToggle.tsx` | Star/favorite toggle button |
-| `OutputFeedbackButtons.tsx` | Thumbs up/down feedback buttons on agent output |
 | `KanbanBoard.tsx` | Kanban board view (alternate to `IssuesList` list view) |
 | `agent-config-primitives.tsx` | Shared field primitives for agent config forms |
 | `PropertiesPanel.tsx` | Generic properties-panel shell (used by Issue/Project/Agent/Goal Properties) |

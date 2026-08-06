@@ -12,14 +12,12 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": ["dist/**", "generated/**"],
-      "env": ["VITE_FEEDBACK_TERMS_URL"]
+      "outputs": ["dist/**", "generated/**"]
     },
     "build-storybook": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": ["storybook-static/**"],
-      "env": ["VITE_FEEDBACK_TERMS_URL"]
+      "outputs": ["storybook-static/**"]
     },
     "dev": {
       "persistent": true,

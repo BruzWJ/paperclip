@@ -9,7 +9,6 @@ import { defaultSecretsConfig, promptSecrets } from "../prompts/secrets.js";
 import { defaultStorageConfig, promptStorage } from "../prompts/storage.js";
 import { promptServer } from "../prompts/server.js";
 import {
-  resolveDefaultBackupDir,
   resolveDefaultLogsDir,
   resolvePaperclipInstanceId,
 } from "../config/home.js";
@@ -33,14 +32,7 @@ function defaultConfig(): PaperclipConfig {
       updatedAt: new Date().toISOString(),
       source: "configure",
     },
-    database: {
-      backup: {
-        enabled: true,
-        intervalMinutes: 60,
-        retentionDays: 30,
-        dir: resolveDefaultBackupDir(instanceId),
-      },
-    },
+    database: {},
     logging: {
       mode: "file",
       logDir: resolveDefaultLogsDir(instanceId),

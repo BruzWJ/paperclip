@@ -262,22 +262,10 @@ identity before mutation.
 
 ## Disaster recovery
 
-A backup is one complete custom-format PostgreSQL payload plus an external
-manifest containing:
-
-- source physical database identity
-- exact table set
-- payload size and checksum
-- salted one-way fingerprint of the durable Better Auth secret
-
-A restore accepts only that complete, checksummed pair. It requires
-the matching durable Better Auth secret and a physically distinct empty target.
-Every check completes before the first target mutation. Ordinary forward
-migrations may advance the restored database to the current build.
-
-Raw SQL input, selective tables/columns, source-database reuse, a nonempty
-target, an edited payload, or a different authentication secret is rejected.
-Disaster recovery is not schema migration.
+Paperclip does not ship application-managed database backup/restore. Operators
+recover from their external PostgreSQL provider backups (or other host-level
+backups) and must separately preserve secrets key material and local storage
+files when those providers are enabled.
 
 ## Validation
 
@@ -291,6 +279,4 @@ Repository validation must prove:
 - ownership, epoch, revision, reference, lease, and idempotency races fail closed
 - reassignment/reset/false-carry work and handoffs outside an exact
   effective-true-carry scope cannot inherit another provider conversation
-- complete manifested disaster recovery rejects every invalid source or target
-  before mutation
 - focused PostgreSQL suites, typecheck, tests, and build pass

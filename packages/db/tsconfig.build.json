@@ -8,7 +8,6 @@
   "include": [
     "index.ts",
     "schema.ts",
-    "backup-lib.ts",
     "database-identity.ts",
     "runtime-config.ts",
     "schema/**/*.ts"

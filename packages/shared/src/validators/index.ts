@@ -92,14 +92,6 @@ export {
   type EnvironmentCustomImageTerminalSessionToken,
 } from "./environment-custom-images.js";
 export {
-  feedbackDataSharingPreferenceSchema,
-  feedbackTargetTypeSchema,
-  feedbackTraceStatusSchema,
-  feedbackVoteValueSchema,
-  upsertIssueFeedbackVoteSchema,
-  type UpsertIssueFeedbackVote,
-} from "./feedback.js";
-export {
   sidebarOrderPreferenceSchema,
   upsertSidebarOrderPreferenceSchema,
   type UpsertSidebarOrderPreference,

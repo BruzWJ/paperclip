@@ -20,7 +20,6 @@ import {
   validateConfiguredBindMode,
 } from "@paperclipai/shared";
 import {
-  resolveDefaultBackupDir,
   resolveDefaultSecretsKeyFilePath,
   resolveDefaultStorageDir,
   resolveHomeAwarePath,
@@ -122,10 +121,6 @@ export interface Config {
   databaseUrl: string;
   databaseTargetSource: ExternalDatabaseTargetSource;
   databaseMigrationUrl: string | undefined;
-  databaseBackupEnabled: boolean;
-  databaseBackupIntervalMinutes: number;
-  databaseBackupRetentionDays: number;
-  databaseBackupDir: string;
   serveUi: boolean;
   uiDevMiddleware: boolean;
   secretsProvider: SecretProvider;
@@ -138,8 +133,6 @@ export interface Config {
   storageS3Endpoint: string | undefined;
   storageS3Prefix: string;
   storageS3ForcePathStyle: boolean;
-  feedbackExportBackendUrl: string | undefined;
-  feedbackExportBackendToken: string | undefined;
   issueExecutionSchedulerEnabled: boolean;
   issueExecutionSchedulerIntervalMs: number;
   companyDeletionEnabled: boolean;
@@ -169,7 +162,6 @@ export function loadConfig(): Config {
   assertNoAmbientAuthOriginEnvironment();
   const databaseTarget = resolveDatabaseTarget();
   const fileConfig = readConfigFile();
-  const fileDatabaseBackup = fileConfig?.database.backup;
   const fileSecrets = fileConfig?.secrets;
   const fileStorage = fileConfig?.storage;
 
@@ -200,15 +192,6 @@ export function loadConfig(): Config {
     process.env.PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE !== undefined
       ? process.env.PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE === "true"
       : (fileStorage?.s3?.forcePathStyle ?? false);
-  const feedbackExportBackendUrl =
-    process.env.PAPERCLIP_FEEDBACK_EXPORT_BACKEND_URL?.trim() ||
-    process.env.PAPERCLIP_TELEMETRY_BACKEND_URL?.trim() ||
-    undefined;
-  const feedbackExportBackendToken =
-    process.env.PAPERCLIP_FEEDBACK_EXPORT_BACKEND_TOKEN?.trim() ||
-    process.env.PAPERCLIP_TELEMETRY_BACKEND_TOKEN?.trim() ||
-    undefined;
-
   const strictModeFromEnv = process.env.PAPERCLIP_SECRETS_STRICT_MODE;
   const secretsStrictMode =
     strictModeFromEnv !== undefined
@@ -265,27 +248,6 @@ export function loadConfig(): Config {
     companyDeletionEnvRaw !== undefined
       ? companyDeletionEnvRaw === "true"
       : false;
-  const databaseBackupEnabled =
-    process.env.PAPERCLIP_DB_BACKUP_ENABLED !== undefined
-      ? process.env.PAPERCLIP_DB_BACKUP_ENABLED === "true"
-      : (fileDatabaseBackup?.enabled ?? true);
-  const databaseBackupIntervalMinutes = Math.max(
-    1,
-    Number(process.env.PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES) ||
-      fileDatabaseBackup?.intervalMinutes ||
-      60,
-  );
-  const databaseBackupRetentionDays = Math.max(
-    1,
-    Number(process.env.PAPERCLIP_DB_BACKUP_RETENTION_DAYS) ||
-      fileDatabaseBackup?.retentionDays ||
-      7,
-  );
-  const databaseBackupDir = resolveHomeAwarePath(
-    process.env.PAPERCLIP_DB_BACKUP_DIR ??
-      fileDatabaseBackup?.dir ??
-      resolveDefaultBackupDir(),
-  );
   const bindValidationErrors = validateConfiguredBindMode({
     exposure: deploymentExposure,
     bind,
@@ -317,10 +279,6 @@ export function loadConfig(): Config {
     databaseUrl: databaseTarget.connectionString,
     databaseTargetSource: databaseTarget.source,
     databaseMigrationUrl: resolveExternalMigrationUrl(process.env.DATABASE_MIGRATION_URL),
-    databaseBackupEnabled,
-    databaseBackupIntervalMinutes,
-    databaseBackupRetentionDays,
-    databaseBackupDir,
     serveUi:
       process.env.SERVE_UI !== undefined
         ? process.env.SERVE_UI === "true"
@@ -341,8 +299,6 @@ export function loadConfig(): Config {
     storageS3Endpoint,
     storageS3Prefix,
     storageS3ForcePathStyle,
-    feedbackExportBackendUrl,
-    feedbackExportBackendToken,
     issueExecutionSchedulerEnabled: process.env.ISSUE_EXECUTION_SCHEDULER_ENABLED !== "false",
     issueExecutionSchedulerIntervalMs: Math.max(
       10000,

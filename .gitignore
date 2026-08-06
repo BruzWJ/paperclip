@@ -40,7 +40,6 @@ apps/server/src/**/*.d.ts
 !apps/server/src/types/express.d.ts
 apps/server/src/**/*.d.ts.map
 tmp/
-feedback-export-*
 diagnostics/
 
 # Editor / tool temp files

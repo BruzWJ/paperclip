@@ -82,22 +82,9 @@ export type {
   SshEnvironmentConfig,
 } from "./environment.js";
 export type {
-  FeedbackVote,
-  FeedbackDataSharingPreference,
-  FeedbackTargetType,
-  FeedbackVoteValue,
-  FeedbackTrace,
-  FeedbackTraceStatus,
-  FeedbackTraceTargetSummary,
-  FeedbackTraceBundleCaptureStatus,
-  FeedbackTraceBundleFile,
-  FeedbackTraceBundle,
-} from "./feedback.js";
-export type {
   InstanceExperimentalSettings,
   InstanceGeneralSettings,
   InstanceSettings,
-  BackupRetentionPolicy,
 } from "./instance.js";
 export type {
   SmokeLabServiceStatus,
@@ -114,12 +101,6 @@ export {
   SMOKE_RUN_STEP_STATUSES,
   SMOKE_RUN_TRIGGERS,
 } from "./smoke-lab.js";
-export {
-  DAILY_RETENTION_PRESETS,
-  WEEKLY_RETENTION_PRESETS,
-  MONTHLY_RETENTION_PRESETS,
-  DEFAULT_BACKUP_RETENTION,
-} from "./instance.js";
 export {
   TRUST_PRESETS,
   DEFAULT_TRUST_PRESET,

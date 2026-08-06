@@ -218,19 +218,6 @@ export function registerAccessCommands(program: Command): void {
   addJsonPatch(instance, "settings:general:update", "Update general instance settings", "/api/instance/settings/general");
   addSimpleGet(instance, "settings:experimental", "Get experimental instance settings", "/api/instance/settings/experimental");
   addJsonPatch(instance, "settings:experimental:update", "Update experimental instance settings", "/api/instance/settings/experimental");
-  addCommonClientOptions(
-    instance
-      .command("database-backup")
-      .description("Create a database backup")
-      .action(async (opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.post("/api/instance/database-backups", {}), { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
 
   const sidebar = program.command("sidebar").description("Sidebar preference and badge operations");
   addSimpleGet(sidebar, "preferences", "Get current sidebar preferences", "/api/sidebar-preferences/me");
