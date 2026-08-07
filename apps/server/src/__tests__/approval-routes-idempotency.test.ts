@@ -57,9 +57,7 @@ async function createApp(actorOverrides: Record<string, unknown> = {}) {
     next();
   });
   app.use("/api", approvalRoutes(createRouteDb(), {
-    ordinaryIssues: {
-      notifyCreatorDelivery: async () => undefined,
-    } as never,
+    ordinaryIssues: {} as never,
   }));
   app.use(errorHandler);
   return app;
@@ -88,9 +86,7 @@ async function createAgentApp(options: { runId?: string } = {}) {
   });
   app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", approvalRoutes(createRouteDb(), {
-    ordinaryIssues: {
-      notifyCreatorDelivery: async () => undefined,
-    } as never,
+    ordinaryIssues: {} as never,
   }));
   app.use(errorHandler);
   return app;

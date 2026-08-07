@@ -21,7 +21,6 @@ import {
   environmentCustomImageService,
   composeRuntimeActionPort,
   createOrdinaryIssueRuntime,
-  createPostgresCreatorDeliveryService,
   createPostgresSystemEscalationService,
   createPostgresIssueExecutionProductionRuntime,
   createPostgresIssueSessionCompositionRuntime,
@@ -96,7 +95,6 @@ type BetterAuthSessionResult = {
 type CausalRuntimeStartupAssembly = Pick<
   PostgresRuntimeIssueActionServiceOptions,
   | "dispatchPersistedRef"
-  | "notifyCreatorDelivery"
   | "issueExecutionCancellation"
 >;
 
@@ -223,10 +221,6 @@ export async function startServer(): Promise<StartedServer> {
       async dispatchPersistedRef(refId) {
         const runtime = await causalRuntimeStartup.ready;
         await runtime.dispatchPersistedRef(refId);
-      },
-      async notifyCreatorDelivery(deliveryId) {
-        const runtime = await causalRuntimeStartup.ready;
-        await runtime.notifyCreatorDelivery(deliveryId);
       },
       issueExecutionCancellation: {
         async requestScopeCancellationsInTransaction(transaction, input) {
@@ -370,35 +364,14 @@ export async function startServer(): Promise<StartedServer> {
       dispatchRef: dispatchPersistedRef,
     },
   );
-  const creatorDelivery = createPostgresCreatorDeliveryService(
-    db as any,
-    {
-      workerId,
-      pluginWorkerManager,
-      async notifyRef(refId) {
-        return composition.prepareAndNotifyCreatorDeliveryRef(
-          refId,
-          issueExecution.dispatcher,
-        );
-      },
-      terminalizeCreatorDelivery(input) {
-        return systemEscalations.terminalizeCreatorDelivery(input);
-      },
-    },
-  );
-  const notifyCreatorDelivery = async (deliveryId: string) => {
-    await creatorDelivery.notifyPersistedDelivery(deliveryId);
-  };
   causalRuntimeStartup.complete({
     dispatchPersistedRef,
-    notifyCreatorDelivery,
     issueExecutionCancellation: issueExecution.cancellation,
   });
   const ordinaryIssues = createOrdinaryIssueRuntime(db as any, {
     issueExecutionRunService: issueExecution.runService,
     issueExecutionCancellation: issueExecution.cancellation,
     dispatchRef: dispatchPersistedRef,
-    notifyCreatorDelivery,
   });
   const app = await createApp(db as any, {
     uiMode,
@@ -490,7 +463,6 @@ export async function startServer(): Promise<StartedServer> {
 
   let issueExecutionSchedulerStopped = false;
   let issueExecutionSchedulerInterval: ReturnType<typeof setInterval> | null = null;
-  let creatorDeliveryInterval: ReturnType<typeof setInterval> | null = null;
   const issueExecutionSchedulerInFlight = new Set<Promise<void>>();
   const trackIssueExecutionSchedulerWork = (work: Promise<unknown>) => {
     let tracked: Promise<void>;
@@ -521,7 +493,6 @@ export async function startServer(): Promise<StartedServer> {
     // dispatch persisted execution work.
     const cancellations =
       await issueExecution.cancellation.reconcilePending();
-    const deliveries = await creatorDelivery.drainQueued();
     const escalations = await systemEscalations.reconcile();
     const prepared = await composition.reconcilePersistedRefs(
       issueExecution.dispatcher,
@@ -530,11 +501,6 @@ export async function startServer(): Promise<StartedServer> {
       await issueExecution.dispatcher.reconcilePersistedRefs();
     if (
       cancellations.length > 0 ||
-      deliveries.delivered > 0 ||
-      deliveries.deferred > 0 ||
-      deliveries.failed > 0 ||
-      deliveries.holdsChanged > 0 ||
-      deliveries.terminalOutcomesChanged > 0 ||
       escalations.terminalized > 0 ||
       escalations.ensured > 0 ||
       prepared.discovered > 0 ||
@@ -543,7 +509,6 @@ export async function startServer(): Promise<StartedServer> {
       logger.info(
         {
           cancellations,
-          creatorDeliveries: deliveries,
           systemEscalations: escalations,
           prepared,
           dispatchable,
@@ -626,33 +591,6 @@ export async function startServer(): Promise<StartedServer> {
       );
     }, config.issueExecutionSchedulerIntervalMs);
   }
-  creatorDeliveryInterval = setInterval(() => {
-    if (issueExecutionSchedulerStopped) return;
-    trackIssueExecutionSchedulerWork(
-      creatorDelivery.drainQueued()
-        .then((result) => {
-          if (
-            result.delivered > 0 ||
-            result.deferred > 0 ||
-            result.failed > 0 ||
-            result.holdsChanged > 0 ||
-            result.terminalOutcomesChanged > 0
-          ) {
-            logger.info(
-              { ...result },
-              "creator-delivery worker drained persisted intents",
-            );
-          }
-        })
-        .catch((err) => {
-          logger.error(
-            { err },
-            "creator-delivery worker drain failed",
-          );
-        }),
-    );
-  }, 1_000);
-  
   await new Promise<void>((resolveListen, rejectListen) => {
     const onError = (err: Error) => {
       server.off("error", onError);
@@ -701,10 +639,6 @@ export async function startServer(): Promise<StartedServer> {
       if (issueExecutionSchedulerInterval) {
         clearInterval(issueExecutionSchedulerInterval);
         issueExecutionSchedulerInterval = null;
-      }
-      if (creatorDeliveryInterval) {
-        clearInterval(creatorDeliveryInterval);
-        creatorDeliveryInterval = null;
       }
       await waitForIssueExecutionSchedulerIdle();
 

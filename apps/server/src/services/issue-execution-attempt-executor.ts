@@ -1513,7 +1513,7 @@ export function createIssueExecutionAttemptExecutor(options: {
           // runCycle returns only after ACPX's public close boundary and the
           // disposable runtime-state cleanup. Paperclip owns no provider PID
           // or legacy process fact. Release the Paperclip-owned execution
-          // target before terminal settlement can publish a durable handoff.
+          // target before terminal settlement closes the durable run state.
           await releaseTarget();
           await settle({
             result: cycle.decision.result,

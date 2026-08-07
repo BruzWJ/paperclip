@@ -126,8 +126,6 @@ export function decodeSystemCreatorSourceKind(
 }
 
 export const ISSUE_CREATOR_EDGE_TERMINAL_REASONS = [
-  "delivery_exhausted",
-  "paused_or_budget_staleness",
   "creator_execution_superseded",
   "agent_terminated",
   "agent_deleted",
@@ -157,7 +155,26 @@ export function decodeIssueCreatorEdgeTerminalReason(
   return value;
 }
 
+/**
+ * Configurable agent action grants. Relationship-derived issue authority is
+ * intentionally absent: creating an issue permits assignment, while issue
+ * updates compile from the active creator/owner relationship.
+ */
 export const PAPERCLIP_ACTION_KEYS = [
+  "issue_create",
+  "mention_agent",
+  "mention_board",
+  "agent_hire",
+  "agent_configure",
+] as const;
+
+export type PaperclipActionKey = (typeof PAPERCLIP_ACTION_KEYS)[number];
+
+/**
+ * Closed runtime tool vocabulary. `issue_assign` and `issue_update` are
+ * runtime actions, but never independently configurable grants.
+ */
+export const PAPERCLIP_RUNTIME_ACTION_KEYS = [
   "issue_create",
   "issue_assign",
   "issue_update",
@@ -167,7 +184,8 @@ export const PAPERCLIP_ACTION_KEYS = [
   "agent_configure",
 ] as const;
 
-export type PaperclipActionKey = (typeof PAPERCLIP_ACTION_KEYS)[number];
+export type PaperclipRuntimeActionKey =
+  (typeof PAPERCLIP_RUNTIME_ACTION_KEYS)[number];
 
 export const AGENT_MENTION_REACH_GRANT_KEYS = [
   "mention_any_descendant",
@@ -295,7 +313,7 @@ export const ISSUE_EXECUTION_REF_SOURCE_KINDS = [
   "board_chat",
   "human_comment_mention",
   "routine_dispatch",
-  "creator_update",
+  "issue_update",
   "consult_mention",
   "system_nudge",
   "termination_recovery",
@@ -331,8 +349,8 @@ export type AgentLivenessAttentionReason =
 
 /**
  * Immutable actor branch for the canonical creator-withdrawal command. Agent
- * creators use the ordinary issue_assign + issue_update tools and therefore
- * never enter this board/plugin control-plane ledger.
+ * creators use relationship-derived issue runtime actions and therefore never
+ * enter this board/plugin control-plane ledger.
  */
 export const ISSUE_CREATOR_WITHDRAWAL_ACTOR_KINDS = [
   "user",

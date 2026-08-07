@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
   resolveInvokableOwner: vi.fn(),
   recordLiveness: vi.fn(),
   dispatchRef: vi.fn(),
-  notifyCreatorDelivery: vi.fn(),
   requestSteering: vi.fn(),
   continueSteering: vi.fn(),
   requestCancellations: vi.fn(),
@@ -108,7 +107,6 @@ function createRuntime(harness: MockDbHarness) {
       reconcileRequestedScopeCancellations: mocks.reconcileCancellations,
     },
     dispatchRef: mocks.dispatchRef,
-    notifyCreatorDelivery: mocks.notifyCreatorDelivery,
   });
 }
 
@@ -139,7 +137,6 @@ beforeEach(() => {
   });
   mocks.recordLiveness.mockResolvedValue(undefined);
   mocks.dispatchRef.mockResolvedValue(undefined);
-  mocks.notifyCreatorDelivery.mockResolvedValue(undefined);
   mocks.requestSteering.mockResolvedValue(undefined);
   mocks.continueSteering.mockResolvedValue(undefined);
   mocks.requestCancellations.mockResolvedValue(null);
@@ -315,7 +312,7 @@ describe("ordinary issue board mutations without a database", () => {
       issueId: ISSUE_ID,
       selector: { kind: "ownership_epoch", ownershipEpoch: 1 },
       reason: "board_reopen_continuity_fence",
-      fence: { refIds: ["ref-stale"], deliveryIds: [], correlationIds: [] },
+      fence: { refIds: ["ref-stale"], correlationIds: [] },
       requests: [],
     };
     mocks.sessions.admitExecutionSource.mockResolvedValue({ ref });

@@ -116,7 +116,7 @@ Provider-native continuity is represented only by a fixed, encrypted
 
 `(company, issue, ownership epoch, agent, adapter configuration identity)`
 
-It is retained only for effective-true-carry work. A handoff always creates a
+It is retained only for effective-true-carry work. A mention always creates a
 fresh Paperclip run, but the receiving agent may resume its own compatible ACP
 backend session when `carry_context` and this exact scope match; it never
 receives the caller's handle. Reassignment, adapter revision change, board/user
@@ -143,10 +143,19 @@ The seven possible issue actions are:
 
 The runtime compiler derives the exact interface from the leased issue
 reference, live owner/creator authority, context/action/mention grants, and
-selected company tools. Dynamic catalogs contain only eligible direct children,
-valid mention targets, and permitted configuration targets. A direct parent is
-an implicit response route, not an implicit outgoing mention target; explicit
-upward mentions require the ancestor grant. A missing grant means false.
+selected company tools. The five configurable action grants govern
+`issue_create`, `mention_agent`, `mention_board`, `agent_hire`, and
+`agent_configure`; `issue_create` also enables reassignment of eligible direct
+children created by that exact execution. `issue_update` is relationship-derived
+instead: the current owner omits `issueId` to update its active issue, and the
+exact creator execution supplies an eligible direct-child `issueId`. Both paths
+record one canonical comment and automatically mention the owner/creator
+counterpart in that counterpart's issue context. A creator
+path may send a message or set nonterminal `open`/`blocked`; terminal
+`done`/`cancelled` and `structuredResult` are current-owner-only. Dynamic
+catalogs contain only eligible direct children, valid mention targets, and permitted
+configuration targets. There is no implicit response route; explicit upward
+mentions require the ancestor grant. A missing configurable grant means false.
 
 The provider receives a `paperclip.run-tools/v1` endpoint/bearer bound to the
 run, issue, epoch, agent, adapter revision, reference, and lease. It is accepted
@@ -157,27 +166,30 @@ tool-selector REST routes reject provider credentials.
 ## Communication, admission, and recovery
 
 Delegation creates a direct child issue with an explicit owner and immutable
-creator edge. Owner-form `issue_update` writes ordered progress or terminal
-disposition to the chronological thread and routes it to the immutable creator.
-Creator-form updates are message-only and cannot mutate lifecycle or metadata.
+creator edge. Canonical `issue_update` writes ordered progress or terminal
+disposition as the counterpart-facing chronological comment. A child-owner
+update targets the direct parent, a root-owner update targets the root issue's
+Board creator, and a creator-targeted child update targets the child. Both paths
+may carry a message and nonterminal `open`/`blocked` status but cannot mutate
+request, title, owner, dependencies, or metadata. Terminal `done`/`cancelled`
+and `structuredResult` are current-owner-only. The counterpart mention is
+automatic, so providers do not add a separate comment for the same update. A
+nonterminal creator-targeted update admits the current owner’s follow-up
+execution.
 
 An ordinary human comment is durable and non-dispatching by default. A typed
 mention may invoke only the exact current agent owner and ownership epoch. Prose
 is never parsed as a mention, assignment, approval, or lifecycle operation.
-`mention_agent` atomically admits a durable same-issue handoff and returns only
-an admission acknowledgement. It is terminal for the caller's turn; the caller
-ends normally, and the recipient is dispatched only after caller finalization.
-The recipient's final response is admitted as a fresh message and run for its
-direct parent, continuing one hop at a time until the current issue owner/root
-receives it. The route never skips an unavailable direct parent and never
-auto-notifies the Board. Each hop is a fresh Paperclip run, while a compatible
-ACP backend session may resume under the exact effective-true-carry scope.
+`mention_agent` atomically records one canonical same-issue comment and admits
+the recipient's execution reference. It is asynchronous and non-terminal, and
+dispatch begins after the action transaction commits. The recipient's final
+provider response is not automatically relayed; any further communication must
+use `mention_agent`, `mention_board`, or `issue_update`.
 
-An owner agent with the explicit `mention_board` action grant may publish a
-message to collective Board Attention. It
-atomically commits its terminal acknowledgement with that request and ends the
-caller's turn. It does not change issue lifecycle or create an approval, review,
-or execution reference. A later typed Board comment mention to that exact owner
+An agent with the explicit `mention_board` action grant may publish a canonical
+comment to collective Board Attention. It atomically commits its non-terminal
+acknowledgement with that request. It does not change issue lifecycle or create
+an approval, review, or execution reference. A later typed Board comment mention to that exact owner
 and ownership epoch supplies the response in a fresh run and removes the request
 from Board Attention. A terminal issue hides the request, and a later reopen
 does not revive it.
@@ -220,7 +232,7 @@ content but grant no authority.
 
 Board Chat creates an ordinary board/user-authored issue for the explicitly
 selected eligible agent. The first message is the immutable request; follow-ups
-use creator-form updates. No concierge identity, standing chat issue, prompt
+use creator-targeted updates. No concierge identity, standing chat issue, prompt
 relay, or hidden transcript exists.
 
 Plugins may create callback-bound ordinary issues and receive canonical
@@ -277,6 +289,6 @@ Repository validation must prove:
   bridge
 - general REST and selector-session interfaces deny or omit provider access
 - ownership, epoch, revision, reference, lease, and idempotency races fail closed
-- reassignment/reset/false-carry work and handoffs outside an exact
+- reassignment/reset/false-carry work and mentions outside an exact
   effective-true-carry scope cannot inherit another provider conversation
 - focused PostgreSQL suites, typecheck, tests, and build pass

@@ -3,7 +3,6 @@ import {
   agents,
   companies,
   companySessionLifecycleOperations,
-  creatorDeliveries,
   issueConsultExecutions,
   issueExecutionAttemptRetrySchedules,
   issueExecutionAttempts,
@@ -215,7 +214,6 @@ export type IssueExecutionAuthorityFenceSelector =
 
 export interface FencedIssueExecutionAuthority {
   readonly refIds: readonly string[];
-  readonly deliveryIds: readonly string[];
   readonly correlationIds: readonly string[];
 }
 
@@ -419,7 +417,7 @@ export function projectPersistedIssueExecutionRef(
 }
 
 function sameBatchScope(first: RefRow, candidate: RefRow): boolean {
-  return candidate.sourceKind === "creator_update" &&
+  return candidate.sourceKind === "issue_update" &&
     candidate.companyId === first.companyId &&
     candidate.issueId === first.issueId &&
     candidate.sessionId === first.sessionId &&
@@ -1329,7 +1327,7 @@ async function createRunForRef(
       issueId: ref.issueId,
       sessionId: ref.sessionId,
     });
-    const candidates = ref.sourceKind === "creator_update"
+    const candidates = ref.sourceKind === "issue_update"
       ? await transaction
           .select()
           .from(issueExecutionRefs)
@@ -1702,7 +1700,6 @@ async function completeTerminalPromptInTransaction(
     readonly finishedAt: Date;
   } | null;
   readonly laneReleased: boolean;
-  readonly dispatchRefIds: readonly string[];
 }> {
   if (
     input.attempt.refId !== input.lease.ref.id ||
@@ -1787,7 +1784,7 @@ async function completeTerminalPromptInTransaction(
         leaseId: input.lease.leaseId,
         at: input.at,
       });
-      return { finalization: null, laneReleased: true, dispatchRefIds: [] };
+      return { finalization: null, laneReleased: true };
     }
   } else {
     await settleUnsentSuffix(
@@ -1828,7 +1825,7 @@ async function completeTerminalPromptInTransaction(
     terminalReasonCode: (input.reason?.trim() || input.outcome).slice(0, 200),
     finishedAt: input.at,
   } as const;
-  const finalized = await options.finalizer.finalizeInTransaction(
+  await options.finalizer.finalizeInTransaction(
     transaction,
     finalization,
   );
@@ -1842,7 +1839,6 @@ async function completeTerminalPromptInTransaction(
   return {
     finalization,
     laneReleased: true,
-    dispatchRefIds: finalized.dispatchRefIds,
   };
 }
 
@@ -1916,23 +1912,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
       readonly at: Date;
     },
   ) => Promise<FencedIssueExecutionAuthority>;
-  readonly releaseSuspendedAgentDeliveriesInTransaction: (
-    transaction: IssueSessionDbTransaction,
-    input: {
-      readonly companyId: string;
-      readonly agentIds: readonly string[];
-      readonly at: Date;
-    },
-  ) => Promise<readonly string[]>;
-  readonly releaseBudgetScopeDeliveriesInTransaction: (
-    transaction: IssueSessionDbTransaction,
-    input: {
-      readonly companyId: string;
-      readonly scopeType: "company" | "project" | "agent";
-      readonly scopeId: string;
-      readonly at: Date;
-    },
-  ) => Promise<readonly string[]>;
 } {
   const now = options.now ?? (() => new Date());
   const idFactory = options.idFactory ?? randomUUID;
@@ -3385,7 +3364,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
       if (selector.agentIds.length === 0) {
         return Object.freeze({
           refIds: Object.freeze([]),
-          deliveryIds: Object.freeze([]),
           correlationIds: Object.freeze([]),
         });
       }
@@ -3449,7 +3427,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
         if (selector.refIds.length === 0) {
           return Object.freeze({
             refIds: Object.freeze([]),
-            deliveryIds: Object.freeze([]),
             correlationIds: Object.freeze([]),
           });
         }
@@ -3588,394 +3565,10 @@ export function createPostgresIssueExecutionDispatcherRepository(
       )
       .returning({ id: issueExecutionSessions.id });
 
-    const deliveryRefIds = selector.kind === "refs"
-      ? [...new Set([...selector.refIds, ...refIds])]
-      : refIds;
-    const deliveryPredicate = selector.kind === "agents" ||
-        selector.kind === "suspended_agents"
-      ? or(
-          inArray(
-            sql<string>`${creatorDeliveries.recipientRef}->>'agentId'`,
-            [...selector.agentIds],
-          ),
-          inArray(
-            sql<string>`${creatorDeliveries.recipientRef}->>'endpointId'`,
-            [...selector.agentIds],
-          ),
-          ...(deliveryRefIds.length > 0
-            ? [inArray(creatorDeliveries.counterpartRefId, deliveryRefIds)]
-            : []),
-        )
-      : selector.kind === "budget_scope"
-        ? selector.scopeType === "company"
-          ? sql<boolean>`true`
-          : selector.scopeType === "agent"
-            ? or(
-                eq(
-                  sql<string>`${creatorDeliveries.recipientRef}->>'agentId'`,
-                  selector.scopeId,
-                ),
-                eq(
-                  sql<string>`${creatorDeliveries.recipientRef}->>'endpointId'`,
-                  selector.scopeId,
-                ),
-                ...(deliveryRefIds.length > 0
-                  ? [inArray(creatorDeliveries.counterpartRefId, deliveryRefIds)]
-                  : []),
-              )
-            : budgetIssueIds.length === 0
-              ? sql<boolean>`false`
-              : inArray(creatorDeliveries.issueId, [...budgetIssueIds])
-      : selector.kind === "ownership_epoch"
-        ? and(
-            eq(creatorDeliveries.issueId, selector.issueId),
-            eq(creatorDeliveries.ownershipEpoch, selector.ownershipEpoch),
-          )
-        : and(
-            eq(creatorDeliveries.issueId, selector.issueId),
-            inArray(creatorDeliveries.counterpartRefId, deliveryRefIds),
-          );
-    const temporaryHold =
-      selector.kind === "suspended_agents" ||
-      selector.kind === "budget_scope";
-    const deliveries = temporaryHold
-      ? await transaction
-          .update(creatorDeliveries)
-          .set({
-            state: "retryable",
-            heldSince:
-              sql`coalesce(${creatorDeliveries.heldSince}, ${at.toISOString()}::timestamptz)`,
-            holdReason:
-              selector.kind === "budget_scope" ? "budget_stopped" : "paused",
-            retryAt: null,
-            lastFailure:
-              selector.kind === "budget_scope"
-                ? "continuous_budget_hold"
-                : "continuous_paused_hold",
-            leaseOwner: null,
-            leasedAt: null,
-            leaseExpiresAt: null,
-            updatedAt: at,
-          })
-          .where(
-            and(
-              eq(creatorDeliveries.companyId, input.companyId),
-              eq(creatorDeliveries.recipientKind, "agent-execution"),
-              inArray(creatorDeliveries.state, [
-                "pending",
-                "leased",
-                "retryable",
-              ]),
-              deliveryPredicate,
-            ),
-          )
-          .returning({ id: creatorDeliveries.id })
-      : await transaction
-          .update(creatorDeliveries)
-          .set({
-            state: "permanently_unreceivable",
-            leaseOwner: null,
-            leasedAt: null,
-            leaseExpiresAt: null,
-            retryAt: null,
-            terminalAt: at,
-            terminalReason: reason,
-            updatedAt: at,
-          })
-          .where(
-            and(
-              eq(creatorDeliveries.companyId, input.companyId),
-              eq(creatorDeliveries.recipientKind, "agent-execution"),
-              inArray(creatorDeliveries.state, [
-                "pending",
-                "leased",
-                "retryable",
-              ]),
-              deliveryPredicate,
-            ),
-          )
-          .returning({ id: creatorDeliveries.id });
-
     return Object.freeze({
       refIds: Object.freeze(refIds),
-      deliveryIds: Object.freeze(deliveries.map((row) => row.id)),
       correlationIds: Object.freeze(correlations.map((row) => row.id)),
     });
-  }
-
-  async function releaseSuspendedAgentDeliveriesInTransaction(
-    transaction: IssueSessionDbTransaction,
-    input: {
-      readonly companyId: string;
-      readonly agentIds: readonly string[];
-      readonly at: Date;
-    },
-  ): Promise<readonly string[]> {
-    exactIdentifier(input.companyId, "agent resumption company id");
-    const at = validDate(input.at, "agent resumption time");
-    const agentIds = [...new Set(input.agentIds)];
-    for (const agentId of agentIds) {
-      exactIdentifier(agentId, "resumed agent id");
-    }
-    if (agentIds.length === 0) return Object.freeze([]);
-
-    const relatedRefs = await transaction
-      .select({ id: issueExecutionRefs.id })
-      .from(issueExecutionRefs)
-      .where(
-        and(
-          eq(issueExecutionRefs.companyId, input.companyId),
-          inArray(issueExecutionRefs.targetAgentId, agentIds),
-        ),
-      );
-    const relatedRefIds = relatedRefs.map((ref) => ref.id);
-    const recipientPredicate = or(
-      inArray(
-        sql<string>`${creatorDeliveries.recipientRef}->>'agentId'`,
-        agentIds,
-      ),
-      inArray(
-        sql<string>`${creatorDeliveries.recipientRef}->>'endpointId'`,
-        agentIds,
-      ),
-      ...(relatedRefIds.length > 0
-        ? [inArray(creatorDeliveries.counterpartRefId, relatedRefIds)]
-        : []),
-    );
-    const deliveryHasActiveBudgetStop = sql<boolean>`(
-      exists (
-        select 1
-        from ${companies} budget_company
-        where budget_company.id = ${creatorDeliveries.companyId}
-          and budget_company.status = 'paused'
-          and budget_company.pause_reason = 'budget'
-      )
-      or exists (
-        select 1
-        from ${issues} budget_issue
-        join ${projects} budget_project
-          on budget_project.company_id = budget_issue.company_id
-         and budget_project.id = budget_issue.project_id
-        where budget_issue.company_id = ${creatorDeliveries.companyId}
-          and budget_issue.id = ${creatorDeliveries.issueId}
-          and budget_project.pause_reason = 'budget'
-      )
-      or exists (
-        select 1
-        from ${agents} budget_agent
-        where budget_agent.company_id = ${creatorDeliveries.companyId}
-          and budget_agent.pause_reason = 'budget'
-          and (
-            budget_agent.id::text = ${creatorDeliveries.recipientRef}->>'agentId'
-            or budget_agent.id::text = ${creatorDeliveries.recipientRef}->>'endpointId'
-            or exists (
-              select 1
-              from ${issueExecutionRefs} budget_ref
-              where budget_ref.id = ${creatorDeliveries.counterpartRefId}
-                and budget_ref.target_agent_id = budget_agent.id
-            )
-          )
-      )
-    )`;
-    await transaction
-      .update(creatorDeliveries)
-      .set({
-        state: "retryable",
-        holdReason: "budget_stopped",
-        retryAt: null,
-        lastFailure: "continuous_budget_hold",
-        leaseOwner: null,
-        leasedAt: null,
-        leaseExpiresAt: null,
-        updatedAt: at,
-      })
-      .where(
-        and(
-          eq(creatorDeliveries.companyId, input.companyId),
-          eq(creatorDeliveries.recipientKind, "agent-execution"),
-          eq(creatorDeliveries.state, "retryable"),
-          eq(creatorDeliveries.holdReason, "paused"),
-          recipientPredicate,
-          deliveryHasActiveBudgetStop,
-        ),
-      );
-    const released = await transaction
-      .update(creatorDeliveries)
-      .set({
-        state: "retryable",
-        heldSince: null,
-        holdReason: null,
-        retryAt: at,
-        lastFailure: null,
-        leaseOwner: null,
-        leasedAt: null,
-        leaseExpiresAt: null,
-        updatedAt: at,
-      })
-      .where(
-        and(
-          eq(creatorDeliveries.companyId, input.companyId),
-          eq(creatorDeliveries.recipientKind, "agent-execution"),
-          eq(creatorDeliveries.state, "retryable"),
-          eq(creatorDeliveries.holdReason, "paused"),
-          recipientPredicate,
-          sql<boolean>`not (${deliveryHasActiveBudgetStop})`,
-        ),
-      )
-      .returning({ id: creatorDeliveries.id });
-    return Object.freeze(released.map((row) => row.id));
-  }
-
-  async function releaseBudgetScopeDeliveriesInTransaction(
-    transaction: IssueSessionDbTransaction,
-    input: {
-      readonly companyId: string;
-      readonly scopeType: "company" | "project" | "agent";
-      readonly scopeId: string;
-      readonly at: Date;
-    },
-  ): Promise<readonly string[]> {
-    exactIdentifier(input.companyId, "budget resumption company id");
-    exactIdentifier(input.scopeId, "budget resumption scope id");
-    const at = validDate(input.at, "budget resumption time");
-    if (input.scopeType === "company" && input.scopeId !== input.companyId) {
-      reject("company budget resumption crossed its exact company");
-    }
-    const scopePredicate = input.scopeType === "company"
-      ? sql<boolean>`true`
-      : input.scopeType === "project"
-        ? (() => {
-            return inArray(
-              creatorDeliveries.issueId,
-              transaction
-                .select({ id: issues.id })
-                .from(issues)
-                .where(
-                  and(
-                    eq(issues.companyId, input.companyId),
-                    eq(issues.projectId, input.scopeId),
-                  ),
-                ),
-            );
-          })()
-        : or(
-            eq(
-              sql<string>`${creatorDeliveries.recipientRef}->>'agentId'`,
-              input.scopeId,
-            ),
-            eq(
-              sql<string>`${creatorDeliveries.recipientRef}->>'endpointId'`,
-              input.scopeId,
-            ),
-            inArray(
-              creatorDeliveries.counterpartRefId,
-              transaction
-                .select({ id: issueExecutionRefs.id })
-                .from(issueExecutionRefs)
-                .where(
-                  and(
-                    eq(issueExecutionRefs.companyId, input.companyId),
-                    eq(issueExecutionRefs.targetAgentId, input.scopeId),
-                  ),
-                ),
-            ),
-          );
-    const deliveryTargetsNonBudgetPausedAgent = sql<boolean>`exists (
-      select 1
-      from ${agents} paused_agent
-      where paused_agent.company_id = ${creatorDeliveries.companyId}
-        and paused_agent.status = 'paused'
-        and paused_agent.pause_reason is distinct from 'budget'
-        and (
-          paused_agent.id::text = ${creatorDeliveries.recipientRef}->>'agentId'
-          or paused_agent.id::text = ${creatorDeliveries.recipientRef}->>'endpointId'
-          or exists (
-            select 1
-            from ${issueExecutionRefs} paused_ref
-            where paused_ref.id = ${creatorDeliveries.counterpartRefId}
-              and paused_ref.target_agent_id = paused_agent.id
-          )
-        )
-    )`;
-    await transaction
-      .update(creatorDeliveries)
-      .set({
-        state: "retryable",
-        holdReason: "paused",
-        retryAt: null,
-        lastFailure: "continuous_paused_hold",
-        leaseOwner: null,
-        leasedAt: null,
-        leaseExpiresAt: null,
-        updatedAt: at,
-      })
-      .where(
-        and(
-          eq(creatorDeliveries.companyId, input.companyId),
-          eq(creatorDeliveries.recipientKind, "agent-execution"),
-          eq(creatorDeliveries.state, "retryable"),
-          eq(creatorDeliveries.holdReason, "budget_stopped"),
-          scopePredicate,
-          deliveryTargetsNonBudgetPausedAgent,
-        ),
-      );
-    const released = await transaction
-      .update(creatorDeliveries)
-      .set({
-        state: "retryable",
-        heldSince: null,
-        holdReason: null,
-        retryAt: at,
-        lastFailure: null,
-        leaseOwner: null,
-        leasedAt: null,
-        leaseExpiresAt: null,
-        updatedAt: at,
-      })
-      .where(
-        and(
-          eq(creatorDeliveries.companyId, input.companyId),
-          eq(creatorDeliveries.recipientKind, "agent-execution"),
-          eq(creatorDeliveries.state, "retryable"),
-          eq(creatorDeliveries.holdReason, "budget_stopped"),
-          scopePredicate,
-          sql`not exists (
-            select 1
-            from ${companies} budget_company
-            where budget_company.id = ${creatorDeliveries.companyId}
-              and budget_company.status = 'paused'
-              and budget_company.pause_reason = 'budget'
-          )`,
-          sql`not exists (
-            select 1
-            from ${issues} budget_issue
-            join ${projects} budget_project
-              on budget_project.company_id = budget_issue.company_id
-             and budget_project.id = budget_issue.project_id
-            where budget_issue.company_id = ${creatorDeliveries.companyId}
-              and budget_issue.id = ${creatorDeliveries.issueId}
-              and budget_project.pause_reason = 'budget'
-          )`,
-          sql`not exists (
-            select 1
-            from ${agents} budget_agent
-            where budget_agent.company_id = ${creatorDeliveries.companyId}
-              and budget_agent.pause_reason = 'budget'
-              and (
-                budget_agent.id::text = ${creatorDeliveries.recipientRef}->>'agentId'
-                or budget_agent.id::text = ${creatorDeliveries.recipientRef}->>'endpointId'
-                or exists (
-                  select 1
-                  from ${issueExecutionRefs} budget_ref
-                  where budget_ref.id = ${creatorDeliveries.counterpartRefId}
-                    and budget_ref.target_agent_id = budget_agent.id
-                )
-              )
-          )`,
-        ),
-      )
-      .returning({ id: creatorDeliveries.id });
-    return Object.freeze(released.map((row) => row.id));
   }
 
   const repository = {
@@ -4365,7 +3958,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
           completed = {
             finalization: null,
             laneReleased: false,
-            dispatchRefIds: [],
           };
         } else {
           const attempt = exactlyOne(
@@ -4409,7 +4001,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
       }
       return {
         laneReleased: settlement.laneReleased,
-        dispatchRefIds: settlement.dispatchRefIds,
       };
     },
 
@@ -4450,8 +4041,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
 
     terminalizeDetachedCancelledRunInTransaction,
     fenceRevokedExecutionAuthorityInTransaction,
-    releaseSuspendedAgentDeliveriesInTransaction,
-    releaseBudgetScopeDeliveriesInTransaction,
 
   } satisfies IssueExecutionDispatcherRepository & {
     terminalizeCancelledRun(input: {
@@ -4480,23 +4069,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
         at: Date;
       },
     ): Promise<FencedIssueExecutionAuthority>;
-    releaseSuspendedAgentDeliveriesInTransaction(
-      transaction: IssueSessionDbTransaction,
-      input: {
-        companyId: string;
-        agentIds: readonly string[];
-        at: Date;
-      },
-    ): Promise<readonly string[]>;
-    releaseBudgetScopeDeliveriesInTransaction(
-      transaction: IssueSessionDbTransaction,
-      input: {
-        companyId: string;
-        scopeType: "company" | "project" | "agent";
-        scopeId: string;
-        at: Date;
-      },
-    ): Promise<readonly string[]>;
   };
   return repository;
 }

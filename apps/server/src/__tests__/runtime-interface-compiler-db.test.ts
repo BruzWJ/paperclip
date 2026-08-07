@@ -154,8 +154,6 @@ function snapshot(
     ],
     actionGrantKeys: [
       "issue_create",
-      "issue_assign",
-      "issue_update",
       "mention_agent",
       "agent_configure",
     ],

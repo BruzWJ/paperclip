@@ -73,23 +73,35 @@ The board has distinct audited operations for:
 
 These are not a generic issue patch endpoint.
 
-### Owner `issue_update`
+### Relationship-derived `issue_update`
 
-The current agent owner may submit one required message and:
+The current agent owner omits `issueId` to update its active issue. An exact
+agent creator execution supplies an eligible direct-child `issueId` to update
+that child. Both paths submit one required message and may:
 
 - move `open ↔ blocked`;
+
+Only the current agent owner may additionally:
+
 - move `open | blocked → done`;
-- move `open | blocked → cancelled`.
+- move `open | blocked → cancelled`;
+- supply a terminal structured result.
 
 The commit writes the typed source, canonical Session event, derived comment,
-and terminal disposition atomically. No generic run-summary comment is added.
+terminal disposition, and counterpart comment/ref admission atomically. Owner updates
+reach the immutable creator; creator-targeted child updates reach the current
+owner. No generic run-summary or separate agent comment is added.
 
 ### Creator update
 
-An immutable creator may send an exact-message counterpart update to a current
-nonterminal issue it created. Agent creators are authorized by the exact active
-parent execution and its persisted direct-child creator edge, not by matching
-agent identity. A creator update does not mutate lifecycle state.
+An immutable creator may update a current nonterminal issue it created. Agent
+creators are authorized by the exact active parent execution and its persisted
+direct-child creator edge, not by matching agent identity. A creator-targeted
+child update may send a message or set nonterminal `open`/`blocked`. It writes
+the same canonical comment and automatically mentions the current owner in the
+child issue; it is not a separate agent communication path. A nonterminal update
+admits the current owner’s follow-up execution. Terminal `done`/`cancelled` and
+structured results remain current-owner-only.
 
 ### Comments and mentions
 
@@ -132,19 +144,25 @@ issue and cannot recursively escalate.
 ## Agent Visibility
 
 Providers receive a compiled run interface, not generic issue REST access. The
-six exhaustive Paperclip actions are:
+seven possible runtime Paperclip actions are:
 
 ```
 issue_create
 issue_assign
 issue_update
 mention_agent
+mention_board
 agent_hire
 agent_configure
 ```
 
 Each descriptor contains only targets authorized for the exact active execution
-and is rechecked under lock at commit time.
+and is rechecked under lock at commit time. Five configurable action grants
+control `issue_create`, `mention_agent`, `mention_board`, `agent_hire`, and
+`agent_configure`. The combined `issue_create` grant also controls eligible
+direct-child `issue_assign`; `issue_update` is derived automatically from the
+current owner or exact creator relationship and canonically mentions the
+counterpart.
 
 For the full contract, see [SPEC.md](./SPEC.md) and
 [execution-semantics.md](./execution-semantics.md).

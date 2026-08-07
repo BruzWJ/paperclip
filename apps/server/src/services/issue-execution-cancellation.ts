@@ -95,23 +95,6 @@ export interface IssueExecutionCancelledRunSettlementPort {
       readonly at: Date;
     },
   ): Promise<IssueExecutionAuthorityFenceResult>;
-  releaseSuspendedAgentDeliveriesInTransaction(
-    transaction: IssueSessionDbTransaction,
-    input: {
-      readonly companyId: string;
-      readonly agentIds: readonly string[];
-      readonly at: Date;
-    },
-  ): Promise<readonly string[]>;
-  releaseBudgetScopeDeliveriesInTransaction(
-    transaction: IssueSessionDbTransaction,
-    input: {
-      readonly companyId: string;
-      readonly scopeType: "company" | "project" | "agent";
-      readonly scopeId: string;
-      readonly at: Date;
-    },
-  ): Promise<readonly string[]>;
 }
 
 export interface IssueExecutionCancellationServiceOptions {
@@ -170,7 +153,6 @@ export type RequestedRunCancellation = {
 
 export interface IssueExecutionAuthorityFenceResult {
   readonly refIds: readonly string[];
-  readonly deliveryIds: readonly string[];
   readonly correlationIds: readonly string[];
 }
 
@@ -182,7 +164,7 @@ export interface RequestedAgentRunCancellations {
   readonly requests: readonly RequestedRunCancellation[];
 }
 
-/** Suspended-agent cancellation keeps creator deliveries policy-held/retryable. */
+/** Suspended-agent cancellation fences descendant execution authority. */
 export interface RequestedAgentSuspensions {
   readonly companyId: string;
   readonly agentIds: readonly string[];
@@ -191,11 +173,9 @@ export interface RequestedAgentSuspensions {
   readonly requests: readonly RequestedRunCancellation[];
 }
 
-/** Exact paused-delivery holds released by a committed agent resume. */
 export interface ReleasedAgentSuspensions {
   readonly companyId: string;
   readonly agentIds: readonly string[];
-  readonly deliveryIds: readonly string[];
 }
 
 export interface RequestedBudgetScopeSuspension {
@@ -211,7 +191,6 @@ export interface ReleasedBudgetScopeSuspension {
   readonly companyId: string;
   readonly scopeType: "company" | "project" | "agent";
   readonly scopeId: string;
-  readonly deliveryIds: readonly string[];
 }
 
 export interface RequestedScopedRunCancellations {
@@ -553,7 +532,6 @@ export function createIssueExecutionCancellationService(
         reason,
         fence: Object.freeze({
           refIds: Object.freeze([]),
-          deliveryIds: Object.freeze([]),
           correlationIds: Object.freeze([]),
         }),
         requests: Object.freeze([]),
@@ -612,8 +590,7 @@ export function createIssueExecutionCancellationService(
 
   /**
    * System-pause fence for descendants. Their queued execution refs and
-   * target-session correlations are invalidated, while creator deliveries are
-   * intentionally left to the canonical paused-recipient policy hold.
+   * target-session correlations are invalidated.
    */
   function requestAgentSuspensionsInTransaction(
     transaction: IssueSessionDbTransaction,
@@ -640,8 +617,9 @@ export function createIssueExecutionCancellationService(
       readonly now: Date;
     },
   ): Promise<ReleasedAgentSuspensions> {
+    void transaction;
     exactIdentifier(input.companyId, "company id");
-    const now = exactDate(input.now, "agent resumption time");
+    exactDate(input.now, "agent resumption time");
     const agentIds = [...new Set(input.agentIds)];
     for (const agentId of agentIds) {
       exactIdentifier(agentId, "resumed agent id");
@@ -650,18 +628,11 @@ export function createIssueExecutionCancellationService(
       return Object.freeze({
         companyId: input.companyId,
         agentIds: Object.freeze([]),
-        deliveryIds: Object.freeze([]),
       });
     }
-    const deliveryIds =
-      await options.settlement.releaseSuspendedAgentDeliveriesInTransaction(
-        transaction,
-        { companyId: input.companyId, agentIds, at: now },
-      );
     return Object.freeze({
       companyId: input.companyId,
       agentIds: Object.freeze(agentIds),
-      deliveryIds: Object.freeze([...deliveryIds]),
     });
   }
 
@@ -743,23 +714,13 @@ export function createIssueExecutionCancellationService(
       readonly now: Date;
     },
   ): Promise<ReleasedBudgetScopeSuspension> {
+    void transaction;
     validateBudgetScope(input);
-    const at = exactDate(input.now, "budget resumption time");
-    const deliveryIds =
-      await options.settlement.releaseBudgetScopeDeliveriesInTransaction(
-        transaction,
-        {
-          companyId: input.companyId,
-          scopeType: input.scopeType,
-          scopeId: input.scopeId,
-          at,
-        },
-      );
+    exactDate(input.now, "budget resumption time");
     return Object.freeze({
       companyId: input.companyId,
       scopeType: input.scopeType,
       scopeId: input.scopeId,
-      deliveryIds: Object.freeze([...deliveryIds]),
     });
   }
 

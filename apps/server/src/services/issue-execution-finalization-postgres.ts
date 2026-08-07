@@ -1,17 +1,13 @@
 import { randomUUID } from "node:crypto";
 import {
   activityLog,
-  agents,
-  creatorDeliveries,
   documentRevisions,
   issueCommentProjectionSources,
   issueComments,
   issueDocuments,
-  issueExecutionFinalizationDeliveryDependencies,
   issueExecutionFinalizationPromptDependencies,
   issueExecutionFinalizations,
   issueExecutionFinalizationUpdateDependencies,
-  issueExecutionAuthorities,
   issueExecutionRefs,
   issueConsultExecutions,
   issueExecutionPromptCapabilities,
@@ -20,7 +16,6 @@ import {
   issueExecutionRunLivenessFacts,
   issueExecutionRunRefs,
   issueSessionEvents,
-  issueSessionContextEpochs,
   issueSessionMessages,
   issueUpdates,
   issueWorkProducts,
@@ -39,11 +34,6 @@ import {
   type IssueExecutionFinalizationPromptIdentity,
 } from "./issue-execution-finalization.js";
 import type { IssueExecutionRunService } from "./issue-execution-run-service.js";
-import {
-  InvokableIssueOwnerRejected,
-  resolveInvokableIssueOwnerInTransaction,
-} from "./agent-invokability.js";
-import { createIssueSessionAdmissionService } from "./issue-session/admission.js";
 import {
   issueSessionMessageFromRow,
 } from "./issue-session/projector.js";
@@ -66,8 +56,6 @@ export interface FinalizedPostgresIssueExecutionRun {
   readonly finalizationId: string;
   readonly status: IssueExecutionRunTerminalClassification;
   readonly retried: boolean;
-  /** Persisted handoffs that become dispatchable only after this run commits. */
-  readonly dispatchRefIds: readonly string[];
 }
 
 export class PostgresIssueExecutionFinalizationRejected extends Error {
@@ -244,52 +232,23 @@ async function lockPromptFrontier(
 
 async function lockRunUpdates(
   transaction: IssueExecutionDbTransaction,
-  input: { companyId: string; issueId: string; runId: string },
-): Promise<Array<{ issueUpdateId: string; creatorDeliveryId: string }>> {
+  input: { companyId: string; runId: string },
+): Promise<Array<{ issueUpdateId: string }>> {
+  // Creator-form updates are persisted under the child issue even though the
+  // producing run belongs to its parent. Run identity is therefore the only
+  // canonical dedupe scope for suppressing a second final-output comment.
   const updates = await transaction
     .select()
     .from(issueUpdates)
     .where(
       and(
         eq(issueUpdates.companyId, input.companyId),
-        eq(issueUpdates.issueId, input.issueId),
         eq(issueUpdates.runId, input.runId),
       ),
     )
     .orderBy(asc(issueUpdates.runSequence))
     .for("update");
-  if (updates.length === 0) return [];
-  const deliveries = await transaction
-    .select()
-    .from(creatorDeliveries)
-    .where(
-      and(
-        eq(creatorDeliveries.companyId, input.companyId),
-        eq(creatorDeliveries.issueId, input.issueId),
-        inArray(
-          creatorDeliveries.issueUpdateId,
-          updates.map((update) => update.id),
-        ),
-      ),
-    )
-    .for("update");
-  const byUpdate = new Map(
-    deliveries.map((delivery) => [delivery.issueUpdateId, delivery]),
-  );
-  if (deliveries.length !== updates.length) {
-    throw new PostgresIssueExecutionFinalizationRejected(
-      "Run updates do not each have one canonical creator delivery",
-    );
-  }
-  return updates.map((update) => {
-    const delivery = byUpdate.get(update.id);
-    if (!delivery) {
-      throw new PostgresIssueExecutionFinalizationRejected(
-        "Run update lost its canonical creator delivery",
-      );
-    }
-    return { issueUpdateId: update.id, creatorDeliveryId: delivery.id };
-  });
+  return updates.map((update) => ({ issueUpdateId: update.id }));
 }
 
 async function insertProductiveLivenessFact(
@@ -469,54 +428,6 @@ async function insertProductiveLivenessFact(
   return id;
 }
 
-async function activeMentionRefsSourcedByRun(
-  transaction: IssueExecutionDbTransaction,
-  input: { companyId: string; issueId: string; runId: string },
-): Promise<string[]> {
-  const rows = await transaction
-    .select({ id: issueExecutionRefs.id })
-    .from(issueConsultExecutions)
-    .innerJoin(
-      issueExecutionRefs,
-      eq(issueExecutionRefs.consultExecutionId, issueConsultExecutions.id),
-    )
-    .where(
-      and(
-        eq(issueConsultExecutions.companyId, input.companyId),
-        eq(issueConsultExecutions.issueId, input.issueId),
-        eq(issueConsultExecutions.sourceRunId, input.runId),
-        eq(issueConsultExecutions.state, "active"),
-        eq(issueExecutionRefs.disposition, "active"),
-      ),
-    )
-    .orderBy(asc(issueExecutionRefs.laneOrdinal));
-  return rows.map((row) => row.id);
-}
-
-export function resolveMentionResponseDirectParent(
-  companyAgents: readonly Pick<
-    typeof agents.$inferSelect,
-    "id" | "reportsTo"
-  >[],
-  sourceAgentId: string,
-  ownerAgentId: string,
-): string | null {
-  if (sourceAgentId === ownerAgentId) return null;
-  const byId = new Map(companyAgents.map((agent) => [agent.id, agent]));
-  const source = byId.get(sourceAgentId);
-  const directParentId = source?.reportsTo ?? null;
-  if (!directParentId) return null;
-  const visited = new Set<string>([sourceAgentId]);
-  let cursor: string | null = directParentId;
-  for (let depth = 0; cursor && depth < 64; depth += 1) {
-    if (cursor === ownerAgentId) return directParentId;
-    if (visited.has(cursor)) return null;
-    visited.add(cursor);
-    cursor = byId.get(cursor)?.reportsTo ?? null;
-  }
-  return null;
-}
-
 /**
  * Sole productive/consult finalization transaction owner. It derives every
  * dependency from locked canonical rows; callers provide only the run's
@@ -527,22 +438,18 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
   readonly database: Db;
   readonly runService: Pick<IssueExecutionRunService, "lockRun" | "attachFinalization">;
 }) {
-  async function settleMentionHandoffInTransaction(
+  async function closeMentionExecutionInTransaction(
     transaction: IssueExecutionDbTransaction,
     input: {
       companyId: string;
       issueId: string;
-      sessionId: string;
-      ownershipEpoch: number;
       runId: string;
       targetAgentId: string;
       consultExecutionId: string;
-      finalizationId: string;
-      finalText: string;
       status: IssueExecutionRunTerminalClassification;
       at: Date;
     },
-  ): Promise<readonly string[]> {
+  ): Promise<void> {
     const incomingRows = await transaction
       .select({ ref: issueExecutionRefs })
       .from(issueExecutionRunRefs)
@@ -565,7 +472,7 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
       .for("update");
     if (incomingRows.length !== 1) {
       throw new PostgresIssueExecutionFinalizationRejected(
-        "Mention handoff run lost its exact incoming ref",
+        "Mention run lost its exact incoming ref",
       );
     }
     const incomingRef = incomingRows[0]!.ref;
@@ -575,7 +482,7 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
       incomingRef.targetAgentId !== input.targetAgentId ||
       incomingRef.consultChainToken === null
     ) {
-      return [];
+      return;
     }
 
     const closed = await transaction
@@ -584,8 +491,8 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
         state: input.status === "succeeded" ? "completed" : "cancelled",
         closeReason:
           input.status === "succeeded"
-            ? "async_handoff_completed"
-            : `async_handoff_${input.status}`,
+            ? "mention_completed"
+            : `mention_${input.status}`,
         closedAt: input.at,
       })
       .where(
@@ -597,155 +504,9 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
       .returning({ id: issueConsultExecutions.id });
     if (closed.length !== 1) {
       throw new PostgresIssueExecutionFinalizationRejected(
-        "Mention handoff run could not close its consult authority",
+        "Mention run could not close its consult authority",
       );
     }
-
-    const outgoing = await activeMentionRefsSourcedByRun(transaction, input);
-    if (outgoing.length > 0 || input.status !== "succeeded") {
-      return outgoing;
-    }
-    if (input.finalText.trim().length === 0) return [];
-
-    const [issue, companyAgents, contextEpoch] = await Promise.all([
-      transaction
-        .select()
-        .from(issues)
-        .where(
-          and(
-            eq(issues.companyId, input.companyId),
-            eq(issues.id, input.issueId),
-            eq(issues.ownershipEpoch, input.ownershipEpoch),
-          ),
-        )
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
-      transaction
-        .select()
-        .from(agents)
-        .where(eq(agents.companyId, input.companyId)),
-      transaction
-        .select()
-        .from(issueSessionContextEpochs)
-        .where(
-          and(
-            eq(issueSessionContextEpochs.companyId, input.companyId),
-            eq(issueSessionContextEpochs.issueId, input.issueId),
-            eq(issueSessionContextEpochs.sessionId, input.sessionId),
-          ),
-        )
-        .orderBy(desc(issueSessionContextEpochs.generation))
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
-    ]);
-    if (
-      !issue ||
-      !contextEpoch ||
-      issue.ownerKind !== "agent" ||
-      !issue.ownerAgentId ||
-      !["open", "blocked"].includes(issue.lifecycleStatus)
-    ) {
-      return [];
-    }
-    const directParentId = resolveMentionResponseDirectParent(
-      companyAgents,
-      input.targetAgentId,
-      issue.ownerAgentId,
-    );
-    if (!directParentId) return [];
-
-    let parent;
-    try {
-      parent = await resolveInvokableIssueOwnerInTransaction(transaction, {
-        companyId: input.companyId,
-        ownerAgentId: directParentId,
-      });
-    } catch (error) {
-      if (error instanceof InvokableIssueOwnerRejected) return [];
-      throw error;
-    }
-
-    const ownerAuthority = directParentId === issue.ownerAgentId
-      ? await transaction
-          .select({ id: issueExecutionAuthorities.id })
-          .from(issueExecutionAuthorities)
-          .where(
-            and(
-              eq(issueExecutionAuthorities.companyId, input.companyId),
-              eq(issueExecutionAuthorities.issueId, input.issueId),
-              eq(
-                issueExecutionAuthorities.ownershipEpoch,
-                input.ownershipEpoch,
-              ),
-              eq(issueExecutionAuthorities.agentId, directParentId),
-              eq(issueExecutionAuthorities.state, "current"),
-            ),
-          )
-          .limit(1)
-          .then((rows) => rows[0] ?? null)
-      : null;
-    if (directParentId === issue.ownerAgentId && !ownerAuthority) return [];
-
-    const key =
-      `mention-response:${input.finalizationId}:parent:${directParentId}`;
-    const nextConsultId = ownerAuthority ? null : randomUUID();
-    if (nextConsultId) {
-      await transaction.insert(issueConsultExecutions).values({
-        id: nextConsultId,
-        companyId: input.companyId,
-        issueId: input.issueId,
-        sessionId: input.sessionId,
-        ownershipEpoch: input.ownershipEpoch,
-        sourceRunId: input.runId,
-        sourceRefId: incomingRef.id,
-        callerExecutionScopeId: incomingRef.executionScopeId,
-        targetAgentId: directParentId,
-        adapterConfigRevisionId: parent.revisionId,
-        chainToken: incomingRef.consultChainToken,
-        state: "active",
-        createdAt: input.at,
-      });
-    }
-    const admission = createIssueSessionAdmissionService(options.database, {
-      clock: () => input.at,
-    });
-    const admitted = await admission.admitExecutionSource(
-      {
-        companyId: input.companyId,
-        issueId: input.issueId,
-        sessionId: input.sessionId,
-        ownershipEpoch: input.ownershipEpoch,
-        targetAgentId: directParentId,
-        issueExecutionAuthorityId: ownerAuthority?.id ?? null,
-        consultExecutionId: nextConsultId,
-        adapterConfigRevisionId: parent.revisionId,
-        contextEpoch: contextEpoch.generation,
-        mode: ownerAuthority ? "owner" : "consult",
-        executionLineageId: incomingRef.executionLineageId,
-        consultCallerRefId: nextConsultId ? incomingRef.id : null,
-        consultChainToken: nextConsultId
-          ? incomingRef.consultChainToken
-          : null,
-        sourceKind: "consult_mention",
-        actor: {
-          kind: "agent-execution",
-          agentId: input.targetAgentId,
-          authorityId: input.consultExecutionId,
-        },
-        immutableSourceKey: key,
-        sourceRecordId: nextConsultId ?? input.finalizationId,
-        exactText: input.finalText,
-        comment: null,
-        idempotencyKey: key,
-      },
-      transaction,
-    );
-    if (!admitted.ref) {
-      throw new PostgresIssueExecutionFinalizationRejected(
-        "Mention response did not reserve its direct-parent ref",
-      );
-    }
-    return [admitted.ref.id];
   }
 
   async function finalizeInTransaction(
@@ -793,7 +554,6 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
             finalizationId: finalization.id,
             status: input.status,
             retried: true,
-            dispatchRefIds: [],
           };
         }
         if (!activeRunStatus(run.status)) {
@@ -991,30 +751,17 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
           finalizedAt: input.finishedAt,
           createdAt: input.finishedAt,
         });
-        const explicitMentionRefIds =
-          await activeMentionRefsSourcedByRun(transaction, input);
-        const routedMentionRefIds =
-          run.kind === "consult" && run.consultExecutionId
-            ? await settleMentionHandoffInTransaction(transaction, {
-                companyId: input.companyId,
-                issueId: input.issueId,
-                sessionId: run.sessionId,
-                ownershipEpoch: run.ownershipEpoch,
-                runId: input.runId,
-                targetAgentId: run.targetAgentId,
-                consultExecutionId: run.consultExecutionId,
-                finalizationId,
-                finalText,
-                status: input.status,
-                at: input.finishedAt,
-              })
-            : [];
-        const dispatchRefIds = [
-          ...new Set([
-            ...explicitMentionRefIds,
-            ...routedMentionRefIds,
-          ]),
-        ];
+        if (run.kind === "consult" && run.consultExecutionId) {
+          await closeMentionExecutionInTransaction(transaction, {
+            companyId: input.companyId,
+            issueId: input.issueId,
+            runId: input.runId,
+            targetAgentId: run.targetAgentId,
+            consultExecutionId: run.consultExecutionId,
+            status: input.status,
+            at: input.finishedAt,
+          });
+        }
         await transaction
           .insert(issueExecutionFinalizationPromptDependencies)
           .values(
@@ -1046,18 +793,6 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
                 issueUpdateId: dependency.issueUpdateId,
               })),
             );
-          await transaction
-            .insert(issueExecutionFinalizationDeliveryDependencies)
-            .values(
-              plan.deliveryDependencies.map((dependency) => ({
-                companyId: input.companyId,
-                runId: input.runId,
-                finalizationId,
-                dependencyOrdinal: dependency.dependencyOrdinal,
-                issueUpdateId: dependency.issueUpdateId,
-                creatorDeliveryId: dependency.creatorDeliveryId,
-              })),
-            );
         }
         await options.runService.attachFinalization(transaction, {
           companyId: input.companyId,
@@ -1074,7 +809,6 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
           finalizationId,
           status: input.status,
           retried: false,
-          dispatchRefIds,
         };
   }
 

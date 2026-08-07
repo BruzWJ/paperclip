@@ -212,9 +212,7 @@ async function createApp(actor: Record<string, unknown>) {
   });
   app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", agentRoutes({} as any, {
-    ordinaryIssues: {
-      notifyCreatorDelivery: async () => undefined,
-    } as never,
+    ordinaryIssues: {} as never,
     issueExecutionCancellation: mockIssueExecutionCancellation as never,
   }));
   app.use(errorHandler);
@@ -291,7 +289,7 @@ function resetMockDefaults() {
       companyId: input.companyId,
       agentIds: input.agentIds,
       reason: input.reason,
-      fence: { refIds: [], deliveryIds: [], correlationIds: [] },
+      fence: { refIds: [], correlationIds: [] },
       requests: [],
     }),
   );

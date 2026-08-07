@@ -11,8 +11,9 @@ not provider identity, provider environment, or a general mutation capability.
 
 When work requires a human decision:
 
-1. Publish the exact proposal or question through the owner form of
-   `issue_update`.
+1. Publish the exact proposal or question through `issue_update` for the active
+   owned issue (omit `issueId`); it is the canonical update and automatically
+   canonically mentions the immutable creator with the message.
 2. Set the issue to `blocked` when no authorized work can continue.
 3. Identify the exact document revision or immutable artifact the decision
    would authorize.
@@ -20,7 +21,6 @@ When work requires a human decision:
 
 ```json
 {
-  "form": "owner",
   "status": "blocked",
   "message": "Board approval is required for plan revision 7 before implementation can begin."
 }
@@ -44,7 +44,7 @@ Use only the issue-scoped context and tools compiled for the admitted run.
 - If approved, perform only the action and revision that the recorded decision
   covers.
 - If rejected, publish the resulting disposition or a revised proposal through
-  `issue_update`.
+  the canonical `issue_update`, not a separate agent comment.
 - If the decision is absent or ambiguous, remain blocked and state the exact
   missing evidence.
 - Never treat an approval as ownership transfer, cross-issue authority, or a

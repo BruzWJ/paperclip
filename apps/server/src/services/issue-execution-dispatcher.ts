@@ -80,8 +80,6 @@ export type IssueExecutionDispatchResult =
 
 export interface IssueExecutionLaneSettlement {
   readonly laneReleased: boolean;
-  /** Persisted post-finalization handoffs admitted by the same transaction. */
-  readonly dispatchRefIds: readonly string[];
 }
 
 /** One durable per-target execution lane inside an issue ownership epoch. */
@@ -307,7 +305,6 @@ export function createIssueExecutionDispatcher(options: {
         const activeAttempt = { lease, controller };
         activeAttempts.set(lease.attemptId, activeAttempt);
         try {
-          let dispatchRefIds: readonly string[] = [];
           const result = await options.executor.execute(
             lease,
             controller.signal,
@@ -322,14 +319,13 @@ export function createIssueExecutionDispatcher(options: {
                 });
                 return;
               }
-              const settlement = await options.repository.markTerminal({
+              await options.repository.markTerminal({
                 lease,
                 outcome: settled.outcome,
                 reason: settled.reason,
                 finishedAt: now(),
                 materialization,
               });
-              dispatchRefIds = settlement.dispatchRefIds;
             },
           );
           if (lease.promptKind === "steering" && result.kind === "terminal") {
@@ -344,23 +340,6 @@ export function createIssueExecutionDispatcher(options: {
               response: result.finalText ?? "",
               reason: result.reason,
             });
-          }
-          // The source attempt has crossed ACPX's public close boundary and
-          // released its Paperclip execution target before a finalizer-admitted
-          // handoff can start another target-lane attempt.
-          const notificationResults = await Promise.allSettled(
-            dispatchRefIds.map((refId) => notifyPersistedRef(refId)),
-          );
-          const postCommitFailures = notificationResults.flatMap(
-            (notification) => notification.status === "rejected"
-              ? [notification.reason]
-              : [],
-          );
-          if (postCommitFailures.length > 0) {
-            throw new AggregateError(
-              postCommitFailures,
-              "Issue execution settled, but handoff notification did not complete",
-            );
           }
           if (result.kind === "retry") {
             // A target-not-found resume probe is an already-closed pre-send

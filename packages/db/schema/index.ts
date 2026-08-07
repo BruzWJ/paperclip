@@ -107,11 +107,9 @@ export {
 export {
   issueCreatorEdgeReceivability,
   issueUpdates,
-  creatorDeliveries,
-  pluginCreatorDeliveries,
   pluginWithdrawalOperations,
   systemEscalationIdentities,
-} from "./issue_creator_delivery.js";
+} from "./issue_creator_edge.js";
 export {
   issueBoardReopenCommands,
   issueBoardUserComments,
@@ -139,7 +137,6 @@ export {
   issueExecutionFinalizations,
   issueExecutionFinalizationPromptDependencies,
   issueExecutionFinalizationUpdateDependencies,
-  issueExecutionFinalizationDeliveryDependencies,
   type IssueExecutionMode,
   type IssueExecutionRun,
   type NewIssueExecutionRun,
@@ -165,8 +162,6 @@ export {
   type NewIssueExecutionFinalizationPromptDependency,
   type IssueExecutionFinalizationUpdateDependency,
   type NewIssueExecutionFinalizationUpdateDependency,
-  type IssueExecutionFinalizationDeliveryDependency,
-  type NewIssueExecutionFinalizationDeliveryDependency,
 } from "./issue_execution_runs.js";
 export {
   issueExecutionFinalizationStaleCheckOutbox,

@@ -85,7 +85,7 @@ describe("runtime-agent configuration canonical contracts", () => {
       },
       actionGrants: {
         issue_create: true,
-        issue_update: false,
+        mention_agent: false,
       },
       mentionReachGrants: { mention_any_ancestor: true },
       companyToolIds: [toolIdB, toolIdA],
@@ -100,7 +100,7 @@ describe("runtime-agent configuration canonical contracts", () => {
         read_issue_comments: true,
         list_company_issues: false,
       },
-      actionGrants: { issue_create: true, issue_update: false },
+      actionGrants: { issue_create: true, mention_agent: false },
       mentionReachGrants: { mention_any_ancestor: true },
       companyToolIds: [toolIdA, toolIdB],
     });

@@ -112,7 +112,7 @@ execution to an upstream MCP server (GitHub, Linear, a local stdio fixture,
 etc.). Every call goes through the immutable run-interface binding, selection
 intersection, policy evaluation, optional human approval, rate limiting,
 redaction, and audit. The former generic Paperclip issue/agent MCP endpoint was
-retired; provider actors use only the six dynamically compiled Paperclip action
+retired; provider actors use only the seven dynamically compiled Paperclip action
 tools.
 
 For local adapter runs, the compiler delivers only the selected concrete

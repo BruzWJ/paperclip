@@ -362,7 +362,7 @@ export const issueExecutionRefs = pgTable(
         'board_chat',
         'human_comment_mention',
         'routine_dispatch',
-        'creator_update',
+        'issue_update',
         'consult_mention',
         'system_nudge',
         'termination_recovery',

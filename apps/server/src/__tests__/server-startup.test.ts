@@ -8,8 +8,6 @@ const ORIGINAL_PAPERCLIP_LISTEN_PORT = process.env.PAPERCLIP_LISTEN_PORT;
 const {
   createAppMock,
   createBetterAuthInstanceMock,
-  creatorDeliveryServiceFactoryMock,
-  creatorDeliveryServiceMock,
   createDbMock,
   createDevServerRestartCoordinatorMock,
   detectPortMock,
@@ -45,19 +43,6 @@ const {
     () => devServerRestartCoordinatorMock,
   );
   const detectPortMock = vi.fn(async (port: number) => port);
-  const creatorDeliveryServiceMock = {
-    notifyPersistedDelivery: vi.fn(async () => undefined),
-    drainQueued: vi.fn(async () => ({
-      delivered: 0,
-      deferred: 0,
-      failed: 0,
-      holdsChanged: 0,
-      terminalOutcomesChanged: 0,
-    })),
-  };
-  const creatorDeliveryServiceFactoryMock = vi.fn(
-    () => creatorDeliveryServiceMock,
-  );
   const environmentCustomImagesServiceMock = {
     cleanupExpiredSetupSessions: vi.fn(async () => ({ scanned: 0, timedOut: 0, failed: 0 })),
   };
@@ -80,8 +65,6 @@ const {
   return {
     createAppMock,
     createBetterAuthInstanceMock,
-    creatorDeliveryServiceFactoryMock,
-    creatorDeliveryServiceMock,
     createDbMock,
     createDevServerRestartCoordinatorMock,
     devServerRestartCoordinatorMock,
@@ -177,8 +160,6 @@ vi.mock("../services/index.js", () => ({
     id: "issue-session-store",
   })),
   createOrdinaryIssueRuntime: vi.fn(() => ({})),
-  createPostgresCreatorDeliveryService:
-    creatorDeliveryServiceFactoryMock,
   createPostgresSystemEscalationService: vi.fn(() => ({
     reconcile: vi.fn(async () => ({ terminalized: 0, ensured: 0 })),
   })),

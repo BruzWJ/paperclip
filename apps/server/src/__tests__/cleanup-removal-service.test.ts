@@ -59,7 +59,6 @@ describe("cleanup removal services", () => {
     const harness = createMockDb({ select: [[tombstone], [tombstone]] });
     const committed = {
       tombstone,
-      creatorDeliveryIds: [],
       dispatchRefIds: [],
       cancellationRequests: null,
       suspensionRequests: null,
@@ -73,7 +72,6 @@ describe("cleanup removal services", () => {
         reconcileRequestedAgentSuspensions: vi.fn(),
       },
       dispatchRef: vi.fn(),
-      notifyCreatorDelivery: vi.fn(),
     };
 
     const removed = await agentService(harness.db).terminate(
@@ -85,7 +83,6 @@ describe("cleanup removal services", () => {
     expect(transaction).toHaveBeenCalledOnce();
     expect(harness.calls.some((call) => call.operation === "delete")).toBe(false);
     expect(postCommit.dispatchRef).not.toHaveBeenCalled();
-    expect(postCommit.notifyCreatorDelivery).not.toHaveBeenCalled();
   });
 
   it("completes a purge-ready company hard delete through the canonical graph owner", async () => {

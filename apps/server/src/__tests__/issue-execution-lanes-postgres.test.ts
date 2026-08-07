@@ -422,7 +422,7 @@ describe("issue-execution target lanes", () => {
       async assertLeaseCurrent() {},
       async markRetryable() {},
       async markTerminal() {
-        return { laneReleased: true, dispatchRefIds: [] };
+        return { laneReleased: true };
       },
     };
     const dispatcher = createIssueExecutionDispatcher({

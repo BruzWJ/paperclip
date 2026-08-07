@@ -33,24 +33,17 @@ const ACTION_LABELS: Record<
   { label: string; description: string }
 > = {
   issue_create: {
-    label: "Create issues",
-    description: "Create owned issues or direct child issues.",
-  },
-  issue_assign: {
-    label: "Assign issues",
-    description: "Reassign an open issue when immutable creator authority permits.",
-  },
-  issue_update: {
-    label: "Update issue lifecycle",
-    description: "Send the creator↔owner lifecycle message.",
+    label: "Create and assign issues",
+    description:
+      "Create direct child issues and reassign eligible direct children created by this execution.",
   },
   mention_agent: {
     label: "Mention agents",
-    description: "End the turn with a same-issue handoff to an eligible agent.",
+    description: "Post a canonical same-issue comment to an eligible agent.",
   },
   mention_board: {
     label: "Can mention Board",
-    description: "Request information or direction from the collective Board.",
+    description: "Post a canonical issue comment to the collective Board.",
   },
   agent_hire: {
     label: "Hire direct-child agents",
@@ -297,9 +290,17 @@ export function RuntimeAgentConfigurationFields({
       </div>
 
       <div className="rounded-lg border border-border p-4">
-        <h4 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Paperclip actions
         </h4>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Issue updates are relationship-derived: the owner updates its active
+          issue, and the creator can message or set open/blocked on eligible
+          direct children through the same canonical action. Terminal updates
+          remain owner-only. Each update canonically mentions its counterpart
+          automatically, so no lifecycle or separate comment control is
+          configured here.
+        </p>
         {PAPERCLIP_ACTION_KEYS.map((key) => (
           <ConfigurationRow
             key={key}

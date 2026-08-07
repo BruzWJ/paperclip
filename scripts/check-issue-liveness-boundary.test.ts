@@ -284,7 +284,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "packages/db/schema/issue_creator_delivery.ts",
+    "packages/db/schema/issue_creator_edge.ts",
     'check("issue_updates_status_check", sql`${table.status} is null or ${table.status} in (\'open\', \'blocked\', \'done\', \'cancelled\')`),\n',
   );
   write(
@@ -527,7 +527,7 @@ for (const [path, owner, expectedViolation] of [
     "lifecycle constraint",
   ],
   [
-    "packages/db/schema/issue_creator_delivery.ts",
+    "packages/db/schema/issue_creator_edge.ts",
     "issue_updates_status_check",
     "issue_updates_status_check",
   ],

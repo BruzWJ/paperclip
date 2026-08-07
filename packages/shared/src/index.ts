@@ -59,6 +59,7 @@ export type {
 export {
   AGENT_CONTEXT_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
+  PAPERCLIP_RUNTIME_ACTION_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   AGENT_VISIBLE_ISSUE_STATUSES,
   ISSUE_OWNER_KINDS,
@@ -92,6 +93,7 @@ export {
   type IssueCreatorWithdrawalActorKind,
   type IssueBoardLifecycleCommandSubtype,
   type PaperclipActionKey,
+  type PaperclipRuntimeActionKey,
   type AgentMentionReachGrantKey,
   type SparseBooleanGrantMap,
   type RuntimeAgentConfigurationSnapshot,

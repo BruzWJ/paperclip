@@ -46,8 +46,7 @@ function serviceSpies(): RuntimeIssueActionService {
   return {
     create: vi.fn(async (input) => ({ kind: "create", input })),
     assign: vi.fn(async (input) => ({ kind: "assign", input })),
-    updateOwner: vi.fn(async (input) => ({ kind: "owner", input })),
-    updateCreator: vi.fn(async (input) => ({ kind: "creator", input })),
+    update: vi.fn(async (input) => ({ kind: "update", input })),
     mention: vi.fn(async (input) => ({ kind: "mention", input })),
     mentionBoard: vi.fn(async (input) => ({ kind: "board", input })),
   };
@@ -57,7 +56,7 @@ function invocation(
   args: Record<string, unknown>,
   overrides: Record<string, unknown> = {},
 ) {
-  const commitTerminalAction = vi.fn(async <T>(
+  const commitMentionAction = vi.fn(async <T>(
     _transaction: unknown,
     result: T,
   ) => result);
@@ -67,7 +66,7 @@ function invocation(
     runInterfaceToolCallId: "tool-call-1",
     ingressOrdinal: 4,
     arguments: args,
-    commitTerminalAction,
+    commitMentionAction,
     ...overrides,
   };
 }
@@ -105,7 +104,7 @@ describe("runtime issue action contracts", () => {
     });
   });
 
-  it("lowers assignment and both owner-update forms without rewriting payloads", async () => {
+  it("lowers assignment and canonical issue updates without rewriting payloads", async () => {
     const port = createRuntimeIssueActionPort(service);
     const issueId = "00000000-0000-4000-8000-00000000070b";
     const nextOwner = "00000000-0000-4000-8000-00000000070c";
@@ -115,11 +114,9 @@ describe("runtime issue action contracts", () => {
       owner: { kind: "agent", agentId: nextOwner },
     }));
     await port.issueUpdate(invocation({
-      form: "owner",
       message: "Progress note",
     }));
     await port.issueUpdate(invocation({
-      form: "owner",
       status: "done",
       message: "Finished exactly",
       structuredResult: { artifact: "report.json" },
@@ -131,12 +128,12 @@ describe("runtime issue action contracts", () => {
       issueId,
       owner: { kind: "agent", agentId: nextOwner },
     });
-    expect(service.updateOwner).toHaveBeenNthCalledWith(1, {
+    expect(service.update).toHaveBeenNthCalledWith(1, {
       capability,
       invocationId: "invocation-1",
       message: "Progress note",
     });
-    expect(service.updateOwner).toHaveBeenNthCalledWith(2, {
+    expect(service.update).toHaveBeenNthCalledWith(2, {
       capability,
       invocationId: "invocation-1",
       status: "done",
@@ -145,30 +142,31 @@ describe("runtime issue action contracts", () => {
     });
   });
 
-  it("routes creator_message explicitly to the selected creator target", async () => {
+  it("routes a creator update explicitly to the selected direct child", async () => {
     const port = createRuntimeIssueActionPort(service);
-    const creatorTargetIssueId = "00000000-0000-4000-8000-00000000070d";
+    const issueId = "00000000-0000-4000-8000-00000000070d";
 
     await port.issueUpdate(invocation({
-      form: "creator_message",
-      creatorTargetIssueId,
+      issueId,
+      status: "blocked",
       message: "Report to the immutable creator edge",
     }));
 
-    expect(service.updateCreator).toHaveBeenCalledWith({
+    expect(service.update).toHaveBeenCalledWith({
       capability,
       invocationId: "invocation-1",
-      creatorTargetIssueId,
+      issueId,
+      status: "blocked",
       message: "Report to the immutable creator edge",
     });
   });
 
-  it("passes mention admission identity with the canonical terminal message", async () => {
+  it("passes mention admission identity with the canonical message", async () => {
     const port = createRuntimeIssueActionPort(service);
     const targetAgentId = "00000000-0000-4000-8000-00000000070e";
     const call = invocation({
       agentId: targetAgentId,
-      message: "Send this durable handoff",
+      message: "Send this canonical mention",
     });
 
     await port.mentionAgent(call);
@@ -178,9 +176,9 @@ describe("runtime issue action contracts", () => {
       invocationId: "invocation-1",
       runInterfaceToolCallId: "tool-call-1",
       ingressOrdinal: 4,
-      commitTerminalAction: call.commitTerminalAction,
+      commitMentionAction: call.commitMentionAction,
       targetAgentId,
-      message: "Send this durable handoff",
+      message: "Send this canonical mention",
     });
   });
 
@@ -207,14 +205,13 @@ describe("runtime issue action contracts", () => {
       RuntimeToolArgumentsInvalid,
     );
     await expect(port.issueUpdate(invocation({
-      form: "owner",
       message: "No",
     }, { capability: consultCapability }))).rejects.toBeInstanceOf(
       RuntimeToolArgumentsInvalid,
     );
     expect(service.create).not.toHaveBeenCalled();
     expect(service.assign).not.toHaveBeenCalled();
-    expect(service.updateOwner).not.toHaveBeenCalled();
+    expect(service.update).not.toHaveBeenCalled();
   });
 
   it("enforces the closed issue-action ABI before persistence", async () => {
@@ -230,16 +227,14 @@ describe("runtime issue action contracts", () => {
       owner: { kind: "agent", agentId: "" },
     }))).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
     await expect(port.issueUpdate(invocation({
-      form: "owner",
       status: "done",
       message: "Invalid undefined result",
       structuredResult: undefined,
     }))).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
     await expect(port.issueUpdate(invocation({
-      form: "creator_message",
-      creatorTargetIssueId: capability.issueId,
+      issueId: capability.issueId,
       message: "Unexpected key",
-      status: "open",
+      form: "creator_message",
     }))).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
     await expect(port.mentionAgent(invocation({
       agentId: capability.targetAgentId,
@@ -251,7 +246,7 @@ describe("runtime issue action contracts", () => {
   it("validates canonical owner and creator forms before opening a transaction", async () => {
     const harness = createMockDb();
     const runtime = createIssueFormCommitRuntime(harness.db, {
-      notifyCreatorDelivery: vi.fn(async () => undefined),
+      dispatchPersistedRef: vi.fn(async () => undefined),
       issueExecutionCancellation: {
         requestScopeCancellationsInTransaction: vi.fn(),
         reconcileRequestedScopeCancellations: vi.fn(),
@@ -284,13 +279,27 @@ describe("runtime issue action contracts", () => {
         gatewayInvocationId: "human-creator-1",
       },
     )).rejects.toBeInstanceOf(RuntimeIssueActionConflict);
+    await expect(runtime.commitCreatorFormUpdate(
+      capability.issueId,
+      {
+        message: "A creator cannot close its child",
+        status: "done",
+      } as never,
+      {
+        kind: "agent-execution",
+        capability,
+        invocationId: "creator-terminal-1",
+      },
+    )).rejects.toMatchObject<Partial<RuntimeIssueActionDenied>>({
+      reason: "creator_terminal_status_forbidden",
+    });
     expect(harness.calls).toEqual([]);
   });
 
   it("limits withdrawal ownership to message-only cancellation", async () => {
     const harness = createMockDb();
     const runtime = createIssueFormCommitRuntime(harness.db, {
-      notifyCreatorDelivery: vi.fn(async () => undefined),
+      dispatchPersistedRef: vi.fn(async () => undefined),
       issueExecutionCancellation: {
         requestScopeCancellationsInTransaction: vi.fn(),
         reconcileRequestedScopeCancellations: vi.fn(),
@@ -348,7 +357,6 @@ describe("runtime issue action contracts", () => {
       const runtime = createPostgresRuntimeIssueActionService(harness.db, {
         clock: () => new Date("2026-08-02T12:30:00.000Z"),
         dispatchPersistedRef: vi.fn(async () => undefined),
-        notifyCreatorDelivery: vi.fn(async () => undefined),
         issueExecutionCancellation: {
           requestScopeCancellationsInTransaction: vi.fn(),
           reconcileRequestedScopeCancellations: vi.fn(),
@@ -360,7 +368,7 @@ describe("runtime issue action contracts", () => {
         invocationId: `mutation-fence-${reason}`,
         runInterfaceToolCallId: "00000000-0000-4000-8000-000000000711",
         ingressOrdinal: 0,
-        commitTerminalAction: vi.fn(),
+        commitMentionAction: vi.fn(),
         message: "Do not commit this mention",
       })).rejects.toMatchObject<Partial<RuntimeIssueActionDenied>>({ reason });
 
@@ -422,7 +430,6 @@ describe("runtime issue action contracts", () => {
     const runtime = createPostgresRuntimeIssueActionService(harness.db, {
       clock: () => new Date("2026-08-02T12:30:00.000Z"),
       dispatchPersistedRef: vi.fn(async () => undefined),
-      notifyCreatorDelivery: vi.fn(async () => undefined),
       issueExecutionCancellation: {
         requestScopeCancellationsInTransaction: vi.fn(),
         reconcileRequestedScopeCancellations: vi.fn(),
@@ -434,7 +441,7 @@ describe("runtime issue action contracts", () => {
       invocationId: "mutation-fence-cancelled-run",
       runInterfaceToolCallId: "00000000-0000-4000-8000-000000000713",
       ingressOrdinal: 0,
-      commitTerminalAction: vi.fn(),
+        commitMentionAction: vi.fn(),
       message: "Do not revive this call",
     })).rejects.toMatchObject<Partial<RuntimeIssueActionDenied>>({
       reason: "run_scope_changed",

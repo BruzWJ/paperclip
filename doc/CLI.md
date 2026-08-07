@@ -257,8 +257,8 @@ pnpm paperclipai agent clear-error <agent-id>
 pnpm paperclipai agent terminate <agent-id>
 ```
 
-`runtime:create` requires every identity field, all nine context cells, all six
-Paperclip action cells, both mention-reach cells, and the exact
+`runtime:create` requires every identity field, all nine context cells, all five
+configurable Paperclip action-grant cells, both mention-reach cells, and the exact
 `companyToolIds` selection. Nullable values must be supplied as `null`; omitted
 values are not defaulted. Its payload shape is:
 
@@ -281,8 +281,6 @@ values are not defaulted. Its payload shape is:
   },
   "actionGrants": {
     "issue_create": false,
-    "issue_assign": false,
-    "issue_update": false,
     "mention_agent": false,
     "mention_board": false,
     "agent_hire": false,
@@ -295,6 +293,20 @@ values are not defaulted. Its payload shape is:
   "companyToolIds": []
 }
 ```
+
+`issue_create` is the combined create-and-assign grant. It allows an exact
+creator execution to create direct children and reassign eligible direct
+children it created. Lifecycle reporting is relationship-derived rather than
+configured: the current owner receives an active-issue update and an exact
+creator execution receives eligible direct-child updates. Both use canonical
+`issue_update({ message, status?, structuredResult?, issueId? })` and
+automatically mention the owner/creator counterpart in that counterpart's issue
+context; agents do
+not use a separate comment path for the same update. Omit `issueId` for the
+active owned issue; provide an eligible direct-child ID for a creator update.
+Only the current owner may set terminal `done`/`cancelled` and
+`structuredResult`; a creator update may send a message or set nonterminal
+`open`/`blocked`.
 
 Runtime identity/grants/tools, immutable adapter/provider revisions, and
 operational display/environment/budget configuration are three non-overlapping

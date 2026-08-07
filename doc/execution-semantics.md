@@ -8,7 +8,7 @@ This document defines how ordinary issue ownership becomes provider execution. I
 
 Every ordinary issue has one explicit owner and a monotonically increasing ownership epoch. The owner may be an eligible agent or a permitted named user/board identity. The immutable creator is stored independently from the current owner.
 
-Creation commits request, creator, owner, epoch, issue session, creator edge, workspace policy/binding, and any initial execution reference atomically. Reassignment is available only to the immutable creator (or board), selects from the same eligible catalog as creation, advances the epoch, revokes/cancels the former engagement, and starts the new owner fresh.
+Creation commits request, creator, owner, epoch, issue session, creator edge, workspace policy/binding, and any initial execution reference atomically. Reassignment is available only to the immutable creator (or board), selects from the same eligible catalog as creation, advances the epoch, revokes/cancels the former engagement, and starts the new owner fresh. For an agent creator, the one `issue_create` grant covers both direct-child creation and eligible direct-child reassignment; there is no assign-only grant.
 
 There is no provider checkout/release or generic owner/status patch. Run/execution lock columns are control-plane concurrency evidence only; they do not grant ownership.
 
@@ -21,11 +21,25 @@ The canonical lifecycle is:
 - `done`
 - `cancelled`
 
-Only the current owner may submit owner-form lifecycle/disposition updates through a compiled `issue_update`. Terminal updates require a disposition, are ordered after any earlier same-run updates, and reject later updates.
+`issue_update({ message, status?, structuredResult?, issueId? })` is available
+from relationship authority rather than a configurable grant. The current owner
+omits `issueId` to update its active issue; an exact creator execution supplies
+an eligible direct-child `issueId`. A creator-targeted update may send a
+message or set nonterminal `open`/`blocked`; terminal `done`/`cancelled` and
+`structuredResult` are current-owner-only. Terminal owner updates require a
+disposition, are ordered after any earlier same-run updates, and reject later
+updates. Each canonical update is itself the counterpart-facing comment and
+automatically mentions that counterpart: child-owner updates target the direct
+parent, root-owner updates target the root issue's Board creator, and
+creator-targeted child updates target the current owner in the child. A nonterminal
+creator-targeted update
+admits that current owner’s follow-up execution.
 
-`blocked` is nonterminal: it records that the owner cannot currently complete the issue, but it does not freeze the issue execution graph. Existing or newly admitted handoffs may run while the issue remains blocked, and a handoff never changes it back to `open` implicitly. `cancelled` is terminal: the transition atomically fences pending refs and requests cancellation of every active run in the ownership epoch. Reopening never revives those fenced refs.
+`blocked` is nonterminal: it records that the owner cannot currently complete the issue, but it does not freeze the issue execution graph. Existing or newly admitted mentions may run while the issue remains blocked, and a mention never changes it back to `open` implicitly. `cancelled` is terminal: the transition atomically fences pending refs and requests cancellation of every active run in the ownership epoch. Reopening never revives those fenced refs.
 
-The immutable creator may send message-only creator updates. Those cannot alter request, title, owner, lifecycle, dependencies, or metadata.
+Neither relationship path can alter request, title, owner, dependencies, or
+metadata. Both use the same canonical update/comment and neither has a separate
+agent comment path.
 
 Board reopen is a separate audited command. Under the issue lock it changes a terminal issue to `open`, clears disposition, preserves request/owner/epoch/session/workspace, re-applies the native-continuity fence, and materializes or re-evaluates the current epoch's creator edge. A preserved invokable agent commits and dispatches exactly one new ref. A named-user or collective-board-owned system escalation commits the provider-free `board_only` branch with no ref or run. Every other owner is rejected. Reopen never revives an old terminal edge or acts as a fresh-session reset.
 
@@ -42,7 +56,8 @@ An invocation-capable operation must atomically persist:
 1. its typed source and exact message
 2. the canonical Paperclip Session input/event
 3. an `IssueExecutionRef`
-4. any creator/counterpart delivery evidence
+4. the canonical counterpart Session comment/ref generated through the same
+   mention path by an issue update
 
 Only after commit may the internal dispatcher lease the ref. Immediately before launch it validates:
 
@@ -83,12 +98,13 @@ Every accepted human/board comment is a typed user input and durable chronologic
 
 Paperclip never parses prose for names, mentions, assignments, approvals, or lifecycle. Document annotations and other freeform activity are evidence only; they do not create provider work.
 
-Agent-to-agent same-issue assistance uses compiled `mention_agent`. An explicitly
-granted owner may use `mention_board` to request information or direction from
+Agent-to-agent same-issue assistance uses compiled `mention_agent`. Any agent
+with the explicit grant may use `mention_board` to request information or direction from
 the collective Board; this records a comment but creates no execution ref,
 approval, review, or lifecycle transition. Delegation uses a direct child
-issue. Owner reports and creator follow-ups use the two forms of `issue_update`;
-no generic comment tool exists for providers.
+issue. Creation, reassignment, owner reports, and creator-targeted child updates
+all use these canonical mention primitives; no generic comment tool or automatic
+final-response relay exists for providers.
 
 A terminal transition suppresses unresolved Board mentions. Reopen does not
 revive a Board request or execution reference from the prior terminal lifetime.

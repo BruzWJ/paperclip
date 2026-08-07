@@ -9,7 +9,7 @@ describe("buildNewAgentControlPlanePayloads", () => {
   it("keeps runtime identity, adapter revision, and operational fields separate", () => {
     const runtimeAccess = createEmptyRuntimeAgentConfigurationValues();
     runtimeAccess.contextGrants.read_issue_comments = true;
-    runtimeAccess.actionGrants.issue_update = true;
+    runtimeAccess.actionGrants.issue_create = true;
     runtimeAccess.mentionReachGrants.mention_any_ancestor = true;
     runtimeAccess.companyToolIds = [
       "11111111-1111-4111-8111-111111111111",

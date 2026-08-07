@@ -317,7 +317,7 @@ function compileInput(): RuntimeInterfaceCompileInput {
   return {
     mode: "owner" as const,
     contextDial: resolveContextDial({ agent: {} }).effective,
-    actionGrants: { issue_update: true },
+    actionGrants: {},
     isCurrentOwner: true,
     issueCreateDirectChildren: [],
     issueAssignTargets: [],
@@ -357,11 +357,11 @@ function setup(compile = compileInput()) {
     writeAudit,
   };
   const registerTerminalInvalid = vi.fn(async () => undefined);
-  const terminalAuditTransaction = {} as IssueSessionDbTransaction;
+  const mentionAuditTransaction = {} as IssueSessionDbTransaction;
   const execute = vi.fn(async (
     input: Parameters<PromptCapabilityToolExecutor["execute"]>[0],
   ) => {
-    await input.commitTerminalAudit?.(terminalAuditTransaction);
+    await input.commitMentionAudit?.(mentionAuditTransaction);
     return { source: "paperclip" as const, value: { accepted: true } };
   });
   return {
@@ -370,7 +370,7 @@ function setup(compile = compileInput()) {
     execute,
     registerTerminalInvalid,
     revalidate,
-    terminalAuditTransaction,
+    mentionAuditTransaction,
     writeAudit,
     gateway: createPromptCapabilityGateway({
       repository,
@@ -386,6 +386,9 @@ function composedPluginToolRuntime() {
   const compile: RuntimeInterfaceCompileInput = {
     ...compileInput(),
     actionGrants: {},
+    // This fixture isolates plugin-tool binding. The automatic owner update
+    // action is covered by the runtime action tests instead.
+    isCurrentOwner: false,
     pluginTools: [{
       installationId: "plugin-installation",
       manifestIdentity: "manifest-v1",
@@ -569,7 +572,7 @@ describe("prompt-capability gateway", () => {
     await runtime.gateway.callTool({
       bearer,
       toolName: "issue_update",
-      arguments: { form: "owner", message: "progress" },
+      arguments: { message: "progress" },
       callIdentity: { source: "jsonrpc", id: 7 },
       ingressOrdinal: 0,
     });
@@ -587,7 +590,7 @@ describe("prompt-capability gateway", () => {
     );
   });
 
-  it("commits a terminal mention audit through the action transaction", async () => {
+  it("commits a canonical mention audit through the action transaction", async () => {
     const runtime = setup({
       ...compileInput(),
       actionGrants: { mention_board: true },
@@ -607,7 +610,7 @@ describe("prompt-capability gateway", () => {
 
     expect(runtime.writeAudit).toHaveBeenCalledOnce();
     expect(runtime.writeAudit.mock.calls[0]![1]).toBe(
-      runtime.terminalAuditTransaction,
+      runtime.mentionAuditTransaction,
     );
   });
 

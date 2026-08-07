@@ -72,7 +72,7 @@ function replayingExecutor(
       : { state: "claimed" as const, id: "ledger-call-1" }),
     registerTerminalInvalid: vi.fn(async () => undefined),
     classify: vi.fn(async () => undefined),
-    commitTerminalAction: vi.fn(),
+    commitMentionAction: vi.fn(),
     complete: vi.fn(async ({ result }: { result: unknown }) => {
       completedResult = result;
       completed = true;

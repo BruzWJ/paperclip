@@ -72,7 +72,7 @@ describe("canonical issue aggregate creator provenance", () => {
           escalatedFromAffectedIssueId:
             "00000000-0000-4000-8000-000000000011",
           escalatedFromTriggeringRunId: null,
-          escalatedFromReason: "delivery_exhausted",
+          escalatedFromReason: "creator_execution_superseded",
           affectedOwnershipEpoch: 1,
         }),
       ),
@@ -101,7 +101,7 @@ describe("canonical issue aggregate creator provenance", () => {
           escalatedFromAffectedIssueId:
             "00000000-0000-4000-8000-000000000011",
           escalatedFromTriggeringRunId: null,
-          escalatedFromReason: "delivery_exhausted",
+          escalatedFromReason: "creator_execution_superseded",
           affectedOwnershipEpoch: 1,
         }),
       ),

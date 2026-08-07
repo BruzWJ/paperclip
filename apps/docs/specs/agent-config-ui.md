@@ -8,7 +8,13 @@ summary: Canonical agent identity, explicit grants, provider configuration, and 
 - Org position is display/delegation structure, not authority.
 - No role, first-agent, root-agent, title, or manager default grants permissions.
 - Paperclip does not manage prompt templates, instruction files/bundles, provider homes, generic API keys, or agent-wide sessions.
-- Context, issue actions, mention reach, company tools, and genuine company skills are selected explicitly and default false/empty.
+- Context grants, five configurable action grants, mention reach, company tools,
+  and genuine company skills are selected explicitly and default false/empty.
+  Issue updates are relationship-derived: the owner receives its active-issue
+  update and an exact creator execution receives eligible-child updates. Both
+  use one canonical comment with an automatic counterpart mention. A creator may
+  send a message or set `open`/`blocked` on an eligible child; only its current
+  owner may apply terminal `done`/`cancelled` updates.
 - Active runs stay on their recorded immutable adapter revision. A later edit affects only later issue executions and never cancels, resets, or invokes a provider by itself.
 
 ## Agent creation
@@ -34,7 +40,8 @@ Select an adapter and configure only its supported operator-owned native fields.
 - execution timeout/grace controls
 - execution-workspace policy
 - nine context-dial cells
-- seven issue-action grants
+- five configurable action grants, including one combined create-and-assign
+  grant
 - two mention-reach grants
 - selected company tools
 - selected genuine company skills
@@ -59,7 +66,7 @@ Show:
 
 ### Configuration
 
-Board users can edit identity metadata, provider-native declaration, runtime limits, workspace policy, and explicit grants/selections. Present the nine context cells as a 3×3 matrix and the action/mention/tool/skill grants as independent controls.
+Board users can edit identity metadata, provider-native declaration, runtime limits, workspace policy, and explicit grants/selections. Present the nine context cells as a 3×3 matrix and the action/mention/tool/skill grants as independent controls. Do not render separate assign or lifecycle controls: create-and-assign is one grant, while the canonical lifecycle/creator update follows the issue owner/creator relationship and automatically mentions its counterpart.
 
 Explain prospective behavior: narrowing a dial changes gateway acceptance immediately, but content already inside one live provider-native conversation remains there; the board/user issue-execution fresh-session action is required to discard it.
 

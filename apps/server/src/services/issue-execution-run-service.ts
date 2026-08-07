@@ -13,7 +13,6 @@ import {
   issueExecutionAttemptRetrySchedules,
   issueExecutionAuthorities,
   issueExecutionCancellationIntents,
-  issueExecutionFinalizationDeliveryDependencies,
   issueExecutionFinalizationPromptDependencies,
   issueExecutionFinalizationUpdateDependencies,
   issueExecutionFinalizations,
@@ -40,7 +39,6 @@ import {
   type IssueExecutionAttemptRetrySchedule,
   type IssueExecutionCancellationIntent,
   type IssueExecutionFinalization,
-  type IssueExecutionFinalizationDeliveryDependency,
   type IssueExecutionFinalizationPromptDependency,
   type IssueExecutionFinalizationUpdateDependency,
   type IssueExecutionLease,
@@ -410,8 +408,6 @@ export interface IssueExecutionJoinedFinalization {
     BoundedIssueExecutionRunRecords<IssueExecutionFinalizationPromptDependency>;
   readonly updateDependencies:
     BoundedIssueExecutionRunRecords<IssueExecutionFinalizationUpdateDependency>;
-  readonly deliveryDependencies:
-    BoundedIssueExecutionRunRecords<IssueExecutionFinalizationDeliveryDependency>;
   readonly liveness: IssueExecutionRunLivenessFactRow | null;
 }
 
@@ -3243,7 +3239,7 @@ async function readJoinedIssueExecutionRunDetail(
     );
   }
   const finalization = finalizationRows[0] ?? null;
-  const [promptDependencies, updateDependencies, deliveryDependencies, liveness] =
+  const [promptDependencies, updateDependencies, liveness] =
     finalization
       ? await Promise.all([
           database
@@ -3278,21 +3274,6 @@ async function readJoinedIssueExecutionRunDetail(
             .limit(input.limit + 1),
           database
             .select()
-            .from(issueExecutionFinalizationDeliveryDependencies)
-            .where(
-              eq(
-                issueExecutionFinalizationDeliveryDependencies.finalizationId,
-                finalization.id,
-              ),
-            )
-            .orderBy(
-              asc(
-                issueExecutionFinalizationDeliveryDependencies.dependencyOrdinal,
-              ),
-            )
-            .limit(input.limit + 1),
-          database
-            .select()
             .from(issueExecutionRunLivenessFacts)
             .where(
               and(
@@ -3302,7 +3283,7 @@ async function readJoinedIssueExecutionRunDetail(
             )
             .limit(2),
         ])
-      : [[], [], [], []] as const;
+      : [[], [], []] as const;
   if (liveness.length > 1) {
     throw new IssueExecutionRunInvariantViolation(
       "run joined detail found duplicate liveness facts",
@@ -3425,10 +3406,6 @@ async function readJoinedIssueExecutionRunDetail(
           record: finalization,
           promptDependencies: boundedRecords(promptDependencies, input.limit),
           updateDependencies: boundedRecords(updateDependencies, input.limit),
-          deliveryDependencies: boundedRecords(
-            deliveryDependencies,
-            input.limit,
-          ),
           liveness: liveness[0] ?? null,
         }
       : null,

@@ -181,7 +181,7 @@ export interface PromptCapabilityToolExecutor {
       pluginInstallationId: string;
       pluginManifestIdentity: string;
     }): Promise<string>;
-    commitTerminalAudit?(
+    commitMentionAudit?(
       transaction: IssueSessionDbTransaction,
     ): Promise<void>;
   }): Promise<PromptCapabilityToolExecutionResult>;
@@ -468,7 +468,7 @@ export function createPromptCapabilityGateway(options: {
         throw unavailable;
       }
       const current = await requireStillAuthoritative(capability);
-      const terminalMention =
+      const canonicalMention =
         input.toolName === "mention_agent" ||
         input.toolName === "mention_board";
       const callAudit: PromptCapabilityAudit = {
@@ -488,14 +488,14 @@ export function createPromptCapabilityGateway(options: {
         ingressOrdinal: input.ingressOrdinal,
         mintPluginRunContext: (pluginInput) =>
           mintPluginRunContext({ capability: current, ...pluginInput }),
-        ...(terminalMention
+        ...(canonicalMention
           ? {
-              commitTerminalAudit: (transaction: IssueSessionDbTransaction) =>
+              commitMentionAudit: (transaction: IssueSessionDbTransaction) =>
                 options.repository.writeAudit(callAudit, transaction),
             }
           : {}),
       });
-      if (!terminalMention) await options.repository.writeAudit(callAudit);
+      if (!canonicalMention) await options.repository.writeAudit(callAudit);
       return result;
     },
 

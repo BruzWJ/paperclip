@@ -303,16 +303,10 @@ export interface IssueExecutionFinalizationUpdateDependencyRecord {
   issueUpdateId: string;
 }
 
-export interface IssueExecutionFinalizationDeliveryDependencyRecord
-  extends IssueExecutionFinalizationUpdateDependencyRecord {
-  creatorDeliveryId: string;
-}
-
 export interface IssueExecutionJoinedFinalization {
   record: IssueExecutionFinalizationRecord;
   promptDependencies: BoundedRunRecords<IssueExecutionFinalizationPromptDependencyRecord>;
   updateDependencies: BoundedRunRecords<IssueExecutionFinalizationUpdateDependencyRecord>;
-  deliveryDependencies: BoundedRunRecords<IssueExecutionFinalizationDeliveryDependencyRecord>;
   liveness: (IssueExecutionRunLivenessFact & { id: string; runId: string }) | null;
 }
 

@@ -59,16 +59,16 @@ function setup(options: {
   enableRunTrace?: boolean;
   replayedPluginResult?: { value: unknown };
 } = {}) {
-  const terminalTransaction = {} as never;
+  const mentionTransaction = {} as never;
   const issueUpdate = vi.fn(async () => ({ ok: true }));
   const agentConfigure = vi.fn(async () => ({ configured: true }));
   const mentionAgent = vi.fn(
     async (input: RuntimeActionInvocation) =>
-      input.commitTerminalAction(terminalTransaction, { consulted: true }),
+      input.commitMentionAction(mentionTransaction, { consulted: true }),
   );
   const mentionBoard = vi.fn(
     async (input: RuntimeActionInvocation) =>
-      input.commitTerminalAction(terminalTransaction, { requested: true }),
+      input.commitMentionAction(mentionTransaction, { requested: true }),
   );
   const no = vi.fn(async () => null);
   const actions: RuntimeActionPort = {
@@ -110,7 +110,7 @@ function setup(options: {
     }),
   );
   const classify = vi.fn(async () => undefined);
-  const commitTerminalAction = vi.fn(
+  const commitMentionAction = vi.fn(
     async (input: { result: unknown }) => input.result,
   );
   const retrieval = createContextRetrievalService({
@@ -178,7 +178,7 @@ function setup(options: {
       },
       async registerTerminalInvalid() {},
       classify,
-      commitTerminalAction,
+      commitMentionAction,
       async complete() {},
       async fail() {},
     },
@@ -190,11 +190,11 @@ function setup(options: {
     mentionAgent,
     mentionBoard,
     classify,
-    commitTerminalAction,
+    commitMentionAction,
     executeCompany,
     executePlugin,
     readCanonicalRunTrace,
-    terminalTransaction,
+    mentionTransaction,
   };
 }
 
@@ -506,7 +506,7 @@ describe("runtime tool executor", () => {
         inputSchema: {},
         source: "paperclip",
       },
-      arguments: { form: "owner", status: "done", message: "done" },
+      arguments: { status: "done", message: "done" },
       callIdentity: { source: "provider", id: "call-1" },
       ingressOrdinal: 0,
       mintPluginRunContext,
@@ -517,7 +517,7 @@ describe("runtime tool executor", () => {
         invocationId: expect.stringMatching(/^call_[0-9a-f]{64}$/),
         runInterfaceToolCallId: "ledger-call-1",
         ingressOrdinal: 0,
-        commitTerminalAction: expect.any(Function),
+        commitMentionAction: expect.any(Function),
       }),
     );
   });
@@ -605,10 +605,10 @@ describe("runtime tool executor", () => {
       executor,
       mentionAgent,
       classify,
-      commitTerminalAction,
-      terminalTransaction,
+      commitMentionAction,
+      mentionTransaction,
     } = setup();
-    const commitTerminalAudit = vi.fn(async () => undefined);
+    const commitMentionAudit = vi.fn(async () => undefined);
     const descriptor = compileRuntimeInterface({
       mode: "owner",
       contextDial: resolveContextDial({ agent: {} }).effective,
@@ -633,7 +633,7 @@ describe("runtime tool executor", () => {
       callIdentity: { source: "jsonrpc", id: "mention-1" },
       ingressOrdinal: 7,
       mintPluginRunContext,
-      commitTerminalAudit,
+      commitMentionAudit,
     });
 
     expect(classify).toHaveBeenCalledWith({
@@ -648,7 +648,7 @@ describe("runtime tool executor", () => {
       runInterfaceToolCallId: "ledger-call-1",
       ingressOrdinal: 7,
     }));
-    expect(commitTerminalAction).toHaveBeenCalledWith(
+    expect(commitMentionAction).toHaveBeenCalledWith(
       expect.objectContaining({
         capability,
         id: "ledger-call-1",
@@ -658,11 +658,11 @@ describe("runtime tool executor", () => {
         result: { consulted: true },
       }),
     );
-    expect(commitTerminalAudit).toHaveBeenCalledWith(terminalTransaction);
+    expect(commitMentionAudit).toHaveBeenCalledWith(mentionTransaction);
   });
 
   it("routes a Board request as a non-mention ledger action", async () => {
-    const { executor, mentionBoard, classify, commitTerminalAction } = setup();
+    const { executor, mentionBoard, classify, commitMentionAction } = setup();
     const descriptor = compileRuntimeInterface({
       mode: "owner",
       contextDial: resolveContextDial({ agent: {} }).effective,
@@ -701,7 +701,7 @@ describe("runtime tool executor", () => {
     expect(mentionBoard).toHaveBeenCalledWith(expect.objectContaining({
       arguments: { message: "Please choose a rollout" },
     }));
-    expect(commitTerminalAction).toHaveBeenCalledWith(
+    expect(commitMentionAction).toHaveBeenCalledWith(
       expect.objectContaining({
         capability,
         id: "ledger-call-1",

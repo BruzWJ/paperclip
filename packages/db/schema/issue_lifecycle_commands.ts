@@ -21,7 +21,7 @@ import {
   issueCreatorEdgeReceivability,
   issueUpdates,
   pluginWithdrawalOperations,
-} from "./issue_creator_delivery.js";
+} from "./issue_creator_edge.js";
 
 /**
  * Append-only acceptance of the two control-plane creator-withdrawal forms.

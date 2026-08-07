@@ -142,7 +142,7 @@ describe("issueTreeControlService without a database process", () => {
       issueId: "issue",
       selector: { kind: "ownership_epoch", ownershipEpoch: 1 },
       reason: "issue_tree_cancelled",
-      fence: { refIds: [], deliveryIds: [], correlationIds: [] },
+      fence: { refIds: [], correlationIds: [] },
       requests: [],
     });
     serviceMocks.reconcileRequestedRunningIssueInterruptions.mockResolvedValue([]);

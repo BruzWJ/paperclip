@@ -196,7 +196,6 @@ describe("generated PostgreSQL migration contract", () => {
       "agent_company_tool_selections_selected_by_plugin_installation_id_plugins_id_fk",
       "agent_company_tool_selections_revoked_by_plugin_installation_id_plugins_id_fk",
       "issue_comments_author_plugin_installation_fk",
-      "plugin_creator_deliveries_plugin_installation_id_plugins_id_fk",
       "plugin_withdrawal_operations_plugin_installation_id_plugins_id_fk",
       "run_interface_tool_calls_plugin_installation_id_plugins_id_fk",
     ]) {
@@ -236,6 +235,35 @@ describe("generated PostgreSQL migration contract", () => {
     expect(source).toContain('DROP TABLE "feedback_exports";');
     expect(source).toContain('DROP TABLE "feedback_votes";');
     expect(source).not.toMatch(/DROP TABLE "feedback_(exports|votes)" CASCADE/);
+  });
+
+  it("removes legacy delivery persistence and retired action grants atomically", () => {
+    const file = migrationFiles().find((entry) => entry.startsWith("0008_"));
+    expect(file).toBeDefined();
+    const source = migrationSql(file!);
+
+    expect(source).toContain('DROP TABLE "creator_deliveries" CASCADE;');
+    expect(source).toContain('DROP TABLE "plugin_creator_deliveries" CASCADE;');
+    expect(source).toContain(
+      'DROP TABLE "issue_execution_finalization_delivery_dependencies" CASCADE;',
+    );
+    expect(source).toContain(
+      'UPDATE "issue_execution_refs" SET "source_kind" = \'issue_update\' WHERE "source_kind" = \'creator_update\';',
+    );
+    expect(source).toContain(
+      'FOREIGN KEY ("company_id","run_id") REFERENCES "public"."issue_execution_runs"("company_id","id")',
+    );
+    expect(source).not.toContain(
+      'FOREIGN KEY ("company_id","issue_id","run_id") REFERENCES "public"."issue_execution_runs"',
+    );
+    const retireLegacyGrants = source.indexOf(
+      'DELETE FROM "agent_action_grants" WHERE "key" IN (\'issue_assign\', \'issue_update\');',
+    );
+    const narrowActionGrantKeys = source.indexOf(
+      'ADD CONSTRAINT "agent_action_grants_key_check"',
+    );
+    expect(retireLegacyGrants).toBeGreaterThanOrEqual(0);
+    expect(narrowActionGrantKeys).toBeGreaterThan(retireLegacyGrants);
   });
 
 });

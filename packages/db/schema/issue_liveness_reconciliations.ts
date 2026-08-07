@@ -19,7 +19,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
 import { issueComments } from "./issue_comments.js";
-import { issueCreatorEdgeReceivability } from "./issue_creator_delivery.js";
+import { issueCreatorEdgeReceivability } from "./issue_creator_edge.js";
 import {
   issueExecutionFinalizations,
   issueExecutionRuns,

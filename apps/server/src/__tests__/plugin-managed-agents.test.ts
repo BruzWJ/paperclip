@@ -303,7 +303,7 @@ describe("plugin-managed agents", () => {
       companyId,
       agentIds: [agentId],
       reason: "plugin_disabled",
-      fence: { refIds: [], deliveryIds: [], correlationIds: [] },
+      fence: { refIds: [], correlationIds: [] },
       requests: [],
     };
     const requestAgentSuspensionsInTransaction = vi.fn()

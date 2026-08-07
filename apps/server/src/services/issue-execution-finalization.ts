@@ -29,7 +29,6 @@ export type IssueExecutionFinalizationPromptDependency =
 
 export interface IssueExecutionFinalizationUpdateDependency {
   readonly issueUpdateId: string;
-  readonly creatorDeliveryId: string;
 }
 
 export interface IssueExecutionGatewayRevocationIdentity {
@@ -62,11 +61,6 @@ export interface IssueExecutionFinalizationPlan {
   readonly updateDependencies: readonly {
     readonly dependencyOrdinal: number;
     readonly issueUpdateId: string;
-  }[];
-  readonly deliveryDependencies: readonly {
-    readonly dependencyOrdinal: number;
-    readonly issueUpdateId: string;
-    readonly creatorDeliveryId: string;
   }[];
 }
 
@@ -288,21 +282,15 @@ function assertUpdates(
   updates: readonly IssueExecutionFinalizationUpdateDependency[],
 ): void {
   const updateIds = new Set<string>();
-  const deliveryIds = new Set<string>();
   for (const update of updates) {
     exactIdentity(update.issueUpdateId, "issue update id");
-    exactIdentity(update.creatorDeliveryId, "creator delivery id");
-    if (
-      updateIds.has(update.issueUpdateId) ||
-      deliveryIds.has(update.creatorDeliveryId)
-    ) {
+    if (updateIds.has(update.issueUpdateId)) {
       throw new IssueExecutionFinalizationRejected(
-        "Finalization contains a duplicate update or delivery dependency",
+        "Finalization contains a duplicate update dependency",
         "branch_invalid",
       );
     }
     updateIds.add(update.issueUpdateId);
-    deliveryIds.add(update.creatorDeliveryId);
   }
 }
 
@@ -333,7 +321,6 @@ function digestRecord(input: BuildIssueExecutionFinalizationPlanInput) {
     updates: input.updates.map((dependency, dependencyOrdinal) => ({
       dependencyOrdinal,
       issueUpdateId: dependency.issueUpdateId,
-      creatorDeliveryId: dependency.creatorDeliveryId,
     })),
   } as const;
 }
@@ -377,11 +364,6 @@ export function buildIssueExecutionFinalizationPlan(
           dependencyOrdinal,
           issueUpdateId: dependency.issueUpdateId,
         }),
-      ),
-    ),
-    deliveryDependencies: Object.freeze(
-      input.updates.map((dependency, dependencyOrdinal) =>
-        Object.freeze({ dependencyOrdinal, ...dependency }),
       ),
     ),
   });

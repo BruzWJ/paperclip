@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { IssueSessionDbTransaction } from "./event-store.js";
 import {
+  isExactIssueUpdateCrossIssueProducer,
   previousOwnershipEpochForDispatchSource,
   reserveIssueExecutionLaneOrdinalInTransaction,
   resolveIssueCommentReplyProjection,
@@ -273,8 +274,8 @@ describe("Issue Session canonical source authorship", () => {
       source: { sourceKind: "routine_dispatch", actor: routineActor },
       expected: "user",
     },
-    creator_update: {
-      source: { sourceKind: "creator_update", actor: agentActor },
+    issue_update: {
+      source: { sourceKind: "issue_update", actor: agentActor },
       expected: "synthetic",
     },
     consult_mention: {
@@ -327,7 +328,7 @@ describe("Issue Session canonical source authorship", () => {
   it("derives creator-update kind only from immutable actor provenance", () => {
     expect(
       v2MessageKindForExecutionSource({
-        sourceKind: "creator_update",
+        sourceKind: "issue_update",
         actor: userActor,
       }),
     ).toBe("user");
@@ -343,7 +344,7 @@ describe("Issue Session canonical source authorship", () => {
     ]) {
       expect(
         v2MessageKindForExecutionSource({
-          sourceKind: "creator_update",
+          sourceKind: "issue_update",
           actor,
         }),
       ).toBe("synthetic");
@@ -399,5 +400,230 @@ describe("Issue Session canonical source authorship", () => {
         previousOwnershipEpoch: 1,
       }),
     ).toThrow("Only issue reassignment");
+  });
+});
+
+const creatorParentIssueId = "33333333-3333-4333-8333-333333333333";
+const creatorAuthorityId = "44444444-4444-4444-8444-444444444444";
+const creatorAgentId = "55555555-5555-4555-8555-555555555555";
+const childAuthorityId = "66666666-6666-4666-8666-666666666666";
+const creatorRunId = "77777777-7777-4777-8777-777777777777";
+const creatorRevisionId = "88888888-8888-4888-8888-888888888888";
+const creatorRunScopeId = "99999999-9999-4999-8999-999999999999";
+const creatorWorkspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const creatorAttemptId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const creatorLeaseId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+function sequentialSelectTransaction(
+  responses: readonly unknown[][],
+): IssueSessionDbTransaction {
+  let next = 0;
+  return {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: () => Promise.resolve(responses[next++] ?? []),
+        }),
+      }),
+    }),
+  } as unknown as IssueSessionDbTransaction;
+}
+
+function exactCreatorProducerRun(
+  overrides: Record<string, unknown> = {},
+) {
+  const now = new Date("2026-08-06T12:00:00.000Z");
+  return {
+    id: creatorRunId,
+    companyId: scope.companyId,
+    issueId: creatorParentIssueId,
+    sessionId: "ses_parent_creator",
+    executionScopeId: creatorRunScopeId,
+    kind: "productive",
+    status: "running",
+    ownershipEpoch: 3,
+    targetAgentId: creatorAgentId,
+    adapterConfigRevisionId: creatorRevisionId,
+    executionWorkspaceBindingId: creatorWorkspaceId,
+    executionMode: "owner",
+    issueExecutionAuthorityId: creatorAuthorityId,
+    consultExecutionId: null,
+    parentRunId: null,
+    retryOfRunId: null,
+    currentAttemptId: creatorAttemptId,
+    currentLeaseId: creatorLeaseId,
+    cancellationIntentId: null,
+    terminalFinalizationId: null,
+    startedAt: now,
+    finishedAt: null,
+    terminalClassification: null,
+    terminalReasonCode: null,
+    processExitCode: null,
+    processSignal: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+const exactCreatorUpdateScope = {
+  companyId: scope.companyId,
+  issueId: scope.issueId,
+  sessionId: scope.sessionId,
+  sourceKind: "issue_update",
+  actor: {
+    kind: "agent-execution",
+    agentId: creatorAgentId,
+    authorityId: creatorAuthorityId,
+  },
+  counterpartIssueId: creatorParentIssueId,
+  counterpartAuthorityId: creatorAuthorityId,
+  counterpartOwnershipEpoch: 3,
+  mode: "owner",
+  issueExecutionAuthorityId: childAuthorityId,
+  consultExecutionId: null,
+} as const;
+
+const exactCreatorUpdateComment = {
+  author: { kind: "agent", agentId: creatorAgentId },
+  producingRun: {
+    runId: creatorRunId,
+    adapterConfigRevisionId: creatorRevisionId,
+  },
+} as const;
+
+function exactCreatorChild(overrides: Record<string, unknown> = {}) {
+  return {
+    parentId: creatorParentIssueId,
+    parentOwnershipEpoch: 3,
+    creatorKind: "agent-execution",
+    creatorAuthorityId,
+    creatorAdapterConfigRevisionId: creatorRevisionId,
+    ...overrides,
+  };
+}
+
+describe("creator-update cross-issue comment provenance", () => {
+  it("accepts only the exact parent creator authority and producing run", async () => {
+    await expect(
+      isExactIssueUpdateCrossIssueProducer(
+        sequentialSelectTransaction([
+          [{}],
+          [exactCreatorChild()],
+          [{}],
+          [exactCreatorProducerRun()],
+        ]),
+        exactCreatorUpdateScope,
+        exactCreatorUpdateComment,
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it("rejects a generic cross-issue source before reading any provenance", async () => {
+    await expect(
+      isExactIssueUpdateCrossIssueProducer(
+        sequentialSelectTransaction([]),
+        { ...exactCreatorUpdateScope, sourceKind: "issue_request" },
+        exactCreatorUpdateComment,
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      isExactIssueUpdateCrossIssueProducer(
+        sequentialSelectTransaction([]),
+        {
+          ...exactCreatorUpdateScope,
+          actor: {
+            ...exactCreatorUpdateScope.actor,
+            authorityId: childAuthorityId,
+          },
+        },
+        exactCreatorUpdateComment,
+      ),
+    ).resolves.toBe(false);
+  });
+
+  it("rejects a target outside the immediate parent relationship", async () => {
+    await expect(
+      isExactIssueUpdateCrossIssueProducer(
+        sequentialSelectTransaction([
+          [{}],
+          [exactCreatorChild({ parentOwnershipEpoch: 2 })],
+          [{}],
+          [exactCreatorProducerRun()],
+        ]),
+        exactCreatorUpdateScope,
+        exactCreatorUpdateComment,
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      isExactIssueUpdateCrossIssueProducer(
+        sequentialSelectTransaction([
+          [{}],
+          [exactCreatorChild({ creatorAuthorityId: childAuthorityId })],
+          [{}],
+          [exactCreatorProducerRun()],
+        ]),
+        exactCreatorUpdateScope,
+        exactCreatorUpdateComment,
+      ),
+    ).resolves.toBe(false);
+  });
+
+  it("accepts a child-owner update in its direct parent Session", async () => {
+    const parentScope = {
+      ...exactCreatorUpdateScope,
+      issueId: creatorParentIssueId,
+      sessionId: "ses_parent_creator",
+      actor: {
+        ...exactCreatorUpdateScope.actor,
+        authorityId: childAuthorityId,
+      },
+      counterpartIssueId: scope.issueId,
+      counterpartAuthorityId: childAuthorityId,
+      counterpartOwnershipEpoch: 1,
+    };
+    await expect(
+      isExactIssueUpdateCrossIssueProducer(
+        sequentialSelectTransaction([
+          [{}],
+          [{ ownershipEpoch: 3 }],
+          [{
+            parentId: creatorParentIssueId,
+            parentOwnershipEpoch: 3,
+            ownershipEpoch: 1,
+          }],
+          [exactCreatorProducerRun({
+            issueId: scope.issueId,
+            sessionId: scope.sessionId,
+            ownershipEpoch: 1,
+            issueExecutionAuthorityId: childAuthorityId,
+          })],
+        ]),
+        parentScope,
+        exactCreatorUpdateComment,
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it("rejects a missing counterpart authority or a run outside its exact tuple", async () => {
+    await expect(
+      isExactIssueUpdateCrossIssueProducer(
+        sequentialSelectTransaction([[]]),
+        exactCreatorUpdateScope,
+        exactCreatorUpdateComment,
+      ),
+    ).rejects.toThrow("Counterpart authority");
+    await expect(
+      isExactIssueUpdateCrossIssueProducer(
+        sequentialSelectTransaction([
+          [{}],
+          [exactCreatorChild()],
+          [{}],
+          [exactCreatorProducerRun({ issueExecutionAuthorityId: childAuthorityId })],
+        ]),
+        exactCreatorUpdateScope,
+        exactCreatorUpdateComment,
+      ),
+    ).resolves.toBe(false);
   });
 });

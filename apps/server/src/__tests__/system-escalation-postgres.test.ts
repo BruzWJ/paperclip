@@ -214,7 +214,7 @@ describe("PostgreSQL system escalation contracts without a database", () => {
     });
     const current = edge();
     const harness = createMockDb({
-      select: [[affected], [current], []],
+      select: [[affected], [current]],
     });
 
     await expect(
@@ -262,7 +262,6 @@ describe("PostgreSQL system escalation contracts without a database", () => {
         [{ edge: wrapperEdge }, { edge: wrapperEdge }],
         [affected],
         [terminalEdge],
-        [],
       ],
     });
 
@@ -320,7 +319,7 @@ describe("PostgreSQL system escalation contracts without a database", () => {
       terminalReason: reason,
     });
     const harness = createMockDb({
-      select: [[{ edge: wrapperEdge }], [affected], [terminalEdge], []],
+      select: [[{ edge: wrapperEdge }], [affected], [terminalEdge]],
     });
 
     await expect(invoke(harness.db as never)).resolves.toEqual([]);

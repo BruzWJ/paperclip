@@ -55,7 +55,6 @@ export function approvalRoutes(
     terminateHireRejectionAgentInTransaction:
       terminateAgentForHireRejectionInTransaction,
     dispatchRef: options.ordinaryIssues.dispatchRef,
-    notifyCreatorDelivery: options.ordinaryIssues.notifyCreatorDelivery,
   });
   const access = accessService(db);
   const issueApprovalsSvc = issueApprovalService(db);

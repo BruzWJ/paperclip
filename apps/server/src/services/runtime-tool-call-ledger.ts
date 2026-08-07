@@ -178,10 +178,6 @@ function sameBinding(
     && row.argumentsDigest === digest;
 }
 
-function isTurnTerminalTool(name: string): boolean {
-  return name === "mention_agent" || name === "mention_board";
-}
-
 function scopeWhere(capability: PromptCapabilityIngressBinding) {
   return and(
     eq(runInterfaceToolCalls.companyId, capability.companyId),
@@ -227,7 +223,7 @@ export interface RuntimeToolCallLedger {
         targetAgentId: string;
       }
   ): Promise<void>;
-  commitTerminalAction<T>(input: {
+  commitMentionAction<T>(input: {
     transaction: RuntimeToolCallTransaction;
     capability: PromptCapabilityBinding;
     id: string;
@@ -457,53 +453,6 @@ export function createRuntimeToolCallLedger(
       );
     }
 
-    const turnCalls = await input.tx
-      .select({
-        ingressOrdinal: runInterfaceToolCalls.ingressOrdinal,
-        toolName: runInterfaceToolCalls.toolName,
-        status: runInterfaceToolCalls.status,
-      })
-      .from(runInterfaceToolCalls)
-      .where(scopeWhere(input.capability));
-    const terminalCall = turnCalls.find((call) =>
-      isTurnTerminalTool(call.toolName)
-    );
-    if (terminalCall) {
-      throw new RuntimeToolCallIdentityConflict(
-        "This turn already reserved a terminal mention handoff",
-      );
-    }
-    if (isTurnTerminalTool(input.binding.name)) {
-      if (
-        input.lockedCapability.ingressHighWater !==
-          input.ingressOrdinal - 1
-      ) {
-        throw new RuntimeToolCallIdentityConflict(
-          "A mention handoff cannot overtake a missing earlier tool call",
-        );
-      }
-      if (
-        turnCalls.some(
-          (call) => call.ingressOrdinal > input.ingressOrdinal,
-        )
-      ) {
-        throw new RuntimeToolCallIdentityConflict(
-          "A mention handoff must be the final tool call in its turn",
-        );
-      }
-      if (
-        turnCalls.some(
-          (call) =>
-            call.ingressOrdinal < input.ingressOrdinal &&
-            call.status === "executing",
-        )
-      ) {
-        throw new RuntimeToolCallIdentityConflict(
-          "A mention handoff cannot race an earlier unfinished tool call",
-        );
-      }
-    }
-
     const inserted = await input.tx
       .insert(runInterfaceToolCalls)
       .values({
@@ -598,7 +547,6 @@ export function createRuntimeToolCallLedger(
             ? {
                 classification: "validated_mention",
                 mentionTargetAgentId: input.targetAgentId,
-                mentionAdmissionState: "pending",
                 classifiedAt: at,
                 updatedAt: at,
               }
@@ -636,10 +584,7 @@ export function createRuntimeToolCallLedger(
       const at = now();
       const becomesTerminalInvalid =
         row.classification === "unclassified"
-        || (
-          row.classification === "validated_mention"
-          && row.mentionAdmissionState !== "admitted"
-        );
+        || row.classification === "validated_mention";
       await tx
         .update(runInterfaceToolCalls)
         .set({
@@ -647,10 +592,7 @@ export function createRuntimeToolCallLedger(
             ? {
                 classification: "terminal_invalid" as const,
                 mentionTargetAgentId: null,
-                mentionAdmissionState: null,
                 classifiedAt: row.classifiedAt ?? at,
-                mentionAdmissionStartedAt: null,
-                mentionAdmittedAt: null,
               }
             : {}),
           status: "failed",
@@ -736,10 +678,7 @@ export function createRuntimeToolCallLedger(
           .set({
             classification: "terminal_invalid",
             mentionTargetAgentId: null,
-            mentionAdmissionState: null,
             classifiedAt: row.classifiedAt ?? at,
-            mentionAdmissionStartedAt: null,
-            mentionAdmittedAt: null,
             status: "failed",
             error: serializedError(input.error),
             completedAt: at,
@@ -752,7 +691,7 @@ export function createRuntimeToolCallLedger(
 
     classify: markClassification,
 
-    async commitTerminalAction(input) {
+    async commitMentionAction(input) {
       assertIngressOrdinal(input.ingressOrdinal);
       const tx = input.transaction;
       const lockedCapability = await lockCapability(tx, input.capability);
@@ -777,26 +716,18 @@ export function createRuntimeToolCallLedger(
         lockedCapability.classificationHighWater < input.ingressOrdinal ||
         (mentionAgent
           ? row.classification !== "validated_mention" ||
-            row.mentionTargetAgentId !== input.targetAgentId ||
-            row.mentionAdmissionState !== "pending"
+            row.mentionTargetAgentId !== input.targetAgentId
           : row.classification !== "non_mention" ||
             input.targetAgentId !== null)
       ) {
         throw new RuntimeToolCallIdentityConflict(
-          "Terminal action did not match its immutable classified ledger row",
+          "Mention action did not match its immutable classified ledger row",
         );
       }
       const at = now();
       const updated = await tx
         .update(runInterfaceToolCalls)
         .set({
-          ...(mentionAgent
-            ? {
-                mentionAdmissionState: "admitted" as const,
-                mentionAdmissionStartedAt: at,
-                mentionAdmittedAt: at,
-              }
-            : {}),
           status: "completed",
           result: input.result,
           completedAt: at,
@@ -812,7 +743,7 @@ export function createRuntimeToolCallLedger(
         .returning({ id: runInterfaceToolCalls.id });
       if (updated.length !== 1) {
         throw new RuntimeToolCallIdentityConflict(
-          "Terminal action ledger commitment lost its executing call",
+          "Mention action ledger commitment lost its executing call",
         );
       }
       return input.result;
@@ -834,15 +765,9 @@ export function createRuntimeToolCallLedger(
           .for("update")
           .then((rows) => rows[0] ?? null);
         if (!row || row.status !== "executing") return;
-        if (
-          row.classification !== "non_mention"
-          && !(
-            row.classification === "validated_mention"
-            && row.mentionAdmissionState === "admitted"
-          )
-        ) {
+        if (row.classification !== "non_mention") {
           throw new RuntimeToolCallIdentityConflict(
-            "A tool call must be durably classified and admitted before completion",
+            "A mention must commit through its canonical action transaction",
           );
         }
         const at = now();

@@ -87,8 +87,6 @@ export const agentActionGrants = pgTable(
       "agent_action_grants_key_check",
       sql`${table.key} in (
         'issue_create',
-        'issue_assign',
-        'issue_update',
         'mention_agent',
         'mention_board',
         'agent_hire',

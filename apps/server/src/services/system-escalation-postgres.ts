@@ -3,15 +3,12 @@ import {
   agentAdapterConfigRevisions,
   agents,
   companies,
-  creatorDeliveries,
   issueCreatorEdgeReceivability,
   issueExecutionAuthorities,
   issueExecutionRefs,
   issueSessionContextEpochs,
   issueSessions,
-  issueUpdates,
   issues,
-  pluginCreatorDeliveries,
   plugins,
   routines,
   systemEscalationIdentities,
@@ -23,7 +20,7 @@ import {
   type IssueCreatorEdgeTerminalReason,
   type SystemCreatorSourceKind,
 } from "@paperclipai/shared";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { evaluateAgentInvokability } from "./agent-invokability.js";
 import {
   createIssueSessionAdmissionService,
@@ -38,7 +35,6 @@ import { resolveIssueExecutionRunIdentityById } from "./issue-execution-run-serv
 
 type IssueRow = typeof issues.$inferSelect;
 type EdgeRow = typeof issueCreatorEdgeReceivability.$inferSelect;
-type DeliveryRow = typeof creatorDeliveries.$inferSelect;
 
 export type SystemEscalationOwner =
   | { kind: "agent"; agentId: string }
@@ -69,17 +65,6 @@ export interface TerminalizeCreatorEdgeInput {
   audit?: Record<string, unknown> | null;
 }
 
-export interface TerminalizeCreatorDeliveryInput {
-  companyId: string;
-  deliveryId: string;
-  state: "exhausted" | "permanently_unreceivable";
-  reason: IssueCreatorEdgeTerminalReason;
-  expectedLease?: {
-    owner: string;
-    generation: number;
-  };
-}
-
 export interface SystemEscalationTransactionResult {
   identity: typeof systemEscalationIdentities.$inferSelect;
   issue: IssueRow;
@@ -94,25 +79,6 @@ export interface PostgresSystemEscalationOptions {
 }
 
 const NONTERMINAL_STATUSES = new Set(["open", "blocked"]);
-const TERMINAL_DELIVERY_STATES = new Set([
-  "exhausted",
-  "permanently_unreceivable",
-]);
-const ACTIVE_DELIVERY_STATES = [
-  "pending",
-  "leased",
-  "retryable",
-] as const;
-type ActiveDeliveryState =
-  (typeof ACTIVE_DELIVERY_STATES)[number];
-
-function isActiveDeliveryState(
-  value: string,
-): value is ActiveDeliveryState {
-  return (ACTIVE_DELIVERY_STATES as readonly string[]).includes(
-    value,
-  );
-}
 const MAX_ESCALATION_TITLE_CHARS = 180;
 const MAX_ESCALATION_REQUEST_CHARS = 720;
 
@@ -1009,39 +975,10 @@ export async function ensureSystemEscalationInTransaction(
   };
 }
 
-interface SettleCreatorDeliveriesInput
-  extends TerminalizeCreatorEdgeInput {
-  deliveryState: "exhausted" | "permanently_unreceivable";
-  triggerDeliveryId?: string;
-  expectedLease?: {
-    owner: string;
-    generation: number;
-  };
-}
-
-function deliveryStateForTerminalReason(
-  reason: IssueCreatorEdgeTerminalReason,
-): "exhausted" | "permanently_unreceivable" {
-  return reason === "delivery_exhausted" ||
-    reason === "paused_or_budget_staleness"
-    ? "exhausted"
-    : "permanently_unreceivable";
-}
-
-/**
- * Canonical creator-loss settlement primitive.
- *
- * Every caller enters through the same issue -> edge -> parent delivery ->
- * plugin child lock order. The affected issue is deliberately re-read under
- * lock: nonterminal work loses its edge and claims one escalation, while
- * terminal work keeps the receivable edge and records only board/user
- * fallback. Parent and plugin-child delivery state can therefore never split
- * across commits.
- */
-async function settleCreatorDeliveriesInTransaction(
+export async function terminalizeCreatorEdgeInTransaction(
   tx: IssueSessionDbTransaction,
   sessions: IssueSessionAdmissionService,
-  input: SettleCreatorDeliveriesInput,
+  input: TerminalizeCreatorEdgeInput,
   clock: () => Date = () => new Date(),
 ): Promise<{
   edge: EdgeRow;
@@ -1071,8 +1008,8 @@ async function settleCreatorDeliveriesInTransaction(
     affected.lifecycleStatus !== "cancelled"
   ) {
     throw new PostgresSystemEscalationConflict(
-      "Creator delivery settlement requires a canonical issue lifecycle status",
-      "creator_delivery_issue_status_invalid",
+      "Creator-edge terminalization requires a canonical issue lifecycle status",
+      "creator_edge_issue_status_invalid",
     );
   }
   const current = await tx
@@ -1104,189 +1041,6 @@ async function settleCreatorDeliveriesInTransaction(
     throw new PostgresSystemEscalationConflict(
       "User, board, and system creator edges are permanently inbox-receivable",
       "creator_edge_not_terminalizable",
-    );
-  }
-
-  const parentDeliveries = await tx
-    .select()
-    .from(creatorDeliveries)
-    .where(eq(creatorDeliveries.creatorEdgeId, current.id))
-    .orderBy(
-      asc(creatorDeliveries.committedSequence),
-      asc(creatorDeliveries.id),
-    )
-    .for("update");
-  const parentIds = parentDeliveries.map((delivery) => delivery.id);
-  const pluginDeliveries =
-    parentIds.length === 0
-      ? []
-      : await tx
-          .select()
-          .from(pluginCreatorDeliveries)
-          .where(
-            inArray(
-              pluginCreatorDeliveries.creatorDeliveryId,
-              parentIds,
-            ),
-          )
-          .orderBy(
-            asc(pluginCreatorDeliveries.creatorDeliveryId),
-            asc(pluginCreatorDeliveries.id),
-          )
-          .for("update");
-  const pluginByParentId = new Map(
-    pluginDeliveries.map((delivery) => [
-      delivery.creatorDeliveryId,
-      delivery,
-    ]),
-  );
-  const trigger = input.triggerDeliveryId
-    ? parentDeliveries.find(
-        (delivery) => delivery.id === input.triggerDeliveryId,
-      ) ?? null
-    : null;
-  if (input.triggerDeliveryId && !trigger) {
-    throw new PostgresSystemEscalationConflict(
-      "Creator delivery does not belong to the locked creator edge",
-      "creator_delivery_edge_stale",
-    );
-  }
-  if (
-    trigger &&
-    trigger.recipientKind === "plugin" &&
-    !pluginByParentId.has(trigger.id)
-  ) {
-    throw new PostgresSystemEscalationConflict(
-      "Plugin creator delivery lost its transactional child row",
-      "plugin_creator_delivery_missing",
-    );
-  }
-  for (const parent of parentDeliveries) {
-    if (
-      parent.recipientKind !== "plugin" ||
-      (!isActiveDeliveryState(parent.state) &&
-        parent.id !== input.triggerDeliveryId)
-    ) {
-      continue;
-    }
-    const child = pluginByParentId.get(parent.id);
-    if (!child) {
-      throw new PostgresSystemEscalationConflict(
-        "Plugin creator delivery lost its transactional child row",
-        "plugin_creator_delivery_missing",
-      );
-    }
-    if (child.state === "delivered") {
-      throw new PostgresSystemEscalationConflict(
-        "A delivered plugin child cannot be terminalized with its parent",
-        "plugin_creator_delivery_already_delivered",
-      );
-    }
-    if (
-      TERMINAL_DELIVERY_STATES.has(child.state) &&
-      (child.state !== input.deliveryState ||
-        child.terminalReason !== input.reason)
-    ) {
-      throw new PostgresSystemEscalationConflict(
-        "Plugin parent/child terminal outcome is immutable",
-        "plugin_creator_delivery_terminal_conflict",
-      );
-    }
-  }
-  const parentById = new Map(
-    parentDeliveries.map((delivery) => [delivery.id, delivery]),
-  );
-  for (const child of pluginDeliveries) {
-    if (!isActiveDeliveryState(child.state)) continue;
-    const parent = parentById.get(child.creatorDeliveryId);
-    if (parent?.state === "delivered") {
-      throw new PostgresSystemEscalationConflict(
-        "An active plugin child cannot outlive a delivered parent",
-        "plugin_creator_delivery_parent_already_delivered",
-      );
-    }
-    if (
-      parent &&
-      TERMINAL_DELIVERY_STATES.has(parent.state) &&
-      (parent.state !== input.deliveryState ||
-        parent.terminalReason !== input.reason)
-    ) {
-      throw new PostgresSystemEscalationConflict(
-        "Active plugin child does not match its terminal parent",
-        "plugin_creator_delivery_terminal_conflict",
-      );
-    }
-  }
-  if (trigger && TERMINAL_DELIVERY_STATES.has(trigger.state)) {
-    if (
-      trigger.state !== input.deliveryState ||
-      trigger.terminalReason !== input.reason
-    ) {
-      throw new PostgresSystemEscalationConflict(
-        "Creator-delivery terminal outcome is immutable",
-        "creator_delivery_terminal_conflict",
-      );
-    }
-  } else if (trigger && !isActiveDeliveryState(trigger.state)) {
-    throw new PostgresSystemEscalationConflict(
-      "A successfully delivered creator delivery cannot be terminalized",
-      "creator_delivery_already_delivered",
-    );
-  } else if (trigger) {
-    if (
-      input.expectedLease &&
-      (trigger.state !== "leased" ||
-        trigger.leaseOwner !== input.expectedLease.owner ||
-        trigger.leaseGeneration !== input.expectedLease.generation)
-    ) {
-      throw new PostgresSystemEscalationConflict(
-        "Creator-delivery lease changed before terminalization",
-        "creator_delivery_lease_changed",
-      );
-    }
-    if (input.reason === "delivery_exhausted") {
-      if (
-        input.deliveryState !== "exhausted" ||
-        trigger.attemptCount <
-          trigger.policySnapshot.maxRetryAttempts
-      ) {
-        throw new PostgresSystemEscalationConflict(
-          "Delivery exhaustion requires the final snapshotted retry attempt",
-          "creator_delivery_retry_budget_not_exhausted",
-        );
-      }
-    } else if (input.reason === "paused_or_budget_staleness") {
-      const heldForMs = trigger.heldSince
-        ? clock().getTime() - trigger.heldSince.getTime()
-        : -1;
-      if (
-        input.deliveryState !== "exhausted" ||
-        !trigger.heldSince ||
-        (trigger.holdReason !== "paused" &&
-          trigger.holdReason !== "budget_stopped") ||
-        heldForMs <
-          trigger.policySnapshot.pausedOrBudgetStoppedStalenessMs
-      ) {
-        throw new PostgresSystemEscalationConflict(
-          "Paused/budget delivery terminality requires a continuous expired snapshotted hold",
-          "creator_delivery_hold_not_stale",
-        );
-      }
-    } else if (
-      input.deliveryState !== "permanently_unreceivable"
-    ) {
-      throw new PostgresSystemEscalationConflict(
-        "Structural creator loss must permanently terminalize its deliveries",
-        "creator_delivery_structural_state_invalid",
-      );
-    }
-  } else if (
-    input.deliveryState !==
-    deliveryStateForTerminalReason(input.reason)
-  ) {
-    throw new PostgresSystemEscalationConflict(
-      "Creator-edge settlement state does not match its terminal reason",
-      "creator_edge_delivery_state_invalid",
     );
   }
 
@@ -1331,83 +1085,6 @@ async function settleCreatorDeliveriesInTransaction(
     }
   }
 
-  const settledParentIds: string[] = [];
-  for (const delivery of parentDeliveries) {
-    if (!isActiveDeliveryState(delivery.state)) {
-      continue;
-    }
-    const updated = await tx
-      .update(creatorDeliveries)
-      .set({
-        state: input.deliveryState,
-        terminalAt: now,
-        terminalReason: input.reason,
-        heldSince: null,
-        holdReason: null,
-        leaseOwner: null,
-        leasedAt: null,
-        leaseExpiresAt: null,
-        retryAt: null,
-        lastFailure: null,
-        fallbackAudit: null,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(creatorDeliveries.id, delivery.id),
-          eq(creatorDeliveries.state, delivery.state),
-        ),
-      )
-      .returning({ id: creatorDeliveries.id });
-    if (!updated[0]) {
-      throw new PostgresSystemEscalationConflict(
-        "Creator delivery changed during locked settlement",
-        "creator_delivery_settlement_conflict",
-      );
-    }
-    settledParentIds.push(delivery.id);
-  }
-
-  const settledPluginParentIds: string[] = [];
-  for (const pluginDelivery of pluginDeliveries) {
-    if (!isActiveDeliveryState(pluginDelivery.state)) {
-      continue;
-    }
-    const updated = await tx
-      .update(pluginCreatorDeliveries)
-      .set({
-        state: input.deliveryState,
-        terminalAt: now,
-        terminalReason: input.reason,
-        heldSince: null,
-        leaseOwner: null,
-        leasedAt: null,
-        leaseExpiresAt: null,
-        retryAt: null,
-        lastFailure: null,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(pluginCreatorDeliveries.id, pluginDelivery.id),
-          eq(
-            pluginCreatorDeliveries.state,
-            pluginDelivery.state,
-          ),
-        ),
-      )
-      .returning({ id: pluginCreatorDeliveries.id });
-    if (!updated[0]) {
-      throw new PostgresSystemEscalationConflict(
-        "Plugin creator delivery changed during locked settlement",
-        "plugin_creator_delivery_settlement_conflict",
-      );
-    }
-    settledPluginParentIds.push(
-      pluginDelivery.creatorDeliveryId,
-    );
-  }
-
   const escalation = issueIsNonterminal
     ? await ensureSystemEscalationInTransaction(
         tx,
@@ -1424,78 +1101,7 @@ async function settleCreatorDeliveriesInTransaction(
         clock,
       )
     : null;
-  const fallbackAudit = escalation
-    ? {
-        reason: input.reason,
-        sink: "system-escalation",
-        escalationIssueId: escalation.issue.id,
-        recordedAt: now.toISOString(),
-      }
-    : {
-        reason: input.reason,
-        sink: "board/user",
-        issueTerminal: true,
-        recordedAt: now.toISOString(),
-      };
-  const fallbackParentIds = new Set([
-    ...settledParentIds,
-    ...settledPluginParentIds.filter((parentId) => {
-      const parent = parentById.get(parentId);
-      return (
-        parent !== undefined &&
-        TERMINAL_DELIVERY_STATES.has(parent.state) &&
-        parent.terminalReason === input.reason &&
-        parent.fallbackAudit === null
-      );
-    }),
-    ...(trigger &&
-      TERMINAL_DELIVERY_STATES.has(trigger.state) &&
-      trigger.fallbackAudit === null
-      ? [trigger.id]
-      : []),
-  ]);
-  if (fallbackParentIds.size > 0) {
-    await tx
-      .update(creatorDeliveries)
-      .set({
-        fallbackAudit,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          inArray(
-            creatorDeliveries.id,
-            [...fallbackParentIds],
-          ),
-          eq(creatorDeliveries.terminalReason, input.reason),
-          inArray(creatorDeliveries.state, [
-            "exhausted",
-            "permanently_unreceivable",
-          ]),
-        ),
-      );
-  }
   return { edge, escalation };
-}
-
-export async function terminalizeCreatorEdgeInTransaction(
-  tx: IssueSessionDbTransaction,
-  sessions: IssueSessionAdmissionService,
-  input: TerminalizeCreatorEdgeInput,
-  clock: () => Date = () => new Date(),
-): Promise<{
-  edge: EdgeRow;
-  escalation: SystemEscalationTransactionResult | null;
-}> {
-  return settleCreatorDeliveriesInTransaction(
-    tx,
-    sessions,
-    {
-      ...input,
-      deliveryState: deliveryStateForTerminalReason(input.reason),
-    },
-    clock,
-  );
 }
 
 export async function terminalizeAgentCreatorEdgesInTransaction(
@@ -1884,68 +1490,6 @@ export function createPostgresSystemEscalationService(
       return result;
     },
 
-    async terminalizeCreatorDelivery(
-      input: TerminalizeCreatorDeliveryInput,
-    ) {
-      const result = await db.transaction(async (tx) => {
-        const locator = await tx
-          .select({
-            companyId: creatorDeliveries.companyId,
-            issueId: creatorDeliveries.issueId,
-            ownershipEpoch: creatorDeliveries.ownershipEpoch,
-            creatorEdgeId: creatorDeliveries.creatorEdgeId,
-            deliveryId: creatorDeliveries.id,
-            attemptCount: creatorDeliveries.attemptCount,
-            runId: issueUpdates.runId,
-          })
-          .from(creatorDeliveries)
-          .innerJoin(
-            issueUpdates,
-            eq(issueUpdates.id, creatorDeliveries.issueUpdateId),
-          )
-          .where(
-            and(
-              eq(creatorDeliveries.companyId, input.companyId),
-              eq(creatorDeliveries.id, input.deliveryId),
-            ),
-          )
-          .limit(1)
-          .then((rows) => rows[0] ?? null);
-        if (!locator) {
-          throw new PostgresSystemEscalationConflict(
-            "Creator delivery does not exist",
-            "creator_delivery_missing",
-          );
-        }
-        return settleCreatorDeliveriesInTransaction(
-          tx,
-          sessions,
-          {
-            companyId: locator.companyId,
-            issueId: locator.issueId,
-            ownershipEpoch: locator.ownershipEpoch,
-            creatorEdgeId: locator.creatorEdgeId,
-            reason: input.reason,
-            sourceKind: "creator_delivery",
-            sourceId: locator.deliveryId,
-            systemSource: "recovery",
-            triggeringRunId: locator.runId ?? null,
-            audit: {
-              deliveryId: locator.deliveryId,
-              deliveryState: input.state,
-              attemptCount: locator.attemptCount,
-            },
-            deliveryState: input.state,
-            triggerDeliveryId: locator.deliveryId,
-            expectedLease: input.expectedLease,
-          },
-          clock,
-        );
-      });
-      await dispatch(result.escalation?.dispatchRefId ?? null);
-      return result;
-    },
-
     async reconcile(input: { limit?: number } = {}) {
       const limit = Math.max(1, Math.min(input.limit ?? 100, 500));
       const candidates = await db
@@ -2031,7 +1575,7 @@ export function createPostgresSystemEscalationService(
                 "creator_edge_reason_not_escalating",
               );
             }
-            const settled = await settleCreatorDeliveriesInTransaction(
+            const terminalizedResult = await terminalizeCreatorEdgeInTransaction(
               tx,
               sessions,
               {
@@ -2045,133 +1589,16 @@ export function createPostgresSystemEscalationService(
                 systemSource: "recovery",
                 triggeringRunId: null,
                 audit: { reconciled: true },
-                deliveryState: deliveryStateForTerminalReason(
-                  edge.terminalReason,
-                ),
               },
               clock,
             );
             return {
               terminalized: false,
-              escalation: settled.escalation,
-            };
-          }
-          const endpoint = await inspectEndpointTerminality(tx, edge);
-          if (!endpoint) {
-            let terminalDelivery: DeliveryRow | null = await tx
-              .select()
-              .from(creatorDeliveries)
-              .where(
-                and(
-                  eq(creatorDeliveries.creatorEdgeId, edge.id),
-                  inArray(creatorDeliveries.state, [
-                    "exhausted",
-                    "permanently_unreceivable",
-                  ]),
-                  sql`${creatorDeliveries.fallbackAudit} is null`,
-                ),
-              )
-              .orderBy(
-                asc(creatorDeliveries.committedSequence),
-                asc(creatorDeliveries.id),
-              )
-              .limit(1)
-              .then((rows) => rows[0] ?? null);
-            if (!terminalDelivery) {
-              const reconcileNow = clock();
-              const activeDeliveries = await tx
-                .select()
-                .from(creatorDeliveries)
-                .where(
-                  and(
-                    eq(creatorDeliveries.creatorEdgeId, edge.id),
-                    inArray(creatorDeliveries.state, [
-                      "pending",
-                      "leased",
-                      "retryable",
-                    ]),
-                  ),
-                )
-                .orderBy(
-                  asc(creatorDeliveries.committedSequence),
-                  asc(creatorDeliveries.id),
-                )
-                .for("update");
-              for (const activeDelivery of activeDeliveries) {
-                const staleHold =
-                  activeDelivery.heldSince !== null &&
-                  (activeDelivery.holdReason === "paused" ||
-                    activeDelivery.holdReason === "budget_stopped") &&
-                  reconcileNow.getTime() -
-                    activeDelivery.heldSince.getTime() >=
-                    activeDelivery.policySnapshot
-                      .pausedOrBudgetStoppedStalenessMs;
-                const exhaustedRetries =
-                  activeDelivery.state === "retryable" &&
-                  activeDelivery.attemptCount >=
-                    activeDelivery.policySnapshot.maxRetryAttempts;
-                if (!staleHold && !exhaustedRetries) continue;
-                const terminalReason: IssueCreatorEdgeTerminalReason =
-                  staleHold
-                    ? "paused_or_budget_staleness"
-                    : "delivery_exhausted";
-                terminalDelivery = {
-                  ...activeDelivery,
-                  terminalReason,
-                };
-                break;
-              }
-            }
-            if (
-              !terminalDelivery ||
-              !isIssueCreatorEdgeTerminalReason(
-                terminalDelivery.terminalReason,
-              )
-            ) {
-              return null;
-            }
-            const update = await tx
-              .select({ runId: issueUpdates.runId })
-              .from(issueUpdates)
-              .where(eq(issueUpdates.id, terminalDelivery.issueUpdateId))
-              .limit(1)
-              .then((rows) => rows[0] ?? null);
-            const terminalizedResult =
-              await settleCreatorDeliveriesInTransaction(
-                tx,
-                sessions,
-                {
-                  companyId: edge.companyId,
-                  issueId: edge.issueId,
-                  ownershipEpoch: edge.ownershipEpoch,
-                  creatorEdgeId: edge.id,
-                  reason:
-                    terminalDelivery.terminalReason,
-                  sourceKind: "creator_delivery_reconciler",
-                  sourceId: terminalDelivery.id,
-                  systemSource: "recovery",
-                  triggeringRunId: update?.runId ?? null,
-                  audit: {
-                    deliveryId: terminalDelivery.id,
-                    deliveryState: terminalDelivery.state,
-                  },
-                  deliveryState:
-                    terminalDelivery.state === "exhausted" ||
-                    terminalDelivery.state ===
-                      "permanently_unreceivable"
-                      ? terminalDelivery.state
-                      : "exhausted",
-                  triggerDeliveryId: terminalDelivery.id,
-                },
-                clock,
-              );
-            return {
-              terminalized:
-                issue.lifecycleStatus === "open" ||
-                issue.lifecycleStatus === "blocked",
               escalation: terminalizedResult.escalation,
             };
           }
+          const endpoint = await inspectEndpointTerminality(tx, edge);
+          if (!endpoint) return null;
           const terminalizedResult =
             await terminalizeCreatorEdgeInTransaction(
               tx,

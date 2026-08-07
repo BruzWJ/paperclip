@@ -6,7 +6,7 @@ import {
 } from "@paperclipai/shared";
 import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
-import { issueCreatorEdgeReceivability } from "../schema/issue_creator_delivery.js";
+import { issueCreatorEdgeReceivability } from "../schema/issue_creator_edge.js";
 import { issueExecutionRefs } from "../schema/issue_execution_runtime.js";
 import {
   issueExecutionFinalizationStaleCheckOutbox,
@@ -244,7 +244,6 @@ describe("P15-P17 issue liveness reconciliation schema", () => {
         "retry_count",
         "deadline_at",
         "escalation_id",
-        "creator_delivery_id",
       ]),
     );
 

@@ -14,8 +14,8 @@ import {
 import type { AgentVisibleIssueStatus } from "@paperclipai/shared";
 import { authUsers } from "./auth.js";
 import { companies } from "./companies.js";
-import { issueCreatorEdgeReceivability } from "./issue_creator_delivery.js";
-import { systemEscalationIdentities } from "./issue_creator_delivery.js";
+import { issueCreatorEdgeReceivability } from "./issue_creator_edge.js";
+import { systemEscalationIdentities } from "./issue_creator_edge.js";
 import { issueComments } from "./issue_comments.js";
 import { issueExecutionRefs } from "./issue_execution_runtime.js";
 import { issues } from "./issues.js";

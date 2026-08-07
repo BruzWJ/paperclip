@@ -3,8 +3,6 @@ import {
   agentActionGrants,
   agents,
   companies,
-  creatorDeliveries,
-  instanceSettings,
   issueComments,
   issueBoardMentions,
   issueCreateIdempotencyKeys,
@@ -29,6 +27,7 @@ import {
   type AgentContextGrantKey,
   type AgentVisibleIssueStatus,
   type PaperclipActionKey,
+  type PaperclipRuntimeActionKey,
   isUuidLike,
   normalizeContextAccess,
 } from "@paperclipai/shared";
@@ -40,7 +39,7 @@ import {
 } from "./agent-invokability.js";
 import {
   createIssueSessionAdmissionService,
-  type IssueSessionAdmissionResult,
+  type DispatchingExecutionSourceInput,
   type IssueSessionAdmissionService,
   type IssueSessionExecutionActor,
   type IssueSessionProjectedCommentSource,
@@ -62,7 +61,6 @@ import { lockActivePromptCapabilityBinding } from "./prompt-capability-gateway-p
 import {
   type RuntimeActionInvocation,
 } from "./runtime-tool-executor.js";
-import { enqueueCreatorDelivery } from "./creator-delivery-enqueue.js";
 import { terminalizeCreatorEdgeInTransaction } from "./system-escalation-postgres.js";
 import type {
   IssueExecutionCancellationActor,
@@ -95,6 +93,7 @@ import {
   resolvePluginPermittedIssueOwnerCatalogInTransaction,
 } from "./plugin-issue-authorization.js";
 import { recordIssueLivenessActionInTransaction } from "./issue-liveness-reconciliation.js";
+import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
 
 const CREATE_KEYS = [
   "request",
@@ -104,18 +103,12 @@ const CREATE_KEYS = [
   "contextAccessMask",
 ] as const;
 const ASSIGN_KEYS = ["issueId", "owner"] as const;
-const OWNER_MESSAGE_KEYS = ["form", "message"] as const;
-const OWNER_UPDATE_KEYS = ["form", "status", "message"] as const;
-const TERMINAL_OWNER_UPDATE_KEYS = [
-  "form",
+const UPDATE_MESSAGE_KEYS = ["message"] as const;
+const UPDATE_KEYS = ["status", "message"] as const;
+const TERMINAL_UPDATE_KEYS = [
   "status",
   "message",
   "structuredResult",
-] as const;
-const CREATOR_UPDATE_KEYS = [
-  "form",
-  "creatorTargetIssueId",
-  "message",
 ] as const;
 const BOARD_MENTION_KEYS = ["message"] as const;
 const PRIORITIES = new Set(["critical", "high", "medium", "low"]);
@@ -135,16 +128,21 @@ type RuntimeIssueOwnerUpdateBase = {
   message: string;
 };
 
-export type RuntimeIssueOwnerUpdateInput =
+export type RuntimeIssueUpdateInput =
   | (RuntimeIssueOwnerUpdateBase & {
+      /** Omitted targets the active issue; supplied targets an exact child. */
+      issueId?: string;
       status?: undefined;
       structuredResult?: never;
     })
   | (RuntimeIssueOwnerUpdateBase & {
+      issueId?: string;
       status: "open" | "blocked";
       structuredResult?: never;
     })
   | (RuntimeIssueOwnerUpdateBase & {
+      /** Terminal disposition is restricted to the active current-owner issue. */
+      issueId?: never;
       status: "done" | "cancelled";
       structuredResult?: unknown;
     });
@@ -165,19 +163,13 @@ export interface RuntimeIssueActionService {
     issueId: string;
     owner: RuntimeIssueOwnerChoice;
   }): Promise<unknown>;
-  updateOwner(input: RuntimeIssueOwnerUpdateInput): Promise<unknown>;
-  updateCreator(input: {
-    capability: RuntimeActionInvocation["capability"];
-    invocationId: string;
-    creatorTargetIssueId: string;
-    message: string;
-  }): Promise<unknown>;
+  update(input: RuntimeIssueUpdateInput): Promise<unknown>;
   mention(input: {
     capability: RuntimeActionInvocation["capability"];
     invocationId: string;
     runInterfaceToolCallId: string;
     ingressOrdinal: number;
-    commitTerminalAction: RuntimeActionInvocation["commitTerminalAction"];
+    commitMentionAction: RuntimeActionInvocation["commitMentionAction"];
     targetAgentId: string;
     message: string;
   }): Promise<unknown>;
@@ -186,7 +178,7 @@ export interface RuntimeIssueActionService {
     invocationId: string;
     runInterfaceToolCallId: string;
     ingressOrdinal: number;
-    commitTerminalAction: RuntimeActionInvocation["commitTerminalAction"];
+    commitMentionAction: RuntimeActionInvocation["commitMentionAction"];
     message: string;
   }): Promise<unknown>;
 }
@@ -240,12 +232,6 @@ export interface PostgresRuntimeIssueActionServiceOptions {
    * idempotent preparation and drain coalescing.
    */
   dispatchPersistedRef(refId: string): Promise<void>;
-  /**
-   * Gives a committed creator-delivery intent an immediate pass through the
-   * durable outbox worker. Producer code never schedules its counterpart ref
-   * directly.
-   */
-  notifyCreatorDelivery(deliveryId: string): Promise<void>;
   /** Canonical transactional authority fence plus post-commit cancellation. */
   issueExecutionCancellation: RuntimeIssueScopeCancellationPort;
 }
@@ -266,23 +252,29 @@ interface AuthorizedRuntimeAction {
   catalog: RuntimeInterfaceCompileInput;
 }
 
-const DELIVERY_STATE_POLICY_ERROR =
-  "Instance creator-delivery policy must be configured before issue updates";
-
 async function lockIssueSessionState(
   tx: IssueSessionDbTransaction,
   companyId: string,
   issueId: string,
 ): Promise<{
+  issue: IssueRow;
   session: SessionRow;
   contextGeneration: number;
 } | null> {
   return tx
     .select({
+      issue: issues,
       session: issueSessions,
       contextGeneration: issueSessionContextEpochs.generation,
     })
     .from(issueSessions)
+    .innerJoin(
+      issues,
+      and(
+        eq(issues.companyId, issueSessions.companyId),
+        eq(issues.id, issueSessions.issueId),
+      ),
+    )
     .innerJoin(
       issueSessionContextEpochs,
       and(
@@ -299,6 +291,184 @@ async function lockIssueSessionState(
     )
     .for("update")
     .then((rows) => rows[0] ?? null);
+}
+
+export type AgentCounterpartTarget = {
+  issueId: string;
+  sessionId: string;
+  ownershipEpoch: number;
+  agentId: string;
+  authorityId: string;
+  adapterConfigRevisionId: string;
+  contextGeneration: number;
+};
+
+export type IssueUpdateTarget = Pick<
+  AgentCounterpartTarget,
+  "issueId" | "sessionId" | "ownershipEpoch"
+>;
+
+export async function lockIssueUpdateTarget(
+  tx: IssueSessionDbTransaction,
+  companyId: string,
+  issueId: string,
+): Promise<IssueUpdateTarget> {
+  const sessionState = await lockIssueSessionState(tx, companyId, issueId);
+  if (!sessionState || sessionState.session.integrityState !== "ready") {
+    throw new RuntimeIssueActionConflict(
+      "Issue-update counterpart has no receivable canonical Session",
+    );
+  }
+  return {
+    issueId,
+    sessionId: sessionState.session.id,
+    ownershipEpoch: sessionState.issue.ownershipEpoch,
+  };
+}
+
+export async function lockAgentCounterpartTarget(
+  tx: IssueSessionDbTransaction,
+  companyId: string,
+  authorityId: string,
+): Promise<AgentCounterpartTarget> {
+  const authority = await tx
+    .select()
+    .from(issueExecutionAuthorities)
+    .where(
+      and(
+        eq(issueExecutionAuthorities.companyId, companyId),
+        eq(issueExecutionAuthorities.id, authorityId),
+        eq(issueExecutionAuthorities.state, "current"),
+      ),
+    )
+    .for("update")
+    .then((rows) => rows[0] ?? null);
+  if (!authority) {
+    throw new RuntimeIssueActionConflict(
+      "Issue-update counterpart has no current execution authority",
+    );
+  }
+  const sessionState = await lockIssueSessionState(
+    tx,
+    companyId,
+    authority.issueId,
+  );
+  if (
+    !sessionState ||
+    sessionState.session.id !== authority.sessionId ||
+    sessionState.session.integrityState !== "ready"
+  ) {
+    throw new RuntimeIssueActionConflict(
+      "Issue-update counterpart has no receivable canonical Session",
+    );
+  }
+  return {
+    issueId: authority.issueId,
+    sessionId: authority.sessionId,
+    ownershipEpoch: authority.ownershipEpoch,
+    agentId: authority.agentId,
+    authorityId: authority.id,
+    adapterConfigRevisionId: authority.auditAdapterConfigRevisionId,
+    contextGeneration: sessionState.contextGeneration,
+  };
+}
+
+export type IssueMentionRecipient =
+  | { kind: "agent"; target: AgentCounterpartTarget }
+  | { kind: "board"; target: IssueUpdateTarget };
+
+export async function lockIssueMentionRecipient(
+  tx: IssueSessionDbTransaction,
+  companyId: string,
+  issueId: string,
+): Promise<IssueMentionRecipient> {
+  const sessionState = await lockIssueSessionState(tx, companyId, issueId);
+  if (!sessionState || sessionState.session.integrityState !== "ready") {
+    throw new RuntimeIssueActionConflict(
+      "Mention target has no receivable canonical Session",
+    );
+  }
+  const target = {
+    issueId,
+    sessionId: sessionState.session.id,
+    ownershipEpoch: sessionState.issue.ownershipEpoch,
+  };
+  if (
+    sessionState.issue.ownerKind !== "agent" ||
+    !sessionState.issue.ownerAgentId
+  ) {
+    return { kind: "board", target };
+  }
+  const authority = await tx
+    .select()
+    .from(issueExecutionAuthorities)
+    .where(
+      and(
+        eq(issueExecutionAuthorities.companyId, companyId),
+        eq(issueExecutionAuthorities.issueId, issueId),
+        eq(
+          issueExecutionAuthorities.ownershipEpoch,
+          sessionState.issue.ownershipEpoch,
+        ),
+        eq(
+          issueExecutionAuthorities.agentId,
+          sessionState.issue.ownerAgentId,
+        ),
+        eq(issueExecutionAuthorities.state, "current"),
+      ),
+    )
+    .limit(1)
+    .for("update")
+    .then((rows) => rows[0] ?? null);
+  if (!authority || authority.sessionId !== sessionState.session.id) {
+    throw new RuntimeIssueActionConflict(
+      "Mention target agent has no current issue authority",
+    );
+  }
+  return {
+    kind: "agent",
+    target: {
+      ...target,
+      agentId: authority.agentId,
+      authorityId: authority.id,
+      adapterConfigRevisionId: authority.auditAdapterConfigRevisionId,
+      contextGeneration: sessionState.contextGeneration,
+    },
+  };
+}
+
+async function lockOwnerUpdateRecipient(
+  tx: IssueSessionDbTransaction,
+  companyId: string,
+  issue: IssueRow,
+  creatorEdge: {
+    endpointKind: string;
+    endpointId: string | null;
+  },
+): Promise<IssueMentionRecipient> {
+  if (issue.parentId) {
+    return lockIssueMentionRecipient(tx, companyId, issue.parentId);
+  }
+
+  const sameIssue = await lockIssueUpdateTarget(tx, companyId, issue.id);
+  if (
+    creatorEdge.endpointKind === "agent-execution" &&
+    creatorEdge.endpointId
+  ) {
+    try {
+      return {
+        kind: "agent",
+        target: await lockAgentCounterpartTarget(
+          tx,
+          companyId,
+          creatorEdge.endpointId,
+        ),
+      };
+    } catch (error) {
+      if (!(error instanceof RuntimeIssueActionConflict)) throw error;
+    }
+  }
+  return { kind: "board", target: sameIssue };
 }
 
 function deterministicUuid(namespace: string, key: string): string {
@@ -583,10 +753,37 @@ async function lockRuntimeActionRun(
   }
 }
 
+const PERSISTENT_GRANT_BY_RUNTIME_ACTION = {
+  issue_create: "issue_create",
+  issue_assign: "issue_create",
+  issue_update: null,
+  mention_agent: "mention_agent",
+  mention_board: "mention_board",
+  agent_hire: "agent_hire",
+  agent_configure: "agent_configure",
+} as const satisfies Record<PaperclipRuntimeActionKey, PaperclipActionKey | null>;
+
+function actionRemainsAvailableInCatalog(
+  catalog: RuntimeInterfaceCompileInput,
+  action: PaperclipRuntimeActionKey,
+  persistentGrant: PaperclipActionKey | null,
+): boolean {
+  if (persistentGrant) {
+    return catalog.actionGrants[persistentGrant] === true;
+  }
+  // issue_update is emitted from relationship-derived authority, never a
+  // stored action grant. Form-specific target validation happens at the
+  // owner/creator commit boundary below.
+  return (
+    action === "issue_update" &&
+    (catalog.isCurrentOwner || catalog.creatorUpdateTargets.length > 0)
+  );
+}
+
 async function lockRuntimeActionAuthority(
   tx: IssueSessionDbTransaction,
   capability: RuntimeActionInvocation["capability"],
-  action: PaperclipActionKey,
+  action: PaperclipRuntimeActionKey,
   now: Date,
   options: {
     requireOwner: boolean;
@@ -819,22 +1016,25 @@ async function lockRuntimeActionAuthority(
     );
   }
 
-  const grantRows = await tx
-    .select({ id: agentActionGrants.id })
-    .from(agentActionGrants)
-    .where(
-      and(
-        eq(agentActionGrants.companyId, capability.companyId),
-        eq(agentActionGrants.agentId, capability.targetAgentId),
-        eq(agentActionGrants.key, action),
-      ),
-    )
-    .for("update");
-  if (grantRows.length !== 1) {
-    throw new RuntimeIssueActionDenied(
-      `Current run no longer has ${action}`,
-      "action_grant_missing",
-    );
+  const persistentGrant = PERSISTENT_GRANT_BY_RUNTIME_ACTION[action];
+  if (persistentGrant) {
+    const grantRows = await tx
+      .select({ id: agentActionGrants.id })
+      .from(agentActionGrants)
+      .where(
+        and(
+          eq(agentActionGrants.companyId, capability.companyId),
+          eq(agentActionGrants.agentId, capability.targetAgentId),
+          eq(agentActionGrants.key, persistentGrant),
+        ),
+      )
+      .for("update");
+    if (grantRows.length !== 1) {
+      throw new RuntimeIssueActionDenied(
+        `Current run no longer has ${persistentGrant} required for ${action}`,
+        "action_grant_missing",
+      );
+    }
   }
 
   let catalog: RuntimeInterfaceCompileInput;
@@ -850,10 +1050,12 @@ async function lockRuntimeActionAuthority(
       "catalog_revalidation_failed",
     );
   }
-  if (catalog.actionGrants[action] !== true) {
+  if (!actionRemainsAvailableInCatalog(catalog, action, persistentGrant)) {
     throw new RuntimeIssueActionDenied(
-      `Current runtime catalog no longer grants ${action}`,
-      "action_grant_missing",
+      persistentGrant
+        ? `Current runtime catalog no longer grants ${persistentGrant} required for ${action}`
+        : `Current runtime catalog no longer exposes ${action}`,
+      persistentGrant ? "action_grant_missing" : "runtime_action_unavailable",
     );
   }
   return {
@@ -1137,19 +1339,6 @@ async function insertCreatorEdge(
   return existing;
 }
 
-async function loadCreatorDeliveryPolicy(tx: IssueSessionDbTransaction) {
-  const row = await tx
-    .select({ policy: instanceSettings.creatorDelivery })
-    .from(instanceSettings)
-    .where(eq(instanceSettings.singletonKey, "default"))
-    .for("share")
-    .then((rows) => rows[0] ?? null);
-  if (!row?.policy) {
-    throw new RuntimeIssueActionConflict(DELIVERY_STATE_POLICY_ERROR);
-  }
-  return row.policy;
-}
-
 async function nextRunUpdateSequence(
   tx: IssueSessionDbTransaction,
   companyId: string,
@@ -1181,47 +1370,35 @@ async function loadUpdateRetry(
     .limit(1)
     .then((rows) => rows[0] ?? null);
   if (!update) return null;
-  const [comment, delivery] = await Promise.all([
-    tx
-      .select()
-      .from(issueComments)
-      .where(eq(issueComments.id, update.commentId))
-      .limit(1)
-      .then((rows) => rows[0] ?? null),
-    tx
-      .select()
-      .from(creatorDeliveries)
-      .where(eq(creatorDeliveries.issueUpdateId, update.id))
-      .limit(1)
-      .then((rows) => rows[0] ?? null),
-  ]);
-  if (!comment || !delivery) {
+  const comment = await tx
+    .select()
+    .from(issueComments)
+    .where(eq(issueComments.id, update.commentId))
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+  if (!comment) {
     throw new RuntimeIssueActionConflict(
-      "Accepted issue update is missing its comment or delivery ledger",
+      "Accepted issue update is missing its canonical comment",
     );
   }
-  const ref = delivery.counterpartRefId
+  const ref = comment.canonicalSourceId
     ? await tx
         .select()
         .from(issueExecutionRefs)
         .where(
           and(
             eq(issueExecutionRefs.companyId, companyId),
-            eq(issueExecutionRefs.id, delivery.counterpartRefId),
+            eq(issueExecutionRefs.sessionId, comment.sessionId),
+            eq(issueExecutionRefs.sourceId, comment.canonicalSourceId),
           ),
         )
         .limit(1)
         .then((rows) => rows[0] ?? null)
     : null;
-  if (delivery.counterpartRefId && !ref) {
-    throw new RuntimeIssueActionConflict(
-      "Accepted issue update is missing its counterpart ref",
-    );
-  }
-  return { update, comment, delivery, ref, retried: true as const };
+  return { update, comment, ref, retried: true as const };
 }
 
-export type CanonicalOwnerFormUpdate =
+type CanonicalNonterminalFormUpdate =
   | {
       message: string;
       status?: undefined;
@@ -1231,12 +1408,22 @@ export type CanonicalOwnerFormUpdate =
       message: string;
       status: "open" | "blocked";
       structuredResult?: never;
-    }
+    };
+
+export type CanonicalOwnerFormUpdate =
+  | CanonicalNonterminalFormUpdate
   | {
       message: string;
       status: "done" | "cancelled";
       structuredResult?: unknown;
     };
+
+/**
+ * A creator update always targets an exact child. It may keep that child open
+ * or blocked, but terminal disposition remains current-owner authority because
+ * it ends the receiving owner's execution epoch.
+ */
+export type CanonicalCreatorFormUpdate = CanonicalNonterminalFormUpdate;
 
 export type CanonicalOwnerFormAuthority =
   | {
@@ -1293,7 +1480,7 @@ export type CanonicalCreatorFormAuthority =
 
 export interface IssueFormCommitRuntimeOptions {
   clock?: () => Date;
-  notifyCreatorDelivery(deliveryId: string): Promise<void>;
+  dispatchPersistedRef(refId: string): Promise<void>;
   issueExecutionCancellation: RuntimeIssueScopeCancellationPort;
 }
 
@@ -1505,12 +1692,15 @@ function executionActorForCapability(
   };
 }
 
-function creatorExecutionActor(
-  authority: CanonicalCreatorFormAuthority,
+function issueUpdateActor(
+  authority: CanonicalOwnerFormAuthority | CanonicalCreatorFormAuthority,
 ): IssueSessionExecutionActor {
   switch (authority.kind) {
     case "agent-execution":
       return executionActorForCapability(authority.capability);
+    case "system-escalation-human":
+    case "user-creator-withdrawal":
+      return { kind: "user/board", userId: authority.actorUserId };
     case "user/board":
       return { kind: "user/board", userId: authority.userId };
     case "plugin":
@@ -1534,6 +1724,278 @@ function creatorExecutionActor(
   }
 }
 
+function updateCounterpart(
+  authority: CanonicalOwnerFormAuthority | CanonicalCreatorFormAuthority,
+): {
+  counterpartIssueId: string;
+  counterpartAuthorityId: string;
+  counterpartOwnershipEpoch: number;
+} | undefined {
+  if (
+    authority.kind !== "agent-execution" ||
+    !authority.capability.issueExecutionAuthorityId
+  ) {
+    return undefined;
+  }
+  return {
+    counterpartIssueId: authority.capability.issueId,
+    counterpartAuthorityId:
+      authority.capability.issueExecutionAuthorityId,
+    counterpartOwnershipEpoch: authority.capability.ownershipEpoch,
+  };
+}
+
+function sameIssueAgentTarget(
+  sourceAgentTarget: { issueId: string; agentId: string } | null | undefined,
+  target: AgentCounterpartTarget,
+): boolean {
+  // The only self-mention dedupe key is the exact (issueId, agentId) pair.
+  return (
+    sourceAgentTarget?.issueId === target.issueId &&
+    sourceAgentTarget.agentId === target.agentId
+  );
+}
+
+async function canDispatchAgentCounterpartTarget(
+  tx: IssueSessionDbTransaction,
+  companyId: string,
+  target: AgentCounterpartTarget,
+): Promise<boolean> {
+  try {
+    return (await assertTargetAdapterRevision(
+      tx,
+      companyId,
+      target.agentId,
+    )) === target.adapterConfigRevisionId;
+  } catch (error) {
+    if (error instanceof RuntimeIssueActionDenied) return false;
+    throw error;
+  }
+}
+
+export async function mentionAgentInTransaction(
+  sessionAdmission: IssueSessionAdmissionService,
+  tx: IssueSessionDbTransaction,
+  input: DispatchingExecutionSourceInput,
+) {
+  const admission = await sessionAdmission.admitExecutionSource(input, tx);
+  if (!admission.ref || (input.comment && !admission.comment)) {
+    throw new RuntimeIssueActionConflict(
+      "Canonical agent mention did not reserve its ref and comment",
+    );
+  }
+  return admission;
+}
+
+export async function mentionBoardInTransaction(
+  sessionAdmission: IssueSessionAdmissionService,
+  tx: IssueSessionDbTransaction,
+  input: {
+    companyId: string;
+    target: IssueUpdateTarget;
+    actor: IssueSessionExecutionActor;
+    comment: IssueSessionProjectedCommentSource;
+    counterpart?: {
+      counterpartIssueId: string;
+      counterpartAuthorityId: string;
+      counterpartOwnershipEpoch: number;
+    };
+    sourceKind: string;
+    immutableSourceKey: string;
+    sourceRecordId: string;
+    message: string;
+  },
+) {
+  if (
+    input.comment.author.kind !== "agent" ||
+    input.comment.producingRun === null
+  ) {
+    throw new RuntimeIssueActionConflict(
+      "Canonical Board mention requires an agent producing run",
+    );
+  }
+  const counterpart = input.counterpart ?? {};
+  const admission = await sessionAdmission.appendNonDispatchSyntheticComment(
+    {
+      companyId: input.companyId,
+      issueId: input.target.issueId,
+      sessionId: input.target.sessionId,
+      sourceKind: input.sourceKind,
+      projectionKind: "issue_update",
+      immutableSourceKey: input.immutableSourceKey,
+      sourceRecordId: input.sourceRecordId,
+      exactText: input.message,
+      ownershipEpoch: input.target.ownershipEpoch,
+      agentId: input.comment.author.agentId,
+      adapterConfigRevisionId:
+        input.comment.producingRun.adapterConfigRevisionId,
+      runId: input.comment.producingRun.runId,
+      actor: input.actor,
+      ...counterpart,
+      comment: input.comment,
+    },
+    tx,
+  );
+  if (!admission.comment) {
+    throw new RuntimeIssueActionConflict(
+      "Canonical Board mention did not reserve its comment",
+    );
+  }
+  const mentionId = deterministicUuid(
+    "issue-board-mention",
+    input.immutableSourceKey,
+  );
+  const inserted = await tx
+    .insert(issueBoardMentions)
+    .values({
+      id: mentionId,
+      companyId: input.companyId,
+      issueId: input.target.issueId,
+      ownershipEpoch: input.target.ownershipEpoch,
+      agentId: input.comment.author.agentId,
+      runId: input.comment.producingRun.runId,
+      idempotencyKey: input.immutableSourceKey,
+      commentId: admission.comment.id,
+    })
+    .onConflictDoNothing({
+      target: [
+        issueBoardMentions.companyId,
+        issueBoardMentions.idempotencyKey,
+      ],
+    })
+    .returning()
+    .then((rows) => rows[0] ?? null);
+  const mention = inserted ?? await tx
+    .select()
+    .from(issueBoardMentions)
+    .where(and(
+      eq(issueBoardMentions.companyId, input.companyId),
+      eq(issueBoardMentions.idempotencyKey, input.immutableSourceKey),
+    ))
+    .limit(1)
+    .for("update")
+    .then((rows) => rows[0] ?? null);
+  if (!mention || mention.commentId !== admission.comment.id) {
+    throw new RuntimeIssueActionConflict(
+      "Canonical Board mention was retried with different immutable arguments",
+    );
+  }
+  await recordIssueLivenessActionInTransaction(
+    tx,
+    `issue_board_mention:${mention.id}`,
+  );
+  return { ...admission, boardMention: mention };
+}
+
+export async function admitCounterpartIssueUpdate(
+  sessionAdmission: IssueSessionAdmissionService,
+  tx: IssueSessionDbTransaction,
+  input: {
+    companyId: string;
+    target: IssueMentionRecipient;
+    actor: IssueSessionExecutionActor;
+    comment: IssueSessionProjectedCommentSource;
+    counterpart?: {
+      counterpartIssueId: string;
+      counterpartAuthorityId: string;
+      counterpartOwnershipEpoch: number;
+    };
+    sourceAgentTarget?: { issueId: string; agentId: string } | null;
+    sourceKind?: "issue_update" | "termination_recovery";
+    immutableSourceKey: string;
+    sourceRecordId: string;
+    message: string;
+  },
+) {
+  const counterpart = input.counterpart ?? {};
+  const sourceKind = input.sourceKind ?? "issue_update";
+  const selfTarget =
+    input.target.kind === "agent" &&
+    sameIssueAgentTarget(input.sourceAgentTarget, input.target.target);
+  const dispatchTarget =
+    input.target.kind === "agent" &&
+    !selfTarget &&
+    await canDispatchAgentCounterpartTarget(
+      tx,
+      input.companyId,
+      input.target.target,
+    );
+  if (dispatchTarget && input.target.kind === "agent") {
+    const target = input.target.target;
+    const dispatchScope = {
+      companyId: input.companyId,
+      issueId: target.issueId,
+      sessionId: target.sessionId,
+      ownershipEpoch: target.ownershipEpoch,
+      targetAgentId: target.agentId,
+      issueExecutionAuthorityId: target.authorityId,
+      consultExecutionId: null,
+      adapterConfigRevisionId: target.adapterConfigRevisionId,
+      contextEpoch: target.contextGeneration,
+      mode: "owner" as const,
+      ...counterpart,
+      immutableSourceKey: input.immutableSourceKey,
+      sourceRecordId: input.sourceRecordId,
+      exactText: input.message,
+      comment: input.comment,
+      idempotencyKey: input.immutableSourceKey,
+    };
+    const executionSource =
+      sourceKind === "termination_recovery"
+        ? (() => {
+            if (input.actor.kind !== "system") {
+              throw new RuntimeIssueActionConflict(
+                "Termination recovery requires a system actor",
+              );
+            }
+            return {
+              sourceKind: "termination_recovery" as const,
+              actor: input.actor,
+            };
+          })()
+        : { sourceKind: "issue_update" as const, actor: input.actor };
+    const admission = await mentionAgentInTransaction(
+      sessionAdmission,
+      tx,
+      { ...dispatchScope, ...executionSource },
+    );
+    return admission;
+  }
+  if (
+    input.actor.kind === "agent-execution" &&
+    (input.target.kind === "board" || !selfTarget)
+  ) {
+    return mentionBoardInTransaction(sessionAdmission, tx, {
+      companyId: input.companyId,
+      target: input.target.target,
+      actor: input.actor,
+      comment: input.comment,
+      counterpart: input.counterpart,
+      sourceKind,
+      immutableSourceKey: input.immutableSourceKey,
+      sourceRecordId: input.sourceRecordId,
+      message: input.message,
+    });
+  }
+  const target = input.target.target;
+  return sessionAdmission.appendNonDispatchControlNotice(
+    {
+      companyId: input.companyId,
+      issueId: target.issueId,
+      sessionId: target.sessionId,
+      sourceKind,
+      actor: input.actor,
+      ...counterpart,
+      immutableSourceKey: input.immutableSourceKey,
+      sourceRecordId: input.sourceRecordId,
+      exactText: input.message,
+      comment: input.comment,
+      allowTerminal: false,
+    },
+    tx,
+  );
+}
+
 async function lockReadyCompany(
   tx: IssueSessionDbTransaction,
   companyId: string,
@@ -1555,33 +2017,6 @@ async function lockReadyCompany(
       "company_inactive",
     );
   }
-}
-
-function ownerRecipient(issue: IssueRow): {
-  recipientKind: "agent-execution" | "user/board";
-  recipientRef: Record<string, unknown>;
-} {
-  if (issue.ownerKind === "user" && issue.ownerUserId) {
-    return {
-      recipientKind: "user/board",
-      recipientRef: {
-        userId: issue.ownerUserId,
-        recipient: "named-user",
-      },
-    };
-  }
-  if (issue.ownerKind === "board") {
-    return {
-      recipientKind: "user/board",
-      recipientRef: {
-        userId: null,
-        recipient: "company-board",
-      },
-    };
-  }
-  throw new RuntimeIssueActionConflict(
-    "Creator-form owner recipient is invalid",
-  );
 }
 
 /**
@@ -1806,7 +2241,6 @@ export function createIssueFormCommitRuntime(
           "Current ownership epoch has no eager creator edge",
         );
       }
-      const policy = await loadCreatorDeliveryPolicy(tx);
       const runSequence =
         source.runId === null
           ? 0
@@ -1827,50 +2261,33 @@ export function createIssueFormCommitRuntime(
           "Human owner-form target has no canonical Session",
         );
       }
-      const admission =
+      const sourceSessionId =
         ownerAuthority.kind === "agent-execution"
-          ? await sessionAdmission.appendNonDispatchSyntheticComment(
-              {
-                companyId,
-                issueId: issue.id,
-                sessionId: ownerAuthority.capability.sessionId,
-                sourceKind: "issue_update",
-                immutableSourceKey: gatewayInvocationId,
-                sourceRecordId: updateId,
-                exactText: input.message,
-                projectionKind: "issue_update",
-                ownershipEpoch: ownerAuthority.capability.ownershipEpoch,
+          ? ownerAuthority.capability.sessionId
+          : humanSessionState!.session.id;
+      const target = await lockOwnerUpdateRecipient(
+        tx,
+        companyId,
+        issue,
+        edge,
+      );
+      const admission = await admitCounterpartIssueUpdate(sessionAdmission, tx, {
+        companyId,
+        target,
+        actor: issueUpdateActor(ownerAuthority),
+        comment: source.comment,
+        counterpart: updateCounterpart(ownerAuthority),
+        sourceAgentTarget:
+          ownerAuthority.kind === "agent-execution"
+            ? {
+                issueId: ownerAuthority.capability.issueId,
                 agentId: ownerAuthority.capability.targetAgentId,
-                adapterConfigRevisionId:
-                  ownerAuthority.capability.adapterConfigIdentity,
-                runId: ownerAuthority.capability.runId,
-                comment: {
-                  author: {
-                    kind: "agent",
-                    agentId: ownerAuthority.capability.targetAgentId,
-                  },
-                  producingRun: {
-                    runId: ownerAuthority.capability.runId,
-                    adapterConfigRevisionId:
-                      ownerAuthority.capability.adapterConfigIdentity,
-                  },
-                },
-              },
-              tx,
-            )
-          : await sessionAdmission.appendNonDispatchControlNotice(
-              {
-                companyId,
-                issueId: issue.id,
-                sessionId: humanSessionState!.session.id,
-                sourceKind: "issue_update",
-                immutableSourceKey: gatewayInvocationId,
-                sourceRecordId: updateId,
-                exactText: input.message,
-                comment: source.comment,
-              },
-              tx,
-            );
+              }
+            : null,
+        immutableSourceKey: gatewayInvocationId,
+        sourceRecordId: updateId,
+        message: input.message,
+      });
       if (!admission.comment) {
         throw new RuntimeIssueActionConflict(
           "Owner update projector did not create its comment-of-record",
@@ -1882,7 +2299,7 @@ export function createIssueFormCommitRuntime(
           id: updateId,
           companyId,
           issueId: issue.id,
-          sessionId: admission.comment.sessionId,
+          sessionId: sourceSessionId,
           ownershipEpoch: issue.ownershipEpoch!,
           form: "owner",
           sourceKind: source.sourceKind,
@@ -1905,18 +2322,6 @@ export function createIssueFormCommitRuntime(
           "Owner update ledger row was not persisted",
         );
       }
-      const delivery = await enqueueCreatorDelivery(tx, {
-        update,
-        edge,
-        recipientKind: edge.endpointKind,
-        recipientRef: {
-          endpointId: edge.endpointId,
-          ...edge.endpointSnapshot,
-        },
-        counterpartRefId: null,
-        policy,
-        now,
-      });
       const updatedIssue =
         input.status === undefined
           ? await tx
@@ -1964,6 +2369,19 @@ export function createIssueFormCommitRuntime(
           "Issue lifecycle changed during owner update",
         );
       }
+      if (!gated && (input.status === "done" || input.status === "cancelled")) {
+        await finalizeSummarySlotsForTerminalIssue(
+          tx as unknown as Db,
+          updatedIssue,
+          input.status === "done" && update.runId
+            ? {
+                updateId: update.id,
+                commentId: update.commentId,
+                runId: update.runId,
+              }
+            : undefined,
+        );
+      }
       const cancellations =
         !gated && input.status === "cancelled"
           ? await options.issueExecutionCancellation
@@ -1997,18 +2415,15 @@ export function createIssueFormCommitRuntime(
         issue: updatedIssue,
         update,
         comment: admission.comment,
-        delivery,
+        ref: admission.ref,
         gated,
         cancellations,
         retried: false as const,
       };
     });
-    // The delivery row is the durable authority. Notification only wakes its
-    // worker and must never extend the provider tool call through a recipient
-    // plugin/agent lifecycle.
-    void options.notifyCreatorDelivery(committed.delivery.id).catch(() => {
-      // The creator-delivery drain retries committed queued work.
-    });
+    if (committed.ref) {
+      await options.dispatchPersistedRef(committed.ref.id);
+    }
     if (committed.cancellations) {
       void options.issueExecutionCancellation
         .reconcileRequestedScopeCancellations(committed.cancellations)
@@ -2022,14 +2437,49 @@ export function createIssueFormCommitRuntime(
 
   async function commitCreatorFormUpdate(
     issueId: string,
-    message: string,
+    input: string | CanonicalCreatorFormUpdate,
     creatorAuthority: CanonicalCreatorFormAuthority,
   ) {
+    const updateInput: CanonicalCreatorFormUpdate =
+      typeof input === "string" ? { message: input } : input;
+    const { message } = updateInput;
     if (!message.trim()) {
       throw new RuntimeIssueActionConflict(
         "Creator-form issue_update requires a non-empty message",
       );
     }
+    if (
+      updateInput.status !== undefined &&
+      !STATUSES.has(updateInput.status)
+    ) {
+      throw new RuntimeIssueActionConflict(
+        "Creator-form issue_update status is invalid",
+      );
+    }
+    if (Object.hasOwn(updateInput, "structuredResult")) {
+      throw new RuntimeIssueActionConflict(
+        "Creator issue_update cannot carry structuredResult",
+      );
+    }
+    if (
+      updateInput.status !== undefined &&
+      terminalStatus(updateInput.status)
+    ) {
+      throw new RuntimeIssueActionDenied(
+        "Terminal done or cancelled updates require current-owner authority",
+        "creator_terminal_status_forbidden",
+      );
+    }
+    if (
+      updateInput.status !== undefined &&
+      creatorAuthority.kind !== "agent-execution"
+    ) {
+      throw new RuntimeIssueActionDenied(
+        "Only an exact agent execution creator may transition issue lifecycle",
+        "creator_lifecycle_agent_execution_required",
+      );
+    }
+    const disposition = null;
     const companyId = authorityCompanyId(creatorAuthority);
     const gatewayInvocationId =
       creatorGatewayInvocationId(creatorAuthority);
@@ -2056,7 +2506,7 @@ export function createIssueFormCommitRuntime(
           )
         ) {
           throw new RuntimeIssueActionDenied(
-            "Target is no longer in the caller's creator-message catalog",
+            "Target is no longer in the caller's creator-update catalog",
             "creator_catalog_changed",
           );
         }
@@ -2125,11 +2575,10 @@ export function createIssueFormCommitRuntime(
         .then((rows) => rows[0] ?? null);
       if (!issue || !issue.ownershipEpoch) {
         throw new RuntimeIssueActionDenied(
-          "Creator-message target no longer exists",
+          "Creator-update target no longer exists",
           "target_issue_missing",
         );
       }
-      assertIssueNonterminal(issue);
       const creatorMatches = (() => {
         switch (creatorAuthority.kind) {
           case "agent-execution":
@@ -2169,7 +2618,7 @@ export function createIssueFormCommitRuntime(
       })();
       if (!creatorMatches) {
         throw new RuntimeIssueActionDenied(
-          "Creator-message authority does not match the immutable target creator",
+          "Creator-update authority does not match the immutable target creator",
           "creator_authority_mismatch",
         );
       }
@@ -2194,7 +2643,7 @@ export function createIssueFormCommitRuntime(
       );
       if (!sessionState) {
         throw new RuntimeIssueActionConflict(
-          "Creator-message target has no canonical Session",
+          "Creator-update target has no canonical Session",
         );
       }
       const edge = await tx
@@ -2243,139 +2692,91 @@ export function createIssueFormCommitRuntime(
             canonicalJson(source.sourceIdentity) ||
           retry.update.runId !== source.runId ||
           retry.update.message !== message ||
-          retry.update.status !== null ||
-          retry.update.disposition !== null
+          retry.update.status !== (updateInput.status ?? null) ||
+          canonicalJson(retry.update.disposition) !== canonicalJson(disposition)
         ) {
           throw new RuntimeIssueActionConflict(
             "creator issue_update invocation was retried with different immutable arguments",
           );
         }
-        return retry;
+        return { ...retry, cancellations: null };
       }
 
-      let admission: IssueSessionAdmissionResult;
-      let recipient:
-        | {
-            recipientKind: "agent-execution";
-            recipientRef: Record<string, unknown>;
-          }
-        | ReturnType<typeof ownerRecipient>;
-      if (
-        issue.ownerKind === "agent" &&
-        issue.ownerAgentId
-      ) {
-        const targetRevisionId = await assertTargetAdapterRevision(
-          tx,
-          companyId,
-          issue.ownerAgentId,
-        );
-        const targetAuthority = await tx
-          .select()
-          .from(issueExecutionAuthorities)
-          .where(
-            and(
-              eq(issueExecutionAuthorities.companyId, companyId),
-              eq(issueExecutionAuthorities.issueId, issue.id),
-              eq(
-                issueExecutionAuthorities.ownershipEpoch,
-                issue.ownershipEpoch,
-              ),
-              eq(issueExecutionAuthorities.agentId, issue.ownerAgentId),
-              eq(issueExecutionAuthorities.state, "current"),
-            ),
-          )
-          .for("update")
-          .then((rows) => rows[0] ?? null);
-        if (!targetAuthority) {
-          throw new RuntimeIssueActionConflict(
-            "Creator-message target has no current owner authority",
-          );
-        }
-        const directInput = {
-          companyId,
-          issueId: issue.id,
-          sessionId: sessionState.session.id,
-          ownershipEpoch: issue.ownershipEpoch,
-          targetAgentId: issue.ownerAgentId,
-          issueExecutionAuthorityId: targetAuthority.id,
-          consultExecutionId: null,
-          adapterConfigRevisionId: targetRevisionId,
-          contextEpoch: sessionState.contextGeneration,
-          mode: "owner" as const,
-          counterpartIssueId:
-            creatorAuthority.kind === "agent-execution"
-              ? creatorAuthority.capability.issueId
-              : null,
-          counterpartAuthorityId: source.sourceAuthorityId,
-          counterpartOwnershipEpoch:
-            creatorAuthority.kind === "agent-execution"
-              ? creatorAuthority.capability.ownershipEpoch
-              : null,
-          sourceKind: "creator_update" as const,
-          immutableSourceKey: gatewayInvocationId,
-          sourceRecordId: deterministicUuid(
-            "issue-update",
-            gatewayInvocationId,
-          ),
-          exactText: message,
-          actor: creatorExecutionActor(creatorAuthority),
-          comment: source.comment,
-          idempotencyKey: gatewayInvocationId,
-        };
-        admission = await sessionAdmission.admitExecutionSource(
-          directInput,
-          tx,
-        );
-        if (!admission.ref) {
-          throw new RuntimeIssueActionConflict(
-            "Creator message did not reserve its owner ref",
-          );
-        }
-        recipient = {
-          recipientKind: "agent-execution",
-          recipientRef: {
-            authorityId: targetAuthority.id,
-            agentId: issue.ownerAgentId,
-            issueId: issue.id,
-            sessionId: sessionState.session.id,
-            ownershipEpoch: issue.ownershipEpoch,
-            adapterConfigRevisionId: targetRevisionId,
-          },
-        };
+      // Idempotent retries must be recognized before checking the current
+      // lifecycle state: a successful open -> blocked creator update now sees
+      // the child as blocked on its exact replay.
+      if (updateInput.status === undefined) {
+        assertIssueNonterminal(issue);
       } else {
-        admission =
-          await sessionAdmission.appendNonDispatchControlNotice(
-            {
-              companyId,
-              issueId: issue.id,
-              sessionId: sessionState.session.id,
-              sourceKind: "issue_update",
-              immutableSourceKey: gatewayInvocationId,
-              sourceRecordId: deterministicUuid(
-                "issue-update",
-                gatewayInvocationId,
-              ),
-              exactText: message,
-              comment: source.comment,
-            },
-            tx,
-          );
-        recipient = ownerRecipient(issue);
+        assertLifecycleTransition(issue.lifecycleStatus, updateInput.status);
       }
-      if (!admission.comment) {
-        throw new RuntimeIssueActionConflict(
-          "Creator message did not persist its comment-of-record",
-        );
-      }
-      const policy = await loadCreatorDeliveryPolicy(tx);
-      const runSequence =
-        source.runId === null
-          ? 0
-          : await nextRunUpdateSequence(tx, companyId, source.runId);
+
+      const executionPolicyTransition =
+        updateInput.status === undefined
+          ? null
+          : (() => {
+              if (creatorAuthority.kind !== "agent-execution") {
+                throw new RuntimeIssueActionDenied(
+                  "Only an exact agent execution creator may transition issue lifecycle",
+                  "creator_lifecycle_agent_execution_required",
+                );
+              }
+              return applyIssueExecutionPolicyTransition({
+                issue,
+                policy: normalizeIssueExecutionPolicy(
+                  issue.executionPolicy,
+                ),
+                requestedStatus: boardPresentationStatusFor(
+                  updateInput.status,
+                ),
+                requestedOwnerPatch: {},
+                actor: {
+                  agentId: creatorAuthority.capability.targetAgentId,
+                },
+                commentBody: message,
+              });
+            })();
+      const executionPolicyPatch = executionPolicyTransition
+        ? issueExecutionPolicyPersistencePatch(
+            executionPolicyTransition.patch,
+          )
+        : {};
+
+      const target = await lockIssueMentionRecipient(
+        tx,
+        companyId,
+        issue.id,
+      );
       const updateId = deterministicUuid(
         "issue-update",
         gatewayInvocationId,
       );
+      const admission = await admitCounterpartIssueUpdate(sessionAdmission, tx, {
+        companyId,
+        target,
+        actor: issueUpdateActor(creatorAuthority),
+        comment: source.comment,
+        counterpart: updateCounterpart(creatorAuthority),
+        sourceAgentTarget:
+          creatorAuthority.kind === "agent-execution"
+            ? {
+                issueId: creatorAuthority.capability.issueId,
+                agentId: creatorAuthority.capability.targetAgentId,
+              }
+            : null,
+        immutableSourceKey: gatewayInvocationId,
+        sourceRecordId: updateId,
+        message,
+      });
+      if (!admission.comment) {
+        throw new RuntimeIssueActionConflict(
+          "Creator update did not persist its canonical comment",
+        );
+      }
+      const runSequence =
+        source.runId === null
+          ? 0
+          : await nextRunUpdateSequence(tx, companyId, source.runId);
       const update = await tx
         .insert(issueUpdates)
         .values({
@@ -2392,8 +2793,8 @@ export function createIssueFormCommitRuntime(
           gatewayInvocationId,
           runSequence,
           message,
-          status: null,
-          disposition: null,
+          status: updateInput.status ?? null,
+          disposition,
           commentId: admission.comment.id,
           creatorEdgeId: edge.id,
           createdAt: now,
@@ -2405,32 +2806,68 @@ export function createIssueFormCommitRuntime(
           "Creator update ledger row was not persisted",
         );
       }
-      const delivery = await enqueueCreatorDelivery(tx, {
-        update,
-        edge,
-        recipientKind: recipient.recipientKind,
-        recipientRef: recipient.recipientRef,
-        counterpartRefId: admission.ref?.id ?? null,
-        policy,
-        now,
-      });
+      const updatedIssue =
+        updateInput.status === undefined
+          ? await tx
+              .select()
+              .from(issues)
+              .where(
+                and(
+                  eq(issues.companyId, companyId),
+                  eq(issues.id, issue.id),
+                  eq(issues.ownershipEpoch, issue.ownershipEpoch),
+                  inArray(issues.lifecycleStatus, ["open", "blocked"]),
+                ),
+              )
+              .limit(1)
+              .then((rows) => rows[0] ?? null)
+          : await tx
+              .update(issues)
+              .set({
+                ...executionPolicyPatch,
+                lifecycleStatus: updateInput.status,
+                boardPresentationStatus:
+                  executionPolicyPatch.boardPresentationStatus ??
+                  boardPresentationStatusFor(updateInput.status),
+                disposition: null,
+                completedAt: null,
+                cancelledAt: null,
+                updatedAt: now,
+              })
+              .where(
+                and(
+                  eq(issues.companyId, companyId),
+                  eq(issues.id, issue.id),
+                  eq(issues.ownershipEpoch, issue.ownershipEpoch),
+                  inArray(issues.lifecycleStatus, ["open", "blocked"]),
+                ),
+              )
+              .returning()
+              .then((rows) => rows[0] ?? null);
+      if (!updatedIssue) {
+        throw new RuntimeIssueActionConflict(
+          "Issue lifecycle changed during creator update",
+        );
+      }
       await recordIssueLivenessActionInTransaction(
         tx,
         `issue_update:${update.id}`,
       );
       return {
-        issue,
+        issue: updatedIssue,
         update,
         comment: admission.comment,
-        delivery,
         ref: admission.ref,
+        gated: false,
+        cancellations: null,
         retried: false as const,
       };
     });
-    void options.notifyCreatorDelivery(committed.delivery.id).catch(() => {
-      // The creator-delivery drain retries committed queued work.
-    });
-    return committed;
+    if (committed.ref) {
+      await options.dispatchPersistedRef(committed.ref.id);
+    }
+    const { cancellations: _, ...result } = committed;
+    return result;
   }
 
   return {
@@ -2733,72 +3170,68 @@ export function createRuntimeIssueActionPort(
 
     async issueUpdate(input) {
       assertOwnerExecution(input);
-      const form = input.arguments.form;
-      if (form === "owner") {
-        if (!Object.hasOwn(input.arguments, "status")) {
-          exactKeys(input.arguments, OWNER_MESSAGE_KEYS);
-          return service.updateOwner({
-            capability: input.capability,
-            invocationId: input.invocationId,
-            message: requiredString(input.arguments.message, "message"),
-          });
-        }
-        const status = input.arguments.status;
-        if (
-          typeof status !== "string" ||
-          !STATUSES.has(status as AgentVisibleIssueStatus)
-        ) {
-          throw new RuntimeToolArgumentsInvalid(
-            "status must be open, blocked, done, or cancelled",
-          );
-        }
-        const terminal = status === "done" || status === "cancelled";
-        exactKeys(
-          input.arguments,
-          terminal ? TERMINAL_OWNER_UPDATE_KEYS : OWNER_UPDATE_KEYS,
+      const hasTargetIssueId = Object.hasOwn(input.arguments, "issueId");
+      const target = hasTargetIssueId
+        ? { issueId: requiredString(input.arguments.issueId, "issueId") }
+        : {};
+      if (!Object.hasOwn(input.arguments, "status")) {
+        exactKeys(input.arguments, [
+          ...UPDATE_MESSAGE_KEYS,
+          ...(hasTargetIssueId ? ["issueId"] : []),
+        ]);
+        return service.update({
+          capability: input.capability,
+          invocationId: input.invocationId,
+          ...target,
+          message: requiredString(input.arguments.message, "message"),
+        });
+      }
+      const status = input.arguments.status;
+      if (
+        typeof status !== "string" ||
+        !STATUSES.has(status as AgentVisibleIssueStatus)
+      ) {
+        throw new RuntimeToolArgumentsInvalid(
+          "status must be open, blocked, done, or cancelled",
         );
-        if (
-          terminal &&
-          Object.hasOwn(input.arguments, "structuredResult") &&
-          input.arguments.structuredResult === undefined
-        ) {
-          throw new RuntimeToolArgumentsInvalid(
-            "structuredResult must be omitted rather than undefined",
-          );
-        }
-        if (terminal) {
-          return service.updateOwner({
-            capability: input.capability,
-            invocationId: input.invocationId,
-            status: status as "done" | "cancelled",
-            message: requiredString(input.arguments.message, "message"),
-            ...(Object.hasOwn(input.arguments, "structuredResult")
-              ? { structuredResult: input.arguments.structuredResult }
-              : {}),
-          });
-        }
-        return service.updateOwner({
+      }
+      const terminal = status === "done" || status === "cancelled";
+      if (terminal && hasTargetIssueId) {
+        throw new RuntimeToolArgumentsInvalid(
+          "Terminal done or cancelled updates require current-owner authority; omit issueId",
+        );
+      }
+      exactKeys(input.arguments, [
+        ...(terminal ? TERMINAL_UPDATE_KEYS : UPDATE_KEYS),
+        ...(hasTargetIssueId ? ["issueId"] : []),
+      ]);
+      if (
+        terminal &&
+        Object.hasOwn(input.arguments, "structuredResult") &&
+        input.arguments.structuredResult === undefined
+      ) {
+        throw new RuntimeToolArgumentsInvalid(
+          "structuredResult must be omitted rather than undefined",
+        );
+      }
+      if (terminal) {
+        return service.update({
           capability: input.capability,
           invocationId: input.invocationId,
-          status: status as "open" | "blocked",
+          status: status as "done" | "cancelled",
           message: requiredString(input.arguments.message, "message"),
+          ...(Object.hasOwn(input.arguments, "structuredResult")
+            ? { structuredResult: input.arguments.structuredResult }
+            : {}),
         });
       }
-      if (form === "creator_message") {
-        exactKeys(input.arguments, CREATOR_UPDATE_KEYS);
-        return service.updateCreator({
-          capability: input.capability,
-          invocationId: input.invocationId,
-          creatorTargetIssueId: requiredString(
-            input.arguments.creatorTargetIssueId,
-            "creatorTargetIssueId",
-          ),
-          message: requiredString(input.arguments.message, "message"),
-        });
-      }
-      throw new RuntimeToolArgumentsInvalid(
-        "form must be owner or creator_message",
-      );
+      return service.update({
+        capability: input.capability,
+        invocationId: input.invocationId,
+        ...target,
+        status: status as "open" | "blocked",
+        message: requiredString(input.arguments.message, "message"),
+      });
     },
 
     async mentionAgent(input) {
@@ -2818,21 +3251,20 @@ export function createRuntimeIssueActionPort(
         invocationId: input.invocationId,
         runInterfaceToolCallId: input.runInterfaceToolCallId,
         ingressOrdinal: input.ingressOrdinal,
-        commitTerminalAction: input.commitTerminalAction,
+        commitMentionAction: input.commitMentionAction,
         targetAgentId: mention.agentId,
         message: mention.message,
       });
     },
 
     async mentionBoard(input) {
-      assertOwnerExecution(input);
       exactKeys(input.arguments, BOARD_MENTION_KEYS);
       return service.mentionBoard({
         capability: input.capability,
         invocationId: input.invocationId,
         runInterfaceToolCallId: input.runInterfaceToolCallId,
         ingressOrdinal: input.ingressOrdinal,
-        commitTerminalAction: input.commitTerminalAction,
+        commitMentionAction: input.commitMentionAction,
         message: nonBlankString(input.arguments.message, "message"),
       });
     },
@@ -2853,7 +3285,7 @@ export function createPostgresRuntimeIssueActionService(
   const sessionAdmission = createIssueSessionAdmissionService(db, { clock });
   const issueForms = createIssueFormCommitRuntime(db, {
     clock,
-    notifyCreatorDelivery: options.notifyCreatorDelivery,
+    dispatchPersistedRef: options.dispatchPersistedRef,
     issueExecutionCancellation: options.issueExecutionCancellation,
   });
 
@@ -3023,7 +3455,9 @@ export function createPostgresRuntimeIssueActionService(
             "issue_create did not persist its creator edge",
           );
         }
-        const admission = await sessionAdmission.admitExecutionSource(
+        const admission = await mentionAgentInTransaction(
+          sessionAdmission,
+          tx,
           {
             companyId: created.companyId,
             issueId: created.id,
@@ -3056,7 +3490,6 @@ export function createPostgresRuntimeIssueActionService(
             },
             idempotencyKey: key,
           },
-          tx,
         );
         if (!admission.ref) {
           throw new RuntimeIssueActionConflict(
@@ -3324,7 +3757,9 @@ export function createPostgresRuntimeIssueActionService(
           createdAt: now,
         });
         const edge = await insertCreatorEdge(tx, reassigned, now);
-        const admission = await sessionAdmission.admitExecutionSource(
+        const admission = await mentionAgentInTransaction(
+          sessionAdmission,
+          tx,
           {
             companyId: reassigned.companyId,
             issueId: reassigned.id,
@@ -3358,7 +3793,6 @@ export function createPostgresRuntimeIssueActionService(
             },
             idempotencyKey: key,
           },
-          tx,
         );
         if (!admission.ref) {
           throw new RuntimeIssueActionConflict(
@@ -3390,33 +3824,37 @@ export function createPostgresRuntimeIssueActionService(
       return committed;
     },
 
-    async updateOwner(input) {
-      return issueForms.commitOwnerFormUpdate(
-        input.capability.issueId,
-        {
+    async update(input) {
+      const authority = {
+        kind: "agent-execution" as const,
+        capability: input.capability,
+        invocationId: input.invocationId,
+      };
+      // `issueId` is deliberately a relationship selector, not a generic
+      // issue mutation target. The underlying creator form re-proves exact
+      // parent/creator authority in the same transaction.
+      if (input.issueId === undefined) {
+        const ownerUpdate = {
           message: input.message,
           ...(input.status === undefined ? {} : { status: input.status }),
           ...(Object.hasOwn(input, "structuredResult")
             ? { structuredResult: input.structuredResult }
             : {}),
-        } as CanonicalOwnerFormUpdate,
-        {
-          kind: "agent-execution",
-          capability: input.capability,
-          invocationId: input.invocationId,
-        },
-      );
-    },
-
-    async updateCreator(input) {
+        } as CanonicalOwnerFormUpdate;
+        return issueForms.commitOwnerFormUpdate(
+          input.capability.issueId,
+          ownerUpdate,
+          authority,
+        );
+      }
+      const creatorUpdate = {
+        message: input.message,
+        ...(input.status === undefined ? {} : { status: input.status }),
+      } as CanonicalCreatorFormUpdate;
       return issueForms.commitCreatorFormUpdate(
-        input.creatorTargetIssueId,
-        input.message,
-        {
-          kind: "agent-execution",
-          capability: input.capability,
-          invocationId: input.invocationId,
-        },
+        input.issueId,
+        creatorUpdate,
+        authority,
       );
     },
 
@@ -3426,30 +3864,26 @@ export function createPostgresRuntimeIssueActionService(
         promptCapabilityGenerationIdentity(input.capability),
         input.invocationId,
       );
-      return db.transaction(async (tx) => {
+      const committed = await db.transaction(async (tx) => {
         const now = clock();
         await lockRuntimeActionAuthority(
           tx,
           input.capability,
           "mention_board",
           now,
-          { requireOwner: true },
+          { requireOwner: false },
         );
-        const mentionId = deterministicUuid("issue-board-mention", key);
-        const admission = await sessionAdmission.appendNonDispatchSyntheticComment(
+        const admission = await mentionBoardInTransaction(
+          sessionAdmission,
+          tx,
           {
             companyId: input.capability.companyId,
-            issueId: input.capability.issueId,
-            sessionId: input.capability.sessionId,
-            sourceKind: "mention_board",
-            immutableSourceKey: key,
-            sourceRecordId: mentionId,
-            exactText: input.message,
-            projectionKind: "issue_update",
-            ownershipEpoch: input.capability.ownershipEpoch,
-            agentId: input.capability.targetAgentId,
-            adapterConfigRevisionId: input.capability.adapterConfigIdentity,
-            runId: input.capability.runId,
+            target: {
+              issueId: input.capability.issueId,
+              sessionId: input.capability.sessionId,
+              ownershipEpoch: input.capability.ownershipEpoch,
+            },
+            actor: executionActorForCapability(input.capability),
             comment: {
               author: {
                 kind: "agent",
@@ -3460,65 +3894,20 @@ export function createPostgresRuntimeIssueActionService(
                 adapterConfigRevisionId: input.capability.adapterConfigIdentity,
               },
             },
+            sourceKind: "mention_board",
+            immutableSourceKey: key,
+            sourceRecordId: deterministicUuid("issue-board-mention", key),
+            message: input.message,
           },
-          tx,
         );
-        if (!admission.comment) {
-          throw new RuntimeIssueActionConflict(
-            "mention_board did not persist its canonical issue comment",
-          );
-        }
-        const inserted = await tx
-          .insert(issueBoardMentions)
-          .values({
-            id: mentionId,
-            companyId: input.capability.companyId,
-            issueId: input.capability.issueId,
-            ownershipEpoch: input.capability.ownershipEpoch,
-            agentId: input.capability.targetAgentId,
-            runId: input.capability.runId,
-            idempotencyKey: key,
-            commentId: admission.comment.id,
-            createdAt: now,
-          })
-          .onConflictDoNothing({
-            target: [
-              issueBoardMentions.companyId,
-              issueBoardMentions.idempotencyKey,
-            ],
-          })
-          .returning()
-          .then((rows) => rows[0] ?? null);
-        const mention = inserted ?? await tx
-          .select()
-          .from(issueBoardMentions)
-          .where(and(
-            eq(issueBoardMentions.companyId, input.capability.companyId),
-            eq(issueBoardMentions.idempotencyKey, key),
-          ))
-          .limit(1)
-          .for("update")
-          .then((rows) => rows[0] ?? null);
-        if (
-          !mention ||
-          mention.commentId !== admission.comment.id
-        ) {
-          throw new RuntimeIssueActionConflict(
-            "mention_board invocation was retried with different immutable arguments",
-          );
-        }
-        await recordIssueLivenessActionInTransaction(
-          tx,
-          `issue_board_mention:${mention.id}`,
-        );
-        return input.commitTerminalAction(tx, {
+        return input.commitMentionAction(tx, {
           accepted: true,
-          terminal: true,
-          id: mention.id,
-          commentId: mention.commentId,
+          id: admission.boardMention.id,
+          commentId: admission.boardMention.commentId,
           retried: admission.retried,
         });
       });
+      return committed;
     },
 
     async mention(input) {
@@ -3544,7 +3933,7 @@ export function createPostgresRuntimeIssueActionService(
         promptCapabilityGenerationIdentity(input.capability),
         input.invocationId,
       )}:tool-call:${input.runInterfaceToolCallId}:ingress:${input.ingressOrdinal}`;
-      return db.transaction(async (tx) => {
+      const committed = await db.transaction(async (tx) => {
           const now = clock();
           await lockRuntimeActionHierarchy(tx, input.capability, now, {
             additionalLaneTargetAgentId: input.targetAgentId,
@@ -3618,9 +4007,8 @@ export function createPostgresRuntimeIssueActionService(
                 "mention invocation was retried with different immutable arguments",
               );
             }
-            return input.commitTerminalAction(tx, {
+            return input.commitMentionAction(tx, {
               accepted: true,
-              terminal: true,
               consultExecutionId: consult.id,
               refId: priorRef.id,
               commentId: null,
@@ -3674,7 +4062,7 @@ export function createPostgresRuntimeIssueActionService(
           }
           if (chain.agentIds.has(input.targetAgentId)) {
             throw new RuntimeIssueActionDenied(
-              "Mention target would loop within its durable handoff chain",
+              "Mention target would loop within its active mention chain",
               "mention_chain_loop",
             );
           }
@@ -3701,10 +4089,12 @@ export function createPostgresRuntimeIssueActionService(
             .then((rows) => rows[0] ?? null);
           if (!consult) {
             throw new RuntimeIssueActionConflict(
-              "Mention handoff binding was not persisted",
+              "Mention execution binding was not persisted",
             );
           }
-          const admission = await sessionAdmission.admitExecutionSource(
+          const admission = await mentionAgentInTransaction(
+            sessionAdmission,
+            tx,
             {
               companyId: input.capability.companyId,
               issueId: input.capability.issueId,
@@ -3737,26 +4127,26 @@ export function createPostgresRuntimeIssueActionService(
               },
               idempotencyKey: key,
             },
-            tx,
           );
           if (!admission.ref || !admission.comment) {
             throw new RuntimeIssueActionConflict(
-              "Mention did not reserve its durable handoff ref and comment",
+              "Mention did not reserve its canonical ref and comment",
             );
           }
           await recordIssueLivenessActionInTransaction(
             tx,
             `issue_execution_ref:${admission.ref.id}`,
           );
-          return input.commitTerminalAction(tx, {
+          return input.commitMentionAction(tx, {
             accepted: true,
-            terminal: true,
             consultExecutionId: consult.id,
             refId: admission.ref.id,
             commentId: admission.comment.id,
             retried: false,
           });
       });
+      await options.dispatchPersistedRef(committed.refId);
+      return committed;
     },
   };
 }

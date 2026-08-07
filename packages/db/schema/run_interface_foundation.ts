@@ -126,15 +126,7 @@ export const runInterfaceToolCalls = pgTable(
       .notNull()
       .default("unclassified"),
     mentionTargetAgentId: uuid("mention_target_agent_id"),
-    mentionAdmissionState: text("mention_admission_state")
-      .$type<"pending" | "preparing" | "admitted">(),
     classifiedAt: timestamp("classified_at", { withTimezone: true }),
-    mentionAdmissionStartedAt: timestamp("mention_admission_started_at", {
-      withTimezone: true,
-    }),
-    mentionAdmittedAt: timestamp("mention_admitted_at", {
-      withTimezone: true,
-    }),
     status: text("status")
       .$type<"executing" | "completed" | "failed">()
       .notNull(),
@@ -172,33 +164,15 @@ export const runInterfaceToolCalls = pgTable(
       sql`(
         ${table.classification} = 'unclassified'
         and ${table.mentionTargetAgentId} is null
-        and ${table.mentionAdmissionState} is null
         and ${table.classifiedAt} is null
-        and ${table.mentionAdmissionStartedAt} is null
-        and ${table.mentionAdmittedAt} is null
       ) or (
         ${table.classification} in ('non_mention', 'terminal_invalid')
         and ${table.mentionTargetAgentId} is null
-        and ${table.mentionAdmissionState} is null
         and ${table.classifiedAt} is not null
-        and ${table.mentionAdmissionStartedAt} is null
-        and ${table.mentionAdmittedAt} is null
       ) or (
         ${table.classification} = 'validated_mention'
         and ${table.mentionTargetAgentId} is not null
         and ${table.classifiedAt} is not null
-        and (
-          (${table.mentionAdmissionState} = 'pending'
-            and ${table.mentionAdmissionStartedAt} is null
-            and ${table.mentionAdmittedAt} is null)
-          or (${table.mentionAdmissionState} = 'preparing'
-            and ${table.mentionAdmissionStartedAt} is not null
-            and ${table.mentionAdmittedAt} is null)
-          or (${table.mentionAdmissionState} = 'admitted'
-            and ${table.mentionAdmissionStartedAt} is not null
-            and ${table.mentionAdmittedAt} is not null
-            and ${table.mentionAdmittedAt} >= ${table.mentionAdmissionStartedAt})
-        )
       )`,
     ),
     check(
@@ -211,10 +185,6 @@ export const runInterfaceToolCalls = pgTable(
       ) or (
         ${table.status} = 'completed'
         and ${table.classification} in ('non_mention', 'validated_mention')
-        and (
-          ${table.classification} <> 'validated_mention'
-          or ${table.mentionAdmissionState} = 'admitted'
-        )
         and ${table.error} is null
         and ${table.completedAt} is not null
       ) or (
@@ -278,7 +248,7 @@ export const runInterfaceToolCalls = pgTable(
       table.capabilityGeneration,
       table.status,
     ),
-    index("run_interface_tool_calls_mention_admission_idx").on(
+    index("run_interface_tool_calls_mention_target_idx").on(
       table.companyId,
       table.capabilityConnectionId,
       table.capabilityGeneration,

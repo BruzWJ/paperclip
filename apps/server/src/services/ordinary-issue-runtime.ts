@@ -4,8 +4,6 @@ import {
   agents,
   authUsers,
   companies,
-  creatorDeliveries,
-  instanceSettings,
   issueCreateIdempotencyKeys,
   issueBoardReopenCommands,
   issueBoardUserComments,
@@ -43,7 +41,6 @@ import {
   InvokableIssueOwnerRejected,
   resolveInvokableIssueOwnerInTransaction,
 } from "./agent-invokability.js";
-import { enqueueCreatorDelivery } from "./creator-delivery-enqueue.js";
 import {
   createIssueSessionAdmissionService,
   type IssueSessionAdmissionResult,
@@ -378,12 +375,6 @@ export interface OrdinaryIssueRuntimeOptions {
    * must prepare composition and notify the dispatcher for this persisted ref.
    */
   dispatchRef(refId: string): Promise<void>;
-  /**
-   * Gives a newly committed creator-delivery intent an immediate worker
-   * opportunity. The durable outbox remains the sole owner of ref
-   * preparation and scheduling.
-   */
-  notifyCreatorDelivery(deliveryId: string): Promise<void>;
 }
 
 function deterministicUuid(namespace: string, key: string): string {
@@ -1333,18 +1324,12 @@ export function createOrdinaryIssueRuntime(
   const sessions = createIssueSessionAdmissionService(db, { clock });
   const issueForms = createIssueFormCommitRuntime(db, {
     clock,
-    notifyCreatorDelivery: options.notifyCreatorDelivery,
+    dispatchPersistedRef: options.dispatchRef,
     issueExecutionCancellation: options.issueExecutionCancellation,
   });
 
   async function dispatch(refId: string): Promise<void> {
     await options.dispatchRef(refId);
-  }
-
-  async function notifyCreatorDelivery(
-    deliveryId: string,
-  ): Promise<void> {
-    await options.notifyCreatorDelivery(deliveryId);
   }
 
   async function commitAgentOwnerReassignmentInTransaction(
@@ -1556,8 +1541,6 @@ export function createOrdinaryIssueRuntime(
 
   return {
     dispatchRef: dispatch,
-    notifyCreatorDelivery,
-
     async create(
       rawInput: OrdinaryIssueCreateInput,
     ): Promise<OrdinaryIssueCreateResult> {

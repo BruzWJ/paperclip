@@ -32,10 +32,7 @@ import { acpPromptAccounting } from "./acp_prompt_accounting.js";
 import { agents } from "./agents.js";
 import { authUsers } from "./auth.js";
 import { costEvents } from "./cost_events.js";
-import {
-  creatorDeliveries,
-  issueUpdates,
-} from "./issue_creator_delivery.js";
+import { issueUpdates } from "./issue_creator_edge.js";
 import { issueComments } from "./issue_comments.js";
 import {
   issueExecutionPromptCapabilities,
@@ -2087,61 +2084,6 @@ export const issueExecutionFinalizationUpdateDependencies = pgTable(
   ],
 );
 
-/** Ordered update-to-creator-delivery references for one finalization. */
-export const issueExecutionFinalizationDeliveryDependencies = pgTable(
-  "issue_execution_finalization_delivery_dependencies",
-  {
-    companyId: uuid("company_id").notNull(),
-    runId: uuid("run_id").notNull(),
-    finalizationId: uuid("finalization_id").notNull(),
-    dependencyOrdinal: integer("dependency_ordinal").notNull(),
-    issueUpdateId: uuid("issue_update_id").notNull(),
-    creatorDeliveryId: uuid("creator_delivery_id").notNull(),
-  },
-  (table) => [
-    primaryKey({
-      columns: [table.finalizationId, table.dependencyOrdinal],
-      name: "issue_execution_finalization_delivery_dependencies_pk",
-    }),
-    check(
-      "issue_execution_finalization_delivery_dependencies_ordinal_check",
-      sql`${table.dependencyOrdinal} >= 0`,
-    ),
-    foreignKey({
-      columns: [table.companyId, table.runId, table.finalizationId],
-      foreignColumns: [
-        issueExecutionFinalizations.companyId,
-        issueExecutionFinalizations.runId,
-        issueExecutionFinalizations.id,
-      ],
-      name: "issue_execution_finalization_delivery_dependencies_finalization_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.issueUpdateId],
-      foreignColumns: [issueUpdates.id],
-      name: "issue_execution_finalization_delivery_dependencies_update_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [table.creatorDeliveryId],
-      foreignColumns: [creatorDeliveries.id],
-      name: "issue_execution_finalization_delivery_dependencies_delivery_fk",
-    }).onDelete("restrict"),
-    unique("issue_execution_finalization_delivery_dependencies_update_uq").on(
-      table.finalizationId,
-      table.issueUpdateId,
-    ),
-    unique("issue_execution_finalization_delivery_dependencies_delivery_uq").on(
-      table.finalizationId,
-      table.creatorDeliveryId,
-    ),
-    index("issue_execution_finalization_delivery_dependencies_run_idx").on(
-      table.companyId,
-      table.runId,
-      table.dependencyOrdinal,
-    ),
-  ],
-);
-
 export type IssueExecutionRun = typeof issueExecutionRuns.$inferSelect;
 export type NewIssueExecutionRun = typeof issueExecutionRuns.$inferInsert;
 export type IssueExecutionRunRef = typeof issueExecutionRunRefs.$inferSelect;
@@ -2183,7 +2125,3 @@ export type IssueExecutionFinalizationUpdateDependency =
   typeof issueExecutionFinalizationUpdateDependencies.$inferSelect;
 export type NewIssueExecutionFinalizationUpdateDependency =
   typeof issueExecutionFinalizationUpdateDependencies.$inferInsert;
-export type IssueExecutionFinalizationDeliveryDependency =
-  typeof issueExecutionFinalizationDeliveryDependencies.$inferSelect;
-export type NewIssueExecutionFinalizationDeliveryDependency =
-  typeof issueExecutionFinalizationDeliveryDependencies.$inferInsert;

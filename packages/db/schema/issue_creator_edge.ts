@@ -22,20 +22,11 @@ import type {
 import { companies } from "./companies.js";
 import { issueExecutionRuns } from "./issue_execution_runs.js";
 import { issueComments } from "./issue_comments.js";
-import {
-  issueExecutionAuthorities,
-  issueExecutionRefs,
-} from "./issue_execution_runtime.js";
+import { issueExecutionAuthorities } from "./issue_execution_runtime.js";
 import { issues } from "./issues.js";
 import { issueSessions } from "./issue_sessions.js";
 
-type CreatorDeliveryPolicySnapshot = {
-  maxRetryAttempts: number;
-  retryBaseDelayMs: number;
-  retryMaxDelayMs: number;
-  pausedOrBudgetStoppedStalenessMs: number;
-};
-
+// Immutable creator provenance plus the single canonical issue-update ledger.
 export const issueCreatorEdgeReceivability = pgTable(
   "issue_creator_edge_receivability",
   {
@@ -102,8 +93,6 @@ export const issueCreatorEdgeReceivability = pgTable(
     check(
       "issue_creator_edge_receivability_terminal_reason_check",
       sql`${table.terminalReason} is null or ${table.terminalReason} in (
-        'delivery_exhausted',
-        'paused_or_budget_staleness',
         'creator_execution_superseded',
         'agent_terminated',
         'agent_deleted',
@@ -193,28 +182,23 @@ export const issueUpdates = pgTable(
     check(
       "issue_updates_form_shape_check",
       sql`(
-        ${table.form} = 'creator'
-        and ${table.status} is null
-        and ${table.disposition} is null
-      ) or (
-        ${table.form} = 'owner'
-        and (
-          (${table.status} is null and ${table.disposition} is null)
-          or (
-            ${table.status} is not null
-            and (
-              (${table.status} in ('open', 'blocked') and ${table.disposition} is null)
-              or (
-                ${table.status} in ('done', 'cancelled')
-                and ${table.disposition} is not null
-                and jsonb_typeof(${table.disposition}) = 'object'
-                and ${table.disposition} ? 'message'
-                and jsonb_typeof(${table.disposition} -> 'message') = 'string'
-                and btrim(${table.disposition} ->> 'message') <> ''
-                and ${table.disposition} - 'message' - 'structuredResult' = '{}'::jsonb
-              )
-            )
+        (${table.status} is null and ${table.disposition} is null)
+        or (
+          ${table.status} in ('open', 'blocked')
+          and ${table.disposition} is null
+          and (
+            ${table.form} <> 'creator'
+            or ${table.sourceKind} = 'agent-execution'
           )
+        ) or (
+          ${table.form} = 'owner'
+          and ${table.status} in ('done', 'cancelled')
+          and ${table.disposition} is not null
+          and jsonb_typeof(${table.disposition}) = 'object'
+          and ${table.disposition} ? 'message'
+          and jsonb_typeof(${table.disposition} ->> 'message') = 'string'
+          and btrim(${table.disposition} ->> 'message') <> ''
+          and ${table.disposition} - 'message' - 'structuredResult' = '{}'::jsonb
         )
       )`,
     ),
@@ -281,294 +265,6 @@ export const issueUpdates = pgTable(
       table.issueId,
       table.ownershipEpoch,
       table.createdAt,
-    ),
-  ],
-);
-
-export const creatorDeliveries = pgTable(
-  "creator_deliveries",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    companyId: uuid("company_id").notNull(),
-    issueId: uuid("issue_id").notNull(),
-    sessionId: text("session_id").notNull(),
-    ownershipEpoch: integer("ownership_epoch").notNull(),
-    creatorEdgeId: uuid("creator_edge_id").notNull(),
-    issueUpdateId: uuid("issue_update_id").notNull(),
-    commentId: uuid("comment_id").notNull(),
-    recipientKind: text("recipient_kind")
-      .$type<"agent-execution" | "user/board" | "plugin" | "routine" | "system">()
-      .notNull(),
-    recipientRef: jsonb("recipient_ref").$type<Record<string, unknown>>().notNull(),
-    direction: text("direction").$type<"to_creator" | "to_owner">().notNull(),
-    counterpartExecutionKey: text("counterpart_execution_key").notNull(),
-    committedSequence: integer("committed_sequence").notNull(),
-    deliveryId: text("delivery_id").notNull(),
-    idempotencyKey: text("idempotency_key").notNull(),
-    state: text("state")
-      .$type<
-        | "pending"
-        | "leased"
-        | "retryable"
-        | "delivered"
-        | "exhausted"
-        | "permanently_unreceivable"
-      >()
-      .notNull()
-      .default("pending"),
-    policySnapshot: jsonb("policy_snapshot").$type<CreatorDeliveryPolicySnapshot>().notNull(),
-    firstQueuedAt: timestamp("first_queued_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    heldSince: timestamp("held_since", { withTimezone: true }),
-    holdReason: text("hold_reason"),
-    firstAttemptAt: timestamp("first_attempt_at", { withTimezone: true }),
-    attemptCount: integer("attempt_count").notNull().default(0),
-    firstLeasedAt: timestamp("first_leased_at", { withTimezone: true }),
-    leasedAt: timestamp("leased_at", { withTimezone: true }),
-    leaseOwner: text("lease_owner"),
-    leaseGeneration: integer("lease_generation").notNull().default(0),
-    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
-    retryAt: timestamp("retry_at", { withTimezone: true }),
-    lastFailure: text("last_failure"),
-    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
-    terminalAt: timestamp("terminal_at", { withTimezone: true }),
-    terminalReason: text("terminal_reason"),
-    counterpartRefId: uuid("counterpart_ref_id").references(
-      () => issueExecutionRefs.id,
-      { onDelete: "restrict" },
-    ),
-    fallbackAudit: jsonb("fallback_audit").$type<Record<string, unknown> | null>(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    check(
-      "creator_deliveries_recipient_kind_check",
-      sql`${table.recipientKind} in ('agent-execution', 'user/board', 'plugin', 'routine', 'system')`,
-    ),
-    check(
-      "creator_deliveries_direction_check",
-      sql`${table.direction} in ('to_creator', 'to_owner')`,
-    ),
-    check(
-      "creator_deliveries_committed_sequence_check",
-      sql`${table.committedSequence} >= 0`,
-    ),
-    check(
-      "creator_deliveries_state_check",
-      sql`${table.state} in (
-        'pending',
-        'leased',
-        'retryable',
-        'delivered',
-        'exhausted',
-        'permanently_unreceivable'
-      )`,
-    ),
-    check(
-      "creator_deliveries_terminal_check",
-      sql`(
-        ${table.state} = 'delivered'
-        and ${table.deliveredAt} is not null
-        and ${table.terminalAt} is not null
-      ) or (
-        ${table.state} in ('exhausted', 'permanently_unreceivable')
-        and ${table.terminalAt} is not null
-        and ${table.terminalReason} is not null
-      ) or ${table.state} in ('pending', 'leased', 'retryable')`,
-    ),
-    foreignKey({
-      columns: [table.companyId, table.issueId, table.sessionId],
-      foreignColumns: [issueSessions.companyId, issueSessions.issueId, issueSessions.id],
-      name: "creator_deliveries_scope_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.ownershipEpoch,
-        table.creatorEdgeId,
-      ],
-      foreignColumns: [
-        issueCreatorEdgeReceivability.companyId,
-        issueCreatorEdgeReceivability.issueId,
-        issueCreatorEdgeReceivability.ownershipEpoch,
-        issueCreatorEdgeReceivability.id,
-      ],
-      name: "creator_deliveries_edge_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.ownershipEpoch,
-        table.issueUpdateId,
-      ],
-      foreignColumns: [
-        issueUpdates.companyId,
-        issueUpdates.issueId,
-        issueUpdates.ownershipEpoch,
-        issueUpdates.id,
-      ],
-      name: "creator_deliveries_update_fk",
-    }).onDelete("restrict"),
-    unique("creator_deliveries_scope_id_uq").on(
-      table.companyId,
-      table.issueId,
-      table.ownershipEpoch,
-      table.id,
-    ),
-    unique("creator_deliveries_company_issue_id_uq").on(
-      table.companyId,
-      table.issueId,
-      table.id,
-    ),
-    uniqueIndex("creator_deliveries_delivery_id_uq").on(table.deliveryId),
-    uniqueIndex("creator_deliveries_idempotency_uq").on(
-      table.companyId,
-      table.idempotencyKey,
-    ),
-    uniqueIndex("creator_deliveries_update_uq").on(table.issueUpdateId),
-    uniqueIndex("creator_deliveries_counterpart_sequence_uq").on(
-      table.companyId,
-      table.counterpartExecutionKey,
-      table.committedSequence,
-    ),
-    index("creator_deliveries_claim_idx").on(
-      table.companyId,
-      table.state,
-      table.retryAt,
-      table.leaseExpiresAt,
-      table.firstQueuedAt,
-    ),
-    index("creator_deliveries_counterpart_claim_idx").on(
-      table.companyId,
-      table.counterpartExecutionKey,
-      table.committedSequence,
-      table.state,
-    ),
-    index("creator_deliveries_edge_state_idx").on(table.creatorEdgeId, table.state),
-    index("creator_deliveries_hold_idx").on(
-      table.companyId,
-      table.holdReason,
-      table.heldSince,
-    ),
-  ],
-);
-
-export const pluginCreatorDeliveries = pgTable(
-  "plugin_creator_deliveries",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    companyId: uuid("company_id").notNull(),
-    issueId: uuid("issue_id").notNull(),
-    sessionId: text("session_id").notNull(),
-    creatorDeliveryId: uuid("creator_delivery_id").notNull(),
-    /** Immutable operation actor identity; intentionally not a live installation FK. */
-    pluginInstallationId: uuid("plugin_installation_id").notNull(),
-    pluginKey: text("plugin_key").notNull(),
-    callbackKey: text("callback_key").notNull(),
-    callbackVersion: text("callback_version").notNull(),
-    committedSequence: integer("committed_sequence").notNull(),
-    deliveryId: text("delivery_id").notNull(),
-    idempotencyKey: text("idempotency_key").notNull(),
-    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
-    state: text("state")
-      .$type<
-        | "pending"
-        | "leased"
-        | "retryable"
-        | "delivered"
-        | "exhausted"
-        | "permanently_unreceivable"
-      >()
-      .notNull()
-      .default("pending"),
-    policySnapshot: jsonb("policy_snapshot").$type<CreatorDeliveryPolicySnapshot>().notNull(),
-    firstQueuedAt: timestamp("first_queued_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    heldSince: timestamp("held_since", { withTimezone: true }),
-    firstAttemptAt: timestamp("first_attempt_at", { withTimezone: true }),
-    attemptCount: integer("attempt_count").notNull().default(0),
-    firstLeasedAt: timestamp("first_leased_at", { withTimezone: true }),
-    leasedAt: timestamp("leased_at", { withTimezone: true }),
-    leaseOwner: text("lease_owner"),
-    leaseGeneration: integer("lease_generation").notNull().default(0),
-    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
-    retryAt: timestamp("retry_at", { withTimezone: true }),
-    lastFailure: text("last_failure"),
-    acknowledgement: jsonb("acknowledgement").$type<{
-      deliveryId: string;
-      accepted: true;
-    } | null>(),
-    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
-    terminalAt: timestamp("terminal_at", { withTimezone: true }),
-    terminalReason: text("terminal_reason"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    check(
-      "plugin_creator_deliveries_state_check",
-      sql`${table.state} in (
-        'pending',
-        'leased',
-        'retryable',
-        'delivered',
-        'exhausted',
-        'permanently_unreceivable'
-      )`,
-    ),
-    check(
-      "plugin_creator_deliveries_ack_check",
-      sql`(
-        ${table.state} = 'delivered'
-        and ${table.acknowledgement} is not null
-        and ${table.deliveredAt} is not null
-        and ${table.terminalAt} is not null
-      ) or (
-        ${table.state} in ('exhausted', 'permanently_unreceivable')
-        and ${table.terminalAt} is not null
-        and ${table.terminalReason} is not null
-      ) or ${table.state} in ('pending', 'leased', 'retryable')`,
-    ),
-    foreignKey({
-      columns: [table.companyId, table.issueId, table.sessionId],
-      foreignColumns: [issueSessions.companyId, issueSessions.issueId, issueSessions.id],
-      name: "plugin_creator_deliveries_scope_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.companyId, table.issueId, table.creatorDeliveryId],
-      foreignColumns: [
-        creatorDeliveries.companyId,
-        creatorDeliveries.issueId,
-        creatorDeliveries.id,
-      ],
-      name: "plugin_creator_deliveries_delivery_fk",
-    }).onDelete("restrict"),
-    uniqueIndex("plugin_creator_deliveries_creator_delivery_uq").on(
-      table.creatorDeliveryId,
-    ),
-    uniqueIndex("plugin_creator_deliveries_delivery_id_uq").on(table.deliveryId),
-    uniqueIndex("plugin_creator_deliveries_callback_sequence_uq").on(
-      table.pluginInstallationId,
-      table.pluginKey,
-      table.callbackKey,
-      table.callbackVersion,
-      table.committedSequence,
-    ),
-    uniqueIndex("plugin_creator_deliveries_idempotency_uq").on(
-      table.pluginInstallationId,
-      table.idempotencyKey,
-    ),
-    index("plugin_creator_deliveries_claim_idx").on(
-      table.companyId,
-      table.state,
-      table.retryAt,
-      table.leaseExpiresAt,
-      table.firstQueuedAt,
     ),
   ],
 );

@@ -90,7 +90,6 @@ function harness(
   const retryable = vi.fn();
   const terminal = vi.fn(async () => ({
     laneReleased: true,
-    dispatchRefIds: [],
   }));
   const repository: IssueExecutionDispatcherRepository = {
     async recoverExpiredLeases() {
@@ -158,7 +157,7 @@ describe("issue execution dispatcher", () => {
 
   it("executes an ordered creator-update batch once without rewriting its sources", async () => {
     const first = ref({
-      sourceKind: "creator_update",
+    sourceKind: "issue_update",
       sourceId: "source-1",
       sourceRecordId: "delivery-1",
       messageKind: "synthetic",
@@ -170,7 +169,7 @@ describe("issue execution dispatcher", () => {
     });
     const second = ref({
       id: "ref-2",
-      sourceKind: "creator_update",
+      sourceKind: "issue_update",
       sourceId: "source-2",
       sourceRecordId: "delivery-2",
       messageKind: "synthetic",
@@ -246,12 +245,12 @@ describe("issue execution dispatcher", () => {
 
   it("signals only an exact active attempt and accepts a non-primary creator-batch member", async () => {
     const first = ref({
-      sourceKind: "creator_update",
+      sourceKind: "issue_update",
       messageKind: "synthetic",
     });
     const second = ref({
       id: "ref-2",
-      sourceKind: "creator_update",
+      sourceKind: "issue_update",
       messageKind: "synthetic",
       historyViewId: "view-2",
     });
@@ -413,7 +412,7 @@ describe("issue execution dispatcher", () => {
   it("rejects a repository batch that crosses execution scopes", async () => {
     const current = harness(
       ref({
-        sourceKind: "creator_update",
+        sourceKind: "issue_update",
         messageKind: "synthetic",
       }),
     );
@@ -427,7 +426,7 @@ describe("issue execution dispatcher", () => {
         ref: ref({
           id: "ref-2",
           executionScopeId: "other-scope",
-          sourceKind: "creator_update",
+          sourceKind: "issue_update",
           messageKind: "synthetic",
         }),
         leaseGeneration: 1,
@@ -555,106 +554,6 @@ describe("issue execution dispatcher", () => {
     await expect(
       dispatcher.notifyPersistedRef("ref"),
     ).rejects.toThrow(/Invalidated refs/);
-  });
-
-  it("wakes every finalization handoff after source release even when another wake fails", async () => {
-    const source = harness(ref({ id: "source-ref", targetAgentId: "source-agent" }));
-    const failedWakeRefId = "failed-wake-ref";
-    const handoffRef = ref({
-      id: "handoff-ref",
-      mode: "consult",
-      targetAgentId: "handoff-agent",
-      executionScopeId: "handoff-scope",
-      executionLineageId: "handoff-lineage",
-      historyViewId: "handoff-view",
-      issueExecutionAuthorityId: null,
-      consultExecutionId: "consult",
-      consultCallerRefId: source.lease.ref.id,
-      consultChainToken: "chain",
-    });
-    const handoff = harness(handoffRef);
-    handoff.lease.runId = "handoff-run";
-    handoff.lease.attemptId = "handoff-attempt";
-    handoff.lease.leaseId = "handoff-lease";
-    const refs = new Map([
-      [source.lease.ref.id, source.lease.ref],
-      [handoffRef.id, handoffRef],
-    ]);
-    const leases = new Map([
-      [source.lease.ref.targetAgentId, source.lease],
-      [handoffRef.targetAgentId, handoff.lease],
-    ]);
-    const repository: IssueExecutionDispatcherRepository = {
-      ...source.repository,
-      async resolveLaneForPersistedRef(refId) {
-        if (refId === failedWakeRefId) {
-          throw new Error("handoff wake failed");
-        }
-        const value = refs.get(refId);
-        return value
-          ? {
-              lane: {
-                companyId: value.companyId,
-                issueId: value.issueId,
-                sessionId: value.sessionId,
-                ownershipEpoch: value.ownershipEpoch,
-                targetAgentId: value.targetAgentId,
-              },
-              mode: value.mode,
-              disposition: value.disposition,
-              leaseState: "available" as const,
-              leaseExpiresAt: null,
-            }
-          : null;
-      },
-      async leaseNextRef({ lane }) {
-        const lease = leases.get(lane.targetAgentId) ?? null;
-        leases.delete(lane.targetAgentId);
-        return lease;
-      },
-      async markTerminal({ lease }) {
-        return {
-          laneReleased: true,
-          dispatchRefIds:
-            lease.ref.id === source.lease.ref.id
-              ? [failedWakeRefId, handoffRef.id]
-              : [],
-        };
-      },
-    };
-    let activeProcesses = 0;
-    let maxActiveProcesses = 0;
-    let finishHandoff!: () => void;
-    const handoffFinished = new Promise<void>((resolve) => {
-      finishHandoff = resolve;
-    });
-    const dispatcher = createIssueExecutionDispatcher({
-      repository,
-      executor: {
-        async execute(lease, _signal, settle) {
-          activeProcesses += 1;
-          maxActiveProcesses = Math.max(maxActiveProcesses, activeProcesses);
-          const result = await settleResult(settle, {
-            kind: "terminal",
-            outcome: "succeeded",
-            reason: null,
-          });
-          activeProcesses -= 1;
-          if (lease.ref.id === handoffRef.id) finishHandoff();
-          return result;
-        },
-      },
-      steeringResults: { publish: vi.fn() },
-      workerId: "worker",
-    });
-
-    await expect(
-      dispatcher.runPersistedRef(source.lease.ref.id),
-    ).rejects.toThrow(/handoff notification/);
-    await handoffFinished;
-
-    expect(maxActiveProcesses).toBe(1);
-    await dispatcher.shutdown();
   });
 
   it("reconciles expired leases before waking each recovered ref", async () => {
@@ -829,7 +728,6 @@ describe("issue execution dispatcher", () => {
       markRetryable: vi.fn(),
       markTerminal: vi.fn(async () => ({
         laneReleased: true,
-        dispatchRefIds: [],
       })),
     };
     const entered = new Map<string, () => void>();

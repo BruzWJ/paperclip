@@ -88,9 +88,7 @@ async function createApp() {
     next();
   });
   app.use("/api", agentRoutes({} as any, {
-    ordinaryIssues: {
-      notifyCreatorDelivery: async () => undefined,
-    } as never,
+    ordinaryIssues: {} as never,
   }));
   app.use(errorHandler);
   return app;

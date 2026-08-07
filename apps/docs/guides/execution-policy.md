@@ -72,7 +72,10 @@ If a later transition requires provider work, it must enter through an ordinary,
 
 ## Comments and successful runs
 
-The chronological issue thread is the durable human-facing output. A successful owner `issue_update` writes its own exact message as a comment of record. When a run commits no update, its trailing final response can become the single comment of record; the two paths never duplicate one run's output.
+The chronological issue thread is the durable human-facing output. A successful
+`issue_update` writes its exact message once in the counterpart Session; it does
+not add a source-side duplicate. When a run commits no update, its trailing final
+response can become the single comment of record.
 
 There is no missing-comment retry wake. Transactional run finalization and the issue-session projector guarantee the comment-of-record invariant or record the run failure explicitly.
 
@@ -85,7 +88,9 @@ Board issue creation and editing may configure review and approval stages by sel
 - immutable creator attribution; and
 - any optional execution policy.
 
-Agent providers do not use generic issue REST mutation routes. An authorized current owner reports lifecycle changes through the compiled `issue_update` action. Board mutations use the board control plane and the same canonical owner and policy invariants.
+Agent providers do not use generic issue REST mutation routes. An authorized
+owner or exact creator uses the compiled `issue_update` action. Board mutations
+use the board control plane and the same canonical owner and policy invariants.
 
 Removing a policy clears only its policy-owned pending state according to the existing one-shot transition rules. It does not rewrite the immutable request, restore a retired owner epoch, revive a cancelled run, or schedule a replacement invocation.
 

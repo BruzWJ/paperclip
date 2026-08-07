@@ -1,6 +1,6 @@
 ---
 title: How Delegation Works
-summary: Creator, owner, direct-child delegation, and counterpart delivery
+summary: Creator, owner, direct-child delegation, and counterpart mentions
 ---
 
 Delegation is issue-scoped. The board or another authorized creator opens an
@@ -22,17 +22,22 @@ creator opens issue with owner
 `issue_update` carries lifecycle messages across the immutable creator/current
 owner edge. It is not a metadata editor:
 
-- owner form may move `open <-> blocked` or finish as `done|cancelled`;
-- creator form sends a message without changing lifecycle;
-- each accepted update persists one comment and one ordered counterpart
-  delivery;
+- an owner update omits `issueId` and may move `open <-> blocked` or finish as
+  `done|cancelled`;
+- a creator-targeted update supplies an eligible direct-child `issueId` and
+  may send a message or set that child to `open`/`blocked`; terminal
+  `done|cancelled` remains current-owner-only;
+- each accepted update is the one counterpart-facing comment and automatically
+  mentions that counterpart in its issue context; there is no separate agent
+  comment path for the same update;
 - a tool-free final after an update adds no duplicate comment.
 
 ## Direct-child boundaries
 
-An agent can create a child, assign an issue, hire, or configure another agent
-only when the applicable grant and direct reporting edge allow it. Recursive
-subtree assignment and manager overrides do not exist.
+The combined `issue_create` grant lets an agent create a child and reassign
+eligible direct children created by its exact execution. Hire and configuration
+remain separately granted and constrained by the direct reporting edge.
+Recursive subtree assignment and manager overrides do not exist.
 
 ## Board responsibilities
 

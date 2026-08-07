@@ -13,7 +13,8 @@ For each productive prompt, the worker:
 
 1. selects one current persisted issue-execution ref or steering segment;
 2. resolves its ownership epoch, immutable adapter revision, execution
-   workspace, context dial, and action grants;
+   workspace, context dial, configurable action grants, and relationship
+   authority;
 3. starts one disposable ACPX public-runtime session for the discovered local
    compatible CLI;
 4. lets ACPX create or resume the eligible provider backend session;
@@ -99,12 +100,19 @@ Configure eligibility and limits as control-plane policy:
 
 - lifecycle status and budgets;
 - all nine context-dial cells, including `carry_context`;
-- the seven issue-action grants and explicit mention reach;
+- five configurable action grants and explicit mention reach; `issue_create`
+  combines direct-child creation and reassignment;
 - explicitly selected company tools; and
 - explicitly selected company skills through the `operator_native` channel.
 
 All context grants default to false. Tool presence is the model-visible
-context-access boundary; the server still reauthorizes every call.
+context-access boundary; the server still reauthorizes every call. Lifecycle
+reporting is not a grant: the current owner receives `issue_update` for its
+active issue, and an exact creator execution receives it for eligible direct
+children. The canonical update automatically mentions the owner/creator
+counterpart in that counterpart's issue context. Creator child updates may send a message or set
+`open`/`blocked`; only the current owner may set terminal `done`/`cancelled` or
+`structuredResult`.
 
 ### 3.4 Working directory and execution limits
 
@@ -167,8 +175,8 @@ exposes its id through REST, UI, CLI, logs, tools, or environment variables.
 
 Every productive prompt gets a distinct request-scoped Paperclip MCP
 connection. Its `tools/list` result is compiled from that run's effective
-context dial, action grants, explicit company-tool selections, lifecycle
-authority, and current target catalogs. Paperclip supplies that MCP server set
+context dial, configurable action grants, explicit company-tool selections,
+owner/creator relationship authority, and current target catalogs. Paperclip supplies that MCP server set
 when it creates the bounded ACPX runtime for the prompt; it never accumulates
 a prior request's authority.
 
@@ -214,17 +222,24 @@ that root in canonical sequence.
 
 No tool-free final closes an issue or invokes another agent. The current owner
 must call `issue_update` with `done` or `cancelled` and a final message to close
-an issue. A nonterminal issue that becomes idle remains idle until a canonical
-input explicitly admits more work.
+its active issue, omitting `issueId`. An exact creator execution can update an
+eligible direct child only with a message or nonterminal `open`/`blocked`. A
+nonterminal issue that becomes idle remains idle until a canonical input
+explicitly admits more work.
 
 ## 8. Common operating patterns
 
 ### 8.1 Issue-driven execution
 
 1. Create an issue with an immutable request and explicit eligible owner.
-2. Grant only the actions and context depth needed for that work.
-3. Let the owner report progress or disposition through `issue_update`.
-4. Inspect the durable issue thread and bounded structured run history.
+2. Grant only the configurable actions and context depth needed for that work;
+   lifecycle reporting follows the eventual owner/creator relationship.
+3. Let the owner report progress or disposition through the canonical
+   `issue_update`; its canonical comment automatically mentions the creator.
+4. Let the exact creator update an eligible direct child through the same
+   canonical action when needed; it may send a message or set `open`/`blocked`,
+   and its canonical comment automatically mentions the child owner.
+5. Inspect the durable issue thread and bounded structured run history.
 
 ### 8.2 Scheduled work
 
@@ -234,7 +249,7 @@ directly.
 
 ### 8.3 Safety-first loop
 
-1. Start with narrow context and action grants.
+1. Start with narrow context and configurable action grants.
 2. Configure conservative runtime and budget limits.
 3. Monitor the stable run-progress comment and cancel quickly when needed.
 4. Change adapter/session configuration only through a new immutable revision;
@@ -275,8 +290,8 @@ attempt and any later retry re-evaluates the current immutable request.
 4. Select the exact discovered adapter and complete its required stable ACPX
    configuration.
 5. Configure an execution-workspace policy.
-6. Set explicit context dials, issue-action grants, and selected company
-   tools/skills.
+6. Set explicit context dials, the five configurable action grants, and
+   selected company tools/skills. Lifecycle reporting needs no separate grant.
 7. Create an issue with an immutable request and eligible owner.
 8. Confirm the Session projection, progress comment, terminal state, and any
    valid accounting were recorded.

@@ -109,7 +109,6 @@ export function agentRoutes(
     terminateHireRejectionAgentInTransaction:
       terminateAgentForHireRejectionInTransaction,
     dispatchRef: options.ordinaryIssues.dispatchRef,
-    notifyCreatorDelivery: options.ordinaryIssues.notifyCreatorDelivery,
   });
   const workspaceOperations = workspaceOperationService(db);
   const instanceSettings = instanceSettingsService(db);
@@ -1039,8 +1038,6 @@ export function agentRoutes(
         }, {
           issueExecutionCancellation: options.issueExecutionCancellation,
           dispatchRef: options.ordinaryIssues.dispatchRef,
-          notifyCreatorDelivery:
-            options.ordinaryIssues.notifyCreatorDelivery,
         });
       if (!managedTermination) {
         const openApproval =
@@ -1061,8 +1058,6 @@ export function agentRoutes(
               actor: { kind: "user", userId: req.actor.userId },
               issueExecutionCancellation: options.issueExecutionCancellation,
               dispatchRef: options.ordinaryIssues.dispatchRef,
-              notifyCreatorDelivery:
-                options.ordinaryIssues.notifyCreatorDelivery,
             },
           );
         }
@@ -1189,8 +1184,6 @@ export function agentRoutes(
     }, {
       issueExecutionCancellation: options.issueExecutionCancellation,
       dispatchRef: options.ordinaryIssues.dispatchRef,
-      notifyCreatorDelivery:
-        options.ordinaryIssues.notifyCreatorDelivery,
     });
     if (managedTermination) {
       agent = await svc.getById(id);
@@ -1208,8 +1201,6 @@ export function agentRoutes(
           actor: { kind: "user", userId: req.actor.userId },
           issueExecutionCancellation: options.issueExecutionCancellation,
           dispatchRef: options.ordinaryIssues.dispatchRef,
-          notifyCreatorDelivery:
-            options.ordinaryIssues.notifyCreatorDelivery,
         },
       );
     }

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
+  PAPERCLIP_RUNTIME_ACTION_KEYS,
   runtimeAgentConfigureActionSchemaForTargets,
   runtimeAgentHireConfigurationSchemaForCompanyTools,
   isMcpToolName,
@@ -34,7 +35,9 @@ type PaperclipRetrievalToolName =
 
 const PAPERCLIP_RUNTIME_TOOL_NAMES = [
   ...PAPERCLIP_RETRIEVAL_TOOL_NAMES,
-  ...PAPERCLIP_ACTION_KEYS,
+  // Runtime actions include relationship-derived actions which are not
+  // persisted agent grants. Keep the entire runtime namespace reserved.
+  ...PAPERCLIP_RUNTIME_ACTION_KEYS,
 ] as const;
 
 export type PaperclipRuntimeToolName =
@@ -689,7 +692,7 @@ function issueCreateDescriptor(
     name: "issue_create",
     title: "Create direct child issue",
     description:
-      "Create one direct child of the active issue with an immutable request and an explicit invokable owner.",
+      "Create one direct child of the active issue and canonically mention its explicit invokable owner with the immutable request.",
     inputSchema: objectSchema(
       {
         request: MESSAGE,
@@ -754,7 +757,7 @@ function issueAssignDescriptor(
     name: "issue_assign",
     title: "Assign creator-owned issue",
     description:
-      "Reassign one nonterminal direct child created by this exact issue execution.",
+      "Reassign one nonterminal direct child created by this exact issue execution and canonically mention its new owner with the issue request.",
     inputSchema: { oneOf: targetSchemas },
     source: "paperclip",
   };
@@ -765,47 +768,62 @@ function issueUpdateDescriptor(
   creatorTargets: readonly CreatorUpdateTargetCatalogEntry[],
 ): CompiledRunToolDescriptor | null {
   const forms: JsonSchema[] = [];
-  if (includeOwnerForm) {
+  const addNonterminalUpdateVariants = (
+    targetProperties: Record<string, JsonSchema>,
+    targetRequired: string[],
+  ) => {
     forms.push(
       objectSchema(
         {
-          form: { const: "owner" },
+          ...targetProperties,
           message: MESSAGE,
         },
-        ["form", "message"],
+        [...targetRequired, "message"],
       ),
       objectSchema(
         {
-          form: { const: "owner" },
+          ...targetProperties,
           status: { type: "string", enum: ["open", "blocked"] },
           message: MESSAGE,
         },
-        ["form", "status", "message"],
+        [...targetRequired, "status", "message"],
       ),
+    );
+  };
+
+  const addOwnerUpdateVariants = () => {
+    addNonterminalUpdateVariants({}, []);
+    forms.push(
       objectSchema(
         {
-          form: { const: "owner" },
           status: { type: "string", enum: ["done", "cancelled"] },
           message: MESSAGE,
           structuredResult: {},
         },
-        ["form", "status", "message"],
+        ["status", "message"],
       ),
     );
+  };
+
+  if (includeOwnerForm) {
+    // Omitted issueId always means the active issue, and therefore requires
+    // current-owner authority at call time. Terminal disposition is
+    // deliberately owner-only: it hard-stops the receiving execution epoch.
+    addOwnerUpdateVariants();
   }
   if (creatorTargets.length > 0) {
-    forms.push(
-      objectSchema(
-        {
-          form: { const: "creator_message" },
-          creatorTargetIssueId: {
-            type: "string",
-            enum: creatorTargets.map((target) => target.issueId),
-          },
-          message: MESSAGE,
+    // Supplying issueId is only allowed for a nonterminal direct child made
+    // by this exact execution authority. It selects creator authority, not a
+    // second caller-facing action, and only permits nonterminal lifecycle
+    // state because creator updates automatically wake the current owner.
+    addNonterminalUpdateVariants(
+      {
+        issueId: {
+          type: "string",
+          enum: creatorTargets.map((target) => target.issueId),
         },
-        ["form", "creatorTargetIssueId", "message"],
-      ),
+      },
+      ["issueId"],
     );
   }
   if (forms.length === 0) return null;
@@ -814,7 +832,7 @@ function issueUpdateDescriptor(
     name: "issue_update",
     title: "Update issue",
     description:
-      "Publish an owner message, optionally with a lifecycle/disposition transition, or a creator message to an eligible direct child.",
+      "Publish one canonical issue comment, optionally update lifecycle, and automatically mention the creator/owner counterpart in that counterpart's issue context. Omit issueId to update the active issue as its current owner, including terminal done or cancelled disposition; provide an eligible direct-child issueId to update it as its exact creator with a message, open, or blocked status.",
     inputSchema: { oneOf: forms },
     source: "paperclip",
   };
@@ -828,7 +846,7 @@ function mentionDescriptor(
     name: "mention_agent",
     title: "Mention agent",
     description:
-      "Terminal durable handoff to an authorized agent on this same issue. End your turn after calling; any response is delivered through a future run, never this tool result. The recipient gets no owner or creator lifecycle authority.",
+      "Post one canonical issue comment mentioning an authorized agent on this same issue. The asynchronous call is non-terminal and gives the recipient no owner or creator lifecycle authority.",
     inputSchema: objectSchema(
       {
         agentId: descriptiveAgentChoiceSchema(targets),
@@ -859,7 +877,7 @@ function mentionBoardDescriptor(): CompiledRunToolDescriptor {
     name: "mention_board",
     title: "Mention Board",
     description:
-      "Terminal durable handoff requesting information or direction from the collective Board. End your turn after calling; any response is delivered through a future run, never this tool result. This does not change issue lifecycle, approvals, or review.",
+      "Post one canonical issue comment mentioning the collective Board for information or direction. The asynchronous call is non-terminal and does not change issue lifecycle, approvals, or review.",
     inputSchema: objectSchema(
       {
         message: MESSAGE,
@@ -919,12 +937,18 @@ function actionDescriptors(
   }
   if (
     ownerMode &&
-    input.actionGrants.issue_assign === true &&
+    // Creating direct children and reassigning the caller's own direct
+    // children are one authority. There is intentionally no independent
+    // issue_assign grant.
+    input.actionGrants.issue_create === true &&
     input.issueAssignTargets.length > 0
   ) {
     descriptors.push(issueAssignDescriptor(input.issueAssignTargets));
   }
-  if (ownerMode && input.actionGrants.issue_update === true) {
+  if (ownerMode) {
+    // Lifecycle authority follows the active owner, while an exact creator
+    // execution may update its direct child nonterminally. Neither form is an
+    // independently configurable agent action grant.
     const descriptor = issueUpdateDescriptor(
       input.isCurrentOwner,
       input.creatorUpdateTargets,
@@ -937,7 +961,7 @@ function actionDescriptors(
   ) {
     descriptors.push(mentionDescriptor(input.mentionTargets));
   }
-  if (ownerMode && input.actionGrants.mention_board === true) {
+  if (input.actionGrants.mention_board === true) {
     descriptors.push(mentionBoardDescriptor());
   }
   if (input.actionGrants.agent_hire === true) {
@@ -1030,11 +1054,6 @@ export function compileRuntimeInterface(
         `Compiled tool name is not provider-safe: ${descriptor.name}`,
       );
     }
-    if (byName.has(descriptor.name)) {
-      throw new RuntimeInterfaceConflict(
-        `Duplicate compiled tool name: ${descriptor.name}`,
-      );
-    }
     if (
       descriptor.source !== "paperclip" &&
       (PAPERCLIP_RUNTIME_TOOL_NAMES as readonly string[]).includes(
@@ -1043,6 +1062,11 @@ export function compileRuntimeInterface(
     ) {
       throw new RuntimeInterfaceConflict(
         `External tool collides with Paperclip tool: ${descriptor.name}`,
+      );
+    }
+    if (byName.has(descriptor.name)) {
+      throw new RuntimeInterfaceConflict(
+        `Duplicate compiled tool name: ${descriptor.name}`,
       );
     }
     byName.set(descriptor.name, descriptor);

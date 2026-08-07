@@ -80,7 +80,7 @@ const plugin = definePlugin({
       if (!ownerAgentId) {
         throw new Error("ownerAgentId is required when the root issue has no assigned agent");
       }
-      const request = "Verify canonical plugin issue creation and creator delivery.";
+      const request = "Verify canonical plugin issue creation and issue updates.";
       const child = await ctx.issues.create({
         companyId: input.companyId,
         parentId: input.issueId,

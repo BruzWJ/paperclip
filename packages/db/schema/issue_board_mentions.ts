@@ -17,9 +17,9 @@ import { issueExecutionRuns } from "./issue_execution_runs.js";
 import { issues } from "./issues.js";
 
 /**
- * Immutable agent-originated request for collective Board direction. It is an
- * issue Session/comment source, not a Board-owned issue, creator delivery, or
- * provider invocation.
+ * Immutable agent-originated mention of the collective Board for information
+ * or direction. It is an issue Session/comment source, not a Board-owned issue
+ * or provider invocation.
  */
 export const issueBoardMentions = pgTable(
   "issue_board_mentions",
@@ -54,10 +54,9 @@ export const issueBoardMentions = pgTable(
       name: "issue_board_mentions_agent_fk",
     }).onDelete("restrict"),
     foreignKey({
-      columns: [table.companyId, table.issueId, table.runId],
+      columns: [table.companyId, table.runId],
       foreignColumns: [
         issueExecutionRuns.companyId,
-        issueExecutionRuns.issueId,
         issueExecutionRuns.id,
       ],
       name: "issue_board_mentions_run_fk",

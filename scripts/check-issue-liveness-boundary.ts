@@ -11,7 +11,7 @@ const SHARED_RUNTIME = "packages/shared/src/issue-runtime.ts";
 const SHARED_CONSTANTS = "packages/shared/src/constants.ts";
 const ISSUES_SCHEMA = "packages/db/schema/issues.ts";
 const ISSUE_UPDATES_SCHEMA =
-  "packages/db/schema/issue_creator_delivery.ts";
+  "packages/db/schema/issue_creator_edge.ts";
 const OWNER_FORM_VALIDATOR = "packages/shared/src/validators/issue.ts";
 const COMPANY_PORTABILITY = "apps/server/src/services/company-portability.ts";
 const RUNTIME_INTERFACE_COMPILER =

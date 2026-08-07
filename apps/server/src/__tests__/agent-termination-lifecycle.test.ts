@@ -86,14 +86,14 @@ function cancellationRecorder() {
     companyId: input.companyId,
     agentIds: input.agentIds,
     reason: input.reason,
-    fence: { refIds: ["cancelled-ref"], deliveryIds: [], correlationIds: [] },
+    fence: { refIds: ["cancelled-ref"], correlationIds: [] },
     requests: [{ runId: "cancelled-run" }],
   }));
   const suspend = vi.fn(async (_tx, input) => ({
     companyId: input.companyId,
     agentIds: input.agentIds,
     reason: input.reason,
-    fence: { refIds: ["suspended-ref"], deliveryIds: [], correlationIds: [] },
+    fence: { refIds: ["suspended-ref"], correlationIds: [] },
     requests: [{ runId: "suspended-run" }],
   }));
   const reconcileCancel = vi.fn(async () => undefined);
@@ -151,7 +151,6 @@ describe("canonical agent termination lifecycle", () => {
 
     expect(committed).toMatchObject({
       tombstone,
-      creatorDeliveryIds: [],
       dispatchRefIds: ["creator-ref"],
     });
     expect(setValues(harness.calls)).toEqual([
@@ -237,20 +236,17 @@ describe("canonical agent termination lifecycle", () => {
     });
     const cancellation = cancellationRecorder();
     const dispatchRef = vi.fn(async () => undefined);
-    const notifyCreatorDelivery = vi.fn(async () => undefined);
 
     const result = await agentService(harness.db).terminate(targetId, {
       actor: { kind: "system" },
       issueExecutionCancellation: cancellation.service,
       dispatchRef,
-      notifyCreatorDelivery,
     });
 
     expect(result).toMatchObject({ id: targetId, status: "terminated" });
     expect(cancellation.reconcileCancel).toHaveBeenCalledTimes(1);
     expect(cancellation.reconcileSuspend).toHaveBeenCalledTimes(1);
     expect(dispatchRef).toHaveBeenCalledWith("creator-ref");
-    expect(notifyCreatorDelivery).not.toHaveBeenCalled();
     expect(dependencies.monthlySpend).toHaveBeenCalledWith(companyId, [targetId]);
     expect(harness.remaining("select")).toBe(0);
   });

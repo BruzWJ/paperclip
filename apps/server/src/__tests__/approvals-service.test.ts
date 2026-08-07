@@ -61,7 +61,6 @@ describe("approvalService resolution idempotency", () => {
       dbStub.db as never,
       {
         dispatchRef: async () => undefined,
-        notifyCreatorDelivery: async () => undefined,
       },
     ).approve("approval-1", "board", "ship it");
 
@@ -81,7 +80,6 @@ describe("approvalService resolution idempotency", () => {
       dbStub.db as never,
       {
         dispatchRef: async () => undefined,
-        notifyCreatorDelivery: async () => undefined,
       },
     ).reject("approval-1", "board", "not now");
 
@@ -96,7 +94,6 @@ describe("approvalService resolution idempotency", () => {
     expect(() =>
       approvalService(dbStub.db as never, {
         dispatchRef: async () => undefined,
-        notifyCreatorDelivery: async () => undefined,
       }).create(
         "company-1",
         {

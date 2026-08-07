@@ -91,6 +91,18 @@ describe("RuntimeAgentConfigurationFields company-tool options", () => {
     return onChange;
   }
 
+  it("initializes only the five configurable action grants", () => {
+    expect(
+      createEmptyRuntimeAgentConfigurationValues().actionGrants,
+    ).toEqual({
+      issue_create: false,
+      mention_agent: false,
+      mention_board: false,
+      agent_hire: false,
+      agent_configure: false,
+    });
+  });
+
   it("loads create options from the dedicated company-installed catalog", async () => {
     await act(async () => render());
     await flushReact();
@@ -158,7 +170,27 @@ describe("RuntimeAgentConfigurationFields company-tool options", () => {
 
     expect(container.textContent).toContain("Can mention Board");
     expect(container.textContent).toContain(
-      "Request information or direction from the collective Board.",
+      "Post a canonical issue comment to the collective Board.",
     );
+  });
+
+  it("combines direct-child creation and assignment and derives lifecycle access", async () => {
+    await act(async () => render());
+
+    expect(container.textContent).toContain("Create and assign issues");
+    expect(container.textContent).toContain(
+      "Create direct child issues and reassign eligible direct children created by this execution.",
+    );
+    expect(container.textContent).toContain(
+      "Issue updates are relationship-derived",
+    );
+    expect(container.textContent).toContain(
+      "canonically mentions its counterpart automatically",
+    );
+    expect(container.textContent).toContain(
+      "Terminal updates remain owner-only.",
+    );
+    expect(container.textContent).not.toContain("Assign issues");
+    expect(container.textContent).not.toContain("Update issue lifecycle");
   });
 });

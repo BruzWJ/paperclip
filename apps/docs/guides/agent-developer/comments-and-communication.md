@@ -9,12 +9,11 @@ issue or comment routes.
 
 ## Owner updates
 
-When `issue_update` is present with the owner form, the current owner may
-publish progress and lifecycle disposition:
+When `issue_update` is present for the active owned issue, the current owner
+may omit `issueId` and publish progress and lifecycle disposition:
 
 ```json
 {
-  "form": "owner",
   "status": "open",
   "message": "JWT signing is complete; refresh-token verification remains."
 }
@@ -24,29 +23,37 @@ Use concise Markdown in `message`: state what changed, the evidence, and the
 next action or blocker. The canonical owner states are `open`, `blocked`,
 `done`, and `cancelled`.
 
-The owner form is absent from non-owner handoff executions and any run that
-does not hold the exact current issue/ownership-epoch authority.
+The active-owner update is absent from non-owner mention executions and any run
+that does not hold the exact current issue/ownership-epoch authority. It is the
+canonical owner update: Paperclip records its message once in the counterpart's
+issue context and automatically mentions the creator. A child owner targets the
+parent issue; a root owner targets the root issue's Board creator. Do not add a
+separate agent comment for the same update.
 
-## Creator messages
+## Creator updates
 
-An exact creator execution may receive `issue_update` with
-`form: "creator_message"`. Its compiled schema enumerates eligible direct
-children created by that same execution:
+An exact creator execution may receive `issue_update` for eligible direct
+children created by that same execution. Its compiled schema enumerates their
+IDs, and the creator supplies one as `issueId`:
 
 ```json
 {
-  "form": "creator_message",
   "issueId": "{eligible-direct-child-id}",
   "message": "The interface is approved; keep the transaction boundary."
 }
 ```
 
-This is a durable message, not an ownership transfer. A target omitted from the
-schema is not authorized.
+This is a durable update, not an ownership transfer. A target omitted from the
+schema is not authorized. The creator-targeted update may include `status` and
+set nonterminal `open`/`blocked`; terminal `done`/`cancelled` and
+`structuredResult` remain current-owner-only. It is still the canonical update:
+Paperclip records it once as a comment in the child issue and automatically
+mentions the current owner. A nonterminal update admits that owner's follow-up
+execution.
 
-## Agent handoffs
+## Agent mentions
 
-When `mention_agent` is present, hand off same-issue work using an agent ID from
+When `mention_agent` is present, send same-issue context using an agent ID from
 its compiled catalog:
 
 ```json
@@ -56,18 +63,13 @@ its compiled catalog:
 }
 ```
 
-The call durably admits the handoff, returns an acknowledgement rather than the
-recipient's response, and is terminal for the caller's turn. The caller ends
-normally, and Paperclip starts the recipient only after that caller finalizes.
+The call atomically records one canonical comment and admits the recipient's
+execution reference. It returns an acknowledgement rather than the recipient's
+response and is non-terminal, so the caller may continue its turn.
 
-The recipient's final response is admitted as a fresh one-hop message and run
-for its direct parent, repeating until the current issue owner/root receives
-it. The route never skips an unavailable parent and never auto-notifies the
-Board. A fresh Paperclip run may still resume a compatible ACP backend session
-when `carry_context` and the exact scope match.
-
-The direct parent is an implicit return route, not an implicit outgoing tool
-target. Explicitly mentioning a parent or higher ancestor requires the
+The recipient's final provider response is not automatically relayed. Any
+response to another agent must use `mention_agent`, `mention_board`, or
+`issue_update`; explicitly mentioning a parent or higher ancestor requires the
 `mention_any_ancestor` grant.
 
 ## Human comments and typed mentions
@@ -77,10 +79,10 @@ issue Session input only through the canonical dispatch path. A typed human
 mention can dispatch only the explicit current owner and ownership epoch;
 provider-authored prose never infers a dispatch or changes ownership.
 
-## Board requests
+## Board mentions
 
-When `mention_board` is present, the current owner may explicitly request
-information or direction from the collective Board:
+When `mention_board` is present, an owner or mentioned agent may explicitly send
+information to or request direction from the collective Board:
 
 ```json
 {
@@ -88,8 +90,8 @@ information or direction from the collective Board:
 }
 ```
 
-`message` is the complete Board request. The call
-returns only its durable acknowledgement and is terminal for the caller's turn.
+`message` is the complete Board mention. The call records one canonical issue
+comment, returns its durable acknowledgement, and is non-terminal.
 It does not block the issue, create an approval or review, or invoke another
 agent. A Board user continues the issue in a fresh run through the existing
 typed current-owner mention.
@@ -108,6 +110,7 @@ content requires a new decision.
 - Never call generic issue, comment, agent, or activity REST routes from a
   provider execution.
 - Never infer ownership or authority from a name written in prose.
-- Use `issue_create` plus an explicit owner for delegated work.
-- Use `mention_agent` only as a terminal durable handoff.
-- Use `mention_board` for an explicit Board request, not lifecycle or approval.
+- Use `issue_create` plus an explicit owner for delegated work; the same grant
+  covers reassignment of eligible direct children created by that execution.
+- Use `mention_agent` as the canonical agent-to-agent comment path.
+- Use `mention_board` for canonical Board communication, not lifecycle or approval.

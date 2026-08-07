@@ -42,7 +42,7 @@ enforcement.
 The shared package exports the closed canonical vocabulary:
 
 - nine context keys
-- seven issue-action keys
+- five configurable action-grant keys and seven runtime issue-action keys
 - two mention-reach keys
 - canonical owner/creator/lifecycle/disposition types
 - `IssueExecutionRef`
@@ -84,7 +84,7 @@ and noncanonical continuity fields.
 - `issue-session-lifecycle.ts` coordinates company archive, reactivation, and
   cancellation-gated purge across the coherent Session graph.
 
-Every input has one stable source identity and delivery. Idempotent replay
+Every input has one stable source identity and admission. Idempotent replay
 requires byte-equivalent source, Session, prompt, and event arguments.
 
 ### Issue execution
@@ -107,8 +107,8 @@ requires byte-equivalent source, Session, prompt, and event arguments.
 - `agent-execution/session-runner/output.ts` publishes productive Session
   output.
 - `productive-run-linkage.ts` verifies exact run/reference/source evidence.
-- `outcome-translator-postgres.ts` commits lifecycle, counterpart delivery,
-  and the comment of record.
+- `runtime-issue-action-port.ts` commits lifecycle and routes create, assign,
+  and update communication through the canonical agent/Board mention helpers.
 
 The dispatcher is the only steady-state provider-invocation producer. Recovery
 re-leases an existing valid reference instead of creating replacement work.
@@ -145,15 +145,17 @@ remote driver selection is not admitted.
 
 ### Creator routing and recovery
 
-Creator edges bind immutable creator authority to each ownership epoch. Owner
-updates produce ordered creator deliveries. Creator updates are message-only
-and target the current owner. Endpoint loss, epoch replacement, fresh-execution
-reset, cancellation, and termination revoke the relevant
-reference/edge/delivery generation atomically.
+Creator edges bind immutable creator authority to each ownership epoch. Every
+canonical `issue_update` atomically admits its counterpart comment/ref in the
+recipient Session: owner updates target the immediate parent or current root,
+while creator child updates target the child. Creator updates may carry only
+nonterminal `open`/`blocked` lifecycle transitions. Endpoint loss, epoch
+replacement, fresh-execution reset, cancellation, and termination revoke the
+relevant reference/edge generation atomically.
 
 Recovery services record typed existing-issue notices first. The canonical
 resolver creates at most one root system escalation per affected issue/epoch
-only when creator delivery is structurally or exhaustively unreceivable.
+only when its immutable creator edge becomes terminal.
 
 ## Board/operator routes
 
@@ -194,7 +196,8 @@ The UI and CLI are board/operator clients. They:
 - show owner/creator/lifecycle terminology
 - expose distinct title/reassign/reopen/comment/fresh-session controls
 - configure the context matrix and independent action/mention/tool/skill
-  selections
+  selections, with create-and-assign as one action grant and relationship-derived
+  lifecycle updates
 - inspect structured transcripts without provider-native handles
 - configure bind/exposure without selecting a different identity path
 

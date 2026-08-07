@@ -245,7 +245,6 @@ describe("runtime interface compiler", () => {
         }).effective,
         actionGrants: {
           issue_create: true,
-          issue_update: true,
           mention_agent: true,
           mention_board: true,
         },
@@ -267,10 +266,9 @@ describe("runtime interface compiler", () => {
     ]);
   });
 
-  it("compiles the exact message-required owner update variants with optional status", () => {
+  it("compiles one canonical owner-or-creator update ABI with automatic counterpart mention", () => {
     const descriptor = compileRuntimeInterface(
       compileInput({
-        actionGrants: { issue_update: true },
         isCurrentOwner: true,
         creatorUpdateTargets: [{ issueId: "child-1" }],
       }),
@@ -279,7 +277,7 @@ describe("runtime interface compiler", () => {
     expect(descriptor).toMatchObject({
       name: "issue_update",
       description:
-        "Publish an owner message, optionally with a lifecycle/disposition transition, or a creator message to an eligible direct child.",
+        "Publish one canonical issue comment, optionally update lifecycle, and automatically mention the creator/owner counterpart in that counterpart's issue context. Omit issueId to update the active issue as its current owner, including terminal done or cancelled disposition; provide an eligible direct-child issueId to update it as its exact creator with a message, open, or blocked status.",
       source: "paperclip",
     });
     expect(descriptor?.inputSchema).toEqual({
@@ -287,54 +285,62 @@ describe("runtime interface compiler", () => {
         {
           type: "object",
           properties: {
-            form: { const: "owner" },
             message: { type: "string", minLength: 1 },
           },
-          required: ["form", "message"],
+          required: ["message"],
           additionalProperties: false,
         },
         {
           type: "object",
           properties: {
-            form: { const: "owner" },
             status: { type: "string", enum: ["open", "blocked"] },
             message: { type: "string", minLength: 1 },
           },
-          required: ["form", "status", "message"],
+          required: ["status", "message"],
           additionalProperties: false,
         },
         {
           type: "object",
           properties: {
-            form: { const: "owner" },
             status: { type: "string", enum: ["done", "cancelled"] },
             message: { type: "string", minLength: 1 },
             structuredResult: {},
           },
-          required: ["form", "status", "message"],
+          required: ["status", "message"],
           additionalProperties: false,
         },
         {
           type: "object",
           properties: {
-            form: { const: "creator_message" },
-            creatorTargetIssueId: {
+            issueId: {
               type: "string",
               enum: ["child-1"],
             },
             message: { type: "string", minLength: 1 },
           },
-          required: ["form", "creatorTargetIssueId", "message"],
+          required: ["issueId", "message"],
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          properties: {
+            issueId: {
+              type: "string",
+              enum: ["child-1"],
+            },
+            status: { type: "string", enum: ["open", "blocked"] },
+            message: { type: "string", minLength: 1 },
+          },
+          required: ["issueId", "status", "message"],
           additionalProperties: false,
         },
       ],
     });
   });
 
-  it("omits the owner update variants when the run is not the current owner", () => {
+  it("requires an exact child issueId when only creator authority is available", () => {
     const descriptor = compileRuntimeInterface(
       compileInput({
-        actionGrants: { issue_update: true },
         isCurrentOwner: false,
         creatorUpdateTargets: [{ issueId: "child-1" }],
       }),
@@ -345,14 +351,26 @@ describe("runtime interface compiler", () => {
         {
           type: "object",
           properties: {
-            form: { const: "creator_message" },
-            creatorTargetIssueId: {
+            issueId: {
               type: "string",
               enum: ["child-1"],
             },
             message: { type: "string", minLength: 1 },
           },
-          required: ["form", "creatorTargetIssueId", "message"],
+          required: ["issueId", "message"],
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          properties: {
+            issueId: {
+              type: "string",
+              enum: ["child-1"],
+            },
+            status: { type: "string", enum: ["open", "blocked"] },
+            message: { type: "string", minLength: 1 },
+          },
+          required: ["issueId", "status", "message"],
           additionalProperties: false,
         },
       ],
@@ -365,8 +383,6 @@ describe("runtime interface compiler", () => {
         mode: "consult",
         actionGrants: {
           issue_create: true,
-          issue_assign: true,
-          issue_update: true,
           mention_agent: true,
           mention_board: true,
           agent_hire: true,
@@ -389,24 +405,57 @@ describe("runtime interface compiler", () => {
 
     expect(result.descriptors.map((tool) => tool.name)).toEqual([
       "mention_agent",
+      "mention_board",
       "agent_hire",
       "agent_configure",
     ]);
+  });
+
+  it("uses issue_create as the sole create-and-assign grant", () => {
+    const issueAssignTargets = [
+      {
+        issueId: "child",
+        identifier: "PAP-2",
+        owners: [{ kind: "self" as const }],
+      },
+    ];
+
+    expect(
+      compileRuntimeInterface(
+        compileInput({
+          isCurrentOwner: false,
+          issueAssignTargets,
+        }),
+      ).descriptors,
+    ).toEqual([]);
+
+    expect(
+      compileRuntimeInterface(
+        compileInput({
+          isCurrentOwner: false,
+          actionGrants: { issue_create: true },
+          issueAssignTargets,
+        }),
+      ).descriptors.map((tool) => tool.name),
+    ).toEqual(["issue_create", "issue_assign"]);
   });
 
   it("omits mention and assignment when their call-time catalogs are empty", () => {
     const result = compileRuntimeInterface(
       compileInput({
         actionGrants: {
-          issue_assign: true,
+          issue_create: true,
           mention_agent: true,
         },
+        isCurrentOwner: false,
       }),
     );
-    expect(result.descriptors).toEqual([]);
+    expect(result.descriptors.map((tool) => tool.name)).toEqual([
+      "issue_create",
+    ]);
   });
 
-  it("compiles mention_agent as a terminal durable handoff", () => {
+  it("compiles mention_agent as a canonical non-terminal comment", () => {
     const descriptor = compileRuntimeInterface(
       compileInput({
         actionGrants: { mention_agent: true },
@@ -417,7 +466,7 @@ describe("runtime interface compiler", () => {
     ).byName.get("mention_agent")!;
 
     expect(descriptor.description).toContain(
-      "response is delivered through a future run, never this tool result",
+      "asynchronous call is non-terminal",
     );
     expect(descriptor.inputSchema.required).toEqual(["agentId", "message"]);
     expect(descriptor.inputSchema.properties).not.toHaveProperty(
@@ -437,7 +486,7 @@ describe("runtime interface compiler", () => {
     })).toThrow(RuntimeToolArgumentsInvalid);
   });
 
-  it("compiles an owner-only collective Board request without a target catalog", () => {
+  it("compiles a collective Board mention without a target catalog", () => {
     const descriptor = compileRuntimeInterface(
       compileInput({
         actionGrants: { mention_board: true },
@@ -448,7 +497,7 @@ describe("runtime interface compiler", () => {
       name: "mention_board",
       title: "Mention Board",
       description:
-        "Terminal durable handoff requesting information or direction from the collective Board. End your turn after calling; any response is delivered through a future run, never this tool result. This does not change issue lifecycle, approvals, or review.",
+        "Post one canonical issue comment mentioning the collective Board for information or direction. The asynchronous call is non-terminal and does not change issue lifecycle, approvals, or review.",
       inputSchema: {
         type: "object",
         required: ["message"],
@@ -466,7 +515,7 @@ describe("runtime interface compiler", () => {
       compileRuntimeInterface(
         compileInput({ mode: "consult", actionGrants: { mention_board: true } }),
       ).byName.has("mention_board"),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("exposes only the closed runtime-agent configuration cells", () => {
@@ -498,7 +547,7 @@ describe("runtime interface compiler", () => {
       Object.keys(
         hire.inputSchema.properties?.actionGrants.properties ?? {},
       ),
-    ).toHaveLength(7);
+    ).toHaveLength(5);
     expect(
       Object.keys(
         configure.inputSchema.properties?.mentionReachGrants.properties ?? {},

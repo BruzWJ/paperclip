@@ -336,9 +336,15 @@ describe("normalized plugin run contexts", () => {
         "ingress_ordinal",
         "classification",
         "mention_target_agent_id",
-        "mention_admission_state",
         "company_tool_selection_id",
         "plugin_installation_id",
+      ]),
+    );
+    expect(columns(runInterfaceToolCalls)).not.toEqual(
+      expect.arrayContaining([
+        "mention_admission_state",
+        "mention_admission_started_at",
+        "mention_admitted_at",
       ]),
     );
     // PAPERCLIP_REMOVAL_NEGATIVE_FIXTURE: run_interface_session_id

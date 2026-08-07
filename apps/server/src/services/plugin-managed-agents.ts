@@ -419,7 +419,6 @@ export async function terminatePluginManagedAgentFromBoard(
     if (!binding) {
       return {
         terminatedBinding: null,
-        creatorDeliveryIds: [] as string[],
         dispatchRefIds: [] as string[],
         cancellationRequests: [] as RequestedAgentRunCancellations[],
         suspensionRequests: [] as RequestedAgentSuspensions[],
@@ -476,7 +475,6 @@ export async function terminatePluginManagedAgentFromBoard(
       });
     return {
       terminatedBinding,
-      creatorDeliveryIds: termination.creatorDeliveryIds,
       dispatchRefIds: termination.dispatchRefIds,
       cancellationRequests: termination.cancellationRequests
         ? [termination.cancellationRequests]
@@ -496,9 +494,6 @@ export async function terminatePluginManagedAgentFromBoard(
   }
   for (const refId of committed.dispatchRefIds) {
     await postCommit.dispatchRef(refId);
-  }
-  for (const deliveryId of committed.creatorDeliveryIds) {
-    await postCommit.notifyCreatorDelivery(deliveryId);
   }
   return committed.terminatedBinding;
 }

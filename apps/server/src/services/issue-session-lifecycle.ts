@@ -12,7 +12,6 @@ import {
   companySessionLifecycleOperations,
   companySkills,
   costEvents,
-  creatorDeliveries,
   documentRevisions,
   documents,
   environmentLeases,
@@ -27,7 +26,6 @@ import {
   issueExecutionAttempts,
   issueExecutionAuthorities,
   issueExecutionCancellationIntents,
-  issueExecutionFinalizationDeliveryDependencies,
   issueExecutionFinalizationPromptDependencies,
   issueExecutionFinalizationUpdateDependencies,
   issueExecutionHistoryViewMessages,
@@ -47,7 +45,6 @@ import {
   issueSessions,
   issueUpdates,
   joinRequests,
-  pluginCreatorDeliveries,
   pluginWithdrawalOperations,
   principalPermissionGrants,
   projects,
@@ -1617,14 +1614,6 @@ export async function purgeCompanySessionGraphInTx(
 
   // External run restrictors are removed before the canonical run roots.
   await tx
-    .delete(issueExecutionFinalizationDeliveryDependencies)
-    .where(
-      eq(
-        issueExecutionFinalizationDeliveryDependencies.companyId,
-        input.companyId,
-      ),
-    );
-  await tx
     .delete(issueExecutionFinalizationUpdateDependencies)
     .where(
       eq(
@@ -1687,8 +1676,6 @@ export async function purgeCompanySessionGraphInTx(
   await tx.delete(activityLog).where(eq(activityLog.companyId, input.companyId));
   await tx.delete(financeEvents).where(eq(financeEvents.companyId, input.companyId));
   await tx.delete(costEvents).where(eq(costEvents.companyId, input.companyId));
-  await tx.delete(pluginCreatorDeliveries).where(eq(pluginCreatorDeliveries.companyId, input.companyId));
-  await tx.delete(creatorDeliveries).where(eq(creatorDeliveries.companyId, input.companyId));
   await tx.delete(pluginWithdrawalOperations).where(eq(pluginWithdrawalOperations.companyId, input.companyId));
   await tx.delete(issueUpdates).where(eq(issueUpdates.companyId, input.companyId));
   await tx.delete(issueReadStates).where(eq(issueReadStates.companyId, input.companyId));

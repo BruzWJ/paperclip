@@ -65,7 +65,6 @@ export async function withdrawOpenHireApprovalForAgentInTransaction(
   cancellation: AgentLifecycleCancellationService,
 ): Promise<{
   approvalId: string;
-  creatorDeliveryIds: string[];
   dispatchRefIds: string[];
   cancellationRequests: AgentTerminationCommit["cancellationRequests"];
   suspensionRequests: AgentTerminationCommit["suspensionRequests"];
@@ -140,7 +139,6 @@ export async function withdrawOpenHireApprovalForAgentInTransaction(
   }
   return {
     approvalId: rejected.id,
-    creatorDeliveryIds: terminated.creatorDeliveryIds,
     dispatchRefIds: terminated.dispatchRefIds,
     cancellationRequests: terminated.cancellationRequests,
     suspensionRequests: terminated.suspensionRequests,
@@ -154,7 +152,6 @@ export function approvalService(
     terminateHireRejectionAgentInTransaction:
       HireRejectionAgentTerminationOwner;
     dispatchRef(refId: string): Promise<void>;
-    notifyCreatorDelivery(deliveryId: string): Promise<void>;
   },
 ) {
   const instanceSettings = instanceSettingsService(db);
@@ -401,7 +398,6 @@ export function approvalService(
           return {
             approval: existing,
             applied: false,
-            creatorDeliveryIds: [] as string[],
             dispatchRefIds: [] as string[],
             cancellationRequests: null as AgentTerminationCommit["cancellationRequests"],
             suspensionRequests: null as AgentTerminationCommit["suspensionRequests"],
@@ -418,7 +414,6 @@ export function approvalService(
       );
 
       const now = new Date();
-      let creatorDeliveryIds: string[] = [];
       let dispatchRefIds: string[] = [];
       let cancellationRequests: AgentTerminationCommit["cancellationRequests"] = null;
       let suspensionRequests: AgentTerminationCommit["suspensionRequests"] = null;
@@ -482,7 +477,6 @@ export function approvalService(
             },
           );
         }
-        creatorDeliveryIds = terminated.creatorDeliveryIds;
         dispatchRefIds = terminated.dispatchRefIds;
         cancellationRequests = terminated.cancellationRequests;
         suspensionRequests = terminated.suspensionRequests;
@@ -514,7 +508,6 @@ export function approvalService(
       return {
         approval: updated,
         applied: true,
-        creatorDeliveryIds,
         dispatchRefIds,
         cancellationRequests,
         suspensionRequests,
@@ -532,9 +525,6 @@ export function approvalService(
     }
     for (const refId of committed.dispatchRefIds) {
       await options.dispatchRef(refId);
-    }
-    for (const deliveryId of committed.creatorDeliveryIds) {
-      await options.notifyCreatorDelivery(deliveryId);
     }
     return {
       approval: committed.approval,

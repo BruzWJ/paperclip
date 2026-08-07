@@ -342,14 +342,8 @@ export {
   type PostgresSystemEscalationService,
   type EnsureSystemEscalationInput,
   type TerminalizeCreatorEdgeInput,
-  type TerminalizeCreatorDeliveryInput,
   type SystemEscalationOwner,
 } from "./system-escalation-postgres.js";
-export {
-  createPostgresCreatorDeliveryService,
-  type CreatorDeliveryRefNotificationOutcome,
-  type PostgresCreatorDeliveryOptions,
-} from "./creator-delivery.js";
 export { createPluginIssueControlPlane } from "./plugin-issue-control-plane.js";
 export {
   assertPluginInstallationRequestScope,

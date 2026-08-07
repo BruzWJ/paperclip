@@ -164,7 +164,7 @@ export type IssueSessionExecutionSource =
       actor: RoutineExecutionActor;
     }
   | {
-      sourceKind: "creator_update";
+      sourceKind: "issue_update";
       actor: IssueSessionExecutionActor;
     }
   | {
@@ -322,6 +322,10 @@ export interface NonDispatchControlNotice
   issueId: string;
   sessionId: string;
   sourceKind: string;
+  actor?: IssueSessionExecutionActor;
+  counterpartIssueId?: string | null;
+  counterpartAuthorityId?: string | null;
+  counterpartOwnershipEpoch?: number | null;
   comment: IssueSessionProjectedCommentSource | null;
   allowTerminal?: boolean;
 }
@@ -340,6 +344,10 @@ export interface NonDispatchSyntheticComment
   agentId: string;
   adapterConfigRevisionId: string;
   runId: string;
+  actor?: IssueSessionExecutionActor;
+  counterpartIssueId?: string | null;
+  counterpartAuthorityId?: string | null;
+  counterpartOwnershipEpoch?: number | null;
   comment: Extract<
     IssueSessionProjectedCommentSource,
     { author: IssueSessionAgentCommentAuthor }
@@ -633,7 +641,7 @@ function assertExecutionSourceActorPair(
   assertExecutionActor(source.actor);
   switch (source.sourceKind) {
     case "issue_request":
-    case "creator_update":
+    case "issue_update":
       return;
     case "issue_reassignment":
       if (
@@ -693,7 +701,7 @@ export function v2MessageKindForExecutionSource(
     case "routine_dispatch":
     case "human_active_run_steering":
       return "user";
-    case "creator_update":
+    case "issue_update":
       return source.actor.kind === "user/board"
         ? "user"
         : "synthetic";
@@ -812,7 +820,7 @@ function userProjectionKind(
 ): IssueSessionCommentProjectionInput["sourceKind"] {
   return sourceKind === "board_chat" ||
     sourceKind === "human_comment_mention" ||
-    sourceKind === "creator_update"
+    sourceKind === "issue_update"
     ? "human_comment"
     : "issue_request";
 }
@@ -820,7 +828,7 @@ function userProjectionKind(
 function directProjectionKind(
   sourceKind: string,
 ): IssueSessionCommentProjectionInput["sourceKind"] {
-  if (sourceKind === "creator_update") return "issue_update";
+  if (sourceKind === "issue_update") return "issue_update";
   return "harness_delivery";
 }
 
@@ -999,9 +1007,114 @@ function assertExecutionSourceCommentProvenance(
   }
 }
 
+type ProjectedCommentProducerScope = {
+  readonly companyId: string;
+  readonly issueId: string;
+  readonly sessionId: string;
+  readonly sourceKind?: string;
+  readonly actor?: IssueSessionExecutionActor;
+  readonly counterpartIssueId?: string | null;
+  readonly counterpartAuthorityId?: string | null;
+  readonly counterpartOwnershipEpoch?: number | null;
+};
+
+export async function isExactIssueUpdateCrossIssueProducer(
+  transaction: IssueSessionDbTransaction,
+  scope: ProjectedCommentProducerScope,
+  comment: Exclude<IssueSessionProjectedCommentSource, { producingRun: null }>,
+): Promise<boolean> {
+  const counterpartIssueId = scope.counterpartIssueId ?? null;
+  const counterpartAuthorityId = scope.counterpartAuthorityId ?? null;
+  const counterpartOwnershipEpoch =
+    scope.counterpartOwnershipEpoch ?? null;
+  if (
+    scope.sourceKind !== "issue_update" ||
+    scope.actor?.kind !== "agent-execution" ||
+    counterpartIssueId === null ||
+    counterpartAuthorityId === null ||
+    counterpartOwnershipEpoch === null ||
+    !Number.isSafeInteger(counterpartOwnershipEpoch) ||
+    counterpartOwnershipEpoch < 1 ||
+    counterpartIssueId === scope.issueId ||
+    scope.actor.authorityId !== counterpartAuthorityId ||
+    scope.actor.agentId !== comment.author.agentId
+  ) {
+    return false;
+  }
+
+  await assertCounterpart(transaction, scope);
+  const [target, sourceIssue, producer] = await Promise.all([
+    transaction
+      .select({
+        parentId: issues.parentId,
+        parentOwnershipEpoch: issues.parentOwnershipEpoch,
+        ownershipEpoch: issues.ownershipEpoch,
+        creatorKind: issues.creatorKind,
+        creatorAuthorityId: issues.creatorAuthorityId,
+        creatorAdapterConfigRevisionId: issues.creatorAdapterConfigRevisionId,
+      })
+      .from(issues)
+      .where(
+        and(
+          eq(issues.companyId, scope.companyId),
+          eq(issues.id, scope.issueId),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+    transaction
+      .select({
+        parentId: issues.parentId,
+        parentOwnershipEpoch: issues.parentOwnershipEpoch,
+        ownershipEpoch: issues.ownershipEpoch,
+      })
+      .from(issues)
+      .where(
+        and(
+          eq(issues.companyId, scope.companyId),
+          eq(issues.id, counterpartIssueId),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+    readIssueExecutionRun(transaction, {
+      companyId: scope.companyId,
+      issueId: counterpartIssueId,
+      runId: comment.producingRun.runId,
+    }),
+  ]);
+  const parentToChild =
+    target &&
+    target.parentId === counterpartIssueId &&
+    target.parentOwnershipEpoch === counterpartOwnershipEpoch &&
+    target.creatorKind === "agent-execution" &&
+    target.creatorAuthorityId === counterpartAuthorityId &&
+    target.creatorAdapterConfigRevisionId ===
+      comment.producingRun.adapterConfigRevisionId;
+  const childToParent =
+    target &&
+    sourceIssue &&
+    sourceIssue.parentId === scope.issueId &&
+    sourceIssue.parentOwnershipEpoch === target.ownershipEpoch &&
+    sourceIssue.ownershipEpoch === counterpartOwnershipEpoch;
+  return Boolean(
+    (parentToChild || childToParent) &&
+      producer &&
+      producer.kind === "productive" &&
+      producer.status === "running" &&
+      producer.executionMode === "owner" &&
+      producer.ownershipEpoch === counterpartOwnershipEpoch &&
+      producer.targetAgentId === comment.author.agentId &&
+      producer.issueExecutionAuthorityId === counterpartAuthorityId &&
+      producer.consultExecutionId === null &&
+      producer.adapterConfigRevisionId ===
+        comment.producingRun.adapterConfigRevisionId,
+  );
+}
+
 async function assertProjectedCommentProducer(
   transaction: IssueSessionDbTransaction,
-  scope: { companyId: string; issueId: string; sessionId: string },
+  scope: ProjectedCommentProducerScope,
   comment: IssueSessionProjectedCommentSource | null,
 ): Promise<void> {
   if (!comment || comment.producingRun === null) return;
@@ -1011,23 +1124,27 @@ async function assertProjectedCommentProducer(
     runId: comment.producingRun.runId,
   });
   if (
-    !producer ||
-    producer.sessionId !== scope.sessionId ||
-    producer.targetAgentId !== comment.author.agentId ||
-    producer.adapterConfigRevisionId !==
-      comment.producingRun.adapterConfigRevisionId ||
-    (producer.kind !== "productive" && producer.kind !== "consult")
+    producer &&
+    producer.sessionId === scope.sessionId &&
+    producer.targetAgentId === comment.author.agentId &&
+    producer.adapterConfigRevisionId ===
+      comment.producingRun.adapterConfigRevisionId &&
+    (producer.kind === "productive" || producer.kind === "consult")
   ) {
-    throw new IssueSessionLifecycleConflict(
-      "Agent comment producing run, agent, and adapter revision do not match one canonical issue execution",
-      {
-        authorAgentId: comment.author.agentId,
-        producingRunId: comment.producingRun.runId,
-        producingAdapterConfigRevisionId:
-          comment.producingRun.adapterConfigRevisionId,
-      },
-    );
+    return;
   }
+  if (await isExactIssueUpdateCrossIssueProducer(transaction, scope, comment)) {
+    return;
+  }
+  throw new IssueSessionLifecycleConflict(
+    "Agent comment producing run, agent, and adapter revision do not match one canonical issue execution",
+    {
+      authorAgentId: comment.author.agentId,
+      producingRunId: comment.producingRun.runId,
+      producingAdapterConfigRevisionId:
+        comment.producingRun.adapterConfigRevisionId,
+    },
+  );
 }
 
 function messageIdFromEvent(event: EventRow): string | null {
@@ -1383,7 +1500,14 @@ async function assertWorkspaceBinding(
 
 async function assertCounterpart(
   transaction: IssueSessionDbTransaction,
-  input: DispatchExecutionScope,
+  input: Pick<
+    DispatchExecutionScope,
+    | "companyId"
+    | "issueId"
+    | "counterpartIssueId"
+    | "counterpartAuthorityId"
+    | "counterpartOwnershipEpoch"
+  >,
 ): Promise<void> {
   const counterpart = [
     input.counterpartIssueId ?? null,
@@ -2192,6 +2316,8 @@ async function appendNonDispatchEvent(
           ? "human_comment"
           : input.sourceKind === "plugin_withdrawal"
             ? "plugin_withdrawal"
+            : input.sourceKind === "issue_update"
+              ? "issue_update"
             : "system_control",
         sourceId: options.ids.sourceId,
         messageId: options.ids.messageId,
@@ -2640,6 +2766,11 @@ export function createIssueSessionAdmissionService(
         immutableSourceKey: input.immutableSourceKey,
         sourceRecordId: input.sourceRecordId,
         exactText: input.exactText,
+        actor: input.actor ?? null,
+        counterpartIssueId: input.counterpartIssueId ?? null,
+        counterpartAuthorityId: input.counterpartAuthorityId ?? null,
+        counterpartOwnershipEpoch:
+          input.counterpartOwnershipEpoch ?? null,
         comment: input.comment,
         allowTerminal: input.allowTerminal ?? true,
       });
@@ -2711,6 +2842,11 @@ export function createIssueSessionAdmissionService(
         agentId: input.agentId,
         adapterConfigRevisionId: input.adapterConfigRevisionId,
         runId: input.runId,
+        actor: input.actor ?? null,
+        counterpartIssueId: input.counterpartIssueId ?? null,
+        counterpartAuthorityId: input.counterpartAuthorityId ?? null,
+        counterpartOwnershipEpoch:
+          input.counterpartOwnershipEpoch ?? null,
         projectionKind: input.projectionKind ?? "issue_update",
         comment: input.comment,
       });

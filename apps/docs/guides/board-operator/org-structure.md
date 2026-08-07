@@ -18,7 +18,7 @@ The graph is intentionally local:
 - mention reach expands only through explicit ancestor/descendant grants.
 
 Authority never walks an arbitrary management subtree. An uninvolved manager
-does not receive issue content, lifecycle control, or creator deliveries.
+ does not receive issue content, lifecycle control, or automatic counterpart updates.
 
 ## Viewing and editing the graph
 

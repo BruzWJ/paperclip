@@ -87,7 +87,6 @@ function options(dispatchRef = vi.fn(async () => undefined)) {
   return {
     clock: () => now,
     dispatchRef,
-    notifyCreatorDelivery: vi.fn(async () => undefined),
     issueExecutionRunService: {
       requestSteeringInTransaction: vi.fn(),
       continuePendingSteeringForSource: vi.fn(),

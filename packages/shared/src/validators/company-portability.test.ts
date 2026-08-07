@@ -254,6 +254,29 @@ describe("company portability declarative ACP configuration", () => {
     ).toEqual({ model: "gpt-5.6" });
   });
 
+  it("rejects runtime-only issue actions in portable grant maps", () => {
+    const agent = portableAgent({}, {});
+
+    expect(
+      portabilityAgentManifestEntrySchema.safeParse({
+        ...agent,
+        actionGrants: {
+          ...agent.actionGrants,
+          issue_assign: false,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      portabilityAgentManifestEntrySchema.safeParse({
+        ...agent,
+        actionGrants: {
+          ...agent.actionGrants,
+          issue_update: false,
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects retired provider execution, inline environment, and auth fields", () => {
     for (const adapterConfig of [
       { command: "codex" },

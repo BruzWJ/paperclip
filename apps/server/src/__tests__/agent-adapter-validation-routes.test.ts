@@ -195,9 +195,7 @@ function createApp(actorType: "board" | "agent" = "board") {
   });
   app.use("/api", denyGenericAgentRest("control-plane"));
   app.use("/api", agentRoutes({} as never, {
-    ordinaryIssues: {
-      notifyCreatorDelivery: async () => undefined,
-    } as never,
+    ordinaryIssues: {} as never,
     adapterConfigurationDraftTest:
       mockAdapterConfigurationDraftTest,
   }));

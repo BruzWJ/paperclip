@@ -8,12 +8,8 @@ const pluginDomainEvents = {
 function fixture() {
   const fenceRevokedExecutionAuthorityInTransaction = vi.fn(async () => ({
     refIds: ["ref-budget"],
-    deliveryIds: ["delivery-budget"],
     correlationIds: ["correlation-budget"],
   }));
-  const releaseBudgetScopeDeliveriesInTransaction = vi.fn(
-    async () => ["delivery-budget"],
-  );
   const lockActiveRunsForBudgetScopeInTransaction = vi.fn(
     async () => Object.freeze([]),
   );
@@ -25,7 +21,6 @@ function fixture() {
     dispatcher: {} as never,
     settlement: {
       fenceRevokedExecutionAuthorityInTransaction,
-      releaseBudgetScopeDeliveriesInTransaction,
     } as never,
     pluginDomainEvents,
     now: () => new Date("2026-07-31T12:00:00.000Z"),
@@ -33,7 +28,6 @@ function fixture() {
   return {
     service,
     fenceRevokedExecutionAuthorityInTransaction,
-    releaseBudgetScopeDeliveriesInTransaction,
     lockActiveRunsForBudgetScopeInTransaction,
   };
 }
@@ -54,7 +48,6 @@ function scopedFixture(input: {
     events.push("refs_fenced");
     return {
       refIds: [...(input.fencedRefIds?.() ?? [])],
-      deliveryIds: [],
       correlationIds: [],
     };
   });
@@ -139,7 +132,7 @@ describe("budget-scope execution suspension", () => {
     });
   });
 
-  it("releases only the exact budget hold through the typed settlement owner", async () => {
+  it("returns the resumed budget scope without a delivery side channel", async () => {
     const value = fixture();
     const transaction = {} as never;
     const now = new Date("2026-07-31T12:00:00.000Z");
@@ -154,15 +147,6 @@ describe("budget-scope execution suspension", () => {
       companyId: "company-1",
       scopeType: "agent",
       scopeId: "agent-1",
-      deliveryIds: ["delivery-budget"],
-    });
-    expect(
-      value.releaseBudgetScopeDeliveriesInTransaction,
-    ).toHaveBeenCalledWith(transaction, {
-      companyId: "company-1",
-      scopeType: "agent",
-      scopeId: "agent-1",
-      at: now,
     });
   });
 });

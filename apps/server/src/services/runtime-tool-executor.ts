@@ -36,7 +36,7 @@ export interface RuntimeActionInvocation {
   runInterfaceToolCallId: string;
   ingressOrdinal: number;
   arguments: Readonly<Record<string, unknown>>;
-  commitTerminalAction<T>(
+  commitMentionAction<T>(
     transaction: RuntimeToolCallTransaction,
     result: T,
   ): Promise<T>;
@@ -247,7 +247,7 @@ export function createRuntimeToolExecutor(options: {
       callIdentity,
       ingressOrdinal,
       mintPluginRunContext,
-      commitTerminalAudit,
+      commitMentionAudit,
     }) {
       const claim = await options.callLedger.claim({
         capability,
@@ -326,7 +326,7 @@ export function createRuntimeToolExecutor(options: {
               },
         );
         let result: unknown;
-        let terminalActionCommitted = false;
+        let mentionActionCommitted = false;
         if (
           descriptor.name === "list_company_issues" ||
           descriptor.name === "list_sub_issues" ||
@@ -383,16 +383,16 @@ export function createRuntimeToolExecutor(options: {
             runInterfaceToolCallId: claim.id,
             ingressOrdinal,
             arguments: record(validatedArguments),
-            async commitTerminalAction(transaction, result) {
+            async commitMentionAction(transaction, result) {
               if (
                 descriptor.name !== "mention_agent" &&
                 descriptor.name !== "mention_board"
               ) {
                 throw new RuntimeToolCallIdentityConflict(
-                  "Only a terminal mention can commit through the terminal action boundary",
+                  "Only a canonical mention can commit through the mention action boundary",
                 );
               }
-              const committed = await options.callLedger.commitTerminalAction({
+              const committed = await options.callLedger.commitMentionAction({
                 transaction,
                 capability,
                 id: claim.id,
@@ -401,8 +401,8 @@ export function createRuntimeToolExecutor(options: {
                 targetAgentId: mentionTargetAgentId,
                 result,
               });
-              await commitTerminalAudit?.(transaction);
-              terminalActionCommitted = true;
+              await commitMentionAudit?.(transaction);
+              mentionActionCommitted = true;
               return committed;
             },
           });
@@ -411,9 +411,9 @@ export function createRuntimeToolExecutor(options: {
           descriptor.name === "mention_agent" ||
           descriptor.name === "mention_board"
         ) {
-          if (!terminalActionCommitted) {
+          if (!mentionActionCommitted) {
             throw new RuntimeToolCallIdentityConflict(
-              "Terminal mention returned without its atomic ledger commitment",
+              "Canonical mention returned without its atomic ledger commitment",
             );
           }
         } else {

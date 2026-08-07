@@ -15,7 +15,6 @@ const actor: PipelineActor = { type: "user", userId: "board-user" };
 const ordinaryIssues = {
   create: vi.fn(),
   dispatchRef: vi.fn(),
-  notifyCreatorDelivery: vi.fn(),
 } as never;
 
 function serviceFor(db: ReturnType<typeof createMockDb>["db"]) {
@@ -24,7 +23,7 @@ function serviceFor(db: ReturnType<typeof createMockDb>["db"]) {
     issueExecutionCancellation: {
       requestScopeCancellationsInTransaction: vi.fn(async (_tx, input) => ({
         ...input,
-        fence: { refIds: [], deliveryIds: [], correlationIds: [] },
+        fence: { refIds: [], correlationIds: [] },
         requests: [],
       })),
       reconcileRequestedScopeCancellations: vi.fn(async () => []),

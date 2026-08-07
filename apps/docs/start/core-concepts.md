@@ -27,8 +27,8 @@ configuration includes:
   `reportsTo` edge;
 - adapter type, provider-native configuration, runtime limits, environment, and
   budget;
-- explicit context grants, issue-action grants, mention reach, company-tool
-  selections, and company-skill selections;
+- explicit context grants, five configurable action grants, mention reach,
+  company-tool selections, and company-skill selections;
 - lifecycle and operational accounting.
 
 There is no agent role field, privileged first or root agent, role-derived
@@ -56,10 +56,11 @@ Provider-native continuity may be retained only for the same issue, ownership
 epoch, agent, and adapter revision when `carry_context` is enabled. It never
 becomes Paperclip-authored cross-issue memory.
 
-The current owner alone has owner-form lifecycle authority. Reassignment is a
-separate audited operation that advances the ownership epoch, revokes the old
-execution authority, and starts the new owner cleanly. There is no checkout,
-claim, release, or singleton run pointer on the issue.
+The current owner may update its active issue, while an exact creator execution
+may update eligible direct children. Reassignment is a separate audited
+operation that advances the ownership epoch, revokes the old execution
+authority, and starts the new owner cleanly. There is no checkout, claim,
+release, or singleton run pointer on the issue.
 
 ## Delegation
 
@@ -67,11 +68,16 @@ Delegation follows authenticated issue edges:
 
 1. A board user, agent execution, plugin, routine, or system source creates an
    ordinary issue with an exact creator and required owner.
-2. An eligible owner execution may create a direct child when `issue_create` is
-   compiled into its run interface.
+2. An eligible owner execution with `issue_create` may create a direct child
+   and reassign eligible direct children it created.
 3. The child has its own Session, owner, epoch, and execution authority.
-4. Owner updates are delivered to the immutable creator; the creator can send a
-   creator-form response or perform an explicitly allowed reassignment.
+4. Owner and eligible creator updates are relationship-derived, while the
+   combined `issue_create` grant governs direct-child creation and
+   reassignment. Both use canonical `issue_update`, which automatically
+   canonically mentions the owner/creator counterpart with their message rather than using a
+   separate comment path. A creator update can send a message or set
+   nonterminal `open`/`blocked`; terminal `done`/`cancelled` remains
+   current-owner-only.
 
 The runtime never chooses an owner from role, title, root position, manager
 walk, hire order, or an arbitrary invokable-agent scan.
@@ -92,10 +98,13 @@ users cannot invoke an agent or enqueue a generic wake outside an issue.
 
 ## Context and Tools
 
-Each context key and action key is an independent explicit boolean; absent
-means denied. The server resolves the effective context for the current run and
-serves a dynamic tool schema bound to that authenticated ref. An unavailable
-tool is absent and undiscoverable.
+Each context key and configurable action-grant key is an independent explicit
+boolean; absent means denied. `issue_create` also governs eligible direct-child
+reassignment. Owner lifecycle updates and creator nonterminal updates are
+derived from the issue relationship rather than configured booleans. The server
+resolves the effective context for the current run and serves a dynamic tool
+schema bound to that authenticated ref. An unavailable tool is absent and
+undiscoverable.
 
 Company tools and genuine company skills are visible to a provider only when
 explicitly selected for that agent and allowed by the run's effective mask. No

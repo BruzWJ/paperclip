@@ -43,10 +43,6 @@ export interface PostgresIssueSessionCompositionRuntime {
     refId: string,
     dispatcher: Pick<IssueExecutionDispatcher, "notifyPersistedRef">,
   ): Promise<PersistedRefNotificationOutcome>;
-  prepareAndNotifyCreatorDeliveryRef(
-    refId: string,
-    dispatcher: Pick<IssueExecutionDispatcher, "notifyPersistedRef">,
-  ): Promise<PersistedRefNotificationOutcome | "preparing">;
   reconcilePersistedRefs(
     dispatcher: Pick<IssueExecutionDispatcher, "notifyPersistedRef">,
     limit?: number,
@@ -136,41 +132,6 @@ export function createPostgresIssueSessionCompositionRuntime(
     return true;
   }
 
-  async function prepareCreatorBatch(primary: RefRow): Promise<number> {
-    if (primary.sourceKind !== "creator_update") {
-      return (await prepareRef(primary)) ? 1 : 0;
-    }
-    const refs = await database
-      .select()
-      .from(issueExecutionRefs)
-      .where(
-        and(
-          eq(issueExecutionRefs.companyId, primary.companyId),
-          eq(issueExecutionRefs.issueId, primary.issueId),
-          eq(issueExecutionRefs.ownershipEpoch, primary.ownershipEpoch),
-          eq(issueExecutionRefs.targetAgentId, primary.targetAgentId),
-          eq(issueExecutionRefs.disposition, "active"),
-          issueExecutionRefDeliveryEligibilitySql("reconcile"),
-        ),
-      )
-      .orderBy(asc(issueExecutionRefs.laneOrdinal), asc(issueExecutionRefs.id));
-    const firstIndex = refs.findIndex((candidate) => candidate.id === primary.id);
-    let prepared = 0;
-    for (const ref of firstIndex < 0 ? [primary] : refs.slice(firstIndex)) {
-      if (
-        ref.sourceKind !== "creator_update" ||
-        ref.sessionId !== primary.sessionId ||
-        ref.executionScopeId !== primary.executionScopeId ||
-        ref.executionLineageId !== primary.executionLineageId ||
-        ref.adapterConfigRevisionId !== primary.adapterConfigRevisionId
-      ) {
-        break;
-      }
-      if (await prepareRef(ref)) prepared += 1;
-    }
-    return prepared;
-  }
-
   async function prepareAndNotifyPersistedRef(
     refId: string,
     dispatcher: Pick<IssueExecutionDispatcher, "notifyPersistedRef">,
@@ -182,15 +143,6 @@ export function createPostgresIssueSessionCompositionRuntime(
 
   const runtime: PostgresIssueSessionCompositionRuntime = {
     prepareAndNotifyPersistedRef,
-
-    async prepareAndNotifyCreatorDeliveryRef(
-      refId: string,
-      dispatcher: Pick<IssueExecutionDispatcher, "notifyPersistedRef">,
-    ) {
-      const ref = await loadRef(refId);
-      await prepareCreatorBatch(ref);
-      return dispatcher.notifyPersistedRef(ref.id);
-    },
 
     async reconcilePersistedRefs(
       dispatcher: Pick<IssueExecutionDispatcher, "notifyPersistedRef">,

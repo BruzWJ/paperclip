@@ -52,8 +52,6 @@ Content-Type: application/json
   },
   "actionGrants": {
     "issue_create": false,
-    "issue_assign": false,
-    "issue_update": false,
     "mention_agent": false,
     "mention_board": false,
     "agent_hire": false,
@@ -71,6 +69,18 @@ Creation is explicit and does not accept adapter/provider configuration. It
 does not mint a Paperclip credential, install an operational skill, create an
 agent-wide session, or stamp role-derived grants. The complete context/action
 and mention-reach maps make the all-false baseline unambiguous.
+
+`issue_create` is the combined create-and-assign grant: it permits an exact
+creator execution to create direct children and reassign its eligible direct
+children. `issue_update` is not a configured grant. The current owner receives
+an active-issue update automatically, and the exact creator execution receives
+an eligible-child update automatically. Both use the same canonical
+`issue_update({ message, status?, structuredResult?, issueId? })` path, which
+delivers the update message to the owner/creator counterpart; there is no
+separate agent comment path for that update. Omit `issueId` for the active owned
+issue; provide an eligible direct-child ID for a creator update. The current
+owner alone may set terminal `done`/`cancelled` and `structuredResult`; a
+creator update may send a message or set nonterminal `open`/`blocked`.
 
 ## Runtime identity and grants
 

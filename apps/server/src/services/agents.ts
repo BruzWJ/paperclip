@@ -6,7 +6,6 @@ import {
   agentConfigRevisions,
   agentRuntimeState,
   approvals,
-  instanceSettings,
   issueCreatorEdgeReceivability,
   issueExecutionAuthorities,
   issues,
@@ -26,7 +25,10 @@ import { conflict, notFound } from "../errors.js";
 import { normalizeAgentGovernancePolicy } from "./agent-governance-policy.js";
 import { createIssueSessionAdmissionService } from "./issue-session/admission.js";
 import { terminalizeAgentCreatorEdgesInTransaction } from "./system-escalation-postgres.js";
-import { enqueueCreatorDelivery } from "./creator-delivery-enqueue.js";
+import {
+  admitCounterpartIssueUpdate,
+  lockIssueMentionRecipient,
+} from "./runtime-issue-action-port.js";
 import {
   listCompanyAgentGraphDescendants,
   lockCompanyAgentGraph,
@@ -45,7 +47,6 @@ export type AgentLifecycleTransaction =
 
 export interface AgentTerminationCommit {
   tombstone: typeof agents.$inferSelect;
-  creatorDeliveryIds: string[];
   dispatchRefIds: string[];
   cancellationRequests: RequestedAgentRunCancellations | null;
   suspensionRequests: RequestedAgentSuspensions | null;
@@ -87,7 +88,6 @@ export type AgentTerminationActor = Extract<
 export interface AgentLifecyclePostCommit {
   issueExecutionCancellation: AgentLifecycleCancellationService;
   dispatchRef(refId: string): Promise<void>;
-  notifyCreatorDelivery(deliveryId: string): Promise<void>;
 }
 
 export interface AgentTerminationPostCommit extends AgentLifecyclePostCommit {
@@ -108,7 +108,7 @@ function lifecycleUuid(namespace: string, key: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-async function enqueueOwnedIssueTerminationRecoveryInTransaction(
+async function admitOwnedIssueTerminationRecoveryInTransaction(
   tx: AgentLifecycleTransaction,
   input: {
     companyId: string;
@@ -136,7 +136,7 @@ async function enqueueOwnedIssueTerminationRecoveryInTransaction(
     .for("update");
   if (ownedIssues.length === 0) return [];
 
-  const deliveryIds: string[] = [];
+  const dispatchRefIds: string[] = [];
   for (const issue of ownedIssues) {
     if (!issue.ownershipEpoch) {
       throw new Error(
@@ -203,29 +203,7 @@ async function enqueueOwnedIssueTerminationRecoveryInTransaction(
     const recoveryKey =
       `${input.sourceId}:owned-issue:${issue.id}:${issue.ownershipEpoch}`;
     const exactText =
-      `Agent ${input.agentName} was terminated. This issue is blocked because its owner is no longer executable; recovery has been delivered to its immutable creator.`;
-    const notice = await sessions.appendNonDispatchControlNotice(
-      {
-        companyId: input.companyId,
-        issueId: issue.id,
-        sessionId: session.id,
-        sourceKind: "agent_termination_recovery",
-        immutableSourceKey: recoveryKey,
-        sourceRecordId: input.sourceId,
-        exactText,
-        comment: {
-          author: { kind: "system", source: "control" },
-          producingRun: null,
-        },
-        allowTerminal: false,
-      },
-      tx,
-    );
-    if (!notice.comment) {
-      throw new Error(
-        `Owned issue ${issue.id} termination recovery has no system comment`,
-      );
-    }
+      `Agent ${input.agentName} was terminated. This issue is blocked because its owner is no longer executable.`;
     const blockedIssue = await tx
       .update(issues)
       .set({
@@ -251,13 +229,49 @@ async function enqueueOwnedIssueTerminationRecoveryInTransaction(
         `Owned issue ${issue.id} lost its locked termination-recovery transition`,
       );
     }
+    const updateId = lifecycleUuid(
+      "agent-termination-recovery-update",
+      recoveryKey,
+    );
+    const targetIssueId = issue.parentId ?? issue.id;
+    const admission = await admitCounterpartIssueUpdate(
+      sessions,
+      tx as never,
+      {
+        companyId: input.companyId,
+        target: await lockIssueMentionRecipient(
+          tx as never,
+          input.companyId,
+          targetIssueId,
+        ),
+        actor: {
+          kind: "system",
+          sourceKind: "agent_termination",
+          sourceId: input.sourceId,
+        },
+        comment: {
+          author: { kind: "system", source: "recovery" },
+          producingRun: null,
+        },
+        sourceAgentTarget: {
+          issueId: issue.id,
+          agentId: input.agentId,
+        },
+        sourceKind: "termination_recovery",
+        immutableSourceKey: recoveryKey,
+        sourceRecordId: updateId,
+        message: exactText,
+      },
+    );
+    if (!admission.comment) {
+      throw new Error(
+        `Owned issue ${issue.id} termination recovery has no canonical comment`,
+      );
+    }
     const update = await tx
       .insert(issueUpdates)
       .values({
-        id: lifecycleUuid(
-          "agent-termination-recovery-update",
-          recoveryKey,
-        ),
+        id: updateId,
         companyId: input.companyId,
         issueId: issue.id,
         sessionId: session.id,
@@ -276,7 +290,7 @@ async function enqueueOwnedIssueTerminationRecoveryInTransaction(
         message: exactText,
         status: "blocked",
         disposition: null,
-        commentId: notice.comment.id,
+        commentId: admission.comment.id,
         creatorEdgeId: edge.id,
         createdAt: input.now,
       })
@@ -287,34 +301,9 @@ async function enqueueOwnedIssueTerminationRecoveryInTransaction(
         `Owned issue ${issue.id} termination update was not persisted`,
       );
     }
-    if (edge.state === "receivable") {
-      const policy = await tx
-        .select({ value: instanceSettings.creatorDelivery })
-        .from(instanceSettings)
-        .where(eq(instanceSettings.singletonKey, "default"))
-        .for("share")
-        .then((rows) => rows[0]?.value ?? null);
-      if (!policy) {
-        throw new Error(
-          "Agent termination requires the configured creator-delivery policy",
-        );
-      }
-      const delivery = await enqueueCreatorDelivery(tx, {
-        update,
-        edge,
-        recipientKind: edge.endpointKind,
-        recipientRef: {
-          endpointId: edge.endpointId,
-          ...edge.endpointSnapshot,
-        },
-        counterpartRefId: null,
-        policy,
-        now: input.now,
-      });
-      deliveryIds.push(delivery.id);
-    }
+    if (admission.ref) dispatchRefIds.push(admission.ref.id);
   }
-  return deliveryIds;
+  return dispatchRefIds;
 }
 
 /**
@@ -354,7 +343,6 @@ export async function terminateAgentToTombstoneInTransaction(
   if (existing.status === "terminated") {
     return {
       tombstone: existing,
-      creatorDeliveryIds: [],
       dispatchRefIds: [],
       cancellationRequests: null,
       suspensionRequests: null,
@@ -453,17 +441,20 @@ export async function terminateAgentToTombstoneInTransaction(
         now: input.now,
       })
     : null;
-  const creatorDeliveryIds =
-    await enqueueOwnedIssueTerminationRecoveryInTransaction(tx, {
+  const recoveryDispatchRefIds =
+    await admitOwnedIssueTerminationRecoveryInTransaction(tx, {
       companyId: existing.companyId,
       agentId: existing.id,
       agentName: existing.name,
       sourceId: input.sourceId,
       now: input.now,
     });
-  const dispatchRefIds = escalations.flatMap((escalation) =>
-    escalation.dispatchRefId ? [escalation.dispatchRefId] : [],
-  );
+  const dispatchRefIds = [
+    ...escalations.flatMap((escalation) =>
+      escalation.dispatchRefId ? [escalation.dispatchRefId] : [],
+    ),
+    ...recoveryDispatchRefIds,
+  ];
   await logActivity(tx as unknown as Db, {
     companyId: existing.companyId,
     actorType: input.actor.kind,
@@ -482,21 +473,16 @@ export async function terminateAgentToTombstoneInTransaction(
       suspensionRequestedRunIds:
         suspensionRequests?.requests.map((request) => request.runId) ?? [],
       fencedExecutionRefIds: cancellationRequests.fence.refIds,
-      fencedCreatorDeliveryIds: cancellationRequests.fence.deliveryIds,
       fencedTargetCorrelationIds:
         cancellationRequests.fence.correlationIds,
       suspendedExecutionRefIds: suspensionRequests?.fence.refIds ?? [],
-      heldDescendantCreatorDeliveryIds:
-        suspensionRequests?.fence.deliveryIds ?? [],
       supersededDescendantCorrelationIds:
         suspensionRequests?.fence.correlationIds ?? [],
-      creatorDeliveryIds,
       dispatchRefIds,
     },
   });
   return {
     tombstone,
-    creatorDeliveryIds,
     dispatchRefIds,
     cancellationRequests,
     suspensionRequests,
@@ -895,9 +881,6 @@ export function agentService(db: Db) {
       }
       for (const refId of committed?.dispatchRefIds ?? []) {
         await postCommit.dispatchRef(refId);
-      }
-      for (const deliveryId of committed?.creatorDeliveryIds ?? []) {
-        await postCommit.notifyCreatorDelivery(deliveryId);
       }
       return committed ? getById(id) : null;
     },

@@ -1565,7 +1565,7 @@ No other plugin or host service is interrupted.
 
 When a plugin is uninstalled at runtime:
 
-1. The host commits the `disabled` authority fence and its managed-agent/creator-delivery invariants (Section 25.1).
+1. The host commits the `disabled` authority fence and its managed-agent/creator-edge invariants (Section 25.1).
 2. The host fences scheduler admission and other new runtime intake, drains accepted work, and then revokes the activation-scoped binding under the graceful shutdown policy (Section 12.5). Dynamic DB-backed webhooks, tools, and UI discovery stop resolving the installation as soon as it is non-ready.
 3. The host removes its managed package tree, drops its custom database namespace, and deletes the installation with all installation-owned operational rows.
 4. A failed teardown remains retryable from the `disabled` row; it never restores ready authority implicitly.

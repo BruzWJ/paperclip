@@ -99,6 +99,23 @@ describe("runtime-agent control-plane validators", () => {
     ).toBe(false);
   });
 
+  it("rejects relationship-derived issue actions as configurable grants", () => {
+    const grants = falseMap(PAPERCLIP_ACTION_KEYS);
+
+    expect(
+      paperclipActionGrantMapSchema.safeParse({
+        ...grants,
+        issue_assign: false,
+      }).success,
+    ).toBe(false);
+    expect(
+      paperclipActionGrantMapSchema.safeParse({
+        ...grants,
+        issue_update: false,
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts only a nonempty strict partial for runtime-agent updates", () => {
     expect(
       runtimeAgentUpdateConfigurationSchema.parse({

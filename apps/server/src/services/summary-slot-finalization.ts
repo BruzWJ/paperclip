@@ -133,10 +133,11 @@ export async function finalizeSummarySlotsForTerminalIssue(
       .select()
       .from(issueComments)
       .where(
+        // A sub-issue owner update is canonically projected into its parent
+        // Session, so the update comment need not belong to `issue.id`.
         and(
           eq(issueComments.id, source.commentId),
           eq(issueComments.companyId, issue.companyId),
-          eq(issueComments.issueId, issue.id),
           eq(issueComments.runId, source.runId),
         ),
       )

@@ -4,10 +4,7 @@ import { agentCompanyToolSelections } from "../schema/tool_access.js";
 import { externalObjectMentions } from "../schema/external_object_mentions.js";
 import { externalObjects } from "../schema/external_objects.js";
 import { issueComments } from "../schema/issue_comments.js";
-import {
-  pluginCreatorDeliveries,
-  pluginWithdrawalOperations,
-} from "../schema/issue_creator_delivery.js";
+import { pluginWithdrawalOperations } from "../schema/issue_creator_edge.js";
 import { pluginCompanySettings } from "../schema/plugin_company_settings.js";
 import { pluginConfig } from "../schema/plugin_config.js";
 import {
@@ -78,7 +75,6 @@ describe("terminal plugin uninstall schema", () => {
   it("keeps historical actor identities as bare UUID values", () => {
     for (const table of [
       issueComments,
-      pluginCreatorDeliveries,
       pluginWithdrawalOperations,
       runInterfaceToolCalls,
       agentCompanyToolSelections,
