@@ -103,16 +103,13 @@ describe("resolveActorSourceTrustForIssue", () => {
   it("uses the canonical linked issue policy", async () => {
     const executionPolicy = lowTrustExecutionPolicy(issueId);
     const { db } = createMockDb({
-      select: [
-        [{ companyId, permissions: {} }],
-        [{
-          runId,
-          companyId,
-          agentId: actorAgentId,
-          issueId,
-          issueExecutionPolicy: executionPolicy,
-        }],
-      ],
+      select: [[{
+        runId,
+        companyId,
+        agentId: actorAgentId,
+        issueId,
+        issueExecutionPolicy: executionPolicy,
+      }]],
     });
 
     const sourceTrust = await resolveActorSourceTrustForIssue({
@@ -142,10 +139,7 @@ describe("resolveActorSourceTrustForIssue", () => {
 
   it("fails closed when the supplied run id does not belong to the acting agent", async () => {
     const { db } = createMockDb({
-      select: [
-        [{ companyId, permissions: {} }],
-        [],
-      ],
+      select: [[]],
     });
 
     const sourceTrust = await resolveActorSourceTrustForIssue({
@@ -173,22 +167,8 @@ describe("resolveActorSourceTrustForIssue", () => {
     });
   });
 
-  it("surfaces denied trust policy resolution instead of treating it as higher trust", async () => {
-    const { db } = createMockDb({
-      select: [[{
-        companyId,
-        permissions: {
-          trustPreset: LOW_TRUST_REVIEW_PRESET,
-          authorizationPolicy: {
-            trustBoundary: {
-              mode: LOW_TRUST_REVIEW_PRESET,
-              companyId: "00000000-0000-4000-8000-000000000099",
-              projectIds: ["00000000-0000-4000-8000-000000000098"],
-            },
-          },
-        },
-      }]],
-    });
+  it("does not load agent state when no productive run is supplied", async () => {
+    const { db, calls } = createMockDb();
 
     await expect(resolveActorSourceTrustForIssue({
       db,
@@ -204,9 +184,7 @@ describe("resolveActorSourceTrustForIssue", () => {
         agentId: actorAgentId,
         runId: null,
       },
-    })).rejects.toMatchObject({
-      status: 403,
-      message: "Low-trust boundary refers to a different company.",
-    });
+    })).resolves.toBeNull();
+    expect(calls).toEqual([]);
   });
 });

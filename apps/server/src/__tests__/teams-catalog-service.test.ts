@@ -167,12 +167,9 @@ vi.mock("../adapters/registry.js", () => {
 
 const {
   collectCatalogTeamSkillPreparations,
-  readCatalogTeamProvenance,
   teamsCatalogService,
 } = await import("../services/teams-catalog.js");
 
-const CORE_EXEC_TEAM_ID = "paperclipai:bundled:company-defaults:core-exec-team";
-const CORE_EXEC_TEAM_HASH = "sha256:e335c2456fcdefd5d27e0197c16f5a220bb927fc9ea49c0e4b6cacb805a09fe6";
 const CORE_ADAPTER_OVERRIDES = {
   "company-lead": {
     adapterType: "external_acp",
@@ -234,23 +231,6 @@ const ENGINEERING_STANDALONE_OPTIONS = {
   },
   actor: { actorType: "system", actorId: "teams-catalog-test" } as const,
 };
-
-function agentWithCatalogTeam(originHash: string | null, extra: Record<string, unknown> = {}) {
-  return {
-    id: `agent-${Math.random().toString(36).slice(2)}`,
-    companyId: "company-1",
-    metadata: {
-      paperclip: {
-        catalogTeam: {
-          catalogId: CORE_EXEC_TEAM_ID,
-          catalogKey: "paperclipai/bundled/company-defaults/core-exec-team",
-          ...(originHash ? { originHash } : {}),
-        },
-      },
-    },
-    ...extra,
-  };
-}
 
 describe("teamsCatalogService", () => {
   beforeEach(() => {
@@ -334,7 +314,7 @@ describe("teamsCatalogService", () => {
     expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("reportsToExistingAgentSlug: \"company-lead\""));
   });
 
-  it("generates catalog provenance without package-declared authority defaults", async () => {
+  it("generates an import extension without package-declared authority or agent provenance", async () => {
     const svc = teamsCatalogService({} as any);
 
     const prepared = await svc.prepareCatalogTeamSource(
@@ -344,11 +324,11 @@ describe("teamsCatalogService", () => {
     );
 
     expect(prepared.source.files[".paperclip.yaml"]).not.toContain("permissions:");
-    expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("catalogTeam:"));
-    expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("catalogSlug: \"product-engineering\""));
+    expect(prepared.source.files[".paperclip.yaml"]).not.toContain("metadata:");
+    expect(prepared.source.files[".paperclip.yaml"]).not.toContain("catalogTeam:");
   });
 
-  it("merges target-manager metadata without package authority defaults", async () => {
+  it("merges target-manager configuration without package authority defaults", async () => {
     const svc = teamsCatalogService({} as any);
 
     const prepared = await svc.prepareCatalogTeamSource("company-1", "product-engineering", {
@@ -359,7 +339,6 @@ describe("teamsCatalogService", () => {
     expect(prepared.source.files[".paperclip.yaml"]).not.toContain("permissions:");
     expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("reportsToExistingAgentId: \"manager-1\""));
     expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("reportsToExistingAgentSlug: \"engineering-manager\""));
-    expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("catalogSlug: \"product-engineering\""));
   });
 
   it("rejects missing target-manager slugs instead of emitting unresolved reparent metadata", async () => {
@@ -774,82 +753,6 @@ describe("teamsCatalogService", () => {
         sourceCompanyId: "company-1",
       },
     );
-  });
-
-  describe("readCatalogTeamProvenance", () => {
-    it("reads catalogTeam provenance from agent metadata", () => {
-      expect(
-        readCatalogTeamProvenance({
-          paperclip: { catalogTeam: { catalogId: "team-x", catalogKey: "k", originHash: "sha256:1" } },
-        }),
-      ).toEqual({ catalogId: "team-x", catalogKey: "k", originHash: "sha256:1" });
-    });
-
-    it("returns null when there is no catalogTeam provenance", () => {
-      expect(readCatalogTeamProvenance(null)).toBeNull();
-      expect(readCatalogTeamProvenance({})).toBeNull();
-      expect(readCatalogTeamProvenance({ paperclip: { catalog: { skillKey: "s" } } })).toBeNull();
-      expect(readCatalogTeamProvenance({ paperclip: { catalogTeam: { originHash: "h" } } })).toBeNull();
-    });
-  });
-
-  describe("listInstalledCatalogTeams", () => {
-    it("marks a team out of date when an installed originHash differs from the catalog hash", async () => {
-      mockAgentService.list.mockResolvedValue([
-        agentWithCatalogTeam("sha256:stale-hash"),
-        agentWithCatalogTeam("sha256:stale-hash"),
-        { id: "no-provenance", companyId: "company-1", metadata: null },
-      ]);
-      const svc = teamsCatalogService({} as any);
-
-      const installed = await svc.listInstalledCatalogTeams("company-1");
-
-      expect(mockAgentService.list).toHaveBeenCalledWith("company-1");
-      expect(installed).toEqual([
-        expect.objectContaining({
-          catalogId: CORE_EXEC_TEAM_ID,
-          present: true,
-          currentContentHash: CORE_EXEC_TEAM_HASH,
-          installedOriginHashes: ["sha256:stale-hash"],
-          agentCount: 2,
-          outOfDate: true,
-        }),
-      ]);
-    });
-
-    it("marks a team up to date when the installed originHash matches the catalog hash", async () => {
-      mockAgentService.list.mockResolvedValue([agentWithCatalogTeam(CORE_EXEC_TEAM_HASH)]);
-      const svc = teamsCatalogService({} as any);
-
-      const installed = await svc.listInstalledCatalogTeams("company-1");
-
-      expect(installed).toHaveLength(1);
-      expect(installed[0]).toMatchObject({ present: true, outOfDate: false, agentCount: 1 });
-    });
-
-    it("does not flag teams that no longer resolve to a catalog entry", async () => {
-      mockAgentService.list.mockResolvedValue([
-        {
-          id: "removed",
-          companyId: "company-1",
-          metadata: { paperclip: { catalogTeam: { catalogId: "paperclipai:bundled:gone:removed", originHash: "sha256:x" } } },
-        },
-      ]);
-      const svc = teamsCatalogService({} as any);
-
-      const installed = await svc.listInstalledCatalogTeams("company-1");
-
-      expect(installed).toEqual([
-        expect.objectContaining({ present: false, currentContentHash: null, outOfDate: false }),
-      ]);
-    });
-
-    it("returns an empty list when no agents carry catalog-team provenance", async () => {
-      mockAgentService.list.mockResolvedValue([{ id: "a", companyId: "company-1", metadata: {} }]);
-      const svc = teamsCatalogService({} as any);
-
-      expect(await svc.listInstalledCatalogTeams("company-1")).toEqual([]);
-    });
   });
 
   it("classifies unresolved and unsafe external skill requirements as blocked", () => {

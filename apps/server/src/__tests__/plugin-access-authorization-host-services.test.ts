@@ -359,7 +359,7 @@ describe("plugin access and authorization host services", () => {
     await host.dispose();
   });
 
-  it("rejects plugin attempts to overwrite board-owned agent governance before any write", async () => {
+  it("rejects plugin attempts to create agent authorization policies before any write", async () => {
     const harness = createMockDb();
     const host = services(harness.db);
 

@@ -149,16 +149,6 @@ export interface CatalogTeamInstallResult {
   warnings: string[];
 }
 
-export interface InstalledCatalogTeam {
-  catalogId: string;
-  catalogKey: string | null;
-  present: boolean;
-  currentContentHash: string | null;
-  installedOriginHashes: string[];
-  agentCount: number;
-  outOfDate: boolean;
-}
-
 export interface CatalogTeamFileDetail {
   catalogTeamId: string;
   path: string;
@@ -261,39 +251,6 @@ export async function listCatalogTeams(query: CatalogTeamListQuery = {}): Promis
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function readNonEmptyString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-interface CatalogTeamProvenance {
-  catalogId: string;
-  catalogKey: string | null;
-  originHash: string | null;
-}
-
-/**
- * Extract `metadata.paperclip.catalogTeam` provenance written by the team
- * importer (see `renderCatalogProvenanceYaml`). Returns null when the agent was
- * not installed from a catalog team.
- */
-export function readCatalogTeamProvenance(
-  metadata: Record<string, unknown> | null | undefined,
-): CatalogTeamProvenance | null {
-  if (!isPlainRecord(metadata)) return null;
-  const paperclip = isPlainRecord(metadata.paperclip) ? metadata.paperclip : null;
-  const catalogTeam = paperclip && isPlainRecord(paperclip.catalogTeam) ? paperclip.catalogTeam : null;
-  if (!catalogTeam) return null;
-  const catalogId = readNonEmptyString(catalogTeam.catalogId);
-  if (!catalogId) return null;
-  return {
-    catalogId,
-    catalogKey: readNonEmptyString(catalogTeam.catalogKey),
-    originHash: readNonEmptyString(catalogTeam.originHash),
-  };
 }
 
 function formatError(error: unknown): string {
@@ -464,20 +421,6 @@ function renderSyntheticCompanyMarkdown(team: CatalogTeam) {
   return lines.join("\n");
 }
 
-async function catalogProvenance(team: CatalogTeam) {
-  const manifest = await getCatalogManifest();
-  return {
-    catalogId: team.id,
-    catalogKey: team.key,
-    catalogKind: team.kind,
-    catalogCategory: team.category,
-    catalogSlug: team.slug,
-    packageName: manifest.packageName,
-    packageVersion: manifest.packageVersion,
-    originHash: team.contentHash,
-  };
-}
-
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") {
     return JSON.stringify(value) ?? "null";
@@ -532,12 +475,11 @@ function explicitFalseMap(keys: readonly string[]) {
   return Object.fromEntries(keys.map((key) => [key, false]));
 }
 
-async function renderCatalogProvenanceYaml(
+async function renderCatalogImportYaml(
   team: CatalogTeam,
   targetManager: CatalogTargetManagerReference | null,
   adapterOverrides: CompanyPortabilityImport["adapterOverrides"],
 ) {
-  const provenance = await catalogProvenance(team);
   const agentSlugs = Array.from(new Set(team.agentSlugs)).sort();
   const projectSlugs = Array.from(new Set(team.projectSlugs)).sort();
   const issueSlugs = team.files
@@ -575,20 +517,6 @@ async function renderCatalogProvenanceYaml(
           ),
         }
       : {}),
-    metadata: {
-      paperclip: {
-        catalogTeam: {
-          catalogId: provenance.catalogId,
-          catalogKey: provenance.catalogKey,
-          catalogKind: provenance.catalogKind,
-          catalogCategory: provenance.catalogCategory,
-          catalogSlug: provenance.catalogSlug,
-          packageName: provenance.packageName,
-          packageVersion: provenance.packageVersion,
-          originHash: provenance.originHash,
-        },
-      },
-    },
   });
 
   const extension: Record<string, unknown> = {
@@ -958,7 +886,7 @@ export function teamsCatalogService(
         ? parseYamlDocument(files[".paperclip.yaml"])
         : {};
     const generatedExtension = parseYamlDocument(
-      await renderCatalogProvenanceYaml(
+      await renderCatalogImportYaml(
         team,
         targetManager,
         options.adapterOverrides,
@@ -1119,68 +1047,6 @@ export function teamsCatalogService(
     };
   }
 
-  /**
-   * Compare each company agent's installed catalog-team provenance against the
-   * live catalog. Drives the Team Catalog `INSTALLED · N` group and the
-   * out-of-date badge from a real server signal (design
-   * [PAP-10238 §3.2 + §5]).
-   */
-  async function listInstalledCatalogTeams(companyId: string): Promise<InstalledCatalogTeam[]> {
-    const companyAgents = await agents.list(companyId);
-    const currentTeams = await getCatalogTeams();
-    const currentById = new Map(currentTeams.map((team) => [team.id, team]));
-
-    type Aggregate = {
-      catalogId: string;
-      catalogKey: string | null;
-      originHashes: Set<string>;
-      agentCount: number;
-    };
-    const byCatalogId = new Map<string, Aggregate>();
-
-    for (const agent of companyAgents) {
-      const provenance = readCatalogTeamProvenance(
-        agent.metadata as Record<string, unknown> | null,
-      );
-      if (!provenance) continue;
-      let entry = byCatalogId.get(provenance.catalogId);
-      if (!entry) {
-        entry = {
-          catalogId: provenance.catalogId,
-          catalogKey: provenance.catalogKey,
-          originHashes: new Set<string>(),
-          agentCount: 0,
-        };
-        byCatalogId.set(provenance.catalogId, entry);
-      }
-      entry.agentCount += 1;
-      if (!entry.catalogKey && provenance.catalogKey) entry.catalogKey = provenance.catalogKey;
-      if (provenance.originHash) entry.originHashes.add(provenance.originHash);
-    }
-
-    return Array.from(byCatalogId.values())
-      .map((entry) => {
-        const current = currentById.get(entry.catalogId) ?? null;
-        const currentContentHash = current?.contentHash ?? null;
-        const installedOriginHashes = Array.from(entry.originHashes).sort();
-        const present = Boolean(current);
-        const outOfDate = present
-          && currentContentHash !== null
-          && installedOriginHashes.length > 0
-          && installedOriginHashes.some((hash) => hash !== currentContentHash);
-        return {
-          catalogId: entry.catalogId,
-          catalogKey: entry.catalogKey ?? current?.key ?? null,
-          present,
-          currentContentHash,
-          installedOriginHashes,
-          agentCount: entry.agentCount,
-          outOfDate,
-        } satisfies InstalledCatalogTeam;
-      })
-      .sort((left, right) => left.catalogId.localeCompare(right.catalogId));
-  }
-
   return {
     listCatalogTeams,
     getCatalogTeamOrThrow,
@@ -1188,6 +1054,5 @@ export function teamsCatalogService(
     prepareCatalogTeamSource,
     previewCatalogTeamImport,
     installCatalogTeam,
-    listInstalledCatalogTeams,
   };
 }

@@ -16,7 +16,6 @@ import {
 } from "./issue.js";
 import { routineVariableSchema } from "./routine.js";
 import {
-  agentGovernancePolicySchema,
   agentRuntimeConfigSchema,
 } from "./agent.js";
 import { companySkillChannelSchema } from "./company-skill-pins.js";
@@ -189,13 +188,11 @@ export const portabilityAgentManifestEntrySchema = z.object({
   mentionReachGrants: exactBooleanMap(
     AGENT_MENTION_REACH_GRANT_KEYS,
   ),
-  governance: agentGovernancePolicySchema,
   permissionGrants: z.array(z.object({
     permissionKey: z.enum(PERMISSION_KEYS),
     scope: z.record(z.string(), z.unknown()).nullable().default(null),
   }).strict()),
   budgetMonthlyAmount: moneyAmountSchema,
-  metadata: z.record(z.string(), z.unknown()).nullable(),
 }).strict();
 
 export const portabilitySkillManifestEntrySchema = z.object({

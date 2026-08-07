@@ -1,7 +1,6 @@
 import type {
   CatalogTeam,
   CatalogTeamSkillPreparation,
-  InstalledCatalogTeam,
 } from "@paperclipai/shared";
 
 // ---------------------------------------------------------------------------
@@ -94,25 +93,6 @@ export const warnTeam: CatalogTeam = {
     { type: "url", ref: "https://example.com/unpinned.md", pinned: false },
     { type: "local_path", ref: "/Users/dev/skills/secret-sauce", pinned: false },
   ],
-};
-
-// Server-computed installed-team state (PAP-10256). Drives the `INSTALLED · N`
-// group, the per-row out-of-date badge, and the detail header chip. Shared by
-// the Storybook stories and /design-guide showcase so they stay in sync.
-export const outOfDateInstalledState: InstalledCatalogTeam = {
-  catalogId: sampleTeam.id,
-  catalogKey: sampleTeam.key,
-  present: true,
-  currentContentHash: sampleTeam.contentHash,
-  installedOriginHashes: ["sha256:0000older0000older0000older"],
-  agentCount: 3,
-  outOfDate: true,
-};
-
-export const currentInstalledState: InstalledCatalogTeam = {
-  ...outOfDateInstalledState,
-  installedOriginHashes: [sampleTeam.contentHash],
-  outOfDate: false,
 };
 
 export const sampleSkillPreparations: CatalogTeamSkillPreparation[] = [

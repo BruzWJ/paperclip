@@ -15,7 +15,6 @@ const mockAccessService = vi.hoisted(() => ({
 const mockTeamsCatalogService = vi.hoisted(() => ({
   previewCatalogTeamImport: vi.fn(),
   installCatalogTeam: vi.fn(),
-  listInstalledCatalogTeams: vi.fn(),
 }));
 
 const mockCatalogModule = vi.hoisted(() => ({
@@ -92,7 +91,6 @@ describe("teams catalog routes", () => {
     mockAgentService.getById.mockResolvedValue({
       id: "agent-1",
       companyId,
-      governance: {},
     });
     mockCatalogModule.listCatalogTeams.mockReturnValue([catalogTeam()]);
     mockCatalogModule.getCatalogTeamOrThrow.mockReturnValue(catalogTeam());
@@ -115,17 +113,6 @@ describe("teams catalog routes", () => {
       warnings: [],
       errors: [],
     });
-    mockTeamsCatalogService.listInstalledCatalogTeams.mockResolvedValue([
-      {
-        catalogId: "paperclipai:bundled:software-development:product-engineering",
-        catalogKey: "paperclipai/bundled/software-development/product-engineering",
-        present: true,
-        currentContentHash: "sha256:catalog-team",
-        installedOriginHashes: ["sha256:old"],
-        agentCount: 3,
-        outOfDate: true,
-      },
-    ]);
     mockTeamsCatalogService.installCatalogTeam.mockResolvedValue({
       team: catalogTeam(),
       portabilityImport: {
@@ -157,40 +144,6 @@ describe("teams catalog routes", () => {
     expect(mockCatalogModule.listCatalogTeams).toHaveBeenCalledWith({ kind: "bundled", q: "engineering" });
     expect(mockCatalogModule.getCatalogTeamOrThrow).toHaveBeenCalledWith("product-engineering");
     expect(mockCatalogModule.readCatalogTeamFile).toHaveBeenCalledWith("product-engineering", "TEAM.md");
-  });
-
-  it("returns server-computed installed-team state for actors with company access", async () => {
-    const app = await createApp(testBoardSessionActor({
-      userId: "board-user",
-      companyIds: [companyId],
-      isInstanceAdmin: false,
-    }));
-
-    const res = await request(app).get(`/api/companies/${companyId}/teams/catalog/installed`);
-
-    expect(res.status, JSON.stringify(res.body)).toBe(200);
-    expect(mockTeamsCatalogService.listInstalledCatalogTeams).toHaveBeenCalledWith(companyId);
-    expect(res.body).toEqual([
-      expect.objectContaining({
-        catalogId: "paperclipai:bundled:software-development:product-engineering",
-        present: true,
-        outOfDate: true,
-        agentCount: 3,
-      }),
-    ]);
-  });
-
-  it("denies installed-team state to actors without company access", async () => {
-    const app = await createApp(testBoardSessionActor({
-      userId: "other",
-      companyIds: ["22222222-2222-4222-8222-222222222222"],
-      isInstanceAdmin: false,
-    }));
-
-    const res = await request(app).get(`/api/companies/${companyId}/teams/catalog/installed`);
-
-    expect(res.status, JSON.stringify(res.body)).toBe(403);
-    expect(mockTeamsCatalogService.listInstalledCatalogTeams).not.toHaveBeenCalled();
   });
 
   it("requires authentication for catalog read routes", async () => {
@@ -360,7 +313,6 @@ describe("teams catalog routes", () => {
     mockAgentService.getById.mockResolvedValue({
       id: "agent-1",
       companyId,
-      governance: {},
     });
     mockAccessService.hasPermission.mockResolvedValue(false);
     const app = await createApp({

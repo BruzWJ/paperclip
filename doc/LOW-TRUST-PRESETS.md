@@ -15,11 +15,9 @@ Community Edition even when EE policy editing is unavailable.
 
 `low_trust_review` is resolved from existing JSON policy fields:
 
-- agent governance: `governance.trustPreset` and
-  `governance.authorizationPolicy.trustBoundary`
 - issue/run policy: `executionPolicy.authorizationPolicy.trustBoundary`
 
-The resolver intersects those sources. Narrower wins. A low-trust preset must
+The resolver intersects issue and run policy sources. Narrower wins. A low-trust preset must
 resolve to a concrete company-local project, root issue, or issue-id scope. If a
 policy source names another company, uses an unsupported preset, or lacks that
 scope for risky access, Paperclip fails closed.
@@ -35,7 +33,7 @@ changes that behavior. Low-trust containment instead limits what the low-trust
 agent can read or mutate through the Paperclip API and prevents raw untrusted
 output from being automatically promoted into higher-trust agent context.
 
-Low-trust agents cannot read or mutate agent configuration, instruction bundles,
+Low-trust agents cannot read or mutate agent configuration, agent instructions,
 or company skill configuration through direct grants. Configuration changes from
 low-trust work must go through higher-trust review and promotion paths instead.
 

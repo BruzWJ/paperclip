@@ -602,10 +602,8 @@ const PORTABLE_AGENT_EXTENSION_KEYS = [
   "contextGrants",
   "actionGrants",
   "mentionReachGrants",
-  "governance",
   "permissionGrants",
   "budgetMonthlyAmount",
-  "metadata",
   "reportsTo",
   "reportsToExistingAgentId",
   "reportsToExistingAgentSlug",
@@ -1873,7 +1871,6 @@ const YAML_KEY_PRIORITY = [
   "logoPath",
   "adapter",
   "runtime",
-  "governance",
   "permissionGrants",
   "budgetCurrency",
   "budgetMonthlyAmount",
@@ -2709,9 +2706,7 @@ function buildManifestFromPackageFiles(
         `Agent ${slug} adapterRevision.skillChannel must be isolated_skills_home or operator_native`,
       );
     }
-    const extensionGovernance = isPlainRecord(extension.governance) ? extension.governance : null;
     const extensionPermissionGrants = normalizePortablePermissionGrants(extension.permissionGrants);
-    const extensionMetadata = isPlainRecord(extension.metadata) ? extension.metadata : null;
     const title = asString(frontmatter.title);
 
     manifest.agents.push({
@@ -2751,13 +2746,11 @@ function buildManifestFromPackageFiles(
         AGENT_MENTION_REACH_GRANT_KEYS,
         `Agent ${slug} mentionReachGrants`,
       ),
-      governance: extensionGovernance ?? {},
       permissionGrants: extensionPermissionGrants,
       budgetMonthlyAmount: portableMoneyAmount(
         extension.budgetMonthlyAmount,
         `Agent ${slug} budgetMonthlyAmount`,
       ),
-      metadata: extensionMetadata,
     });
 
     if (frontmatter.kind && frontmatter.kind !== "agent") {
@@ -3718,7 +3711,6 @@ export function companyPortabilityService(
               dropFalseBooleans: true,
             },
           ) as Record<string, unknown> | undefined) ?? {};
-        const portableGovernance = pruneDefaultLikeValue(agent.governance ?? {}, { dropFalseBooleans: true }) as Record<string, unknown>;
         const portablePermissionGrants = permissionGrantsByAgentId.get(agent.id) ?? [];
         const reportsToSlug = agent.reportsTo ? (idToSlug.get(agent.reportsTo) ?? null) : null;
         files[`agents/${slug}/AGENTS.md`] = buildMarkdown(
@@ -3734,10 +3726,8 @@ export function companyPortabilityService(
         const optionalExtension = stripEmptyValues({
           icon: agent.icon ?? null,
           capabilities: agent.capabilities ?? null,
-          governance: portableGovernance,
           permissionGrants: portablePermissionGrants.length > 0 ? portablePermissionGrants : undefined,
           budgetMonthlyAmount: agent.budgetMonthlyAmount,
-          metadata: (agent.metadata as Record<string, unknown> | null) ?? null,
         });
         const extension: Record<string, unknown> = {
           ...(isPlainRecord(optionalExtension)

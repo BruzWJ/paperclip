@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  agentGovernancePolicySchema,
   type LowTrustBoundary,
   LOW_TRUST_REVIEW_RAW_OUTPUT_DISPOSITION,
   LOW_TRUST_REVIEW_PRESET,
@@ -21,7 +20,7 @@ const issueA = "77777777-7777-4777-8777-777777777777";
 const issueB = "88888888-8888-4888-8888-888888888888";
 const issueC = "99999999-9999-4999-8999-999999999999";
 const agentA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-const agentB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const agentB = "bbbbbbbb-bbbb-8bbb-bbbb-bbbbbbbbbbbb";
 
 function lowTrustBoundary(input: Partial<Omit<LowTrustBoundary, "mode">>): LowTrustBoundary {
   return {
@@ -32,25 +31,20 @@ function lowTrustBoundary(input: Partial<Omit<LowTrustBoundary, "mode">>): LowTr
 }
 
 describe("resolveCoreTrustPreset", () => {
-  it("defaults to standard with no boundary", () => {
-    const result = resolveCoreTrustPreset({
-      companyId,
-      agent: { companyId, governance: {} },
-    });
-
-    expect(result).toMatchObject({
+  it("defaults to standard with no issue or run policy", () => {
+    expect(resolveCoreTrustPreset({ companyId })).toMatchObject({
       kind: "standard",
       preset: "standard",
       boundary: null,
     });
   });
 
-  it("intersects low-trust agent and issue policy boundaries", () => {
+  it("intersects low-trust issue and run policy boundaries", () => {
     const result = resolveCoreTrustPreset({
       companyId,
-      agent: {
+      issue: {
         companyId,
-        governance: {
+        executionPolicy: {
           trustPreset: LOW_TRUST_REVIEW_PRESET,
           authorizationPolicy: {
             managedBy: "core-trust-preset",
@@ -64,7 +58,7 @@ describe("resolveCoreTrustPreset", () => {
           },
         },
       },
-      issue: {
+      run: {
         companyId,
         executionPolicy: {
           authorizationPolicy: {
@@ -92,30 +86,28 @@ describe("resolveCoreTrustPreset", () => {
     expect(isIssueWithinLowTrustBoundary(result.boundary, { companyId, id: issueC, projectId: projectC })).toBe(false);
   });
 
-  it("fails closed for unknown presets", () => {
+  it("fails closed for unknown issue presets", () => {
     const result = resolveCoreTrustPreset({
       companyId,
-      agent: {
+      issue: {
         companyId,
-        governance: {
-          trustPreset: "trusted_but_weird",
-        },
+        executionPolicy: { trustPreset: "trusted_but_weird" },
       },
     });
 
     expect(result).toMatchObject({
       kind: "denied",
       reason: "unsupported_trust_preset",
-      source: "agent",
+      source: "issue",
     });
   });
 
-  it("fails closed when low-trust has no concrete project or issue scope", () => {
+  it("fails closed when low-trust has no concrete issue scope", () => {
     const result = resolveCoreTrustPreset({
       companyId,
-      agent: {
+      issue: {
         companyId,
-        governance: {
+        executionPolicy: {
           trustPreset: LOW_TRUST_REVIEW_PRESET,
           authorizationPolicy: {
             trustBoundary: lowTrustBoundary({ allowedToolClasses: ["git.read"] }),
@@ -130,8 +122,8 @@ describe("resolveCoreTrustPreset", () => {
     });
   });
 
-  it("denies cross-company policy sources and boundaries", () => {
-    const boundaryMismatch = resolveCoreTrustPreset({
+  it("denies cross-company issue policy boundaries", () => {
+    const result = resolveCoreTrustPreset({
       companyId,
       issue: {
         companyId,
@@ -146,24 +138,14 @@ describe("resolveCoreTrustPreset", () => {
         },
       },
     });
-    expect(boundaryMismatch).toMatchObject({
+    expect(result).toMatchObject({
       kind: "denied",
       reason: "cross_company_boundary",
       source: "issue",
     });
   });
 
-  it("normalizes and preserves trust policy JSON alongside existing policy data", () => {
-    const governance = agentGovernancePolicySchema.parse({
-      trustPreset: LOW_TRUST_REVIEW_PRESET,
-      authorizationPolicy: {
-        managedBy: "ee-governance",
-        customEeField: { mode: "visualized" },
-        trustBoundary: lowTrustBoundary({ rootIssueId }),
-      },
-    });
-    expect(governance.authorizationPolicy?.customEeField).toEqual({ mode: "visualized" });
-
+  it("normalizes and preserves issue trust policy JSON", () => {
     const executionPolicy = normalizeIssueExecutionPolicy({
       reviewPreset: {
         id: LOW_TRUST_REVIEW_PRESET,
@@ -172,6 +154,7 @@ describe("resolveCoreTrustPreset", () => {
       },
       authorizationPolicy: {
         managedBy: "core-trust-preset",
+        customEeField: { mode: "visualized" },
         trustBoundary: lowTrustBoundary({ rootIssueId }),
       },
     });
@@ -184,6 +167,7 @@ describe("resolveCoreTrustPreset", () => {
       },
       authorizationPolicy: {
         managedBy: "core-trust-preset",
+        customEeField: { mode: "visualized" },
         trustBoundary: { rootIssueId },
       },
     });

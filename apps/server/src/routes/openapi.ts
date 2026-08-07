@@ -1196,7 +1196,6 @@ for (const route of [
   ["get", "/api/teams/catalog", "List catalog teams"],
   ["get", "/api/teams/catalog/{catalogId}/files", "Get catalog team file"],
   ["get", "/api/teams/catalog/{catalogId}", "Get catalog team"],
-  ["get", "/api/companies/{companyId}/teams/catalog/installed", "List installed catalog teams"],
   ["post", "/api/companies/{companyId}/teams/catalog/{catalogId}/preview", "Preview catalog team install"],
   ["post", "/api/companies/{companyId}/teams/catalog/{catalogId}/install", "Install catalog team"],
 ] as const) {

@@ -6,7 +6,6 @@ import type {
   CatalogTeamInstallOptions,
   CatalogTeamInstallResult,
   CatalogTeamKind,
-  InstalledCatalogTeam,
 } from "@paperclipai/shared";
 import { api } from "./client";
 
@@ -36,10 +35,6 @@ export const teamCatalogApi = {
   },
   catalogDetail: (catalogRef: string) =>
     api.get<CatalogTeam>(`/teams/catalog/${encodeURIComponent(catalogRef)}`),
-  installed: (companyId: string) =>
-    api.get<InstalledCatalogTeam[]>(
-      `/companies/${encodeURIComponent(companyId)}/teams/catalog/installed`,
-    ),
   catalogFile: (catalogRef: string, relativePath = "TEAM.md") =>
     api.get<CatalogTeamFileDetail>(
       `/teams/catalog/${encodeURIComponent(catalogRef)}/files?path=${encodeURIComponent(relativePath)}`,

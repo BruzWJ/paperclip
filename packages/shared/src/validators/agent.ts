@@ -1,23 +1,7 @@
 import { z } from "zod";
 import { INBOX_MINE_ISSUE_STATUS_FILTER } from "../constants.js";
 import { envConfigSchema } from "./secret.js";
-import { trustAuthorizationPolicySchema, trustPresetSchema } from "./trust-policy.js";
 import { isProviderChildReservedEnvironmentKey } from "../provider-child-boundary.js";
-
-export const agentGovernancePolicySchema = z.object({
-  trustPreset: trustPresetSchema.optional(),
-  authorizationPolicy: trustAuthorizationPolicySchema.optional().nullable(),
-}).catchall(z.unknown()).superRefine((value, ctx) => {
-  for (const key of Object.keys(value)) {
-    if (/^can[A-Z]/.test(key)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Coarse capability switches are not governance policy; use explicit action and management grants",
-        path: [key],
-      });
-    }
-  }
-});
 
 const FORBIDDEN_ADAPTER_BRIDGE_KEYS = new Set([
   "codexhome",

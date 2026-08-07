@@ -146,10 +146,8 @@ import {
   TeamRow,
 } from "@/pages/TeamCatalog";
 import {
-  currentInstalledState,
   onboardingTeams,
   optionalTeam,
-  outOfDateInstalledState,
   sampleSkillPreparations,
   sampleTeam,
   warnTeam,
@@ -1647,17 +1645,7 @@ export function DesignGuide() {
               Optional · 2
             </div>
             <TeamRow team={optionalTeam} selected={false} onSelect={() => {}} />
-            <div className="px-3 py-2 text-(length:--text-micro) font-semibold uppercase tracking-wide text-muted-foreground">
-              Installed · 2
-            </div>
-            <TeamRow team={sampleTeam} selected={false} onSelect={() => {}} installed={outOfDateInstalledState} />
-            <TeamRow team={warnTeam} selected={false} onSelect={() => {}} installed={currentInstalledState} />
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Installed teams collapse under <code className="font-mono">INSTALLED · N</code>; an out-of-date
-            install (server <code className="font-mono">originHash</code> ≠ catalog <code className="font-mono">contentHash</code>)
-            shows the amber <code className="font-mono">↑</code> badge (PAP-10256).
-          </p>
         </SubSection>
 
         <SubSection title="TeamCard (onboarding grid)">

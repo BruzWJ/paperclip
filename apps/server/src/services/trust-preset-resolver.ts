@@ -13,14 +13,10 @@ type JsonRecord = Record<string, unknown>;
 
 export const LOW_TRUST_ISSUE_ANCESTRY_MAX_DEPTH = 12;
 
-export type TrustPresetPolicySource = "agent" | "issue" | "run";
+export type TrustPresetPolicySource = "issue" | "run";
 
 export type ResolveCoreTrustPresetInput = {
   companyId: string;
-  agent?: {
-    companyId?: string | null;
-    governance?: unknown;
-  } | null;
   issue?: {
     companyId?: string | null;
     executionPolicy?: unknown;
@@ -263,17 +259,6 @@ function hasBoundaryScope(boundary: LowTrustBoundary): boolean {
 export function resolveCoreTrustPreset(input: ResolveCoreTrustPresetInput): TrustPresetResolution {
   const sourcePresets: Partial<Record<TrustPresetPolicySource, TrustPreset>> = {};
   const sources: ParsedPolicySource[] = [];
-
-  const agentGovernance = asRecord(input.agent?.governance);
-  const agent = parseSource(
-    "agent",
-    input.agent?.companyId,
-    agentGovernance,
-    agentGovernance?.authorizationPolicy,
-    sourcePresets,
-  );
-  if ("kind" in agent) return agent;
-  sources.push(agent);
 
   const issuePolicy = asRecord(input.issue?.executionPolicy);
   const issue = parseSource("issue", input.issue?.companyId, issuePolicy, issuePolicy?.authorizationPolicy, sourcePresets);

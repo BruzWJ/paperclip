@@ -774,17 +774,11 @@ export function buildHostServices(
     if (pathInfo.table === "agent") {
       const agent = await agents.getById(resourceId);
       if (!inCompany(agent, companyId)) return null;
-      const governance =
-        agent.governance && typeof agent.governance === "object"
-          ? agent.governance as Record<string, unknown>
-          : {};
       return {
         resourceType,
         resourceId,
         companyId,
-        policy: governance.authorizationPolicy && typeof governance.authorizationPolicy === "object"
-          ? sanitizeRecord(governance.authorizationPolicy as Record<string, unknown>)
-          : null,
+        policy: null,
         updatedAt: agent.updatedAt,
       };
     }

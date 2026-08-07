@@ -2,8 +2,13 @@ import type { SourceTrustMetadata } from "@paperclipai/shared";
 import { BadgeCheck, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { sourceTrustLabel } from "../lib/trust-policy-ui";
 import { cn } from "../lib/utils";
+
+function sourceTrustLabel(sourceTrust: SourceTrustMetadata | null | undefined) {
+  if (!sourceTrust || sourceTrust.preset !== "low_trust_review") return null;
+  if (sourceTrust.disposition === "promoted") return "Promoted from low-trust";
+  return "Low-trust source";
+}
 
 export function SourceTrustBadge({
   sourceTrust,

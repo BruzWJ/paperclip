@@ -10,9 +10,6 @@ import type {
   PaperclipActionKey,
 } from "../issue-runtime.js";
 import type { IssueCommentMetadata, IssueCommentPresentation } from "./issue.js";
-import type {
-  AgentGovernancePolicy,
-} from "./agent.js";
 import type { CompanySkillChannel } from "../validators/company-skill-pins.js";
 import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
@@ -144,13 +141,11 @@ export interface CompanyPortabilityAgentManifestEntry {
   contextGrants: Record<AgentContextGrantKey, boolean>;
   actionGrants: Record<PaperclipActionKey, boolean>;
   mentionReachGrants: Record<AgentMentionReachGrantKey, boolean>;
-  governance: AgentGovernancePolicy;
   permissionGrants: Array<{
     permissionKey: PermissionKey;
     scope: Record<string, unknown> | null;
   }>;
   budgetMonthlyAmount: MoneyAmount;
-  metadata: Record<string, unknown> | null;
 }
 
 export interface CompanyPortabilitySkillManifestEntry {

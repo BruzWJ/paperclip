@@ -226,7 +226,6 @@ export {
   adapterConfigSchema,
   agentRuntimeConfigSchema,
   agentMineInboxQuerySchema,
-  agentGovernancePolicySchema,
   type AgentMineInboxQuery,
 } from "./agent.js";
 

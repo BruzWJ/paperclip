@@ -60,7 +60,6 @@ import {
   ListTree,
   X,
   Eye,
-  ShieldAlert,
   ShieldCheck,
 } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -68,7 +67,6 @@ import { issueStatusText, issueStatusTextDefault, priorityColor, priorityColorDe
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { AgentIcon } from "./AgentIconPicker";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
-import { getTrustPreset } from "../lib/trust-policy-ui";
 import { IssueContextAccessMaskMatrix } from "./IssueContextAccessMaskMatrix";
 
 const DRAFT_KEY = "paperclip:issue-request-draft:v2";
@@ -842,7 +840,6 @@ export function NewIssueDialog() {
   const currentOwner = selectedOwnerAgentId
     ? (agents ?? []).find((agent) => agent.id === selectedOwnerAgentId)
     : null;
-  const currentOwnerLowTrust = getTrustPreset(currentOwner?.governance) === "low_trust_review";
   const currentProject = orderedProjects.find((project) => project.id === projectId);
   const neededUserSecretKeys = useMemo(
     () => {
@@ -1617,18 +1614,6 @@ export function NewIssueDialog() {
             <Flag className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-300" />
             <span className="leading-snug">
               Agent ownership implies executable intent - leave status as <span className="font-medium">Backlog</span> only to deliberately park this. The owner will not be dispatched until status moves to <span className="font-medium">Todo</span> or <span className="font-medium">In Progress</span>.
-            </span>
-          </div>
-        ) : null}
-
-        {currentOwnerLowTrust ? (
-          <div
-            data-testid="new-issue-low-trust-owner-note"
-            className="mx-4 mb-2 flex items-start gap-2 rounded-md border border-amber-300/70 bg-amber-50/90 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
-          >
-            <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-300" />
-            <span className="leading-snug">
-              Low-trust review agent. It can only act inside its assigned review boundary; issue, project, or run policy defines the concrete scope.
             </span>
           </div>
         ) : null}

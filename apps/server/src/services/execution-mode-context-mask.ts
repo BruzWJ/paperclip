@@ -14,7 +14,6 @@ export interface ExecutionModeContextInput {
   workMode?: string | null;
   harnessKind?: string | null;
   originKind?: string | null;
-  agentGovernance?: unknown;
   issueExecutionPolicy?: unknown;
 }
 
@@ -55,7 +54,6 @@ export function resolveExecutionModeContextMask(
     input.workMode === "skill_test" ||
     input.harnessKind === "skill_test" ||
     input.originKind === "task_bridge" ||
-    impliesLowTrust(input.agentGovernance) ||
     impliesLowTrust(input.issueExecutionPolicy)
   ) {
     return DENY_ALL_EXECUTION_CONTEXT_MASK;

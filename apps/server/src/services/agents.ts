@@ -22,7 +22,6 @@ import {
   type MoneyAmount,
 } from "@paperclipai/shared";
 import { conflict, notFound } from "../errors.js";
-import { normalizeAgentGovernancePolicy } from "./agent-governance-policy.js";
 import { createIssueSessionAdmissionService } from "./issue-session/admission.js";
 import { terminalizeAgentCreatorEdgesInTransaction } from "./system-escalation-postgres.js";
 import {
@@ -541,11 +540,7 @@ export function agentService(db: Db) {
   }
 
   function normalizeAgentBaseRow<T extends typeof agents.$inferSelect>(row: T) {
-    const { permissions, ...agent } = row;
-    return withUrlKey({
-      ...agent,
-      governance: normalizeAgentGovernancePolicy(permissions),
-    });
+    return withUrlKey(row);
   }
 
   function toEligibilityAgent(row: Pick<typeof agents.$inferSelect, "id" | "companyId" | "name" | "status" | "reportsTo">): AgentEligibilityAgent {

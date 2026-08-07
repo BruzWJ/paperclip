@@ -10,14 +10,6 @@ describe("execution-mode context attenuation", () => {
     { workMode: "skill_test" },
     { harnessKind: "skill_test" },
     { originKind: "task_bridge" },
-    { agentGovernance: { trustPreset: "low_trust_review" } },
-    {
-      agentGovernance: {
-        authorizationPolicy: {
-          reviewPreset: { id: "low_trust_review" },
-        },
-      },
-    },
     {
       issueExecutionPolicy: {
         authorizationPolicy: {
@@ -45,7 +37,6 @@ describe("execution-mode context attenuation", () => {
         workMode: "standard",
         harnessKind: null,
         originKind: "manual",
-        agentGovernance: { trustPreset: "standard" },
       }),
     ).toBeNull();
   });

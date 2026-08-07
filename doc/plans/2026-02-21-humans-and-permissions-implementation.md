@@ -535,9 +535,8 @@ Required UX:
 
 ## 11.2 Data compatibility
 
-- do not delete `agents.permissions` in V1
-- stop reading it once grants are wired
-- remove in post-V1 cleanup migration
+- Historical: the legacy per-agent JSON policy field was retained in V1, then
+  removed by the current cleanup migration after explicit grants replaced it.
 
 ## 11.3 Better Auth user ID handling
 

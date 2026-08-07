@@ -1,6 +1,4 @@
-import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents } from "@paperclipai/db";
 import {
   LOW_TRUST_REVIEW_PRESET,
   type SourceTrustMetadata,
@@ -100,23 +98,13 @@ export async function resolveActorSourceTrustForIssue(input: {
 }): Promise<SourceTrustMetadata | null> {
   if (input.actor.actorType !== "agent" || !input.actor.agentId) return null;
 
-  const [agent, runLinkage] = await Promise.all([
-    input.db
-      .select({
-        companyId: agents.companyId,
-        permissions: agents.permissions,
+  const runLinkage = input.actor.runId
+    ? await resolveProductiveRunLinkage(input.db, {
+        runId: input.actor.runId,
+        companyId: input.issue.companyId,
+        agentId: input.actor.agentId,
       })
-      .from(agents)
-      .where(and(eq(agents.id, input.actor.agentId), eq(agents.companyId, input.issue.companyId)))
-      .then((rows) => rows[0] ?? null),
-    input.actor.runId
-      ? resolveProductiveRunLinkage(input.db, {
-          runId: input.actor.runId,
-          companyId: input.issue.companyId,
-          agentId: input.actor.agentId,
-        })
-      : Promise.resolve(null),
-  ]);
+    : null;
 
   if (
     input.actor.runId
@@ -133,9 +121,6 @@ export async function resolveActorSourceTrustForIssue(input: {
 
   const resolution = resolveCoreTrustPreset({
     companyId: input.issue.companyId,
-    agent: agent
-      ? { companyId: agent.companyId, governance: agent.permissions }
-      : null,
     issue: {
       companyId: input.issue.companyId,
       executionPolicy: input.issue.executionPolicy,

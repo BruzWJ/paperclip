@@ -226,10 +226,8 @@ describe("company portability declarative ACP configuration", () => {
       contextGrants: falseMap(AGENT_CONTEXT_GRANT_KEYS),
       actionGrants: falseMap(PAPERCLIP_ACTION_KEYS),
       mentionReachGrants: falseMap(AGENT_MENTION_REACH_GRANT_KEYS),
-      governance: {},
       permissionGrants: [],
       budgetMonthlyAmount: "0",
-      metadata: null,
     };
   }
 

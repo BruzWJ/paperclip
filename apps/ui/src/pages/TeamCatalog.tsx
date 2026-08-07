@@ -20,7 +20,6 @@ import type {
   CatalogTeamImportOptions,
   CatalogTeamInstallOptions,
   CatalogTeamInstallResult,
-  InstalledCatalogTeam,
   CompanyPortabilityAdapterOverride,
   CompanyPortabilityCollisionStrategy,
   CompanySkillChannel,
@@ -99,7 +98,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
   Cpu,
   Crown,
   Download,
@@ -294,22 +292,6 @@ function CompatChip({ compatibility }: { compatibility: CatalogTeamCompatibility
     >
       {meta.label}
     </Badge>
-  );
-}
-
-function ProvenanceBadge({ team }: { team: CatalogTeam }) {
-  if (!team.packageName) return null;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Badge variant="outline" className="border-border px-1.5 text-(length:--text-micro) text-muted-foreground">
-          <Package className="h-3 w-3" />
-          {team.packageName}
-          {team.packageVersion ? `@${team.packageVersion}` : ""}
-        </Badge>
-      </TooltipTrigger>
-      <TooltipContent>Catalog package provenance</TooltipContent>
-    </Tooltip>
   );
 }
 
@@ -660,7 +642,6 @@ export function TeamDetailPane({
   onInstall,
   canInstall,
   fileContent,
-  installed,
 }: {
   team: CatalogTeam;
   selectedPath: string | null;
@@ -668,14 +649,11 @@ export function TeamDetailPane({
   onInstall: () => void;
   canInstall: boolean;
   fileContent: string | null;
-  installed?: InstalledCatalogTeam | null;
 }) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const tree = useMemo(() => buildTree(team.files), [team.files]);
   const invalid = team.compatibility === "invalid";
   const unsafe = team.trustLevel === "scripts_executables";
-  const isInstalled = Boolean(installed);
-  const outOfDate = Boolean(installed?.outOfDate);
 
   const toggleDir = (name: string) =>
     setExpandedDirs((current) => {
@@ -685,22 +663,18 @@ export function TeamDetailPane({
       return next;
     });
 
-  // Installed teams default to update/re-install semantics; out-of-date teams
-  // get the primary amber affordance (design §5 / PAP-10256).
   const installButton = (
     <Button
       onClick={onInstall}
       disabled={invalid || !canInstall}
-      variant={outOfDate ? "default" : isInstalled ? "outline" : "default"}
+      variant="default"
     >
       {unsafe ? (
         <AlertTriangle className="h-4 w-4" />
-      ) : isInstalled ? (
-        <RotateCcw className="h-4 w-4" />
       ) : (
         <Download className="h-4 w-4" />
       )}
-      {isInstalled ? "Re-install latest" : "Install team"}
+      Install team
     </Button>
   );
 
@@ -718,20 +692,6 @@ export function TeamDetailPane({
               <span className="text-xs text-muted-foreground">{team.category}</span>
               <TrustChip level={team.trustLevel} />
               <CompatChip compatibility={team.compatibility} />
-              <ProvenanceBadge team={team} />
-              {isInstalled && !outOfDate && (
-                <Badge variant="secondary" className="gap-1 text-(length:--text-nano)">
-                  <CheckCircle2 className="h-3 w-3" /> Installed
-                </Badge>
-              )}
-              {outOfDate && (
-                <Badge
-                  variant="outline"
-                  className="gap-1 border-amber-500/40 bg-amber-500/10 text-(length:--text-nano) text-amber-600 dark:text-amber-300"
-                >
-                  <ChevronUp className="h-3 w-3" /> Update available
-                </Badge>
-              )}
             </div>
           </div>
           {invalid ? (
@@ -2273,12 +2233,6 @@ export function StepPreview({
         </PreviewSection>
       )}
 
-      {/* Provenance */}
-      <div className="rounded-md border border-border px-3 py-2.5 text-xs text-muted-foreground">
-        Imported entities are stamped with <code className="font-mono">metadata.paperclip.catalogTeam</code>{" "}
-        ({team.packageName ?? team.key}, content hash <code className="font-mono">{team.contentHash.slice(0, 16)}…</code>),
-        and an activity event is recorded for preview and install.
-      </div>
     </div>
   );
 }
@@ -2351,7 +2305,7 @@ export function ApplySuccess({
         <p className="text-base font-semibold">Team installed</p>
       </div>
       <p className="text-sm text-muted-foreground">
-        {team.name} was imported into your company. Imported entities are stamped with catalog provenance.
+        {team.name} was imported into your company.
       </p>
       {result && (
         <ul className="divide-y divide-border/60 rounded-md border border-border px-3">
@@ -2388,15 +2342,12 @@ export function TeamRow({
   team,
   selected,
   onSelect,
-  installed,
 }: {
   team: CatalogTeam;
   selected: boolean;
   onSelect: () => void;
-  installed?: InstalledCatalogTeam | null;
 }) {
   const risk = teamRisk(team);
-  const outOfDate = Boolean(installed?.outOfDate);
   return (
     <button
       type="button"
@@ -2411,19 +2362,6 @@ export function TeamRow({
         <span className={cn("line-clamp-2 text-(length:--text-compact) font-medium", selected && "text-foreground")}>
           {team.name}
         </span>
-        {outOfDate && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                aria-label="Update available"
-                className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300"
-              >
-                <ChevronUp className="h-3 w-3" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Update available — installed team is out of date</TooltipContent>
-          </Tooltip>
-        )}
         {risk !== "safe" && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -2609,23 +2547,6 @@ export function TeamCatalog() {
     enabled: Boolean(selectedCompanyId),
   });
 
-  // Server-computed installed/out-of-date state. Drives the `INSTALLED · N`
-  // group, the per-row out-of-date badge, and the detail header chip from a
-  // real server signal (design §3.2 + §5 / PAP-10256).
-  const installedQuery = useQuery({
-    queryKey: queryKeys.teamCatalog.installed(selectedCompanyId ?? ""),
-    queryFn: () => teamCatalogApi.installed(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId),
-  });
-
-  const installedById = useMemo(() => {
-    const map = new Map<string, InstalledCatalogTeam>();
-    for (const entry of installedQuery.data ?? []) {
-      if (entry.present) map.set(entry.catalogId, entry);
-    }
-    return map;
-  }, [installedQuery.data]);
-
   function setFilterParam(key: string, value: string | null) {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
@@ -2637,15 +2558,11 @@ export function TeamCatalog() {
 
   const anyFilterActive = q !== "" || kindFilter !== "all" || categoryFilter !== "" || riskFilter !== "any";
 
-  // Installed teams collapse under a single `INSTALLED · N` group and drop out
-  // of their BUNDLED/OPTIONAL home (design §5 "Already installed").
   const grouped = useMemo(() => {
-    const installed = filtered.filter((t) => installedById.has(t.id));
-    const remaining = filtered.filter((t) => !installedById.has(t.id));
-    const bundled = remaining.filter((t) => t.kind === "bundled");
-    const optional = remaining.filter((t) => t.kind === "optional");
-    return { bundled, optional, installed };
-  }, [filtered, installedById]);
+    const bundled = filtered.filter((t) => t.kind === "bundled");
+    const optional = filtered.filter((t) => t.kind === "optional");
+    return { bundled, optional };
+  }, [filtered]);
 
   const canInstall = true; // server enforces; UI shows the affordance to operators
 
@@ -2812,22 +2729,6 @@ export function TeamCatalog() {
                   ))}
                 </>
               )}
-              {grouped.installed.length > 0 && (
-                <>
-                  <div className="px-3 py-2 text-(length:--text-micro) font-semibold uppercase tracking-wide text-muted-foreground">
-                    Installed · {grouped.installed.length}
-                  </div>
-                  {grouped.installed.map((team) => (
-                    <TeamRow
-                      key={team.id}
-                      team={team}
-                      selected={team.id === selectedTeam?.id}
-                      onSelect={() => navigate(withFilters(teamRoute(team.id)))}
-                      installed={installedById.get(team.id) ?? null}
-                    />
-                  ))}
-                </>
-              )}
             </div>
           )}
         </div>
@@ -2859,7 +2760,6 @@ export function TeamCatalog() {
                 onInstall={() => setInstallOpen(true)}
                 canInstall={canInstall}
                 fileContent={fileQuery.data?.content ?? null}
-                installed={installedById.get(selectedTeam.id) ?? null}
               />
             ) : (
               <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -2879,10 +2779,6 @@ export function TeamCatalog() {
           onClose={() => setInstallOpen(false)}
           onInstalled={() => {
             pushToast({ tone: "success", title: "Team installed", body: `${selectedTeam.name} was imported.` });
-            // Provenance now lives on the new agents — refresh installed/out-of-date state.
-            void queryClient.invalidateQueries({
-              queryKey: queryKeys.teamCatalog.installed(selectedCompanyId),
-            });
             void queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId) });
           }}
         />
