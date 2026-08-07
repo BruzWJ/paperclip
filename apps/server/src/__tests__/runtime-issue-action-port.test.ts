@@ -70,6 +70,7 @@ describe("runtime issue action port", () => {
 
     await admitCounterpartIssueUpdate(sessionAdmission, {} as never, {
       companyId: "company",
+      sourceKind: "issue_update",
       target: {
         kind: "agent",
         target: {
@@ -97,10 +98,33 @@ describe("runtime issue action port", () => {
       sourceAgentTarget: { issueId: "issue", agentId: "agent" },
       immutableSourceKey: "update",
       sourceRecordId: "update",
-      message: "Progress",
+      prompt: {
+        toolName: "issue_update",
+        arguments: { message: "Progress" },
+        context: {
+          issue: { id: "issue" },
+          from: { id: "agent", name: "Agent" },
+          sourceRole: "issue owner",
+          previousStatus: "open",
+          effectiveStatus: "open",
+        },
+      },
     });
 
     expect(appendNonDispatchControlNotice).toHaveBeenCalledOnce();
+    expect(appendNonDispatchControlNotice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exactText: [
+          "[Paperclip issue update]",
+          "Issue: issue",
+          "From: issue owner, Agent (agent)",
+          "Status: open",
+          "",
+          "Progress",
+        ].join("\n"),
+      }),
+      expect.anything(),
+    );
   });
 
   it("passes only the closed immutable create contract", async () => {

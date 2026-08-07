@@ -94,6 +94,13 @@ import {
 } from "./plugin-issue-authorization.js";
 import { recordIssueLivenessActionInTransaction } from "./issue-liveness-reconciliation.js";
 import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
+import {
+  paperclipEnvelopeHasBody,
+  renderPaperclipManagedToolPrompt,
+  type PaperclipManagedToolPrompt,
+  type PaperclipMessageActor,
+  type PaperclipMessageAgent,
+} from "./paperclip-agent-message.js";
 
 const CREATE_KEYS = [
   "request",
@@ -250,6 +257,54 @@ interface AuthorizedRuntimeAction {
   contextGeneration: number;
   ref: RefRow;
   catalog: RuntimeInterfaceCompileInput;
+}
+
+function messageAgent(
+  companyAgents: readonly AgentRow[],
+  agentId: string,
+): PaperclipMessageAgent {
+  const agent = companyAgents.find((candidate) => candidate.id === agentId);
+  if (!agent) {
+    throw new RuntimeIssueActionConflict(
+      "Canonical agent message lost its company agent identity",
+    );
+  }
+  return { id: agent.id, name: agent.name };
+}
+
+function issueUpdateMessageActor(
+  authority: CanonicalOwnerFormAuthority | CanonicalCreatorFormAuthority,
+  authorizedRuntime: AuthorizedRuntimeAction | null,
+): PaperclipMessageActor {
+  switch (authority.kind) {
+    case "agent-execution":
+      if (!authorizedRuntime) {
+        throw new RuntimeIssueActionConflict(
+          "Canonical issue update lost its agent identity",
+        );
+      }
+      return messageAgent(
+        authorizedRuntime.companyAgents,
+        authority.capability.targetAgentId,
+      );
+    case "system-escalation-human":
+    case "user-creator-withdrawal":
+      return { id: authority.actorUserId, name: "Paperclip Board user" };
+    case "user/board":
+      return { id: authority.userId, name: "Paperclip Board user" };
+    case "plugin":
+      return {
+        id: authority.pluginInstallationId,
+        name: `Paperclip plugin ${authority.pluginKey}`,
+      };
+    case "routine":
+      return { id: authority.routineId, name: "Paperclip routine" };
+    case "system":
+      return {
+        id: authority.sourceId,
+        name: `Paperclip system ${authority.sourceKind}`,
+      };
+  }
 }
 
 async function lockIssueSessionState(
@@ -564,7 +619,9 @@ function assertLifecycleTransition(
   }
 }
 
-function assertIssueNonterminal(issue: IssueRow): void {
+function assertIssueNonterminal(
+  issue: IssueRow,
+): asserts issue is IssueRow & { lifecycleStatus: "open" | "blocked" } {
   if (issue.lifecycleStatus !== "open" && issue.lifecycleStatus !== "blocked") {
     throw new RuntimeIssueActionConflict(
       "The target issue is not open or blocked",
@@ -1773,7 +1830,7 @@ async function canDispatchAgentCounterpartTarget(
   }
 }
 
-export async function mentionAgentInTransaction(
+async function admitAgentTextInTransaction(
   sessionAdmission: IssueSessionAdmissionService,
   tx: IssueSessionDbTransaction,
   input: DispatchingExecutionSourceInput,
@@ -1785,6 +1842,39 @@ export async function mentionAgentInTransaction(
     );
   }
   return admission;
+}
+
+type PaperclipManagedToolAdmissionInput =
+  | (Omit<
+      Extract<DispatchingExecutionSourceInput, { sourceKind: "issue_request" }>,
+      "exactText"
+    > & { prompt: PaperclipManagedToolPrompt<"issue_create"> })
+  | (Omit<
+      Extract<
+        DispatchingExecutionSourceInput,
+        { sourceKind: "issue_reassignment" }
+      >,
+      "exactText"
+    > & { prompt: PaperclipManagedToolPrompt<"issue_assign"> })
+  | (Omit<
+      Extract<DispatchingExecutionSourceInput, { sourceKind: "issue_update" }>,
+      "exactText"
+    > & { prompt: PaperclipManagedToolPrompt<"issue_update"> })
+  | (Omit<
+      Extract<DispatchingExecutionSourceInput, { sourceKind: "consult_mention" }>,
+      "exactText"
+    > & { prompt: PaperclipManagedToolPrompt<"mention_agent"> });
+
+export async function mentionAgentInTransaction(
+  sessionAdmission: IssueSessionAdmissionService,
+  tx: IssueSessionDbTransaction,
+  input: PaperclipManagedToolAdmissionInput,
+) {
+  const { prompt, ...source } = input;
+  return admitAgentTextInTransaction(sessionAdmission, tx, {
+    ...source,
+    exactText: renderPaperclipManagedToolPrompt(prompt),
+  });
 }
 
 export async function mentionBoardInTransaction(
@@ -1901,14 +1991,26 @@ export async function admitCounterpartIssueUpdate(
       counterpartOwnershipEpoch: number;
     };
     sourceAgentTarget?: { issueId: string; agentId: string } | null;
-    sourceKind?: "issue_update" | "termination_recovery";
     immutableSourceKey: string;
     sourceRecordId: string;
-    message: string;
-  },
+  } & (
+    | {
+        sourceKind: "issue_update";
+        prompt: PaperclipManagedToolPrompt<"issue_update">;
+        message?: never;
+      }
+    | {
+        sourceKind: "termination_recovery";
+        prompt?: never;
+        message: string;
+      }
+  ),
 ) {
   const counterpart = input.counterpart ?? {};
-  const sourceKind = input.sourceKind ?? "issue_update";
+  const sourceKind = input.sourceKind;
+  const exactMessage = input.sourceKind === "termination_recovery"
+    ? input.message
+    : renderPaperclipManagedToolPrompt(input.prompt);
   const selfTarget =
     input.target.kind === "agent" &&
     sameIssueAgentTarget(input.sourceAgentTarget, input.target.target);
@@ -1936,30 +2038,28 @@ export async function admitCounterpartIssueUpdate(
       ...counterpart,
       immutableSourceKey: input.immutableSourceKey,
       sourceRecordId: input.sourceRecordId,
-      exactText: input.message,
       comment: input.comment,
       idempotencyKey: input.immutableSourceKey,
     };
-    const executionSource =
-      sourceKind === "termination_recovery"
-        ? (() => {
-            if (input.actor.kind !== "system") {
-              throw new RuntimeIssueActionConflict(
-                "Termination recovery requires a system actor",
-              );
-            }
-            return {
-              sourceKind: "termination_recovery" as const,
-              actor: input.actor,
-            };
-          })()
-        : { sourceKind: "issue_update" as const, actor: input.actor };
-    const admission = await mentionAgentInTransaction(
-      sessionAdmission,
-      tx,
-      { ...dispatchScope, ...executionSource },
-    );
-    return admission;
+    if (input.sourceKind === "termination_recovery") {
+      if (input.actor.kind !== "system") {
+        throw new RuntimeIssueActionConflict(
+          "Termination recovery requires a system actor",
+        );
+      }
+      return admitAgentTextInTransaction(sessionAdmission, tx, {
+        ...dispatchScope,
+        sourceKind: "termination_recovery",
+        actor: input.actor,
+        exactText: input.message,
+      });
+    }
+    return mentionAgentInTransaction(sessionAdmission, tx, {
+      ...dispatchScope,
+      sourceKind: "issue_update",
+      actor: input.actor,
+      prompt: input.prompt,
+    });
   }
   if (
     input.actor.kind === "agent-execution" &&
@@ -1974,7 +2074,7 @@ export async function admitCounterpartIssueUpdate(
       sourceKind,
       immutableSourceKey: input.immutableSourceKey,
       sourceRecordId: input.sourceRecordId,
-      message: input.message,
+      message: exactMessage,
     });
   }
   const target = input.target.target;
@@ -1988,7 +2088,7 @@ export async function admitCounterpartIssueUpdate(
       ...counterpart,
       immutableSourceKey: input.immutableSourceKey,
       sourceRecordId: input.sourceRecordId,
-      exactText: input.message,
+      exactText: exactMessage,
       comment: input.comment,
       allowTerminal: false,
     },
@@ -2187,9 +2287,9 @@ export function createIssueFormCommitRuntime(
         return { ...retry, cancellations: null };
       }
 
-      if (input.status === undefined) {
-        assertIssueNonterminal(issue);
-      } else {
+      assertIssueNonterminal(issue);
+      const previousStatus = issue.lifecycleStatus;
+      if (input.status !== undefined) {
         assertLifecycleTransition(issue.lifecycleStatus, input.status);
       }
       const executionPolicyTransition =
@@ -2271,8 +2371,28 @@ export function createIssueFormCommitRuntime(
         issue,
         edge,
       );
+      const updatePrompt = {
+        toolName: "issue_update",
+        arguments: {
+          ...(input.status === undefined ? {} : { status: input.status }),
+          message: input.message,
+          ...(Object.hasOwn(input, "structuredResult")
+            ? { structuredResult: input.structuredResult }
+            : {}),
+        },
+        context: {
+          issue,
+          from: issueUpdateMessageActor(ownerAuthority, authorizedRuntime),
+          sourceRole: "issue owner",
+          previousStatus,
+          effectiveStatus:
+            input.status === undefined || gated ? previousStatus : input.status,
+          ...(gated ? { pendingReview: true } : {}),
+        },
+      } satisfies PaperclipManagedToolPrompt<"issue_update">;
       const admission = await admitCounterpartIssueUpdate(sessionAdmission, tx, {
         companyId,
+        sourceKind: "issue_update",
         target,
         actor: issueUpdateActor(ownerAuthority),
         comment: source.comment,
@@ -2286,7 +2406,7 @@ export function createIssueFormCommitRuntime(
             : null,
         immutableSourceKey: gatewayInvocationId,
         sourceRecordId: updateId,
-        message: input.message,
+        prompt: updatePrompt,
       });
       if (!admission.comment) {
         throw new RuntimeIssueActionConflict(
@@ -2705,9 +2825,9 @@ export function createIssueFormCommitRuntime(
       // Idempotent retries must be recognized before checking the current
       // lifecycle state: a successful open -> blocked creator update now sees
       // the child as blocked on its exact replay.
-      if (updateInput.status === undefined) {
-        assertIssueNonterminal(issue);
-      } else {
+      assertIssueNonterminal(issue);
+      const previousStatus = issue.lifecycleStatus;
+      if (updateInput.status !== undefined) {
         assertLifecycleTransition(issue.lifecycleStatus, updateInput.status);
       }
 
@@ -2751,8 +2871,26 @@ export function createIssueFormCommitRuntime(
         "issue-update",
         gatewayInvocationId,
       );
+      const updatePrompt = {
+        toolName: "issue_update",
+        arguments: {
+          issueId,
+          ...(updateInput.status === undefined
+            ? {}
+            : { status: updateInput.status }),
+          message,
+        },
+        context: {
+          issue,
+          from: issueUpdateMessageActor(creatorAuthority, authorizedRuntime),
+          sourceRole: "issue creator",
+          previousStatus,
+          effectiveStatus: updateInput.status ?? previousStatus,
+        },
+      } satisfies PaperclipManagedToolPrompt<"issue_update">;
       const admission = await admitCounterpartIssueUpdate(sessionAdmission, tx, {
         companyId,
+        sourceKind: "issue_update",
         target,
         actor: issueUpdateActor(creatorAuthority),
         comment: source.comment,
@@ -2766,7 +2904,7 @@ export function createIssueFormCommitRuntime(
             : null,
         immutableSourceKey: gatewayInvocationId,
         sourceRecordId: updateId,
-        message,
+        prompt: updatePrompt,
       });
       if (!admission.comment) {
         throw new RuntimeIssueActionConflict(
@@ -3476,7 +3614,26 @@ export function createPostgresRuntimeIssueActionService(
             actor: executionActorForCapability(input.capability),
             immutableSourceKey: key,
             sourceRecordId: created.id,
-            exactText: input.request,
+            prompt: {
+              toolName: "issue_create",
+              arguments: {
+                request: input.request,
+                ...(input.title === undefined ? {} : { title: input.title }),
+                ...(input.priority === undefined
+                  ? {}
+                  : { priority: input.priority }),
+                owner: input.owner,
+              },
+              context: {
+                issue: created,
+                from: messageAgent(
+                  authorized.companyAgents,
+                  input.capability.targetAgentId,
+                ),
+                owner: messageAgent(authorized.companyAgents, targetAgentId),
+                status: "open",
+              },
+            },
             comment: {
               author: {
                 kind: "agent",
@@ -3595,7 +3752,11 @@ export function createPostgresRuntimeIssueActionService(
             priorEvent.data === null ||
             !priorRef ||
             priorRef.targetAgentId !== requestedOwnerId ||
-            priorRef.exactMessage !== targetIssue.request
+            !paperclipEnvelopeHasBody(
+              priorRef.exactMessage,
+              "[Paperclip issue assignment]",
+              targetIssue.request,
+            )
           ) {
             throw new RuntimeIssueActionConflict(
               "issue_assign invocation was retried with different immutable arguments",
@@ -3779,7 +3940,23 @@ export function createPostgresRuntimeIssueActionService(
             previousOwnershipEpoch: targetIssue.ownershipEpoch,
             immutableSourceKey: key,
             sourceRecordId: reassigned.id,
-            exactText: reassigned.request!,
+            prompt: {
+              toolName: "issue_assign",
+              arguments: {
+                issueId: input.issueId,
+                owner: input.owner,
+              },
+              context: {
+                issue: reassigned,
+                from: messageAgent(
+                  authorized.companyAgents,
+                  input.capability.targetAgentId,
+                ),
+                owner: messageAgent(authorized.companyAgents, targetAgentId),
+                status: targetIssue.lifecycleStatus,
+                request: reassigned.request!,
+              },
+            },
             comment: {
               author: {
                 kind: "agent",
@@ -3995,7 +4172,11 @@ export function createPostgresRuntimeIssueActionService(
               priorRef.sourceKind !== "consult_mention" ||
               priorRef.consultCallerRefId !== input.capability.refId ||
               priorRef.targetAgentId !== input.targetAgentId ||
-              priorRef.exactMessage !== input.message ||
+              !paperclipEnvelopeHasBody(
+                priorRef.exactMessage,
+                "[Paperclip agent message]",
+                input.message,
+              ) ||
               !consult ||
               consult.state !== "active" ||
               consult.sourceRunId !== input.capability.runId ||
@@ -4113,7 +4294,20 @@ export function createPostgresRuntimeIssueActionService(
               actor: executionActorForCapability(input.capability),
               immutableSourceKey: key,
               sourceRecordId: consult.id,
-              exactText: input.message,
+              prompt: {
+                toolName: "mention_agent",
+                arguments: {
+                  agentId: input.targetAgentId,
+                  message: input.message,
+                },
+                context: {
+                  issue: authorized.issue,
+                  from: messageAgent(
+                    authorized.companyAgents,
+                    input.capability.targetAgentId,
+                  ),
+                },
+              },
               comment: {
                 author: {
                   kind: "agent",
