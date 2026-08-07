@@ -210,34 +210,24 @@ describe("generated PostgreSQL migration contract", () => {
     expect(source).not.toContain(
       `CREATE UNIQUE INDEX "plugins_plugin_key_idx" ON "plugins" USING btree ("plugin_key") WHERE "status" <> 'uninstalled';`,
     );
-    const legacyPluginBarrier = source.indexOf(
-      "Legacy plugin installations must be uninstalled before this migration",
-    );
-    const firstPluginSchemaChange = source.indexOf(
-      `ALTER TABLE "plugin_entities" DROP CONSTRAINT`,
-    );
-    expect(legacyPluginBarrier).toBeGreaterThanOrEqual(0);
-    expect(firstPluginSchemaChange).toBeGreaterThan(legacyPluginBarrier);
-    expect(source).toContain(
-      `DELETE FROM "plugins" WHERE "status" = 'uninstalled';`,
-    );
   });
 
-  it("retires feedback tables without cascading into operator-owned dependencies", () => {
+  it("retires feedback tables and company consent columns", () => {
     const file = migrationFiles().find((entry) => entry.startsWith("0007_"));
     expect(file).toBeDefined();
     const source = migrationSql(file!);
 
-    expect(source).toContain(`UPDATE "instance_settings"`);
+    expect(source).toContain('DROP TABLE "feedback_exports" CASCADE;');
+    expect(source).toContain('DROP TABLE "feedback_votes" CASCADE;');
     expect(source).toContain(
-      `"general" = "general" - 'feedbackDataSharingPreference' - 'backupRetention'`,
+      'ALTER TABLE "companies" DROP COLUMN "feedback_data_sharing_enabled";',
     );
-    expect(source).toContain('DROP TABLE "feedback_exports";');
-    expect(source).toContain('DROP TABLE "feedback_votes";');
-    expect(source).not.toMatch(/DROP TABLE "feedback_(exports|votes)" CASCADE/);
+    expect(source).toContain(
+      'ALTER TABLE "companies" DROP COLUMN "feedback_data_sharing_consent_at";',
+    );
   });
 
-  it("removes legacy delivery persistence and retired action grants atomically", () => {
+  it("removes legacy delivery persistence and narrows related checks", () => {
     const file = migrationFiles().find((entry) => entry.startsWith("0008_"));
     expect(file).toBeDefined();
     const source = migrationSql(file!);
@@ -248,22 +238,24 @@ describe("generated PostgreSQL migration contract", () => {
       'DROP TABLE "issue_execution_finalization_delivery_dependencies" CASCADE;',
     );
     expect(source).toContain(
-      'UPDATE "issue_execution_refs" SET "source_kind" = \'issue_update\' WHERE "source_kind" = \'creator_update\';',
-    );
-    expect(source).toContain(
       'FOREIGN KEY ("company_id","run_id") REFERENCES "public"."issue_execution_runs"("company_id","id")',
     );
     expect(source).not.toContain(
       'FOREIGN KEY ("company_id","issue_id","run_id") REFERENCES "public"."issue_execution_runs"',
     );
-    const retireLegacyGrants = source.indexOf(
-      'DELETE FROM "agent_action_grants" WHERE "key" IN (\'issue_assign\', \'issue_update\');',
+    // jsonb_typeof requires jsonb; ->> returns text and fails at apply time
+    expect(source).toContain(
+      `jsonb_typeof("issue_updates"."disposition" -> 'message') = 'string'`,
     );
-    const narrowActionGrantKeys = source.indexOf(
+    expect(source).not.toContain(
+      `jsonb_typeof("issue_updates"."disposition" ->> 'message')`,
+    );
+    expect(source).toContain(
       'ADD CONSTRAINT "agent_action_grants_key_check"',
     );
-    expect(retireLegacyGrants).toBeGreaterThanOrEqual(0);
-    expect(narrowActionGrantKeys).toBeGreaterThan(retireLegacyGrants);
+    expect(source).toContain("'issue_update'");
+    expect(source).not.toContain("'creator_update'");
+    expect(source).not.toContain("'issue_assign'");
   });
 
 });

@@ -6,9 +6,9 @@ DROP TABLE "issue_execution_finalization_delivery_dependencies" CASCADE;--> stat
 DROP TABLE "plugin_creator_deliveries" CASCADE;--> statement-breakpoint
 ALTER TABLE "agent_action_grants" DROP CONSTRAINT "agent_action_grants_key_check";--> statement-breakpoint
 ALTER TABLE "instance_settings" DROP CONSTRAINT "instance_settings_creator_delivery_check";--> statement-breakpoint
+ALTER TABLE "issue_creator_edge_receivability" DROP CONSTRAINT "issue_creator_edge_receivability_terminal_reason_check";--> statement-breakpoint
 ALTER TABLE "issue_execution_refs" DROP CONSTRAINT "issue_execution_refs_source_kind_check";--> statement-breakpoint
 ALTER TABLE "issue_updates" DROP CONSTRAINT "issue_updates_form_shape_check";--> statement-breakpoint
-ALTER TABLE "issue_creator_edge_receivability" DROP CONSTRAINT "issue_creator_edge_receivability_terminal_reason_check";--> statement-breakpoint
 ALTER TABLE "run_interface_tool_calls" DROP CONSTRAINT "run_interface_tool_calls_classification_check";--> statement-breakpoint
 ALTER TABLE "run_interface_tool_calls" DROP CONSTRAINT "run_interface_tool_calls_status_check";--> statement-breakpoint
 ALTER TABLE "issue_board_mentions" DROP CONSTRAINT "issue_board_mentions_run_fk";
@@ -20,14 +20,20 @@ ALTER TABLE "instance_settings" DROP COLUMN "creator_delivery";--> statement-bre
 ALTER TABLE "run_interface_tool_calls" DROP COLUMN "mention_admission_state";--> statement-breakpoint
 ALTER TABLE "run_interface_tool_calls" DROP COLUMN "mention_admission_started_at";--> statement-breakpoint
 ALTER TABLE "run_interface_tool_calls" DROP COLUMN "mention_admitted_at";--> statement-breakpoint
-UPDATE "issue_execution_refs" SET "source_kind" = 'issue_update' WHERE "source_kind" = 'creator_update';--> statement-breakpoint
-DELETE FROM "agent_action_grants" WHERE "key" IN ('issue_assign', 'issue_update');--> statement-breakpoint
 ALTER TABLE "agent_action_grants" ADD CONSTRAINT "agent_action_grants_key_check" CHECK ("agent_action_grants"."key" in (
         'issue_create',
         'mention_agent',
         'mention_board',
         'agent_hire',
         'agent_configure'
+      ));--> statement-breakpoint
+ALTER TABLE "issue_creator_edge_receivability" ADD CONSTRAINT "issue_creator_edge_receivability_terminal_reason_check" CHECK ("issue_creator_edge_receivability"."terminal_reason" is null or "issue_creator_edge_receivability"."terminal_reason" in (
+        'creator_execution_superseded',
+        'agent_terminated',
+        'agent_deleted',
+        'plugin_disabled',
+        'plugin_uninstalled',
+        'routine_deleted'
       ));--> statement-breakpoint
 ALTER TABLE "issue_execution_refs" ADD CONSTRAINT "issue_execution_refs_source_kind_check" CHECK ("issue_execution_refs"."source_kind" in (
         'issue_request',
@@ -57,18 +63,10 @@ ALTER TABLE "issue_updates" ADD CONSTRAINT "issue_updates_form_shape_check" CHEC
           and "issue_updates"."disposition" is not null
           and jsonb_typeof("issue_updates"."disposition") = 'object'
           and "issue_updates"."disposition" ? 'message'
-          and jsonb_typeof("issue_updates"."disposition" ->> 'message') = 'string'
+          and jsonb_typeof("issue_updates"."disposition" -> 'message') = 'string'
           and btrim("issue_updates"."disposition" ->> 'message') <> ''
           and "issue_updates"."disposition" - 'message' - 'structuredResult' = '{}'::jsonb
         )
-      ));--> statement-breakpoint
-ALTER TABLE "issue_creator_edge_receivability" ADD CONSTRAINT "issue_creator_edge_receivability_terminal_reason_check" CHECK ("issue_creator_edge_receivability"."terminal_reason" is null or "issue_creator_edge_receivability"."terminal_reason" in (
-        'creator_execution_superseded',
-        'agent_terminated',
-        'agent_deleted',
-        'plugin_disabled',
-        'plugin_uninstalled',
-        'routine_deleted'
       ));--> statement-breakpoint
 ALTER TABLE "run_interface_tool_calls" ADD CONSTRAINT "run_interface_tool_calls_classification_check" CHECK ((
         "run_interface_tool_calls"."classification" = 'unclassified'

@@ -196,7 +196,7 @@ export const issueUpdates = pgTable(
           and ${table.disposition} is not null
           and jsonb_typeof(${table.disposition}) = 'object'
           and ${table.disposition} ? 'message'
-          and jsonb_typeof(${table.disposition} ->> 'message') = 'string'
+          and jsonb_typeof(${table.disposition} -> 'message') = 'string'
           and btrim(${table.disposition} ->> 'message') <> ''
           and ${table.disposition} - 'message' - 'structuredResult' = '{}'::jsonb
         )

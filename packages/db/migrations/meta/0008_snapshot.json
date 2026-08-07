@@ -1,5 +1,5 @@
 {
-  "id": "6cf1f5a5-8f9e-4dd0-94c4-0ead26b21197",
+  "id": "fc69441e-ee76-44ad-9081-cf6fda1d387e",
   "prevId": "9ad07a77-8205-48a9-a582-0822918b62af",
   "version": "7",
   "dialect": "postgresql",
@@ -30615,7 +30615,7 @@
         },
         "issue_updates_form_shape_check": {
           "name": "issue_updates_form_shape_check",
-          "value": "(\n        (\"issue_updates\".\"status\" is null and \"issue_updates\".\"disposition\" is null)\n        or (\n          \"issue_updates\".\"status\" in ('open', 'blocked')\n          and \"issue_updates\".\"disposition\" is null\n          and (\n            \"issue_updates\".\"form\" <> 'creator'\n            or \"issue_updates\".\"source_kind\" = 'agent-execution'\n          )\n        ) or (\n          \"issue_updates\".\"form\" = 'owner'\n          and \"issue_updates\".\"status\" in ('done', 'cancelled')\n          and \"issue_updates\".\"disposition\" is not null\n          and jsonb_typeof(\"issue_updates\".\"disposition\") = 'object'\n          and \"issue_updates\".\"disposition\" ? 'message'\n          and jsonb_typeof(\"issue_updates\".\"disposition\" ->> 'message') = 'string'\n          and btrim(\"issue_updates\".\"disposition\" ->> 'message') <> ''\n          and \"issue_updates\".\"disposition\" - 'message' - 'structuredResult' = '{}'::jsonb\n        )\n      )"
+          "value": "(\n        (\"issue_updates\".\"status\" is null and \"issue_updates\".\"disposition\" is null)\n        or (\n          \"issue_updates\".\"status\" in ('open', 'blocked')\n          and \"issue_updates\".\"disposition\" is null\n          and (\n            \"issue_updates\".\"form\" <> 'creator'\n            or \"issue_updates\".\"source_kind\" = 'agent-execution'\n          )\n        ) or (\n          \"issue_updates\".\"form\" = 'owner'\n          and \"issue_updates\".\"status\" in ('done', 'cancelled')\n          and \"issue_updates\".\"disposition\" is not null\n          and jsonb_typeof(\"issue_updates\".\"disposition\") = 'object'\n          and \"issue_updates\".\"disposition\" ? 'message'\n          and jsonb_typeof(\"issue_updates\".\"disposition\" -> 'message') = 'string'\n          and btrim(\"issue_updates\".\"disposition\" ->> 'message') <> ''\n          and \"issue_updates\".\"disposition\" - 'message' - 'structuredResult' = '{}'::jsonb\n        )\n      )"
         },
         "issue_updates_run_sequence_check": {
           "name": "issue_updates_run_sequence_check",
