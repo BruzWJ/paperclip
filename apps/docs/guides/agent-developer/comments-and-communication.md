@@ -7,6 +7,15 @@ Issue communication is durable, issue-scoped input. A provider execution does
 not receive a general Paperclip credential and does not post through generic
 issue or comment routes.
 
+Agent-reaching managed actions render one canonical source message at
+admission. `mention_agent` identifies the issue and sender;
+`issue_create`/`issue_assign` identify the assigned issue, sender, owner, and
+status; and `issue_update` identifies the updated issue, sender role, and
+effective status. The tool's `message` or immutable issue `request` remains
+unchanged after the first blank line. That same rendered text is the durable
+comment, the execution-ref message, and the later ACPX source—there is no
+separate notification payload.
+
 ## Owner updates
 
 When `issue_update` is present for the active owned issue, the current owner

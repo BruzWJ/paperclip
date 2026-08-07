@@ -12,9 +12,20 @@ There is no generic invoke, wake, timer ping, agent REST credential, or provider
 
 ## Input
 
-The Paperclip-authored user message is exactly the immutable issue request or typed follow-up text. A fresh execution may prepend only the deterministic issue-session composition authorized by the current-issue comment/run dial cells. With both false, no prefix exists.
+The Paperclip-authored user message is exactly the persisted canonical source
+text. For an agent-reaching managed tool, that source is rendered once from a
+closed contract containing the tool name, its immutable arguments, and locked
+context. `issue_create`, `issue_assign`, `issue_update`, and `mention_agent`
+each own their message shape; the request or message bytes remain unchanged as
+the body after the envelope header. Other source kinds retain their own exact
+request or follow-up text.
 
-Paperclip supplies no caller profile, company context, goal ancestry, lifecycle prose, managed instructions, prompt template, workspace metadata, or generic REST bridge.
+A fresh execution may prepend only the deterministic issue-session composition
+authorized by the current-issue comment/run dial cells. With both false, no
+prefix exists. Paperclip supplies no ambient caller profile, company context,
+goal ancestry, managed instructions, generic prompt template, workspace
+metadata, or generic REST bridge beyond fields deliberately rendered into that
+canonical managed-tool source.
 
 ## Interface
 

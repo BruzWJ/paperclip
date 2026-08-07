@@ -45,7 +45,12 @@ Board reopen is a separate audited command. Under the issue lock it changes a te
 
 ## Request and title
 
-`request` is immutable and byte-preserved. It is the owner's first Paperclip-authored provider message on creation, reassignment, and an invokable-agent reopen. A board-only system-escalation reopen sends no provider message. Clarification uses the chronological thread; no actor rewrites the request.
+`request` is immutable and byte-preserved. For managed `issue_create` and
+`issue_assign`, it is the unchanged body of the owner's canonical
+`[Paperclip issue assignment]` source message. Other creation and
+invokable-agent reopen sources retain their own exact request contract. A
+board-only system-escalation reopen sends no provider message. Clarification
+uses the chronological thread; no actor rewrites the request.
 
 `title` is optional board-editable display metadata with no routing, authority, or provider-input meaning.
 
@@ -58,6 +63,16 @@ An invocation-capable operation must atomically persist:
 3. an `IssueExecutionRef`
 4. the canonical counterpart Session comment/ref generated through the same
    mention path by an issue update
+
+Every agent-reaching managed tool enters that path with one discriminated
+prompt contract containing its tool name, immutable arguments, and resolved
+locked context. `issue_create`, `issue_assign`, `issue_update`, and
+`mention_agent` each render their own source shape at admission. The rendered
+text is not a second delivery: the Session comment and execution ref share
+those exact bytes, and the ACPX path later consumes the ref's canonical source
+without a tool-specific executor branch. A separately governed before-prompt
+prelude may compose around that source without rewriting it. `mention_board`
+creates no provider execution and therefore has no ACPX prompt.
 
 Only after commit may the internal dispatcher lease the ref. Immediately before launch it validates:
 
@@ -113,7 +128,13 @@ revive a Board request or execution reference from the prior terminal lifetime.
 
 Every provider attempt resolves the persisted `(company, issue, ownership epoch)` execution-workspace binding. Projectless issues are first-class and receive a bound workspace. A missing/stale/cross-company binding blocks before provider launch.
 
-Local providers receive the resolved absolute path as process `cwd`. Remote providers receive a closed server-to-provider launch envelope containing only the repository/ref/environment selectors their native API requires. Neither path injects caller identity, issue metadata, workspace metadata, or a general Paperclip credential into provider context.
+Local providers receive the resolved absolute path as process `cwd`. Remote
+providers receive a closed server-to-provider launch envelope containing only
+the repository/ref/environment selectors their native API requires. Neither
+launch path injects ambient caller identity, issue metadata, workspace
+metadata, or a general Paperclip credential; the canonical managed-tool source
+message is the sole narrow carrier of its explicitly rendered sender/issue
+fields.
 
 ## Configuration readiness
 

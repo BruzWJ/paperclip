@@ -222,11 +222,14 @@ launches. The current ACPX public runtime has no Paperclip-managed SSH,
 sandbox, or plugin transport; a declarative adapter definition receives no
 process callback or alternate remote transport.
 
-Paperclip does not inject caller identity, issue/workspace metadata, a general
-REST credential, provider instructions, or another issue's cwd/home into a
-provider child. The only Paperclip capability is the compiled run interface.
-Explicitly selected genuine company skills may be materialized as workspace
-content but grant no authority.
+Paperclip does not inject an ambient caller profile, company/workspace
+metadata, a general REST credential, provider instructions, or another issue's
+cwd/home into a provider child. A canonical source created by an
+agent-reaching managed tool may identify that tool's locked source agent,
+target issue, and lifecycle state in its own persisted message envelope. The
+only Paperclip capability is still the compiled run interface. Explicitly
+selected genuine company skills may be materialized as workspace content but
+grant no authority.
 
 ## Board Chat, plugins, and routines
 

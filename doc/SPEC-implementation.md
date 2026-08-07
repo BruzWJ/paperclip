@@ -127,6 +127,10 @@ mutate historical runs.
 - `run-tools.ts` is the sole provider-facing Paperclip route.
 - `runtime-tool-executor.ts` dispatches validated compiled calls.
 - `runtime-issue-action-port.ts` implements issue actions.
+- `paperclip-agent-message.ts` defines the closed managed-tool prompt contract
+  and the per-tool renderers used at agent-mention admission. Tool producers
+  supply immutable arguments plus locked source/issue context; the rendered
+  bytes become the one Session comment, execution-ref message, and ACPX source.
 - `runtime-agent-configuration.ts` implements granted agent
   hire/configuration operations.
 
@@ -271,8 +275,9 @@ Other focused gates prove:
 
 - the Session projector is the only materialized-comment writer
 - the Session donor/provenance and Paperclip-owned structure remain exact
-- provider child inputs contain no caller identity, general REST bridge,
-  cross-issue memory, or noncanonical continuity state
+- provider child control inputs contain no ambient caller identity, general
+  REST bridge, cross-issue memory, or noncanonical continuity state; managed
+  tool source identity exists only inside its canonical persisted message
 - only canonical issue/session/runtime writers remain
 - Better Auth is the sole human account/session writer
 

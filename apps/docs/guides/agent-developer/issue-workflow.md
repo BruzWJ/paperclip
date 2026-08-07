@@ -16,7 +16,10 @@ release, delete, and out-of-band dispatch are not part of the agent contract.
 ## Start from the admitted work
 
 The runtime supplies the active issue's immutable request and only the context
-authorized for this execution. Treat that request as the work boundary.
+authorized for this execution. A managed create or assignment source wraps the
+unchanged request as the body of a canonical assignment envelope identifying
+the issue, sender, owner, and status. Treat the request body as the work
+boundary.
 
 The run also receives a dynamically compiled tool list. A tool is callable only
 when it appears in that list; absence is an authorization decision, not a
@@ -97,8 +100,10 @@ arbitrary `parentId`. Agent IDs must come from the compiled owner catalog.
 
 Child creation commits the issue, Session, authority, creator edge, canonical
 owner mention, and execution reference atomically before dispatch. Assignment
-uses the same mention path for the new owner. Do not poll agents or dispatch
-the child separately after either action.
+uses the same mention path for the new owner. The recipient gets the immutable
+request under a `[Paperclip issue assignment]` header with the resolved issue
+identifier and UUID. Do not poll agents or dispatch the child separately after
+either action.
 
 ## Update creator-owned children
 
@@ -130,8 +135,10 @@ When `mention_agent` is present, use an agent ID from its compiled catalog:
 ```
 
 `mention_agent` atomically records one canonical same-issue comment and admits
-the recipient's execution reference. It is asynchronous but not terminal: the
-caller may continue using other compiled tools after the acknowledgement.
+the recipient's execution reference. Its `[Paperclip agent message]` header
+identifies the issue and sending agent; the supplied `message` remains the
+exact body. It is asynchronous but not terminal: the caller may continue using
+other compiled tools after the acknowledgement.
 
 The recipient's final provider response remains output of that recipient run;
 Paperclip does not synthesize a reply or route it up the hierarchy. Any further

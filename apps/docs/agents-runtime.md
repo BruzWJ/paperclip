@@ -1,7 +1,7 @@
 # Agent Runtime Guide
 
 Status: User-facing guide
-Last updated: 2026-08-01
+Last updated: 2026-08-06
 Audience: Operators setting up and running agents in Paperclip
 
 ## 1. What this system does
@@ -129,10 +129,27 @@ server process cwd, or a prior issue's workspace.
 
 ### 3.5 Provider instructions
 
-Paperclip has no prompt template, bootstrap prompt, managed instruction bundle,
-or caller-identity prompt. Configure any system/developer instructions directly
-through operator-owned provider-native configuration. Empty instruction state
-is valid.
+Paperclip has no agent-wide prompt template, bootstrap prompt, or managed
+instruction bundle. Configure system/developer instructions directly through
+operator-owned provider-native configuration. Empty instruction state is
+valid.
+
+Agent-reaching managed actions do have canonical source-message contracts.
+Each producer supplies its tool name, immutable tool arguments, and locked
+issue/source context; admission then selects that tool's renderer exactly once:
+
+| Managed tool | Canonical source shape | Exact body |
+| --- | --- | --- |
+| `mention_agent` | `[Paperclip agent message]` with issue and sender identity | `message` |
+| `issue_create` | `[Paperclip issue assignment]`, action `Created and assigned`, issue, sender, owner, and status | `request` |
+| `issue_assign` | `[Paperclip issue assignment]`, action `Reassigned`, issue, sender, owner, and status | immutable issue `request` |
+| `issue_update` | `[Paperclip issue update]` with updated issue, sender role/identity, and effective status | `message` |
+
+That rendered text is simultaneously the canonical Session comment and
+execution-ref message. The ACPX path consumes it as the same canonical source;
+a separately governed before-prompt prelude may compose around that source but
+does not rebuild or switch on tool prompts. `mention_board` invokes no agent
+and therefore has no ACPX prompt contract.
 
 ## 4. Issue-session continuity
 
