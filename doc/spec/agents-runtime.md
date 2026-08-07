@@ -68,5 +68,9 @@ A productive final always yields the canonical assistant turn. The outcome trans
 Process loss and retry re-lease the original persisted reference and resume its persisted execution view. They never create a replacement wake, prompt, session, or idempotency identity. Stale authority, epoch, revision, lease, input, or source causes terminal rejection.
 
 ACPX receives a frozen resume operation when that eligible correlation exists.
-If its frontend rejects the operation, the attempt fails closed; Paperclip does
-not interpret provider-specific errors or replace it with a fresh session.
+Its typed `target_not_found` result invalidates the correlation and creates one
+fresh successor for the same authorized ref; the successor's work source stays
+unchanged. An instructed successor may call recovery-only `restore_session`
+for the exact provider-safe run traces of the current agent that precede the
+triggering run. Paperclip never automatically replays, summarizes, or injects
+that history into the work prompt. Other resume failures fail closed.

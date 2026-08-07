@@ -100,8 +100,11 @@ requires byte-equivalent source, Session, prompt, and event arguments.
   operation under that lease.
 - `issue-execution-attempt-executor.ts` drives the Session runner and adapter.
   A missing correlated ACP target is invalidated and retried once as a fresh
-  session using the exact current source; Paperclip never injects Session
-  history into that replacement prompt.
+  session using the exact current source. Paperclip never automatically
+  injects Session history into that replacement work prompt; an instructed
+  recovery bootstrap may expose `restore_session`, which returns the exact
+  provider-safe `read_issue_agent_run` results for the current agent's prior
+  runs in the issue Session, excluding the triggering run.
 - `agent-execution/session-runner/output.ts` publishes productive Session
   output.
 - `productive-run-linkage.ts` verifies exact run/reference/source evidence.

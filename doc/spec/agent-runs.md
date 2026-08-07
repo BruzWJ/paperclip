@@ -76,10 +76,12 @@ after authority is lost.
 
 Transient/process-loss recovery may re-lease only the original valid ref. It preserves the same admitted source and execution view. An invalid or stale ref terminalizes with audit evidence and does not create replacement work.
 
-If ACPX rejects a frozen native resume, the attempt fails through the canonical
-ACPX runtime path. Paperclip does not parse a provider-specific
-`target_not_found` signal or silently create a fresh session, because that
-would change the immutable attempt's continuity semantics.
+When ACPX reports its typed `target_not_found` result for a frozen native
+resume, Paperclip invalidates the correlation and creates one fresh successor
+for the same authorized ref. Its work source remains unchanged. An instructed
+successor may call recovery-only `restore_session` for the exact
+provider-safe run traces of the current agent that precede the triggering run;
+Paperclip never automatically injects that history into the work prompt.
 
 ## API surface
 

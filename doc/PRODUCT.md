@@ -73,8 +73,13 @@ persistence.
 The canonical log is not ambient provider history. Each issue-execution ref has
 an immutable authorized lowering view. Context from another issue appears only
 through an explicitly enabled, permission-checked composition dial.
-Paperclip does not replay or summarize this log to replace a missing
-provider-native session.
+Paperclip never automatically replays, summarizes, or injects this log into a
+replacement work prompt. If ACPX reports a missing frozen target, Paperclip may
+retry the same authorized ref once as a fresh provider session. Its instructed
+bootstrap may expose `restore_session`, which returns the exact provider-safe
+`read_issue_agent_run` results for the current agent's earlier runs in that
+issue Session, excluding the triggering run. The ordinary work prompt remains
+unchanged.
 
 Provider-native continuity is separately correlated to the exact
 `(issue, ownership epoch, agent, adapter revision)` scope. With effective
