@@ -467,6 +467,27 @@ describe("plugin manifest validators", () => {
     }).success).toBe(true);
   });
 
+  it("accepts only boolean bootstrap tool enablement", () => {
+    const tool = {
+      name: "search_query",
+      displayName: "Query",
+      description: "Query an external index",
+      parametersSchema: { type: "object" },
+    };
+    expect(pluginToolDeclarationSchema.safeParse({
+      ...tool,
+      bootstrapEnabled: true,
+    }).success).toBe(true);
+    expect(pluginToolDeclarationSchema.safeParse({
+      ...tool,
+      bootstrapEnabled: false,
+    }).success).toBe(true);
+    expect(pluginToolDeclarationSchema.safeParse({
+      ...tool,
+      bootstrapEnabled: "true",
+    }).success).toBe(false);
+  });
+
   it("requires the ordinary HTTP capability before private-network access", () => {
     const base = {
       id: "paperclip.private-service",

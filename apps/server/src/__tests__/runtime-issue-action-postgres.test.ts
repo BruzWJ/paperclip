@@ -37,6 +37,7 @@ const capability: PromptCapabilityBinding = {
   targetSessionCorrelationId: "correlation-1",
   effectiveContextExposureDigest: "context-digest",
   effectiveToolsDigest: "tools-digest",
+  bootstrapToolGate: false,
   expiresAt: new Date("2026-08-02T13:00:00.000Z"),
   activatedAt: new Date("2026-08-02T12:00:00.000Z"),
   createdAt: new Date("2026-08-02T12:00:00.000Z"),

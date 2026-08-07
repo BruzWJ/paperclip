@@ -6,6 +6,7 @@ import {
   issueExecutionAuthorities,
   issueExecutionLeases,
   issueExecutionPromptCapabilities,
+  issueExecutionPromptSegments,
   issueExecutionRefs,
   issueExecutionRunControls,
   issueExecutionRunRefs,
@@ -63,6 +64,7 @@ const capability: PromptCapabilityBinding = Object.freeze({
   targetSessionCorrelationId: "00000000-0000-4000-8000-00000000000d",
   effectiveContextExposureDigest: "b".repeat(64),
   effectiveToolsDigest: "c".repeat(64),
+  bootstrapToolGate: false,
   expiresAt: new Date("2026-07-31T12:05:00.000Z"),
   activatedAt: new Date("2026-07-31T11:59:00.000Z"),
   createdAt: new Date("2026-07-31T11:58:00.000Z"),
@@ -104,8 +106,12 @@ function persistedCapabilityRow(input: {
   expiresAt: Date;
   state?: "active" | "revoked";
 }) {
+  const {
+    bootstrapToolGate: _bootstrapToolGate,
+    ...persistentCapability
+  } = capability;
   return {
-    ...capability,
+    ...persistentCapability,
     state: input.state ?? "active",
     expiresAt: input.expiresAt,
     bearerHash: "d".repeat(64),
@@ -120,6 +126,9 @@ function gatewayAuthorityRows(
     lifecycleStatus?: "open" | "blocked" | "done" | "cancelled";
     executionPaused?: boolean;
   } = {},
+  sourcePromptTransmissionPhase:
+    | "not_transmitted"
+    | "transmitted" = "transmitted",
 ) {
   return new Map<unknown, readonly unknown[]>([
     [issueExecutionPromptCapabilities, [row]],
@@ -169,8 +178,27 @@ function gatewayAuthorityRows(
         protocolSettlementState: null,
         capabilityConnectionId: row.capabilityConnectionId,
         capabilityGeneration: row.capabilityGeneration,
+        promptTransmissionPhase: row.segmentOrdinal === 0
+          ? sourcePromptTransmissionPhase
+          : "transmitted",
       }],
     ],
+    ...(row.segmentOrdinal === 0
+      ? []
+      : [[
+          issueExecutionPromptSegments,
+          [{
+            companyId: row.companyId,
+            issueId: row.issueId,
+            sessionId: capability.sessionId,
+            attemptId: row.attemptId,
+            capabilityConnectionId: row.capabilityConnectionId,
+            capabilityGeneration: row.capabilityGeneration,
+            protocolSettlementState: null,
+            steeringState: "resumed",
+            promptTransmissionPhase: sourcePromptTransmissionPhase,
+          }],
+        ]] as const),
     [
       issueExecutionRunControls,
       [{
@@ -187,7 +215,7 @@ function gatewayAuthorityRows(
         sessionId: capability.sessionId,
         runId: row.runId,
         runKind: "productive",
-        promptKind: "base",
+        promptKind: row.segmentOrdinal === 0 ? "base" : "steering",
         refId: row.refId,
         refOrdinal: row.refOrdinal,
         segmentOrdinal: row.segmentOrdinal,
@@ -249,8 +277,15 @@ function postgresGatewayRepository(
   row: ReturnType<typeof persistedCapabilityRow>,
   databaseTime = now,
   issueState: Parameters<typeof gatewayAuthorityRows>[1] = {},
+  sourcePromptTransmissionPhase:
+    | "not_transmitted"
+    | "transmitted" = "transmitted",
 ) {
-  const rowsByTable = gatewayAuthorityRows(row, issueState);
+  const rowsByTable = gatewayAuthorityRows(
+    row,
+    issueState,
+    sourcePromptTransmissionPhase,
+  );
   const database: Record<string, unknown> = {
     async execute() {
       return [{ timestamp: databaseTime }];
@@ -328,18 +363,21 @@ function compileInput(): RuntimeInterfaceCompileInput {
   };
 }
 
-function setup(compile = compileInput()) {
+function setup(
+  compile = compileInput(),
+  binding: PromptCapabilityBinding = capability,
+) {
   const authenticateIngressBearerHash = vi.fn(async () => ({
     kind: "authenticated" as const,
-    capability,
+    capability: binding,
   }));
   const authenticateBearerHash = vi.fn(async () => ({
     kind: "authenticated" as const,
-    capability,
+    capability: binding,
   }));
   const revalidate = vi.fn(async () => ({
     kind: "authenticated" as const,
-    capability,
+    capability: binding,
   }));
   const repository: PromptCapabilityGatewayRepository = {
     authenticateIngressBearerHash,
@@ -599,6 +637,69 @@ describe("prompt-capability gateway", () => {
     }));
   });
 
+  it("keeps one tool catalogue while limiting bootstrap calls to opted-in plugin tools", async () => {
+    const bootstrapCapability: PromptCapabilityBinding = {
+      ...capability,
+      bootstrapToolGate: true,
+    };
+    const runtime = setup({
+      ...compileInput(),
+      pluginTools: [{
+        installationId: "memory-plugin",
+        manifestIdentity: "memory-v1",
+        name: "memory.read_company_agent_memory",
+        toolName: "read_company_agent_memory",
+        title: "Read company memory",
+        description: "Read agent background memory",
+        inputSchema: { type: "object" },
+        bootstrapEnabled: true,
+      }],
+    }, bootstrapCapability);
+    const bearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(10));
+
+    const names = (await runtime.gateway.listTools(bearer)).map(
+      (tool) => tool.name,
+    );
+    expect(names).toContain("issue_update");
+    expect(names).toContain("memory.read_company_agent_memory");
+
+    await expect(runtime.gateway.callTool({
+      bearer,
+      toolName: "issue_update",
+      arguments: { message: "do work" },
+      callIdentity: { source: "jsonrpc", id: "bootstrap-denied" },
+      ingressOrdinal: 0,
+    })).rejects.toMatchObject({
+      code: "runtime_tool_unavailable",
+      message: "Tool is unavailable during instruction bootstrap: issue_update",
+    });
+    expect(runtime.execute).not.toHaveBeenCalled();
+    expect(runtime.registerTerminalInvalid).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capability: bootstrapCapability,
+        descriptor: expect.objectContaining({ name: "issue_update" }),
+      }),
+    );
+
+    await expect(runtime.gateway.callTool({
+      bearer,
+      toolName: "memory.read_company_agent_memory",
+      arguments: {},
+      callIdentity: { source: "jsonrpc", id: "bootstrap-memory" },
+      ingressOrdinal: 1,
+    })).resolves.toEqual({
+      source: "paperclip",
+      value: { accepted: true },
+    });
+    expect(runtime.execute).toHaveBeenCalledWith(expect.objectContaining({
+      capability: bootstrapCapability,
+      descriptor: expect.objectContaining({
+        name: "memory.read_company_agent_memory",
+        bootstrapEnabled: true,
+      }),
+    }));
+  });
+
   it("rejects every credential class other than a prompt capability", async () => {
     const runtime = setup();
     await expect(runtime.gateway.listTools("pc_plugin_ctx_v1_not-a-run"))
@@ -647,6 +748,74 @@ describe("prompt-capability gateway", () => {
       },
     });
   });
+
+  it.each([
+    {
+      label: "a base prompt before transmission",
+      segmentOrdinal: 0,
+      sourcePromptTransmissionPhase: "not_transmitted" as const,
+      bootstrapToolGate: true,
+    },
+    {
+      label: "a base prompt after transmission",
+      segmentOrdinal: 0,
+      sourcePromptTransmissionPhase: "transmitted" as const,
+      bootstrapToolGate: false,
+    },
+    {
+      label: "a steering prompt before transmission",
+      segmentOrdinal: 1,
+      sourcePromptTransmissionPhase: "not_transmitted" as const,
+      bootstrapToolGate: true,
+    },
+    {
+      label: "a steering prompt after transmission",
+      segmentOrdinal: 1,
+      sourcePromptTransmissionPhase: "transmitted" as const,
+      bootstrapToolGate: false,
+    },
+  ])(
+    "derives the transient bootstrap tool gate from $label",
+    async ({
+      segmentOrdinal,
+      sourcePromptTransmissionPhase,
+      bootstrapToolGate,
+    }) => {
+      const row = {
+        ...persistedCapabilityRow({
+          expiresAt: new Date("2026-07-31T12:10:00.000Z"),
+        }),
+        segmentOrdinal,
+      };
+      const sourceBinding: PromptCapabilityBinding = {
+        ...capability,
+        segmentOrdinal,
+        // This value is intentionally stale: revalidation derives it again
+        // and ignores it when comparing durable binding identity.
+        bootstrapToolGate: false,
+      };
+      const repository = postgresGatewayRepository(
+        row,
+        now,
+        {},
+        sourcePromptTransmissionPhase,
+      );
+
+      await expect(
+        repository.revalidate(
+          sourceBinding,
+          new Date("2026-07-31T12:06:00.000Z"),
+        ),
+      ).resolves.toEqual({
+        kind: "authenticated",
+        capability: {
+          ...sourceBinding,
+          bootstrapToolGate,
+          expiresAt: row.expiresAt,
+        },
+      });
+    },
+  );
 
   it.each([
     {

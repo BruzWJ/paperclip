@@ -62,7 +62,6 @@ function agent(id: string, input: {
     name: input.name ?? id,
     status: input.status ?? "active",
     reportsTo: input.reportsTo ?? null,
-    permissions: {},
   } as never;
 }
 
@@ -230,7 +229,7 @@ describe("canonical agent termination lifecycle", () => {
         [{ companyId }],
         [],
         [tombstone],
-        [{ ...tombstone, permissions: {} }],
+        [tombstone],
       ],
       update: [[tombstone], [{ id: childId }, { id: grandchildId }]],
     });

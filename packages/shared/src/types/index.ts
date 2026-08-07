@@ -191,7 +191,6 @@ export type {
   AgentDetail,
   ClearAgentErrorResponse,
   AgentModelProfileConfig,
-  AgentGovernancePolicy,
   AgentRuntimeConfig,
   AgentConfigRevision,
   AgentAdapterConfigRevision,

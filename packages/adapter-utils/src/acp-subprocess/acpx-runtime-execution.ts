@@ -43,6 +43,14 @@ export interface AcpxRuntimeConfigSelection {
   readonly value: string;
 }
 
+/**
+ * A role/bootstrap turn sent before the normal work prompt. It reuses the
+ * same ACPX runtime handle, configured MCP servers, and provider session.
+ */
+export interface AcpxOneShotBootstrapInput {
+  readonly message: string;
+}
+
 /** The ACPX runtime's fresh-session or durable-backend-session start choice. */
 export type AcpxRuntimeSessionStart =
   | { readonly kind: "new" }
@@ -96,6 +104,8 @@ export interface AcpxOneShotPromptInput {
   /** Must be an exact, locally available name in ACPX's registry. */
   readonly agentName: string;
   readonly start: AcpxRuntimeSessionStart;
+  /** Optional role/bootstrap turn sent before the normal work message. */
+  readonly bootstrapPrompt?: AcpxOneShotBootstrapInput;
   readonly message: string;
   /** Immutable selections supplied by ACPX's own discovery contract. */
   readonly configSelections: readonly AcpxRuntimeConfigSelection[];
@@ -114,11 +124,11 @@ export interface AcpxOneShotPromptInput {
   readonly onSessionEvent?: (
     event: NormalizedAcpSessionEvent,
   ) => Promise<void> | void;
-  /** Activates Paperclip's durable prompt authority after ACPX configuration. */
+  /** Activates Paperclip's durable execution authority after ACPX configuration. */
   readonly activatePrompt?: (input: {
     readonly sessionId: string;
   }) => Promise<void>;
-  /** Records the durable transmission fence immediately before `startTurn`. */
+  /** Records the durable work-transmission fence immediately before its `startTurn`. */
   readonly beginPromptTransmission?: (input: {
     readonly sessionId: string;
   }) => Promise<void>;
@@ -170,6 +180,7 @@ export type AcpxOneShotPromptResult =
       readonly kind: "error";
       readonly phase: AcpxOneShotExecutionPhase;
       readonly sessionId: string | null;
+      /** True only after the normal work prompt was handed to ACPX. */
       readonly promptTransmitted: boolean;
       readonly cause: unknown;
       readonly cleanup: AcpxOneShotCleanup;
@@ -197,6 +208,7 @@ type AcpxOneShotPromptResultWithoutCleanup =
       readonly kind: "error";
       readonly phase: AcpxOneShotExecutionPhase;
       readonly sessionId: string | null;
+      /** True only after the normal work prompt was handed to ACPX. */
       readonly promptTransmitted: boolean;
       readonly cause: unknown;
     };
@@ -204,6 +216,13 @@ type AcpxOneShotPromptResultWithoutCleanup =
 function exactString(value: string, label: string): string {
   if (typeof value !== "string" || value.length === 0 || value !== value.trim()) {
     throw new Error(`${label} must be an exact non-empty string`);
+  }
+  return value;
+}
+
+function exactPromptMessage(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${label} must be non-empty`);
   }
   return value;
 }
@@ -459,13 +478,18 @@ export async function executeAcpxOneShotPrompt(
     ? cwd
     : resolveExecutionCwd(input.registryCwd);
   const agentName = exactString(input.agentName, "ACPX agent name");
-  if (typeof input.message !== "string" || input.message.length === 0) {
-    throw new Error("ACPX one-shot prompt message must be non-empty");
-  }
+  const initialWorkMessage = exactPromptMessage(
+    input.message,
+    "ACPX one-shot prompt message",
+  );
   const configSelections = exactConfigSelections(input.configSelections);
   const start = exactSessionStart(input.start);
   const timeoutMs = resolveTimeout(input.timeoutMs);
   const requestId = requestIdFor(input);
+  const bootstrapPrompt = input.bootstrapPrompt;
+  if (bootstrapPrompt !== undefined && start.kind !== "new") {
+    throw new Error("ACPX bootstrap prompt requires a new session");
+  }
   const dependencies = input.dependencies;
   const registry = await (dependencies?.loadAgentRegistry ?? loadAcpxAgentRegistry)({
     cwd: registryCwd,
@@ -537,9 +561,10 @@ export async function executeAcpxOneShotPrompt(
     handle = await runtime.ensureSession({
       sessionKey,
       agent: agentName,
-      // Paperclip still sends exactly one prompt and deletes this runtime's
-      // state directory. ACPX's persistent mode only keeps its client alive
-      // across setup/configuration/prompt, preventing an implicit reconnect
+      // Paperclip may send one bootstrap turn before normal work, then deletes
+      // this runtime's state directory. ACPX's persistent mode keeps its
+      // client alive across setup, configuration, and both turns, preventing
+      // an implicit reconnect
       // from replacing the opaque provider backend id before we seal it.
       mode: "persistent",
       cwd,
@@ -574,57 +599,103 @@ export async function executeAcpxOneShotPrompt(
     abortIfNeeded(input.signal);
     await input.activatePrompt?.({ sessionId });
 
-    phase = "prompt_transmission";
-    abortIfNeeded(input.signal);
-    await input.beginPromptTransmission?.({ sessionId });
-    promptTransmitted = true;
-
-    abortIfNeeded(input.signal);
-    activeTurn = runtime.startTurn({
-      handle,
-      text: input.message,
-      mode: "prompt",
-      requestId,
-      ...(timeoutMs === undefined ? {} : { timeoutMs }),
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
-    });
-    phase = "prompt";
-    // A callback failure causes a cooperative cancellation. Attach a rejection
-    // handler immediately so a provider failure cannot become an unhandled
-    // promise while cleanup closes the temporary runtime.
-    const turnResultPromise = activeTurn.result;
-    void turnResultPromise.catch(() => {});
-    let terminalOccupancy: AcpTerminalOccupancy | null = null;
-    try {
-      for await (const runtimeEvent of activeTurn.events) {
-        terminalOccupancy = terminalOccupancyFromRuntimeEvent(runtimeEvent);
-        await input.onRuntimeEvent?.(runtimeEvent);
-        const event = normalizedRuntimeEvent(runtimeEvent);
-        if (event) await input.onSessionEvent?.(event);
+    if (bootstrapPrompt) {
+      phase = "prompt_transmission";
+      abortIfNeeded(input.signal);
+      const bootstrapTurn = runtime.startTurn({
+        handle,
+        text: exactPromptMessage(
+          bootstrapPrompt.message,
+          "ACPX one-shot bootstrap message",
+        ),
+        mode: "prompt",
+        requestId: `${requestId}:bootstrap`,
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      });
+      activeTurn = bootstrapTurn;
+      phase = "prompt";
+      const bootstrapResultPromise = bootstrapTurn.result;
+      void bootstrapResultPromise.catch(() => {});
+      try {
+        for await (const _event of bootstrapTurn.events) {
+          // Bootstrap output is internal; the stable work event stream begins
+          // only after the canonical work prompt is sent.
+        }
+      } catch (cause) {
+        await bootstrapTurn.cancel({ reason: "Paperclip bootstrap failed" }).catch(
+          (cancelError: unknown) => cleanupErrors.push(cancelError),
+        );
+        throw cause;
+      } finally {
+        if (activeTurn === bootstrapTurn) activeTurn = null;
       }
-    } catch (cause) {
-      await activeTurn.cancel({ reason: "Paperclip event projection failed" }).catch(
-        (cancelError: unknown) => cleanupErrors.push(cancelError),
-      );
-      throw cause;
+      const bootstrapResult = await bootstrapResultPromise;
+      if (bootstrapResult.status === "failed") {
+        result = { kind: "failed", sessionId, turnResult: bootstrapResult };
+      } else if (bootstrapResult.status === "cancelled") {
+        result = {
+          kind: "cancelled",
+          sessionId,
+          turnResult: bootstrapResult,
+          settlement: null,
+        };
+      }
     }
-    const turnResult = await turnResultPromise;
-    if (turnResult.status === "failed") {
-      result = { kind: "failed", sessionId, turnResult };
-    } else if (turnResult.status === "cancelled") {
-      result = {
-        kind: "cancelled",
-        sessionId,
-        turnResult,
-        settlement: settlementFromRuntimeTurn({ turnResult, terminalOccupancy }),
-      };
-    } else {
-      result = {
-        kind: "completed",
-        sessionId,
-        turnResult,
-        settlement: settlementFromRuntimeTurn({ turnResult, terminalOccupancy }),
-      };
+
+    if (result === null) {
+      phase = "prompt_transmission";
+      abortIfNeeded(input.signal);
+      await input.beginPromptTransmission?.({ sessionId });
+      promptTransmitted = true;
+
+      abortIfNeeded(input.signal);
+      activeTurn = runtime.startTurn({
+        handle,
+        text: initialWorkMessage,
+        mode: "prompt",
+        requestId,
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      });
+      phase = "prompt";
+      // A callback failure causes a cooperative cancellation. Attach a rejection
+      // handler immediately so a provider failure cannot become an unhandled
+      // promise while cleanup closes the temporary runtime.
+      const turnResultPromise = activeTurn.result;
+      void turnResultPromise.catch(() => {});
+      let terminalOccupancy: AcpTerminalOccupancy | null = null;
+      try {
+        for await (const runtimeEvent of activeTurn.events) {
+          terminalOccupancy = terminalOccupancyFromRuntimeEvent(runtimeEvent);
+          await input.onRuntimeEvent?.(runtimeEvent);
+          const event = normalizedRuntimeEvent(runtimeEvent);
+          if (event) await input.onSessionEvent?.(event);
+        }
+      } catch (cause) {
+        await activeTurn.cancel({ reason: "Paperclip event projection failed" }).catch(
+          (cancelError: unknown) => cleanupErrors.push(cancelError),
+        );
+        throw cause;
+      }
+      const turnResult = await turnResultPromise;
+      if (turnResult.status === "failed") {
+        result = { kind: "failed", sessionId, turnResult };
+      } else if (turnResult.status === "cancelled") {
+        result = {
+          kind: "cancelled",
+          sessionId,
+          turnResult,
+          settlement: settlementFromRuntimeTurn({ turnResult, terminalOccupancy }),
+        };
+      } else {
+        result = {
+          kind: "completed",
+          sessionId,
+          turnResult,
+          settlement: settlementFromRuntimeTurn({ turnResult, terminalOccupancy }),
+        };
+      }
     }
   } catch (cause) {
     result = {

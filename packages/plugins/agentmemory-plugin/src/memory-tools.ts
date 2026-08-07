@@ -67,6 +67,7 @@ export const MEMORY_TOOL_DEFINITIONS = [
       description:
         "Recall this agent's private memory across company issues when company run-detail context access is enabled.",
       parametersSchema: querySchema,
+      bootstrapEnabled: true,
     },
   },
   {
@@ -77,6 +78,7 @@ export const MEMORY_TOOL_DEFINITIONS = [
       description:
         "Recall company-wide shared memory when company comment-detail context access is enabled.",
       parametersSchema: querySchema,
+      bootstrapEnabled: true,
     },
   },
 ] as const satisfies readonly MemoryToolDefinition[];

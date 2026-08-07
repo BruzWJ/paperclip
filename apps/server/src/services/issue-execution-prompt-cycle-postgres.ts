@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  agents,
   agentAdapterConfigRevisions,
   issueBoardReopenCommands,
   issueExecutionAttempts,
@@ -24,9 +25,7 @@ import {
   IssueSession,
 } from "@paperclipai/shared";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import {
-  settleAcpPromptInTransaction,
-} from "./acp-prompt-settlement.js";
+import { settleAcpPromptInTransaction } from "./acp-prompt-settlement.js";
 import type { BudgetEnforcementScope } from "./budgets.js";
 import { contextDialDigest } from "./context-dial-resolver.js";
 import {
@@ -172,6 +171,14 @@ function sourceTextFromPrompt(value: unknown): string {
     reject("steering input contains a non-text provider prompt");
   }
   return prompt.text;
+}
+
+function bootstrapInstruction(value: string | null): string | null {
+  // The board validator permits intentional leading/trailing whitespace in a
+  // board-authored instruction/role text. Only a direct database write
+  // containing no content is normalized away here; it must not create a
+  // meaningless ACP turn.
+  return value !== null && value.trim().length > 0 ? value : null;
 }
 
 function scopeFromCorrelationRow(row: CorrelationRow): AcpCorrelationScope {
@@ -986,6 +993,16 @@ export function createPostgresIssueExecutionPromptCycleRepository(
             ),
           )
           .limit(2);
+        const agentRows = await transaction
+          .select({ instruction: agents.instruction })
+          .from(agents)
+          .where(
+            and(
+              eq(agents.companyId, identity.companyId),
+              eq(agents.id, identity.targetAgentId),
+            ),
+          )
+          .limit(2);
         const workspaceRows = await transaction
           .select()
           .from(issueExecutionWorkspaceBindings)
@@ -1008,6 +1025,10 @@ export function createPostgresIssueExecutionPromptCycleRepository(
         const member = exactlyOne(memberRows, "current prompt lost its run-ref member");
         const source = exactlyOne(sourceRows, "current prompt lost its immutable ref");
         const revision = exactlyOne(revisionRows, "current prompt lost its adapter revision");
+        const targetAgent = exactlyOne(
+          agentRows,
+          "current prompt lost its target agent",
+        );
         const workspace = exactlyOne(workspaceRows, "current prompt lost its workspace binding");
         if (
           source.companyId !== identity.companyId ||
@@ -1250,6 +1271,10 @@ export function createPostgresIssueExecutionPromptCycleRepository(
           sourceMessageId,
           sourceMessageSeq,
           sourceText,
+          bootstrapInstruction:
+            attempt.sessionOperation === "new"
+              ? bootstrapInstruction(targetAgent.instruction)
+              : null,
           contextAccess: Object.freeze({ ...compileInput.contextDial }),
           carryContext,
           storedCorrelation: selectedCorrelation

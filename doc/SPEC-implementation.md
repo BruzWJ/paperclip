@@ -49,7 +49,9 @@ The shared package exports the closed canonical vocabulary:
 
 It does not export generic issue mutation, checkout/release, general provider
 credentials, role-based authority, conversational agent sessions, arbitrary
-wake operations, managed instruction injection, or interaction-card contracts.
+wake operations, generic managed-instruction injection, or interaction-card
+contracts. `agents.instruction` is the narrow exception: a one-time bootstrap
+turn in a newly created provider session before its unchanged work message.
 
 ### Adapters and `packages/adapter-utils`
 
@@ -61,7 +63,7 @@ Adapters receive a split request:
   validated native correlation, and compiled run-tools transport
 
 Provider invocation scrubbers reject caller identity, general Paperclip
-credentials, run-directory metadata, Paperclip-managed prompt/instruction state,
+credentials, run-directory metadata, generic Paperclip prompt/instruction state,
 and noncanonical continuity fields.
 
 ## Server runtime
@@ -136,9 +138,11 @@ exposes false-grant surfaces.
 ### Run directories
 
 The issue-execution resolver supplies the resolved local directory to the
-bounded single-prompt ACPX path. ACPX launches the local compatible CLI itself;
-adapter definitions do not execute or transport provider work. The current
-public ACPX runtime is local-only, so remote driver selection is not admitted.
+bounded ACPX path. ACPX launches the local compatible CLI itself; adapter
+definitions do not execute or transport provider work. A new instructed session
+may receive one bootstrap turn on the same runtime/handle before its work
+prompt; resumes have only the work prompt. The current public ACPX runtime is
+local-only, so remote driver selection is not admitted.
 
 ### Creator routing and recovery
 
@@ -198,8 +202,9 @@ The UI and CLI are board/operator clients. They:
 - configure bind/exposure without selecting a different identity path
 
 They do not emulate provider behavior or retain alternate commands for generic
-issue mutation, provider credentials, arbitrary wake/invoke, managed
-instructions/skills, or agent-wide conversations.
+issue mutation, provider credentials, arbitrary wake/invoke, generic managed
+instructions/skills, or agent-wide conversations. Board users may edit the
+optional canonical agent instruction through operational configuration.
 
 ## Plugins, routines, and company lifecycle
 

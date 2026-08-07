@@ -166,7 +166,7 @@ export const ACP_COST_CURSOR_STATES = [
 
 export type AcpCostCursorState = (typeof ACP_COST_CURSOR_STATES)[number];
 
-/** One generation exists for exactly one prompt setup and active prompt. */
+/** One generation exists for one canonical work-prompt setup and active prompt. */
 export const ISSUE_EXECUTION_PROMPT_CAPABILITY_STATES = [
   "pending_setup",
   "active",

@@ -53,6 +53,11 @@ export interface PromptCapabilityBinding
   readonly targetSessionCorrelationId: string;
   readonly effectiveContextExposureDigest: string;
   readonly effectiveToolsDigest: string;
+  /**
+   * Derived from the exact source prompt while this binding is authenticated.
+   * It is deliberately not a persisted capability property or identity fact.
+   */
+  readonly bootstrapToolGate: boolean;
   readonly expiresAt: Date;
   readonly activatedAt: Date;
   readonly createdAt: Date;
@@ -357,6 +362,24 @@ export function createPromptCapabilityGateway(options: {
         throw unavailable;
       }
       const current = await requireStillAuthoritative(capability);
+      if (
+        current.bootstrapToolGate &&
+        (descriptor.source !== "plugin" || descriptor.bootstrapEnabled !== true)
+      ) {
+        const unavailable = new RuntimeToolUnavailable(
+          input.toolName,
+          `Tool is unavailable during instruction bootstrap: ${input.toolName}`,
+        );
+        await options.executor.registerTerminalInvalid({
+          capability: current,
+          descriptor,
+          arguments: input.arguments,
+          callIdentity: input.callIdentity,
+          ingressOrdinal: input.ingressOrdinal,
+          error: unavailable,
+        });
+        throw unavailable;
+      }
       const result = await options.executor.execute({
         capability: current,
         descriptor,

@@ -48,9 +48,9 @@ Provider-native storage is opaque. Paperclip does not read, display, delete, der
 
 ## Run directory
 
-The server resolves the local directory used by the ACPX public-runtime bridge
-for its bounded single-prompt session. ACPX owns the underlying CLI process, and
-no declarative adapter receives a process callback or alternate remote
+The server resolves the local directory used by the bounded ACPX public-runtime
+session. ACPX owns the underlying CLI process, and no declarative adapter
+receives a process callback or alternate remote
 transport. No agent-home, adapter-configured cwd, process cwd, prior
 conversational session, or directory metadata is a fallback.
 

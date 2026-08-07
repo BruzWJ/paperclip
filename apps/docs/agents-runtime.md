@@ -19,8 +19,9 @@ For each productive prompt, the worker:
    compatible CLI;
 4. lets ACPX create or resume the eligible provider backend session;
 5. supplies a complete request-scoped Paperclip MCP capability binding;
-6. sends exactly one prompt and consumes structured ACP updates plus its stop
-   result; and
+6. sends the canonical work prompt (preceded only on a new instructed provider
+   session by one bootstrap turn) and consumes structured ACP updates plus its
+   stop result; and
 7. revokes the request capability, closes ACPX, and deletes its temporary
    runtime state before another prompt can start.
 
@@ -124,12 +125,13 @@ set terminal `done`/`cancelled` or `structuredResult`.
 Paperclip does not fall back to an agent home, an adapter-configured cwd, the
 server process cwd, or a prior issue's working directory.
 
-### 3.5 Provider instructions
+### 3.5 Board-owned agent instruction
 
-Paperclip has no agent-wide prompt template, bootstrap prompt, or managed
-instruction bundle. Configure system/developer instructions directly through
-operator-owned provider-native configuration. Empty instruction state is
-valid.
+`agents.instruction` is optional canonical board-owned role text. On a new ACPX
+provider session, Paperclip sends it once as a bootstrap turn on the same
+runtime and session, then sends the unchanged managed issue message. It grants
+no authority, is not a provider system prompt or work-message prefix, and is
+not repeated on resume. A null instruction has no bootstrap turn.
 
 Agent-reaching managed actions do have canonical source-message contracts.
 Each producer supplies its tool name, immutable tool arguments, and locked
@@ -190,9 +192,13 @@ exposes its id through REST, UI, CLI, logs, tools, or environment variables.
 Every productive prompt gets a distinct request-scoped Paperclip MCP
 connection. Its `tools/list` result is compiled from that run's effective
 context dial, configurable action grants, owner/creator relationship authority,
-and current target catalogs. Paperclip supplies that MCP server set when it
-creates the bounded ACPX runtime for the prompt; it never accumulates a prior
-request's authority.
+and current target catalogs. Paperclip supplies the same complete MCP list when
+it creates the ACPX runtime; it never accumulates a prior request's authority.
+
+The same complete Paperclip MCP list is attached to bootstrap and work turns.
+During bootstrap, only plugin tools declared `bootstrapEnabled` may execute;
+other Paperclip calls return an unavailable error. Provider-native tools remain
+provider-owned.
 
 The AI CLI keeps its own built-in shell, file, browser, and other native tools.
 Paperclip owns and audits only the dynamically supplied prompt-capability
@@ -292,7 +298,8 @@ protocol framing failure, or a stop result without the required terminal
 occupancy.
 
 Paperclip never retains or reconstructs ACPX runtime state. Each run uses a
-bounded, single-prompt ACPX runtime; a setup, resume, or turn error fails that
+bounded ACPX runtime; an instructed new provider session may make one bootstrap
+turn before work on that same runtime. A setup, resume, or turn error fails the
 attempt and any later retry re-evaluates the current immutable request.
 
 ## 10. Minimal setup checklist

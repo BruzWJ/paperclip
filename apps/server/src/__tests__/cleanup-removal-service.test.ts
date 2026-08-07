@@ -54,7 +54,7 @@ describe("cleanup removal services", () => {
       name: "CodexCoder",
       status: "terminated",
       reportsTo: null,
-      permissions: {},
+      instruction: null,
     };
     const harness = createMockDb({ select: [[tombstone], [tombstone]] });
     const committed = {

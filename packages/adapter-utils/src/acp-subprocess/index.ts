@@ -66,6 +66,7 @@ export type {
 export { executeAcpxOneShotPrompt } from "./acpx-runtime-execution.js";
 export type {
   AcpxRuntimeMcpServer,
+  AcpxOneShotBootstrapInput,
   AcpxOneShotCleanup,
   AcpxOneShotExecutionDependencies,
   AcpxOneShotExecutionPhase,

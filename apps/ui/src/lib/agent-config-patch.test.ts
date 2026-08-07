@@ -17,6 +17,7 @@ function agent(): Agent {
     status: "active",
     reportsTo: null,
     capabilities: null,
+    instruction: null,
     adapterType: "codex",
     adapterConfig: { model: "fixture-standard" },
     currentAdapterConfigRevisionId: null,
@@ -28,8 +29,6 @@ function agent(): Agent {
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     urlKey: "agent",
-    governance: {},
-    metadata: null,
   };
 }
 
@@ -99,5 +98,14 @@ describe("buildAgentUpdatePatch", () => {
         overlay({ modelProfiles: { cheap: { cleared: true } } }),
       ),
     ).toEqual({ runtimeConfig: {} });
+  });
+
+  it("retains a nullable board-owned instruction in the outgoing patch", () => {
+    expect(
+      buildAgentUpdatePatch(
+        agent(),
+        overlay({ identity: { instruction: null } }),
+      ),
+    ).toEqual({ instruction: null });
   });
 });

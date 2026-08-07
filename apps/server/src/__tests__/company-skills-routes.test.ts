@@ -1254,7 +1254,6 @@ describe("company skill mutation permissions", () => {
     mockAgentService.getById.mockResolvedValue({
       id: "55555555-5555-4555-8555-555555555555",
       companyId: "company-1",
-      governance: {},
     });
 
     const res = await request(await createApp({

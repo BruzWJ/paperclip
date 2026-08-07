@@ -127,6 +127,8 @@ export interface PluginToolDeclaration {
   description: string;
   /** JSON Schema describing the tool's input parameters. */
   parametersSchema: JsonSchema;
+  /** Whether this ready plugin tool may execute during an agent role bootstrap. */
+  bootstrapEnabled?: boolean;
 }
 
 /**

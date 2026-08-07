@@ -57,7 +57,7 @@ function agentRow(input: {
     adapterType: "codex",
     adapterConfig: { model: "gpt-5.6" },
     runtimeConfig: {},
-    permissions: {},
+    instruction: null,
     budgetMonthlyAmount: input.budgetMonthlyAmount ?? "10",
     createdAt: now,
     updatedAt: now,

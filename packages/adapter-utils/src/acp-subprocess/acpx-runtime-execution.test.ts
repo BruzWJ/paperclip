@@ -302,6 +302,182 @@ describe("ACPX one-shot runtime bridge", () => {
     await expect(fs.access(stateDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("runs a bootstrap on the same ACPX session before the work turn", async () => {
+    const stateDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "paperclip-acpx-one-shot-bootstrap-"),
+    );
+    const handle: AcpRuntimeHandle = {
+      sessionKey: "bootstrap-session",
+      backend: "acpx",
+      runtimeSessionName: "bootstrap-session",
+      backendSessionId: "provider-session",
+    };
+    const trace: string[] = [];
+    const workSessionEvents: unknown[] = [];
+    const startTurn = vi.fn((turnInput: { text: string }) => {
+      trace.push(`turn:${turnInput.text}`);
+      return runtimeTurn({
+        events: turnInput.text === "adopt the reviewer role"
+          ? [{ type: "text_delta", text: "role ready", stream: "output" }]
+          : [{ type: "text_delta", text: "work complete", stream: "output" }],
+        result: { status: "completed", stopReason: "end_turn" },
+      });
+    });
+    const runtime: AcpxOneShotRuntime = {
+      ensureSession: vi.fn(async () => {
+        trace.push("ensure");
+        return handle;
+      }),
+      setConfigOption: vi.fn(async ({ key, value }: { key: string; value: string }) => {
+        trace.push(`config:${key}=${value}`);
+      }),
+      getStatus: vi.fn(async () => {
+        trace.push("status");
+        return { backendSessionId: "provider-session-after-config" };
+      }),
+      startTurn,
+      cancel: async () => {},
+      close: vi.fn(async () => {
+        trace.push("close");
+      }),
+    };
+    const removeTemporaryStateDir = vi.fn(async (directory: string) => {
+      trace.push("remove-state");
+      await fs.rm(directory, { recursive: true, force: true });
+    });
+
+    const result = await executeAcpxOneShotPrompt({
+      cwd: process.cwd(),
+      agentName: "fixture",
+      start: { kind: "new" },
+      bootstrapPrompt: {
+        message: "adopt the reviewer role",
+      },
+      message: "review the change with memory",
+      configSelections: [{ configId: "model", value: "model-b" }],
+      permissionMode: "deny-all",
+      beginPromptTransmission: ({ sessionId }) => {
+        trace.push(`work-begin:${sessionId}`);
+        return Promise.resolve();
+      },
+      onSessionEvent: (event) => {
+        workSessionEvents.push(event);
+      },
+      activatePrompt: ({ sessionId }) => {
+        trace.push(`activate:${sessionId}`);
+        return Promise.resolve();
+      },
+      dependencies: {
+        loadAgentRegistry: async () => registry(),
+        createAcpRuntime: () => runtime,
+        createRuntimeStore: () => store(),
+        createTemporaryStateDir: async () => stateDir,
+        removeTemporaryStateDir,
+        createSessionKey: () => "bootstrap-session",
+      },
+    });
+
+    expect(trace).toEqual([
+      "ensure",
+      "config:model=model-b",
+      "status",
+      "activate:provider-session-after-config",
+      "turn:adopt the reviewer role",
+      "work-begin:provider-session-after-config",
+      "turn:review the change with memory",
+      "close",
+      "remove-state",
+    ]);
+    expect(runtime.ensureSession).toHaveBeenCalledOnce();
+    expect(startTurn).toHaveBeenCalledTimes(2);
+    expect(startTurn).toHaveBeenNthCalledWith(1, {
+      handle,
+      text: "adopt the reviewer role",
+      mode: "prompt",
+      requestId: expect.stringMatching(/:bootstrap$/),
+    });
+    expect(startTurn).toHaveBeenNthCalledWith(2, {
+      handle,
+      text: "review the change with memory",
+      mode: "prompt",
+      requestId: expect.any(String),
+    });
+    expect(workSessionEvents).toEqual([
+      {
+        kind: "message_chunk",
+        channel: "assistant",
+        content: { type: "text", text: "work complete" },
+      },
+    ]);
+    expect(result).toEqual({
+      kind: "completed",
+      sessionId: "provider-session-after-config",
+      turnResult: { status: "completed", stopReason: "end_turn" },
+      settlement: null,
+      cleanup: { stateRemoved: true, errors: [] },
+    });
+    await expect(fs.access(stateDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("does not start work when the bootstrap turn is cancelled", async () => {
+    const stateDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "paperclip-acpx-one-shot-bootstrap-"),
+    );
+    const handle: AcpRuntimeHandle = {
+      sessionKey: "bootstrap-cancelled-session",
+      backend: "acpx",
+      runtimeSessionName: "bootstrap-cancelled-session",
+      backendSessionId: "provider-session",
+    };
+    const beginWorkTransmission = vi.fn(async () => {});
+    const startTurn = vi.fn(() => runtimeTurn({
+      events: [],
+      result: { status: "cancelled", stopReason: "cancelled" },
+    }));
+    const runtime: AcpxOneShotRuntime = {
+      ensureSession: async () => handle,
+      setConfigOption: async () => {},
+      getStatus: async () => ({ backendSessionId: "provider-session" }),
+      startTurn,
+      cancel: async () => {},
+      close: async () => {},
+    };
+
+    const result = await executeAcpxOneShotPrompt({
+      cwd: process.cwd(),
+      agentName: "fixture",
+      start: { kind: "new" },
+      bootstrapPrompt: {
+        message: "adopt the reviewer role",
+      },
+      message: "review the change",
+      configSelections: [],
+      permissionMode: "deny-all",
+      beginPromptTransmission: beginWorkTransmission,
+      dependencies: {
+        loadAgentRegistry: async () => registry(),
+        createAcpRuntime: () => runtime,
+        createRuntimeStore: () => store(),
+        createTemporaryStateDir: async () => stateDir,
+        removeTemporaryStateDir: async (directory) => {
+          await fs.rm(directory, { recursive: true, force: true });
+        },
+        createSessionKey: () => "bootstrap-cancelled-session",
+      },
+    });
+
+    expect(startTurn).toHaveBeenCalledOnce();
+    expect(beginWorkTransmission).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      kind: "cancelled",
+      sessionId: "provider-session",
+      turnResult: { status: "cancelled", stopReason: "cancelled" },
+      settlement: null,
+      cleanup: { stateRemoved: true, errors: [] },
+    });
+    await expect(fs.access(stateDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("resolves the ACPX registry at an explicit service scope while keeping the session in its execution workspace", async () => {
     const registryCwds: string[] = [];
     const runtimeCwds: string[] = [];

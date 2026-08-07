@@ -514,8 +514,7 @@ describe("company portability", () => {
         },
         budgetMonthlyAmount: "0",
         knownSpendAmount: "0",
-        governance: {},
-        metadata: null,
+        instruction: "Review implementation work carefully before reporting completion.",
       },
       {
         id: "agent-2",
@@ -536,8 +535,7 @@ describe("company portability", () => {
         },
         budgetMonthlyAmount: "0",
         knownSpendAmount: "0",
-        governance: {},
-        metadata: null,
+        instruction: null,
       },
     ]);
     projectSvc.list.mockResolvedValue([]);
@@ -754,6 +752,8 @@ describe("company portability", () => {
     expect(extension).not.toContain("inputs:");
     expect(extension).toContain('adapterType: "codex"');
     expect(extension).toContain('model: "gpt-5.6"');
+    expect(extension).not.toContain("instruction:");
+    expect(extension).not.toContain("metadata:");
     expect(extension).not.toContain("requireBoardApprovalForNewAgents: true");
     expect(extension).toContain('budgetMonthlyAmount: "0"');
     expect(exported.warnings).not.toEqual(
@@ -781,8 +781,7 @@ describe("company portability", () => {
         runtimeConfig: {},
         budgetMonthlyAmount: "0",
         knownSpendAmount: "0",
-        governance: {},
-        metadata: null,
+        instruction: null,
       },
     ]);
 
@@ -1495,8 +1494,7 @@ describe("company portability", () => {
         runtimeConfig: {},
         budgetMonthlyAmount: "0",
         knownSpendAmount: "0",
-        governance: {},
-        metadata: null,
+        instruction: null,
       },
     ]);
     agentSvc.create.mockImplementation(async (_companyId: string, input: Record<string, unknown>) => ({
@@ -1842,8 +1840,7 @@ describe("company portability", () => {
         runtimeConfig: {},
         budgetMonthlyAmount: "0",
         knownSpendAmount: "0",
-        governance: {},
-        metadata: null,
+        instruction: null,
       },
       {
         id: "agent-built-in",
@@ -1860,13 +1857,7 @@ describe("company portability", () => {
         runtimeConfig: {},
         budgetMonthlyAmount: "0",
         knownSpendAmount: "0",
-        governance: {},
-        metadata: {
-          paperclipBuiltInAgent: {
-            key: "reflection-coach",
-            featureKeys: ["recent-agent-reflection"],
-          },
-        },
+        instruction: null,
       },
     ]);
     routineSvc.list.mockResolvedValue([
@@ -3568,7 +3559,7 @@ describe("company portability", () => {
 
     // Simulate existing agents so collision detection triggers rename
     agentSvc.list.mockResolvedValue([
-      { id: "existing-1", name: "ClaudeCoder", status: "idle", adapterType: "codex", adapterConfig: { model: "gpt-5.6" }, runtimeConfig: {}, budgetMonthlyAmount: "0", knownSpendAmount: "0", governance: {}, metadata: null },
+      { id: "existing-1", name: "ClaudeCoder", status: "idle", adapterType: "codex", adapterConfig: { model: "gpt-5.6" }, runtimeConfig: {}, budgetMonthlyAmount: "0", knownSpendAmount: "0", instruction: null },
     ]);
 
     const preview = await portability.previewImport({
@@ -3599,13 +3590,13 @@ describe("company portability", () => {
         id: "agent-a", name: "AgentA", status: "idle", title: null, icon: null,
         reportsTo: "agent-b", capabilities: null, adapterType: "codex",
         currentAdapterConfigRevisionId: SOURCE_ADAPTER_REVISION_ID,
-        adapterConfig: { model: "gpt-5.6" }, runtimeConfig: {}, budgetMonthlyAmount: "0", knownSpendAmount: "0", governance: {}, metadata: null,
+        adapterConfig: { model: "gpt-5.6" }, runtimeConfig: {}, budgetMonthlyAmount: "0", knownSpendAmount: "0", instruction: null,
       },
       {
         id: "agent-b", name: "AgentB", status: "idle", title: null, icon: null,
         reportsTo: "agent-a", capabilities: null, adapterType: "codex",
         currentAdapterConfigRevisionId: "11111111-1111-4111-8111-111111111112",
-        adapterConfig: { model: "gpt-5.6" }, runtimeConfig: {}, budgetMonthlyAmount: "0", knownSpendAmount: "0", governance: {}, metadata: null,
+        adapterConfig: { model: "gpt-5.6" }, runtimeConfig: {}, budgetMonthlyAmount: "0", knownSpendAmount: "0", instruction: null,
       },
     ]);
     // Export should complete without infinite recursion in org chart building
@@ -3644,8 +3635,8 @@ describe("company portability", () => {
     // Re-import into same company with skip collision strategy
     // Both agents exist so both will be skipped; the existing agent should resolve as issue owner.
     agentSvc.list.mockResolvedValue([
-      { id: "agent-1", name: "ClaudeCoder", status: "idle", adapterType: "codex", adapterConfig: { model: "gpt-5.6" }, runtimeConfig: {}, budgetMonthlyAmount: "0", knownSpendAmount: "0", governance: {}, metadata: null },
-      { id: "agent-2", name: "Reviewer", status: "idle", adapterType: "codex", adapterConfig: { model: "gpt-5.6" }, runtimeConfig: {}, budgetMonthlyAmount: "0", knownSpendAmount: "0", governance: {}, metadata: null },
+      { id: "agent-1", name: "ClaudeCoder", status: "idle", adapterType: "codex", adapterConfig: { model: "gpt-5.6" }, runtimeConfig: {}, budgetMonthlyAmount: "0", knownSpendAmount: "0", instruction: null },
+      { id: "agent-2", name: "Reviewer", status: "idle", adapterType: "codex", adapterConfig: { model: "gpt-5.6" }, runtimeConfig: {}, budgetMonthlyAmount: "0", knownSpendAmount: "0", instruction: null },
     ]);
     projectSvc.list.mockResolvedValue([]);
     issueSvc.list.mockResolvedValue([]);

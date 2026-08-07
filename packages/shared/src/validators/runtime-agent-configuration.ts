@@ -195,14 +195,22 @@ export const agentAdapterConfigurationTestResultSchema =
 const agentOperationalConfigurationFieldsSchema = z
   .object({
     icon: z.enum(AGENT_ICON_NAMES).nullable(),
+    instruction: z.string()
+      .min(1)
+      .max(20_000)
+      .refine(
+        (value) => value.trim().length > 0,
+        "Agent instruction must not be blank",
+      )
+      .nullable(),
     budgetMonthlyAmount: moneyAmountSchema,
   })
   .strict();
 
 /**
- * Board-only display/operational updates. Lifecycle, spend, telemetry,
- * runtime-agent identity/grants, and adapter/provider configuration are
- * structurally outside this contract.
+ * Board-only display, role-instruction, and operational updates. Lifecycle,
+ * spend, telemetry, runtime-agent identity/grants, and adapter/provider
+ * configuration are structurally outside this contract.
  */
 export const agentOperationalConfigurationUpdateSchema = nonemptyPatch(
   agentOperationalConfigurationFieldsSchema,

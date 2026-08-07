@@ -7,7 +7,9 @@ summary: Canonical agent identity, explicit grants, provider configuration, and 
 
 - Org position is display/delegation structure, not authority.
 - No role, first-agent, root-agent, title, or manager default grants permissions.
-- Paperclip does not manage prompt templates, instruction files/bundles, provider homes, generic API keys, or agent-wide sessions.
+- Paperclip has no generic prompt template, provider home, generic API key, or
+  agent-wide session. Its optional board-owned Instruction is delivered once
+  when ACPX creates a new provider session.
 - Context grants, five configurable action grants, mention reach, and genuine
   company skills are selected explicitly.
   Issue updates are relationship-derived: the owner receives its active-issue
@@ -29,10 +31,11 @@ The creation dialog contains:
 | Title | no | Display-only; grants no authority |
 | Reports to | no | Same-company org edge; roots are ordinary |
 | Capabilities | no | Verbatim description used only in eligible target catalogs |
+| Instruction | no | Canonical board-owned role text; delivered once on a new provider session |
 
 ### Provider adapter
 
-Select an adapter and configure only its supported operator-owned native fields. Authentication/configuration declarations are target-scoped and opaque. The form has no Paperclip prompt, bootstrap instructions, agent home, adapter-configured run-directory fallback, session-key strategy, or general Paperclip credential.
+Select an adapter and configure only its supported operator-owned native fields. Authentication/configuration declarations are target-scoped and opaque. Apart from the optional board-owned Instruction, the form has no Paperclip prompt, agent home, adapter-configured run-directory fallback, session-key strategy, or general Paperclip credential.
 
 ### Runtime policy
 
@@ -64,14 +67,18 @@ Show:
 
 ### Configuration
 
-Board users can edit identity metadata, provider-native declaration, runtime
-limits, and explicit grants/selections. Present the nine context cells as a 3×3
+Board users can edit identity metadata, the canonical instruction,
+provider-native declaration, runtime limits, and explicit grants/selections.
+Present the nine context cells as a 3×3
 matrix and the action/mention/skill grants as independent controls. Do not
 render separate assign or lifecycle controls: create-and-assign is one grant,
 while the canonical lifecycle/creator update follows the issue owner/creator
 relationship and automatically mentions its counterpart.
 
 Explain prospective behavior: narrowing a dial changes gateway acceptance immediately, but content already inside one live provider-native conversation remains there; the board/user issue-execution fresh-session action is required to discard it.
+
+Changing Instruction affects only a later new provider session; it is not
+prepended to work messages or replayed into an existing session.
 
 ### Runs
 

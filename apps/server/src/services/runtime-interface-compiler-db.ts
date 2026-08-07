@@ -55,7 +55,6 @@ type AgentRow = AgentOrgRow & {
   title: string | null;
   capabilities: string | null;
   currentAdapterConfigRevisionId: string | null;
-  governance: Record<string, unknown>;
 };
 
 type ConfigureGrant = {
@@ -192,6 +191,7 @@ export function readyPluginTools(
       title: tool.displayName,
       description: tool.description,
       inputSchema: tool.parametersSchema as JsonSchema,
+      bootstrapEnabled: tool.bootstrapEnabled === true,
     })),
   ).sort((left, right) =>
     left.name.localeCompare(right.name) ||
@@ -245,7 +245,6 @@ export function buildRuntimeInterfaceCompileInput(
       workMode: issue.workMode,
       harnessKind: issue.harnessKind,
       originKind: issue.originKind,
-      agentGovernance: sourceAgent.governance,
       issueExecutionPolicy: issue.executionPolicy,
     }),
   }).effective;
@@ -397,7 +396,6 @@ async function loadSnapshot(
         status: agents.status,
         currentAdapterConfigRevisionId:
           agents.currentAdapterConfigRevisionId,
-        governance: agents.permissions,
       })
       .from(agents)
       .where(eq(agents.companyId, capability.companyId)),

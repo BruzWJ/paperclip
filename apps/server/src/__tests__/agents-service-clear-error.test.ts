@@ -38,8 +38,7 @@ function agentRow(status: string, id = randomUUID()): AgentRow {
       status === "error"
         ? "Secret is not bound to agent at env.ANTHROPIC_API_KEY"
         : null,
-    permissions: {},
-    metadata: null,
+    instruction: null,
     createdAt: now,
     updatedAt: now,
   };

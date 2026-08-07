@@ -305,6 +305,7 @@ export const pluginToolDeclarationSchema = z.object({
   displayName: z.string().min(1),
   description: z.string().min(1),
   parametersSchema: jsonSchemaSchema,
+  bootstrapEnabled: z.boolean().optional(),
 }).strict();
 
 const pluginEnvironmentTemplateConfigFieldSchema = z.string()

@@ -362,6 +362,17 @@ describe("agent operational control-plane validator", () => {
     });
   });
 
+  it("accepts a nullable canonical agent instruction", () => {
+    expect(
+      agentOperationalConfigurationUpdateSchema.parse({
+        instruction: "Act as a careful reviewer.",
+      }),
+    ).toEqual({ instruction: "Act as a careful reviewer." });
+    expect(
+      agentOperationalConfigurationUpdateSchema.parse({ instruction: null }),
+    ).toEqual({ instruction: null });
+  });
+
   it("rejects empty, malformed, system-owned, and cross-owner updates", () => {
     for (const invalid of [
       {},
@@ -373,6 +384,7 @@ describe("agent operational control-plane validator", () => {
       { name: "Researcher" },
       { adapterConfig: {} },
       { runtimeConfig: {} },
+      { instruction: "   " },
     ]) {
       expect(
         agentOperationalConfigurationUpdateSchema.safeParse(invalid).success,

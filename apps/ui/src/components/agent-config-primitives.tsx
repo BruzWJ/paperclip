@@ -22,6 +22,7 @@ export const help: Record<string, string> = {
   title: "Job title shown in the org chart.",
   reportsTo: "The agent this one reports to in the org hierarchy.",
   capabilities: "Describes what this agent can do. Shown in the org chart and used for task routing.",
+  instruction: "High-level role and operating guidance Paperclip delivers when it initializes this agent's session.",
   adapterType: "An exact locally available agent name. Paperclip discovers its models and session configuration at runtime.",
   timeoutSec: "Maximum seconds a run can take before being terminated. 0 means no timeout.",
   graceSec: "Seconds to wait after sending interrupt before force-killing the process.",

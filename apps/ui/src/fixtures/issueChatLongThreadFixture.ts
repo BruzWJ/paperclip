@@ -30,12 +30,11 @@ function createAgent(id: string, name: string, icon: string, urlKey: string): Ag
     runtimeConfig: {},
     budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
     knownSpendAmount: canonicalizeMoneyAmount("0"),
-    metadata: null,
+    instruction: null,
     createdAt: now,
     updatedAt: now,
     pauseReason: null,
     pausedAt: null,
-    governance: {},
   };
 }
 

@@ -8,10 +8,6 @@ import type {
   CompanyMembership,
   PrincipalPermissionGrant,
 } from "./access.js";
-import type {
-  TrustAuthorizationPolicy,
-  TrustPreset,
-} from "../trust-policy.js";
 import type { AgentOrgChainHealth } from "../agent-eligibility.js";
 import type { AdapterImplementationIdentity } from "../adapter-implementation.js";
 import type {
@@ -19,11 +15,6 @@ import type {
   PublicAgentAdapterAcpConfigurationInput,
 } from "../validators/agent-adapter-revision.js";
 import type { MoneyAmount } from "../money.js";
-
-export interface AgentGovernancePolicy extends Record<string, unknown> {
-  trustPreset?: TrustPreset;
-  authorizationPolicy?: TrustAuthorizationPolicy;
-}
 
 export interface AgentModelProfileConfig {
   enabled?: boolean;
@@ -113,8 +104,7 @@ export interface Agent {
   pauseReason: PauseReason | null;
   pausedAt: Date | null;
   errorReason?: string | null;
-  governance: AgentGovernancePolicy;
-  metadata: Record<string, unknown> | null;
+  instruction: string | null;
   orgChainHealth?: AgentOrgChainHealth;
   createdAt: Date;
   updatedAt: Date;

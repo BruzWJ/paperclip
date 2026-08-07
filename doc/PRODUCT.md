@@ -26,11 +26,14 @@ limited to:
 - its `reportsTo` relationship;
 - a free-text capabilities description used in the owner catalog.
 
-An agent has no core Paperclip role, soul, or instruction fallback. Paperclip
-retains control-plane configuration such as adapter binding,
-provider-native target declaration, context/action/mention dials, lifecycle
-state, budget, and telemetry, but that bookkeeping is never injected into
-provider context.
+An agent may additionally have an optional board-owned `instruction`. On a new
+ACPX provider session, Paperclip sends it once as a bootstrap turn on that same
+session before the unchanged issue message. It grants no authority, is not a
+provider system prompt or work-message prefix, and is not repeated on resume.
+
+Other control-plane configuration—adapter binding, provider-native target
+declaration, context/action/mention dials, lifecycle state, budget, and
+telemetry—is never injected into provider context.
 
 Provider-native configuration and storage are operator-owned and opaque.
 Paperclip does not inspect, seed, copy, merge, or delete provider homes,

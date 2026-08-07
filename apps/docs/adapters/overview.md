@@ -26,12 +26,13 @@ and its temporary runtime state.
 For each prompt segment, Paperclip's worker:
 
 1. resolves an immutable adapter revision and execution target;
-2. creates an ephemeral, single-prompt ACPX runtime in that run directory;
+2. creates an ephemeral ACPX runtime in that run directory;
 3. asks ACPX to create a provider backend session or perform the exact frozen
    resume operation;
 4. applies every persisted generic session configuration option through ACPX;
 5. attaches the complete request-scoped Paperclip MCP server set;
-6. sends one exact text block and projects structured ACP updates; and
+6. sends the exact work text and projects structured ACP updates (after one
+   instruction bootstrap turn only for a new instructed session); and
 7. settles accounting, revokes request capability, closes the ACPX runtime,
    and deletes its temporary state store.
 

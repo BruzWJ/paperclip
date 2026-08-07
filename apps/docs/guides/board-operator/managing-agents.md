@@ -5,8 +5,9 @@ summary: Hiring, configuring, pausing, and terminating agents
 
 An agent is a reusable configured identity. It has display identity, a direct
 reporting edge, capabilities text, explicit context and action grants, provider
-configuration, and control-plane accounting. It has no role-derived behavior,
-instruction bundle, or built-in Paperclip memory shared between issues.
+configuration, optional board-owned role instructions, and control-plane
+accounting. It has no role-derived authority, generic instruction bundle, or
+built-in Paperclip memory shared between issues.
 Instance administrators can separately install privileged infrastructure
 plugins that observe the generic before-prompt lifecycle and contribute agent
 tools; those plugins do not add prompt content, per-agent memory settings, or
@@ -34,6 +35,7 @@ Create agents from the Agents page. Each agent requires:
 - **Local agent runtime** — an installed local CLI that passed the runtime probe
 - **Adapter config** — only the model and session settings that ACPX advertises
 - **Capabilities** — verbatim description shown when another agent selects an owner
+- **Instructions** — optional high-level role guidance delivered once when a new provider session starts
 - **Context and action grants** — independent, explicit per-agent permissions
 - **Company skills** — explicit selections only
 
@@ -56,6 +58,7 @@ permissions.
 Edit an agent's configuration from the agent detail page:
 
 - **Identity** — name, display title, icon, capabilities, and direct reporting edge
+- **Instructions** — optional durable role guidance; it is delivered once when a new provider session starts
 - **Adapter config** — change only the model and session choices currently
   advertised by ACPX (including reasoning effort when the selected agent
   advertises it)

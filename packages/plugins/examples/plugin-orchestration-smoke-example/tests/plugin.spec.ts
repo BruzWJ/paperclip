@@ -78,8 +78,7 @@ function agent(id: string, companyId: string): Agent {
     knownSpendAmount: canonicalizeMoneyAmount("0"),
     pauseReason: null,
     pausedAt: null,
-    governance: {},
-    metadata: {},
+    instruction: null,
     createdAt: now,
     updatedAt: now,
   };

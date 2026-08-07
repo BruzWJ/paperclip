@@ -620,7 +620,6 @@ export type {
   AgentPluginManagementBinding,
   AgentDetail,
   ClearAgentErrorResponse,
-  AgentGovernancePolicy,
   AgentConfigRevision,
   AgentAdapterConfigRevision,
   AgentAdapterAcpConfiguration,

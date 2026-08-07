@@ -353,6 +353,7 @@ tools?: Array<{
   displayName: string;
   description: string;
   parametersSchema: JsonSchema;
+  bootstrapEnabled?: boolean;
 }>;
 ```
 
@@ -360,6 +361,9 @@ Provider-visible tool names use the reserved MCP-safe form `pluginId__toolName`
 (for example `linear__search-issues`). Manifest plugin IDs and tool names cannot
 contain `__`, and the combined name cannot exceed 128 characters, so plugins
 cannot shadow core tools or each other's tools.
+
+`bootstrapEnabled` defaults to `false`. A `true` value permits that plugin tool
+during an instruction bootstrap; it does not change normal discovery or execution.
 
 ### 11.2 Tool Execution
 

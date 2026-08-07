@@ -27,12 +27,11 @@ function createAgent(
     runtimeConfig: {},
     budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
     knownSpendAmount: canonicalizeMoneyAmount("0"),
-    metadata: null,
+    instruction: null,
     createdAt: now,
     updatedAt: now,
     pauseReason: null,
     pausedAt: null,
-    governance: {},
   };
 }
 

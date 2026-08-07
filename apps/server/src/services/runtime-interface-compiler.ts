@@ -50,6 +50,12 @@ export interface CompiledRunToolDescriptor {
   description: string;
   inputSchema: JsonSchema;
   source: RuntimeToolSource;
+  /**
+   * Server-only declaration that this plugin tool may run during the
+   * instruction bootstrap turn. Paperclip-owned built-in tools are never
+   * bootstrap-enabled.
+   */
+  bootstrapEnabled?: boolean;
   /** Server-only immutable installation identity for a direct plugin tool. */
   pluginInstallationId?: string;
   /** Server-only exact manifest identity compiled with this declaration. */
@@ -103,6 +109,8 @@ export interface RuntimePluginTool {
   title: string;
   description: string;
   inputSchema: JsonSchema;
+  /** Opt-in bootstrap availability from the signed plugin manifest. */
+  bootstrapEnabled?: boolean;
 }
 
 export interface RuntimeInterfaceCompileInput {
@@ -138,10 +146,12 @@ export class RuntimeInterfaceConflict extends Error {
 }
 
 export class RuntimeToolUnavailable extends Error {
-  readonly code = "runtime_tool_unavailable";
+  readonly code: string = "runtime_tool_unavailable";
 
-  constructor(readonly toolName: string) {
-    super(`Tool is not available for the current issue execution: ${toolName}`);
+  constructor(readonly toolName: string, message?: string) {
+    super(
+      message ?? `Tool is not available for the current issue execution: ${toolName}`,
+    );
     this.name = "RuntimeToolUnavailable";
   }
 }
@@ -972,6 +982,7 @@ function pluginDescriptors(
     pluginInstallationId: tool.installationId,
     pluginManifestIdentity: tool.manifestIdentity,
     pluginToolName: tool.toolName,
+    bootstrapEnabled: tool.bootstrapEnabled === true,
     validateArguments(argumentsValue) {
       const validation = validateJsonSchemaValue(
         argumentsValue,
@@ -1099,6 +1110,7 @@ function compiledRuntimeInterfaceDigest(
       pluginInstallationId: descriptor.pluginInstallationId,
       pluginManifestIdentity: descriptor.pluginManifestIdentity,
       pluginToolName: descriptor.pluginToolName,
+      bootstrapEnabled: descriptor.bootstrapEnabled,
     })),
   };
   return createHash("sha256")

@@ -179,6 +179,7 @@ export async function lockActivePromptCapabilityBinding(
 function projectBinding(input: {
   row: PromptCapabilityRow;
   sessionId: string;
+  bootstrapToolGate: boolean;
 }): PromptCapabilityBinding | null {
   const { row } = input;
   if (
@@ -216,6 +217,7 @@ function projectBinding(input: {
     targetSessionCorrelationId: row.targetSessionCorrelationId,
     effectiveContextExposureDigest: row.effectiveContextExposureDigest,
     effectiveToolsDigest: row.effectiveToolsDigest,
+    bootstrapToolGate: input.bootstrapToolGate,
     expiresAt: row.expiresAt,
     activatedAt: row.activatedAt,
     createdAt: row.createdAt,
@@ -605,7 +607,14 @@ export function createPostgresPromptCapabilityGatewayRepository(
       return invalid("native_correlation_changed");
     }
 
-    const capability = projectBinding({ row, sessionId: run.sessionId });
+    const sourcePromptTransmissionPhase = row.segmentOrdinal === 0
+      ? member.promptTransmissionPhase
+      : segment?.promptTransmissionPhase;
+    const capability = projectBinding({
+      row,
+      sessionId: run.sessionId,
+      bootstrapToolGate: sourcePromptTransmissionPhase === "not_transmitted",
+    });
     return capability
       ? { kind: "authenticated", capability }
       : inactive();

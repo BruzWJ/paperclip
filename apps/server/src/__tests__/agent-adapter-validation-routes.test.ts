@@ -139,8 +139,7 @@ function agent(overrides: Record<string, unknown> = {}) {
     pauseReason: null,
     pausedAt: null,
     errorReason: null,
-    permissions: {},
-    metadata: null,
+    instruction: null,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     ...overrides,
@@ -564,14 +563,31 @@ describe("agent control-plane routes", () => {
     });
   });
 
+  it("updates the board-owned agent instruction through the operational contract", async () => {
+    const instruction = "Review changes carefully before reporting completion.";
+    mockOperationalConfigurations.update.mockResolvedValue({
+      agent: agent({ instruction }),
+    });
+
+    const response = await request(createApp())
+      .patch(`/api/agents/${agentId}/operational-configuration`)
+      .send({ instruction });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ id: agentId, instruction });
+    expect(mockOperationalConfigurations.update).toHaveBeenCalledWith({
+      companyId: "company-1",
+      agentId,
+      configuration: { instruction },
+      actorUserId: "board-user",
+    });
+  });
+
   it("removes every superseded mixed mutation route", async () => {
     const app = createApp();
     const statuses = await Promise.all([
       request(app).post("/api/companies/company-1/agents").send({}),
       request(app).patch(`/api/agents/${agentId}`).send({ name: "Legacy" }),
-      request(app)
-        .patch(`/api/agents/${agentId}/governance`)
-        .send({ trustPreset: "standard" }),
       request(app)
         .post(`/api/agents/${agentId}/config-revisions/legacy/rollback`)
         .send({}),
@@ -579,7 +595,6 @@ describe("agent control-plane routes", () => {
     ]);
 
     expect(statuses.map((response) => response.status)).toEqual([
-      404,
       404,
       404,
       404,

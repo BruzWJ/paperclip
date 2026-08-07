@@ -254,7 +254,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Product-surface stories exercise the board UI components that carry Paperclip's task, approval, budget, activity, and agent governance workflows.",
+          "Product-surface stories exercise the board UI components that carry Paperclip's task, approval, budget, activity, and agent configuration workflows.",
       },
     },
   },

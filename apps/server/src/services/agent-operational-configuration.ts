@@ -17,7 +17,7 @@ export interface AgentOperationalConfigurationResult {
 }
 
 /**
- * Board-only owner for display and operational agent state.
+ * Board-only owner for display, role-instruction, and operational agent state.
  *
  * Identity/grants, adapter/provider/runtime configuration, lifecycle, spend,
  * and telemetry are deliberately absent. The agent projection and its monthly
@@ -72,6 +72,9 @@ export function createAgentOperationalConfigurationService(
         const directPatch: Partial<typeof agents.$inferInsert> = {};
         if (Object.prototype.hasOwnProperty.call(parsed.data, "icon")) {
           directPatch.icon = parsed.data.icon ?? null;
+        }
+        if (Object.prototype.hasOwnProperty.call(parsed.data, "instruction")) {
+          directPatch.instruction = parsed.data.instruction ?? null;
         }
         if (Object.keys(directPatch).length > 0) {
           await tx

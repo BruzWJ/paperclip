@@ -69,7 +69,6 @@ function snapshot(
         reportsTo: null,
         status: "idle",
         currentAdapterConfigRevisionId: "above-root-revision",
-        governance: {},
       },
       {
         id: "ancestor",
@@ -80,7 +79,6 @@ function snapshot(
         reportsTo: "above-root",
         status: "idle",
         currentAdapterConfigRevisionId: "ancestor-revision",
-        governance: {},
       },
       {
         id: "owner",
@@ -91,7 +89,6 @@ function snapshot(
         reportsTo: "ancestor",
         status: "running",
         currentAdapterConfigRevisionId: "revision",
-        governance: {},
       },
       {
         id: "child",
@@ -102,7 +99,6 @@ function snapshot(
         reportsTo: "owner",
         status: "idle",
         currentAdapterConfigRevisionId: "child-revision",
-        governance: {},
       },
       {
         id: "grandchild",
@@ -113,7 +109,6 @@ function snapshot(
         reportsTo: "child",
         status: "idle",
         currentAdapterConfigRevisionId: "grandchild-revision",
-        governance: {},
       },
       {
         id: "paused-child",
@@ -124,7 +119,6 @@ function snapshot(
         reportsTo: "owner",
         status: "paused",
         currentAdapterConfigRevisionId: "paused-revision",
-        governance: {},
       },
       {
         id: "peer",
@@ -135,7 +129,6 @@ function snapshot(
         reportsTo: "ancestor",
         status: "idle",
         currentAdapterConfigRevisionId: "peer-revision",
-        governance: {},
       },
     ],
     adapterRevisions: [
@@ -241,6 +234,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
       title: "Query",
       description: "Query an external index",
       inputSchema: { type: "object" },
+      bootstrapEnabled: false,
     }]);
 
     expect(() => readyPluginTools([{

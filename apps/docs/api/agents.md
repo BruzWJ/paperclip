@@ -16,9 +16,9 @@ GET /api/agents/{agentId}
 GET /api/companies/{companyId}/org
 ```
 
-Agent identity contains name, optional display title, capabilities, and
-optional `reportsTo`. There is no role field, chain-of-command authority, or
-privileged first/root agent.
+Agent identity contains name, optional display title, capabilities, optional
+board-owned `instruction`, and optional `reportsTo`. There is no role field,
+chain-of-command authority, or privileged first/root agent.
 
 The company-authorized issue-owner catalog is the picker projection for new
 ownership. It returns only `id`, `name`, `title`, and `icon`, and omits any

@@ -92,6 +92,12 @@ export interface ResolvedIssueExecutionPrompt {
   /** Global Session sequence of `sourceMessageId`; also the plugin snapshot cutoff. */
   readonly sourceMessageSeq: number;
   readonly sourceText: string;
+  /**
+   * One short pre-task turn for a newly created ACP session. This remains
+   * null for ordinary work and every ACP resume, so it is never prepended to
+   * the canonical issue message.
+   */
+  readonly bootstrapInstruction: string | null;
   /** Exact effective context-access matrix compiled for this prompt. */
   readonly contextAccess: ContextDial;
   readonly carryContext: boolean;
@@ -288,6 +294,13 @@ export interface AcpxRuntimePromptExecutionInput {
     };
     readonly message: string;
   };
+  /**
+    * An optional first turn in a newly created ACP session. The normal work
+   * message is sent as the second turn on that same session.
+   */
+  readonly bootstrapPrompt?: {
+    readonly message: string;
+  };
   readonly signal: AbortSignal;
   readonly redactStderr: (chunk: string) => string;
   readonly activatePrompt: (input: {
@@ -408,6 +421,9 @@ function validatePrompt(prompt: ResolvedIssueExecutionPrompt): void {
   exactDigest(prompt.effectiveToolsDigest, "effective tools digest");
   if (
     prompt.sourceText.length === 0 ||
+    (prompt.bootstrapInstruction !== null &&
+      (prompt.bootstrapInstruction.trim().length === 0 ||
+        prompt.sessionOperation !== "new")) ||
     !Number.isSafeInteger(prompt.sourceMessageSeq) ||
     prompt.sourceMessageSeq < 0 ||
     AGENT_CONTEXT_GRANT_KEYS.some(
@@ -519,6 +535,10 @@ function validatePrompt(prompt: ResolvedIssueExecutionPrompt): void {
       "ACP session operation crossed carry policy or stored correlation",
     );
   }
+}
+
+function instructionBootstrapMessage(instruction: string): string {
+  return `${instruction}\n\nNo task yet. Use enabled tools if needed, then end turn.`;
 }
 
 function waitForLeaseRenewalInterval(
@@ -795,6 +815,18 @@ function acpxRuntimePhase(
   }
 }
 
+/**
+ * ACPX's phase describes either the optional role bootstrap or normal work.
+ * Paperclip's closure phase describes only the canonical source task, which
+ * remains in setup until its durable transmission fence has succeeded.
+ */
+function canonicalWorkPhase(
+  workPromptTransmitted: boolean,
+  phase: AcpPromptExecutionPhase,
+): AcpPromptExecutionPhase {
+  return workPromptTransmitted ? phase : "session_setup";
+}
+
 function redactAcpxRuntimeError(
   cause: unknown,
   redact: (value: string) => string,
@@ -813,16 +845,21 @@ function redactAcpxRuntimeError(
 }
 
 /**
- * Executes exactly one prompt through ACPX's public runtime. ACPX owns the
- * provider CLI process, session setup, configuration setters, prompt
- * invocation, cancellation, and cleanup; Paperclip retains only durable
- * activation and closure fences.
+ * Executes one canonical work prompt through ACPX's public runtime, optionally
+ * after an instruction bootstrap turn on a new session. ACPX owns the provider
+ * CLI process, session setup, configuration setters, prompt invocation,
+ * cancellation, and cleanup; Paperclip retains only durable activation and
+ * closure fences.
  */
 export async function executeAcpxRuntimePrompt(
   input: AcpxRuntimePromptExecutionInput,
 ): Promise<AcpPromptExecutionResult> {
   let outcome: AcpPromptClosureOutcome;
   let teardownFailure: Error | null = null;
+  // The adapter may send a role-bootstrap turn first. Only this callback
+  // crosses the canonical source-message transmission fence, so bootstrap
+  // output/failure never masquerades as a delivered issue request.
+  let workPromptTransmitted = false;
   try {
     const result = await executeAcpxOneShotPrompt({
       cwd: input.cwd,
@@ -832,6 +869,13 @@ export async function executeAcpxRuntimePrompt(
       agentName: input.agentName,
       start: input.request.start,
       message: input.request.message,
+      ...(input.bootstrapPrompt === undefined
+        ? {}
+        : {
+            bootstrapPrompt: {
+              message: input.bootstrapPrompt.message,
+            },
+          }),
       configSelections: acpxRuntimeConfigSelections(input.configSelections),
       // Paperclip approval gates are settled before the run reaches this
       // worker. ACPX therefore receives the non-interactive execution policy,
@@ -842,7 +886,10 @@ export async function executeAcpxRuntimePrompt(
       timeoutMs: input.timeoutMs,
       signal: input.signal,
       activatePrompt: input.activatePrompt,
-      beginPromptTransmission: input.beginPromptTransmission,
+      beginPromptTransmission: async ({ sessionId }) => {
+        await input.beginPromptTransmission({ sessionId });
+        workPromptTransmitted = true;
+      },
       onSessionEvent: input.onSessionEvent,
     });
     if (!result.cleanup.stateRemoved || result.cleanup.errors.length > 0) {
@@ -855,19 +902,29 @@ export async function executeAcpxRuntimePrompt(
       outcome = {
         kind: "error",
         failure: "runtime",
-        phase: result.kind === "error"
-          ? acpxRuntimePhase(result.phase)
-          : "prompt",
-        promptTransmitted:
+        phase: canonicalWorkPhase(
+          workPromptTransmitted,
           result.kind === "error"
-            ? result.promptTransmitted
-            : true,
+            ? acpxRuntimePhase(result.phase)
+            : "prompt",
+        ),
+        promptTransmitted: workPromptTransmitted,
         cause: new Error(
           "ACPX temporary runtime state could not be removed after the prompt",
         ),
       };
     } else if (result.kind === "completed" || result.kind === "cancelled") {
-      if (!result.settlement) {
+      if (!workPromptTransmitted) {
+        outcome = {
+          kind: "error",
+          failure: "runtime",
+          phase: "session_setup",
+          promptTransmitted: false,
+          cause: new Error(
+            "ACPX role bootstrap ended before the canonical issue request was sent",
+          ),
+        };
+      } else if (!result.settlement) {
         outcome = {
           kind: "error",
           failure: "runtime",
@@ -903,16 +960,19 @@ export async function executeAcpxRuntimePrompt(
       outcome = {
         kind: "error",
         failure: "runtime",
-        phase: "prompt",
-        promptTransmitted: true,
+        phase: canonicalWorkPhase(workPromptTransmitted, "prompt"),
+        promptTransmitted: workPromptTransmitted,
         cause: redactAcpxRuntimeError(result.turnResult.error, input.redactStderr),
       };
     } else {
       outcome = {
         kind: "error",
         failure: "runtime",
-        phase: acpxRuntimePhase(result.phase),
-        promptTransmitted: result.promptTransmitted,
+        phase: canonicalWorkPhase(
+          workPromptTransmitted,
+          acpxRuntimePhase(result.phase),
+        ),
+        promptTransmitted: workPromptTransmitted,
         cause: redactAcpxRuntimeError(result.cause, input.redactStderr),
       };
     }
@@ -920,8 +980,8 @@ export async function executeAcpxRuntimePrompt(
     outcome = {
       kind: "error",
       failure: "runtime",
-      phase: "session_setup",
-      promptTransmitted: false,
+      phase: workPromptTransmitted ? "prompt" : "session_setup",
+      promptTransmitted: workPromptTransmitted,
       cause: redactAcpxRuntimeError(cause, input.redactStderr),
     };
   }
@@ -1042,6 +1102,27 @@ export function createIssueExecutionAttemptExecutor(options: {
     // admission; a successful ACPX invocation never creates a Paperclip skill
     // materialization to collect.
     return null;
+  }
+
+  async function composeWorkPrompt(
+    prompt: ResolvedIssueExecutionPrompt,
+  ): Promise<string> {
+    return options.beforePrompt.dispatch({
+      companyId: prompt.identity.companyId,
+      issueId: prompt.identity.issueId,
+      sessionId: prompt.identity.sessionId,
+      runId: prompt.identity.runId,
+      agentId: prompt.identity.targetAgentId,
+      sourceText: prompt.sourceText,
+      promptKind: prompt.identity.promptKind,
+      sessionOperation: prompt.sessionOperation,
+      refId: prompt.identity.refId,
+      refOrdinal: prompt.identity.refOrdinal,
+      segmentOrdinal: prompt.identity.segmentOrdinal,
+      sourceMessageId: prompt.sourceMessageId,
+      sourceMessageSeq: prompt.sourceMessageSeq,
+      contextAccess: prompt.contextAccess,
+    });
   }
 
   async function runCycle(input: {
@@ -1234,6 +1315,15 @@ export function createIssueExecutionAttemptExecutor(options: {
             start: input.start,
             message: input.message,
           },
+          ...(input.prompt.bootstrapInstruction === null
+            ? {}
+            : {
+                bootstrapPrompt: {
+                  message: instructionBootstrapMessage(
+                    input.prompt.bootstrapInstruction,
+                  ),
+                },
+              }),
           signal: input.signal,
           redactStderr: redactRuntimeText,
           async activatePrompt({ sessionId }) {
@@ -1440,22 +1530,7 @@ export function createIssueExecutionAttemptExecutor(options: {
       try {
         let outboundMessage = prompt.sourceText;
         if (!executionController.signal.aborted) {
-          outboundMessage = await options.beforePrompt.dispatch({
-            companyId: prompt.identity.companyId,
-            issueId: prompt.identity.issueId,
-            sessionId: prompt.identity.sessionId,
-            runId: prompt.identity.runId,
-            agentId: prompt.identity.targetAgentId,
-            sourceText: prompt.sourceText,
-            promptKind: prompt.identity.promptKind,
-            sessionOperation: prompt.sessionOperation,
-            refId: prompt.identity.refId,
-            refOrdinal: prompt.identity.refOrdinal,
-            segmentOrdinal: prompt.identity.segmentOrdinal,
-            sourceMessageId: prompt.sourceMessageId,
-            sourceMessageSeq: prompt.sourceMessageSeq,
-            contextAccess: prompt.contextAccess,
-          });
+          outboundMessage = await composeWorkPrompt(prompt);
         }
         if (renewalFailed) throw renewalFailure;
         const target = await options.targetAcquirer.acquire(prompt.target);

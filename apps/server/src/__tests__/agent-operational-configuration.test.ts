@@ -37,8 +37,7 @@ function agentRow(status = "idle"): AgentRow {
     pauseReason: null,
     pausedAt: null,
     errorReason: null,
-    permissions: {},
-    metadata: null,
+    instruction: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -116,6 +115,36 @@ describe("agent operational configuration", () => {
     expect(db.transaction).not.toHaveBeenCalled();
     expect(calls).toHaveLength(0);
     expect(budgetMocks.setAgentMonthlyLimit).not.toHaveBeenCalled();
+  });
+
+  it("updates a role instruction without changing the monthly budget policy", async () => {
+    const agent = agentRow();
+    const updatedAgent: AgentRow = {
+      ...agent,
+      instruction: "Review changes carefully before reporting completion.",
+    };
+    const { db, calls, remaining } = createMockDb({
+      select: [[agent], [updatedAgent]],
+      update: [[]],
+    });
+    const service = createAgentOperationalConfigurationService(db);
+
+    const result = await service.update({
+      companyId: agent.companyId,
+      agentId: agent.id,
+      configuration: { instruction: updatedAgent.instruction },
+      actorUserId: "board-user",
+    });
+
+    expect(result.agent.instruction).toBe(updatedAgent.instruction);
+    expect(
+      calls.find(
+        (call) => call.operation === "update" && call.method === "set",
+      )?.args[0],
+    ).toMatchObject({ instruction: updatedAgent.instruction });
+    expect(budgetMocks.setAgentMonthlyLimit).not.toHaveBeenCalled();
+    expect(remaining("select")).toBe(0);
+    expect(remaining("update")).toBe(0);
   });
 
   it("does not mutate terminated agents", async () => {

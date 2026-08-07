@@ -20,6 +20,7 @@ import { useCompany } from "../context/CompanyContext";
 import {
   Field,
   DraftInput,
+  DraftTextarea,
   help,
 } from "./agent-config-primitives";
 import { defaultCreateValues } from "./agent-config-defaults";
@@ -400,6 +401,15 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   </p>
                 ) : null}
               </div>
+            </Field>
+            <Field label="Instructions" hint={help.instruction}>
+              <DraftTextarea
+                value={eff("identity", "instruction", props.agent.instruction ?? "") ?? ""}
+                onCommit={(v) => mark("identity", "instruction", v.trim() ? v : null)}
+                immediate
+                minRows={4}
+                placeholder="Describe this agent's role, priorities, and durable operating guidance..."
+              />
             </Field>
           </div>
         </div>

@@ -190,8 +190,9 @@ A change is done when all are true:
 
 ## 12. Adapter ownership
 
-Paperclip has one AI execution path: the ACPX public-runtime bounded
-single-prompt bridge.
+Paperclip has one AI execution path: the ACPX public-runtime bounded bridge.
+For a new provider session of an agent with a non-null `instruction`, it sends
+one bootstrap turn on that same session before the ordinary work prompt.
 ACPX is the sole supplier of exact agent names, launch resolution, models, and
 stable session settings. Paperclip loads ACPX's public registry, including its
 resolved `agents` overrides, and never treats that override map as an
@@ -209,9 +210,9 @@ launch returned by ACPX and must never execute or materialize a package. ACPX
 owns resolution and lifecycle of the local provider CLI; Paperclip
 owns durable authority fences, request-scoped MCP, safe event projection,
 cancellation requests, and cleanup of its own request files. ACPX's temporary
-state store is deleted after each bounded prompt; only an opaque provider backend
-session id may be retained in Paperclip's scoped correlation record for an
-eligible resume.
+state store is deleted after each bounded execution, including an optional
+bootstrap and work pair; only an opaque provider backend session id may be
+retained in Paperclip's scoped correlation record for an eligible resume.
 
 ### Local Dev
 

@@ -106,6 +106,7 @@ function resolvedPrompt(input: {
   promptKind?: "base" | "steering";
   stored?: StoredAcpSessionCorrelation | null;
   sessionOperation?: ResolvedIssueExecutionPrompt["sessionOperation"];
+  bootstrapInstruction?: string | null;
   laneKind?: "owner" | "consult";
   leaseRenewalIntervalMs?: number;
 }): ResolvedIssueExecutionPrompt {
@@ -149,6 +150,7 @@ function resolvedPrompt(input: {
     sourceMessageId: "source-message-1",
     sourceMessageSeq: 7,
     sourceText: "exact source message",
+    bootstrapInstruction: input.bootstrapInstruction ?? null,
     contextAccess: {
       carry_context: input.carryContext,
       read_issue_comments: true,
@@ -459,7 +461,6 @@ function createHarness(input: {
       executionStarted.resolve();
       launches.push(execution);
       starts.push(execution.request.start);
-      messages.push(execution.request.message);
       if (execution.signal.aborted) throw execution.signal.reason;
       if (input.executePromptGate) {
         await waitForGateOrAbort(input.executePromptGate, execution.signal);
@@ -498,6 +499,10 @@ function createHarness(input: {
         };
       }
       await execution.activatePrompt({ sessionId: "opaque-acp-session" });
+      if (execution.bootstrapPrompt) {
+        order.push(`bootstrap:${capabilityGeneration}`);
+      }
+      messages.push(execution.request.message);
       await execution.beginPromptTransmission({ sessionId: "opaque-acp-session" });
       if (input.executePromptFailureAfterTransmission) {
         throw input.executePromptFailureAfterTransmission;
@@ -678,16 +683,21 @@ describe("canonical productive/consult ACP attempt executor", () => {
   it("fails the durable attempt if ACPX cannot remove its private runtime state", async () => {
     const closePrompt = vi.fn(async () => {});
     acpxFixture.executeAcpxOneShotPrompt.mockReset();
-    acpxFixture.executeAcpxOneShotPrompt.mockResolvedValue({
-      kind: "completed",
-      sessionId: "provider-session-2",
-      turnResult: { status: "completed", stopReason: "end_turn" },
-      settlement: {
-        kind: "protocol_settled",
-        stopReason: "end_turn",
-        occupancy: { used: 12, size: 128, cost: null },
-      },
-      cleanup: { stateRemoved: false, errors: [new Error("remove failed")] },
+    acpxFixture.executeAcpxOneShotPrompt.mockImplementation(async (input: {
+      readonly beginPromptTransmission?: (value: { sessionId: string }) => Promise<void>;
+    }) => {
+      await input.beginPromptTransmission?.({ sessionId: "provider-session-2" });
+      return {
+        kind: "completed" as const,
+        sessionId: "provider-session-2",
+        turnResult: { status: "completed" as const, stopReason: "end_turn" as const },
+        settlement: {
+          kind: "protocol_settled" as const,
+          stopReason: "end_turn" as const,
+          occupancy: { used: 12, size: 128, cost: null },
+        },
+        cleanup: { stateRemoved: false, errors: [new Error("remove failed")] },
+      };
     });
 
     const result = await executeAcpxRuntimePrompt({
@@ -717,18 +727,66 @@ describe("canonical productive/consult ACP attempt executor", () => {
     }));
   });
 
-  it("reports ACPX runtime-close cleanup errors as failed teardown", async () => {
+  it("keeps a bootstrap-only ACPX failure in canonical task setup", async () => {
+    const closePrompt = vi.fn(async () => {});
+    const beginPromptTransmission = vi.fn(async () => {});
+    const bootstrapFailure = new Error("bootstrap provider failure");
     acpxFixture.executeAcpxOneShotPrompt.mockReset();
     acpxFixture.executeAcpxOneShotPrompt.mockResolvedValue({
-      kind: "completed",
+      kind: "failed",
       sessionId: "provider-session-2",
-      turnResult: { status: "completed", stopReason: "end_turn" },
-      settlement: {
-        kind: "protocol_settled",
-        stopReason: "end_turn",
-        occupancy: { used: 12, size: 128, cost: null },
+      turnResult: { status: "failed", error: bootstrapFailure },
+      cleanup: { stateRemoved: true, errors: [] },
+    });
+
+    const result = await executeAcpxRuntimePrompt({
+      cwd: "/workspace",
+      agentName: acpxFixture.agentName,
+      configSelections: [],
+      mcpServers: [],
+      request: { start: { kind: "new" }, message: "do the work" },
+      bootstrapPrompt: {
+        message: "adopt the reviewer role",
       },
-      cleanup: { stateRemoved: true, errors: [new Error("close failed")] },
+      signal: new AbortController().signal,
+      activatePrompt: async () => {},
+      beginPromptTransmission,
+      releasePreparedResources: async () => {},
+      closePrompt,
+      redactStderr: (value) => value,
+      onSessionEvent: async () => {},
+    });
+
+    expect(beginPromptTransmission).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      kind: "error",
+      phase: "session_setup",
+      promptTransmitted: false,
+    });
+    expect(closePrompt).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "error",
+      phase: "session_setup",
+      promptTransmitted: false,
+    }));
+  });
+
+  it("reports ACPX runtime-close cleanup errors as failed teardown", async () => {
+    acpxFixture.executeAcpxOneShotPrompt.mockReset();
+    acpxFixture.executeAcpxOneShotPrompt.mockImplementation(async (input: {
+      readonly beginPromptTransmission?: (value: { sessionId: string }) => Promise<void>;
+    }) => {
+      await input.beginPromptTransmission?.({ sessionId: "provider-session-2" });
+      return {
+        kind: "completed" as const,
+        sessionId: "provider-session-2",
+        turnResult: { status: "completed" as const, stopReason: "end_turn" as const },
+        settlement: {
+          kind: "protocol_settled" as const,
+          stopReason: "end_turn" as const,
+          occupancy: { used: 12, size: 128, cost: null },
+        },
+        cleanup: { stateRemoved: true, errors: [new Error("close failed")] },
+      };
     });
 
     const result = await executeAcpxRuntimePrompt({
@@ -753,16 +811,21 @@ describe("canonical productive/consult ACP attempt executor", () => {
 
   it("reports request-scoped resource cleanup errors as failed teardown", async () => {
     acpxFixture.executeAcpxOneShotPrompt.mockReset();
-    acpxFixture.executeAcpxOneShotPrompt.mockResolvedValue({
-      kind: "completed",
-      sessionId: "provider-session-2",
-      turnResult: { status: "completed", stopReason: "end_turn" },
-      settlement: {
-        kind: "protocol_settled",
-        stopReason: "end_turn",
-        occupancy: { used: 12, size: 128, cost: null },
-      },
-      cleanup: { stateRemoved: true, errors: [] },
+    acpxFixture.executeAcpxOneShotPrompt.mockImplementation(async (input: {
+      readonly beginPromptTransmission?: (value: { sessionId: string }) => Promise<void>;
+    }) => {
+      await input.beginPromptTransmission?.({ sessionId: "provider-session-2" });
+      return {
+        kind: "completed" as const,
+        sessionId: "provider-session-2",
+        turnResult: { status: "completed" as const, stopReason: "end_turn" as const },
+        settlement: {
+          kind: "protocol_settled" as const,
+          stopReason: "end_turn" as const,
+          occupancy: { used: 12, size: 128, cost: null },
+        },
+        cleanup: { stateRemoved: true, errors: [] },
+      };
     });
     const closePrompt = vi.fn(async () => {});
 
@@ -839,6 +902,39 @@ describe("canonical productive/consult ACP attempt executor", () => {
       },
     ]);
     expect(harness.renewedPrompts.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("sends a configured role bootstrap before the normal work turn", async () => {
+    const prompt = resolvedPrompt({
+      carryContext: false,
+      bootstrapInstruction: "You are the release engineer.",
+    });
+    const beforePrompt = vi.fn(async (
+      input: Parameters<PluginBeforePromptDispatcher["dispatch"]>[0],
+    ) => `Plugin prelude\n\n${input.sourceText}`);
+    const harness = createHarness({ prompt, beforePrompt });
+
+    await expect(executeAttempt(harness, prompt)).resolves.toMatchObject({
+      kind: "terminal",
+      outcome: "succeeded",
+    });
+
+    const launch = harness.launches[0]!;
+    expect(launch.bootstrapPrompt?.message).toBe(
+      "You are the release engineer.\n\nNo task yet. Use enabled tools if needed, then end turn.",
+    );
+    expect(launch.bootstrapPrompt?.message).not.toContain(prompt.sourceText);
+    expect(beforePrompt).toHaveBeenCalledOnce();
+    expect(harness.order.indexOf("beforePrompt")).toBeLessThan(
+      harness.order.indexOf("bootstrap:1"),
+    );
+    expect(harness.order.indexOf("bootstrap:1")).toBeLessThan(
+      harness.order.indexOf("transmit:1"),
+    );
+    expect(harness.messages).toEqual([
+      `Plugin prelude\n\n${prompt.sourceText}`,
+    ]);
+    expect(launch.mcpServers).toHaveLength(1);
   });
 
   it("fails closed before target acquisition when a before-prompt hook fails", async () => {
@@ -1033,7 +1129,7 @@ describe("canonical productive/consult ACP attempt executor", () => {
     expect(harness.starts).toEqual([
       { kind: "resume", sessionId: "opaque-resume-session" },
     ]);
-    expect(harness.messages).toEqual([prompt.sourceText]);
+    expect(harness.messages).toEqual([]);
     expect(harness.invocationFileSets).toHaveLength(1);
     expect(harness.order).toContain("close:target_not_found:1");
     expect(harness.order).not.toContain("mint:2");

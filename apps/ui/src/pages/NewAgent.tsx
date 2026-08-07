@@ -43,6 +43,7 @@ export function NewAgent() {
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [capabilities, setCapabilities] = useState("");
+  const [instruction, setInstruction] = useState("");
   const [initialIssueTitle, setInitialIssueTitle] = useState("");
   const [initialRequest, setInitialRequest] = useState("");
   const [runtimeAccess, setRuntimeAccess] =
@@ -169,6 +170,7 @@ export function NewAgent() {
         name,
         title,
         capabilities,
+        instruction,
         reportsTo: null,
         runtimeAccess,
         configValues,
@@ -243,6 +245,22 @@ export function NewAgent() {
             Board-created agents start at the root. Reporting lines can be
             changed later through runtime-agent configuration.
           </p>
+        </div>
+
+        <div className="border-t border-border px-4 py-4">
+          <label className="grid gap-1.5 text-sm">
+            <span className="font-medium">Agent instructions</span>
+            <span className="text-xs text-muted-foreground">
+              Optional high-level role guidance Paperclip delivers during this
+              agent&apos;s session bootstrap.
+            </span>
+            <textarea
+              className="min-h-24 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={instruction}
+              onChange={(event) => setInstruction(event.target.value)}
+              placeholder="Describe the agent's role, priorities, and durable operating guidance."
+            />
+          </label>
         </div>
 
         <div className="border-t border-border px-4 py-4">

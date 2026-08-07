@@ -336,6 +336,14 @@ describe("AgentMemory manifest and partitions", () => {
       "read_company_agent_memory",
       "read_company_shared_memory",
     ]);
+    expect(
+      manifest.tools
+        ?.filter(({ bootstrapEnabled }) => bootstrapEnabled)
+        .map(({ name }) => name),
+    ).toEqual([
+        "read_company_agent_memory",
+        "read_company_shared_memory",
+      ]);
     expect(manifest.capabilities).toEqual(expect.arrayContaining([
       "agent.tools.register",
       "runtime.context.read",

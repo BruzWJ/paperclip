@@ -636,27 +636,50 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
     return declaration;
   }
 
-  function isManagedAgent(agent: Agent, agentKey: string) {
-    const marker = agent.metadata?.paperclipManagedResource;
-    return Boolean(
-      marker
-      && typeof marker === "object"
-      && !Array.isArray(marker)
-      && (marker as Record<string, unknown>).pluginKey === manifest.id
-      && (marker as Record<string, unknown>).resourceKind === "agent"
-      && (marker as Record<string, unknown>).resourceKey === agentKey,
-    );
+  function managedAgentEntity(companyId: string, agentKey: string) {
+    const externalId = `${manifest.id}:agent:${agentKey}`;
+    return [...entities.values()].find((entity) =>
+      entity.entityType === "managed_resource"
+      && entity.scopeKind === "company"
+      && entity.scopeId === companyId
+      && entity.externalId === externalId,
+    ) ?? null;
   }
 
-  function managedAgentMetadata(agentKey: string, existing?: Record<string, unknown> | null) {
-    return {
-      ...(existing ?? {}),
-      paperclipManagedResource: {
-        pluginKey: manifest.id,
-        resourceKind: "agent",
-        resourceKey: agentKey,
-      },
+  function managedAgentFor(companyId: string, agentKey: string) {
+    const entity = managedAgentEntity(companyId, agentKey);
+    const agent = entity ? agents.get(String(entity.data?.agentId ?? "")) : null;
+    return agent && isInCompany(agent, companyId) && agent.status !== "terminated"
+      ? agent
+      : null;
+  }
+
+  function recordManagedAgent(
+    companyId: string,
+    agentKey: string,
+    agent: Agent,
+    now: Date,
+  ) {
+    const existingEntity = managedAgentEntity(companyId, agentKey);
+    const externalId = `${manifest.id}:agent:${agentKey}`;
+    const nowIso = now.toISOString();
+    const record: PluginEntityRecord = {
+      id: existingEntity?.id ?? randomUUID(),
+      entityType: "managed_resource",
+      scopeKind: "company",
+      scopeId: companyId,
+      externalId,
+      title: agent.name,
+      status: null,
+      data: { resourceKind: "agent", resourceKey: agentKey, agentId: agent.id },
+      createdAt: existingEntity?.createdAt ?? nowIso,
+      updatedAt: nowIso,
     };
+    entities.set(record.id, record);
+    entityExternalIndex.set(
+      JSON.stringify(["managed_resource", "company", companyId, externalId]),
+      record.id,
+    );
   }
 
   function managedResolution(
@@ -1261,7 +1284,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           const projectRef = declaration.projectRef;
           const assigneeAgentId = overrides?.assigneeAgentId
             ?? (agentRef?.resourceKind === "agent"
-              ? [...agents.values()].find((agent) => isInCompany(agent, companyId) && isManagedAgent(agent, agentRef.resourceKey))?.id
+              ? managedAgentFor(companyId, agentRef.resourceKey)?.id
               : null)
             ?? null;
           const projectId = overrides?.projectId
@@ -1792,22 +1815,14 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           requireCapability(manifest, capabilitySet, "agents.managed");
           const cid = requireCompanyId(companyId);
           managedAgentDeclaration(agentKey);
-          const agent = [...agents.values()].find((candidate) =>
-            candidate.companyId === cid &&
-            candidate.status !== "terminated" &&
-            isManagedAgent(candidate, agentKey),
-          ) ?? null;
+          const agent = managedAgentFor(cid, agentKey);
           return managedResolution(agentKey, cid, agent, agent ? "resolved" : "missing");
         },
         async reconcile(agentKey, companyId) {
           requireCapability(manifest, capabilitySet, "agents.managed");
           const cid = requireCompanyId(companyId);
           const declaration = managedAgentDeclaration(agentKey);
-          const existingAgent = [...agents.values()].find((candidate) =>
-            candidate.companyId === cid &&
-            candidate.status !== "terminated" &&
-            isManagedAgent(candidate, agentKey),
-          ) ?? null;
+          const existingAgent = managedAgentFor(cid, agentKey);
           const existing = managedResolution(agentKey, cid, existingAgent, existingAgent ? "resolved" : "missing");
           if (existing.agent) return existing;
           const now = new Date();
@@ -1829,54 +1844,18 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
             knownSpendAmount: canonicalizeMoneyAmount("0"),
             pauseReason: null,
             pausedAt: null,
-            governance: {},
-            metadata: managedAgentMetadata(agentKey),
+            instruction: null,
             createdAt: now,
             updatedAt: now,
           };
           agents.set(created.id, created);
+          recordManagedAgent(cid, agentKey, created, now);
           return managedResolution(agentKey, cid, created, "created");
         },
         async reset(agentKey, companyId) {
-          requireCapability(manifest, capabilitySet, "agents.managed");
-          const cid = requireCompanyId(companyId);
-          const declaration = managedAgentDeclaration(agentKey);
-          let agent = [...agents.values()].find((candidate) =>
-            candidate.companyId === cid &&
-            candidate.status !== "terminated" &&
-            isManagedAgent(candidate, agentKey),
-          ) ?? null;
-          if (!agent) {
-            const now = new Date();
-            const created: Agent = {
-              id: randomUUID(),
-              companyId: cid,
-              name: declaration.displayName,
-              urlKey: declaration.displayName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
-              title: declaration.title ?? null,
-              icon: null,
-              status: "idle",
-              reportsTo: null,
-              capabilities: declaration.capabilities ?? null,
-              adapterType: null,
-              adapterConfig: null,
-              currentAdapterConfigRevisionId: null,
-              runtimeConfig: {},
-              budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
-              knownSpendAmount: canonicalizeMoneyAmount("0"),
-              pauseReason: null,
-              pausedAt: null,
-              governance: {},
-              metadata: managedAgentMetadata(agentKey),
-              createdAt: now,
-              updatedAt: now,
-            };
-            agents.set(created.id, created);
-            agent = created;
-          }
-          const resolved = managedResolution(agentKey, cid, agent, "resolved");
+          const resolved = await this.reconcile(agentKey, companyId);
           return resolved.agent
-            ? managedResolution(agentKey, cid, resolved.agent, "reset")
+            ? managedResolution(agentKey, resolved.companyId, resolved.agent, "reset")
             : resolved;
         },
       },

@@ -15,7 +15,7 @@ const mockAgentService = vi.hoisted(() => ({
 const mockTrackAgentIssueCompleted = vi.hoisted(() => vi.fn());
 const mockDbSelectWhere = vi.hoisted(() => vi.fn(() => ({
   then: (onFulfilled: (rows: unknown[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
-    Promise.resolve([{ companyId: "company-1", permissions: null }]).then(onFulfilled, onRejected),
+    Promise.resolve([{ companyId: "company-1" }]).then(onFulfilled, onRejected),
 })));
 const mockDbSelectFrom = vi.hoisted(() => vi.fn(() => ({ where: mockDbSelectWhere })));
 const mockDbSelect = vi.hoisted(() => vi.fn(() => ({ from: mockDbSelectFrom })));
@@ -132,7 +132,7 @@ describe("issue telemetry routes", () => {
     mockDbSelectFrom.mockImplementation(() => ({ where: mockDbSelectWhere }));
     mockDbSelectWhere.mockImplementation(() => ({
       then: (onFulfilled: (rows: unknown[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
-        Promise.resolve([{ companyId: "company-1", permissions: null }]).then(onFulfilled, onRejected),
+        Promise.resolve([{ companyId: "company-1" }]).then(onFulfilled, onRejected),
     }));
   });
 

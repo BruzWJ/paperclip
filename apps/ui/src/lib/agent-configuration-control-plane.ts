@@ -13,7 +13,7 @@ const RUNTIME_AGENT_IDENTITY_KEYS = [
   "reportsTo",
   "capabilities",
 ] as const;
-const OPERATIONAL_KEYS = [] as const;
+const OPERATIONAL_KEYS = ["instruction"] as const;
 const ADAPTER_REVISION_KEYS = [
   "adapterType",
   "adapterConfig",

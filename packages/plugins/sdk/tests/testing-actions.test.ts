@@ -282,8 +282,7 @@ describe("createTestHarness issue control plane", () => {
       knownSpendAmount: canonicalizeMoneyAmount("0"),
       pauseReason: null,
       pausedAt: null,
-      governance: {},
-      metadata: null,
+      instruction: null,
       createdAt: now,
       updatedAt: now,
     };

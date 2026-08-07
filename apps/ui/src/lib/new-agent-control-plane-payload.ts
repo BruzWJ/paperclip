@@ -20,6 +20,7 @@ export function buildNewAgentControlPlanePayloads(input: {
   name: string;
   title?: string;
   capabilities?: string;
+  instruction?: string;
   reportsTo?: string | null;
   runtimeAccess: RuntimeAgentConfigurationValues;
   configValues: CreateConfigValues;
@@ -49,6 +50,9 @@ export function buildNewAgentControlPlanePayloads(input: {
     },
     operational: {
       budgetMonthlyAmount: parseMoneyAmount("0"),
+      // Preserve authored Markdown whitespace; only a blank value means no
+      // canonical role instruction.
+      instruction: input.instruction?.trim().length ? input.instruction : null,
     },
   };
 }

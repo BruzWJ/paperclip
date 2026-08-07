@@ -356,12 +356,12 @@ export function agentRoutes(
       companyId: agent.companyId,
       name: agent.name,
       title: agent.title,
+      instruction: agent.instruction,
       status: agent.status,
       reportsTo: agent.reportsTo,
       adapterType: agent.adapterType,
       adapterConfig: redactEventPayload(agent.adapterConfig),
       runtimeConfig: redactEventPayload(agent.runtimeConfig),
-      governance: agent.governance,
       updatedAt: agent.updatedAt,
     };
   }
