@@ -22,18 +22,14 @@ import {
   type BudgetWindowKind,
   type ProjectBudgetSummary,
   type MoneyAmount,
-  type ProjectCodebase,
-  type ProjectExecutionWorkspacePolicy,
   type ProjectGoalRef,
   type ProjectManagedByPlugin,
   type ProjectWorkspaceRuntimeConfig,
-  type ProjectWorkspace,
   type WorkspaceRuntimeService,
   type PluginManagedProjectDeclaration,
   type PluginManagedProjectResolution,
 } from "@paperclipai/shared";
 import { listCurrentRuntimeServicesForProjectWorkspaces } from "./workspace-runtime-read-model.js";
-import { parseProjectExecutionWorkspacePolicy } from "./execution-workspace-policy.js";
 import { mergeProjectWorkspaceRuntimeConfig, readProjectWorkspaceRuntimeConfig } from "./project-workspace-runtime-config.js";
 import { resolveManagedProjectWorkspaceDir } from "../home-paths.js";
 
@@ -60,17 +56,92 @@ type CreateWorkspaceInput = {
 };
 type UpdateWorkspaceInput = Partial<CreateWorkspaceInput>;
 
-interface ProjectWithGoals extends Omit<ProjectRow, "executionWorkspacePolicy"> {
+/**
+ * Server-only workspace data used to resolve a run's working directory.
+ *
+ * This is deliberately not the shared public Project contract: the board and
+ * plugin project APIs do not expose execution-workspace configuration.
+ */
+type InternalProjectWorkspaceSourceType = "local_path" | "git_repo" | "remote_managed" | "non_git_path";
+type InternalProjectWorkspaceVisibility = "default" | "advanced";
+
+export interface InternalProjectWorkspace {
+  id: string;
+  companyId: string;
+  projectId: string;
+  name: string;
+  sourceType: InternalProjectWorkspaceSourceType;
+  cwd: string | null;
+  repoUrl: string | null;
+  repoRef: string | null;
+  defaultRef: string | null;
+  visibility: InternalProjectWorkspaceVisibility;
+  setupCommand: string | null;
+  cleanupCommand: string | null;
+  remoteProvider: string | null;
+  remoteWorkspaceRef: string | null;
+  sharedWorkspaceKey: string | null;
+  metadata: Record<string, unknown> | null;
+  runtimeConfig: ProjectWorkspaceRuntimeConfig | null;
+  isPrimary: boolean;
+  runtimeServices?: WorkspaceRuntimeService[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+type InternalProjectCodebaseOrigin = "local_folder" | "managed_checkout";
+
+export interface InternalProjectCodebase {
+  workspaceId: string | null;
+  repoUrl: string | null;
+  repoRef: string | null;
+  defaultRef: string | null;
+  repoName: string | null;
+  localFolder: string | null;
+  managedFolder: string;
+  effectiveLocalFolder: string;
+  origin: InternalProjectCodebaseOrigin;
+}
+
+/** Complete server-side project aggregate, including runtime-only workspace data. */
+export interface InternalProject extends ProjectRow {
   urlKey: string;
   goalIds: string[];
   goals: ProjectGoalRef[];
-  executionWorkspacePolicy: ProjectExecutionWorkspacePolicy | null;
-  codebase: ProjectCodebase;
-  workspaces: ProjectWorkspace[];
-  primaryWorkspace: ProjectWorkspace | null;
+  codebase: InternalProjectCodebase;
+  workspaces: InternalProjectWorkspace[];
+  primaryWorkspace: InternalProjectWorkspace | null;
   managedByPlugin: ProjectManagedByPlugin | null;
   issueCount?: number;
   budget?: ProjectBudgetSummary | null;
+}
+
+type InternalProjectWithGoals = Omit<
+  InternalProject,
+  "codebase" | "workspaces" | "primaryWorkspace" | "managedByPlugin"
+>;
+
+type InternalProjectRuntimeFields = {
+  codebase?: unknown;
+  workspaces?: unknown;
+  primaryWorkspace?: unknown;
+};
+
+/** Public-safe project projection for HTTP and plugin-host reads. */
+export type PublicProject = Omit<InternalProject, keyof InternalProjectRuntimeFields>;
+
+export function toPublicProject(project: InternalProject): PublicProject;
+export function toPublicProject<T extends object>(
+  project: T,
+): Omit<T, keyof InternalProjectRuntimeFields>;
+export function toPublicProject<T extends object>(project: T) {
+  const {
+    codebase: _codebase,
+    workspaces: _workspaces,
+    primaryWorkspace: _primaryWorkspace,
+    ...publicProject
+  } = project as T & InternalProjectRuntimeFields;
+  return publicProject as Omit<T, keyof InternalProjectRuntimeFields>;
 }
 
 interface ProjectShortnameRow {
@@ -83,7 +154,7 @@ interface ResolveProjectNameOptions {
 }
 
 /** Batch-load goal refs for a set of projects. */
-async function attachGoals(db: Db, rows: ProjectRow[]): Promise<ProjectWithGoals[]> {
+async function attachGoals(db: Db, rows: ProjectRow[]): Promise<InternalProjectWithGoals[]> {
   if (rows.length === 0) return [];
 
   const projectIds = rows.map((r) => r.id);
@@ -116,8 +187,7 @@ async function attachGoals(db: Db, rows: ProjectRow[]): Promise<ProjectWithGoals
       urlKey: deriveProjectUrlKey(r.name, r.id),
       goalIds: g.map((x) => x.id),
       goals: g,
-      executionWorkspacePolicy: parseProjectExecutionWorkspacePolicy(r.executionWorkspacePolicy),
-    } as ProjectWithGoals;
+    };
   });
 }
 
@@ -156,18 +226,18 @@ function toRuntimeService(row: WorkspaceRuntimeServiceRow): WorkspaceRuntimeServ
 function toWorkspace(
   row: ProjectWorkspaceRow,
   runtimeServices: WorkspaceRuntimeService[] = [],
-): ProjectWorkspace {
+): InternalProjectWorkspace {
   return {
     id: row.id,
     companyId: row.companyId,
     projectId: row.projectId,
     name: row.name,
-    sourceType: row.sourceType as ProjectWorkspace["sourceType"],
+    sourceType: row.sourceType as InternalProjectWorkspace["sourceType"],
     cwd: normalizeWorkspaceCwd(row.cwd),
     repoUrl: row.repoUrl ?? null,
     repoRef: row.repoRef ?? null,
     defaultRef: row.defaultRef ?? row.repoRef ?? null,
-    visibility: row.visibility as ProjectWorkspace["visibility"],
+    visibility: row.visibility as InternalProjectWorkspace["visibility"],
     setupCommand: row.setupCommand ?? null,
     cleanupCommand: row.cleanupCommand ?? null,
     remoteProvider: row.remoteProvider ?? null,
@@ -198,9 +268,9 @@ function deriveRepoNameFromRepoUrl(repoUrl: string | null): string | null {
 function deriveProjectCodebase(input: {
   companyId: string;
   projectId: string;
-  primaryWorkspace: ProjectWorkspace | null;
-  fallbackWorkspaces: ProjectWorkspace[];
-}): ProjectCodebase {
+  primaryWorkspace: InternalProjectWorkspace | null;
+  fallbackWorkspaces: InternalProjectWorkspace[];
+}): InternalProjectCodebase {
   const primaryWorkspace = input.primaryWorkspace ?? input.fallbackWorkspaces[0] ?? null;
   const repoUrl = primaryWorkspace?.repoUrl ?? null;
   const repoName = deriveRepoNameFromRepoUrl(repoUrl);
@@ -227,7 +297,7 @@ function deriveProjectCodebase(input: {
 function pickPrimaryWorkspace(
   rows: ProjectWorkspaceRow[],
   runtimeServicesByWorkspaceId?: Map<string, WorkspaceRuntimeService[]>,
-): ProjectWorkspace | null {
+): InternalProjectWorkspace | null {
   if (rows.length === 0) return null;
   const explicitPrimary = rows.find((row) => row.isPrimary);
   const primary = explicitPrimary ?? rows[0];
@@ -235,7 +305,7 @@ function pickPrimaryWorkspace(
 }
 
 /** Batch-load workspace refs for a set of projects. */
-async function attachWorkspaces(db: Db, rows: ProjectWithGoals[]): Promise<ProjectWithGoals[]> {
+async function attachWorkspaces(db: Db, rows: InternalProjectWithGoals[]): Promise<InternalProject[]> {
   if (rows.length === 0) return [];
 
   const projectIds = rows.map((r) => r.id);
@@ -364,8 +434,8 @@ export function buildProjectListMetricMaps(issueCountRows: IssueCountRow[], budg
 async function attachListMetrics(
   db: Db,
   companyId: string,
-  rows: ProjectWithGoals[],
-): Promise<ProjectWithGoals[]> {
+  rows: InternalProject[],
+): Promise<InternalProject[]> {
   if (rows.length === 0) return rows;
 
   const projectIds = rows.map((r) => r.id);
@@ -552,7 +622,7 @@ export function projectService(db: Db) {
   const createProject = async (
     companyId: string,
     data: Omit<typeof projects.$inferInsert, "companyId"> & { goalIds?: string[] },
-  ): Promise<ProjectWithGoals> => {
+  ): Promise<InternalProject> => {
     const { goalIds: inputGoalIds, ...projectData } = data;
     const ids = resolveGoalIds({ goalIds: inputGoalIds, goalId: projectData.goalId });
 
@@ -583,7 +653,7 @@ export function projectService(db: Db) {
     return enriched!;
   };
 
-  const getProjectById = async (id: string): Promise<ProjectWithGoals | null> => {
+  const getProjectById = async (id: string): Promise<InternalProject | null> => {
     const row = await db
       .select()
       .from(projects)
@@ -597,14 +667,14 @@ export function projectService(db: Db) {
   };
 
   return {
-    list: async (companyId: string): Promise<ProjectWithGoals[]> => {
+    list: async (companyId: string): Promise<InternalProject[]> => {
       const rows = await db.select().from(projects).where(eq(projects.companyId, companyId));
       const withGoals = await attachGoals(db, rows);
       const withWorkspaces = await attachWorkspaces(db, withGoals);
       return attachListMetrics(db, companyId, withWorkspaces);
     },
 
-    listByIds: async (companyId: string, ids: string[]): Promise<ProjectWithGoals[]> => {
+    listByIds: async (companyId: string, ids: string[]): Promise<InternalProject[]> => {
       const dedupedIds = [...new Set(ids)];
       if (dedupedIds.length === 0) return [];
       const rows = await db
@@ -614,7 +684,7 @@ export function projectService(db: Db) {
       const withGoals = await attachGoals(db, rows);
       const withWorkspaces = await attachWorkspaces(db, withGoals);
       const byId = new Map(withWorkspaces.map((project) => [project.id, project]));
-      return dedupedIds.map((id) => byId.get(id)).filter((project): project is ProjectWithGoals => Boolean(project));
+      return dedupedIds.map((id) => byId.get(id)).filter((project): project is InternalProject => Boolean(project));
     },
 
     getById: getProjectById,
@@ -710,7 +780,7 @@ export function projectService(db: Db) {
             resourceKey: input.projectKey,
             companyId: input.companyId,
             projectId: project?.id ?? existingBinding.resourceId,
-            project: project as import("@paperclipai/shared").Project | null,
+            project: project ? toPublicProject(project) : null,
             status: input.reset ? "reset" : "resolved",
           };
         }
@@ -744,7 +814,7 @@ export function projectService(db: Db) {
           resourceKey: input.projectKey,
           companyId: input.companyId,
           projectId: hydrated?.id ?? project.id,
-          project: hydrated as import("@paperclipai/shared").Project | null,
+          project: hydrated ? toPublicProject(hydrated) : null,
           status: "relinked",
         };
       }
@@ -783,7 +853,7 @@ export function projectService(db: Db) {
         resourceKey: input.projectKey,
         companyId: input.companyId,
         projectId: hydrated?.id ?? project.id,
-        project: hydrated as import("@paperclipai/shared").Project | null,
+        project: hydrated ? toPublicProject(hydrated) : null,
         status: "created",
       };
     },
@@ -793,7 +863,7 @@ export function projectService(db: Db) {
     update: async (
       id: string,
       data: Partial<typeof projects.$inferInsert> & { goalIds?: string[] },
-    ): Promise<ProjectWithGoals | null> => {
+    ): Promise<InternalProject | null> => {
       const { goalIds: inputGoalIds, ...projectData } = data;
       const ids = resolveGoalIds({ goalIds: inputGoalIds, goalId: projectData.goalId });
       const existingProject = await db
@@ -843,36 +913,6 @@ export function projectService(db: Db) {
       return enriched ?? null;
     },
 
-    clearExecutionWorkspaceEnvironmentSelection: async (companyId: string, environmentId: string) => {
-      const rows = await db
-        .select({
-          id: projects.id,
-          executionWorkspacePolicy: projects.executionWorkspacePolicy,
-        })
-        .from(projects)
-        .where(eq(projects.companyId, companyId));
-
-      let cleared = 0;
-      for (const row of rows) {
-        const policy = parseProjectExecutionWorkspacePolicy(row.executionWorkspacePolicy);
-        if (policy?.environmentId !== environmentId) continue;
-
-        await db
-          .update(projects)
-          .set({
-            executionWorkspacePolicy: {
-              ...policy,
-              environmentId: null,
-            },
-            updatedAt: new Date(),
-          })
-          .where(eq(projects.id, row.id));
-        cleared += 1;
-      }
-
-      return cleared;
-    },
-
     remove: (id: string) =>
       db
         .delete(projects)
@@ -884,7 +924,7 @@ export function projectService(db: Db) {
           return { ...row, urlKey: deriveProjectUrlKey(row.name, row.id) };
         }),
 
-    listWorkspaces: async (projectId: string): Promise<ProjectWorkspace[]> => {
+    listWorkspaces: async (projectId: string): Promise<InternalProjectWorkspace[]> => {
       const rows = await db
         .select()
         .from(projectWorkspaces)
@@ -907,7 +947,7 @@ export function projectService(db: Db) {
     createWorkspace: async (
       projectId: string,
       data: CreateWorkspaceInput,
-    ): Promise<ProjectWorkspace | null> => {
+    ): Promise<InternalProjectWorkspace | null> => {
       const project = await db
         .select()
         .from(projects)
@@ -989,7 +1029,7 @@ export function projectService(db: Db) {
       projectId: string,
       workspaceId: string,
       data: UpdateWorkspaceInput,
-    ): Promise<ProjectWorkspace | null> => {
+    ): Promise<InternalProjectWorkspace | null> => {
       const existing = await db
         .select()
         .from(projectWorkspaces)
@@ -1137,7 +1177,7 @@ export function projectService(db: Db) {
       return updated ? toWorkspace(updated) : null;
     },
 
-    removeWorkspace: async (projectId: string, workspaceId: string): Promise<ProjectWorkspace | null> => {
+    removeWorkspace: async (projectId: string, workspaceId: string): Promise<InternalProjectWorkspace | null> => {
       const existing = await db
         .select()
         .from(projectWorkspaces)

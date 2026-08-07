@@ -139,13 +139,8 @@ export function PluginSettings() {
         : "secondary";
   const pluginDescription = plugin.manifestJson.description;
   const pluginCapabilities = plugin.manifestJson.capabilities;
-  const environmentDrivers = plugin.manifestJson.environmentDrivers ?? [];
   const localFolderDeclarations = plugin.manifestJson.localFolders ?? [];
   const hasLocalFolders = localFolderDeclarations.length > 0;
-  const environmentDriverNames = environmentDrivers
-    .map((driver) => driver.displayName)
-    .filter((name, index, values) => values.indexOf(name) === index);
-  const driverLabel = environmentDriverNames.join(", ");
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -246,18 +241,6 @@ export function PluginSettings() {
                   pluginStatus={plugin.status}
                   supportsConfigTest={plugin.supportsConfigTest}
                 />
-              ) : environmentDrivers.length > 0 ? (
-                <div className="rounded-md border border-border/60 bg-muted/20 px-4 py-3 text-sm">
-                  <p className="font-medium text-foreground">Configure this plugin from Instance Settings → Environments.</p>
-                  <p className="mt-1 text-muted-foreground">
-                    {driverLabel} registers its instance-scoped environment runtime settings there.
-                  </p>
-                  <div className="mt-3">
-                    <Button asChild variant="outline" size="sm">
-                      <Link to="/company/settings/instance/environments">Open Environments</Link>
-                    </Button>
-                  </div>
-                </div>
               ) : !hasLocalFolders ? (
                 <p className="text-sm text-muted-foreground">
                   This plugin does not require any settings.

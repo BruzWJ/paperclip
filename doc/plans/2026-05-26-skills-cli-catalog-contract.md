@@ -74,7 +74,6 @@ These commands are Phase B and must work over existing APIs.
 | `skills file <skill-ref> [--path <path>]` | Resolves the skill, reads a file with default `SKILL.md`, and prints raw file content in human mode. This command must remain pipeable. | `CompanySkillFileDetail` |
 | `skills import <source>` | Calls existing import API. Source may be a local path, GitHub URL, skills.sh URL or command, `owner/repo`, `owner/repo/skill`, or URL-like source already accepted by the server. | `CompanySkillImportResult` |
 | `skills create --name <name> [--slug <slug>] [--description <text>] [--body-file <path|->]` | Creates a managed local company skill. If `--body-file` is omitted, the server default body is used. `-` reads markdown from stdin. | `CompanySkill` |
-| `skills scan-projects [--project-id <id>...] [--workspace-id <id>...]` | Calls project scan. Repeated flags become arrays. With neither flag, scan all accessible project workspaces. | `CompanySkillProjectScanResult` |
 | `skills check [skill-ref]` | Reads update status for one skill, or for every listed company skill when no ref is provided. Unsupported statuses are shown, not hidden. | `CompanySkillCheckRow[]` |
 | `skills update <skill-ref>` | Installs the update for one skill through the existing install-update API. | `CompanySkillUpdateRow` |
 | `skills update --all` | Checks all skills, installs only those with `hasUpdate=true`, and reports skipped unsupported or current skills. | `CompanySkillUpdateRow[]` |

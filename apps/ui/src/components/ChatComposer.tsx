@@ -15,8 +15,8 @@ import { cn } from "../lib/utils";
 /**
  * Shared chat composer (PAP-95a / PAP-96).
  *
- * One reusable input shell used by BOTH the conference room (BoardChat) and
- * task comments (IssueChatThread). It is intentionally a *plain textarea* —
+ * One reusable input shell for issue comments and related messaging flows. It
+ * is intentionally a *plain textarea* —
  * **no formatting toolbar** — with attach + send. The focus state is a neutral
  * border darkening (no blue focus ring) so the box reads as calm chrome in both
  * surfaces.
@@ -24,8 +24,8 @@ import { cn } from "../lib/utils";
  * Task-only chrome — the yellow planning chip and the assignee footer — is NOT
  * baked in here. It layers on through the `tone`, `leadingTools`, and
  * `trailingTools` props (wired by PAP-95b). The @project/@task picker layers on
- * through PAP-95f. The conference room adopts this bare: textarea + send (+ attach
- * when a handler is supplied), no mode chip, since the room has no task lifecycle.
+ * through PAP-95f. Consumers can also use it bare: textarea + send (+ attach
+ * when a handler is supplied), without task-specific chrome.
  */
 
 export interface ChatComposerAttachment {
@@ -52,11 +52,11 @@ export interface ChatComposerProps {
   submitting?: boolean;
   /**
    * Send-key behavior.
-   * - `"enter"`: Enter submits, Shift+Enter inserts a newline (conference room default today).
+   * - `"enter"`: Enter submits, Shift+Enter inserts a newline.
    * - `"mod-enter"`: Cmd/Ctrl+Enter submits, Enter inserts a newline (recommended unified default).
    */
   submitKey?: "enter" | "mod-enter";
-  /** Collapse to a single visual line — strips newlines and disables wrapping (conference room). */
+  /** Collapse to a single visual line — strips newlines and disables wrapping. */
   singleLine?: boolean;
   /** Visual tone. Task issue modes tint the box for planning and ask flows. */
   tone?: "standard" | "ask" | "planning";
@@ -150,7 +150,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
   }), []);
 
   // Auto-grow the textarea up to a cap (multiline only). Single-line stays at
-  // one row and scrolls horizontally, matching the conference room today.
+  // one row and scrolls horizontally.
   useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el || singleLine) return;

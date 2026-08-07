@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { agentAdapterAcpConfigurationSchema } from "./agent-adapter-revision.js";
+import {
+  agentAdapterAcpConfigurationSchema,
+  projectAgentAdapterAcpConfiguration,
+  publicAgentAdapterAcpConfigurationSchema,
+} from "./agent-adapter-revision.js";
 
 const ENVIRONMENT_ID = "00000000-0000-4000-8000-000000000001";
 const SKILL_VERSION_A = "00000000-0000-4000-8000-000000000002";
@@ -26,7 +30,7 @@ function configuration() {
       },
     },
     executionTargetSelector: {
-      defaultEnvironmentId: ENVIRONMENT_ID,
+      environmentId: ENVIRONMENT_ID,
       executionTargetDriver: "local" as const,
       executionTargetDigest: "a".repeat(64),
     },
@@ -46,6 +50,15 @@ describe("agent adapter ACP revision configuration", () => {
     expect(agentAdapterAcpConfigurationSchema.parse(configuration())).toEqual(
       configuration(),
     );
+  });
+
+  it("redacts internal execution selectors from the board projection", () => {
+    const projected = projectAgentAdapterAcpConfiguration(configuration());
+    expect(publicAgentAdapterAcpConfigurationSchema.parse(projected)).toEqual(
+      projected,
+    );
+    expect(projected).not.toHaveProperty("executionTargetSelector");
+    expect(projected).not.toHaveProperty("workspaceSelector");
   });
 
   it("allows a target with no selected model", () => {

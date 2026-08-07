@@ -299,7 +299,7 @@ export function scanServerWorkerTopology(
     markers: [
       "discoverLocalAcpxAdapterCatalog",
       "acpxDiscoveryToServerAdapter",
-      "listAcpRegistryAgentNames",
+      "listLocallyAvailableAcpRegistryAgentNames",
       "probeAcpxAgent",
       "configOptions",
       "limits: null",

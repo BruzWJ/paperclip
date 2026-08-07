@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ExternalObjectSummary, Issue } from "@paperclipai/shared";
+import type { Issue } from "@paperclipai/shared";
 import { Link } from "@/lib/router";
 import { Archive, Flag } from "lucide-react";
 import {
@@ -10,7 +10,6 @@ import {
 import { cn } from "../lib/utils";
 import { StatusIcon } from "./StatusIcon";
 import { hasAssignedBacklogBlocker } from "../lib/issue-blockers";
-import { ExternalObjectStatusSummary } from "./ExternalObjectStatusSummary";
 import { Badge } from "@/components/ui/badge";
 
 type UnreadState = "hidden" | "visible" | "fading";
@@ -24,11 +23,6 @@ interface IssueRowProps {
   desktopLeadingSpacer?: boolean;
   mobileMeta?: ReactNode;
   desktopTrailing?: ReactNode;
-  /**
-   * Optional pre-fetched external-object summary. Renders a compact severity
-   * marker before the rest of `desktopTrailing` on desktop only.
-   */
-  externalObjectSummary?: ExternalObjectSummary | null;
   trailingMeta?: ReactNode;
   titleSuffix?: ReactNode;
   titleClassName?: string;
@@ -64,7 +58,6 @@ export function IssueRow({
   desktopLeadingSpacer = false,
   mobileMeta,
   desktopTrailing,
-  externalObjectSummary,
   trailingMeta,
   titleSuffix,
   titleClassName,
@@ -251,7 +244,7 @@ export function IssueRow({
           ) : null}
         </span>
       </span>
-      {(onArchive || desktopTrailing || trailingMeta || externalObjectSummary) ? (
+      {(onArchive || desktopTrailing || trailingMeta) ? (
         <span className="relative z-20 ml-auto hidden shrink-0 items-center gap-2 sm:order-3 sm:flex sm:gap-3">
           {onArchive ? (
             <button
@@ -267,9 +260,6 @@ export function IssueRow({
               <Archive className="h-3.5 w-3.5" />
               Archive
             </button>
-          ) : null}
-          {externalObjectSummary ? (
-            <ExternalObjectStatusSummary summary={externalObjectSummary} compact />
           ) : null}
           {desktopTrailing}
           {trailingMeta ? (

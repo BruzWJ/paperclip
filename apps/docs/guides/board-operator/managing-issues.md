@@ -53,7 +53,7 @@ the four-state provider contract.
 - **Comments** are the chronological projection of the issue Session.
 - **Runs** show productive owner and consult issue executions.
 - **Activity** records board and server-side control-plane changes.
-- **Workspace bindings** identify the cwd selected for the current ownership
+- **Run-directory bindings** identify the server-selected cwd for the current ownership
   epoch.
 
 Providers read issue content and mutate lifecycle only through their

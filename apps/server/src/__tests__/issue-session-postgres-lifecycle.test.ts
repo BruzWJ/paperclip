@@ -391,7 +391,7 @@ describe("canonical company Session lifecycle without a database process", () =>
     });
     const emptySafetyChecks = Array.from({ length: 10 }, () => []);
     const deleteResults = [
-      ...Array.from({ length: 49 }, () => []),
+      ...Array.from({ length: 46 }, () => []),
       [{ id: companyId }],
     ];
     const harness = createMockDb({

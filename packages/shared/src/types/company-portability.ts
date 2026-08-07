@@ -71,23 +71,7 @@ export interface CompanyPortabilityProjectManifestEntry {
   icon: string | null;
   status: string | null;
   env: AgentEnvConfig | null;
-  executionWorkspacePolicy: Record<string, unknown> | null;
-  workspaces: CompanyPortabilityProjectWorkspaceManifestEntry[];
   metadata: Record<string, unknown> | null;
-}
-
-export interface CompanyPortabilityProjectWorkspaceManifestEntry {
-  key: string;
-  name: string;
-  sourceType: string | null;
-  repoUrl: string | null;
-  repoRef: string | null;
-  defaultRef: string | null;
-  visibility: string | null;
-  setupCommand: string | null;
-  cleanupCommand: string | null;
-  metadata: Record<string, unknown> | null;
-  isPrimary: boolean;
 }
 
 export interface CompanyPortabilityIssueRoutineTriggerManifestEntry {
@@ -124,7 +108,6 @@ export interface CompanyPortabilityIssueManifestEntry {
   title: string | null;
   path: string;
   projectSlug: string | null;
-  projectWorkspaceKey: string | null;
   ownerAgentSlug: string;
   request: string;
   recurring: boolean;
@@ -136,7 +119,6 @@ export interface CompanyPortabilityIssueManifestEntry {
   priority: string | null;
   labelIds: string[];
   billingCode: string | null;
-  executionWorkspaceSettings: Record<string, unknown> | null;
   comments: CompanyPortabilityIssueCommentManifestEntry[];
   metadata: Record<string, unknown> | null;
 }
@@ -157,13 +139,11 @@ export interface CompanyPortabilityAgentManifestEntry {
     adapterType: string;
     adapterConfig: Record<string, unknown>;
     runtimeConfig: Record<string, unknown>;
-    sourceEnvironmentId: string;
     skillChannel: CompanySkillChannel;
   };
   contextGrants: Record<AgentContextGrantKey, boolean>;
   actionGrants: Record<PaperclipActionKey, boolean>;
   mentionReachGrants: Record<AgentMentionReachGrantKey, boolean>;
-  companyToolIds: string[];
   governance: AgentGovernancePolicy;
   permissionGrants: Array<{
     permissionKey: PermissionKey;
@@ -318,7 +298,6 @@ export interface CompanyPortabilityPreviewResult {
 export interface CompanyPortabilityAdapterOverride {
   adapterType: string;
   adapterConfig: Record<string, unknown>;
-  defaultEnvironmentId: string;
   skillChannel: CompanySkillChannel;
 }
 

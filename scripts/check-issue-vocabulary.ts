@@ -149,29 +149,9 @@ export const ISSUE_VOCABULARY_OWNER_ALLOWLIST: readonly OwnerAllowance[] =
       line: /--status-task-/u,
     },
     {
-      category: "design-locked-ui-token",
-      owner: "doc/design/DECISION-SHEET.md",
-      line: /--status-task-/u,
-    },
-    {
-      category: "design-locked-ui-token",
-      owner: "doc/design/COMPONENT-INVENTORY.md",
-      line: /--status-task-/u,
-    },
-    {
-      category: "design-locked-ui-token",
-      owner: "doc/design/TOKEN-AUDIT.md",
-      line: /(?:--status-task-|taskStatusVar)/u,
-    },
-    {
       category: "plan-work-unit",
       owner: "doc/plans/2026-05-05-scaled-kanban-board.md",
       line: /(?:task-by-task|^## Task \d+:)/u,
-    },
-    {
-      category: "vscode-native-task-api",
-      owner: "doc/plans/2026-04-12-vscode-task-interoperability-plan.md",
-      wholeOwner: true,
     },
     {
       category: "rendered-ui-copy-governed-by-design",

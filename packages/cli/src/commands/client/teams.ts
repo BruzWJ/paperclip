@@ -44,7 +44,6 @@ interface TeamPreviewOptions extends BaseClientOptions {
   allowLocalPathSources?: boolean;
   adapterOverride?: string[];
   adapterConfig?: string[];
-  defaultEnvironmentId?: string[];
   skillChannel?: string[];
 }
 
@@ -183,7 +182,6 @@ export function registerTeamCommands(program: Command): void {
       .option("--selected-file <path>", "Restrict import preview to selected portable file; may be repeated", collectOptionValue, [] as string[])
       .option("--adapter-override <slug=type>", "Explicit adapter type for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--adapter-config <slug=json>", "Explicit adapter config JSON object for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
-      .option("--default-environment-id <slug=id>", "Explicit execution environment UUID for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--skill-channel <slug=channel>", "Exact company-skill channel (isolated_skills_home or operator_native) for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--allow-external-sources", "Allow GitHub, URL, or skills.sh skill sources declared by the catalog team", false)
       .option("--allow-unpinned-optional-sources", "Allow optional-team external skill sources that are not pinned to a commit", false)
@@ -222,7 +220,6 @@ export function registerTeamCommands(program: Command): void {
       .option("--secret-value <key=value>", "Secret env input value for install; may be repeated", collectOptionValue, [] as string[])
       .option("--adapter-override <slug=type>", "Explicit adapter type for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--adapter-config <slug=json>", "Explicit adapter config JSON object for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
-      .option("--default-environment-id <slug=id>", "Explicit execution environment UUID for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--skill-channel <slug=channel>", "Exact company-skill channel (isolated_skills_home or operator_native) for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--allow-external-sources", "Allow GitHub, URL, or skills.sh skill sources declared by the catalog team", false)
       .option("--allow-unpinned-optional-sources", "Allow optional-team external skill sources that are not pinned to a commit", false)
@@ -386,7 +383,6 @@ function buildTeamOptions(opts: TeamPreviewOptions): CatalogTeamImportOptions {
     adapterOverrides: parseExplicitAdapterOverrides(
       opts.adapterOverride,
       opts.adapterConfig,
-      opts.defaultEnvironmentId,
       opts.skillChannel,
     ),
     sourcePolicy: buildSourcePolicy(opts),

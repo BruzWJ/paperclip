@@ -65,7 +65,6 @@ interface CompanyImportOptions extends BaseClientOptions {
   dryRun?: boolean;
   adapterOverride?: string[];
   adapterConfig?: string[];
-  defaultEnvironmentId?: string[];
   skillChannel?: string[];
 }
 
@@ -91,7 +90,7 @@ const IMPORT_INCLUDE_OPTIONS: Array<{
   hint: string;
 }> = [
   { value: "company", label: "Company", hint: "name, branding, and company settings" },
-  { value: "projects", label: "Projects", hint: "projects and workspace metadata" },
+  { value: "projects", label: "Projects", hint: "project metadata" },
   { value: "issues", label: "Issues", hint: "issues and recurring routines" },
   { value: "agents", label: "Agents", hint: "agent records and org structure" },
   { value: "skills", label: "Skills", hint: "company skill packages and references" },
@@ -1266,7 +1265,6 @@ export function registerCompanyCommands(program: Command): void {
       .option("--paperclip-url <url>", "Alias for --api-base on this command")
       .option("--adapter-override <slug=type>", "Explicit adapter type for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--adapter-config <slug=json>", "Explicit adapter config JSON object for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
-      .option("--default-environment-id <slug=id>", "Explicit execution environment UUID for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--skill-channel <slug=channel>", "Exact company-skill channel (isolated_skills_home or operator_native) for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--yes", "Accept default selection and skip the pre-import confirmation prompt", false)
       .option("--dry-run", "Run preview only without applying", false)
@@ -1291,7 +1289,6 @@ export function registerCompanyCommands(program: Command): void {
           const adapterOverrides = parseExplicitAdapterOverrides(
             opts.adapterOverride,
             opts.adapterConfig,
-            opts.defaultEnvironmentId,
             opts.skillChannel,
           );
 

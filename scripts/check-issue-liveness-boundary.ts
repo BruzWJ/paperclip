@@ -1101,7 +1101,7 @@ function writerAndCallerViolations(repositoryRoot: string): string[] {
       violations.push(`${path}: alternate liveness processor assembly`);
     }
     if (
-      /(?:timer|scanner|startup|watchdog|routine|maintenance|reader?|routes?)/i.test(
+      /(?:timer|scanner|startup|routine|maintenance|reader?|routes?)/i.test(
         path,
       ) &&
       /(?:consumeFinalizationOutbox|processFinalizationInTransaction|issueExecutionFinalizationStaleCheckOutbox)/.test(

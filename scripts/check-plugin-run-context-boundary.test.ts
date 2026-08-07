@@ -63,7 +63,6 @@ function fixtureRoot(): string {
       "  parameters: unknown;",
       "  runContextHandle: string;",
       "}",
-      "export interface PluginExternalObjectUrlCandidate {}",
       "",
     ].join("\n"),
   );
@@ -98,7 +97,7 @@ function fixtureRoot(): string {
       "  });",
       "  return runContext;",
       "}",
-      "async function handleDetectExternalObjects() {}",
+      "  function methodNotImplemented() {}",
       "",
     ].join("\n"),
   );

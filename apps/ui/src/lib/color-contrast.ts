@@ -70,9 +70,8 @@ function composite(
 
 /**
  * Shared readable-text pair (slate-50 / gray-900) for "pick light or dark
- * text over an arbitrary background" logic. Byte-identical values were
- * previously duplicated in lib/worktree-branding.ts (DECISION-SHEET.md A2);
- * this is the single source. NOT the same thing as ThemeContext.tsx's
+ * text over an arbitrary background" logic. This is the single source and is
+ * not the same thing as ThemeContext.tsx's
  * <meta theme-color> pair (#18181b/#ffffff), which stays separate.
  */
 export const READABLE_TEXT_LIGHT = "#f8fafc";

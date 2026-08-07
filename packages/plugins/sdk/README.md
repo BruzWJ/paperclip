@@ -91,7 +91,7 @@ runWorker(plugin, import.meta.url);
 | `onWebhook?(input)` | Present exactly when `manifest.webhooks` declares endpoints. Handle `POST /api/plugins/:pluginId/webhooks/:endpointKey`. |
 | `onApiRequest?(input)` | Present exactly when `manifest.apiRoutes` declares routes. Handle scoped plugin JSON API requests. |
 
-**Context (`ctx`) in setup:** `config`, `localFolders`, `events`, `jobs`, `db`, `http`, `runtime`, `activity`, `state`, `entities`, `projects`, `executionWorkspaces`, `skills`, `routines`, `companies`, `issues`, `agents`, `goals`, `access`, `authorization`, `data`, `actions`, `tools`, `metrics`, `telemetry`, `logger`, `manifest`. Worker-side host APIs are capability-gated; declare capabilities in the manifest.
+**Context (`ctx`) in setup:** `config`, `localFolders`, `events`, `jobs`, `db`, `http`, `runtime`, `activity`, `state`, `entities`, `projects`, `skills`, `routines`, `companies`, `issues`, `agents`, `goals`, `access`, `authorization`, `data`, `actions`, `tools`, `metrics`, `telemetry`, `logger`, `manifest`. Worker-side host APIs are capability-gated; declare capabilities in the manifest.
 
 `instanceConfigSchema` produces one instance-admin configuration for the
 installed plugin. Read it with `await ctx.config.get()`; configuration is not
@@ -106,7 +106,7 @@ invoke an agent or open a conversational agent session directly.
 them as untrusted input and read company authority only from the immutable
 `context.actor.companyId` argument supplied to the action handler.
 
-**Jobs:** Declare in `manifest.jobs` with `jobKey`, `displayName`, `schedule` (cron), and register exactly one matching handler with `ctx.jobs.register(jobKey, fn)`. **Webhooks:** `manifest.webhooks` and `onWebhook(input)` must either both be present or both be absent. **State:** `ctx.state.get/set/delete(scopeKey)`; scope kinds: `instance`, `company`, `project`, `project_workspace`, `agent`, `issue`, `goal`, `run`.
+**Jobs:** Declare in `manifest.jobs` with `jobKey`, `displayName`, `schedule` (cron), and register exactly one matching handler with `ctx.jobs.register(jobKey, fn)`. **Webhooks:** `manifest.webhooks` and `onWebhook(input)` must either both be present or both be absent. **State:** `ctx.state.get/set/delete(scopeKey)`; scope kinds: `instance`, `company`, `project`, `agent`, `issue`, `goal`, `run`.
 
 **Trusted local folders:** Declare `manifest.localFolders[]` and the `local.folders` capability when a plugin needs an operator-configured company-scoped folder. Use `ctx.localFolders.configure()`, `status()`, `readText()`, and `writeTextAtomic()` instead of resolving arbitrary filesystem paths yourself. The host validates absolute roots, read/write access, required relative folders/files, traversal attempts, symlink escapes, and writes through temp-file-plus-rename atomic replacement.
 
@@ -118,7 +118,7 @@ for administrator-controlled plugins:
 
 - Declare `agent.tools.register` to expose every manifest-declared tool directly
   to all agents while the plugin installation is ready. Installation is
-  the administrator grant; no company-tool catalog projection or per-agent
+  the administrator grant; no additional catalog projection or per-agent
   selection is involved. The database-backed per-prompt compiler is the sole
   discovery/schema authority; calls still use the prompt-capability gateway,
   immutable installation binding, direct bare-name worker dispatch, and audit
@@ -269,10 +269,10 @@ Slots are mount points for plugin React components. Launchers are host-rendered 
 | `companySettingsPage` | Global | — |
 | `dashboardWidget` | Global | — |
 | `globalToolbarButton` | Global | — |
-| `detailTab` | Entity | `project`, `issue`, `execution_workspace`, `project_workspace` |
+| `detailTab` | Entity | `project`, `issue` |
 | `issueDetailView` | Entity | `issue` |
 | `projectSidebarItem` | Entity | `project` |
-| `toolbarButton` | Entity | `project`, `issue`, `execution_workspace` |
+| `toolbarButton` | Entity | `project`, `issue` |
 
 Launcher placement zones are a separate closed set:
 
@@ -320,7 +320,7 @@ A card or section rendered on the main dashboard. Use this for at-a-glance metri
 
 #### `detailTab`
 
-An additional tab on a project, issue, execution-workspace, or project-workspace detail page. Receives `PluginDetailTabProps` with `context.companyId` set to the active company and `context.entityId` / `context.entityType` guaranteed to be non-null. Specify the mounted entity types through `entityTypes`. Requires the `ui.detailTab.register` capability.
+An additional tab on a project or issue detail page. Receives `PluginDetailTabProps` with `context.companyId` set to the active company and `context.entityId` / `context.entityType` guaranteed to be non-null. Specify the mounted entity types through `entityTypes`. Requires the `ui.detailTab.register` capability.
 
 #### `issueDetailView`
 
@@ -336,7 +336,7 @@ A button rendered in the global top bar (breadcrumb bar) that appears on every p
 
 #### `toolbarButton`
 
-A button rendered on project, issue, or execution-workspace detail pages. Use this for short-lived actions scoped to the current entity. Receives `context.companyId`, `context.entityId`, and `context.entityType`; the required `entityTypes` controls which mounted pages receive it. Requires the `ui.action.register` capability.
+A button rendered on project or issue detail pages. Use this for short-lived actions scoped to the current entity. Receives `context.companyId`, `context.entityId`, and `context.entityType`; the required `entityTypes` controls which mounted pages receive it. Requires the `ui.action.register` capability.
 
 ### Launcher actions and render options
 
@@ -368,8 +368,6 @@ Declare in `manifest.capabilities`. Grouped by scope:
 |-------|------------|
 | **Company** | `companies.read` |
 | | `projects.read` |
-| | `project.workspaces.read` |
-| | `execution.workspaces.read` |
 | | `issues.read` |
 | | `agents.read` |
 | | `goals.read` |
@@ -395,8 +393,6 @@ Declare in `manifest.capabilities`. Grouped by scope:
 | | `telemetry.track` |
 | | `database.namespace.migrate` |
 | | `database.namespace.write` |
-| | `external.objects.detect` |
-| | `external.objects.read` |
 | **Instance** | `instance.settings.register` |
 | | `plugin.state.read` |
 | | `plugin.state.write` |
@@ -424,42 +420,6 @@ Declare in `manifest.capabilities`. Grouped by scope:
 | | `ui.action.register` |
 
 Full list in code: import `PLUGIN_CAPABILITIES` from `@paperclipai/plugin-sdk`.
-
-### External Object Reference Providers
-
-Trusted connector plugins can declare generic external object providers in the
-manifest. The host owns URL scanning, sanitized canonical URLs, core storage,
-normalized status rendering, and issue/comment/document write durability. The
-plugin only identifies provider-owned objects and resolves board-safe status
-metadata.
-
-```ts
-objectReferences: [
-  {
-    providerKey: "mocktracker",
-    displayName: "Mock Tracker",
-    objectTypes: ["ticket"],
-    urlPatterns: ["https://mock.example/tickets/:id"],
-    refreshPolicy: { defaultTtlSeconds: 300, staleAfterSeconds: 1800 },
-  },
-],
-capabilities: ["external.objects.detect", "external.objects.read"],
-```
-
-Implement `onDetectExternalObjects()` to map sanitized URL candidates to
-`providerKey`, `objectType`, provider-stable `externalId`, and optional display
-metadata such as `displayKey`/`iconKey`. Implement `onResolveExternalObject()`
-to return a normalized snapshot with `statusCategory`, `statusTone`,
-`statusLabel`, optional `statusIconKey`, board-safe `data`, and freshness
-metadata. Slow or failing plugins are isolated: Paperclip logs the failure and
-continues saving the source issue, comment, or document.
-
-MVP security posture: provider plugins are trusted installs. Manifest
-capabilities gate host APIs and provider invocation paths, but they are not a
-sandbox boundary for untrusted marketplace code. Plugin UI is same-origin
-JavaScript and must not be mounted inline in markdown; inline external-object
-rendering uses host-owned metadata only. Treat untrusted providers as future work
-that requires worker sandboxing plus isolated plugin UI.
 
 ### Restricted Database Namespace
 

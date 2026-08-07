@@ -34,7 +34,7 @@ const STAR_ROW_REVEAL =
 
 /**
  * Compact starred-project children rendered directly below the top-level
- * `Projects` nav row in the streamlined sidebar. Starring/unstarring itself
+ * `Projects` nav row in the sidebar. Starring/unstarring itself
  * happens from browse/detail surfaces; here we only ever *remove* a star
  * (plus the existing leave affordance). Archived projects are filtered out
  * server-side, so a stale star never resurrects a hidden project.

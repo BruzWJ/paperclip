@@ -15,7 +15,6 @@ import {
 } from "drizzle-orm/pg-core";
 import { issueExecutionPromptCapabilities } from "./issue_execution_capabilities.js";
 import { plugins } from "./plugins.js";
-import { agentCompanyToolSelections } from "./tool_access.js";
 
 /**
  * Server-side validation ledger for plugin run-context bearers. Only the
@@ -109,10 +108,6 @@ export const runInterfaceToolCalls = pgTable(
       .notNull(),
     callIdentityValue: text("call_identity_value").notNull(),
     toolName: text("tool_name").notNull(),
-    companyToolSelectionId: uuid("company_tool_selection_id").references(
-      () => agentCompanyToolSelections.id,
-      { onDelete: "restrict" },
-    ),
     /** Immutable plugin binding identity; intentionally not a live installation FK. */
     pluginInstallationId: uuid("plugin_installation_id"),
     argumentsDigest: text("arguments_digest").notNull(),
@@ -194,13 +189,6 @@ export const runInterfaceToolCalls = pgTable(
         and ${table.completedAt} is not null
       )`,
     ),
-    check(
-      "run_interface_tool_calls_plugin_binding_check",
-      sql`not (
-        ${table.pluginInstallationId} is not null
-        and ${table.companyToolSelectionId} is not null
-      )`,
-    ),
     foreignKey({
       columns: [
         table.companyId,
@@ -214,14 +202,6 @@ export const runInterfaceToolCalls = pgTable(
       ],
       name: "run_interface_tool_calls_capability_generation_fk",
     }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.companyId, table.companyToolSelectionId],
-      foreignColumns: [
-        agentCompanyToolSelections.companyId,
-        agentCompanyToolSelections.id,
-      ],
-      name: "run_interface_tool_calls_company_tool_selection_fk",
-    }).onDelete("restrict"),
     uniqueIndex("run_interface_tool_calls_identity_uq").on(
       table.companyId,
       table.capabilityConnectionId,

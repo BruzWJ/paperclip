@@ -50,7 +50,7 @@ const ACP_CONFIGURATION: AgentAdapterAcpConfiguration = {
     },
   },
   executionTargetSelector: {
-    defaultEnvironmentId: ENVIRONMENT_ID,
+    environmentId: ENVIRONMENT_ID,
     executionTargetDriver: "local",
     executionTargetDigest: "a".repeat(64),
   },
@@ -195,7 +195,6 @@ describe("adapter runtime readiness", () => {
         agentId: AGENT_ID,
         adapterConfigRevisionId: REVISION_ID,
         environmentId: ENVIRONMENT_ID,
-        executionWorkspaceBindingId: BINDING_ID,
       },
       runtimeControls: ["session/status"],
     });
@@ -234,7 +233,6 @@ describe("adapter runtime readiness", () => {
         agentId: AGENT_ID,
         adapterConfigRevisionId: REVISION_ID,
         environmentId: ENVIRONMENT_ID,
-        executionWorkspaceBindingId: BINDING_ID,
       },
       reason: "adapter_revision_invalid",
       remediationCommand: null,

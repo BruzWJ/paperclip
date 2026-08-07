@@ -83,6 +83,16 @@ export function InstanceGeneralSettings() {
 
   const censorUsernameInLogs = generalQuery.data?.censorUsernameInLogs === true;
   const keyboardShortcuts = generalQuery.data?.keyboardShortcuts === true;
+  const reconcileWorkspaceBranches =
+    generalQuery.data?.enableWorkspaceBranchReconcileForward !== false;
+  const repairDirtyWorkspaces =
+    generalQuery.data?.enableWorkspaceDirtyQuarantineRepair !== false;
+  const serverInfoDebugView =
+    generalQuery.data?.enableServerInfoDebugView === true;
+  const autoRestartDevServerWhenIdle =
+    generalQuery.data?.autoRestartDevServerWhenIdle === true;
+  const worktreeRunExecution =
+    generalQuery.data?.enableWorktreeRunExecution === true;
   const pendingSettingsStatus = updateGeneralMutation.isPending
     ? "Saving instance settings…"
     : signOutMutation.isPending
@@ -159,6 +169,123 @@ export function InstanceGeneralSettings() {
             }
             disabled={updateGeneralMutation.isPending}
             aria-label="Toggle username log censoring"
+          />
+        </div>
+      </Card>
+
+      <Card className="block p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold">
+              Run scheduled tasks in worktrees
+            </h2>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Allow automatic schedule and webhook runs in this worktree
+              instance. It is off by default; when enabled in a worktree, only
+              routines created afterward can run automatically. Normal
+              instances are unaffected.
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={worktreeRunExecution}
+            onCheckedChange={() =>
+              updateGeneralMutation.mutate({
+                enableWorktreeRunExecution: !worktreeRunExecution,
+              })
+            }
+            disabled={updateGeneralMutation.isPending}
+            aria-label="Toggle worktree scheduled task execution"
+          />
+        </div>
+      </Card>
+
+      <Card className="block p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold">Server Info debug view</h2>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Show server restart, running commit, and checkout-state details in
+              the account menu. This is off by default.
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={serverInfoDebugView}
+            onCheckedChange={() =>
+              updateGeneralMutation.mutate({
+                enableServerInfoDebugView: !serverInfoDebugView,
+              })
+            }
+            disabled={updateGeneralMutation.isPending}
+            aria-label="Toggle Server Info debug view"
+          />
+        </div>
+      </Card>
+
+      <Card className="block p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold">
+              Auto-restart dev server when idle
+            </h2>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Automatically request a dev-server restart after backend changes
+              once no issue executions are active. This is off by default.
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={autoRestartDevServerWhenIdle}
+            onCheckedChange={() =>
+              updateGeneralMutation.mutate({
+                autoRestartDevServerWhenIdle: !autoRestartDevServerWhenIdle,
+              })
+            }
+            disabled={updateGeneralMutation.isPending}
+            aria-label="Toggle automatic idle dev-server restart"
+          />
+        </div>
+      </Card>
+
+      <Card className="block p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold">Reconcile workspace branches</h2>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Advance managed workspace branches when it is safe to reconcile
+              them with their configured source. This safeguard is on by default.
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={reconcileWorkspaceBranches}
+            onCheckedChange={() =>
+              updateGeneralMutation.mutate({
+                enableWorkspaceBranchReconcileForward:
+                  !reconcileWorkspaceBranches,
+              })
+            }
+            disabled={updateGeneralMutation.isPending}
+            aria-label="Toggle workspace branch reconciliation"
+          />
+        </div>
+      </Card>
+
+      <Card className="block p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold">Repair dirty workspaces</h2>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Quarantine and repair managed workspaces that are left in a dirty
+              state before they are reused. This safeguard is on by default.
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={repairDirtyWorkspaces}
+            onCheckedChange={() =>
+              updateGeneralMutation.mutate({
+                enableWorkspaceDirtyQuarantineRepair: !repairDirtyWorkspaces,
+              })
+            }
+            disabled={updateGeneralMutation.isPending}
+            aria-label="Toggle dirty workspace repair"
           />
         </div>
       </Card>

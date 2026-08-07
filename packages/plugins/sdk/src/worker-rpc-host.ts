@@ -74,8 +74,6 @@ import type {
   PluginPerformActionActorContext,
   PluginPerformActionContext,
   ExecuteToolParams,
-  DetectExternalObjectsParams,
-  ResolveExternalObjectParams,
   PluginEnvironmentAcquireLeaseParams,
   PluginEnvironmentDestroyLeaseParams,
   PluginEnvironmentExecuteParams,
@@ -595,14 +593,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           return callHost("projects.get", { projectId, companyId });
         },
 
-        async listWorkspaces(projectId: string, companyId: string) {
-          return callHost("projects.listWorkspaces", { projectId, companyId });
-        },
-
-        async getPrimaryWorkspace(projectId: string, companyId: string) {
-          return callHost("projects.getPrimaryWorkspace", { projectId, companyId });
-        },
-
         managed: {
           async get(projectKey: string, companyId: string) {
             return callHost("projects.managed.get", { projectKey, companyId });
@@ -613,12 +603,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           async reset(projectKey: string, companyId: string) {
             return callHost("projects.managed.reset", { projectKey, companyId });
           },
-        },
-      },
-
-      executionWorkspaces: {
-        async get(workspaceId: string, companyId: string) {
-          return callHost("executionWorkspaces.get", { workspaceId, companyId });
         },
       },
 
@@ -1080,10 +1064,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         }
         return acknowledgement;
       }
-      case "detectExternalObjects":
-        return handleDetectExternalObjects(params as DetectExternalObjectsParams);
-      case "resolveExternalObject":
-        return handleResolveExternalObject(params as ResolveExternalObjectParams);
       case "environmentValidateConfig":
         return handleEnvironmentValidateConfig(params as PluginEnvironmentValidateConfigParams);
 
@@ -1230,8 +1210,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     if (creatorCallbackHandlers.size > 0) {
       supportedMethods.push("issues.creatorCallback.deliver");
     }
-    if (plugin.definition.onDetectExternalObjects) supportedMethods.push("detectExternalObjects");
-    if (plugin.definition.onResolveExternalObject) supportedMethods.push("resolveExternalObject");
     if (plugin.definition.onEnvironmentValidateConfig) supportedMethods.push("environmentValidateConfig");
     if (plugin.definition.onEnvironmentProbe) supportedMethods.push("environmentProbe");
     if (plugin.definition.onEnvironmentAcquireLease) supportedMethods.push("environmentAcquireLease");
@@ -1459,20 +1437,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       }),
     });
     return handler(params.parameters, runContext);
-  }
-
-  async function handleDetectExternalObjects(params: DetectExternalObjectsParams) {
-    if (!plugin.definition.onDetectExternalObjects) {
-      throw methodNotImplemented("detectExternalObjects");
-    }
-    return plugin.definition.onDetectExternalObjects(params);
-  }
-
-  async function handleResolveExternalObject(params: ResolveExternalObjectParams) {
-    if (!plugin.definition.onResolveExternalObject) {
-      throw methodNotImplemented("resolveExternalObject");
-    }
-    return plugin.definition.onResolveExternalObject(params);
   }
 
   function methodNotImplemented(method: string): Error & { code: number } {

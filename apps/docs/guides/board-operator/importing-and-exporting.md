@@ -71,7 +71,7 @@ paperclipai company export abc123 --out ./skills-only --include skills --skills 
 
 - Company name, description, and metadata
 - Agent identity, reporting structure, explicit permission grants, and selected skills
-- Project definitions and workspace config
+- Project definitions
 - Issue immutable requests and explicit agent owners (when included as `ISSUE.md`)
 - Skill packages (as references or vendored content)
 - Adapter type and env input declarations in `.paperclip.yaml`

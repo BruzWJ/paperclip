@@ -31,11 +31,6 @@ import type {
   Agent,
   Goal,
   PrincipalPermissionGrant,
-  ExternalObjectStatusCategory,
-  ExternalObjectStatusTone,
-  ExternalObjectLivenessState,
-  ExternalObjectMentionConfidence,
-  ExternalObjectMentionSourceKind,
   ProviderSafeRunTrace,
   PluginWorkerLogLevel,
   ContextAccess,
@@ -49,8 +44,6 @@ import type {
   PluginCreatorCallbackAcknowledgement,
   PluginCreatorCallbackDelivery,
   PluginJobContext,
-  PluginExecutionWorkspaceMetadata,
-  PluginWorkspace,
   PluginRunContextHandle,
   PluginRunIssueProjection,
   PluginRunIssueCommentProjection,
@@ -540,101 +533,6 @@ export interface ExecuteToolParams {
   runContextHandle: PluginRunContextHandle;
 }
 
-export interface PluginExternalObjectUrlCandidate {
-  sanitizedCanonicalUrl: string;
-  sanitizedDisplayUrl: string;
-  canonicalIdentityHash: string;
-  canonicalIdentity: Record<string, unknown>;
-  redactedMatchedText: string;
-}
-
-export interface PluginExternalObjectSourceContext {
-  companyId: string;
-  sourceIssueId: string;
-  sourceKind: ExternalObjectMentionSourceKind;
-  sourceRecordId: string | null;
-  documentKey: string | null;
-  propertyKey: string | null;
-}
-
-export interface DetectExternalObjectsParams {
-  companyId: string;
-  urls: PluginExternalObjectUrlCandidate[];
-  sourceContext: PluginExternalObjectSourceContext;
-}
-
-export interface PluginExternalObjectDetection {
-  urlIdentityHash: string;
-  providerKey: string;
-  objectType: string;
-  externalId: string;
-  displayKey?: string | null;
-  iconKey?: string | null;
-  displayTitle?: string | null;
-  confidence?: ExternalObjectMentionConfidence;
-}
-
-export interface DetectExternalObjectsResult {
-  detections: PluginExternalObjectDetection[];
-}
-
-export interface PluginExternalObjectRecordSnapshot {
-  id: string;
-  companyId: string;
-  providerKey: string;
-  objectType: string;
-  externalId: string;
-  sanitizedCanonicalUrl: string | null;
-  canonicalIdentityHash: string | null;
-  displayKey: string | null;
-  iconKey: string | null;
-  displayTitle: string | null;
-  statusKey: string | null;
-  statusLabel: string | null;
-  statusIconKey: string | null;
-  statusCategory: ExternalObjectStatusCategory;
-  statusTone: ExternalObjectStatusTone;
-  liveness: ExternalObjectLivenessState;
-  isTerminal: boolean;
-  data: Record<string, unknown>;
-  remoteVersion: string | null;
-  etag: string | null;
-}
-
-export interface ResolveExternalObjectParams {
-  companyId: string;
-  providerKey: string;
-  objectType: string;
-  externalId: string;
-  object: PluginExternalObjectRecordSnapshot;
-}
-
-export interface PluginExternalObjectResolvedSnapshot {
-  displayKey?: string | null;
-  iconKey?: string | null;
-  displayTitle?: string | null;
-  statusKey?: string | null;
-  statusLabel?: string | null;
-  statusIconKey?: string | null;
-  statusCategory: ExternalObjectStatusCategory;
-  statusTone: ExternalObjectStatusTone;
-  isTerminal?: boolean;
-  data?: Record<string, unknown>;
-  remoteVersion?: string | null;
-  etag?: string | null;
-  ttlSeconds?: number;
-}
-
-export type PluginExternalObjectResolveResult =
-  | { ok: true; snapshot: PluginExternalObjectResolvedSnapshot }
-  | {
-      ok: false;
-      liveness: Extract<ExternalObjectLivenessState, "auth_required" | "unreachable">;
-      errorCode: string;
-      errorMessage?: string | null;
-      retryAfterSeconds?: number;
-    };
-
 export interface PluginEnvironmentDiagnostic {
   severity: "info" | "warning" | "error";
   message: string;
@@ -999,14 +897,6 @@ export interface HostToWorkerMethods {
     },
     result: PluginCreatorCallbackAcknowledgement,
   ];
-  detectExternalObjects: [
-    params: DetectExternalObjectsParams,
-    result: DetectExternalObjectsResult,
-  ];
-  resolveExternalObject: [
-    params: ResolveExternalObjectParams,
-    result: PluginExternalObjectResolveResult,
-  ];
   environmentValidateConfig: [
     params: PluginEnvironmentValidateConfigParams,
     result: PluginEnvironmentValidationResult,
@@ -1098,8 +988,6 @@ export const HOST_TO_WORKER_OPTIONAL_METHODS = [
   "performAction",
   "executeTool",
   "issues.creatorCallback.deliver",
-  "detectExternalObjects",
-  "resolveExternalObject",
   "environmentValidateConfig",
   "environmentProbe",
   "environmentAcquireLease",
@@ -1293,21 +1181,6 @@ export interface WorkerToHostMethods {
   "projects.get": [
     params: { projectId: string; companyId: string },
     result: Project | null,
-  ];
-  "projects.listWorkspaces": [
-    params: { projectId: string; companyId: string },
-    result: PluginWorkspace[],
-  ];
-  "projects.getPrimaryWorkspace": [
-    params: { projectId: string; companyId: string },
-    result: PluginWorkspace | null,
-  ];
-  "executionWorkspaces.get": [
-    params: {
-      workspaceId: string;
-      companyId: string;
-    },
-    result: PluginExecutionWorkspaceMetadata | null,
   ];
   "projects.managed.get": [
     params: { projectKey: string; companyId: string },
@@ -1595,13 +1468,13 @@ export interface WorkerToHostMethods {
     result: PluginAuthorizationPolicySummary,
   ];
   "authorization.policies.get": [
-    params: { companyId: string; resourceType: "company" | "agent" | "project" | "issue"; resourceId: string },
+    params: { companyId: string; resourceType: "company" | "agent" | "issue"; resourceId: string },
     result: PluginAuthorizationPolicyRecord | null,
   ];
   "authorization.policies.update": [
     params: {
       companyId: string;
-      resourceType: "project" | "issue";
+      resourceType: "issue";
       resourceId: string;
       policy: Record<string, unknown> | null;
     },

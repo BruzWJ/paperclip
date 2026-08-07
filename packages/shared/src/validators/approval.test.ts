@@ -98,7 +98,6 @@ describe("approval validators", () => {
         mentionReachGrants: Object.fromEntries(
           AGENT_MENTION_REACH_GRANT_KEYS.map((key) => [key, false]),
         ),
-        companyToolIds: [],
       },
     };
     expect(

@@ -415,13 +415,6 @@ export function RoutineDetail() {
         ...(data?.variables && Object.keys(data.variables).length > 0 ? { variables: data.variables } : {}),
         ...(data?.assigneeAgentId !== undefined ? { assigneeAgentId: data.assigneeAgentId } : {}),
         ...(data?.projectId !== undefined ? { projectId: data.projectId } : {}),
-        ...(data?.executionWorkspaceId !== undefined ? { executionWorkspaceId: data.executionWorkspaceId } : {}),
-        ...(data?.executionWorkspacePreference !== undefined
-          ? { executionWorkspacePreference: data.executionWorkspacePreference }
-          : {}),
-        ...(data?.executionWorkspaceSettings !== undefined
-          ? { executionWorkspaceSettings: data.executionWorkspaceSettings }
-          : {}),
       }),
     onSuccess: async () => {
       pushToast({ title: "Routine run started", tone: "success" });
@@ -910,7 +903,6 @@ export function RoutineDetail() {
       <RoutineRunVariablesDialog
         open={runVariablesOpen}
         onOpenChange={setRunVariablesOpen}
-        companyId={routine.companyId}
         routineName={routine.title}
         agents={agents ?? []}
         projects={projects ?? []}

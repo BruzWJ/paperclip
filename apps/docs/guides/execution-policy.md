@@ -1,8 +1,11 @@
 # Execution policies
 
-Execution policies are board control-plane rules for review and approval. They are enforced by the server and audited independently of provider prompts.
+Execution policies are board control-plane rules for review and approval. They
+are enforced by the server and audited independently of provider prompts.
 
-They do not create provider interaction cards, inject lifecycle instructions, or invoke an agent merely because a gate was resolved. Provider work still enters through the ordinary issue-execution path with a required current owner.
+They do not create provider interaction cards, inject lifecycle instructions, or
+invoke an agent merely because a gate was resolved. Provider work still enters
+through the ordinary issue-execution path with a required current owner.
 
 ## Policy shape
 
@@ -30,13 +33,18 @@ interface IssueExecutionStageParticipant {
 }
 ```
 
-Participants are explicitly selected agents or board users. Agent titles, reporting position, and creation order confer no review or approval authority.
+Participants are explicitly selected agents or board users. Agent titles,
+reporting position, and creation order confer no review or approval authority.
 
-The board may keep richer presentation stages while an agent sees only the canonical issue lifecycle: `open`, `blocked`, `done`, or `cancelled`. Review routing never expands an agent's action grants, context dial, mention reach, or company-tool selection.
+The board may keep richer presentation stages while an agent sees only the
+canonical issue lifecycle: `open`, `blocked`, `done`, or `cancelled`. Review
+routing never expands an agent's authority.
 
 ## Decisions and state
 
-The server keeps the current stage, selected participant, completed stages, return owner, and most recent outcome as issue execution state. Every accepted decision is also appended to `issue_execution_decisions` with:
+The server keeps the current stage, selected participant, completed stages,
+return owner, and most recent outcome as issue execution state. Every accepted
+decision is also appended to `issue_execution_decisions` with:
 
 - the company, issue, stage, and stage type;
 - the deciding agent or user;
@@ -45,43 +53,57 @@ The server keeps the current stage, selected participant, completed stages, retu
 - the originating run, when applicable; and
 - its creation timestamp.
 
-The decision log is the audit source. Historical thread-interaction records are read-only archives and do not participate in execution-policy behavior.
+The decision log is the audit source. Historical thread-interaction records are
+read-only archives and do not participate in execution-policy behavior.
 
 ## Workflow
 
-When the current owner submits a terminal completion and stages remain, the server applies the existing execution-policy transition instead of treating the issue as finally complete. It selects an eligible participant for the next stage and records the pending state.
+When the current owner submits a terminal completion and stages remain, the
+server applies the existing execution-policy transition instead of treating the
+issue as finally complete. It selects an eligible participant for the next
+stage and records the pending state.
 
-An approval advances to the next stage. Approval of the final stage completes the policy and permits the issue's terminal completion.
+An approval advances to the next stage. Approval of the final stage completes
+the policy and permits the issue's terminal completion.
 
-A change request records the decision and returns the issue to its recorded work owner. Resubmission returns to the same pending stage rather than restarting the whole policy. All owner changes use the canonical owner transition and ownership-epoch rules; no assignee compatibility field is written.
+A change request records the decision and returns the issue to its recorded
+work owner. Resubmission returns to the same pending stage rather than
+restarting the whole policy. All owner changes use the canonical owner
+transition and ownership-epoch rules; no assignee compatibility field is
+written.
 
-Stages with several participants still represent one required decision. The server chooses an eligible participant using the policy's existing deterministic selection rules and prevents self-review where that rule applies.
+Stages with several participants still represent one required decision. The
+server chooses an eligible participant using the policy's existing deterministic
+selection rules and prevents self-review where that rule applies.
 
 ## Control-plane boundary
 
-Execution policy is separate from the other retained board gates:
+Execution policy is separate from other retained board gates, including change
+consent and formal approvals. Resolving a gate permits only its recorded
+control-plane effect. Resolution does not create a provider card, append
+provider-directed prose, fabricate a comment, resume a native session, or queue
+an arbitrary wake.
 
-- change consent remains target-bound consent with its displayed diff and one-use checks;
-- tool OAuth and connection authorization remain in tool connection state;
-- company-tool execution approval remains in formal approvals, action requests, and signed reviewed arguments; and
-- execution-policy review and approval remain in issue execution state and append-only decisions.
-
-Resolving any of these gates permits only the recorded control-plane effect. Resolution does not create a provider card, append provider-directed prose, fabricate a comment, resume a native session, or queue an arbitrary wake.
-
-If a later transition requires provider work, it must enter through an ordinary, valid issue source and persisted `IssueExecutionRef`. It is subject to current ownership, lifecycle, adapter revision, context dial, grants, and compiled run-interface checks.
+If a later transition requires provider work, it must enter through an ordinary,
+valid issue source and persisted `IssueExecutionRef`. It is subject to current
+ownership, lifecycle, adapter revision, context controls, and compiled
+run-interface checks.
 
 ## Comments and successful runs
 
 The chronological issue thread is the durable human-facing output. A successful
 `issue_update` writes its exact message once in the counterpart Session; it does
-not add a source-side duplicate. When a run commits no update, its trailing final
-response can become the single comment of record.
+not add a source-side duplicate. When a run commits no update, its trailing
+final response can become the single comment of record.
 
-There is no missing-comment retry wake. Transactional run finalization and the issue-session projector guarantee the comment-of-record invariant or record the run failure explicitly.
+There is no missing-comment retry wake. Transactional run finalization and the
+issue-session projector guarantee the comment-of-record invariant or record the
+run failure explicitly.
 
 ## Board usage
 
-Board issue creation and editing may configure review and approval stages by selecting named agents or users. Issue creation must still provide:
+Board issue creation and editing may configure review and approval stages by
+selecting named agents or users. Issue creation must still provide:
 
 - immutable `request`;
 - required current agent owner;
@@ -92,14 +114,18 @@ Agent providers do not use generic issue REST mutation routes. An authorized
 owner or exact creator uses the compiled `issue_update` action. Board mutations
 use the board control plane and the same canonical owner and policy invariants.
 
-Removing a policy clears only its policy-owned pending state according to the existing one-shot transition rules. It does not rewrite the immutable request, restore a retired owner epoch, revive a cancelled run, or schedule a replacement invocation.
+Removing a policy clears only its policy-owned pending state according to the
+existing one-shot transition rules. It does not rewrite the immutable request,
+restore a retired owner epoch, revive a cancelled run, or schedule a replacement
+invocation.
 
 ## Invariants
 
 - Policy is enforced by server state, never prompt text.
 - Every stage decision is authorized, one-shot, and append-only audited.
-- A policy decision cannot grant context, tools, ownership, or generic API access.
+- A policy decision cannot grant authority, ownership, or generic API access.
 - Provider interaction cards and continuation policies are absent.
 - Gate resolution alone causes no provider message or wake.
 - Current owner terminology is canonical; no assignee aliases survive.
-- The issue Session remains per issue, and policy transitions never create cross-issue memory.
+- The issue Session remains per issue, and policy transitions never create
+  cross-issue memory.

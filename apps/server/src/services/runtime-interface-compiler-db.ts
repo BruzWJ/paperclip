@@ -1,17 +1,12 @@
 import {
   agentActionGrants,
   agentAdapterConfigRevisions,
-  agentCompanyToolSelections,
   agentContextGrants,
   agentMentionReachGrants,
   agents,
   issues,
   plugins,
   principalPermissionGrants,
-  toolApplications,
-  toolCatalogEntries,
-  toolConnectionInstalls,
-  toolConnections,
   type Db,
 } from "@paperclipai/db";
 import {
@@ -24,7 +19,6 @@ import {
   type JsonSchema,
   type PaperclipPluginManifestV1,
   type PaperclipActionKey,
-  type RuntimeAgentCompanyToolOption,
 } from "@paperclipai/shared";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
@@ -44,7 +38,6 @@ import type {
   RuntimeAgentConfigureTarget,
   RuntimeInterfaceCompileInput,
   RuntimePluginTool,
-  SelectedCompanyTool,
 } from "./runtime-interface-compiler.js";
 import type { RuntimeRetrievalScopeResolver } from "./runtime-tool-executor.js";
 import { listAuthorizedPluginAgentTools } from "./plugin-agent-tool-authority.js";
@@ -54,9 +47,6 @@ import {
   resolveMentionReach,
   type MentionReachIssue,
 } from "./mention-reach-resolver.js";
-import {
-  listRuntimeAgentCreateCompanyToolOptions,
-} from "./runtime-agent-configuration.js";
 import {
   isServerAdapterImplementationAvailable,
 } from "../adapters/registry.js";
@@ -73,28 +63,6 @@ type ConfigureGrant = {
   scope: Record<string, unknown> | null;
 };
 
-type SelectedToolRow = {
-  id: string;
-  connectionId: string;
-  connectionInstallId: string;
-  catalogEntryId: string;
-  catalogVersionHash: string;
-  selectionStatus: "selected" | "revoked";
-  installTargetType: string;
-  installTargetAgentId: string | null;
-  entryKind: string;
-  entryName: string;
-  toolName: string;
-  title: string | null;
-  description: string | null;
-  inputSchema: Record<string, unknown>;
-  entryStatus: string;
-  entryVersionHash: string;
-  connectionStatus: string;
-  connectionEnabled: boolean;
-  applicationStatus: string;
-};
-
 export interface RuntimeInterfaceCompilerSnapshot {
   capability: PromptCapabilityCompileScope;
   issue: {
@@ -109,7 +77,6 @@ export interface RuntimeInterfaceCompilerSnapshot {
     harnessKind: string | null;
     originKind: string;
     executionPolicy: Record<string, unknown> | null;
-    projectExecutionPolicy: Record<string, unknown> | null;
   };
   agents: readonly AgentRow[];
   adapterRevisions: readonly InvokableIssueOwnerRevision[];
@@ -125,8 +92,6 @@ export interface RuntimeInterfaceCompilerSnapshot {
     creatorAuthorityId: string | null;
   }[];
   issueTree: readonly MentionReachIssue[];
-  agentHireCompanyToolOptions: readonly RuntimeAgentCompanyToolOption[];
-  selectedTools: readonly SelectedToolRow[];
   pluginTools: readonly RuntimePluginTool[];
 }
 
@@ -208,40 +173,6 @@ function explicitConfigureTargets(
   return targets;
 }
 
-function selectedCompanyTools(
-  capability: PromptCapabilityCompileScope,
-  rows: readonly SelectedToolRow[],
-): SelectedCompanyTool[] {
-  return rows
-    .filter((row) => {
-      const installMatches =
-        row.installTargetType === "agent" &&
-        row.installTargetAgentId === capability.targetAgentId;
-      return (
-        row.selectionStatus === "selected" &&
-        installMatches &&
-        row.entryKind === "tool" &&
-        row.entryStatus === "active" &&
-        row.catalogVersionHash === row.entryVersionHash &&
-        row.connectionStatus === "active" &&
-        row.connectionEnabled &&
-        row.applicationStatus === "active"
-      );
-    })
-    .map((row) => ({
-      selectionId: row.id,
-      catalogEntryId: row.catalogEntryId,
-      name: row.toolName,
-      title: row.title ?? row.entryName,
-      description: row.description ?? "",
-      inputSchema: row.inputSchema as JsonSchema,
-    }))
-    .sort((left, right) =>
-      left.name.localeCompare(right.name) ||
-      left.selectionId.localeCompare(right.selectionId),
-    );
-}
-
 export function readyPluginTools(
   rows: readonly {
     id: string;
@@ -316,7 +247,6 @@ export function buildRuntimeInterfaceCompileInput(
       originKind: issue.originKind,
       agentGovernance: sourceAgent.governance,
       issueExecutionPolicy: issue.executionPolicy,
-      projectExecutionPolicy: issue.projectExecutionPolicy,
     }),
   }).effective;
 
@@ -421,93 +351,8 @@ export function buildRuntimeInterfaceCompileInput(
     creatorUpdateTargets,
     mentionTargets,
     configureTargets,
-    agentHireCompanyToolOptions: snapshot.agentHireCompanyToolOptions,
-    selectedCompanyTools: selectedCompanyTools(capability, snapshot.selectedTools),
     pluginTools: snapshot.pluginTools,
   };
-}
-
-async function loadSelectedToolRows(
-  db: Db,
-  capability: PromptCapabilityCompileScope,
-): Promise<SelectedToolRow[]> {
-  return db
-    .select({
-      id: agentCompanyToolSelections.id,
-      connectionId: agentCompanyToolSelections.connectionId,
-      connectionInstallId: agentCompanyToolSelections.connectionInstallId,
-      catalogEntryId: agentCompanyToolSelections.catalogEntryId,
-      catalogVersionHash: agentCompanyToolSelections.catalogVersionHash,
-      selectionStatus: agentCompanyToolSelections.status,
-      installTargetType: toolConnectionInstalls.targetType,
-      installTargetAgentId: toolConnectionInstalls.targetAgentId,
-      entryKind: toolCatalogEntries.entryKind,
-      entryName: toolCatalogEntries.name,
-      toolName: toolCatalogEntries.toolName,
-      title: toolCatalogEntries.title,
-      description: toolCatalogEntries.description,
-      inputSchema: toolCatalogEntries.inputSchema,
-      entryStatus: toolCatalogEntries.status,
-      entryVersionHash: toolCatalogEntries.versionHash,
-      connectionStatus: toolConnections.status,
-      connectionEnabled: toolConnections.enabled,
-      applicationStatus: toolApplications.status,
-    })
-    .from(agentCompanyToolSelections)
-    .innerJoin(
-      toolConnectionInstalls,
-      and(
-        eq(
-          toolConnectionInstalls.companyId,
-          agentCompanyToolSelections.companyId,
-        ),
-        eq(
-          toolConnectionInstalls.connectionId,
-          agentCompanyToolSelections.connectionId,
-        ),
-        eq(
-          toolConnectionInstalls.id,
-          agentCompanyToolSelections.connectionInstallId,
-        ),
-      ),
-    )
-    .innerJoin(
-      toolCatalogEntries,
-      and(
-        eq(toolCatalogEntries.companyId, agentCompanyToolSelections.companyId),
-        eq(
-          toolCatalogEntries.connectionId,
-          agentCompanyToolSelections.connectionId,
-        ),
-        eq(toolCatalogEntries.id, agentCompanyToolSelections.catalogEntryId),
-      ),
-    )
-    .innerJoin(
-      toolConnections,
-      and(
-        eq(toolConnections.companyId, agentCompanyToolSelections.companyId),
-        eq(toolConnections.id, agentCompanyToolSelections.connectionId),
-      ),
-    )
-    .innerJoin(
-      toolApplications,
-      and(
-        eq(toolApplications.companyId, agentCompanyToolSelections.companyId),
-        eq(toolApplications.id, toolConnections.applicationId),
-      ),
-    )
-    .where(
-      and(
-        eq(agentCompanyToolSelections.companyId, capability.companyId),
-        eq(agentCompanyToolSelections.agentId, capability.targetAgentId),
-        eq(agentCompanyToolSelections.status, "selected"),
-        eq(toolConnectionInstalls.targetType, "agent"),
-        eq(
-          toolConnectionInstalls.targetAgentId,
-          capability.targetAgentId,
-        ),
-      ),
-    );
 }
 
 async function loadSnapshot(
@@ -524,8 +369,6 @@ async function loadSnapshot(
     configureRows,
     childRows,
     issueTreeRows,
-    agentHireCompanyToolOptions,
-    selectedTools,
     readyPlugins,
   ] = await Promise.all([
     db
@@ -539,14 +382,6 @@ async function loadSnapshot(
         harnessKind: issues.harnessKind,
         originKind: issues.originKind,
         executionPolicy: issues.executionPolicy,
-        projectExecutionPolicy:
-          sql<Record<string, unknown> | null>`(
-            SELECT project.execution_workspace_policy
-            FROM projects project
-            WHERE project.id = ${issues.projectId}
-              AND project.company_id = ${issues.companyId}
-            LIMIT 1
-          )`,
       })
       .from(issues)
       .where(eq(issues.id, capability.issueId))
@@ -690,8 +525,6 @@ async function loadSnapshot(
         owner_agent_id::text AS "ownerAgentId"
       FROM issue_tree
     `),
-    listRuntimeAgentCreateCompanyToolOptions(db, capability.companyId),
-    loadSelectedToolRows(db, capability),
     db
       .select({
         id: plugins.id,
@@ -725,8 +558,6 @@ async function loadSnapshot(
         ? issueTreeRows
         : Array.from(issueTreeRows as Iterable<unknown>)
     ) as unknown as MentionReachIssue[],
-    agentHireCompanyToolOptions,
-    selectedTools,
     pluginTools: readyPluginTools(readyPlugins),
   };
 }

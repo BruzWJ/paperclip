@@ -184,7 +184,7 @@ function resolvedPrompt(input: {
         },
       },
       executionTargetSelector: {
-        defaultEnvironmentId: "00000000-0000-4000-8000-000000000001",
+        environmentId: "00000000-0000-4000-8000-000000000001",
         executionTargetDriver: "local",
         executionTargetDigest: targetFingerprint,
       },
@@ -214,7 +214,7 @@ function resolvedPrompt(input: {
           },
         },
         executionTargetSelector: {
-          defaultEnvironmentId: "00000000-0000-4000-8000-000000000001",
+          environmentId: "00000000-0000-4000-8000-000000000001",
           executionTargetDriver: "local",
           executionTargetDigest: targetFingerprint,
         },
@@ -418,7 +418,7 @@ function createHarness(input: {
           executionTarget: {
             kind: "local",
             environmentId:
-              input.prompt.acpConfiguration.executionTargetSelector.defaultEnvironmentId,
+              input.prompt.acpConfiguration.executionTargetSelector.environmentId,
             leaseId: "environment-lease-1",
           },
           hostCwd: "/workspace",

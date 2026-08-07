@@ -88,12 +88,10 @@ import {
   IssueExecutionWorkspaceReservationRejected,
   reserveIssueExecutionWorkspaceBinding,
 } from "./execution-workspaces.js";
-import { parseIssueExecutionWorkspaceSettings } from "./execution-workspace-policy.js";
 import {
   resolvePluginPermittedIssueOwnerCatalogInTransaction,
 } from "./plugin-issue-authorization.js";
 import { recordIssueLivenessActionInTransaction } from "./issue-liveness-reconciliation.js";
-import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
 import {
   paperclipEnvelopeHasBody,
   renderPaperclipManagedToolPrompt,
@@ -571,16 +569,6 @@ function canonicalJson(value: unknown): string {
     .sort()
     .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
     .join(",")}}`;
-}
-
-function issueRequestsWorkspaceReuse(
-  issue: typeof issues.$inferSelect,
-): boolean {
-  return (
-    issue.executionWorkspacePreference === "reuse_existing" ||
-    parseIssueExecutionWorkspaceSettings(issue.executionWorkspaceSettings)
-      ?.mode === "reuse_existing"
-  );
 }
 
 function terminalStatus(status: AgentVisibleIssueStatus): boolean {
@@ -1207,45 +1195,6 @@ function assertAssignOwnerCatalog(
     );
   }
   return owner.agentId;
-}
-
-export async function loadWorkspaceBinding(
-  tx: IssueSessionDbTransaction,
-  input: {
-    companyId: string;
-    issueId: string;
-    ownershipEpoch: number;
-  },
-) {
-  await tx.execute(sql`
-    SELECT id
-    FROM issue_execution_workspace_bindings
-    WHERE company_id = ${input.companyId}
-      AND issue_id = ${input.issueId}
-      AND ownership_epoch = ${input.ownershipEpoch}
-    FOR UPDATE
-  `);
-  const binding = await tx
-    .select()
-    .from(issueExecutionWorkspaceBindings)
-    .where(
-      and(
-        eq(issueExecutionWorkspaceBindings.companyId, input.companyId),
-        eq(issueExecutionWorkspaceBindings.issueId, input.issueId),
-        eq(
-          issueExecutionWorkspaceBindings.ownershipEpoch,
-          input.ownershipEpoch,
-        ),
-      ),
-    )
-    .limit(1)
-    .then((rows) => rows[0] ?? null);
-  if (!binding) {
-    throw new RuntimeIssueActionConflict(
-      "The source issue execution has no immutable workspace binding",
-    );
-  }
-  return binding;
 }
 
 function creatorEndpoint(issue: IssueRow): {
@@ -2489,19 +2438,6 @@ export function createIssueFormCommitRuntime(
           "Issue lifecycle changed during owner update",
         );
       }
-      if (!gated && (input.status === "done" || input.status === "cancelled")) {
-        await finalizeSummarySlotsForTerminalIssue(
-          tx as unknown as Db,
-          updatedIssue,
-          input.status === "done" && update.runId
-            ? {
-                updateId: update.id,
-                commentId: update.commentId,
-                runId: update.runId,
-              }
-            : undefined,
-        );
-      }
       const cancellations =
         !gated && input.status === "cancelled"
           ? await options.issueExecutionCancellation
@@ -3530,7 +3466,6 @@ export function createPostgresRuntimeIssueActionService(
               id: issueId,
               companyId: input.capability.companyId,
               projectId: authorized.issue.projectId,
-              projectWorkspaceId: authorized.issue.projectWorkspaceId,
               goalId: authorized.issue.goalId,
               parentId: input.capability.issueId,
               title: input.title ?? null,
@@ -3556,8 +3491,6 @@ export function createPostgresRuntimeIssueActionService(
               originRunId: input.capability.runId,
               originFingerprint: key,
               requestDepth: authorized.issue.requestDepth + 1,
-              executionWorkspacePreference: null,
-              executionWorkspaceSettings: null,
               createdAt: now,
               updatedAt: now,
             },
@@ -3567,7 +3500,6 @@ export function createPostgresRuntimeIssueActionService(
               now,
             },
             workspaceReservation: {
-              explicitReusableWorkspaceId: null,
               provenance: {
                 agentId: input.capability.targetAgentId,
                 userId: null,
@@ -3829,17 +3761,6 @@ export function createPostgresRuntimeIssueActionService(
             "Target issue has no current outgoing owner authority",
           );
         }
-        const explicitReusableWorkspaceId = issueRequestsWorkspaceReuse(
-          targetIssue,
-        )
-          ? (
-              await loadWorkspaceBinding(tx, {
-                companyId: input.capability.companyId,
-                issueId: targetIssue.id,
-                ownershipEpoch: targetIssue.ownershipEpoch,
-              })
-            ).executionWorkspaceId
-          : null;
         const revocation =
           await revokeOutgoingOwnershipEpoch(
             tx,
@@ -3899,7 +3820,6 @@ export function createPostgresRuntimeIssueActionService(
                 id: targetSession.id,
                 now,
               },
-              explicitReusableWorkspaceId,
               provenance: {
                 agentId: input.capability.targetAgentId,
                 userId: null,

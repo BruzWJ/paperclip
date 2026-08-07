@@ -6,7 +6,6 @@ import { useCompany } from "@/context/CompanyContext";
 import { IssueLinkQuicklook } from "@/components/IssueLinkQuicklook";
 import {
   applyCompanyPrefix,
-  caseHref,
   extractCompanyPrefixFromPath,
   normalizeCompanyPrefix,
 } from "@/lib/company-routes";
@@ -40,19 +39,6 @@ export function useActiveCompanyPrefix(): string | null {
   if (pathPrefix) return pathPrefix;
 
   return selectedCompany ? normalizeCompanyPrefix(selectedCompany.issuePrefix) : null;
-}
-
-/**
- * Returns a builder for company-prefixed Cases hrefs bound to the active company
- * (e.g. `/PAP/cases/PAP-C5`). Use for all case-to-case links so they emit
- * prefixed paths directly instead of leaning on the PAP-13002 redirect.
- */
-export function useCaseHref(): (...segments: string[]) => string {
-  const companyPrefix = useActiveCompanyPrefix();
-  return React.useCallback(
-    (...segments: string[]) => caseHref(companyPrefix, ...segments),
-    [companyPrefix],
-  );
 }
 
 export * from "react-router-dom";

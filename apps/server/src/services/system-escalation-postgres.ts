@@ -810,7 +810,6 @@ export async function ensureSystemEscalationInTransaction(
       companyId: input.companyId,
       parentId: null,
       projectId: null,
-      projectWorkspaceId: null,
       goalId: null,
       title,
       request,
@@ -847,7 +846,6 @@ export async function ensureSystemEscalationInTransaction(
         now,
       },
       workspaceReservation: {
-        explicitReusableWorkspaceId: null,
         provenance: {
           agentId: null,
           userId: owner.kind === "user" ? owner.userId : null,

@@ -1001,7 +1001,7 @@ function assertTargetMatchesPrompt(
     canonicalAcpConfiguration(target.acpConfiguration) !==
       canonicalAcpConfiguration(prompt.acpConfiguration) ||
     target.executionTarget.environmentId !==
-      prompt.acpConfiguration.executionTargetSelector.defaultEnvironmentId ||
+      prompt.acpConfiguration.executionTargetSelector.environmentId ||
     target.hostCwd !== prompt.target.hostCwd ||
     !sameStringSequence(
       target.targetAdditionalDirectories,

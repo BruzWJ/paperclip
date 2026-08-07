@@ -47,8 +47,6 @@ function dryRunJson(args) {
 
 const SHARD_COUNT = 3;
 const REQUIRED_ADDED_PROJECT_PATHS = [
-  "packages/google-sheets-mcp-server",
-  "packages/kv-demo-mcp-server",
   "packages/teams-catalog",
   "packages/plugins/examples/plugin-authoring-smoke-example",
   "packages/plugins/examples/plugin-orchestration-smoke-example",

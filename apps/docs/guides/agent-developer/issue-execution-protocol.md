@@ -6,7 +6,7 @@ summary: Step-by-step procedure for a run admitted from an ordinary issue execut
 Paperclip does not ask a provider to poll an assignment inbox. Each provider
 invocation is admitted from one persisted issue-execution reference and is
 already bound to the exact issue, ownership epoch, agent, adapter revision,
-workspace, context policy, configurable action grants, and relationship
+server-resolved run directory, context policy, configurable action grants, and relationship
 authority.
 
 There is no provider-side identity lookup, assignment search, checkout, generic
@@ -35,7 +35,7 @@ Possible Paperclip tools include:
 - issue actions: `issue_update`, `issue_create`, and `issue_assign`
 - canonical same-issue agent mention: `mention_agent`
 - collective Board requests: `mention_board`
-- separately granted agent or company tools
+- administrator-installed plugin prompt capabilities, when present
 
 Use the input schema returned for this run. Tool catalogs and target enums are
 authority boundaries. A missing tool or target must not be recovered through a
@@ -51,8 +51,9 @@ issue Session. A board-only system-escalation reopen has no provider request.
 
 ### 4. Do concrete work
 
-Use the execution workspace and selected tools to advance the immutable
-request. Do not stop at a plan unless planning is the requested deliverable.
+Use the current run directory and available prompt capabilities to advance the
+immutable request. Do not stop at a plan unless planning is the requested
+deliverable.
 
 For parallel work, use `issue_create` when present. It creates a direct child
 with an immutable request and explicit owner, then dispatches from a persisted

@@ -32,7 +32,6 @@ import {
   readConfigValueAtPath,
   writeConfigValueAtPath,
 } from "./json-schema-secret-refs.js";
-import { resolveActiveEnvironmentCustomImageTemplateForRuntime } from "./environment-custom-image-runtime.js";
 
 const secretRefSchema = z.object({
   type: z.literal("secret_ref"),
@@ -571,11 +570,6 @@ export async function resolveEnvironmentDriverConfigForRuntime(
   context?: {
     issueId?: string | null;
     runId?: string | null;
-    // Force applying the active custom-image template even without a run/issue
-    // context. Operator-initiated `Test` probes have no issueId/runId
-    // but must still resolve the active custom image as prepared runtime
-    // configuration and tooling so the test reflects what real agent runs use.
-    applyCustomImageTemplate?: boolean;
   },
 ): Promise<ParsedEnvironmentConfig> {
   const parsed = parseEnvironmentDriverConfig(environment);
@@ -636,17 +630,7 @@ export async function resolveEnvironmentDriverConfigForRuntime(
     }
     return {
       driver: "sandbox",
-      config: environmentId && (context?.issueId || context?.runId || context?.applyCustomImageTemplate)
-        ? await resolveActiveEnvironmentCustomImageTemplateForRuntime(db, {
-            environmentId,
-            baseConfig: parsed.config,
-            runtimeConfig,
-            // Match the capture-time fingerprint exclusions: secret-ref paths
-            // are excluded when the template's source fingerprint is computed,
-            // so they must be excluded when re-checking it here.
-            secretRefExcludePaths: collectSecretRefPaths(schema),
-          })
-        : runtimeConfig,
+      config: runtimeConfig,
     };
   }
 

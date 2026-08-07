@@ -47,10 +47,9 @@ Detailed instructions for the agent...
    selections.
 3. A selected company skill remains data and grants no issue or company
    execution authority.
-4. Paperclip materializes only that agent's exact selected version set into
-   the current issue-execution workspace. The provider discovers those files
-   through its native workspace conventions or operator-authored native
-   configuration.
+4. Paperclip materializes only that agent's exact selected version set for the
+   current run. The provider discovers those files through its native
+   conventions or operator-authored native configuration.
 
 The Paperclip adapter boundary does not copy selected skill text into provider
 prompts, child environment, or a Paperclip-managed provider home. It does not
@@ -66,7 +65,7 @@ attach company-library defaults or unselected skills.
 
 ## Runtime Discovery
 
-Paperclip-selected company skills are ordinary files in the bound workspace,
-never Paperclip operational tooling. Provider-native instructions and skills
+Paperclip-selected company skills are ordinary files in the server-resolved run
+directory, never Paperclip operational tooling. Provider-native instructions and skills
 remain opaque operator configuration. Neither channel expands the compiled
 run-tools catalog or substitutes for an explicit action grant.

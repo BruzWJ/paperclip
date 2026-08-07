@@ -19,19 +19,6 @@ interface RunListOptions extends BaseClientOptions {
   limit?: string;
 }
 
-interface RunLogOptions extends BaseClientOptions {
-  offset?: string;
-  limitBytes?: string;
-  text?: boolean;
-}
-
-interface RunWatchdogOptions extends BaseClientOptions {
-  decision: string;
-  reason?: string;
-  snoozedUntil?: string;
-  evaluationIssueId?: string;
-}
-
 export function registerRunCommands(command: Command): void {
   addCommonClientOptions(
     command
@@ -105,70 +92,6 @@ export function registerRunCommands(command: Command): void {
       }),
   );
 
-  addCommonClientOptions(
-    command
-      .command("workspace-log")
-      .description("Read a typed workspace-operation log")
-      .argument("<operationId>", "Workspace operation ID")
-      .option("--offset <bytes>", "Byte offset", "0")
-      .option("--limit-bytes <bytes>", "Maximum bytes to read")
-      .option("--text", "Print only the returned text field")
-      .action(async (operationId: string, opts: RunLogOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const result = await fetchWorkspaceLog(
-            ctx.api,
-            apiPath`/api/workspace-operations/${operationId}/log`,
-            opts,
-          );
-          printLogResult(result, { json: ctx.json, text: opts.text });
-        } catch (error) {
-          handleCommandError(error);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    command
-      .command("watchdog-decision")
-      .description("Record a watchdog decision for an issue-execution run")
-      .argument("<runId>", "Issue-execution run ID")
-      .requiredOption(
-        "--decision <decision>",
-        "snooze, continue, or dismissed_false_positive",
-      )
-      .option("--reason <text>", "Decision reason")
-      .option("--snoozed-until <iso8601>", "Required for snooze decisions")
-      .option("--evaluation-issue-id <id>", "Related evaluation issue ID")
-      .action(async (runId: string, opts: RunWatchdogOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const decision = await ctx.api.post(
-            apiPath`/api/runs/${runId}/watchdog-decisions`,
-            {
-              decision: opts.decision,
-              reason: opts.reason,
-              snoozedUntil: opts.snoozedUntil,
-              evaluationIssueId: opts.evaluationIssueId,
-            },
-          );
-          printOutput(decision, { json: ctx.json });
-        } catch (error) {
-          handleCommandError(error);
-        }
-      }),
-  );
-}
-
-async function fetchWorkspaceLog(
-  api: { get<T>(path: string): Promise<T | null> },
-  path: string,
-  opts: RunLogOptions,
-): Promise<unknown> {
-  const params = new URLSearchParams();
-  if (opts.offset) params.set("offset", opts.offset);
-  if (opts.limitBytes) params.set("limitBytes", opts.limitBytes);
-  return api.get(`${path}?${params.toString()}`);
 }
 
 function printRuns(
@@ -196,25 +119,4 @@ function printRuns(
   }
   if (rows.length === 0) printOutput([], { json: false });
   if (nextCursor) console.log(formatInlineRecord({ nextCursor }));
-}
-
-function printLogResult(
-  result: unknown,
-  opts: { json: boolean; text?: boolean },
-): void {
-  if (opts.json) {
-    printOutput(result, { json: true });
-    return;
-  }
-  if (
-    opts.text &&
-    typeof result === "object" &&
-    result !== null &&
-    "text" in result
-  ) {
-    const text = (result as { text?: unknown }).text;
-    process.stdout.write(typeof text === "string" ? text : String(text ?? ""));
-    return;
-  }
-  printOutput(result, { json: false });
 }

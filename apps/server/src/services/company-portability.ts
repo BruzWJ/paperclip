@@ -6,14 +6,12 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   agentAdapterConfigRevisions,
   companies as companyRows,
-  environments,
   issueCreateIdempotencyKeys,
   issueExecutionRefs,
   issueLabels,
   issues as issueRows,
   labels as labelRows,
   principalPermissionGrants,
-  toolCatalogEntries,
   type Db,
 } from "@paperclipai/db";
 import type {
@@ -34,7 +32,6 @@ import type {
   CompanyPortabilityPreviewAgentPlan,
   CompanyPortabilityPreviewResult,
   CompanyPortabilityProjectManifestEntry,
-  CompanyPortabilityProjectWorkspaceManifestEntry,
   CompanyPortabilityIssueRoutineManifestEntry,
   CompanyPortabilityIssueRoutineTriggerManifestEntry,
   CompanyPortabilityIssueManifestEntry,
@@ -191,26 +188,8 @@ function collectAgentSafeImportPolicyErrors(
   include: CompanyPortabilityInclude,
 ) {
   const errors: string[] = [];
-  if (include.projects) {
-    for (const project of manifest.projects) {
-      if (project.executionWorkspacePolicy !== null) {
-        errors.push(`Safe import does not allow project ${project.slug} executionWorkspacePolicy.`);
-      }
-      for (const workspace of project.workspaces) {
-        if (workspace.setupCommand) {
-          errors.push(`Safe import does not allow project ${project.slug} workspace ${workspace.key} setupCommand.`);
-        }
-        if (workspace.cleanupCommand) {
-          errors.push(`Safe import does not allow project ${project.slug} workspace ${workspace.key} cleanupCommand.`);
-        }
-      }
-    }
-  }
   if (include.issues) {
     for (const issue of manifest.issues) {
-      if (issue.executionWorkspaceSettings !== null) {
-        errors.push(`Safe import does not allow issue ${issue.slug} executionWorkspaceSettings.`);
-      }
       const triggers = issue.routine?.triggers ?? [];
       for (const trigger of triggers) {
         if (trigger.kind !== "schedule") {
@@ -623,7 +602,6 @@ const PORTABLE_AGENT_EXTENSION_KEYS = [
   "contextGrants",
   "actionGrants",
   "mentionReachGrants",
-  "companyToolIds",
   "governance",
   "permissionGrants",
   "budgetMonthlyAmount",
@@ -650,8 +628,6 @@ const PORTABLE_ISSUE_EXTENSION_KEYS = [
   "priority",
   "labelIds",
   "billingCode",
-  "projectWorkspaceKey",
-  "executionWorkspaceSettings",
   "comments",
   "metadata",
 ] as const;
@@ -675,21 +651,6 @@ type ProjectLike = {
   icon: string | null;
   status: string;
   env: Record<string, unknown> | null;
-  executionWorkspacePolicy: Record<string, unknown> | null;
-  workspaces?: Array<{
-    id: string;
-    name: string;
-    sourceType: string;
-    cwd: string | null;
-    repoUrl: string | null;
-    repoRef: string | null;
-    defaultRef: string | null;
-    visibility: string;
-    setupCommand: string | null;
-    cleanupCommand: string | null;
-    metadata?: Record<string, unknown> | null;
-    isPrimary: boolean;
-  }>;
   metadata?: Record<string, unknown> | null;
 };
 
@@ -699,13 +660,11 @@ type IssueLike = {
   title: string | null;
   request: string | null;
   projectId: string | null;
-  projectWorkspaceId: string | null;
   ownerAgentId: string | null;
   status: string;
   priority: string;
   labelIds?: string[];
   billingCode: string | null;
-  executionWorkspaceSettings: Record<string, unknown> | null;
 };
 
 function issueDisplayLabel(issue: Pick<IssueLike, "id" | "identifier" | "title" | "request">) {
@@ -900,7 +859,6 @@ interface PortableCanonicalIssueCreateInput {
   ownerAgentId: string;
   creatorUserId: string;
   projectId: string | null;
-  projectWorkspaceId: string | null;
   lifecycleStatus: AgentVisibleIssueStatus;
   boardPresentationStatus: IssueStatus;
   disposition: IssueDisposition | null;
@@ -908,7 +866,6 @@ interface PortableCanonicalIssueCreateInput {
   priority: "critical" | "high" | "medium" | "low";
   labelIds: string[];
   billingCode: string | null;
-  executionWorkspaceSettings: Record<string, unknown> | null;
 }
 
 async function createPortableCanonicalIssue(
@@ -964,19 +921,15 @@ async function createPortableCanonicalIssue(
         existing.creatorKind !== "user/board" ||
         existing.creatorUserId !== input.creatorUserId ||
         existing.projectId !== input.projectId ||
-        (input.projectWorkspaceId !== null &&
-          existing.projectWorkspaceId !== input.projectWorkspaceId) ||
         existing.lifecycleStatus !== input.lifecycleStatus ||
         existing.boardPresentationStatus !==
           input.boardPresentationStatus ||
         canonicalPortableJson(existing.disposition) !==
           canonicalPortableJson(input.disposition) ||
         canonicalPortableJson(existing.contextAccessMask) !==
-          canonicalPortableJson(input.contextAccessMask) ||
+        canonicalPortableJson(input.contextAccessMask) ||
         existing.priority !== input.priority ||
         existing.billingCode !== input.billingCode ||
-        canonicalPortableJson(existing.executionWorkspaceSettings) !==
-          canonicalPortableJson(input.executionWorkspaceSettings) ||
         canonicalPortableJson(persistedLabels) !==
           canonicalPortableJson(requestedLabels)
       ) {
@@ -1075,7 +1028,6 @@ async function createPortableCanonicalIssue(
         id: issueId,
         companyId: input.companyId,
         projectId: input.projectId,
-        projectWorkspaceId: input.projectWorkspaceId,
         goalId: null,
         parentId: null,
         title,
@@ -1103,9 +1055,6 @@ async function createPortableCanonicalIssue(
         originFingerprint: aggregateKey,
         billingCode: input.billingCode,
         requestDepth: 0,
-        executionWorkspacePreference: null,
-        executionWorkspaceSettings:
-          input.executionWorkspaceSettings,
         completedAt:
           input.lifecycleStatus === "done" ? now : null,
         cancelledAt:
@@ -1119,7 +1068,6 @@ async function createPortableCanonicalIssue(
         now,
       },
       workspaceReservation: {
-        explicitReusableWorkspaceId: null,
         provenance: {
           agentId: null,
           userId: input.creatorUserId,
@@ -1268,25 +1216,6 @@ function materializePortableBooleanMap<Key extends string>(
   ) as Record<Key, boolean>;
 }
 
-function parsePortableCompanyToolIds(
-  value: unknown,
-  label: string,
-): string[] {
-  if (!Array.isArray(value)) {
-    throw unprocessable(`${label} must be an array`);
-  }
-  const ids = value.map((entry) => {
-    if (typeof entry !== "string" || !isUuidLike(entry)) {
-      throw unprocessable(`${label} must contain only UUIDs`);
-    }
-    return entry;
-  });
-  if (new Set(ids).size !== ids.length) {
-    throw unprocessable(`${label} must not contain duplicates`);
-  }
-  return ids;
-}
-
 function derivePortableCommentAuthorType(value: Record<string, unknown>) {
   const explicit = issueCommentAuthorTypeSchema.safeParse(value.authorType);
   if (explicit.success) return explicit.data;
@@ -1423,23 +1352,6 @@ function buildRoutineManifestFromLiveRoutine(routine: RoutineLike): CompanyPorta
   };
 }
 
-function containsAbsolutePathFragment(value: string) {
-  return /(^|\s)(\/[^/\s]|[A-Za-z]:[\\/])/.test(value);
-}
-
-function containsSystemDependentPathValue(value: unknown): boolean {
-  if (typeof value === "string") {
-    return path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) || containsAbsolutePathFragment(value);
-  }
-  if (Array.isArray(value)) {
-    return value.some((entry) => containsSystemDependentPathValue(entry));
-  }
-  if (isPlainRecord(value)) {
-    return Object.values(value).some((entry) => containsSystemDependentPathValue(entry));
-  }
-  return false;
-}
-
 function clonePortableRecord(value: unknown) {
   if (!isPlainRecord(value)) return null;
   return structuredClone(value) as Record<string, unknown>;
@@ -1447,249 +1359,6 @@ function clonePortableRecord(value: unknown) {
 
 function normalizeImportedRuntimeConfig(runtimeConfig: unknown) {
   return clonePortableRecord(runtimeConfig) ?? {};
-}
-
-function normalizePortableProjectWorkspaceExtension(
-  workspaceKey: string,
-  value: unknown,
-): CompanyPortabilityProjectWorkspaceManifestEntry | null {
-  if (!isPlainRecord(value)) return null;
-  const normalizedKey = normalizeAgentUrlKey(workspaceKey) ?? workspaceKey.trim();
-  if (!normalizedKey) return null;
-  return {
-    key: normalizedKey,
-    name: asString(value.name) ?? normalizedKey,
-    sourceType: asString(value.sourceType),
-    repoUrl: asString(value.repoUrl),
-    repoRef: asString(value.repoRef),
-    defaultRef: asString(value.defaultRef),
-    visibility: asString(value.visibility),
-    setupCommand: asString(value.setupCommand),
-    cleanupCommand: asString(value.cleanupCommand),
-    metadata: isPlainRecord(value.metadata) ? value.metadata : null,
-    isPrimary: asBoolean(value.isPrimary) ?? false,
-  };
-}
-
-function derivePortableProjectWorkspaceKey(
-  workspace: NonNullable<ProjectLike["workspaces"]>[number],
-  usedKeys: Set<string>,
-) {
-  const baseKey =
-    normalizeAgentUrlKey(workspace.name)
-    ?? normalizeAgentUrlKey(asString(workspace.repoUrl)?.split("/").pop()?.replace(/\.git$/i, "") ?? "")
-    ?? "workspace";
-  return uniqueSlug(baseKey, usedKeys);
-}
-
-function exportPortableProjectExecutionWorkspacePolicy(
-  projectSlug: string,
-  policy: unknown,
-  workspaceKeyById: Map<string, string>,
-  warnings: string[],
-) {
-  const next = clonePortableRecord(policy);
-  if (!next) return null;
-  const defaultWorkspaceId = asString(next.defaultProjectWorkspaceId);
-  if (defaultWorkspaceId) {
-    const defaultWorkspaceKey = workspaceKeyById.get(defaultWorkspaceId);
-    if (defaultWorkspaceKey) {
-      next.defaultProjectWorkspaceKey = defaultWorkspaceKey;
-    } else {
-      warnings.push(`Project ${projectSlug} default workspace ${defaultWorkspaceId} was omitted from export because that workspace is not portable.`);
-    }
-    delete next.defaultProjectWorkspaceId;
-  }
-  const cleaned = stripEmptyValues(next);
-  return isPlainRecord(cleaned) ? cleaned : null;
-}
-
-function importPortableProjectExecutionWorkspacePolicy(
-  projectSlug: string,
-  policy: Record<string, unknown> | null | undefined,
-  workspaceIdByKey: Map<string, string>,
-  warnings: string[],
-) {
-  const next = clonePortableRecord(policy);
-  if (!next) return null;
-  const defaultWorkspaceKey = asString(next.defaultProjectWorkspaceKey);
-  if (defaultWorkspaceKey) {
-    const defaultWorkspaceId = workspaceIdByKey.get(defaultWorkspaceKey);
-    if (defaultWorkspaceId) {
-      next.defaultProjectWorkspaceId = defaultWorkspaceId;
-    } else {
-      warnings.push(`Project ${projectSlug} references missing workspace key ${defaultWorkspaceKey}; imported execution workspace policy without a default workspace.`);
-    }
-  }
-  delete next.defaultProjectWorkspaceKey;
-  const cleaned = stripEmptyValues(next);
-  return isPlainRecord(cleaned) ? cleaned : null;
-}
-
-function stripPortableProjectExecutionWorkspaceRefs(policy: Record<string, unknown> | null | undefined) {
-  const next = clonePortableRecord(policy);
-  if (!next) return null;
-  delete next.defaultProjectWorkspaceId;
-  delete next.defaultProjectWorkspaceKey;
-  const cleaned = stripEmptyValues(next);
-  return isPlainRecord(cleaned) ? cleaned : null;
-}
-
-async function readGitOutput(cwd: string, args: string[]) {
-  const { stdout } = await execFileAsync("git", ["-C", cwd, ...args], { cwd });
-  const trimmed = stdout.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-async function inferPortableWorkspaceGitMetadata(workspace: NonNullable<ProjectLike["workspaces"]>[number]) {
-  const cwd = asString(workspace.cwd);
-  if (!cwd) {
-    return {
-      repoUrl: null,
-      repoRef: null,
-      defaultRef: null,
-    };
-  }
-
-  let repoUrl: string | null = null;
-  try {
-    repoUrl = await readGitOutput(cwd, ["remote", "get-url", "origin"]);
-  } catch {
-    try {
-      const firstRemote = await readGitOutput(cwd, ["remote"]);
-      const remoteName = firstRemote?.split("\n").map((entry) => entry.trim()).find(Boolean) ?? null;
-      if (remoteName) {
-        repoUrl = await readGitOutput(cwd, ["remote", "get-url", remoteName]);
-      }
-    } catch {
-      repoUrl = null;
-    }
-  }
-
-  let repoRef: string | null = null;
-  try {
-    repoRef = await readGitOutput(cwd, ["branch", "--show-current"]);
-  } catch {
-    repoRef = null;
-  }
-
-  let defaultRef: string | null = null;
-  try {
-    const remoteHead = await readGitOutput(cwd, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
-    defaultRef = remoteHead?.startsWith("origin/") ? remoteHead.slice("origin/".length) : remoteHead;
-  } catch {
-    defaultRef = null;
-  }
-
-  return {
-    repoUrl,
-    repoRef,
-    defaultRef,
-  };
-}
-
-async function buildPortableProjectWorkspaces(
-  projectSlug: string,
-  workspaces: ProjectLike["workspaces"] | undefined,
-  warnings: string[],
-) {
-  const exportedWorkspaces: Record<string, Record<string, unknown>> = {};
-  const manifestWorkspaces: CompanyPortabilityProjectWorkspaceManifestEntry[] = [];
-  const workspaceKeyById = new Map<string, string>();
-  const workspaceKeyBySignature = new Map<string, string>();
-  const manifestWorkspaceByKey = new Map<string, CompanyPortabilityProjectWorkspaceManifestEntry>();
-  const usedKeys = new Set<string>();
-
-  for (const workspace of workspaces ?? []) {
-    const inferredGitMetadata =
-      !asString(workspace.repoUrl) || !asString(workspace.repoRef) || !asString(workspace.defaultRef)
-        ? await inferPortableWorkspaceGitMetadata(workspace)
-        : { repoUrl: null, repoRef: null, defaultRef: null };
-    const repoUrl = asString(workspace.repoUrl) ?? inferredGitMetadata.repoUrl;
-    if (!repoUrl) {
-      warnings.push(`Project ${projectSlug} workspace ${workspace.name} was omitted from export because it does not have a portable repoUrl.`);
-      continue;
-    }
-    const repoRef = asString(workspace.repoRef) ?? inferredGitMetadata.repoRef;
-    const defaultRef = asString(workspace.defaultRef) ?? inferredGitMetadata.defaultRef ?? repoRef;
-    const workspaceSignature = JSON.stringify({
-      name: workspace.name,
-      repoUrl,
-      repoRef,
-      defaultRef,
-    });
-    const existingWorkspaceKey = workspaceKeyBySignature.get(workspaceSignature);
-    if (existingWorkspaceKey) {
-      workspaceKeyById.set(workspace.id, existingWorkspaceKey);
-      const existingManifestWorkspace = manifestWorkspaceByKey.get(existingWorkspaceKey);
-      if (existingManifestWorkspace && workspace.isPrimary) {
-        existingManifestWorkspace.isPrimary = true;
-        const existingExtensionWorkspace = exportedWorkspaces[existingWorkspaceKey];
-        if (isPlainRecord(existingExtensionWorkspace)) existingExtensionWorkspace.isPrimary = true;
-      }
-      continue;
-    }
-
-    const workspaceKey = derivePortableProjectWorkspaceKey(workspace, usedKeys);
-    workspaceKeyById.set(workspace.id, workspaceKey);
-    workspaceKeyBySignature.set(workspaceSignature, workspaceKey);
-
-    let setupCommand = asString(workspace.setupCommand);
-    if (setupCommand && containsAbsolutePathFragment(setupCommand)) {
-      warnings.push(`Project ${projectSlug} workspace ${workspaceKey} setupCommand was omitted from export because it is system-dependent.`);
-      setupCommand = null;
-    }
-
-    let cleanupCommand = asString(workspace.cleanupCommand);
-    if (cleanupCommand && containsAbsolutePathFragment(cleanupCommand)) {
-      warnings.push(`Project ${projectSlug} workspace ${workspaceKey} cleanupCommand was omitted from export because it is system-dependent.`);
-      cleanupCommand = null;
-    }
-
-    const metadata = isPlainRecord(workspace.metadata) && !containsSystemDependentPathValue(workspace.metadata)
-      ? workspace.metadata
-      : null;
-    if (isPlainRecord(workspace.metadata) && metadata == null) {
-      warnings.push(`Project ${projectSlug} workspace ${workspaceKey} metadata was omitted from export because it contains system-dependent paths.`);
-    }
-
-    const portableWorkspace = stripEmptyValues({
-      name: workspace.name,
-      sourceType: workspace.sourceType,
-      repoUrl,
-      repoRef,
-      defaultRef,
-      visibility: asString(workspace.visibility),
-      setupCommand,
-      cleanupCommand,
-      metadata,
-      isPrimary: workspace.isPrimary ? true : undefined,
-    });
-    if (!isPlainRecord(portableWorkspace)) continue;
-
-    exportedWorkspaces[workspaceKey] = portableWorkspace;
-    const manifestWorkspace = {
-      key: workspaceKey,
-      name: workspace.name,
-      sourceType: asString(workspace.sourceType),
-      repoUrl,
-      repoRef,
-      defaultRef,
-      visibility: asString(workspace.visibility),
-      setupCommand,
-      cleanupCommand,
-      metadata,
-      isPrimary: workspace.isPrimary,
-    };
-    manifestWorkspaces.push(manifestWorkspace);
-    manifestWorkspaceByKey.set(workspaceKey, manifestWorkspace);
-  }
-
-  return {
-    extension: Object.keys(exportedWorkspaces).length > 0 ? exportedWorkspaces : undefined,
-    manifest: manifestWorkspaces,
-    workspaceKeyById,
-  };
 }
 
 function resolvePortableRoutineDefinition(
@@ -2995,7 +2664,6 @@ function buildManifestFromPackageFiles(
         "adapterType",
         "adapterConfig",
         "runtimeConfig",
-        "sourceEnvironmentId",
         "skillChannel",
       ],
       `Agent ${slug} adapterRevision`,
@@ -3004,9 +2672,6 @@ function buildManifestFromPackageFiles(
       rawAdapterRevision.sourceRevisionId,
     );
     const adapterType = asString(rawAdapterRevision.adapterType);
-    const sourceEnvironmentId = asString(
-      rawAdapterRevision.sourceEnvironmentId,
-    );
     if (!sourceRevisionId || !isUuidLike(sourceRevisionId)) {
       throw unprocessable(
         `Agent ${slug} adapterRevision.sourceRevisionId must be a UUID`,
@@ -3034,11 +2699,6 @@ function buildManifestFromPackageFiles(
     if (!isPlainRecord(rawAdapterRevision.runtimeConfig)) {
       throw unprocessable(
         `Agent ${slug} adapterRevision.runtimeConfig must be an object`,
-      );
-    }
-    if (!sourceEnvironmentId || !isUuidLike(sourceEnvironmentId)) {
-      throw unprocessable(
-        `Agent ${slug} adapterRevision.sourceEnvironmentId must be a UUID`,
       );
     }
     const skillChannel = companySkillChannelSchema.safeParse(
@@ -3074,7 +2734,6 @@ function buildManifestFromPackageFiles(
         runtimeConfig: {
           ...rawAdapterRevision.runtimeConfig,
         },
-        sourceEnvironmentId,
         skillChannel: skillChannel.data,
       },
       contextGrants: parseExactPortableBooleanMap(
@@ -3091,10 +2750,6 @@ function buildManifestFromPackageFiles(
         extension.mentionReachGrants,
         AGENT_MENTION_REACH_GRANT_KEYS,
         `Agent ${slug} mentionReachGrants`,
-      ),
-      companyToolIds: parsePortableCompanyToolIds(
-        extension.companyToolIds,
-        `Agent ${slug} companyToolIds`,
       ),
       governance: extensionGovernance ?? {},
       permissionGrants: extensionPermissionGrants,
@@ -3224,10 +2879,6 @@ function buildManifestFromPackageFiles(
     );
     const slug = asString(frontmatter.slug) ?? fallbackSlug;
     const extension = isPlainRecord(paperclipProjects[slug]) ? paperclipProjects[slug] : {};
-    const workspaceExtensions = isPlainRecord(extension.workspaces) ? extension.workspaces : {};
-    const workspaces = Object.entries(workspaceExtensions)
-      .map(([workspaceKey, entry]) => normalizePortableProjectWorkspaceExtension(workspaceKey, entry))
-      .filter((entry): entry is CompanyPortabilityProjectWorkspaceManifestEntry => entry !== null);
     manifest.projects.push({
       slug,
       name: asString(frontmatter.name) ?? slug,
@@ -3240,10 +2891,6 @@ function buildManifestFromPackageFiles(
       icon: asString(extension.icon),
       status: asString(extension.status),
       env: normalizePortableProjectEnv(extension.env),
-      executionWorkspacePolicy: isPlainRecord(extension.executionWorkspacePolicy)
-        ? extension.executionWorkspacePolicy
-        : null,
-      workspaces,
       metadata: isPlainRecord(extension.metadata) ? extension.metadata : null,
     });
     manifest.envInputs.push(...readProjectEnvInputs(extension, slug));
@@ -3308,7 +2955,6 @@ function buildManifestFromPackageFiles(
       title: asString(frontmatter.name) ?? asString(frontmatter.title) ?? slug,
       path: issuePath,
       projectSlug: asString(frontmatter.project),
-      projectWorkspaceKey: asString(extension.projectWorkspaceKey),
       ownerAgentSlug,
       request: issueDoc.body,
       recurring,
@@ -3330,9 +2976,6 @@ function buildManifestFromPackageFiles(
         ? extension.labelIds.filter((entry): entry is string => typeof entry === "string")
         : [],
       billingCode: asString(extension.billingCode),
-      executionWorkspaceSettings: isPlainRecord(extension.executionWorkspaceSettings)
-        ? extension.executionWorkspaceSettings
-        : null,
       comments: readPortableIssueComments(extension.comments, warnings, `Issue ${slug}`),
       metadata: isPlainRecord(extension.metadata) ? extension.metadata : null,
     });
@@ -3890,7 +3533,6 @@ export function companyPortabilityService(
     }
 
     const projectSlugById = new Map<string, string>();
-    const projectWorkspaceKeyByProjectId = new Map<string, Map<string, string>>();
     const usedProjectSlugs = new Set<string>();
     for (const project of selectedProjectRows) {
       const baseSlug = deriveProjectUrlKey(project.name, project.name);
@@ -3939,7 +3581,6 @@ export function companyPortabilityService(
     const paperclipAgentsOut: Record<string, Record<string, unknown>> = {};
     const paperclipProjectsOut: Record<string, Record<string, unknown>> = {};
     const paperclipIssuesOut: Record<string, Record<string, unknown>> = {};
-    const unportableIssueWorkspaceRefs = new Map<string, { workspaceId: string; issueSlugs: string[] }>();
     const paperclipRoutinesOut: Record<string, Record<string, unknown>> = {};
     const runtimeConfigurationByAgentId = new Map(
       await Promise.all(
@@ -4109,8 +3750,6 @@ export function companyPortabilityService(
             adapterType,
             adapterConfig: portableAdapterConfig,
             runtimeConfig: portableRuntimeConfig,
-            sourceEnvironmentId:
-              currentAdapterRevision.defaultEnvironmentId,
             skillChannel: currentAcpConfiguration.skillChannel,
           },
           contextGrants: materializePortableBooleanMap(
@@ -4126,8 +3765,6 @@ export function companyPortabilityService(
               AGENT_MENTION_REACH_GRANT_KEYS,
               runtimeConfiguration.mentionReachGrants,
             ),
-          companyToolIds:
-            runtimeConfiguration.companyToolIds,
         };
         paperclipAgentsOut[slug] = isPlainRecord(extension) ? extension : {};
       }
@@ -4144,8 +3781,6 @@ export function companyPortabilityService(
           .slice(envInputsStart)
           .filter((inputValue) => inputValue.projectSlug === slug),
       );
-      const portableWorkspaces = await buildPortableProjectWorkspaces(slug, project.workspaces, warnings);
-      projectWorkspaceKeyByProjectId.set(project.id, portableWorkspaces.workspaceKeyById);
       files[projectPath] = buildMarkdown(
         {
           name: project.name,
@@ -4160,13 +3795,6 @@ export function companyPortabilityService(
         color: project.color ?? null,
         icon: project.icon ?? null,
         status: project.status,
-        executionWorkspacePolicy: exportPortableProjectExecutionWorkspacePolicy(
-          slug,
-          project.executionWorkspacePolicy,
-          portableWorkspaces.workspaceKeyById,
-          warnings,
-        ) ?? undefined,
-        workspaces: portableWorkspaces.extension,
       });
       if (isPlainRecord(extension) && projectEnvInputs.length > 0) {
         extension.inputs = {
@@ -4192,21 +3820,6 @@ export function companyPortabilityService(
           `Issue ${issue.identifier ?? issue.id} has no portable agent owner and cannot be exported`,
         );
       }
-      const projectWorkspaceKey = issue.projectId && issue.projectWorkspaceId
-        ? projectWorkspaceKeyByProjectId.get(issue.projectId)?.get(issue.projectWorkspaceId) ?? null
-        : null;
-      if (issue.projectWorkspaceId && !projectWorkspaceKey) {
-        const aggregateKey = `${issue.projectId ?? "no-project"}:${issue.projectWorkspaceId}`;
-        const existing = unportableIssueWorkspaceRefs.get(aggregateKey);
-        if (existing) {
-          existing.issueSlugs.push(issueSlug);
-        } else {
-          unportableIssueWorkspaceRefs.set(aggregateKey, {
-            workspaceId: issue.projectWorkspaceId,
-            issueSlugs: [issueSlug],
-          });
-        }
-      }
       const comments = await issuesSvc.listComments(issue.id, { order: "asc" });
       files[issuePath] = buildMarkdown(
         {
@@ -4227,8 +3840,6 @@ export function companyPortabilityService(
         priority: issue.priority,
         labelIds: issue.labelIds ?? undefined,
         billingCode: issue.billingCode ?? null,
-        projectWorkspaceKey: projectWorkspaceKey ?? undefined,
-        executionWorkspaceSettings: issue.executionWorkspaceSettings ?? undefined,
         comments: comments.length > 0
           ? comments.map((comment) => ({
               body: comment.body,
@@ -4248,12 +3859,6 @@ export function companyPortabilityService(
         extension.disposition = decodeIssueDisposition(issue.disposition);
       }
       paperclipIssuesOut[issueSlug] = isPlainRecord(extension) ? extension : {};
-    }
-
-    for (const { workspaceId, issueSlugs } of unportableIssueWorkspaceRefs.values()) {
-      const preview = issueSlugs.slice(0, 4).join(", ");
-      const remainder = issueSlugs.length > 4 ? ` and ${issueSlugs.length - 4} more` : "";
-      warnings.push(`Issues ${preview}${remainder} reference workspace ${workspaceId}, but that workspace could not be exported portably.`);
     }
 
     for (const routine of selectedRoutineRows) {
@@ -4509,7 +4114,6 @@ export function companyPortabilityService(
         : null;
       if (
         !isUuidLike(sourceRevision.sourceRevisionId) ||
-        !isUuidLike(sourceRevision.sourceEnvironmentId) ||
         !sourceAdapterType ||
         !sourceAdapterConfig ||
         !isPlainRecord(sourceRevision.runtimeConfig)
@@ -4523,12 +4127,6 @@ export function companyPortabilityService(
       if (!override) {
         errors.push(
           `Selected imported agent ${slug} requires an explicit target adapter override.`,
-        );
-        continue;
-      }
-      if (!isUuidLike(override.defaultEnvironmentId)) {
-        errors.push(
-          `Selected imported agent ${slug} requires an explicit target environment.`,
         );
         continue;
       }
@@ -4554,82 +4152,6 @@ export function companyPortabilityService(
             error instanceof Error ? error.message : String(error)
           }`,
         );
-      }
-    }
-
-    const overrideEnvironmentIds = Array.from(
-      new Set(
-        selectedAgents
-          .map(
-            (agent) =>
-              adapterOverrides[agent.slug]
-                ?.defaultEnvironmentId,
-          )
-          .filter((id): id is string => Boolean(id)),
-      ),
-    );
-    if (overrideEnvironmentIds.length > 0) {
-      const resolvedEnvironmentIds = new Set(
-        (
-          await db
-            .select({ id: environments.id })
-            .from(environments)
-            .where(
-              inArray(
-                environments.id,
-                overrideEnvironmentIds,
-              ),
-            )
-        ).map((row) => row.id),
-      );
-      for (const id of overrideEnvironmentIds) {
-        if (!resolvedEnvironmentIds.has(id)) {
-          errors.push(
-            `Target adapter environment does not exist: ${id}.`,
-          );
-        }
-      }
-    }
-
-    const requestedCompanyToolIds = Array.from(
-      new Set(
-        selectedAgents.flatMap(
-          (agent) => agent.companyToolIds,
-        ),
-      ),
-    );
-    if (requestedCompanyToolIds.length > 0) {
-      if (input.target.mode === "new_company") {
-        errors.push(
-          "A new-company import cannot resolve nonempty companyToolIds; create the company tools first and import into that existing company.",
-        );
-      } else {
-        const targetToolIds = new Set(
-          (
-            await db
-              .select({ id: toolCatalogEntries.id })
-              .from(toolCatalogEntries)
-              .where(
-                and(
-                  eq(
-                    toolCatalogEntries.companyId,
-                    input.target.companyId,
-                  ),
-                  inArray(
-                    toolCatalogEntries.id,
-                    requestedCompanyToolIds,
-                  ),
-                ),
-              )
-          ).map((row) => row.id),
-        );
-        for (const id of requestedCompanyToolIds) {
-          if (!targetToolIds.has(id)) {
-            errors.push(
-              `Target company tool does not exist: ${id}.`,
-            );
-          }
-        }
       }
     }
 
@@ -4679,7 +4201,6 @@ export function companyPortabilityService(
     }
 
     if (include.issues) {
-      const projectBySlug = new Map(manifest.projects.map((project) => [project.slug, project]));
       for (const issue of manifest.issues) {
         const markdown = readPortableTextFile(source.files, ensureMarkdownPath(issue.path));
         if (typeof markdown !== "string") {
@@ -4689,14 +4210,6 @@ export function companyPortabilityService(
         const parsed = parseFrontmatterMarkdown(markdown);
         if (parsed.frontmatter.kind && parsed.frontmatter.kind !== "issue") {
           warnings.push(`Issue markdown ${issue.path} does not declare kind: issue in frontmatter.`);
-        }
-        if (issue.projectWorkspaceKey) {
-          const project = issue.projectSlug ? projectBySlug.get(issue.projectSlug) ?? null : null;
-          if (!project) {
-            warnings.push(`Issue ${issue.slug} references workspace key ${issue.projectWorkspaceKey}, but its project is not present in the package.`);
-          } else if (!project.workspaces.some((workspace) => workspace.key === issue.projectWorkspaceKey)) {
-            warnings.push(`Issue ${issue.slug} references missing project workspace key ${issue.projectWorkspaceKey}.`);
-          }
         }
         if (issue.recurring) {
           if (!issue.projectSlug) {
@@ -5220,7 +4733,6 @@ export function companyPortabilityService(
         agentStatusById.set(existing.id, existing.status);
       }
       const importedSlugToProjectId = new Map<string, string>();
-      const importedProjectWorkspaceIdByProjectSlug = new Map<string, Map<string, string>>();
       const existingProjectSlugToId = new Map<string, string>();
       const existingProjects = await projects.list(targetCompany.id);
       for (const existing of existingProjects) {
@@ -5313,8 +4825,6 @@ export function companyPortabilityService(
                 actionGrants: manifestAgent.actionGrants,
                 mentionReachGrants:
                   manifestAgent.mentionReachGrants,
-                companyToolIds:
-                  manifestAgent.companyToolIds,
               },
             });
             importedAgentId = planAgent.existingAgentId;
@@ -5334,8 +4844,6 @@ export function companyPortabilityService(
                   actionGrants: manifestAgent.actionGrants,
                   mentionReachGrants:
                     manifestAgent.mentionReachGrants,
-                  companyToolIds:
-                    manifestAgent.companyToolIds,
                 },
               });
             importedAgentId = identity.agentId;
@@ -5364,8 +4872,6 @@ export function companyPortabilityService(
               configuration: {
                 adapterType: normalizedAdapter.adapterType,
                 adapterConfig: normalizedAdapter.adapterConfig,
-                defaultEnvironmentId:
-                  adapterOverride.defaultEnvironmentId,
                 runtimeConfig:
                   normalizeImportedRuntimeConfig(
                     manifestAgent.adapterRevision
@@ -5490,7 +4996,6 @@ export function companyPortabilityService(
               ?? existingSlugToAgentId.get(manifestProject.leadAgentSlug)
               ?? null
             : null;
-          const projectWorkspaceIdByKey = new Map<string, string>();
           const normalizedProjectEnv = manifestProject.env
             ? await secrets.normalizeEnvBindingsForPersistence(
                 targetCompany.id,
@@ -5512,7 +5017,6 @@ export function companyPortabilityService(
               ? manifestProject.status as typeof PROJECT_STATUSES[number]
               : "backlog",
             env: normalizedProjectEnv,
-            executionWorkspacePolicy: stripPortableProjectExecutionWorkspaceRefs(manifestProject.executionWorkspacePolicy),
           };
 
           let projectId: string | null = null;
@@ -5561,39 +5065,6 @@ export function companyPortabilityService(
             normalizedProjectEnv ?? {},
             { actor: secretMutationActor },
           );
-
-          for (const workspace of manifestProject.workspaces) {
-            const createdWorkspace = await projects.createWorkspace(projectId, {
-              name: workspace.name,
-              sourceType: workspace.sourceType ?? undefined,
-              repoUrl: workspace.repoUrl ?? undefined,
-              repoRef: workspace.repoRef ?? undefined,
-              defaultRef: workspace.defaultRef ?? undefined,
-              visibility: workspace.visibility ?? undefined,
-              setupCommand: workspace.setupCommand ?? undefined,
-              cleanupCommand: workspace.cleanupCommand ?? undefined,
-              metadata: workspace.metadata ?? undefined,
-              isPrimary: workspace.isPrimary,
-            });
-            if (!createdWorkspace) {
-              warnings.push(`Project ${planProject.slug} workspace ${workspace.key} could not be created during import.`);
-              continue;
-            }
-            projectWorkspaceIdByKey.set(workspace.key, createdWorkspace.id);
-          }
-          importedProjectWorkspaceIdByProjectSlug.set(planProject.slug, projectWorkspaceIdByKey);
-
-          const hydratedProjectExecutionWorkspacePolicy = importPortableProjectExecutionWorkspacePolicy(
-            planProject.slug,
-            manifestProject.executionWorkspacePolicy,
-            projectWorkspaceIdByKey,
-            warnings,
-          );
-          if (hydratedProjectExecutionWorkspacePolicy) {
-            await projects.update(projectId, {
-              executionWorkspacePolicy: hydratedProjectExecutionWorkspacePolicy,
-            });
-          }
         }
       }
 
@@ -5616,12 +5087,6 @@ export function companyPortabilityService(
               ?? existingProjectSlugToId.get(manifestIssue.projectSlug)
               ?? null
             : null;
-          const projectWorkspaceId = manifestIssue.projectSlug && manifestIssue.projectWorkspaceKey
-            ? importedProjectWorkspaceIdByProjectSlug.get(manifestIssue.projectSlug)?.get(manifestIssue.projectWorkspaceKey) ?? null
-            : null;
-          if (manifestIssue.projectWorkspaceKey && !projectWorkspaceId) {
-            warnings.push(`Issue ${manifestIssue.slug} references workspace key ${manifestIssue.projectWorkspaceKey}, but that workspace was not imported.`);
-          }
           if (manifestIssue.recurring) {
             if (!projectId) {
               throw unprocessable(`Recurring issue ${manifestIssue.slug} is missing the project required to create a routine.`);
@@ -5735,13 +5200,10 @@ export function companyPortabilityService(
                     `company-portability:${targetCompany.id}:${manifestIssue.slug}`,
                   sourceKind: "issue_request",
                   projectId,
-                  projectWorkspaceId,
                   title: manifestIssue.title,
                   priority,
                   labelIds: manifestIssue.labelIds ?? [],
                   billingCode: manifestIssue.billingCode,
-                  executionWorkspaceSettings:
-                    manifestIssue.executionWorkspaceSettings,
                   contextAccessMask: manifestIssue.contextAccessMask,
                 })
               : await createPortableCanonicalIssue(db, {
@@ -5752,7 +5214,6 @@ export function companyPortabilityService(
                   ownerAgentId,
                   creatorUserId: actorUserId,
                   projectId,
-                  projectWorkspaceId,
                   lifecycleStatus: manifestIssue.lifecycleStatus,
                   boardPresentationStatus,
                   disposition: manifestIssue.disposition,
@@ -5760,8 +5221,6 @@ export function companyPortabilityService(
                   priority,
                   labelIds: manifestIssue.labelIds ?? [],
                   billingCode: manifestIssue.billingCode,
-                  executionWorkspaceSettings:
-                    manifestIssue.executionWorkspaceSettings,
                 });
           const createdIssue = createdIssueResult.issue;
           for (const [commentIndex, comment] of (manifestIssue.comments ?? []).entries()) {

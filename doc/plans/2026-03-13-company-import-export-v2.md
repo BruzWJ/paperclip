@@ -5,7 +5,7 @@ Date: 2026-03-13
 Audience: Product and engineering
 Supersedes for package-format direction:
 - `doc/plans/2026-02-16-module-system.md` sections that describe company templates as JSON-only
-- `apps/docs/specs/cliphub-plan.md` assumptions about blueprint bundle shape where they conflict with the markdown-first package model
+- earlier blueprint-bundle assumptions where they conflict with the markdown-first package model
 
 ## 1. Purpose
 

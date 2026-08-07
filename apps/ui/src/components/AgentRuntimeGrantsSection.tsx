@@ -51,7 +51,6 @@ export function AgentRuntimeGrantsSection({
           contextGrants: value.contextGrants,
           actionGrants: value.actionGrants,
           mentionReachGrants: value.mentionReachGrants,
-          companyToolIds: value.companyToolIds,
         },
         companyId,
       ),
@@ -76,7 +75,6 @@ export function AgentRuntimeGrantsSection({
         AGENT_MENTION_REACH_GRANT_KEYS,
         snapshot.mentionReachGrants,
       ),
-      companyToolIds: [...snapshot.companyToolIds],
     };
   }, [configuration.data]);
 
@@ -107,8 +105,6 @@ export function AgentRuntimeGrantsSection({
       ) : null}
       {value ? (
         <RuntimeAgentConfigurationFields
-          companyId={companyId ?? ""}
-          agentId={agentId}
           value={value}
           onChange={(next) => update.mutate(next)}
           disabled={update.isPending}

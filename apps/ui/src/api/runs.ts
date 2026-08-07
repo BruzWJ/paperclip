@@ -9,9 +9,6 @@ import type {
   IssueExecutionRunLivenessFact,
   IssueExecutionRunStatus,
   IssueExecutionSessionOperation,
-  IssueExecutionWatchdogDecisionInput,
-  IssueExecutionWatchdogDecisionRecord,
-  WorkspaceOperation,
 } from "@paperclipai/shared";
 import { api } from "./client";
 
@@ -217,43 +214,6 @@ export interface AcpPromptAccountingRecord {
   createdAt: string;
 }
 
-export interface IssueExecutionToolInvocationRecord {
-  id: string;
-  toolName: string;
-  riskLevel: string | null;
-  policyDecision: string | null;
-  approvalState: string;
-  status: string;
-  argumentsHash: string | null;
-  argumentsSummary: unknown;
-  resultHash: string | null;
-  resultSummary: unknown;
-  resultSizeBytes: number | null;
-  errorCode: string | null;
-  startedAt: string | null;
-  completedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface IssueExecutionToolEventRecord {
-  id: string;
-  eventType: string;
-  toolName: string | null;
-  decision: string | null;
-  reasonCode: string | null;
-  outcome: string;
-  latencyMs: number | null;
-  argumentsSummary: unknown;
-  requestHash: string | null;
-  requestSummary: unknown;
-  resultHash: string | null;
-  resultSummary: unknown;
-  resultSizeBytes: number | null;
-  errorCode: string | null;
-  createdAt: string;
-}
-
 export interface IssueExecutionActivityRecord {
   id: string;
   actorType: string;
@@ -324,17 +284,8 @@ export interface IssueExecutionRunJoinedDetail {
   cancellations: BoundedRunRecords<IssueExecutionCancellationRecord>;
   accounting: BoundedRunRecords<AcpPromptAccountingRecord>;
   costs: BoundedRunRecords<CostEvent>;
-  toolInvocations: BoundedRunRecords<IssueExecutionToolInvocationRecord>;
-  toolEvents: BoundedRunRecords<IssueExecutionToolEventRecord>;
   activity: BoundedRunRecords<IssueExecutionActivityRecord>;
-  workspaceOperations: BoundedRunRecords<WorkspaceOperation>;
-  watchdogDecisions: BoundedRunRecords<IssueExecutionWatchdogDecisionRecord>;
   finalization: IssueExecutionJoinedFinalization | null;
-}
-
-export interface WatchdogDecisionInput
-  extends IssueExecutionWatchdogDecisionInput {
-  runId: string;
 }
 
 function runListQuery(filters: IssueExecutionRunListFilters = {}): string {
@@ -365,15 +316,5 @@ export const runsApi = {
   get: (runId: string, limit = 200) =>
     api.get<IssueExecutionRunJoinedDetail>(
       `/runs/${runId}?limit=${encodeURIComponent(String(limit))}`,
-    ),
-  recordWatchdogDecision: (input: WatchdogDecisionInput) =>
-    api.post<IssueExecutionWatchdogDecisionRecord>(
-      `/runs/${input.runId}/watchdog-decisions`,
-      {
-        decision: input.decision,
-        evaluationIssueId: input.evaluationIssueId ?? null,
-        reason: input.reason ?? null,
-        snoozedUntil: input.snoozedUntil ?? null,
-      },
     ),
 };

@@ -9,10 +9,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/i18n";
 import { Layout } from "./components/Layout";
-import { ConferenceRoomChatGate } from "./components/ConferenceRoomChatGate";
-import { PipelinesExperimentalGate } from "./components/PipelinesExperimentalGate";
-import { CasesExperimentalGate } from "./components/CasesExperimentalGate";
-import { AppsExperimentalGate } from "./components/AppsExperimentalGate";
 import { AuthenticatedAppGate } from "./components/AuthenticatedAppGate";
 // NotFoundPage stays eager on purpose: Layout already imports it statically for
 // the invalid-company-prefix state, so it is in the entry graph either way.
@@ -29,11 +25,9 @@ import {
 
 // Route-level code splitting: every page loads its own chunk on first visit
 // instead of riding in the entry bundle (PAP entry chunk was 5.7 MB with all
-// pages eager). Named exports from the same module (e.g. ./pages/Pipelines,
-// ./pages/Training) share a single chunk. Chunk-load failures after a redeploy
+// pages eager). Named exports from the same module (e.g. ./pages/Training)
+// share a single chunk. Chunk-load failures after a redeploy
 // go through the stale-chunk reload guard in lib/lazy-page.
-const Cases = lazyPage(() => import("./pages/Cases"), "Cases");
-const CaseDetail = lazyPage(() => import("./pages/CaseDetail"), "CaseDetail");
 const Dashboard = lazyPage(() => import("./pages/Dashboard"), "Dashboard");
 const DashboardLive = lazyPage(
   () => import("./pages/DashboardLive"),
@@ -51,11 +45,6 @@ const ProjectDetail = lazyPage(
   () => import("./pages/ProjectDetail"),
   "ProjectDetail",
 );
-const ProjectWorkspaceDetail = lazyPage(
-  () => import("./pages/ProjectWorkspaceDetail"),
-  "ProjectWorkspaceDetail",
-);
-const Workspaces = lazyPage(() => import("./pages/Workspaces"), "Workspaces");
 const Issues = lazyPage(() => import("./pages/Issues"), "Issues");
 const Search = lazyPage(() => import("./pages/Search"), "Search");
 const IssueDetail = lazyPage(
@@ -67,21 +56,7 @@ const IssueChatLongThreadPerf = lazyPage(
   "IssueChatLongThreadPerf",
 );
 const Routines = lazyPage(() => import("./pages/Routines"), "Routines");
-const Learnings = lazyPage(() => import("./pages/Pipelines"), "Learnings");
-const PipelineItemDetail = lazyPage(
-  () => import("./pages/Pipelines"),
-  "PipelineItemDetail",
-);
-const PipelineItemLegacyRedirect = lazyPage(
-  () => import("./pages/Pipelines"),
-  "PipelineItemLegacyRedirect",
-);
-const Pipelines = lazyPage(() => import("./pages/Pipelines"), "Pipelines");
-const ReviewQueue = lazyPage(() => import("./pages/Pipelines"), "ReviewQueue");
-const PipelineSettings = lazyPage(
-  () => import("./pages/PipelineSettings"),
-  "PipelineSettings",
-);
+const Goals = lazyPage(() => import("./pages/Goals"), "Goals");
 const RoutineDetail = lazyPage(
   () => import("./pages/RoutineDetail"),
   "RoutineDetail",
@@ -90,11 +65,6 @@ const UserProfile = lazyPage(
   () => import("./pages/UserProfile"),
   "UserProfile",
 );
-const ExecutionWorkspaceDetail = lazyPage(
-  () => import("./pages/ExecutionWorkspaceDetail"),
-  "ExecutionWorkspaceDetail",
-);
-const Goals = lazyPage(() => import("./pages/Goals"), "Goals");
 const Artifacts = lazyPage(() => import("./pages/Artifacts"), "Artifacts");
 const GoalDetail = lazyPage(() => import("./pages/GoalDetail"), "GoalDetail");
 const Approvals = lazyPage(() => import("./pages/Approvals"), "Approvals");
@@ -105,30 +75,9 @@ const ApprovalDetail = lazyPage(
 const Costs = lazyPage(() => import("./pages/Costs"), "Costs");
 const Activity = lazyPage(() => import("./pages/Activity"), "Activity");
 const Inbox = lazyPage(() => import("./pages/Inbox"), "Inbox");
-const WhatNeedsMe = lazyPage(
-  () => import("./pages/WhatNeedsMe"),
-  "WhatNeedsMe",
-);
-const TrainingInspector = lazyPage(
-  () => import("./pages/Training"),
-  "TrainingInspector",
-);
-const TrainingLibrary = lazyPage(
-  () => import("./pages/Training"),
-  "TrainingLibrary",
-);
-const BoardChat = lazyPage(() => import("./pages/BoardChat"), "BoardChat");
 const CompanySettings = lazyPage(
   () => import("./pages/CompanySettings"),
   "CompanySettings",
-);
-const CompanyEnvironments = lazyPage(
-  () => import("./pages/CompanyEnvironments"),
-  "CompanyEnvironments",
-);
-const CloudUpstream = lazyPage(
-  () => import("./pages/CloudUpstream"),
-  "CloudUpstream",
 );
 const CompanySettingsPluginPage = lazyPage(
   () => import("./pages/CompanySettingsPluginPage"),
@@ -137,47 +86,6 @@ const CompanySettingsPluginPage = lazyPage(
 const CompanyAccess = lazyPage(
   () => import("./pages/CompanyAccess"),
   "CompanyAccess",
-);
-const AdvancedToolsRoute = lazyPage(
-  () => import("./pages/tools/AdvancedToolsRoute"),
-  "AdvancedToolsRoute",
-);
-const ProfileWizardRoute = lazyPage(
-  () => import("./pages/tools/profiles/ProfileWizardRoute"),
-  "ProfileWizardRoute",
-);
-const ProfileDetailRoute = lazyPage(
-  () => import("./pages/tools/profiles/ProfileDetailRoute"),
-  "ProfileDetailRoute",
-);
-const Connections = lazyPage(
-  () => import("./pages/apps/Connections"),
-  "Connections",
-);
-const Browse = lazyPage(() => import("./pages/apps/Browse"), "Browse");
-const AppsConnect = lazyPage(
-  () => import("./pages/apps/AppsConnect"),
-  "AppsConnect",
-);
-const AppsReview = lazyPage(
-  () => import("./pages/apps/AppsReview"),
-  "AppsReview",
-);
-const AppDetail = lazyPage(
-  () => import("./pages/apps/AppDetail"),
-  "AppDetail",
-);
-const AppNotConnected = lazyPage(
-  () => import("./pages/apps/AppNotConnected"),
-  "AppNotConnected",
-);
-const GatewaysList = lazyPage(
-  () => import("./pages/apps/gateways/GatewaysList"),
-  "GatewaysList",
-);
-const GatewayDetail = lazyPage(
-  () => import("./pages/apps/gateways/GatewayDetail"),
-  "GatewayDetail",
 );
 const CompanyInvites = lazyPage(
   () => import("./pages/CompanyInvites"),
@@ -211,10 +119,6 @@ const InstanceGeneralSettings = lazyPage(
 const InstanceAccess = lazyPage(
   () => import("./pages/InstanceAccess"),
   "InstanceAccess",
-);
-const InstanceExperimentalSettings = lazyPage(
-  () => import("./pages/InstanceExperimentalSettings"),
-  "InstanceExperimentalSettings",
 );
 const ProfileSettings = lazyPage(
   () => import("./pages/ProfileSettings"),
@@ -271,54 +175,11 @@ function boardRoutes() {
       <Route path="onboarding" element={<OnboardingRoutePage />} />
       <Route path="companies" element={<Companies />} />
       <Route path="company/settings" element={<CompanySettings />} />
-      <Route
-        path="company/settings/cloud-upstream"
-        element={<CloudUpstream />}
-      />
       <Route path="company/settings/members" element={<CompanyAccess />} />
       <Route path="company/settings/invites" element={<CompanyInvites />} />
       <Route path="company/export/*" element={<CompanyExport />} />
       <Route path="company/import" element={<CompanyImport />} />
       <Route path="company/settings/secrets" element={<Secrets />} />
-      <Route element={<AppsExperimentalGate />}>
-        <Route path="apps" element={<Connections />} />
-        <Route path="apps/browse" element={<Browse />} />
-        <Route path="apps/connect" element={<AppsConnectEntryRoute />} />
-        <Route path="apps/review" element={<AppsReview />} />
-        <Route path="apps/gateways" element={<GatewaysList />} />
-        <Route
-          path="apps/gateways/:gatewayId"
-          element={<Navigate to="overview" replace />}
-        />
-        <Route
-          path="apps/gateways/:gatewayId/:tab"
-          element={<GatewayDetail />}
-        />
-        <Route path="apps/advanced" element={<AdvancedToolsRoute />} />
-        <Route
-          path="apps/advanced/profiles/new"
-          element={<ProfileWizardRoute mode="new" />}
-        />
-        <Route
-          path="apps/advanced/profiles/:profileId/edit"
-          element={<ProfileWizardRoute mode="edit" />}
-        />
-        <Route
-          path="apps/advanced/profiles/:profileId"
-          element={<ProfileDetailRoute />}
-        />
-        <Route path="apps/advanced/:tab" element={<AdvancedToolsRoute />} />
-        <Route path="apps/app/:applicationId" element={<AppNotConnected />} />
-        <Route
-          path="apps/app/:applicationId/:tab"
-          element={<AppNotConnected />}
-        />
-        <Route
-          path="apps/:connectionId"
-          element={<Navigate to="setup" replace />}
-        />
-        <Route path="apps/:connectionId/:tab" element={<AppDetail />} />
-      </Route>
       <Route
         path="company/settings/instance"
         element={<Navigate to="general" replace />}
@@ -332,24 +193,8 @@ function boardRoutes() {
         element={<InstanceGeneralSettings />}
       />
       <Route
-        path="company/settings/instance/environments"
-        element={<CompanyEnvironments />}
-      />
-      <Route
-        path="company/settings/instance/environments/new"
-        element={<CompanyEnvironments mode="create" />}
-      />
-      <Route
-        path="company/settings/instance/environments/:environmentId/edit"
-        element={<CompanyEnvironments mode="edit" />}
-      />
-      <Route
         path="company/settings/instance/access"
         element={<InstanceAccess />}
-      />
-      <Route
-        path="company/settings/instance/experimental"
-        element={<InstanceExperimentalSettings />}
       />
       <Route
         path="company/settings/instance/plugins"
@@ -386,7 +231,6 @@ function boardRoutes() {
         "overview",
         "issues",
         "issues/:filter",
-        "workspaces",
         "configuration",
         "budget",
       ].map((tab) => (
@@ -396,11 +240,6 @@ function boardRoutes() {
           element={<ProjectDetail />}
         />
       ))}
-      <Route
-        path="projects/:projectId/workspaces/:workspaceId"
-        element={<ProjectWorkspaceDetail />}
-      />
-      <Route path="workspaces" element={<Workspaces />} />
       <Route path="issues" element={<Issues />} />
       <Route path="search" element={<Search />} />
       <Route path="issues/:issueId" element={<IssueDetail />} />
@@ -411,44 +250,8 @@ function boardRoutes() {
         />
       ) : null}
       <Route path="routines" element={<Routines />} />
-      <Route element={<CasesExperimentalGate />}>
-        <Route path="cases" element={<Cases />} />
-        <Route path="cases/:caseIdentifier" element={<CaseDetail />} />
-      </Route>
-      <Route element={<PipelinesExperimentalGate />}>
-        <Route path="review-queue" element={<ReviewQueue />} />
-        <Route path="learnings" element={<Learnings />} />
-        <Route path="pipelines" element={<Pipelines />} />
-        <Route path="pipelines/:pipelineId" element={<Pipelines />} />
-        <Route path="pipelines/:pipelineId/add" element={<Pipelines />} />
-        <Route
-          path="pipelines/:pipelineId/settings"
-          element={<PipelineSettings />}
-        />
-        <Route
-          path="pipelines/:pipelineId/items/:caseId"
-          element={<PipelineItemDetail />}
-        />
-        <Route
-          path="pipelines/:pipelineId/cases/:caseId"
-          element={<PipelineItemLegacyRedirect />}
-        />
-      </Route>
       <Route path="routines/:routineId" element={<RoutineDetail />} />
       <Route path="routines/:routineId/:section" element={<RoutineDetail />} />
-      <Route
-        path="execution-workspaces/:workspaceId"
-        element={<ExecutionWorkspaceDetail />}
-      />
-      {["services", "configuration", "runtime-logs", "issues", "routines"].map(
-        (tab) => (
-          <Route
-            key={tab}
-            path={`execution-workspaces/:workspaceId/${tab}`}
-            element={<ExecutionWorkspaceDetail />}
-          />
-        ),
-      )}
       <Route path="goals" element={<Goals />} />
       <Route path="goals/:goalId" element={<GoalDetail />} />
       <Route path="artifacts" element={<Artifacts />} />
@@ -461,18 +264,6 @@ function boardRoutes() {
       <Route path="approvals/:approvalId" element={<ApprovalDetail />} />
       <Route path="costs" element={<Costs />} />
       <Route path="activity" element={<Activity />} />
-      {/* Conference Room Chat surfaces (PAP-136/PAP-137): routes stay
-          registered but redirect to the company home while the experimental
-          flag is off. The board-level `artifacts` mount below is the new
-          conference-room one; the master-level mount above it still serves
-          `/artifacts` in both modes. */}
-      <Route element={<ConferenceRoomChatGate />}>
-        <Route path="board-chat" element={<BoardChat />} />
-        <Route path="artifacts" element={<Artifacts />} />
-      </Route>
-      <Route path="decisions" element={<WhatNeedsMe />} />
-      <Route path="training" element={<TrainingLibrary />} />
-      <Route path="training/:id" element={<TrainingInspector />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
       {["mine", "recent", "unread", "blocked", "all"].map((tab) => (
         <Route key={tab} path={`inbox/${tab}`} element={<Inbox />} />
@@ -484,16 +275,6 @@ function boardRoutes() {
       <Route path=":pluginRoutePath/*" element={<PluginPage />} />
       <Route path="*" element={<NotFoundPage scope="board" />} />
     </>
-  );
-}
-
-function AppsConnectEntryRoute() {
-  const location = useLocation();
-  const searchParams = new URLSearchParams(location.search);
-  return searchParams.get("byo") === "1" ? (
-    <AppsConnect />
-  ) : (
-    <Navigate to="/apps/browse" replace />
   );
 }
 
@@ -646,18 +427,9 @@ const UNPREFIXED_BOARD_PATHS = [
   "issues/:issueId",
   "routines",
   "routines/:routineId",
-  "review-queue",
-  "learnings",
-  "cases",
-  "cases/:caseIdentifier",
-  "pipelines",
-  "pipelines/:pipelineId",
-  "pipelines/:pipelineId/add",
-  "pipelines/:pipelineId/settings",
-  "pipelines/:pipelineId/items/:caseId",
-  "pipelines/:pipelineId/cases/:caseId",
+  "goals",
+  "goals/:goalId",
   "artifacts",
-  "decisions",
   "u/:userSlug",
   "skills/studio",
   "skills/studio/new",
@@ -674,16 +446,7 @@ const UNPREFIXED_BOARD_PATHS = [
   "projects/:projectId/overview",
   "projects/:projectId/issues",
   "projects/:projectId/issues/:filter",
-  "projects/:projectId/workspaces",
-  "projects/:projectId/workspaces/:workspaceId",
   "projects/:projectId/configuration",
-  "workspaces",
-  "execution-workspaces/:workspaceId",
-  "execution-workspaces/:workspaceId/services",
-  "execution-workspaces/:workspaceId/configuration",
-  "execution-workspaces/:workspaceId/runtime-logs",
-  "execution-workspaces/:workspaceId/issues",
-  "execution-workspaces/:workspaceId/routines",
 ];
 
 export function App() {

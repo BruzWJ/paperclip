@@ -6,14 +6,12 @@ import {
   issues as issuesTable,
   pluginLogs,
   principalPermissionGrants,
-  projects as projectsTable,
 } from "@paperclipai/db";
 import { eq, and, desc, sql, isNull, isNotNull, gt, lte, or } from "drizzle-orm";
 import type {
   HostServices,
   HostToWorkerMethods,
   WorkerToHostMethods,
-  PluginExecutionWorkspaceMetadata,
 } from "@paperclipai/plugin-sdk";
 import { normalizePluginScopeId } from "@paperclipai/plugin-sdk";
 import {
@@ -27,8 +25,7 @@ import {
   agentService,
   type AgentControlLifecycleService,
 } from "./agents.js";
-import { projectService } from "./projects.js";
-import { executionWorkspaceService } from "./execution-workspaces.js";
+import { projectService, toPublicProject } from "./projects.js";
 import { issueService } from "./issues.js";
 import { goalService } from "./goals.js";
 import { createCompanyInvite } from "./company-invite-creation.js";
@@ -325,39 +322,6 @@ async function executePinnedHttpRequest(
   };
 }
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const PATH_LIKE_PATTERN = /[\\/]/;
-const WINDOWS_DRIVE_PATH_PATTERN = /^[A-Za-z]:[\\/]/;
-
-function looksLikePath(value: string): boolean {
-  const normalized = value.trim();
-  return (
-    PATH_LIKE_PATTERN.test(normalized)
-    || WINDOWS_DRIVE_PATH_PATTERN.test(normalized)
-  ) && !UUID_PATTERN.test(normalized);
-}
-
-function sanitizeWorkspaceText(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed || UUID_PATTERN.test(trimmed)) return "";
-  return trimmed;
-}
-
-function sanitizeWorkspacePath(cwd: string | null): string {
-  if (!cwd) return "";
-  return looksLikePath(cwd) ? cwd.trim() : "";
-}
-
-function sanitizeWorkspaceName(name: string, fallbackPath: string): string {
-  const safeName = sanitizeWorkspaceText(name);
-  if (safeName && !looksLikePath(safeName)) {
-    return safeName;
-  }
-  const normalized = fallbackPath.trim().replace(/[\\/]+$/, "");
-  const segments = normalized.split(/[\\/]/).filter(Boolean);
-  return segments[segments.length - 1] ?? "Workspace";
-}
-
 /** Max length for a single plugin log message (bytes/chars). */
 const MAX_LOG_MESSAGE_LENGTH = 10_000;
 
@@ -531,7 +495,6 @@ export function buildHostServices(
   });
   const registeredCreatorCallbacks = new Set<string>();
   const projects = projectService(db);
-  const executionWorkspaces = executionWorkspaceService(db);
   const issues = issueService(db);
   const goals = goalService(db);
   const access = accessService(db);
@@ -633,35 +596,6 @@ export function buildHostServices(
     record: T | null | undefined,
     companyId: string,
   ): record is T => Boolean(record && record.companyId === companyId);
-
-  const isRecord = (value: unknown): value is Record<string, unknown> =>
-    typeof value === "object" && value !== null && !Array.isArray(value);
-
-  const readProviderMetadata = (metadata: Record<string, unknown> | null | undefined) => {
-    if (!isRecord(metadata)) return null;
-    if (isRecord(metadata.providerMetadata)) return { ...metadata.providerMetadata };
-    const rebuild = metadata.rebuild;
-    if (!isRecord(rebuild)) return null;
-    const rebuildMetadata = rebuild.metadata;
-    if (!isRecord(rebuildMetadata) || !isRecord(rebuildMetadata.providerMetadata)) return null;
-    return { ...rebuildMetadata.providerMetadata };
-  };
-
-  const toPluginExecutionWorkspaceMetadata = (
-    workspace: NonNullable<Awaited<ReturnType<typeof executionWorkspaces.getById>>>,
-  ): PluginExecutionWorkspaceMetadata => ({
-    id: workspace.id,
-    companyId: workspace.companyId,
-    projectId: workspace.projectId,
-    projectWorkspaceId: workspace.projectWorkspaceId,
-    path: workspace.cwd ?? workspace.providerRef,
-    cwd: workspace.cwd,
-    repoUrl: workspace.repoUrl,
-    baseRef: workspace.baseRef,
-    branchName: workspace.branchName,
-    providerType: workspace.providerType,
-    providerMetadata: readProviderMetadata(workspace.metadata),
-  });
 
   const requireInCompany = <T extends { companyId: string | null | undefined }>(
     entityName: string,
@@ -824,12 +758,10 @@ export function buildHostServices(
     };
   };
 
-  const policyPathForResource = (resourceType: "company" | "agent" | "project" | "issue") => {
+  const policyPathForResource = (resourceType: "company" | "agent" | "issue") => {
     switch (resourceType) {
       case "agent":
         return { table: "agent" as const };
-      case "project":
-        return { table: "project" as const };
       case "issue":
         return { table: "issue" as const };
       case "company":
@@ -837,7 +769,7 @@ export function buildHostServices(
     }
   };
 
-  const readAuthorizationPolicy = async (companyId: string, resourceType: "company" | "agent" | "project" | "issue", resourceId: string) => {
+  const readAuthorizationPolicy = async (companyId: string, resourceType: "company" | "agent" | "issue", resourceId: string) => {
     const pathInfo = policyPathForResource(resourceType);
     if (pathInfo.table === "agent") {
       const agent = await agents.getById(resourceId);
@@ -854,20 +786,6 @@ export function buildHostServices(
           ? sanitizeRecord(governance.authorizationPolicy as Record<string, unknown>)
           : null,
         updatedAt: agent.updatedAt,
-      };
-    }
-    if (pathInfo.table === "project") {
-      const project = await projects.getById(resourceId);
-      if (!inCompany(project, companyId)) return null;
-      const policy = project.executionWorkspacePolicy && typeof project.executionWorkspacePolicy === "object"
-        ? (project.executionWorkspacePolicy as unknown as Record<string, unknown>).authorizationPolicy
-        : null;
-      return {
-        resourceType,
-        resourceId,
-        companyId,
-        policy: policy && typeof policy === "object" ? sanitizeRecord(policy as Record<string, unknown>) : null,
-        updatedAt: project.updatedAt,
       };
     }
     if (pathInfo.table === "issue") {
@@ -1217,59 +1135,17 @@ export function buildHostServices(
       async list(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        return applyWindow(await projects.list(companyId), params);
+        return applyWindow(
+          (await projects.list(companyId)).map((project) => toPublicProject(project)),
+          params,
+        );
       },
       async get(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         const project = await projects.getById(params.projectId);
-        return inCompany(project, companyId) ? project : null;
+        return inCompany(project, companyId) ? toPublicProject(project) : null;
       },
-      async listWorkspaces(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const project = await projects.getById(params.projectId);
-        if (!inCompany(project, companyId)) return [];
-        const rows = await projects.listWorkspaces(params.projectId);
-        return rows.map((row) => {
-          const path = sanitizeWorkspacePath(row.cwd);
-          const name = sanitizeWorkspaceName(row.name, path);
-          return {
-            id: row.id,
-            projectId: row.projectId,
-            name,
-            path,
-            repoUrl: row.repoUrl,
-            repoRef: row.repoRef,
-            defaultRef: row.defaultRef,
-            isPrimary: row.isPrimary,
-            createdAt: row.createdAt.toISOString(),
-            updatedAt: row.updatedAt.toISOString(),
-          };
-        });
-      },
-      async getPrimaryWorkspace(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const project = await projects.getById(params.projectId);
-        if (!inCompany(project, companyId)) return null;
-        const row = project.primaryWorkspace;
-        const path = sanitizeWorkspacePath(project.codebase.effectiveLocalFolder);
-        const name = sanitizeWorkspaceName(row?.name ?? project.name, path);
-        return {
-          id: row?.id ?? `${project.id}:managed`,
-          projectId: project.id,
-          name,
-          path,
-          repoUrl: row?.repoUrl ?? project.codebase.repoUrl,
-          repoRef: row?.repoRef ?? project.codebase.repoRef,
-          defaultRef: row?.defaultRef ?? project.codebase.defaultRef,
-          isPrimary: true,
-          createdAt: (row?.createdAt ?? project.createdAt).toISOString(),
-          updatedAt: (row?.updatedAt ?? project.updatedAt).toISOString(),
-        };
-      },
-
       async getManaged(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
@@ -1301,18 +1177,6 @@ export function buildHostServices(
           projectKey: params.projectKey,
           reset: true,
         });
-      },
-    },
-
-    executionWorkspaces: {
-      async get(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const workspace = await executionWorkspaces.getById(params.workspaceId);
-        if (inCompany(workspace, companyId)) {
-          return toPluginExecutionWorkspaceMetadata(workspace);
-        }
-        return null;
       },
     },
 
@@ -1821,35 +1685,22 @@ export function buildHostServices(
       async updatePolicy(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        if (params.resourceType !== "project" && params.resourceType !== "issue") {
+        if (params.resourceType !== "issue") {
           throw new Error(
-            "Plugin authorization policy updates only support project or issue resources.",
+            "Plugin authorization policy updates only support issue resources.",
           );
         }
         const policy = params.policy ? sanitizeRecord(params.policy) : null;
-        if (params.resourceType === "project") {
-          const project = requireInCompany("Project", await projects.getById(params.resourceId), companyId);
-          const executionWorkspacePolicy = project.executionWorkspacePolicy && typeof project.executionWorkspacePolicy === "object"
-            ? { ...(project.executionWorkspacePolicy as unknown as Record<string, unknown>) }
-            : {};
-          if (policy) executionWorkspacePolicy.authorizationPolicy = policy;
-          else delete executionWorkspacePolicy.authorizationPolicy;
-          await db
-            .update(projectsTable)
-            .set({ executionWorkspacePolicy, updatedAt: new Date() })
-            .where(eq(projectsTable.id, project.id));
-        } else if (params.resourceType === "issue") {
-          const issue = requireInCompany("Issue", await issues.getById(params.resourceId), companyId);
-          const executionPolicy = issue.executionPolicy && typeof issue.executionPolicy === "object"
-            ? { ...(issue.executionPolicy as Record<string, unknown>) }
-            : {};
-          if (policy) executionPolicy.authorizationPolicy = policy;
-          else delete executionPolicy.authorizationPolicy;
-          await db
-            .update(issuesTable)
-            .set({ executionPolicy, updatedAt: new Date() })
-            .where(eq(issuesTable.id, issue.id));
-        }
+        const issue = requireInCompany("Issue", await issues.getById(params.resourceId), companyId);
+        const executionPolicy = issue.executionPolicy && typeof issue.executionPolicy === "object"
+          ? { ...(issue.executionPolicy as Record<string, unknown>) }
+          : {};
+        if (policy) executionPolicy.authorizationPolicy = policy;
+        else delete executionPolicy.authorizationPolicy;
+        await db
+          .update(issuesTable)
+          .set({ executionPolicy, updatedAt: new Date() })
+          .where(eq(issuesTable.id, issue.id));
         await logPluginActivity({
           companyId,
           action: "authorization.policy_updated_by_plugin",

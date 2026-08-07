@@ -65,11 +65,7 @@ import {
 import { getRecentStudioSkillIds, trackRecentStudioSkill } from "@/lib/recent-skills";
 import { AgentsUsingSkillBadge } from "@/components/skill-studio/AgentsUsingSkillDialog";
 import { ForkSkillDialog } from "@/components/skill-studio/ForkSkillDialog";
-import {
-  ProjectScanNotice,
-  SkillLineageChip,
-} from "@/components/skill-studio/SkillProvenance";
-import { isProjectScanSkill } from "@/lib/skill-fork";
+import { SkillLineageChip } from "@/components/skill-studio/SkillProvenance";
 import { cn, formatMoneyAmount, relativeTime } from "@/lib/utils";
 import { SkillCardIcon, type DiscoveryCard } from "./CompanySkills";
 import {
@@ -992,7 +988,6 @@ function StudioShell({
       onEditACopy={() => setForkDialogOpen(true)}
     />
   );
-  const projectScan = isProjectScanSkill(skill.metadata);
   const middlePane = (
     <InputPane
       companyId={companyId}
@@ -1044,9 +1039,6 @@ function StudioShell({
           onSelectSkill={(nextSkillId) => navigate(skillStudioRoute(nextSkillId))}
           onOpenVersions={() => setVersionSheetOpen(true)}
         />
-        {projectScan ? (
-          <ProjectScanNotice skill={skill} onEditACopy={() => setForkDialogOpen(true)} />
-        ) : null}
         {isMobile ? (
           <MobileTabs skill={leftPane} input={middlePane} runs={rightPane} />
         ) : (

@@ -13,12 +13,9 @@ import { accessApi } from "../api/access";
 import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { Link, useNavigate } from "@/lib/router";
-import { executionWorkspacesApi } from "../api/execution-workspaces";
 import { issuesApi } from "../api/issues";
 import { authApi } from "../api/auth";
-import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
-import { useIssueExternalObjectSummaries } from "../hooks/useIssueExternalObjects";
 import {
   shouldBlurPageSearchOnEnter,
   shouldBlurPageSearchOnEscape,
@@ -46,16 +43,13 @@ import {
   issueFilterLabel,
   issuePriorityOrder,
   normalizeIssueFilterState,
-  resolveIssueFilterWorkspaceId,
-  shouldIncludeIssueFilterWorkspaceOption,
   issueStatusOrder,
   type IssueFilterState,
 } from "../lib/issue-filters";
 import {
   DEFAULT_INBOX_ISSUE_COLUMNS,
-  getAvailableInboxIssueColumns,
+  inboxIssueColumns,
   normalizeInboxIssueColumns,
-  resolveIssueWorkspaceName,
   type InboxIssueColumn,
 } from "../lib/inbox";
 import { cn, formatDurationMs, formatMoneyAmount } from "../lib/utils";
@@ -214,7 +208,6 @@ export type IssueViewState = IssueFilterState & {
     | "priority"
     | "owner"
     | "project"
-    | "workspace"
     | "parent"
     | "none";
   viewMode: "list" | "board";
@@ -299,21 +292,6 @@ function getInitialViewState(
   return {
     ...base,
     owners: initialOwners,
-    statuses: [],
-  };
-}
-
-function getInitialWorkspaceViewState(
-  key: string,
-  initialOwners?: string[],
-  initialWorkspaces?: string[],
-  defaultSortField?: IssueSortField,
-): IssueViewState {
-  const stored = getInitialViewState(key, initialOwners, defaultSortField);
-  if (!initialWorkspaces) return stored;
-  return {
-    ...stored,
-    workspaces: initialWorkspaces,
     statuses: [],
   };
 }
@@ -501,13 +479,7 @@ type CreatorOption = {
   searchText?: string;
 };
 
-type ProjectOption = Pick<Project, "id" | "name"> &
-  Partial<
-    Pick<
-      Project,
-      "color" | "workspaces" | "executionWorkspacePolicy" | "primaryWorkspace"
-    >
-  >;
+type ProjectOption = Pick<Project, "id" | "name" | "color">;
 type IssueListRequestFilters = NonNullable<
   Parameters<typeof issuesApi.list>[1]
 >;
@@ -523,7 +495,6 @@ interface IssuesListProps {
   viewStateKey: string;
   issueLinkState?: unknown;
   initialOwners?: string[];
-  initialWorkspaces?: string[];
   initialSearch?: string;
   searchFilters?: Omit<
     IssueListRequestFilters,
@@ -774,7 +745,6 @@ export function IssuesList({
   viewStateKey,
   issueLinkState,
   initialOwners,
-  initialWorkspaces,
   initialSearch,
   searchFilters,
   searchWithinLoadedIssues = false,
@@ -830,32 +800,16 @@ export function IssuesList({
     queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
-  const { data: experimentalSettings } = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-    retry: false,
-  });
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
-  const experimentalSettingsLoaded = experimentalSettings !== undefined;
-  const isolatedWorkspacesEnabled =
-    experimentalSettings?.enableIsolatedWorkspaces === true;
-  const externalObjectsEnabled =
-    experimentalSettings?.enableExternalObjects === true;
 
   // Scope the storage key per company so folding/view state is independent across companies.
   const scopedKey = selectedCompanyId
     ? `${viewStateKey}:${selectedCompanyId}`
     : viewStateKey;
   const initialOwnersKey = initialOwners?.join("|") ?? "";
-  const initialWorkspacesKey = initialWorkspaces?.join("|") ?? "";
 
   const [viewState, setViewState] = useState<IssueViewState>(() =>
-    getInitialWorkspaceViewState(
-      scopedKey,
-      initialOwners,
-      initialWorkspaces,
-      defaultSortField,
-    ),
+    getInitialViewState(scopedKey, initialOwners, defaultSortField),
   );
   const [issueSearch, setIssueSearch] = useState(initialSearch ?? "");
   const [renderedIssueRowLimit, setRenderedIssueRowLimit] = useState(
@@ -875,27 +829,20 @@ export function IssuesList({
 
   // Reload view state whenever the persisted context changes.
   const prevViewStateContextKey = useRef(
-    `${scopedKey}::${initialOwnersKey}::${initialWorkspacesKey}`,
+    `${scopedKey}::${initialOwnersKey}`,
   );
   useEffect(() => {
-    const nextContextKey = `${scopedKey}::${initialOwnersKey}::${initialWorkspacesKey}`;
+    const nextContextKey = `${scopedKey}::${initialOwnersKey}`;
     if (prevViewStateContextKey.current !== nextContextKey) {
       prevViewStateContextKey.current = nextContextKey;
       setViewState(
-        getInitialWorkspaceViewState(
-          scopedKey,
-          initialOwners,
-          initialWorkspaces,
-          defaultSortField,
-        ),
+        getInitialViewState(scopedKey, initialOwners, defaultSortField),
       );
     }
   }, [
     scopedKey,
     initialOwners,
     initialOwnersKey,
-    initialWorkspaces,
-    initialWorkspacesKey,
     defaultSortField,
   ]);
 
@@ -917,21 +864,6 @@ export function IssuesList({
     },
     [scopedKey],
   );
-
-  useEffect(() => {
-    if (
-      !experimentalSettingsLoaded ||
-      externalObjectsEnabled ||
-      viewState.externalObjectStatuses.length === 0
-    )
-      return;
-    updateView({ externalObjectStatuses: [] });
-  }, [
-    experimentalSettingsLoaded,
-    externalObjectsEnabled,
-    updateView,
-    viewState.externalObjectStatuses.length,
-  ]);
 
   // Prune stale IDs from collapsedParents whenever the issue list changes.
   // Deleted or reassigned issues leave orphan IDs in localStorage; this keeps
@@ -1024,14 +956,6 @@ export function IssuesList({
       placeholderData: (previousData: Issue[] | undefined) => previousData,
     })),
   });
-  const { data: executionWorkspaces = [] } = useQuery({
-    queryKey: selectedCompanyId
-      ? queryKeys.executionWorkspaces.summaryList(selectedCompanyId)
-      : ["execution-workspaces", "__disabled__"],
-    queryFn: () => executionWorkspacesApi.listSummaries(selectedCompanyId!),
-    enabled: !!selectedCompanyId && isolatedWorkspacesEnabled,
-  });
-
   const agentName = useCallback(
     (id: string | null) => {
       if (!id || !agents) return null;
@@ -1056,114 +980,6 @@ export function IssuesList({
     }
     return map;
   }, [projects]);
-
-  const projectWorkspaceById = useMemo(() => {
-    const map = new Map<string, { name: string; projectId: string }>();
-    for (const project of projects ?? []) {
-      for (const workspace of project.workspaces ?? []) {
-        map.set(workspace.id, {
-          name: workspace.name || project.name,
-          projectId: project.id,
-        });
-      }
-    }
-    return map;
-  }, [projects]);
-
-  const defaultProjectWorkspaceIdByProjectId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const project of projects ?? []) {
-      const defaultWorkspaceId =
-        project.executionWorkspacePolicy?.defaultProjectWorkspaceId ??
-        project.primaryWorkspace?.id ??
-        null;
-      if (defaultWorkspaceId) map.set(project.id, defaultWorkspaceId);
-    }
-    return map;
-  }, [projects]);
-  const defaultProjectWorkspaceIds = useMemo(
-    () => new Set(defaultProjectWorkspaceIdByProjectId.values()),
-    [defaultProjectWorkspaceIdByProjectId],
-  );
-
-  const executionWorkspaceById = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        name: string;
-        mode:
-          | "shared_workspace"
-          | "isolated_workspace"
-          | "operator_branch"
-          | "adapter_managed"
-          | "cloud_sandbox";
-        projectWorkspaceId: string | null;
-        projectId: string | null;
-      }
-    >();
-    for (const workspace of executionWorkspaces) {
-      const projectWorkspace = workspace.projectWorkspaceId
-        ? (projectWorkspaceById.get(workspace.projectWorkspaceId) ?? null)
-        : null;
-      map.set(workspace.id, {
-        name: workspace.name,
-        mode: workspace.mode,
-        projectWorkspaceId: workspace.projectWorkspaceId ?? null,
-        projectId: projectWorkspace?.projectId ?? null,
-      });
-    }
-    return map;
-  }, [executionWorkspaces, projectWorkspaceById]);
-  const issueFilterWorkspaceContext = useMemo(
-    () => ({
-      executionWorkspaceById,
-      defaultProjectWorkspaceIdByProjectId,
-    }),
-    [defaultProjectWorkspaceIdByProjectId, executionWorkspaceById],
-  );
-
-  const workspaceNameMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const [workspaceId, workspace] of projectWorkspaceById) {
-      if (
-        !shouldIncludeIssueFilterWorkspaceOption(
-          { id: workspaceId },
-          defaultProjectWorkspaceIds,
-        )
-      )
-        continue;
-      map.set(workspaceId, workspace.name);
-    }
-    for (const [workspaceId, workspace] of executionWorkspaceById) {
-      if (
-        !shouldIncludeIssueFilterWorkspaceOption(
-          {
-            id: workspaceId,
-            mode: workspace.mode,
-            projectWorkspaceId: workspace.projectWorkspaceId,
-          },
-          defaultProjectWorkspaceIds,
-        )
-      )
-        continue;
-      map.set(workspaceId, workspace.name);
-    }
-    return map;
-  }, [
-    defaultProjectWorkspaceIds,
-    executionWorkspaceById,
-    projectWorkspaceById,
-  ]);
-
-  const workspaceOptions = useMemo(() => {
-    const options = new Map<string, string>();
-    for (const [workspaceId, workspaceName] of workspaceNameMap) {
-      options.set(workspaceId, workspaceName);
-    }
-    return [...options.entries()]
-      .sort((a, b) => a[1].localeCompare(b[1]))
-      .map(([id, name]) => ({ id, name }));
-  }, [workspaceNameMap]);
 
   const creatorOptions = useMemo<CreatorOption[]>(() => {
     const options = new Map<string, CreatorOption>();
@@ -1233,10 +1049,7 @@ export function IssuesList({
     () => new Set(visibleIssueColumns),
     [visibleIssueColumns],
   );
-  const availableIssueColumns = useMemo(
-    () => getAvailableInboxIssueColumns(isolatedWorkspacesEnabled),
-    [isolatedWorkspacesEnabled],
-  );
+  const availableIssueColumns = inboxIssueColumns;
   const availableIssueColumnSet = useMemo(
     () => new Set(availableIssueColumns),
     [availableIssueColumns],
@@ -1322,42 +1135,6 @@ export function IssuesList({
         : sourceIssues,
     [normalizedIssueSearch, searchWithinLoadedIssues, sourceIssues],
   );
-  const hasExternalObjectStatusFilters =
-    viewState.externalObjectStatuses.length > 0;
-  const issueIdsForExternalObjectSummaries = useMemo(
-    () =>
-      viewState.viewMode === "list" || hasExternalObjectStatusFilters
-        ? searchScopedIssues.map((issue) => issue.id)
-        : [],
-    [hasExternalObjectStatusFilters, searchScopedIssues, viewState.viewMode],
-  );
-  const {
-    summaries: externalObjectSummaryByIssueId,
-    isLoading: externalObjectSummariesLoading,
-    isReady: externalObjectSummariesReady,
-  } = useIssueExternalObjectSummaries(
-    selectedCompanyId,
-    issueIdsForExternalObjectSummaries,
-  );
-  const issueFilterContext = useMemo(
-    () => ({
-      ...issueFilterWorkspaceContext,
-      externalObjectSummaryByIssueId,
-      externalObjectSummariesReady:
-        externalObjectSummariesReady && !externalObjectSummariesLoading,
-    }),
-    [
-      externalObjectSummariesLoading,
-      externalObjectSummariesReady,
-      externalObjectSummaryByIssueId,
-      issueFilterWorkspaceContext,
-    ],
-  );
-  const externalObjectFilterLoading =
-    hasExternalObjectStatusFilters &&
-    externalObjectSummariesLoading &&
-    !externalObjectSummariesReady;
-
   const filtered = useMemo(() => {
     const filteredByControls = applyIssueFilters(
       searchScopedIssues,
@@ -1365,7 +1142,6 @@ export function IssuesList({
       currentUserId,
       enableRoutineVisibilityFilter,
       liveIssueIds,
-      issueFilterContext,
     );
     return sortIssues(filteredByControls, viewState);
   }, [
@@ -1374,7 +1150,6 @@ export function IssuesList({
     currentUserId,
     enableRoutineVisibilityFilter,
     liveIssueIds,
-    issueFilterContext,
   ]);
 
   const progressSummary = useMemo(
@@ -1499,29 +1274,6 @@ export function IssuesList({
           items: groups[p]!,
         }));
     }
-    if (viewState.groupBy === "workspace") {
-      const groups = groupBy(
-        filtered,
-        (issue) =>
-          resolveIssueFilterWorkspaceId(issue, issueFilterWorkspaceContext) ??
-          "__no_workspace",
-      );
-      return Object.keys(groups)
-        .sort((a, b) => {
-          // Groups with items first, "no workspace" last
-          if (a === "__no_workspace") return 1;
-          if (b === "__no_workspace") return -1;
-          return (groups[b]?.length ?? 0) - (groups[a]?.length ?? 0);
-        })
-        .map((key) => ({
-          key,
-          label:
-            key === "__no_workspace"
-              ? "No Workspace"
-              : (workspaceNameMap.get(key) ?? key.slice(0, 8)),
-          items: groups[key]!,
-        }));
-    }
     if (viewState.groupBy === "project") {
       const groups = groupBy(
         filtered,
@@ -1585,12 +1337,10 @@ export function IssuesList({
     }));
   }, [
     filtered,
-    issueFilterWorkspaceContext,
     viewState.groupBy,
     agents,
     agentName,
     currentUserId,
-    workspaceNameMap,
     issueTitleMap,
     companyUserLabelMap,
     projectById,
@@ -1929,41 +1679,6 @@ export function IssuesList({
         )
           defaults.projectId = groupKey;
         else if (
-          viewState.groupBy === "workspace" &&
-          groupKey !== "__no_workspace"
-        ) {
-          const representativeIssue =
-            group?.items.find(
-              (issue) =>
-                issue.currentExecutionWorkspace?.id === groupKey ||
-                issue.projectWorkspaceId === groupKey,
-            ) ?? null;
-          const executionWorkspace = executionWorkspaceById.get(groupKey);
-          if (executionWorkspace) {
-            defaults.executionWorkspaceId = groupKey;
-            defaults.executionWorkspaceMode = "reuse_existing";
-            if (executionWorkspace.projectWorkspaceId)
-              defaults.projectWorkspaceId =
-                executionWorkspace.projectWorkspaceId;
-            const groupedProjectId =
-              executionWorkspace.projectId ??
-              (executionWorkspace.projectWorkspaceId
-                ? projectWorkspaceById.get(
-                    executionWorkspace.projectWorkspaceId,
-                  )?.projectId
-                : null) ??
-              (representativeIssue?.currentExecutionWorkspace?.id === groupKey
-                ? representativeIssue.projectId
-                : null);
-            if (groupedProjectId) defaults.projectId = groupedProjectId;
-          } else {
-            const projectWorkspace = projectWorkspaceById.get(groupKey);
-            if (projectWorkspace) {
-              defaults.projectWorkspaceId = groupKey;
-              defaults.projectId = projectWorkspace.projectId;
-            }
-          }
-        } else if (
           viewState.groupBy === "parent" &&
           groupKey !== "__no_parent"
         ) {
@@ -1980,11 +1695,8 @@ export function IssuesList({
     },
     [
       baseCreateIssueDefaults,
-      currentUserId,
-      executionWorkspaceById,
       issueById,
       projectId,
-      projectWorkspaceById,
       viewState.groupBy,
     ],
   );
@@ -2000,13 +1712,6 @@ export function IssuesList({
       openNewIssue(newIssueDefaults(group));
     },
     [newIssueDefaults, openNewIssue],
-  );
-
-  const filterToWorkspace = useCallback(
-    (workspaceId: string) => {
-      updateView({ workspaces: [workspaceId] });
-    },
-    [updateView],
   );
 
   const setIssueColumns = useCallback(
@@ -2036,11 +1741,9 @@ export function IssuesList({
 
   return (
     <div ref={rootRef} className="space-y-4">
-      {isLoading || externalObjectFilterLoading || isLoadingMoreIssues ? (
+      {isLoading || isLoadingMoreIssues ? (
         <p className="sr-only" role="status">
-          {isLoading || externalObjectFilterLoading
-            ? "Loading tasks."
-            : "Loading more tasks."}
+          {isLoading ? "Loading tasks." : "Loading more tasks."}
         </p>
       ) : null}
       {progressSummary ? (
@@ -2259,12 +1962,8 @@ export function IssuesList({
               color: label.color,
             }))}
             currentUserId={currentUserId}
-            enableExternalObjectFilters={externalObjectsEnabled}
             enableRoutineVisibilityFilter={enableRoutineVisibilityFilter}
             iconOnly
-            workspaces={
-              isolatedWorkspacesEnabled ? workspaceOptions : undefined
-            }
           />
 
           {/* Sort (list view only) */}
@@ -2344,7 +2043,6 @@ export function IssuesList({
                       ["priority", "Priority"],
                       ["owner", "Owner"],
                       ["project", "Project"],
-                      ["workspace", "Workspace"],
                       ["parent", "Parent Task"],
                       ["none", "None"],
                     ] as const
@@ -2371,7 +2069,7 @@ export function IssuesList({
         </div>
       </div>
 
-      {(isLoading || externalObjectFilterLoading) && (
+      {isLoading && (
         <PageSkeleton variant="issues-list" />
       )}
       {error && <p className="text-sm text-destructive" role="alert">{error.message}</p>}
@@ -2390,7 +2088,6 @@ export function IssuesList({
         </p>
       )}
       {!isLoading &&
-        !externalObjectFilterLoading &&
         filtered.length === 0 &&
         viewState.viewMode === "list" && (
           <EmptyState
@@ -2672,10 +2369,6 @@ export function IssuesList({
                             checklistDependencyChips={checklistDependencyChips}
                             checklistRowId={checklistRowId}
                             titleClassName={doneRowTitleClass}
-                            externalObjectSummary={
-                              externalObjectSummaryByIssueId.get(issue.id) ??
-                              null
-                            }
                             titleSuffix={
                               <>
                                 {hasChildren && !isExpanded ? (
@@ -2810,19 +2503,6 @@ export function IssuesList({
                                   columns={visibleTrailingIssueColumns}
                                   projectName={issueProject?.name ?? null}
                                   projectColor={issueProject?.color ?? null}
-                                  workspaceId={resolveIssueFilterWorkspaceId(
-                                    issue,
-                                    issueFilterWorkspaceContext,
-                                  )}
-                                  workspaceName={resolveIssueWorkspaceName(
-                                    issue,
-                                    {
-                                      executionWorkspaceById,
-                                      projectWorkspaceById,
-                                      defaultProjectWorkspaceIdByProjectId,
-                                    },
-                                  )}
-                                  onFilterWorkspace={filterToWorkspace}
                                   ownerName={agentName(issue.ownerAgentId)}
                                   ownerUserName={ownerUserLabel}
                                   ownerUserAvatarUrl={

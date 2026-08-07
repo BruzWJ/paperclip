@@ -15,7 +15,6 @@ const blockedViewDefaults = {
   issueFilters: defaultIssueFilterState,
   currentUserId: "user-1",
   liveIssueIds: new Set<string>(),
-  workspaceFilterContext: {},
   showStatusColumn: true,
   showIdentifierColumn: true,
   showUpdatedColumn: true,

@@ -5,7 +5,7 @@ import {
 import { createMockDb, type MockDbHarness } from "./helpers/mock-db.js";
 
 const environments = vi.hoisted(() => ({
-  getById: vi.fn(),
+  ensureLocalEnvironment: vi.fn(),
 }));
 
 const adapterRegistry = vi.hoisted(() => ({
@@ -118,7 +118,6 @@ function agent(currentAdapterConfigRevisionId: string | null = null) {
     adapterType: currentAdapterConfigRevisionId ? "codex" : null,
     adapterConfig: currentAdapterConfigRevisionId ? adapterConfig("gpt-5.6") : null,
     runtimeConfig: {},
-    defaultEnvironmentId: environmentId,
     currentAdapterConfigRevisionId,
     createdAt: now,
     updatedAt: now,
@@ -212,7 +211,6 @@ async function createRevision(
     configuration: {
       adapterType: "codex",
       adapterConfig: adapterConfig(input.model ?? "gpt-5.6"),
-      defaultEnvironmentId: environmentId,
       runtimeConfig: input.runtimeConfig ?? {},
       companySkillPins: input.companySkillPins ?? [],
       skillChannel: input.skillChannel ?? "operator_native",
@@ -223,7 +221,7 @@ async function createRevision(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  environments.getById.mockResolvedValue({
+  environments.ensureLocalEnvironment.mockResolvedValue({
     id: environmentId,
     driver: "local",
     status: "active",
@@ -237,25 +235,39 @@ beforeEach(() => {
 });
 
 describe("agent adapter configuration revisions", () => {
-  it("rejects a driver absent from the exact current ACPX definition before writing a revision", async () => {
-    environments.getById.mockResolvedValue({
-      id: environmentId,
-      driver: "ssh",
-      status: "active",
-      config: {},
+  it("rejects an adapter that cannot run in the required local environment before writing a revision", async () => {
+    adapterRegistry.findSelectableServerAdapterImplementation.mockReturnValue({
+      adapter: {
+        ...TEST_ADAPTER,
+        definition: {
+          ...TEST_ADAPTER.definition,
+          environment: {
+            ...TEST_ADAPTER.definition.environment,
+            drivers: ["ssh"],
+          },
+        },
+      },
+      identity: TEST_IMPLEMENTATION_IDENTITY,
     });
-    const harness = appendHarness({
-      revisionId: "44444444-4444-4444-8444-444444444444",
-      revisionNumber: 1,
+    const harness = createMockDb({
+      select: [
+        [agent()],
+        [{
+          id: agentId,
+          companyId,
+          currentAdapterConfigRevisionId: null,
+        }],
+      ],
     });
 
     await expect(createRevision(harness)).rejects.toThrow(
-      'Environment driver "ssh" is not allowed here. Allowed drivers: local',
+      "does not support the required local execution environment",
     );
 
     expect(adapterRegistry.findSelectableServerAdapterImplementation)
       .toHaveBeenCalledWith("codex");
     expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
+    expect(harness.remaining("select")).toBe(0);
   });
 
   it("appends immutable A to B to A lineage instead of reviving history", async () => {
@@ -380,7 +392,7 @@ describe("agent adapter configuration revisions", () => {
             },
           },
           executionTargetSelector: {
-            defaultEnvironmentId: environmentId,
+            environmentId,
             executionTargetDriver: "local",
             executionTargetDigest: "a".repeat(64),
           },
@@ -418,7 +430,6 @@ describe("agent adapter configuration revisions", () => {
         configuration: {
           adapterType: "codex",
           adapterConfig: {},
-          defaultEnvironmentId: environmentId,
           runtimeConfig: {},
           ...noCompanySkills,
         },

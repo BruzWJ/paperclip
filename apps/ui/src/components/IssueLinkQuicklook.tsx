@@ -18,8 +18,8 @@ import { StatusIcon } from "@/components/StatusIcon";
 /* ------------------------------------------------------------------ */
 /*  Single-flight quicklook store                                      */
 /*                                                                     */
-/*  Every issue link renders its own Radix Popover. In a dense list    */
-/*  (e.g. the Conference Room agent feed) independent per-card open     */
+/*  Every issue link renders its own Radix Popover. In a dense list,   */
+/*  independent per-card open                                           */
 /*  state lets popovers overlap, linger, and stack — two flyouts at    */
 /*  once, sometimes showing the wrong card. This module-level store    */
 /*  enforces exactly one open quicklook across the whole tree: opening  */

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { issueStatusText } from "@/lib/status-colors";
 import { Link } from "@/lib/router";
@@ -7,8 +7,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { accessApi } from "../../api/access";
 import { agentsApi } from "../../api/agents";
 import { authApi } from "../../api/auth";
-import { executionWorkspacesApi } from "../../api/execution-workspaces";
-import { instanceSettingsApi } from "../../api/instanceSettings";
 import { issuesApi } from "../../api/issues";
 import { projectsApi } from "../../api/projects";
 import { useCompany } from "../../context/CompanyContext";
@@ -25,25 +23,17 @@ import { getRecentProjectIds, trackRecentProject } from "../../lib/recent-projec
 import { orderItemsBySelectedAndRecent } from "../../lib/recent-selections";
 import { formatOwnerUserLabel, formatUserLabel } from "../../lib/issue-owners";
 import { buildExecutionPolicy, stageParticipantValues } from "../../lib/issue-execution-policy";
-import {
-  formatMonitorAbsolute,
-  formatMonitorAbsoluteFull,
-  formatMonitorEta,
-  formatMonitorEtaLabel,
-  useMonitorCountdown,
-} from "../../lib/issue-monitor";
 import { StatusIcon } from "../StatusIcon";
 import { PriorityIcon } from "../PriorityIcon";
 import { Identity } from "../Identity";
 import { IssueReferencePill } from "../IssueReferencePill";
 import { formatDate, formatDateTime, cn, projectUrl } from "../../lib/utils";
-import type { IssueExternalObjectGroup } from "../../hooks/useIssueExternalObjects";
 import { timeAgo } from "../../lib/timeAgo";
 import { invalidateInboxIssueQueries } from "../../lib/inboxArchiveCache";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { User, ArrowUpRight, Plus, GitBranch, FolderOpen, HardDrive, Check, Clock, ArchiveRestore } from "lucide-react";
+import { User, ArrowUpRight, Plus, Check, ArchiveRestore } from "lucide-react";
 import { AgentIcon } from "../AgentIconPicker";
 import {
   OwnerRunningBanner,
@@ -51,58 +41,10 @@ import {
   type OwnerChipResolvers,
 } from "../owner-transition/OwnerTransitionViews";
 import { describeOwnerChangeInterrupt } from "../../lib/owner-transition";
-import {
-  buildWorkspaceRuntimeControlSections,
-  WorkspaceRuntimeQuickControls,
-  type WorkspaceRuntimeControlRequest,
-} from "../WorkspaceRuntimeControls";
-import { ExternalObjectRows } from "./external-object-rows";
-import {
-  defaultExecutionWorkspaceModeForProject,
-  defaultProjectWorkspaceIdForProject,
-  isMainIssueWorkspace,
-  toDateTimeLocalValue,
-} from "./helpers";
 import { PropertyPicker } from "./property-picker";
 import { PropertyChip, PropertyRow, PropertySection } from "./primitives";
-import { IssueCasesPanel } from "../IssueCasesPanel";
 import { ExpandRelationListButton, RemovableIssueReferencePill } from "./relation-controls";
 import { Badge } from "@/components/ui/badge";
-
-function TruncatedCopyable({ value, icon: Icon }: { value: string; icon: ComponentType<{ className?: string }> }) {
-  const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(timerRef.current), []);
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setCopied(false), 1500);
-    } catch { /* noop */ }
-  }, [value]);
-
-  return (
-    <div className="flex items-center gap-1.5 min-w-0 flex-1" title={value}>
-      <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      <button
-        type="button"
-        className="text-sm font-mono min-w-0 truncate text-left cursor-pointer hover:text-foreground transition-colors"
-        onClick={handleCopy}
-        title={value}
-        aria-label={`Copy ${value} to clipboard`}
-      >
-        {value}
-      </button>
-      {copied && (
-        <span className={cn("inline-flex items-center gap-1 text-xs shrink-0", issueStatusText.done)} role="status">
-          <Check className="h-3 w-3 shrink-0" />
-          Copied
-        </span>
-      )}
-    </div>
-  );
-}
 
 interface IssuePropertiesProps {
   issue: Issue;
@@ -113,12 +55,6 @@ interface IssuePropertiesProps {
   /** Whether an agent run is currently in flight on this issue, so the owner
    * picker can warn that reassigning will interrupt it. */
   hasActiveRun?: boolean;
-  externalObjects?: IssueExternalObjectGroup[];
-  externalObjectsLoading?: boolean;
-  externalObjectsError?: boolean;
-  onRetryExternalObjects?: () => void;
-  onCheckMonitorNow?: () => void;
-  checkingMonitorNow?: boolean;
 }
 
 const ISSUE_BLOCKER_SEARCH_LIMIT = 50;
@@ -131,21 +67,10 @@ export function IssueProperties({
   onUpdate,
   inline,
   hasActiveRun = false,
-  externalObjects,
-  externalObjectsLoading,
-  externalObjectsError,
-  onRetryExternalObjects,
-  onCheckMonitorNow,
-  checkingMonitorNow = false,
 }: IssuePropertiesProps) {
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
   const companyId = issue.companyId ?? selectedCompanyId;
-  const { data: experimentalSettings } = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-  });
-  const systemSafeguardsEnabled = experimentalSettings?.enableIssueWatchdogs === true;
   const [ownerOpen, setOwnerOpen] = useState(false);
   const [ownerSearch, setOwnerSearch] = useState("");
   /** When a run is live, a selection is staged here until the operator confirms
@@ -169,20 +94,12 @@ export function IssueProperties({
   const [reviewerSearch, setReviewerSearch] = useState("");
   const [approversOpen, setApproversOpen] = useState(false);
   const [approverSearch, setApproverSearch] = useState("");
-  const [monitorOpen, setMonitorOpen] = useState(false);
-  const [monitorDetailsOpen, setMonitorDetailsOpen] = useState(false);
   const [labelsOpen, setLabelsOpen] = useState(false);
   const [labelSearch, setLabelSearch] = useState("");
   const [newLabelName, setNewLabelName] = useState("");
   // token-extraction: allowlisted — color-picker seed state, persisted into label-create payload; a var() string would break that payload.
   const [newLabelColor, setNewLabelColor] = useState("#6366f1");
-  const [monitorAtInput, setMonitorAtInput] = useState(() => toDateTimeLocalValue(issue.executionPolicy?.monitor?.nextCheckAt));
-  const [monitorNotesInput, setMonitorNotesInput] = useState(issue.executionPolicy?.monitor?.notes ?? "");
-  const [monitorServiceInput, setMonitorServiceInput] = useState(issue.executionPolicy?.monitor?.serviceName ?? "");
-  const [runtimeActionMessage, setRuntimeActionMessage] = useState<string | null>(null);
-  const [runtimeActionErrorMessage, setRuntimeActionErrorMessage] = useState<string | null>(null);
   const [unarchiveErrorMessage, setUnarchiveErrorMessage] = useState<string | null>(null);
-  const [watchdogOpen, setWatchdogOpen] = useState(false);
   const normalizedBlockedBySearch = blockedBySearch.trim();
 
   useEffect(() => {
@@ -307,67 +224,6 @@ export function IssueProperties({
     const project = orderedProjects.find((p) => p.id === id);
     return project?.name ?? id.slice(0, 8);
   };
-  const currentProject = issue.projectId
-    ? orderedProjects.find((project) => project.id === issue.projectId) ?? null
-    : null;
-  const issueProject = issue.project ?? currentProject;
-  const issueUsesMainWorkspace = useMemo(
-    () => isMainIssueWorkspace({ issue, project: issueProject }),
-    [issue, issueProject],
-  );
-  const currentExecutionWorkspaceId = issue.currentExecutionWorkspace?.id ?? null;
-  const showWorkspaceDetailLink = Boolean(currentExecutionWorkspaceId) && !issueUsesMainWorkspace;
-  const workspaceRuntimeConfig = issueUsesMainWorkspace
-    ? null
-    : issue.currentExecutionWorkspace?.config?.workspaceRuntime ?? null;
-  const workspaceRuntimeServices = issue.currentExecutionWorkspace?.runtimeServices ?? [];
-  const workspaceCanRunCommands = Boolean(issue.currentExecutionWorkspace?.cwd);
-  const workspaceCanStartServices = Boolean(workspaceRuntimeConfig) && workspaceCanRunCommands;
-  const workspaceRuntimeSections = useMemo(() => buildWorkspaceRuntimeControlSections({
-    runtimeConfig: workspaceRuntimeConfig,
-    runtimeServices: workspaceRuntimeServices,
-    canStartServices: workspaceCanStartServices,
-    canRunJobs: workspaceCanRunCommands,
-  }), [workspaceCanRunCommands, workspaceCanStartServices, workspaceRuntimeConfig, workspaceRuntimeServices]);
-  const hasWorkspaceRuntimeControls = !issueUsesMainWorkspace && (
-    workspaceRuntimeSections.services.length > 0
-    || workspaceRuntimeSections.otherServices.length > 0
-  );
-  const controlWorkspaceRuntime = useMutation({
-    mutationFn: (request: WorkspaceRuntimeControlRequest) => {
-      const workspaceId = currentExecutionWorkspaceId;
-      if (!workspaceId) throw new Error("This task is not attached to a workspace.");
-      return executionWorkspacesApi.controlRuntimeCommands(workspaceId, request.action, request);
-    },
-    onSuccess: (result, request) => {
-      queryClient.setQueryData(queryKeys.executionWorkspaces.detail(result.workspace.id), result.workspace);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issue.id) });
-      if (result.workspace.projectId) {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(result.workspace.projectId) });
-      }
-      void queryClient.invalidateQueries({ queryKey: queryKeys.executionWorkspaces.overview(result.workspace.companyId) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.executionWorkspaces.workspaceOperations(result.workspace.id) });
-      if (companyId) {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
-        void queryClient.invalidateQueries({ queryKey: queryKeys.executionWorkspaces.list(companyId) });
-      }
-      setRuntimeActionErrorMessage(null);
-      setRuntimeActionMessage(
-        request.action === "run"
-          ? "Workspace job completed."
-          : request.action === "stop"
-            ? "Workspace service stopped."
-            : request.action === "restart"
-              ? "Workspace service restarted."
-              : "Workspace service started.",
-      );
-    },
-    onError: (error) => {
-      setRuntimeActionMessage(null);
-      setRuntimeActionErrorMessage(error instanceof Error ? error.message : "Failed to control workspace commands.");
-    },
-  });
-  const pendingWorkspaceRuntimeAction = controlWorkspaceRuntime.isPending ? controlWorkspaceRuntime.variables ?? null : null;
   const referencedIssueIdentifiers = issue.referencedIssueIdentifiers ?? [];
   const relatedTasks = useMemo(() => {
     const excluded = new Set<string>();
@@ -584,263 +440,6 @@ export function IssueProperties({
     if (!body) return;
     decideExecutionStage.mutate({ outcome, body });
   };
-  useEffect(() => {
-    setMonitorAtInput(toDateTimeLocalValue(issue.executionPolicy?.monitor?.nextCheckAt));
-    setMonitorNotesInput(issue.executionPolicy?.monitor?.notes ?? "");
-    setMonitorServiceInput(issue.executionPolicy?.monitor?.serviceName ?? "");
-  }, [
-    issue.executionPolicy?.monitor?.nextCheckAt,
-    issue.executionPolicy?.monitor?.notes,
-    issue.executionPolicy?.monitor?.serviceName,
-  ]);
-  const upsertWatchdog = useMutation({
-    mutationFn: () => issuesApi.upsertWatchdog(issue.id, {}),
-    onSuccess: (watchdog) => {
-      queryClient.setQueryData<Issue>(queryKeys.issues.detail(issue.id), (current) =>
-        current ? { ...current, watchdog } : current,
-      );
-      void queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issue.id) });
-      setWatchdogOpen(false);
-    },
-  });
-  const deleteWatchdog = useMutation({
-    mutationFn: () => issuesApi.deleteWatchdog(issue.id),
-    onSuccess: () => {
-      queryClient.setQueryData<Issue>(queryKeys.issues.detail(issue.id), (current) =>
-        current ? { ...current, watchdog: null } : current,
-      );
-      void queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issue.id) });
-      setWatchdogOpen(false);
-    },
-  });
-  const watchdogMutationError =
-    upsertWatchdog.error instanceof Error
-      ? upsertWatchdog.error.message
-      : deleteWatchdog.error instanceof Error
-        ? deleteWatchdog.error.message
-        : null;
-  const watchdogTrigger = issue.watchdog ? (
-    <span className="text-sm">Enabled</span>
-  ) : (
-    <span className="text-sm text-muted-foreground">Disabled</span>
-  );
-  const watchdogContent = (
-    <div className="space-y-3 p-2">
-      <p className="text-xs text-muted-foreground">
-        The system watches this issue subtree and nudges the current owner when
-        runnable work stops unexpectedly.
-      </p>
-      {watchdogMutationError ? (
-        <div className="rounded border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive">
-          {watchdogMutationError}
-        </div>
-      ) : null}
-      <div className="flex justify-end">
-        <Button
-          type="button"
-          size="sm"
-          className="h-7 text-xs"
-          disabled={upsertWatchdog.isPending || deleteWatchdog.isPending}
-          onClick={() => {
-            if (issue.watchdog) deleteWatchdog.mutate();
-            else upsertWatchdog.mutate();
-          }}
-        >
-          {upsertWatchdog.isPending
-            ? "Enabling…"
-            : deleteWatchdog.isPending
-              ? "Disabling…"
-              : issue.watchdog
-                ? "Disable safeguard"
-                : "Enable safeguard"}
-        </Button>
-      </div>
-    </div>
-  );
-
-  const updateMonitor = (nextMonitor: Issue["executionPolicy"] extends infer T
-    ? T extends { monitor?: infer M | null } | null | undefined
-      ? M | null
-      : never
-    : never) => {
-    const basePolicy = buildExecutionPolicy({
-      existingPolicy: issue.executionPolicy ?? null,
-      reviewerValues,
-      approverValues,
-    });
-    if (!basePolicy && !nextMonitor) {
-      onUpdate({ executionPolicy: null });
-      return;
-    }
-    onUpdate({
-      executionPolicy: {
-        mode: basePolicy?.mode ?? issue.executionPolicy?.mode ?? "normal",
-        commentRequired: true,
-        stages: basePolicy?.stages ?? [],
-        ...(nextMonitor ? { monitor: nextMonitor } : {}),
-      },
-    });
-  };
-  const saveMonitor = () => {
-    if (!monitorAtInput) return;
-    const nextCheckAt = new Date(monitorAtInput);
-    if (Number.isNaN(nextCheckAt.getTime())) return;
-    const serviceName = monitorServiceInput.trim() || null;
-    updateMonitor({
-      nextCheckAt: nextCheckAt.toISOString(),
-      notes: monitorNotesInput.trim() || null,
-      scheduledBy: "board",
-      kind: serviceName ? "external_service" : null,
-      serviceName,
-      externalRef: null,
-    });
-    setMonitorOpen(false);
-  };
-  const clearMonitor = () => {
-    updateMonitor(null);
-    setMonitorOpen(false);
-  };
-  const monitorState = issue.executionState?.monitor ?? null;
-  const monitorNextCheckAt = monitorState?.nextCheckAt ?? issue.monitorNextCheckAt ?? issue.executionPolicy?.monitor?.nextCheckAt ?? null;
-  const monitorAttemptCount = issue.monitorAttemptCount ?? monitorState?.attemptCount ?? 0;
-  const monitorLastTriggeredAt = issue.monitorLastTriggeredAt ?? monitorState?.lastTriggeredAt ?? null;
-  const monitorServiceName = issue.executionPolicy?.monitor?.serviceName ?? monitorState?.serviceName ?? null;
-  const monitorNotes = issue.executionPolicy?.monitor?.notes ?? monitorState?.notes ?? null;
-  const monitorNow = useMonitorCountdown(monitorNextCheckAt);
-  const monitorRelative = monitorNextCheckAt ? formatMonitorEta(monitorNextCheckAt, monitorNow) : null;
-  const monitorIsDueNow = monitorRelative === "due now";
-  const monitorIsOverdue = Boolean(monitorRelative?.startsWith("overdue by "));
-  const monitorPrimary = monitorNextCheckAt
-    ? formatMonitorEtaLabel(monitorNextCheckAt, monitorNow)
-    : monitorState?.status === "cleared"
-      ? "Cleared"
-      : "None";
-  const monitorSecondary = monitorNextCheckAt
-    ? monitorIsDueNow
-      ? "checking momentarily…"
-      : `${formatMonitorAbsolute(monitorNextCheckAt, {}, monitorNow)}${monitorIsOverdue ? " · fires on next tick" : monitorAttemptCount > 0 ? ` · Attempt ${monitorAttemptCount}` : ""}`
-    : monitorState?.status === "cleared"
-      ? [
-          monitorLastTriggeredAt ? `last checked ${timeAgo(monitorLastTriggeredAt)}` : null,
-          monitorAttemptCount > 0 ? `after attempt ${monitorAttemptCount}` : null,
-        ].filter(Boolean).join(" · ")
-      : null;
-  const monitorTrigger = (
-    <TooltipProvider>
-      <Tooltip open={monitorDetailsOpen} onOpenChange={setMonitorDetailsOpen}>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex min-w-0 items-start gap-1.5 border-0 bg-transparent p-0 text-left font-inherit text-inherit"
-          data-testid="monitor-row-trigger"
-          onClick={() => setMonitorDetailsOpen(false)}
-        >
-      {monitorNextCheckAt ? (
-            <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      ) : null}
-          <span className="flex min-w-0 flex-col items-start">
-            <span className={cn("text-sm", monitorNextCheckAt ? "font-semibold text-foreground" : "text-muted-foreground")}>{monitorPrimary}</span>
-            {monitorSecondary ? (
-              <span className="text-xs text-muted-foreground">{monitorSecondary}</span>
-            ) : null}
-          </span>
-        </button>
-      </TooltipTrigger>
-      {monitorNextCheckAt ? (
-        <TooltipContent
-          side="left"
-          className="w-80 border border-border bg-popover p-0 text-popover-foreground shadow-md"
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <span className="text-sm font-semibold">Monitor</span>
-            {monitorAttemptCount > 0 ? <span className="text-xs text-muted-foreground">Attempt {monitorAttemptCount}</span> : null}
-          </div>
-          <div className="space-y-3 px-4 py-3 text-left">
-            <div>
-              <div className="text-xs text-muted-foreground">Next check</div>
-              <div className="text-sm">{formatMonitorAbsoluteFull(monitorNextCheckAt)}</div>
-              <div className="text-xs text-muted-foreground">{monitorRelative}</div>
-            </div>
-            <div>
-              <div className="text-xs text-muted-foreground">Watching</div>
-              <div className="text-sm">{monitorServiceName ?? "—"}</div>
-            </div>
-            <div>
-              <div className="text-xs text-muted-foreground">Notes</div>
-              <div className="whitespace-normal text-sm">{monitorNotes ?? "—"}</div>
-            </div>
-            <div>
-              <div className="text-xs text-muted-foreground">Last triggered</div>
-              <div className="text-sm">{monitorLastTriggeredAt ? formatMonitorAbsoluteFull(monitorLastTriggeredAt) : "— not yet triggered"}</div>
-            </div>
-          </div>
-          <div className="flex gap-2 border-t border-border px-4 py-3">
-            {onCheckMonitorNow ? (
-              <Button type="button" size="sm" variant="outline" disabled={checkingMonitorNow} onClick={() => { setMonitorDetailsOpen(false); onCheckMonitorNow(); }}>
-                {checkingMonitorNow ? "Checking…" : "Check now"}
-              </Button>
-            ) : null}
-            <Button type="button" size="sm" variant="outline" onClick={() => { setMonitorDetailsOpen(false); setMonitorOpen(true); }}>Edit</Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => { setMonitorDetailsOpen(false); clearMonitor(); }}>Clear</Button>
-          </div>
-        </TooltipContent>
-      ) : null}
-      </Tooltip>
-    </TooltipProvider>
-  );
-
-  const monitorContent = (
-    <div className="flex w-full flex-col gap-2">
-      <div className="flex flex-col gap-2 md:flex-row">
-        <input
-          aria-label="Schedule monitor check"
-          type="datetime-local"
-          className="rounded-md border border-border bg-transparent px-2 py-1 text-xs"
-          value={monitorAtInput}
-          onChange={(e) => setMonitorAtInput(e.target.value)}
-        />
-        <input
-          aria-label="Monitor check instructions"
-          type="text"
-          className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs"
-          placeholder="What should the agent re-check?"
-          value={monitorNotesInput}
-          onChange={(e) => setMonitorNotesInput(e.target.value)}
-        />
-      </div>
-      <div className="flex flex-col gap-2 md:flex-row">
-        <input
-          aria-label="External service to monitor"
-          type="text"
-          className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs"
-          placeholder="External service"
-          value={monitorServiceInput}
-          onChange={(e) => setMonitorServiceInput(e.target.value)}
-        />
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-50"
-            disabled={!monitorAtInput}
-            onClick={saveMonitor}
-          >
-            Schedule
-          </button>
-          {issue.executionPolicy?.monitor ? (
-            <button
-              type="button"
-              className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-              onClick={clearMonitor}
-            >
-              Clear
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-
   const selectedIssueLabels = useMemo(() => {
     const selectedIds = issue.labelIds ?? [];
     if (selectedIds.length === 0) return issue.labels ?? [];
@@ -1185,25 +784,10 @@ export function IssueProperties({
               )}
               onClick={() => {
                 if (option.kind === "project") {
-                  const defaultMode = defaultExecutionWorkspaceModeForProject(option.project);
                   trackRecentProject(option.project.id);
-                  onUpdate({
-                    projectId: option.project.id,
-                    projectWorkspaceId: defaultProjectWorkspaceIdForProject(option.project),
-                    executionWorkspaceId: null,
-                    executionWorkspacePreference: defaultMode,
-                    executionWorkspaceSettings: option.project.executionWorkspacePolicy?.enabled
-                      ? { mode: defaultMode }
-                      : null,
-                  });
+                  onUpdate({ projectId: option.project.id });
                 } else {
-                  onUpdate({
-                    projectId: null,
-                    projectWorkspaceId: null,
-                    executionWorkspaceId: null,
-                    executionWorkspacePreference: null,
-                    executionWorkspaceSettings: null,
-                  });
+                  onUpdate({ projectId: null });
                 }
                 setProjectOpen(false);
               }}
@@ -1636,12 +1220,6 @@ export function IssueProperties({
           </PropertyRow>
         ) : null}
 
-        <ExternalObjectRows
-          externalObjects={externalObjects}
-          externalObjectsLoading={externalObjectsLoading}
-          externalObjectsError={externalObjectsError}
-          onRetryExternalObjects={onRetryExternalObjects}
-        />
       </PropertySection>
 
       <PropertySection title="Execution">
@@ -1715,86 +1293,7 @@ export function IssueProperties({
           </PropertyRow>
         )}
 
-        <PropertyPicker
-          inline={inline}
-          label="Monitor"
-          open={monitorOpen}
-          onOpenChange={setMonitorOpen}
-          triggerContent={monitorTrigger}
-          triggerClassName="min-w-0 max-w-full"
-          popoverClassName={cn("max-w-full", inline ? "w-full" : "w-80 sm:w-(--sz-32rem)")}
-        >
-          {monitorContent}
-        </PropertyPicker>
-
-        {systemSafeguardsEnabled ? (
-          <PropertyPicker
-            inline={inline}
-            label="System safeguard"
-            open={watchdogOpen}
-            onOpenChange={setWatchdogOpen}
-            triggerContent={watchdogTrigger}
-            triggerClassName="min-w-0 max-w-full"
-            popoverClassName={cn("max-w-full", inline ? "w-full" : "w-80 sm:w-96")}
-          >
-            {watchdogContent}
-          </PropertyPicker>
-        ) : null}
       </PropertySection>
-
-      {hasWorkspaceRuntimeControls || issue.currentExecutionWorkspace?.branchName || issue.currentExecutionWorkspace?.cwd || currentExecutionWorkspaceId ? (
-        <PropertySection title="Workspace">
-          {showWorkspaceDetailLink && currentExecutionWorkspaceId && (
-            <PropertyRow label="Workspace">
-              <Link
-                to={`/execution-workspaces/${currentExecutionWorkspaceId}`}
-                className="text-sm text-primary hover:underline inline-flex min-w-0 items-center gap-1.5"
-              >
-                <HardDrive className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                View workspace
-                <ArrowUpRight className="h-3 w-3 shrink-0" />
-              </Link>
-            </PropertyRow>
-          )}
-          {hasWorkspaceRuntimeControls && (
-            <PropertyRow label="Service">
-              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                <WorkspaceRuntimeQuickControls
-                  sections={workspaceRuntimeSections}
-                  isPending={controlWorkspaceRuntime.isPending}
-                  pendingRequest={pendingWorkspaceRuntimeAction}
-                  onAction={(request) => controlWorkspaceRuntime.mutate(request)}
-                  square
-                  align="start"
-                  iconOnly
-                />
-                {runtimeActionMessage ? (
-                  <span className="text-xs text-muted-foreground" role="status">{runtimeActionMessage}</span>
-                ) : null}
-                {runtimeActionErrorMessage ? (
-                  <span className="text-xs text-destructive" role="alert">{runtimeActionErrorMessage}</span>
-                ) : null}
-              </div>
-            </PropertyRow>
-          )}
-          {issue.currentExecutionWorkspace?.branchName && (
-            <PropertyRow label="Branch">
-              <TruncatedCopyable
-                value={issue.currentExecutionWorkspace.branchName}
-                icon={GitBranch}
-              />
-            </PropertyRow>
-          )}
-          {issue.currentExecutionWorkspace?.cwd && (
-            <PropertyRow label="Folder">
-              <TruncatedCopyable
-                value={issue.currentExecutionWorkspace.cwd}
-                icon={FolderOpen}
-              />
-            </PropertyRow>
-          )}
-        </PropertySection>
-      ) : null}
 
       <PropertySection title="About">
         {originatingActor ? (
@@ -1896,11 +1395,6 @@ export function IssueProperties({
         )}
       </PropertySection>
 
-      {/* Experimental Cases rail (PAP-12969) — self-gates on the flag and
-          renders nothing when no cases are linked. */}
-      <div className="pt-3">
-        <IssueCasesPanel issueId={issue.id} />
-      </div>
     </div>
   );
 }

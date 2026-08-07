@@ -47,7 +47,6 @@ interface IssueCreateOptions extends BaseClientOptions {
   title?: string;
   priority?: string;
   projectId?: string;
-  projectWorkspaceId?: string;
   goalId?: string;
   parentId?: string;
 }
@@ -198,7 +197,6 @@ export function registerIssueCommands(program: Command): void {
       .option("--title <title>", "Optional display title")
       .option("--priority <priority>", "Issue priority")
       .option("--project-id <id>", "Project ID")
-      .option("--project-workspace-id <id>", "Project workspace ID")
       .option("--goal-id <id>", "Goal ID")
       .option("--parent-id <id>", "Parent issue ID")
       .action(async (opts: IssueCreateOptions) => {
@@ -211,7 +209,6 @@ export function registerIssueCommands(program: Command): void {
             title: opts.title,
             priority: opts.priority,
             projectId: opts.projectId,
-            projectWorkspaceId: opts.projectWorkspaceId,
             goalId: opts.goalId,
             parentId: opts.parentId,
           });

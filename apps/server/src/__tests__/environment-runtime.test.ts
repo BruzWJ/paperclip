@@ -63,7 +63,7 @@ function lease(input: {
     releasedAt: status === "released" ? now : null,
     failureReason: null,
     cleanupStatus: "not_required",
-    metadata: { driver, executionWorkspaceMode: "isolated" },
+    metadata: { driver, executionWorkspaceMode: "shared_workspace" },
     createdAt: now,
     updatedAt: now,
   } as EnvironmentLease;
@@ -166,15 +166,14 @@ describe("environment runtime driver boundary", () => {
       issueId,
       agentId,
       runId,
-      persistedExecutionWorkspace: { id: workspaceId, mode: "isolated" },
+      persistedExecutionWorkspace: { id: workspaceId, mode: "shared_workspace" },
       adapterType: "codex",
-      applyCustomImageTemplate: true,
     })).resolves.toEqual({
       environment: environment(),
       lease: contract.acquired,
       leaseContext: {
         executionWorkspaceId: workspaceId,
-        executionWorkspaceMode: "isolated",
+        executionWorkspaceMode: "shared_workspace",
       },
     });
     expect(contract.calls.acquire).toHaveBeenCalledWith({
@@ -184,9 +183,8 @@ describe("environment runtime driver boundary", () => {
       agentId,
       runId,
       executionWorkspaceId: workspaceId,
-      executionWorkspaceMode: "isolated",
+      executionWorkspaceMode: "shared_workspace",
       adapterType: "codex",
-      applyCustomImageTemplate: true,
     });
     expect(harness.calls).toEqual([]);
   });
@@ -228,7 +226,7 @@ describe("environment runtime driver boundary", () => {
     await expect(runtime.destroyRunLease(base)).resolves.toEqual(contract.destroyed);
     await expect(runtime.realizeWorkspace({
       ...base,
-      workspace: { localPath: "/workspace", mode: "isolated" },
+      workspace: { localPath: "/workspace", mode: "shared_workspace" },
     })).resolves.toMatchObject({ cwd: "/workspace" });
     await expect(runtime.execute({
       ...base,
@@ -288,7 +286,7 @@ describe("environment runtime driver boundary", () => {
       lease: captured.released,
       leaseContext: {
         executionWorkspaceId: workspaceId,
-        executionWorkspaceMode: "isolated",
+        executionWorkspaceMode: "shared_workspace",
       },
     }]);
     expect(captured.calls.release).toHaveBeenCalledWith({
@@ -323,7 +321,7 @@ describe("environment runtime driver boundary", () => {
       lease: contract.destroyed,
       leaseContext: {
         executionWorkspaceId: workspaceId,
-        executionWorkspaceMode: "isolated",
+        executionWorkspaceMode: "shared_workspace",
       },
     }]);
     expect(contract.calls.destroy).toHaveBeenCalledWith({

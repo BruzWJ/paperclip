@@ -12,17 +12,11 @@ import {
   activityLog,
   agents,
   documents,
-  executionWorkspaces,
   issueComments,
   issueDocuments,
   issueRelations,
   issues as issueRows,
   issueWorkProducts,
-  pipelineCaseIssueLinks,
-  pipelineCases,
-  pipelineStages,
-  pipelines,
-  projectWorkspaces,
 } from "@paperclipai/db";
 import {
   attachmentArtifactWorkProductMetadataSchema,
@@ -33,7 +27,6 @@ import {
   createIssueLabelSchema,
   createDocumentAnnotationCommentSchema,
   createDocumentAnnotationThreadSchema,
-  upsertIssueWatchdogSchema,
   linkIssueApprovalSchema,
   issueDocumentKeySchema,
   restoreIssueDocumentRevisionSchema,
@@ -56,7 +49,6 @@ import {
   type CompanySearchExtractResponse,
   type CompanySearchQuery,
   type CompanySearchResponse,
-  type ExecutionWorkspace,
   type IssueBlockerDiagnosticFlag,
   type IssueBlockerDiagnosticIssueSummary,
   type IssueBlockerDiagnosticNode,
@@ -66,9 +58,7 @@ import {
   type IssueSubtreeDiagnosticNode,
   type IssueSubtreeDiagnosticsResponse,
   type IssueRelationIssueSummary,
-  type ProjectWorkspace,
   type SourceTrustMetadata,
-  type WorkspaceRuntimeService,
 } from "@paperclipai/shared";
 import type { StorageService } from "../storage/types.js";
 import { validate } from "../middleware/validate.js";
@@ -82,7 +72,6 @@ import {
   companySkillService,
   companyService,
   companySearchService,
-  executionWorkspaceService,
   goalService,
   issueApprovalService,
   inboxAgentPolicyService,
@@ -96,12 +85,12 @@ import {
   documentAnnotationService,
   logActivity,
   projectService,
+  toPublicProject,
   routineService,
   OrdinaryIssueRuntimeRejected,
   type OrdinaryIssueRuntime,
   workProductService,
 } from "../services/index.js";
-import { issueWatchdogService } from "../services/issue-watchdogs.js";
 import type { PluginDomainEventPublisher } from "../services/plugin-domain-event-publisher.js";
 import { logger } from "../middleware/logger.js";
 import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
@@ -119,9 +108,6 @@ import {
   normalizeUploadAttachmentContentType,
   SVG_CONTENT_TYPE,
 } from "../attachment-types.js";
-import { executionWorkspaceService as executionWorkspaceServiceDirect } from "../services/execution-workspaces.js";
-import { decisionTrainingService } from "../services/decision-training.js";
-import { instanceSettingsService } from "../services/instance-settings.js";
 import {
   ISSUE_BLOCKER_DIAGNOSTICS_MAX_BLOCKERS,
 } from "../services/issues.js";
@@ -134,10 +120,7 @@ import {
 import {
   issueExecutionPolicyControlService,
   normalizeIssueExecutionPolicy,
-  parseIssueExecutionState,
-  redactIssueMonitorExternalRef,
 } from "../services/issue-execution-policy.js";
-import { parseIssueExecutionWorkspaceSettings } from "../services/execution-workspace-policy.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import {
   buildPromotedSourceTrust,
@@ -147,7 +130,6 @@ import { issueIngressRoutes } from "./issue-ingress.js";
 import {
   LOW_TRUST_ISSUE_ANCESTRY_MAX_DEPTH,
 } from "../services/trust-preset-resolver.js";
-import { externalObjectService } from "../services/external-objects.js";
 
 const MAX_ISSUE_COMMENT_LIMIT = 500;
 const issueCommentRootPageQuerySchema = z.object({
@@ -159,14 +141,7 @@ const issueCommentThreadPageQuerySchema = z.object({
   cursor: z.string().trim().min(1).optional(),
   limit: z.coerce.number().int().positive().max(MAX_ISSUE_COMMENT_LIMIT).optional(),
 }).strict();
-const refreshExternalObjectsSchema = z.object({
-  objectIds: z.array(z.string().uuid()).max(50).optional(),
-}).strict();
 const inboxArchiveBodySchema = z.object({}).strict().default({});
-const externalObjectSummariesSchema = z.object({
-  issueIds: z.array(z.string().uuid()).max(1000),
-}).strict();
-
 const promoteLowTrustOutputSchema = z.object({
   sourceArtifactKind: z.enum(["comment", "document", "work_product", "issue"]),
   sourceArtifactId: z.string().uuid(),
@@ -174,43 +149,6 @@ const promoteLowTrustOutputSchema = z.object({
   summary: z.string().trim().min(1).max(8_000),
 });
 
-async function listIssueLinkedCases(db: Db, companyId: string, issueId: string) {
-  const rows = await db
-    .select({
-      link: pipelineCaseIssueLinks,
-      case: pipelineCases,
-      pipeline: pipelines,
-      stage: pipelineStages,
-    })
-    .from(pipelineCaseIssueLinks)
-    .innerJoin(pipelineCases, eq(pipelineCaseIssueLinks.caseId, pipelineCases.id))
-    .innerJoin(pipelines, eq(pipelineCases.pipelineId, pipelines.id))
-    .innerJoin(pipelineStages, eq(pipelineCases.stageId, pipelineStages.id))
-    .where(and(
-      eq(pipelineCaseIssueLinks.companyId, companyId),
-      eq(pipelineCaseIssueLinks.issueId, issueId),
-      eq(pipelineCases.companyId, companyId),
-      eq(pipelines.companyId, companyId),
-    ));
-  return rows.map((row) => ({
-    id: row.case.id,
-    caseKey: row.case.caseKey,
-    title: row.case.title,
-    status: row.case.terminalKind ?? "open",
-    role: row.link.role,
-    pipeline: {
-      id: row.pipeline.id,
-      key: row.pipeline.key,
-      name: row.pipeline.name,
-    },
-    stage: {
-      id: row.stage.id,
-      key: row.stage.key,
-      name: row.stage.name,
-      kind: row.stage.kind,
-    },
-  }));
-}
 
 type NormalizedExecutionPolicy = NonNullable<ReturnType<typeof normalizeIssueExecutionPolicy>>;
 type CompanySearchService = {
@@ -265,126 +203,6 @@ function requiresPaperclipAttachmentMetadata(input: {
 const attachmentArtifactMetadataInputSchema = z.object({
   attachmentId: z.string().uuid(),
 }).passthrough();
-
-const ISSUE_WORKSPACE_AUDIT_FIELDS = new Set([
-  "projectWorkspaceId",
-  "executionWorkspacePreference",
-  "executionWorkspaceSettings",
-]);
-
-function readObject(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function hasIssueWorkspaceAuditChange(previous: Record<string, unknown>) {
-  return Object.keys(previous).some((key) => ISSUE_WORKSPACE_AUDIT_FIELDS.has(key));
-}
-
-function labelIssueWorkspaceMode(mode: string | null) {
-  switch (mode) {
-    case "shared_workspace":
-      return "Project default";
-    case "isolated_workspace":
-      return "New isolated workspace";
-    case "operator_branch":
-      return "Operator branch";
-    case "reuse_existing":
-      return "Reuse existing workspace";
-    case "agent_default":
-      return "Agent default";
-    case "inherit":
-      return "Inherited workspace";
-    default:
-      return "No workspace";
-  }
-}
-
-type IssueWorkspaceAuditInput = {
-  projectWorkspaceId?: string | null;
-  executionWorkspaceId?: string | null;
-  executionWorkspacePreference?: string | null;
-  executionWorkspaceSettings?: unknown;
-};
-
-type WorkspaceNameMaps = {
-  projectWorkspaceNames: Map<string, string>;
-  executionWorkspaceNames: Map<string, string>;
-};
-
-function emptyWorkspaceNameMaps(): WorkspaceNameMaps {
-  return {
-    projectWorkspaceNames: new Map(),
-    executionWorkspaceNames: new Map(),
-  };
-}
-
-function summarizeIssueWorkspaceForActivity(
-  issue: IssueWorkspaceAuditInput,
-  names: WorkspaceNameMaps,
-) {
-  const settings = parseIssueExecutionWorkspaceSettings(issue.executionWorkspaceSettings, { includeEnvironmentId: true });
-  const mode = settings?.mode ?? issue.executionWorkspacePreference ?? null;
-  const executionWorkspaceId = issue.executionWorkspaceId ?? null;
-  const projectWorkspaceId = issue.projectWorkspaceId ?? null;
-
-  const label = (() => {
-    if (executionWorkspaceId) {
-      return names.executionWorkspaceNames.get(executionWorkspaceId) ?? `Workspace ${executionWorkspaceId.slice(0, 8)}`;
-    }
-    if (projectWorkspaceId) {
-      return names.projectWorkspaceNames.get(projectWorkspaceId) ?? `Workspace ${projectWorkspaceId.slice(0, 8)}`;
-    }
-    return labelIssueWorkspaceMode(mode);
-  })();
-
-  return {
-    label,
-    projectWorkspaceId,
-    executionWorkspaceId,
-    mode,
-  };
-}
-
-async function buildIssueWorkspaceChangeActivityDetails(
-  db: Db,
-  companyId: string,
-  previousIssue: IssueWorkspaceAuditInput,
-  nextIssue: IssueWorkspaceAuditInput,
-) {
-  const projectWorkspaceIds = [
-    previousIssue.projectWorkspaceId,
-    nextIssue.projectWorkspaceId,
-  ].filter((value): value is string => typeof value === "string" && value.length > 0);
-  const executionWorkspaceIds = [
-    previousIssue.executionWorkspaceId,
-    nextIssue.executionWorkspaceId,
-  ].filter((value): value is string => typeof value === "string" && value.length > 0);
-
-  const [projectRows, executionRows] = await Promise.all([
-    projectWorkspaceIds.length > 0
-      ? db
-          .select({ id: projectWorkspaces.id, name: projectWorkspaces.name })
-          .from(projectWorkspaces)
-          .where(and(eq(projectWorkspaces.companyId, companyId), inArray(projectWorkspaces.id, projectWorkspaceIds)))
-      : Promise.resolve([]),
-    executionWorkspaceIds.length > 0
-      ? db
-          .select({ id: executionWorkspaces.id, name: executionWorkspaces.name })
-          .from(executionWorkspaces)
-          .where(and(eq(executionWorkspaces.companyId, companyId), inArray(executionWorkspaces.id, executionWorkspaceIds)))
-      : Promise.resolve([]),
-  ]);
-
-  const names: WorkspaceNameMaps = {
-    projectWorkspaceNames: new Map(projectRows.map((row) => [row.id, row.name])),
-    executionWorkspaceNames: new Map(executionRows.map((row) => [row.id, row.name])),
-  };
-
-  return {
-    from: summarizeIssueWorkspaceForActivity(previousIssue, names),
-    to: summarizeIssueWorkspaceForActivity(nextIssue, names),
-  };
-}
 
 type IssueBlockerDiagnosticReadableIssue = {
   id: string;
@@ -764,35 +582,6 @@ function summarizeIssueReferenceActivityDetails(input:
   };
 }
 
-function summarizeIssueMonitor(
-  issue: {
-    monitorNextCheckAt?: Date | null;
-    monitorLastTriggeredAt?: Date | null;
-    monitorAttemptCount?: number | null;
-    monitorNotes?: string | null;
-    monitorScheduledBy?: string | null;
-    executionState?: unknown;
-  },
-  policy: NormalizedExecutionPolicy | null,
-) {
-  const state = parseIssueExecutionState(issue.executionState);
-  return {
-    nextCheckAt: issue.monitorNextCheckAt?.toISOString() ?? policy?.monitor?.nextCheckAt ?? null,
-    lastTriggeredAt: issue.monitorLastTriggeredAt?.toISOString() ?? state?.monitor?.lastTriggeredAt ?? null,
-    attemptCount: issue.monitorAttemptCount ?? state?.monitor?.attemptCount ?? 0,
-    notes: policy?.monitor?.notes ?? issue.monitorNotes ?? state?.monitor?.notes ?? null,
-    scheduledBy: issue.monitorScheduledBy ?? policy?.monitor?.scheduledBy ?? state?.monitor?.scheduledBy ?? null,
-    kind: policy?.monitor?.kind ?? state?.monitor?.kind ?? null,
-    serviceName: policy?.monitor?.serviceName ?? state?.monitor?.serviceName ?? null,
-    externalRef: redactIssueMonitorExternalRef(policy?.monitor?.externalRef ?? state?.monitor?.externalRef ?? null),
-    timeoutAt: policy?.monitor?.timeoutAt ?? state?.monitor?.timeoutAt ?? null,
-    maxAttempts: policy?.monitor?.maxAttempts ?? state?.monitor?.maxAttempts ?? null,
-    recoveryPolicy: policy?.monitor?.recoveryPolicy ?? state?.monitor?.recoveryPolicy ?? null,
-    status: state?.monitor?.status ?? (policy?.monitor ? "scheduled" : null),
-    clearReason: state?.monitor?.clearReason ?? null,
-  };
-}
-
 function activityExecutionParticipantKey(participant: ActivityExecutionParticipant): string {
   return participant.type === "agent" ? `agent:${participant.agentId}` : `user:${participant.userId}`;
 }
@@ -834,12 +623,36 @@ function diffExecutionParticipants(
   };
 }
 
-function toCompactIssue(issue: any): CompactIssue {
+type InternalIssueRuntimeFields = {
+  executionWorkspaceId?: unknown;
+  currentExecutionWorkspace?: unknown;
+};
+
+function toPublicIssue<T extends object>(
+  issue: T,
+): Omit<T, keyof InternalIssueRuntimeFields> {
+  const {
+    executionWorkspaceId: _executionWorkspaceId,
+    currentExecutionWorkspace: _currentExecutionWorkspace,
+    ...publicIssue
+  } = issue as T & InternalIssueRuntimeFields;
+  return publicIssue as Omit<T, keyof InternalIssueRuntimeFields>;
+}
+
+function toCompactIssue(
+  issue: Omit<CompactIssue, "workMode" | "priority" | "ownerAssignmentSource" | "originKind"> &
+    {
+      workMode: string;
+      priority: string;
+      ownerAssignmentSource: string | null;
+      originKind: string | null;
+    } &
+    InternalIssueRuntimeFields,
+): CompactIssue {
   return {
     id: issue.id,
     companyId: issue.companyId,
     projectId: issue.projectId,
-    projectWorkspaceId: issue.projectWorkspaceId,
     goalId: issue.goalId,
     parentId: issue.parentId,
     title: issue.title,
@@ -847,12 +660,13 @@ function toCompactIssue(issue: any): CompactIssue {
     boardPresentationStatus: issue.boardPresentationStatus,
     lifecycleStatus: issue.lifecycleStatus,
     disposition: issue.disposition,
-    workMode: issue.workMode,
-    priority: issue.priority,
+    workMode: issue.workMode as CompactIssue["workMode"],
+    priority: issue.priority as CompactIssue["priority"],
     ownerKind: issue.ownerKind,
     ownerAgentId: issue.ownerAgentId,
     ownerUserId: issue.ownerUserId,
-    ownerAssignmentSource: issue.ownerAssignmentSource,
+    ownerAssignmentSource:
+      issue.ownerAssignmentSource as CompactIssue["ownerAssignmentSource"],
     ownershipEpoch: issue.ownershipEpoch,
     creatorKind: issue.creatorKind,
     creatorAuthorityId: issue.creatorAuthorityId,
@@ -868,7 +682,7 @@ function toCompactIssue(issue: any): CompactIssue {
     creatorSystemSourceId: issue.creatorSystemSourceId,
     issueNumber: issue.issueNumber,
     identifier: issue.identifier,
-    originKind: issue.originKind,
+    originKind: issue.originKind as CompactIssue["originKind"],
     originId: issue.originId,
     originRunId: issue.originRunId,
     requestDepth: issue.requestDepth,
@@ -1304,22 +1118,14 @@ export function issueRoutes(
     return searchSvc;
   };
   const searchRateLimiter = opts.searchRateLimiter ?? defaultCompanySearchRateLimiter;
-  const instanceSettings = instanceSettingsService(db);
   const projectsSvc = projectService(db);
   const goalsSvc = goalService(db);
   const issueApprovalsSvc = issueApprovalService(db);
-  const executionWorkspacesSvc = executionWorkspaceServiceDirect(db);
   const workProductsSvc = workProductService(db);
   const documentsSvc = documentService(db);
   const companySkillsSvc = companySkillService(db);
   const documentAnnotationsSvc = documentAnnotationService(db);
-  const decisionTrainingSvc = decisionTrainingService(db);
   const issueReferencesSvc = issueReferenceService(db);
-  const issueWatchdogsSvc = issueWatchdogService(db, ordinaryIssues);
-  const externalObjectsSvc = externalObjectService(db, {
-    pluginWorkerManager: opts.pluginWorkerManager,
-    enabled: async () => (await instanceSettings.getExperimental()).enableExternalObjects === true,
-  });
   const routinesSvc = routineService(db, { ordinaryIssues });
   const issueTreeControlFactory = Object.prototype.hasOwnProperty.call(
     serviceIndex,
@@ -1330,17 +1136,6 @@ export function issueRoutes(
   const treeControlSvc = issueTreeControlFactory?.(db) ?? {
     getActivePauseHoldGate: async () => null,
   };
-
-  async function queueIssueWatchdogEvaluation(issue: { id: string; companyId: string }, runId?: string | null) {
-    await issueWatchdogsSvc
-      .reconcileForIssueAndAncestors(issue.companyId, issue.id, { runId: runId ?? null })
-      .catch((err) => {
-        logger.warn(
-          { err, issueId: issue.id },
-          "issue watchdog evaluation hook failed",
-        );
-      });
-  }
 
   async function lookupLowTrustSourceArtifact(input: {
     issueId: string;
@@ -1734,31 +1529,6 @@ export function issueRoutes(
     return { project, goal: null };
   }
 
-  function compactIssueProjectWorkspace(workspace: ProjectWorkspace | null | undefined) {
-    if (!workspace) return null;
-    return {
-      id: workspace.id,
-      companyId: workspace.companyId,
-      projectId: workspace.projectId,
-      name: workspace.name,
-      sourceType: workspace.sourceType,
-      cwd: workspace.cwd,
-      repoUrl: workspace.repoUrl,
-      repoRef: workspace.repoRef,
-      defaultRef: workspace.defaultRef,
-      visibility: workspace.visibility,
-      setupCommand: workspace.setupCommand,
-      cleanupCommand: workspace.cleanupCommand,
-      remoteProvider: workspace.remoteProvider,
-      remoteWorkspaceRef: workspace.remoteWorkspaceRef,
-      sharedWorkspaceKey: workspace.sharedWorkspaceKey,
-      runtimeConfig: workspace.runtimeConfig,
-      isPrimary: workspace.isPrimary,
-      createdAt: workspace.createdAt,
-      updatedAt: workspace.updatedAt,
-    };
-  }
-
   function compactIssueProject(project: Awaited<ReturnType<typeof resolveIssueProjectAndGoal>>["project"]) {
     if (!project) return null;
     return {
@@ -1778,90 +1548,12 @@ export function issueRoutes(
       env: null,
       pauseReason: project.pauseReason,
       pausedAt: project.pausedAt,
-      executionWorkspacePolicy: project.executionWorkspacePolicy,
-      codebase: project.codebase,
-      workspaces: (project.workspaces ?? []).map(compactIssueProjectWorkspace),
-      primaryWorkspace: compactIssueProjectWorkspace(project.primaryWorkspace),
       managedByPlugin: project.managedByPlugin ?? null,
       issueCount: project.issueCount,
       budget: project.budget,
       archivedAt: project.archivedAt,
       createdAt: project.createdAt,
       updatedAt: project.updatedAt,
-    };
-  }
-
-  function compactIssueRuntimeService(service: WorkspaceRuntimeService) {
-    return {
-      id: service.id,
-      companyId: service.companyId,
-      projectId: service.projectId,
-      projectWorkspaceId: service.projectWorkspaceId,
-      executionWorkspaceId: service.executionWorkspaceId,
-      issueId: service.issueId,
-      scopeType: service.scopeType,
-      scopeId: service.scopeId,
-      serviceName: service.serviceName,
-      status: service.status,
-      lifecycle: service.lifecycle,
-      reuseKey: service.reuseKey,
-      command: service.command,
-      cwd: service.cwd,
-      port: service.port,
-      url: service.url,
-      provider: service.provider,
-      providerRef: service.providerRef,
-      ownerAgentId: service.ownerAgentId,
-      startedByRunId: service.startedByRunId,
-      lastUsedAt: service.lastUsedAt,
-      startedAt: service.startedAt,
-      stoppedAt: service.stoppedAt,
-      healthStatus: service.healthStatus,
-      configIndex: service.configIndex ?? null,
-    };
-  }
-
-  function compactIssueExecutionWorkspace(workspace: ExecutionWorkspace | null) {
-    if (!workspace) return null;
-    return {
-      id: workspace.id,
-      companyId: workspace.companyId,
-      projectId: workspace.projectId,
-      projectWorkspaceId: workspace.projectWorkspaceId,
-      sourceIssueId: workspace.sourceIssueId,
-      mode: workspace.mode,
-      strategyType: workspace.strategyType,
-      name: workspace.name,
-      status: workspace.status,
-      cwd: workspace.cwd,
-      repoUrl: workspace.repoUrl,
-      baseRef: workspace.baseRef,
-      branchName: workspace.branchName,
-      providerType: workspace.providerType,
-      providerRef: workspace.providerRef,
-      derivedFromExecutionWorkspaceId: workspace.derivedFromExecutionWorkspaceId,
-      lastUsedAt: workspace.lastUsedAt,
-      openedAt: workspace.openedAt,
-      closedAt: workspace.closedAt,
-      cleanupEligibleAt: workspace.cleanupEligibleAt,
-      cleanupReason: workspace.cleanupReason,
-      config: workspace.config
-        ? {
-            environmentId: workspace.config.environmentId,
-            provisionCommand: workspace.config.provisionCommand,
-            teardownCommand: workspace.config.teardownCommand,
-            cleanupCommand: workspace.config.cleanupCommand,
-            workspaceRuntime: workspace.config.workspaceRuntime,
-            desiredState: workspace.config.desiredState,
-            serviceStates: workspace.config.serviceStates,
-          }
-        : null,
-      metadata: null,
-      runtimeServices: (workspace.runtimeServices ?? [])
-        .filter((service) => service.status === "starting" || service.status === "running")
-        .map(compactIssueRuntimeService),
-      createdAt: workspace.createdAt,
-      updatedAt: workspace.updatedAt,
     };
   }
 
@@ -2088,8 +1780,6 @@ export function issueRoutes(
       inboxArchivedByUserId,
       unreadForUserId,
       projectId: req.query.projectId as string | undefined,
-      workspaceId: req.query.workspaceId as string | undefined,
-      executionWorkspaceId: req.query.executionWorkspaceId as string | undefined,
       parentId: req.query.parentId as string | undefined,
       descendantOf: req.query.descendantOf as string | undefined,
       labelId: req.query.labelId as string | undefined,
@@ -2143,7 +1833,7 @@ export function issueRoutes(
         }
         return {
           kind: "full",
-          body: result,
+          body: result.map((issue) => toPublicIssue(issue)),
         };
       },
     });
@@ -2232,8 +1922,6 @@ export function issueRoutes(
       participantAgentId: req.query.participantAgentId as string | undefined,
       ownerUserId: req.query.ownerUserId as string | undefined,
       projectId: req.query.projectId as string | undefined,
-      workspaceId: req.query.workspaceId as string | undefined,
-      executionWorkspaceId: req.query.executionWorkspaceId as string | undefined,
       parentId: req.query.parentId as string | undefined,
       descendantOf: req.query.descendantOf as string | undefined,
       labelId: req.query.labelId as string | undefined,
@@ -2406,7 +2094,6 @@ export function issueRoutes(
       relations,
       blockerAttention,
       referenceSummary,
-      linkedCases,
       inboxArchiveFields,
     ] = await Promise.all([
       resolveIssueProjectAndGoal(issue),
@@ -2416,19 +2103,14 @@ export function issueRoutes(
       svc.getRelationSummaries(issue.id),
       svc.listBlockerAttention(issue.companyId, [issue]).then((map) => map.get(issue.id) ?? null),
       issueReferencesSvc.listIssueReferenceSummary(issue.id),
-      listIssueLinkedCases(db, issue.companyId, issue.id),
       inboxArchiveFieldsPromise,
     ]);
     const mentionedProjects = mentionedProjectIds.length > 0
       ? await projectsSvc.listByIds(issue.companyId, mentionedProjectIds)
       : [];
-    const currentExecutionWorkspace = await executionWorkspacesSvc.getCurrentForIssue(
-      issue.companyId,
-      issue.id,
-    );
     const workProducts = await workProductsSvc.listForIssue(issue.id);
     res.json({
-      ...issue,
+      ...toPublicIssue(issue),
       ...inboxArchiveFields,
       goalId: goal?.id ?? issue.goalId,
       ancestors,
@@ -2440,72 +2122,9 @@ export function issueRoutes(
       ...documentPayload,
       project: compactIssueProject(project),
       goal: goal ?? null,
-      mentionedProjects,
-      currentExecutionWorkspace: compactIssueExecutionWorkspace(currentExecutionWorkspace),
+      mentionedProjects: mentionedProjects.map(toPublicProject),
       workProducts,
-      linkedCases,
     });
-  });
-
-  router.get("/issues/:id/watchdog", async (req, res) => {
-    const id = req.params.id as string;
-    const issue = await getAccessibleResource(req, res, svc.getById(id), "Issue not found");
-    if (!issue) return;
-    if (!(await assertIssueReadAllowed(req, res, issue))) return;
-    res.json(await issueWatchdogsSvc.getActiveForIssue(issue.companyId, issue.id));
-  });
-
-  router.put("/issues/:id/watchdog", validate(upsertIssueWatchdogSchema), async (req, res) => {
-    const id = req.params.id as string;
-    const issue = await getAccessibleResource(req, res, svc.getById(id), "Issue not found");
-    if (!issue) return;
-    if (!(await assertIssueReadAllowed(req, res, issue))) return;
-    if (!(await assertBoardIssueMutationAllowed(req, res, issue))) return;
-    assertBoard(req);
-    const { watchdog, created } = await issueWatchdogsSvc.upsertForIssue(
-      issue.companyId,
-      issue.id,
-    );
-    await logActivity(db, {
-      companyId: issue.companyId,
-      actorType: "user",
-      actorId: req.actor.userId,
-      action: created ? "issue.watchdog_created" : "issue.watchdog_updated",
-      entityType: "issue",
-      entityId: issue.id,
-      details: {
-        identifier: issue.identifier,
-        watchdogId: watchdog.id,
-      },
-    });
-    await queueIssueWatchdogEvaluation(issue);
-    res.json(watchdog);
-  });
-
-  router.delete("/issues/:id/watchdog", async (req, res) => {
-    const id = req.params.id as string;
-    const issue = await getAccessibleResource(req, res, svc.getById(id), "Issue not found");
-    if (!issue) return;
-    if (!(await assertIssueReadAllowed(req, res, issue))) return;
-    if (!(await assertBoardIssueMutationAllowed(req, res, issue))) return;
-    assertBoard(req);
-    const disabled = await issueWatchdogsSvc.disableForIssue(issue.companyId, issue.id);
-    if (disabled) {
-      await logActivity(db, {
-        companyId: issue.companyId,
-        actorType: "user",
-        actorId: req.actor.userId,
-        action: "issue.watchdog_removed",
-        entityType: "issue",
-        entityId: issue.id,
-        details: {
-          identifier: issue.identifier,
-          watchdogId: disabled.id,
-        },
-      });
-    }
-    await queueIssueWatchdogEvaluation(issue);
-    res.json({ ok: true });
   });
 
   router.get("/issues/:id/work-products", async (req, res) => {
@@ -2515,75 +2134,6 @@ export function issueRoutes(
     if (!(await assertIssueReadAllowed(req, res, issue))) return;
     const workProducts = await workProductsSvc.listForIssue(issue.id);
     res.json(workProducts);
-  });
-
-  router.get("/issues/:id/external-objects", async (req, res) => {
-    const id = req.params.id as string;
-    const issue = await getAccessibleResource(req, res, svc.getById(id), "Issue not found");
-    if (!issue) return;
-    if (!(await assertIssueReadAllowed(req, res, issue))) return;
-    const objects = await externalObjectsSvc.listForIssue(issue.id);
-    res.json(objects);
-  });
-
-  router.get("/issues/:id/external-object-summary", async (req, res) => {
-    const id = req.params.id as string;
-    const issue = await getAccessibleResource(req, res, svc.getById(id), "Issue not found");
-    if (!issue) return;
-    if (!(await assertIssueReadAllowed(req, res, issue))) return;
-    const summary = await externalObjectsSvc.getIssueSummary(issue.id);
-    res.json(summary);
-  });
-
-  router.post("/companies/:companyId/issues/external-object-summaries", validate(externalObjectSummariesSchema), async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    const requestedIssueIds = [...new Set(req.body.issueIds as string[])];
-    const candidateIssues = requestedIssueIds.length > 0
-      ? await db
-        .select({
-          id: issueRows.id,
-          companyId: issueRows.companyId,
-          projectId: issueRows.projectId,
-          parentId: issueRows.parentId,
-          ownerAgentId: issueRows.ownerAgentId,
-          ownerUserId: issueRows.ownerUserId,
-        })
-        .from(issueRows)
-        .where(and(eq(issueRows.companyId, companyId), inArray(issueRows.id, requestedIssueIds)))
-      : [];
-    const readableIssueIds = (await filterIssuesForActor(req, candidateIssues)).map((issue) => issue.id);
-    const summaries = await externalObjectsSvc.getIssueSummaries(companyId, readableIssueIds);
-    res.json({ summaries: Object.fromEntries(summaries) });
-  });
-
-  router.post("/issues/:id/external-objects/refresh", validate(refreshExternalObjectsSchema), async (req, res) => {
-    const id = req.params.id as string;
-    const issue = await getAccessibleResource(req, res, svc.getById(id), "Issue not found");
-    if (!issue) return;
-    if (!(await assertBoardIssueMutationAllowed(req, res, issue))) return;
-    assertBoard(req);
-    const results = await externalObjectsSvc.refreshIssueObjects(issue.id, {
-      companyId: issue.companyId,
-      objectIds: req.body.objectIds,
-      actor: {
-        actorType: "user",
-        actorId: req.actor.userId,
-      },
-    });
-    await logActivity(db, {
-      companyId: issue.companyId,
-      actorType: "user",
-      actorId: req.actor.userId,
-      action: "external_object.refresh_requested",
-      entityType: "issue",
-      entityId: issue.id,
-      details: {
-        issueId: issue.id,
-        objectIds: results.map((result) => result.object.id),
-      },
-    });
-    res.json({ refreshed: results });
   });
 
   router.get("/issues/:id/documents", async (req, res) => {
@@ -2831,7 +2381,6 @@ export function issueRoutes(
     const doc = result.document;
     const redirectedFromLockedDocument =
       "redirectedFromLockedDocument" in result ? result.redirectedFromLockedDocument : null;
-    await externalObjectsSvc.syncDocumentSafely(doc.id);
     const referenceSummaryAfter = await issueReferencesSvc.listIssueReferenceSummary(issue.id);
     const referenceDiff = issueReferencesSvc.diffIssueReferenceSummary(referenceSummaryBefore, referenceSummaryAfter);
     const remappedAnnotations = result.created
@@ -3006,7 +2555,6 @@ export function issueRoutes(
         createdByUserId: req.actor.userId,
       });
       const referenceSummaryAfter = await issueReferencesSvc.listIssueReferenceSummary(issue.id);
-      await externalObjectsSvc.syncDocumentSafely(result.document.id);
       const referenceDiff = issueReferencesSvc.diffIssueReferenceSummary(referenceSummaryBefore, referenceSummaryAfter);
       const remappedAnnotations = await documentAnnotationsSvc.remapOpenThreadsForDocument({
         issueId: issue.id,
@@ -3085,7 +2633,6 @@ export function issueRoutes(
       return;
     }
     const referenceSummaryAfter = await issueReferencesSvc.listIssueReferenceSummary(issue.id);
-    if (removed) await externalObjectsSvc.syncDocumentSafely(removed.id);
     const referenceDiff = issueReferencesSvc.diffIssueReferenceSummary(referenceSummaryBefore, referenceSummaryAfter);
     assertBoard(req);
     await logActivity(db, {
@@ -3594,55 +3141,6 @@ export function issueRoutes(
         });
       }
 
-      const previousMonitor = summarizeIssueMonitor(
-        existing,
-        previousPolicy,
-      );
-      const nextMonitor = summarizeIssueMonitor(issue, nextPolicy);
-      if (
-        nextMonitor.nextCheckAt &&
-        (previousMonitor.nextCheckAt !== nextMonitor.nextCheckAt ||
-          previousMonitor.notes !== nextMonitor.notes)
-      ) {
-        await logActivity(db, {
-          companyId: issue.companyId,
-          actorType: "user",
-          actorId: actorUserId,
-          action: "issue.monitor_scheduled",
-          entityType: "issue",
-          entityId: issue.id,
-          details: {
-            identifier: issue.identifier,
-            nextCheckAt: nextMonitor.nextCheckAt,
-            previousNextCheckAt: previousMonitor.nextCheckAt,
-            notes: nextMonitor.notes,
-            scheduledBy: nextMonitor.scheduledBy,
-            serviceName: nextMonitor.serviceName,
-            timeoutAt: nextMonitor.timeoutAt,
-            maxAttempts: nextMonitor.maxAttempts,
-            recoveryPolicy: nextMonitor.recoveryPolicy,
-          },
-        });
-      } else if (
-        !nextMonitor.nextCheckAt &&
-        previousMonitor.nextCheckAt
-      ) {
-        await logActivity(db, {
-          companyId: issue.companyId,
-          actorType: "user",
-          actorId: actorUserId,
-          action: "issue.monitor_cleared",
-          entityType: "issue",
-          entityId: issue.id,
-          details: {
-            identifier: issue.identifier,
-            previousNextCheckAt: previousMonitor.nextCheckAt,
-            reason: nextMonitor.clearReason ?? "manual",
-            notes: previousMonitor.notes,
-          },
-        });
-      }
-
       res.json(issue);
     },
   );
@@ -3711,8 +3209,6 @@ export function issueRoutes(
       res.status(404).json({ error: "Issue not found" });
       return;
     }
-
-    await externalObjectsSvc.syncIssueSafely(issue.id);
 
     await logActivity(db, {
       companyId: issue.companyId,
@@ -3839,7 +3335,6 @@ export function issueRoutes(
               `human-creator-form:${existing.companyId}:${randomUUID()}`,
           },
         );
-        await externalObjectsSvc.syncCommentSafely(result.comment.id);
         res.status(201).json(result);
       } catch (error) {
         canonicalIssueMutationError(error);
@@ -3907,7 +3402,6 @@ export function issueRoutes(
           },
           ownerAuthority,
         );
-        await externalObjectsSvc.syncCommentSafely(result.comment.id);
         res.status(201).json(result);
       } catch (error) {
         canonicalIssueMutationError(error);
@@ -4026,7 +3520,6 @@ export function issueRoutes(
           mention: req.body.mention ?? null,
           replyToCommentId: req.body.replyToCommentId ?? null,
         });
-        await externalObjectsSvc.syncCommentSafely(result.comment.id);
         const comment = await svc.getBoardComment(
           existing.companyId,
           existing.id,

@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { createIssueDetailPath, withIssueDetailHeaderSeed } from "../lib/issueDetailBreadcrumb";
-import type { ProjectWorkspaceLinkedIssue } from "../lib/project-workspaces-tab";
-import { IssueQuicklookCard } from "./IssueLinkQuicklook";
+import { IssueQuicklookCard, type IssueQuicklookIssue } from "./IssueLinkQuicklook";
 
 interface IssuesQuicklookProps {
-  issue: ProjectWorkspaceLinkedIssue;
+  issue: IssueQuicklookIssue;
   children: React.ReactNode;
 }
 

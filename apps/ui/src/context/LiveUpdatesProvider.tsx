@@ -479,13 +479,6 @@ const ROUTINE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS = new Set([
   "routine.document_annotation_thread_reopened",
   "routine.document_annotation_remapped",
 ]);
-const CASE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS = new Set([
-  "case.document_annotation_thread_created",
-  "case.document_annotation_comment_added",
-  "case.document_annotation_thread_resolved",
-  "case.document_annotation_thread_reopened",
-  "case.document_annotation_remapped",
-]);
 const AGENT_TOAST_STATUSES = new Set(["error"]);
 
 function describeIssueUpdate(details: Record<string, unknown> | null): string | null {
@@ -798,25 +791,6 @@ function invalidateActivityQueries(
         queryKey: ["routines", "document-annotations", entityId, documentKey],
         ...routineInvalidationOptions,
       });
-    }
-    return;
-  }
-
-  if (entityType === "case") {
-    queryClient.invalidateQueries({ queryKey: queryKeys.cases.list(companyId) });
-    if (entityId) {
-      queryClient.invalidateQueries({ queryKey: queryKeys.cases.detail(entityId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.cases.events(entityId) });
-      if (action && CASE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS.has(action)) {
-        const documentKey = readString(details?.key) ?? readString(details?.documentKey);
-        const caseInvalidationOptions = ownActorActivity ? { refetchType: "inactive" as const } : undefined;
-        queryClient.invalidateQueries({
-          queryKey: documentKey
-            ? ["cases", "document-annotations", entityId, documentKey]
-            : ["cases", "document-annotations", entityId],
-          ...caseInvalidationOptions,
-        });
-      }
     }
     return;
   }

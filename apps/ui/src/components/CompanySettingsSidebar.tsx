@@ -1,12 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   ChevronLeft,
-  CloudUpload,
   Cpu,
-  FlaskConical,
   KeyRound,
   MailPlus,
-  MonitorCog,
   Puzzle,
   Settings,
   Shield,
@@ -14,7 +11,6 @@ import {
   UserRoundPen,
   Users,
 } from "lucide-react";
-import type { PluginRecordDto } from "@paperclipai/shared";
 import { sidebarBadgesApi } from "@/api/sidebarBadges";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { pluginsApi } from "@/api/plugins";
@@ -27,18 +23,6 @@ import { useCompany } from "@/context/CompanyContext";
 import { useSidebar } from "@/context/SidebarContext";
 import { usePluginSlots } from "@/plugins/slots";
 import { SidebarNavItem } from "./SidebarNavItem";
-
-/**
- * Sandbox-provider-only plugins (e.g. E2B, exe.dev, Modal) have no per-plugin
- * settings page, so a sidebar entry would lead nowhere useful. Filter them out
- * here. Plugins that mix a sandbox provider with other contributions still
- * appear.
- */
-function isSandboxProviderOnly(plugin: PluginRecordDto): boolean {
-  const drivers = plugin.manifestJson.environmentDrivers ?? [];
-  if (drivers.length === 0) return false;
-  return drivers.every((d) => d.kind === "sandbox_provider");
-}
 
 export function CompanySettingsSidebar() {
   const { selectedCompany, selectedCompanyId } = useCompany();
@@ -66,16 +50,11 @@ export function CompanySettingsSidebar() {
     retry: false,
     refetchInterval: 15_000,
   });
-  const { data: experimentalSettings } = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-  });
   const { data: plugins } = useQuery({
     queryKey: queryKeys.plugins.all,
     queryFn: () => pluginsApi.list(),
   });
-  const showCloudUpstream = experimentalSettings?.enableCloudSync === true;
-  const sidebarPlugins = (plugins ?? []).filter((plugin) => !isSandboxProviderOnly(plugin));
+  const sidebarPlugins = plugins ?? [];
   const hasSelectedCompany = !!selectedCompanyId;
 
   return (
@@ -106,14 +85,6 @@ export function CompanySettingsSidebar() {
         {hasSelectedCompany ? (
           <div className="flex flex-col gap-0.5">
             <SidebarNavItem to="/company/settings" label="General" icon={SlidersHorizontal} end />
-            {showCloudUpstream ? (
-              <SidebarNavItem
-                to="/company/settings/cloud-upstream"
-                label="Cloud upstream"
-                icon={CloudUpload}
-                end
-              />
-            ) : null}
             <SidebarNavItem
               to="/company/settings/members"
               label="Members"
@@ -157,21 +128,10 @@ export function CompanySettingsSidebar() {
             end
           />
           <SidebarNavItem
-            to={`${INSTANCE_SETTINGS_PATH_PREFIX}/environments`}
-            label="Environments"
-            icon={MonitorCog}
-            end
-          />
-          <SidebarNavItem
             to={`${INSTANCE_SETTINGS_PATH_PREFIX}/access`}
             label="Access"
             icon={Shield}
             end
-          />
-          <SidebarNavItem
-            to={`${INSTANCE_SETTINGS_PATH_PREFIX}/experimental`}
-            label="Experimental"
-            icon={FlaskConical}
           />
           <SidebarNavItem
             to={`${INSTANCE_SETTINGS_PATH_PREFIX}/plugins`}

@@ -28,7 +28,6 @@ export async function bindTestAgentExecutionTarget(
     .set({
       adapterType: CANONICAL_TEST_ADAPTER_TYPE,
       adapterConfig: canonicalTestAdapterConfig(),
-      defaultEnvironmentId: environment.id,
     })
     .where(
       and(
@@ -39,7 +38,7 @@ export async function bindTestAgentExecutionTarget(
   return {
     adapterType: CANONICAL_TEST_ADAPTER_TYPE,
     implementationIdentity: CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
-    defaultEnvironmentId: environment.id,
+    executionEnvironmentId: environment.id,
     executionTargetDriver: environment.driver,
     executionTargetDigest: deriveAgentExecutionTargetDigest({
       environmentId: environment.id,
@@ -71,7 +70,7 @@ export function canonicalTestAgentAdapterRevision(
     adapterType: CANONICAL_TEST_ADAPTER_TYPE,
     adapterConfig: canonicalTestAdapterConfig(),
     executionTarget: {
-      environmentId: executionTarget.defaultEnvironmentId,
+      environmentId: executionTarget.executionEnvironmentId,
       driver: executionTarget.executionTargetDriver,
       digest: executionTarget.executionTargetDigest,
     },

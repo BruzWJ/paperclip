@@ -70,9 +70,6 @@ export function useInboxDismissals(companyId: string | null | undefined) {
     if (!companyId) return;
     queryClient.invalidateQueries({ queryKey });
     queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(companyId) });
-    // The attention feed derives its rows from server-side dismissals, so any
-    // dismiss/snooze/restore must re-pull it to keep the queue and curtains in sync.
-    queryClient.invalidateQueries({ queryKey: queryKeys.attention(companyId) });
   }
 
   const dismissedAtByKey = useMemo(

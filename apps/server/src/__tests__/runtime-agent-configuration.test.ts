@@ -8,8 +8,6 @@ import { describe, expect, it, vi } from "vitest";
 import { createRuntimeAgentActionPort } from "../services/runtime-agent-action-port.js";
 import {
   createRuntimeAgentConfigurationService,
-  listRuntimeAgentCreateCompanyToolOptions,
-  listRuntimeAgentEditCompanyToolOptions,
   parseRuntimeAgentCreateConfiguration,
   parseRuntimeAgentUpdateConfiguration,
   RuntimeAgentConfigurationConsentRequired,
@@ -24,8 +22,6 @@ import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const companyId = "00000000-0000-4000-8000-000000000001";
 const agentId = "00000000-0000-4000-8000-000000000002";
-const toolIdA = "00000000-0000-4000-8000-000000000003";
-const toolIdB = "00000000-0000-4000-8000-000000000004";
 
 function completeBooleanMap<Key extends string>(
   keys: readonly Key[],
@@ -68,12 +64,11 @@ function snapshot(): RuntimeAgentConfigurationSnapshot {
     contextGrants: { read_issue_comments: true },
     actionGrants: { issue_create: true },
     mentionReachGrants: { mention_any_ancestor: true },
-    companyToolIds: [toolIdA],
   };
 }
 
 describe("runtime-agent configuration canonical contracts", () => {
-  it("parses only exact runtime-owned identity, grants, reach, and tool fields", () => {
+  it("parses only exact runtime-owned identity, grants, and reach fields", () => {
     const parsed = parseRuntimeAgentCreateConfiguration({
       name: "  Research Agent  ",
       title: "Researcher",
@@ -88,7 +83,6 @@ describe("runtime-agent configuration canonical contracts", () => {
         mention_agent: false,
       },
       mentionReachGrants: { mention_any_ancestor: true },
-      companyToolIds: [toolIdB, toolIdA],
     });
 
     expect(parsed).toEqual({
@@ -102,7 +96,6 @@ describe("runtime-agent configuration canonical contracts", () => {
       },
       actionGrants: { issue_create: true, mention_agent: false },
       mentionReachGrants: { mention_any_ancestor: true },
-      companyToolIds: [toolIdA, toolIdB],
     });
     expect(JSON.stringify(parsed)).not.toMatch(
       /adapter|provider|runtimeConfig|skill|icon|environment|budget|cost/i,
@@ -120,15 +113,11 @@ describe("runtime-agent configuration canonical contracts", () => {
       .toThrow(RuntimeAgentConfigurationInvalid);
   });
 
-  it("rejects malformed grants, duplicate tools, and invalid reporting identities", () => {
+  it("rejects malformed grants and invalid reporting identities", () => {
     expect(() => parseRuntimeAgentCreateConfiguration({
       name: "Bad grant",
       contextGrants: { invented_context: true },
     })).toThrow(/unsupported fields/i);
-    expect(() => parseRuntimeAgentCreateConfiguration({
-      name: "Duplicate tools",
-      companyToolIds: [toolIdA, toolIdA],
-    })).toThrow(/duplicates/i);
     expect(() => parseRuntimeAgentCreateConfiguration({
       name: "Bad manager",
       reportsTo: "not-a-uuid",
@@ -170,101 +159,7 @@ describe("runtime-agent configuration canonical contracts", () => {
       "-{\"contextGrants\":{\"read_issue_comments\":true},\"title\":\"Researcher\"}",
       "+{\"contextGrants\":{\"carry_context\":true},\"title\":\"Board consented\"}",
     ].join("\n"));
-    expect(diff).not.toContain("companyToolIds");
     expect(diff).not.toContain("capabilities");
-  });
-});
-
-describe("runtime-agent tool option projection without a database process", () => {
-  const activeRow = {
-    catalogEntryId: toolIdA,
-    connectionId: "00000000-0000-4000-8000-000000000020",
-    connectionName: "Research MCP",
-    entryName: "lookup_record",
-    toolName: "lookup_record",
-    title: null,
-    description: null,
-    catalogVersionHash: "catalog-v1",
-    entryKind: "tool",
-    entryStatus: "active",
-    connectionStatus: "active",
-    connectionEnabled: true,
-    applicationStatus: "active",
-  };
-
-  it("projects only concrete active tools and hides connection-install identity", async () => {
-    const harness = createMockDb({
-      select: [[
-        activeRow,
-        { ...activeRow, catalogEntryId: toolIdB, entryStatus: "disabled" },
-      ]],
-    });
-
-    const options = await listRuntimeAgentCreateCompanyToolOptions(
-      harness.db,
-      companyId,
-    );
-
-    expect(options).toEqual([{
-      catalogEntryId: toolIdA,
-      connectionId: activeRow.connectionId,
-      connectionName: "Research MCP",
-      title: "lookup_record",
-      description: "",
-      catalogVersionHash: "catalog-v1",
-    }]);
-    expect(options[0]).not.toHaveProperty("connectionInstallId");
-    expect(harness.remaining("select")).toBe(0);
-  });
-
-  it("uses the same canonical projection for an agent-scoped connection", async () => {
-    const harness = createMockDb({ select: [[activeRow]] });
-
-    await expect(listRuntimeAgentEditCompanyToolOptions(
-      harness.db,
-      companyId,
-      agentId,
-    )).resolves.toEqual([
-      expect.objectContaining({ catalogEntryId: toolIdA }),
-    ]);
-  });
-
-  it("fails closed before listing tools for a missing or inactive company", async () => {
-    const missing = createMockDb({ select: [[]] });
-    await expect(
-      createRuntimeAgentConfigurationService(missing.db)
-        .listCreateCompanyToolOptions(companyId),
-    ).rejects.toThrow("Company must exist and be active");
-
-    const inactive = createMockDb({
-      select: [[{ id: companyId, status: "archived" }]],
-    });
-    await expect(
-      createRuntimeAgentConfigurationService(inactive.db)
-        .listCreateCompanyToolOptions(companyId),
-    ).rejects.toThrow("Company must exist and be active");
-  });
-
-  it("lists tools only after locking the exact non-terminated target", async () => {
-    const harness = createMockDb({
-      select: [[{ id: agentId, status: "idle" }], [activeRow]],
-    });
-
-    await expect(
-      createRuntimeAgentConfigurationService(harness.db)
-        .listAgentCompanyToolOptions({ companyId, agentId }),
-    ).resolves.toEqual([
-      expect.objectContaining({ catalogEntryId: toolIdA }),
-    ]);
-    expect(harness.remaining("select")).toBe(0);
-
-    const terminated = createMockDb({
-      select: [[{ id: agentId, status: "terminated" }]],
-    });
-    await expect(
-      createRuntimeAgentConfigurationService(terminated.db)
-        .listAgentCompanyToolOptions({ companyId, agentId }),
-    ).rejects.toThrow(/non-terminated agent/i);
   });
 });
 
@@ -317,7 +212,6 @@ describe("runtime-agent action boundary", () => {
         issue_create: true,
       }),
       mentionReachGrants: completeBooleanMap(AGENT_MENTION_REACH_GRANT_KEYS),
-      companyToolIds: [toolIdA],
     };
 
     await expect(actions.agentHire({
@@ -351,7 +245,6 @@ describe("runtime-agent action boundary", () => {
         contextGrants: completeBooleanMap(AGENT_CONTEXT_GRANT_KEYS),
         actionGrants: completeBooleanMap(PAPERCLIP_ACTION_KEYS),
         mentionReachGrants: completeBooleanMap(AGENT_MENTION_REACH_GRANT_KEYS),
-        companyToolIds: [],
       },
     })).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
   });

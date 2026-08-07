@@ -436,7 +436,6 @@ Example uses:
 - permissions
 - budgets
 - approval policies
-- project execution workspace policies
 - issue Paperclip-only metadata
 
 Rules:

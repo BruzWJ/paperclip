@@ -104,16 +104,3 @@ export function agentUsageSentence(count: number): string {
 export function reassignTargetIds(usedByAgents: CompanySkillUsageAgent[]): string[] {
   return usedByAgents.map((agent) => agent.id);
 }
-
-/**
- * Whether a skill is repo-synced (`project_scan`) — editable, but its saves
- * write directly into the user's project working tree (plan §3.3). Detected via
- * the skill's `metadata.sourceKind`.
- */
-export function isProjectScanSkill(
-  metadata: Record<string, unknown> | null | undefined,
-): boolean {
-  if (!metadata || typeof metadata !== "object") return false;
-  const raw = (metadata as Record<string, unknown>).sourceKind;
-  return typeof raw === "string" && raw.trim() === "project_scan";
-}

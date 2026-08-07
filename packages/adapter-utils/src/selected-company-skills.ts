@@ -382,7 +382,7 @@ export function selectedCompanySkillMaterializationKey(input: {
 /**
  * This function is deliberately self-contained. Its emitted source is run by
  * the already-verified Node executable on the selected physical target, so
- * local, SSH, sandbox/custom-image, and plugin targets use one implementation.
+ * local, SSH, sandbox, and plugin targets use one implementation.
  */
 async function selectedCompanySkillTargetMaterializerMain() {
   const crypto = require("node:crypto") as typeof import("node:crypto");

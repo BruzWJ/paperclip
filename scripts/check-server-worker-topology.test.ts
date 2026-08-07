@@ -8,12 +8,12 @@ import {
 function canonicalFiles(): ServerWorkerTopologyFile[] {
   const sources: Record<string, string> = {
     "apps/server/src/adapters/acpx-catalog.ts": `
-      import { listAcpRegistryAgentNames, probeAcpxAgent } from "acpx";
+      import { listLocallyAvailableAcpRegistryAgentNames, probeAcpxAgent } from "acpx";
       export function acpxDiscoveryToServerAdapter(value) {
         return { definition: { configOptions: [], limits: null } };
       }
       export async function discoverLocalAcpxAdapterCatalog() {
-        return [listAcpRegistryAgentNames, probeAcpxAgent, acpxDiscoveryToServerAdapter];
+        return [listLocallyAvailableAcpRegistryAgentNames, probeAcpxAgent, acpxDiscoveryToServerAdapter];
       }
     `,
     "apps/server/src/adapters/registry.ts": `

@@ -21,7 +21,7 @@ import { Identity } from "./Identity";
 import { StatusIcon } from "./StatusIcon";
 import { Badge } from "@/components/ui/badge";
 
-export const issueTrailingColumns: InboxIssueColumn[] = ["owner", "kickedOffBy", "project", "workspace", "parent", "labels", "updated"];
+export const issueTrailingColumns: InboxIssueColumn[] = ["owner", "kickedOffBy", "project", "parent", "labels", "updated"];
 
 const issueColumnLabels: Record<InboxIssueColumn, string> = {
   status: "Status",
@@ -29,7 +29,6 @@ const issueColumnLabels: Record<InboxIssueColumn, string> = {
   owner: "Owner",
   kickedOffBy: "Kicked off by",
   project: "Project",
-  workspace: "Workspace",
   parent: "Parent task",
   labels: "Tags",
   updated: "Last updated",
@@ -41,7 +40,6 @@ const issueColumnDescriptions: Record<InboxIssueColumn, string> = {
   owner: "Agent owner or exceptional board escalation owner.",
   kickedOffBy: "Board user or agent who created the task.",
   project: "Linked project pill with its color.",
-  workspace: "Execution or project workspace used for the task.",
   parent: "Parent task identifier and title.",
   labels: "Task labels and tags.",
   updated: "Latest visible activity time.",
@@ -57,7 +55,6 @@ function issueTrailingGridTemplate(columns: InboxIssueColumn[]): string {
       if (column === "owner") return "minmax(6rem, 8rem)";
       if (column === "kickedOffBy") return "minmax(6rem, 8rem)";
       if (column === "project") return "minmax(4.5rem, 7rem)";
-      if (column === "workspace") return "minmax(6rem, 9rem)";
       if (column === "parent") return "minmax(3.5rem, 5.5rem)";
       if (column === "labels") return "minmax(3rem, 6rem)";
       return "minmax(3.5rem, 4.5rem)";
@@ -73,7 +70,7 @@ export function IssueColumnPicker({
   title,
   iconOnly = false,
 }: {
-  availableColumns: InboxIssueColumn[];
+  availableColumns: readonly InboxIssueColumn[];
   visibleColumnSet: ReadonlySet<InboxIssueColumn>;
   onToggleColumn: (column: InboxIssueColumn, enabled: boolean) => void;
   onResetColumns: () => void;
@@ -228,8 +225,6 @@ export function InboxIssueTrailingColumns({
   columns,
   projectName,
   projectColor,
-  workspaceId,
-  workspaceName,
   ownerName,
   ownerUserName,
   ownerUserAvatarUrl,
@@ -241,14 +236,11 @@ export function InboxIssueTrailingColumns({
   parentIdentifier,
   parentTitle,
   ownerContent,
-  onFilterWorkspace,
 }: {
   issue: Issue;
   columns: InboxIssueColumn[];
   projectName: string | null;
   projectColor: string | null;
-  workspaceId?: string | null;
-  workspaceName: string | null;
   ownerName: string | null;
   ownerUserName?: string | null;
   ownerUserAvatarUrl?: string | null;
@@ -260,7 +252,6 @@ export function InboxIssueTrailingColumns({
   parentIdentifier: string | null;
   parentTitle: string | null;
   ownerContent?: ReactNode;
-  onFilterWorkspace?: (workspaceId: string) => void;
 }) {
   const activityText = timeAgo(issue.lastActivityAt ?? issue.lastExternalCommentAt ?? issue.updatedAt);
   const userLabel = ownerUserName ?? formatOwnerUserLabel(issue.ownerUserId, currentUserId) ?? "User";
@@ -411,39 +402,6 @@ export function InboxIssueTrailingColumns({
           }
 
           return <span key={column} className="min-w-0" aria-hidden="true" />;
-        }
-
-        if (column === "workspace") {
-          if (!workspaceName) {
-            return <span key={column} className="min-w-0" aria-hidden="true" />;
-          }
-
-          return (
-            <span key={column} className="min-w-0 truncate text-xs text-muted-foreground">
-              {workspaceId && onFilterWorkspace ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="truncate rounded-sm text-left text-xs text-muted-foreground transition-colors hover:text-foreground hover:underline"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        onFilterWorkspace(workspaceId);
-                      }}
-                    >
-                      {workspaceName}
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" sideOffset={6}>
-                    Filter by workspace
-                  </TooltipContent>
-                </Tooltip>
-              ) : (
-                workspaceName
-              )}
-            </span>
-          );
         }
 
         if (column === "parent") {

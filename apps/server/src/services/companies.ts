@@ -8,7 +8,6 @@ import {
   agents,
   issues,
   projects,
-  goals,
 } from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
 import { environmentService } from "./environments.js";

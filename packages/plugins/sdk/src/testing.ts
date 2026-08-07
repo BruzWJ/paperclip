@@ -33,8 +33,6 @@ import type {
   ScopeKey,
   ToolResult,
   PluginToolRunContext,
-  PluginWorkspace,
-  PluginExecutionWorkspaceMetadata,
   PluginLocalFolderEntry,
   PluginLocalFolderStatus,
   PluginAccessMember,
@@ -117,8 +115,6 @@ export interface TestHarness {
     issues?: Issue[];
     agents?: Agent[];
     goals?: Goal[];
-    projectWorkspaces?: PluginWorkspace[];
-    executionWorkspaces?: PluginExecutionWorkspaceMetadata[];
     accessMembers?: PluginAccessMember[];
     principalGrants?: PrincipalPermissionGrant[];
   }): void;
@@ -561,8 +557,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
     }
     return stamped;
   }
-  const projectWorkspaces = new Map<string, PluginWorkspace[]>();
-  const executionWorkspaces = new Map<string, PluginExecutionWorkspaceMetadata>();
   const localFolderStatuses = new Map<string, PluginLocalFolderStatus>();
   const localFolderFiles = new Map<string, string>();
 
@@ -1088,17 +1082,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         const project = projects.get(projectId);
         return isInCompany(project, companyId) ? project : null;
       },
-      async listWorkspaces(projectId, companyId) {
-        requireCapability(manifest, capabilitySet, "project.workspaces.read");
-        if (!isInCompany(projects.get(projectId), companyId)) return [];
-        return projectWorkspaces.get(projectId) ?? [];
-      },
-      async getPrimaryWorkspace(projectId, companyId) {
-        requireCapability(manifest, capabilitySet, "project.workspaces.read");
-        if (!isInCompany(projects.get(projectId), companyId)) return null;
-        const workspaces = projectWorkspaces.get(projectId) ?? [];
-        return workspaces.find((workspace) => workspace.isPrimary) ?? null;
-      },
       managed: {
         async get(projectKey, companyId) {
           requireCapability(manifest, capabilitySet, "projects.managed");
@@ -1151,7 +1134,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
             env: null,
             pauseReason: null,
             pausedAt: null,
-            executionWorkspacePolicy: null,
             codebase: {
               workspaceId: null,
               repoUrl: null,
@@ -1219,13 +1201,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           const resolved = await this.get(projectKey, companyId);
           return { ...resolved, status: resolved.project ? "reset" : resolved.status };
         },
-      },
-    },
-    executionWorkspaces: {
-      async get(workspaceId, companyId) {
-        requireCapability(manifest, capabilitySet, "execution.workspaces.read");
-        const workspace = executionWorkspaces.get(workspaceId);
-        return workspace?.companyId === companyId ? workspace : null;
       },
     },
     routines: {
@@ -1683,7 +1658,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           id: randomUUID(),
           companyId: input.companyId,
           projectId: input.projectId ?? null,
-          projectWorkspaceId: null,
           goalId: input.goalId ?? null,
           parentId: input.parentId ?? null,
           title,
@@ -1717,8 +1691,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           identifier: null,
           requestDepth: 0,
           billingCode: null,
-          executionWorkspacePreference: null,
-          executionWorkspaceSettings: null,
           startedAt: null,
           completedAt: null,
           cancelledAt: null,
@@ -2230,13 +2202,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       }
       for (const row of input.agents ?? []) agents.set(row.id, row);
       for (const row of input.goals ?? []) goals.set(row.id, row);
-      for (const row of input.projectWorkspaces ?? []) {
-        if (!row.projectId) continue;
-        const list = projectWorkspaces.get(row.projectId) ?? [];
-        list.push(row);
-        projectWorkspaces.set(row.projectId, list);
-      }
-      for (const row of input.executionWorkspaces ?? []) executionWorkspaces.set(row.id, row);
       for (const row of input.accessMembers ?? []) accessMembers.set(row.id, row);
       for (const row of input.principalGrants ?? []) {
         const list = principalGrants.get(principalGrantsKey(row.companyId, row.principalType, row.principalId)) ?? [];

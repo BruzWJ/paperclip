@@ -1984,7 +1984,6 @@ export function accessRoutes(
           userId: req.actor.userId,
           authorization: req.actor,
         },
-        defaultEnvironmentId: input.defaultEnvironmentId,
         skillChannel: input.skillChannel,
       });
       res.json(toJoinRequestResponse(approved));

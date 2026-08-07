@@ -39,9 +39,8 @@ describe("aliasFromConfigPath", () => {
 });
 
 describe("consumerTypeLabel", () => {
-  it("renders agent_api and other multiword consumers sensibly", () => {
+  it("renders agent_api sensibly", () => {
     expect(consumerTypeLabel("agent_api")).toBe("Agent API");
-    expect(consumerTypeLabel("tool_connection")).toBe("Tool connection");
   });
 
   it("capitalizes single-word consumer types", () => {

@@ -284,7 +284,7 @@ function SidebarAgentItem({
   );
 }
 
-export function SidebarAgents({ streamlined = false }: { streamlined?: boolean } = {}) {
+export function SidebarAgents() {
   const [open, setOpen] = useState(true);
   const [pendingAgentIds, setPendingAgentIds] = useState<Set<string>>(() => new Set());
   const [liveLingerVersion, setLiveLingerVersion] = useState(0);
@@ -394,13 +394,12 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
     }
   }, [liveAgentIds, sortedAgentIdSet]);
 
-  // IA Phase 5 (streamlined): if any agent has a live run, show only those
+  // If any agent has a live run, show only those
   // active agents. Agents that just stopped running linger briefly so clustered
   // run boundaries do not make rows pop out and the section does not immediately
   // swap to the recent fallback during short all-idle gaps. Otherwise fall back
   // to up to RECENT_AGENT_LIMIT agents. Either way a "See all agents" link is
   // shown so the full list is always reachable.
-  // Classic mode (PAP-89, flag OFF) restores the show-all behavior.
   const runningAgents = useMemo(() => {
     const nowForLiveLinger = Date.now();
     const lastSeenLiveAtByAgent = lastSeenLiveAtRef.current;
@@ -411,15 +410,12 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
     });
   }, [liveCountByAgent, liveLingerVersion, sortedAgents]);
   const hasActiveAgents = runningAgents.length > 0;
-  const displayedAgents = !streamlined
-    ? sortedAgents
-    : hasActiveAgents
-      ? runningAgents
-      : sortedAgents.slice(0, RECENT_AGENT_LIMIT);
+  const displayedAgents = hasActiveAgents
+    ? runningAgents
+    : sortedAgents.slice(0, RECENT_AGENT_LIMIT);
   // Always expose "See all agents" whenever the displayed list is a subset of all
-  // agents, so users never lose the entry point to the full list. In classic mode
-  // every agent is already shown, so the link is unnecessary.
-  const showSeeAllLink = streamlined && sortedAgents.length > 0;
+  // agents, so users never lose the entry point to the full list.
+  const showSeeAllLink = sortedAgents.length > 0;
 
   const agentMatch = location.pathname.match(/^\/(?:[^/]+\/)?agents\/([^/]+)(?:\/([^/]+))?/);
   const activeAgentId = agentMatch?.[1] ?? null;
@@ -455,8 +451,6 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
   }, [sortModeStorageKey]);
 
   useEffect(() => {
-    if (!streamlined) return;
-
     const now = Date.now();
     let nextExpiryAt: number | null = null;
     for (const agent of sortedAgents) {
@@ -476,7 +470,7 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [streamlined, sortedAgents, liveCountByAgent, liveLingerVersion]);
+  }, [sortedAgents, liveCountByAgent, liveLingerVersion]);
 
   const persistSortMode = useCallback(
     (value: string) => {

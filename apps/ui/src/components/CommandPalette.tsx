@@ -8,7 +8,6 @@ import { issuesApi } from "../api/issues";
 import { authApi } from "../api/auth";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
-import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
 import {
   CommandDialog,
@@ -29,7 +28,6 @@ import {
   DollarSign,
   History,
   SquarePen,
-  FileCode2,
   Plus,
   Search,
 } from "lucide-react";
@@ -46,12 +44,6 @@ const SEARCH_ALL_VALUE = "__paperclip-search-all__";
 
 export function buildFullSearchPath(query: string, context: SearchQueryParserContext = {}) {
   return buildSearchPathFromQuery(query, context);
-}
-
-const ISSUE_DETAIL_PATH_RE = /\/issues\/[^/?#]+(?:$|\?|#|\/)/;
-
-function isOnIssueDetail(pathname: string): boolean {
-  return ISSUE_DETAIL_PATH_RE.test(pathname);
 }
 
 /** Max promoted project matches kept when typing in the palette. */
@@ -96,13 +88,6 @@ export function CommandPalette() {
   const { openNewIssue, openNewAgent } = useDialogActions();
   const { isMobile, setSidebarOpen } = useSidebar();
   const searchQuery = query.trim();
-  const onIssueDetail = isOnIssueDetail(location.pathname);
-  const { data: experimentalSettings } = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-    retry: false,
-  });
-  const fileViewerEnabled = experimentalSettings?.enableExperimentalFileViewer === true;
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -323,18 +308,6 @@ export function CommandPalette() {
             Create new task
             <span className="ml-auto text-xs text-muted-foreground">C</span>
           </CommandItem>
-          {onIssueDetail && fileViewerEnabled && (
-            <CommandItem
-              onSelect={() => {
-                setOpen(false);
-                window.dispatchEvent(new CustomEvent("paperclip:open-file-viewer"));
-              }}
-            >
-              <FileCode2 className="mr-2 h-4 w-4" />
-              Open file in this issue...
-              <span className="ml-auto text-xs text-muted-foreground">g f</span>
-            </CommandItem>
-          )}
           <CommandItem
             onSelect={() => {
               setOpen(false);

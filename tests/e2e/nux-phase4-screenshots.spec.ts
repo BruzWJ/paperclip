@@ -15,7 +15,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  *   - Board-authored first-issue review
  *   - Onboarding front door (path picker)
  *   - "Add agents to your org" growth intake
- *   - Conference Room (BoardChat) shell + composer + activity feed
  *   - Artifacts page
  *
  * These are structural/rendering checks; provider execution is covered
@@ -48,16 +47,6 @@ async function openWizard(page: import("@playwright/test").Page) {
 
 test.describe("NUX Phase 4 visual QA", () => {
   test("captures every integrated surface", async ({ page, request }) => {
-    // New-NUX surfaces are flag-gated default-OFF (PAP-136/137/138): turn the
-    // experimental flag on for this throwaway instance before driving them.
-    const flagRes = await request.patch("/api/instance/settings/experimental", {
-      data: {
-        enableConferenceRoomChat: true,
-        enableEnvironments: true,
-      },
-    });
-    expect(flagRes.ok()).toBe(true);
-
     const consoleErrors: string[] = [];
     page.on("console", (msg) => {
       if (msg.type() === "error") consoleErrors.push(msg.text());
@@ -108,11 +97,6 @@ test.describe("NUX Phase 4 visual QA", () => {
     await expect(modelField).toBeVisible({ timeout: 15_000 });
     await modelField.getByRole("button").last().click();
     await page.getByRole("button", { name: "GPT-5.6", exact: true }).click();
-    const environmentSelect = page
-      .locator("select")
-      .filter({ hasText: "Local · local" });
-    await expect(environmentSelect).toBeVisible({ timeout: 15_000 });
-    await environmentSelect.selectOption({ label: "Local · local" });
     await page.screenshot({ path: shot("05-connect-codex-agent.png") });
     const createAgentButton = page.getByRole("button", {
       name: "Create agent",
@@ -224,23 +208,7 @@ test.describe("NUX Phase 4 visual QA", () => {
     ).toBeVisible({ timeout: 10_000 });
     await page.screenshot({ path: shot("07-growth-intake.png") });
 
-    // ── Section C: Conference Room (BoardChat) ────────────────────────────
-    // Visit the company dashboard first so CompanyContext selects the company
-    // from the route before we land on the board-chat surface.
-    await page.evaluate(() => window.localStorage.clear());
-    await page.goto(`/${prefix}/dashboard`);
-    await page.waitForLoadState("networkidle");
-    await page.goto(`/${prefix}/board-chat`);
-    await expect(page).toHaveURL(new RegExp(`/${prefix}/board-chat`));
-    // Composer renders once a company is selected. (Regression guard for the
-    // Rules-of-Hooks crash that previously blanked this page — see PAP-50.)
-    await expect(
-      page.getByPlaceholder("Ask anything about your company..."),
-    ).toBeVisible({ timeout: 20_000 });
-    await page.waitForTimeout(2_000); // let welcome bubble + suggestion chips stage in
-    await page.screenshot({ path: shot("08-board-chat.png") });
-
-    // ── Section D: Artifacts ──────────────────────────────────────────────
+    // ── Section C: Artifacts ──────────────────────────────────────────────
     await page.goto(`/${prefix}/artifacts`);
     await expect(page).toHaveURL(new RegExp(`/${prefix}/artifacts`));
     await page.waitForLoadState("networkidle");
@@ -255,7 +223,6 @@ test.describe("NUX Phase 4 visual QA", () => {
       "05-connect-codex-agent.png",
       "06-review-first-issue.png",
       "07-growth-intake.png",
-      "08-board-chat.png",
       "09-artifacts.png",
     ]) {
       const p = shot(f);

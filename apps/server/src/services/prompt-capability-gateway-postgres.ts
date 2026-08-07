@@ -16,7 +16,6 @@ import {
   pluginRunContexts,
   plugins,
   runInterfaceToolCalls,
-  toolAccessAuditEvents,
   type Db,
 } from "@paperclipai/db";
 import { and, eq, gt, or, sql } from "drizzle-orm";
@@ -911,33 +910,5 @@ export function createPostgresPromptCapabilityGatewayRepository(
       };
     },
 
-    async writeAudit(event, transaction) {
-      if (!event.capability) return;
-      await (transaction ?? db).insert(toolAccessAuditEvents).values({
-        companyId: event.capability.companyId,
-        actorType: "agent",
-        actorId: event.capability.targetAgentId,
-        action: `prompt_capability.${event.event}`,
-        outcome: event.outcome,
-        reasonCode: event.reason ?? null,
-        correlationId:
-          `${event.capability.capabilityConnectionId}:` +
-          String(event.capability.capabilityGeneration),
-        details: {
-          capabilityConnectionId:
-            event.capability.capabilityConnectionId,
-          capabilityGeneration: event.capability.capabilityGeneration,
-          issueId: event.capability.issueId,
-          runId: event.capability.runId,
-          refId: event.capability.refId,
-          refOrdinal: event.capability.refOrdinal,
-          segmentOrdinal: event.capability.segmentOrdinal,
-          toolName: event.toolName,
-          dialDigest: event.dialDigest,
-          grantSnapshot: event.grantSnapshot,
-        },
-        createdAt: event.occurredAt,
-      });
-    },
   };
 }

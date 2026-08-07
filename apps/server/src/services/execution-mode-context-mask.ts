@@ -16,7 +16,6 @@ export interface ExecutionModeContextInput {
   originKind?: string | null;
   agentGovernance?: unknown;
   issueExecutionPolicy?: unknown;
-  projectExecutionPolicy?: unknown;
 }
 
 function impliesLowTrust(value: unknown, depth = 0): boolean {
@@ -57,8 +56,7 @@ export function resolveExecutionModeContextMask(
     input.harnessKind === "skill_test" ||
     input.originKind === "task_bridge" ||
     impliesLowTrust(input.agentGovernance) ||
-    impliesLowTrust(input.issueExecutionPolicy) ||
-    impliesLowTrust(input.projectExecutionPolicy)
+    impliesLowTrust(input.issueExecutionPolicy)
   ) {
     return DENY_ALL_EXECUTION_CONTEXT_MASK;
   }

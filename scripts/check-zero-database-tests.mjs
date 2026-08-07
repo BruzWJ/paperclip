@@ -27,7 +27,6 @@ const productionTestDatabaseEnvironmentSuffixes = Object.freeze([
   ["E2E", "DATABASE", "URL"].join("_"),
 ]);
 const retiredLiveSmokePaths = Object.freeze([
-  ["scripts", "smoke", "pipelines-tutorial-smoke.sh"].join("/"),
   ["scripts", "docker-onboard-smoke.sh"].join("/"),
   ["docker", "Dockerfile.onboard-smoke"].join("/"),
 ]);

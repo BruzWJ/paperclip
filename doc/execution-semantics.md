@@ -8,7 +8,7 @@ This document defines how ordinary issue ownership becomes provider execution. I
 
 Every ordinary issue has one explicit owner and a monotonically increasing ownership epoch. The owner may be an eligible agent or a permitted named user/board identity. The immutable creator is stored independently from the current owner.
 
-Creation commits request, creator, owner, epoch, issue session, creator edge, workspace policy/binding, and any initial execution reference atomically. Reassignment is available only to the immutable creator (or board), selects from the same eligible catalog as creation, advances the epoch, revokes/cancels the former engagement, and starts the new owner fresh. For an agent creator, the one `issue_create` grant covers both direct-child creation and eligible direct-child reassignment; there is no assign-only grant.
+Creation commits request, creator, owner, epoch, issue session, creator edge, server-owned run-directory binding, and any initial execution reference atomically. Reassignment is available only to the immutable creator (or board), selects from the same eligible catalog as creation, advances the epoch, revokes/cancels the former engagement, and starts the new owner fresh. For an agent creator, the one `issue_create` grant covers both direct-child creation and eligible direct-child reassignment; there is no assign-only grant.
 
 There is no provider checkout/release or generic owner/status patch. Run/execution lock columns are control-plane concurrency evidence only; they do not grant ownership.
 
@@ -41,7 +41,7 @@ Neither relationship path can alter request, title, owner, dependencies, or
 metadata. Both use the same canonical update/comment and neither has a separate
 agent comment path.
 
-Board reopen is a separate audited command. Under the issue lock it changes a terminal issue to `open`, clears disposition, preserves request/owner/epoch/session/workspace, re-applies the native-continuity fence, and materializes or re-evaluates the current epoch's creator edge. A preserved invokable agent commits and dispatches exactly one new ref. A named-user or collective-board-owned system escalation commits the provider-free `board_only` branch with no ref or run. Every other owner is rejected. Reopen never revives an old terminal edge or acts as a fresh-session reset.
+Board reopen is a separate audited command. Under the issue lock it changes a terminal issue to `open`, clears disposition, preserves request/owner/epoch/session/run-directory binding, re-applies the native-continuity fence, and materializes or re-evaluates the current epoch's creator edge. A preserved invokable agent commits and dispatches exactly one new ref. A named-user or collective-board-owned system escalation commits the provider-free `board_only` branch with no ref or run. Every other owner is rejected. Reopen never revives an old terminal edge or acts as a fresh-session reset.
 
 ## Request and title
 
@@ -80,7 +80,7 @@ Only after commit may the internal dispatcher lease the ref. Immediately before 
 - issue lifecycle and current ownership epoch
 - target owner/consult identity and immutable authority
 - adapter configuration revision
-- workspace binding
+- server-owned run-directory binding
 - live context/action/mention/tool grants
 - session input/view disposition
 - ref and lease generation
@@ -94,7 +94,7 @@ An issue-tree pause is not an issue status. It is a board execution control chec
 The issue-session input inbox preserves causal admission order. Eligible
 true-carry steers coalesce only at copied safe turn boundaries. False-carry
 refs, new epochs, reset generations, adapter revisions, or any
-agent/lane/workspace/context mismatch use independent fresh views. A consult
+agent/lane/run-directory/context mismatch use independent fresh views. A consult
 may resume only that recipient's own exact compatible true-carry correlation;
 it never joins or inherits the caller's native carrier.
 
@@ -124,21 +124,21 @@ final-response relay exists for providers.
 A terminal transition suppresses unresolved Board mentions. Reopen does not
 revive a Board request or execution reference from the prior terminal lifetime.
 
-## Workspace
+## Run directory
 
-Every provider attempt resolves the persisted `(company, issue, ownership epoch)` execution-workspace binding. Projectless issues are first-class and receive a bound workspace. A missing/stale/cross-company binding blocks before provider launch.
+Every provider attempt resolves the persisted `(company, issue, ownership epoch)` run-directory binding. Projectless issues are first-class and receive a server-owned run directory. A missing, stale, or cross-company binding blocks before provider launch.
 
 Local providers receive the resolved absolute path as process `cwd`. Remote
 providers receive a closed server-to-provider launch envelope containing only
-the repository/ref/environment selectors their native API requires. Neither
-launch path injects ambient caller identity, issue metadata, workspace
-metadata, or a general Paperclip credential; the canonical managed-tool source
+the repository/ref target selectors their native API requires. Neither launch
+path injects ambient caller identity, issue metadata, run-directory metadata,
+or a general Paperclip credential; the canonical managed-tool source
 message is the sole narrow carrier of its explicitly rendered sender/issue
 fields.
 
 ## Configuration readiness
 
-Pre-dispatch readiness is distinct from runtime failure. Missing provider-native declarations, secret bindings, target availability, workspace binding, selected tool/skill integrity, or adapter capability block before a run starts. The issue retains explicit auditable waiting/recovery evidence.
+Pre-dispatch readiness is distinct from runtime failure. Missing provider-native declarations, secret bindings, target availability, run-directory binding, selected tool/skill integrity, or adapter capability block before a run starts. The issue retains explicit auditable waiting/recovery evidence.
 
 An adapter configuration edit creates a new immutable revision. An active run finishes on its recorded revision; the edit itself does not cancel, reset, or invoke anything. A later invocation on the new revision cannot resume the old revision's native correlation.
 

@@ -8,7 +8,6 @@ import type {
   CompanySkillImportResult,
   CompanySkillInstallCatalogResult,
   CompanySkillListItem,
-  CompanySkillProjectScanResult,
   CompanySkillUpdateStatus,
 } from "@paperclipai/shared";
 import { readFile } from "node:fs/promises";
@@ -37,11 +36,6 @@ interface SkillCreateOptions extends SkillsOptions {
   slug?: string;
   description?: string;
   bodyFile?: string;
-}
-
-interface SkillScanProjectsOptions extends SkillsOptions {
-  projectId?: string[];
-  workspaceId?: string[];
 }
 
 interface CatalogBrowseOptions extends BaseClientOptions {
@@ -302,36 +296,6 @@ export function registerSkillsCommands(program: Command): void {
             return;
           }
           console.log(`Created skill ${created?.name ?? opts.name} (${created?.key ?? created?.id ?? "unknown"})`);
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-    { includeCompany: true },
-  );
-
-  addCommonClientOptions(
-    skills
-      .command("scan-projects")
-      .description("Scan project workspaces for skills")
-      .option("--project-id <id>", "Project ID to scan; may be repeated", collectOptionValue, [] as string[])
-      .option("--workspace-id <id>", "Workspace ID to scan; may be repeated", collectOptionValue, [] as string[])
-      .action(async (opts: SkillScanProjectsOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts, { requireCompany: true });
-          const result = await ctx.api.post<CompanySkillProjectScanResult>(
-            `/api/companies/${ctx.companyId}/skills/scan-projects`,
-            {
-              projectIds: emptyToUndefined(opts.projectId),
-              workspaceIds: emptyToUndefined(opts.workspaceId),
-            },
-          );
-          if (ctx.json) {
-            printOutput(result, { json: true });
-            return;
-          }
-          console.log(
-            `Scanned projects=${result?.scannedProjects ?? 0} workspaces=${result?.scannedWorkspaces ?? 0} discovered=${result?.discovered ?? 0} imported=${result?.imported.length ?? 0} updated=${result?.updated.length ?? 0} skipped=${result?.skipped.length ?? 0} conflicts=${result?.conflicts.length ?? 0} warnings=${result?.warnings.length ?? 0}`,
-          );
         } catch (err) {
           handleCommandError(err);
         }
@@ -793,14 +757,6 @@ function requireSkillRef(skillRef: string | undefined): string {
     throw new Error("Skill reference is required unless --all is used.");
   }
   return skillRef;
-}
-
-function collectOptionValue(value: string, previous: string[]): string[] {
-  return [...previous, value];
-}
-
-function emptyToUndefined(values: string[] | undefined): string[] | undefined {
-  return values && values.length > 0 ? values : undefined;
 }
 
 function appendQueryParam(params: URLSearchParams, key: string, value: string | undefined): void {

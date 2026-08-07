@@ -620,7 +620,6 @@ function AdapterPickerList({
                       showAdapterTypeField={false}
                       sectionLayout="cards"
                       applyAdapterSchemaDefaults={false}
-                      requireExplicitExecutionEnvironment
                     />
                   </div>
                 )}
@@ -1091,8 +1090,6 @@ export function CompanyImport() {
         adapterConfig: configVals
           ? uiAdapter.buildAdapterConfig(configVals)
           : {},
-        defaultEnvironmentId:
-          configVals?.defaultEnvironmentId ?? "",
         skillChannel,
       };
       overrides[agent.slug] = override;

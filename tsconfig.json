@@ -3,7 +3,6 @@
   "files": [],
   "references": [
     { "path": "./packages/adapter-utils" },
-    { "path": "./packages/google-sheets-mcp-server" },
     { "path": "./packages/shared" },
     { "path": "./packages/db" },
     { "path": "./apps/server" },

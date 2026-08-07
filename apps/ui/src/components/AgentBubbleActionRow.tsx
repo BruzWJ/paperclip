@@ -28,10 +28,8 @@ export function agentBubbleDateLabel(date: Date | string | undefined): string {
 /**
  * Shared agent-bubble action row — copy · timestamp · ⋯ menu.
  *
- * Rendered below every agent bubble so the task thread (`IssueChatThread`) and
- * the conference room (`BoardChat`) speak the same bubble language (PAP-95 /
- * PAP-105). Each surface supplies its own copy text, timestamp label, and any
- * extra overflow-menu items (e.g. stop-run / view-run on the task side).
+ * Rendered below every agent bubble. Each caller supplies its own copy text,
+ * timestamp label, and any extra overflow-menu items.
  */
 export function AgentBubbleActionRow({
   copyText,

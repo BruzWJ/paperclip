@@ -29,10 +29,6 @@ const multilingualMocks = vi.hoisted(() => ({
   workProducts: { listForIssue: vi.fn() },
   goals: { getById: vi.fn(), getDefaultCompanyGoal: vi.fn() },
   executionWorkspaces: { getCurrentForIssue: vi.fn() },
-  externalObjects: {
-    syncCommentSafely: vi.fn(),
-    syncDocumentSafely: vi.fn(),
-  },
   ordinaryIssues: {
     create: vi.fn(),
     userComment: vi.fn(),
@@ -65,16 +61,6 @@ vi.mock("../services/execution-workspaces.js", async () => {
   return {
     ...actual,
     executionWorkspaceService: () => multilingualMocks.executionWorkspaces,
-  };
-});
-
-vi.mock("../services/external-objects.js", async () => {
-  const actual = await vi.importActual<typeof import("../services/external-objects.js")>(
-    "../services/external-objects.js",
-  );
-  return {
-    ...actual,
-    externalObjectService: () => multilingualMocks.externalObjects,
   };
 });
 
@@ -209,8 +195,6 @@ describe("multilingual issue routes", () => {
     multilingualMocks.goals.getById.mockResolvedValue(null);
     multilingualMocks.goals.getDefaultCompanyGoal.mockResolvedValue(null);
     multilingualMocks.executionWorkspaces.getCurrentForIssue.mockResolvedValue(null);
-    multilingualMocks.externalObjects.syncCommentSafely.mockResolvedValue(undefined);
-    multilingualMocks.externalObjects.syncDocumentSafely.mockResolvedValue(undefined);
     multilingualMocks.ordinaryIssues.create.mockResolvedValue({
       issue,
       ref: { id: randomUUID() },
@@ -247,12 +231,12 @@ describe("multilingual issue routes", () => {
   });
 
   it("reads the multilingual title and immutable request unchanged", async () => {
-    const harness = createMockDb({ select: [[]] });
+    const harness = createMockDb();
     const response = await request(createApp(harness)).get("/api/issues/LNG-1");
     expect(response.status, JSON.stringify(response.body)).toBe(200);
     expect(response.body.title).toBe(title);
     expect(response.body.request).toBe(issueRequest);
-    expect(harness.remaining("select")).toBe(0);
+    expect(harness.calls).toEqual([]);
   });
 
   it("finds the issue by Chinese search text", async () => {

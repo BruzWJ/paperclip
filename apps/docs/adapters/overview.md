@@ -26,7 +26,7 @@ and its temporary runtime state.
 For each prompt segment, Paperclip's worker:
 
 1. resolves an immutable adapter revision and execution target;
-2. creates an ephemeral, single-prompt ACPX runtime in that workspace;
+2. creates an ephemeral, single-prompt ACPX runtime in that run directory;
 3. asks ACPX to create a provider backend session or perform the exact frozen
    resume operation;
 4. applies every persisted generic session configuration option through ACPX;

@@ -19,7 +19,9 @@ function isValidTimestamp(value: string | null | undefined): value is string {
 }
 
 function restartTimestamp(health: HealthStatus | undefined): string | null {
-  return health?.devServer?.lastRestartAt ?? health?.serverInfo?.processStartedAt ?? null;
+  return (
+    health?.devServer?.lastRestartAt ?? health?.serverInfo?.processStartedAt ?? null
+  );
 }
 
 function commitLabel(health: HealthStatus | undefined): string {
@@ -30,21 +32,22 @@ function commitLabel(health: HealthStatus | undefined): string {
 
 function localChangesLabel(health: HealthStatus | undefined): string {
   const git = health?.serverInfo?.git;
-  if (!git?.available) return "Unavailable";
-  const localChanges = git.localChanges;
-  if (!localChanges) return "Change status unavailable";
-  if (!localChanges.available) return "Change status unavailable";
-  if (!localChanges.hasLocalChanges) return "Clean checkout";
+  if (!git?.available || !git.localChanges?.available) {
+    return "Change status unavailable";
+  }
+  if (!git.localChanges.hasLocalChanges) return "Clean checkout";
 
   const parts = [
-    [localChanges.stagedFileCount, "staged"],
-    [localChanges.unstagedFileCount, "unstaged"],
-    [localChanges.untrackedFileCount, "untracked"],
+    [git.localChanges.stagedFileCount, "staged"],
+    [git.localChanges.unstagedFileCount, "unstaged"],
+    [git.localChanges.untrackedFileCount, "untracked"],
   ]
     .filter(([count]) => Number(count) > 0)
     .map(([count, label]) => `${count} ${label}`);
 
-  return parts.length > 0 ? `Local changes present (${parts.join(", ")})` : "Local changes present";
+  return parts.length > 0
+    ? `Local changes present (${parts.join(", ")})`
+    : "Local changes present";
 }
 
 function ServerInfoRow({
@@ -64,13 +67,20 @@ function ServerInfoRow({
         <Icon className="size-4" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium text-foreground">{label}</span>
+        <span className="block text-sm font-medium text-foreground">
+          {label}
+        </span>
         {dateTime ? (
-          <time dateTime={dateTime} className="block break-words text-xs text-muted-foreground">
+          <time
+            dateTime={dateTime}
+            className="block break-words text-xs text-muted-foreground"
+          >
             {value}
           </time>
         ) : (
-          <span className="block break-words text-xs text-muted-foreground">{value}</span>
+          <span className="block break-words text-xs text-muted-foreground">
+            {value}
+          </span>
         )}
       </span>
     </div>
@@ -78,19 +88,18 @@ function ServerInfoRow({
 }
 
 export function SidebarServerInfo() {
-  const experimentalQuery = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
+  const generalQuery = useQuery({
+    queryKey: queryKeys.instance.generalSettings,
+    queryFn: () => instanceSettingsApi.getGeneral(),
   });
-  const enabled = experimentalQuery.data?.enableServerInfoDebugView === true;
+  const enabled = generalQuery.data?.enableServerInfoDebugView === true;
   const healthQuery = useQuery({
     queryKey: queryKeys.health,
     queryFn: () => healthApi.get(),
     enabled,
     // The drawer only mounts while the account popover is open, so it cannot
-    // rely on Layout's background health poll (which is itself gated on
-    // devServer.enabled). Always refetch on open and poll while open so a server
-    // restart is reflected without leaving stale boot-time serverInfo on screen.
+    // rely on Layout's background health poll. Always refetch on open and poll
+    // while open so a server restart is reflected without stale boot details.
     refetchOnMount: "always",
     refetchInterval: (query) => {
       const data = query.state.data as HealthStatus | undefined;
@@ -130,10 +139,18 @@ export function SidebarServerInfo() {
         icon={Clock3}
         label="Last restarted"
         value={lastRestartedLabel}
-        dateTime={!healthUnavailable && !isWaitingForHealth && restartedAtIsValid ? restartedAt : null}
+        dateTime={
+          !healthUnavailable && !isWaitingForHealth && restartedAtIsValid
+            ? restartedAt
+            : null
+        }
       />
       <ServerInfoRow icon={GitCommit} label="Running commit" value={commit} />
-      <ServerInfoRow icon={FileDiff} label="Checkout state" value={localChanges} />
+      <ServerInfoRow
+        icon={FileDiff}
+        label="Checkout state"
+        value={localChanges}
+      />
     </div>
   );
 }

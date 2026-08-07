@@ -111,8 +111,6 @@ function readinessScope(
     agentId: binding.agentId,
     adapterConfigRevisionId: binding.adapterConfigRevisionId,
     environmentId: binding.environmentId,
-    executionWorkspaceBindingId:
-      binding.executionWorkspaceBindingId,
   };
 }
 

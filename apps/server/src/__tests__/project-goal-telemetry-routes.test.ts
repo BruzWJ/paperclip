@@ -44,6 +44,7 @@ vi.mock("../services/index.js", () => ({
   logActivity: mockLogActivity,
   projectService: () => mockProjectService,
   secretService: () => mockSecretService,
+  toPublicProject: <T>(project: T) => project,
   workspaceOperationService: () => mockWorkspaceOperationService,
 }));
 
@@ -64,6 +65,7 @@ function registerModuleMocks() {
     logActivity: mockLogActivity,
     projectService: () => mockProjectService,
     secretService: () => mockSecretService,
+    toPublicProject: <T>(project: T) => project,
     workspaceOperationService: () => mockWorkspaceOperationService,
   }));
 

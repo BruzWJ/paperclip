@@ -1,7 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import {
   agents,
-  environments,
   invites,
   joinRequests,
   type Db,
@@ -14,7 +13,6 @@ import {
   type EnvironmentDriver,
 } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
-import { assertEnvironmentSelectionForCompany } from "../routes/environment-selection.js";
 import { accessService } from "./access.js";
 import { createAgentAdapterConfigurationService } from "./agent-adapter-config-revisions.js";
 import { deduplicateAgentName } from "./agents.js";
@@ -40,7 +38,6 @@ export interface JoinRequestApprovalInput {
     userId: string;
     authorization: Extract<AuthorizationActor, { type: "board" }>;
   };
-  defaultEnvironmentId?: string | null;
   skillChannel?: CompanySkillChannel | null;
 }
 
@@ -59,7 +56,7 @@ async function resolveCurrentAcpxEnvironmentDrivers(
 ): Promise<readonly EnvironmentDriver[]> {
   const registry = await import("../adapters/registry.js");
   // A join request can outlive the board catalog page. Refresh before the
-  // environment is selected so this approval cannot revive a removed ACPX
+  // local runtime is admitted so this approval cannot revive a removed ACPX
   // transport from a stale Paperclip snapshot.
   await registry.refreshAcpxAdapters();
   const adapter = registry.findServerAdapter(adapterType);
@@ -108,19 +105,7 @@ export function createJoinRequestApprovalService(
       .then((rows) => rows[0] ?? null);
     if (!joinRequest) throw notFound("Join request not found");
 
-    if (joinRequest.status === "approved") {
-      if (
-        joinRequest.requestType === "agent" &&
-        input.defaultEnvironmentId !== undefined &&
-        input.defaultEnvironmentId !== null &&
-        input.defaultEnvironmentId !== joinRequest.approvedEnvironmentId
-      ) {
-        throw conflict(
-          "Join request was already approved with a different execution environment",
-        );
-      }
-      return joinRequest;
-    }
+    if (joinRequest.status === "approved") return joinRequest;
     if (joinRequest.status !== "pending_approval") {
       throw conflict("Join request is not pending");
     }
@@ -143,7 +128,6 @@ export function createJoinRequestApprovalService(
 
     const access = accessService(txDb);
     let createdAgentId: string | null = null;
-    let approvedEnvironmentId: string | null = null;
     let createdAgentAdapterConfigRevisionId: string | null = null;
 
     if (joinRequest.requestType === "human") {
@@ -189,12 +173,6 @@ export function createJoinRequestApprovalService(
           "Agent join request is missing explicit adapter configuration",
         );
       }
-      if (!input.defaultEnvironmentId) {
-        throw unprocessable(
-          "Agent join approval requires an explicit execution environment",
-          { code: "agent_join_environment_required" },
-        );
-      }
       if (!input.skillChannel) {
         throw unprocessable(
           "Agent join approval requires an explicit company skill channel",
@@ -205,21 +183,19 @@ export function createJoinRequestApprovalService(
       const allowedDrivers = await resolveAdapterEnvironmentDrivers(
         joinRequest.adapterType,
       );
-      await assertEnvironmentSelectionForCompany(
-        environmentService(txDb),
-        input.companyId,
-        input.defaultEnvironmentId,
-        {
-          allowedDrivers: [...allowedDrivers],
-        },
-      );
-      const environment = await tx
-        .select()
-        .from(environments)
-        .where(eq(environments.id, input.defaultEnvironmentId))
-        .for("update")
-        .then((rows) => rows[0] ?? null);
-      if (!environment || environment.status !== "active") {
+      if (!allowedDrivers.includes("local")) {
+        throw unprocessable(
+          `Agent runtime "${joinRequest.adapterType}" does not support the required local execution environment.`,
+          {
+            code: "agent_execution_environment_unsupported",
+            adapterType: joinRequest.adapterType,
+            driver: "local",
+          },
+        );
+      }
+      const internalEnvironment =
+        await environmentService(txDb).ensureLocalEnvironment();
+      if (internalEnvironment.status !== "active") {
         throw unprocessable(
           "Agent execution environment must exist and be active",
           { code: "agent_execution_environment_unavailable" },
@@ -264,7 +240,6 @@ export function createJoinRequestApprovalService(
           mentionReachGrants: Object.fromEntries(
             AGENT_MENTION_REACH_GRANT_KEYS.map((key) => [key, false]),
           ),
-          companyToolIds: [],
         },
       });
       const adapterConfigurations =
@@ -275,7 +250,6 @@ export function createJoinRequestApprovalService(
         configuration: {
           adapterType: joinRequest.adapterType,
           adapterConfig: joinRequest.agentDefaultsPayload,
-          defaultEnvironmentId: input.defaultEnvironmentId,
           runtimeConfig: {},
           companySkillPins: [],
           skillChannel: input.skillChannel,
@@ -302,7 +276,6 @@ export function createJoinRequestApprovalService(
         input.actor.userId,
       );
       createdAgentId = runtimeResult.agentId;
-      approvedEnvironmentId = environment.id;
       createdAgentAdapterConfigRevisionId = adapterResult.revision.id;
     }
 
@@ -314,7 +287,6 @@ export function createJoinRequestApprovalService(
         approvedByUserId: input.actor.userId,
         approvedAt: now,
         createdAgentId,
-        approvedEnvironmentId,
         createdAgentAdapterConfigRevisionId,
         updatedAt: now,
       })
@@ -341,7 +313,6 @@ export function createJoinRequestApprovalService(
       details: {
         requestType: joinRequest.requestType,
         createdAgentId,
-        approvedEnvironmentId,
         createdAgentAdapterConfigRevisionId,
       },
     });

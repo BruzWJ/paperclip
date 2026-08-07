@@ -359,7 +359,6 @@ export const issueExecutionRefs = pgTable(
         'issue_request',
         'issue_reassignment',
         'issue_reopen',
-        'board_chat',
         'human_comment_mention',
         'routine_dispatch',
         'issue_update',
@@ -749,7 +748,6 @@ export const issueExecutionWorkspaceBindings = pgTable(
     repositoryLocator: text("repository_locator"),
     repositoryRef: text("repository_ref"),
     pullRequestSelector: text("pull_request_selector"),
-    environmentSelector: text("environment_selector"),
     boundByAgentId: uuid("bound_by_agent_id").references(() => agents.id, {
       onDelete: "set null",
     }),

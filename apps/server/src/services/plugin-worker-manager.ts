@@ -121,7 +121,6 @@ function manifestWorkerMethodRules(
   const declaresJobs = (manifest.jobs?.length ?? 0) > 0;
   const declaresWebhooks = (manifest.webhooks?.length ?? 0) > 0;
   const declaresApiRoutes = (manifest.apiRoutes?.length ?? 0) > 0;
-  const declaresObjectReferences = (manifest.objectReferences?.length ?? 0) > 0;
   const environmentDrivers = manifest.environmentDrivers ?? [];
   const declaresEnvironmentDrivers = environmentDrivers.length > 0;
   const supportsReusableLeases = environmentDrivers.some(
@@ -178,18 +177,6 @@ function manifestWorkerMethodRules(
       declared: declaresApiRoutes,
       requiredMessage: 'Manifest API route declarations require the worker to advertise "handleApiRequest"',
       undeclaredMessage: 'Worker advertised "handleApiRequest" without manifest API route declarations',
-    },
-    {
-      method: "detectExternalObjects",
-      declared: declaresObjectReferences,
-      requiredMessage: 'Manifest object-reference declarations require the worker to advertise "detectExternalObjects"',
-      undeclaredMessage: 'Worker advertised "detectExternalObjects" without manifest object-reference declarations',
-    },
-    {
-      method: "resolveExternalObject",
-      declared: declaresObjectReferences,
-      requiredMessage: 'Manifest object-reference declarations require the worker to advertise "resolveExternalObject"',
-      undeclaredMessage: 'Worker advertised "resolveExternalObject" without manifest object-reference declarations',
     },
     ...([
       "environmentValidateConfig",

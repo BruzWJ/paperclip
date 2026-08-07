@@ -34,7 +34,6 @@ import {
   type Issue,
 } from "@paperclipai/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
-import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
 
 const DASHBOARD_ACTIVITY_LIMIT = 10;
 const ZERO_AMOUNT = parseMoneyAmount("0");
@@ -319,8 +318,6 @@ export function Dashboard() {
               }
             />
           </div>
-
-          <SmokeLabDashboardCard companyId={selectedCompanyId!} />
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <ChartCard title="Run Activity" subtitle="Last 14 days">

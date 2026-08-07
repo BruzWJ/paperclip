@@ -113,22 +113,18 @@ describe.sequential("teams catalog explicit adapter contract", () => {
 
   it("imports the ordinary core team with exactly the operator's adapter choices", async () => {
     const companyId = randomUUID();
-    const environmentId = randomUUID();
     const adapterOverrides = {
       "company-lead": {
         adapterType: "codex",
         adapterConfig: { model: "gpt-5.6" },
-        defaultEnvironmentId: environmentId,
       },
       "engineering-lead": {
         adapterType: "codex",
         adapterConfig: { model: "gpt-5.6" },
-        defaultEnvironmentId: environmentId,
       },
       qa: {
         adapterType: "codex",
         adapterConfig: { model: "gpt-5.6" },
-        defaultEnvironmentId: environmentId,
       },
     };
     mocks.importBundle.mockResolvedValue({

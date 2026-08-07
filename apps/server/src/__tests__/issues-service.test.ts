@@ -15,26 +15,18 @@ import {
   parseStatusFilter,
   runWorkspaceIsFinalized,
 } from "../services/issues.js";
-import {
-  WORKSPACE_WORKTREE_REQUIRES_PROJECT_CODE,
-  WORKSPACE_WORKTREE_REQUIRES_PROJECT_MESSAGE,
-  WORKSPACE_WORKTREE_REQUIRES_PROJECT_REMEDIATION,
-} from "../services/execution-workspace-policy.js";
 import { createMockDb } from "./helpers/mock-db.js";
 
 const dependencies = vi.hoisted(() => ({
-  getExperimental: vi.fn(),
   getGeneral: vi.fn(),
   defaultGoal: vi.fn(),
   invokableOwner: vi.fn(),
-  finalizeSummarySlots: vi.fn(),
   syncIssue: vi.fn(),
   currentOwnerRunLinkages: vi.fn(),
 }));
 
 vi.mock("../services/instance-settings.js", () => ({
   instanceSettingsService: () => ({
-    getExperimental: dependencies.getExperimental,
     getGeneral: dependencies.getGeneral,
   }),
 }));
@@ -48,10 +40,6 @@ vi.mock("../services/agent-invokability.js", async () => ({
     "../services/agent-invokability.js",
   ),
   resolveInvokableIssueOwnerFromDb: dependencies.invokableOwner,
-}));
-
-vi.mock("../services/summary-slot-finalization.js", () => ({
-  finalizeSummarySlotsForTerminalIssue: dependencies.finalizeSummarySlots,
 }));
 
 vi.mock("../services/issue-references.js", () => ({
@@ -84,7 +72,6 @@ function issueRow(overrides: Record<string, unknown> = {}): Record<string, unkno
     parentId: null,
     parentOwnershipEpoch: null,
     projectId: null,
-    projectWorkspaceId: null,
     goalId,
     ownerKind: "user",
     ownerAgentId: null,
@@ -103,8 +90,6 @@ function issueRow(overrides: Record<string, unknown> = {}): Record<string, unkno
     creatorRoutineDispatchId: null,
     creatorSystemSourceKind: null,
     creatorSystemSourceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
     originKind: null,
     originId: null,
     hiddenAt: null,
@@ -126,11 +111,9 @@ function setValues(calls: ReturnType<typeof createMockDb>["calls"]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  dependencies.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
   dependencies.getGeneral.mockResolvedValue({ censorUsernameInLogs: false });
   dependencies.defaultGoal.mockResolvedValue({ id: goalId });
   dependencies.invokableOwner.mockResolvedValue({ owner: {}, revision: {}, revisionId: "revision-1" });
-  dependencies.finalizeSummarySlots.mockResolvedValue(undefined);
   dependencies.syncIssue.mockResolvedValue(undefined);
   dependencies.currentOwnerRunLinkages.mockResolvedValue(new Map());
 });
@@ -284,29 +267,7 @@ describe("issue ownership and lifecycle mutation", () => {
     expect(harness.calls.some((call) => call.operation === "update")).toBe(false);
   });
 
-  it("fails a projectless pinned worktree mutation with the canonical remediation", async () => {
-    dependencies.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: true });
-    const existing = issueRow({ projectId: null, projectWorkspaceId: null });
-    const harness = createMockDb({ select: [[existing], []] });
-    const service = issueService(harness.db);
-
-    await expect(service.updateControlState(issueId, {
-      executionWorkspaceSettings: {
-        mode: "isolated_workspace",
-        workspaceStrategy: { type: "git_worktree" },
-      },
-    })).rejects.toMatchObject({
-      status: 422,
-      message: WORKSPACE_WORKTREE_REQUIRES_PROJECT_MESSAGE,
-      details: {
-        code: WORKSPACE_WORKTREE_REQUIRES_PROJECT_CODE,
-        remediation: WORKSPACE_WORKTREE_REQUIRES_PROJECT_REMEDIATION,
-      },
-    });
-    expect(harness.calls.some((call) => call.operation === "update")).toBe(false);
-  });
-
-  it("applies terminal lifecycle timestamps, clamps request depth, and finalizes summary slots", async () => {
+  it("applies terminal lifecycle timestamps and clamps request depth", async () => {
     const existing = issueRow();
     const updated = issueRow({
       boardPresentationStatus: "done",
@@ -316,7 +277,7 @@ describe("issue ownership and lifecycle mutation", () => {
       updatedAt: now,
     });
     const harness = createMockDb({
-      select: [[existing], [], [], [], []],
+      select: [[existing], [], []],
       update: [[updated]],
     });
     const service = issueService(harness.db);
@@ -338,10 +299,6 @@ describe("issue ownership and lifecycle mutation", () => {
       goalId,
     });
     expect(setValues(harness.calls)[0]?.completedAt).toBeInstanceOf(Date);
-    expect(dependencies.finalizeSummarySlots).toHaveBeenCalledWith(
-      harness.db,
-      updated,
-    );
     expect(harness.remaining("select")).toBe(0);
     expect(harness.remaining("update")).toBe(0);
   });
@@ -481,7 +438,6 @@ describe("issue list, lookup, and mentions", () => {
     }]]));
     const harness = createMockDb({ select: [
       [row],
-      [],
       [],
       [{ companyId, issueId, ownershipEpoch: 1, executionWorkspaceId: workspaceId }],
       [{ issueId, latestCommentAt: lastCommentAt }],

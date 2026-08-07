@@ -83,7 +83,6 @@ export function buildExecutionPolicy(input: {
 }): IssueExecutionPolicy | null {
   const mode = input.existingPolicy?.mode ?? "normal";
   const stages: IssueExecutionPolicy["stages"] = [];
-  const monitor = input.existingPolicy?.monitor ?? null;
 
   const existingReviewStage = input.existingPolicy?.stages.find((stage) => stage.type === "review");
   const reviewParticipants = mergeParticipants(existingReviewStage?.participants, input.reviewerValues);
@@ -107,12 +106,11 @@ export function buildExecutionPolicy(input: {
     });
   }
 
-  if (stages.length === 0 && !monitor) return null;
+  if (stages.length === 0) return null;
 
   return {
     mode,
     commentRequired: true,
     stages,
-    ...(monitor ? { monitor } : {}),
   };
 }

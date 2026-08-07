@@ -38,7 +38,7 @@ export const agentAdapterConfigRevisions = pgTable(
       .$type<AdapterImplementationIdentity>()
       .notNull(),
     adapterConfigSchemaVersion: text("adapter_config_schema_version").notNull(),
-    defaultEnvironmentId: uuid("default_environment_id")
+    executionEnvironmentId: uuid("execution_environment_id")
       .notNull()
       .references(() => environments.id, { onDelete: "restrict" }),
     executionTargetDriver: text("execution_target_driver")
@@ -90,7 +90,7 @@ export const agentAdapterConfigRevisions = pgTable(
       table.createdAt,
     ),
     index("agent_adapter_config_revisions_environment_idx").on(
-      table.defaultEnvironmentId,
+      table.executionEnvironmentId,
     ),
     check(
       "agent_adapter_config_revisions_execution_target_driver_check",
@@ -180,12 +180,12 @@ export const agentAdapterConfigRevisions = pgTable(
         )
         and jsonb_typeof(${table.acpConfiguration} -> 'executionTargetSelector') = 'object'
         and (${table.acpConfiguration} -> 'executionTargetSelector') ?& array[
-          'defaultEnvironmentId', 'executionTargetDriver', 'executionTargetDigest'
+          'environmentId', 'executionTargetDriver', 'executionTargetDigest'
         ]::text[]
         and (${table.acpConfiguration} -> 'executionTargetSelector') - array[
-          'defaultEnvironmentId', 'executionTargetDriver', 'executionTargetDigest'
+          'environmentId', 'executionTargetDriver', 'executionTargetDigest'
         ]::text[] = '{}'::jsonb
-        and ${table.acpConfiguration} #>> '{executionTargetSelector,defaultEnvironmentId}' = ${table.defaultEnvironmentId}::text
+        and ${table.acpConfiguration} #>> '{executionTargetSelector,environmentId}' = ${table.executionEnvironmentId}::text
         and ${table.acpConfiguration} #>> '{executionTargetSelector,executionTargetDriver}' = ${table.executionTargetDriver}
         and ${table.acpConfiguration} #>> '{executionTargetSelector,executionTargetDigest}' = ${table.executionTargetDigest}
         and ${table.executionTargetDigest} ~ '^[0-9a-f]{64}$'

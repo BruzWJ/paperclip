@@ -22,7 +22,7 @@ const configuration: AgentAdapterAcpConfiguration = {
     },
   },
   executionTargetSelector: {
-    defaultEnvironmentId: environmentId,
+    environmentId,
     executionTargetDriver: "local",
     executionTargetDigest: targetDigest,
   },

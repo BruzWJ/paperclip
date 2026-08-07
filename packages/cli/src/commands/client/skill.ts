@@ -57,7 +57,6 @@ export function registerSkillCommands(program: Command): void {
 
   addCompanyPost(skill, "create", "Create a local company skill", "skills", true);
   addCompanyPost(skill, "import", "Import company skills from a source", "skills/import", true);
-  addCompanyPost(skill, "scan-projects", "Scan project workspaces for company skills", "skills/scan-projects", true);
 
   addCommonClientOptions(
     skill

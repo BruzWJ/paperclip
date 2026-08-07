@@ -33,7 +33,6 @@ function agentRow(status = "idle"): AgentRow {
     adapterConfig: null,
     currentAdapterConfigRevisionId: null,
     runtimeConfig: {},
-    defaultEnvironmentId: null,
     budgetMonthlyAmount: parseMoneyAmount("0"),
     pauseReason: null,
     pausedAt: null,

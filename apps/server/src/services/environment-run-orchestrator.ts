@@ -314,32 +314,23 @@ export function environmentRunOrchestrator(
         "Provider execution requires its exact persisted issue execution workspace binding.",
       );
     }
-    const strategy =
-      workspace.strategyType === "git_worktree"
-        ? "git_worktree"
-        : "project_primary";
+    const executionWorkspace: RealizedExecutionWorkspace = {
+      baseCwd: binding.absoluteCwd,
+      source: "project_primary",
+      projectId: workspace.projectId,
+      workspaceId: workspace.projectWorkspaceId,
+      repoUrl: workspace.repoUrl,
+      repoRef: workspace.baseRef,
+      strategy: "project_primary",
+      cwd: binding.absoluteCwd,
+      branchName: null,
+      worktreePath: null,
+      warnings: [],
+      created: false,
+    };
     return {
       persistedExecutionWorkspace: workspace,
-      executionWorkspace: {
-        baseCwd: binding.absoluteCwd,
-        source:
-          workspace.mode === "shared_workspace"
-            ? "project_primary"
-            : "issue_execution",
-        projectId: workspace.projectId,
-        workspaceId: workspace.projectWorkspaceId,
-        repoUrl: workspace.repoUrl,
-        repoRef: workspace.baseRef,
-        strategy,
-        cwd: binding.absoluteCwd,
-        branchName: workspace.branchName,
-        worktreePath:
-          strategy === "git_worktree"
-            ? workspace.providerRef ?? binding.absoluteCwd
-            : null,
-        warnings: [],
-        created: false,
-      },
+      executionWorkspace,
     };
   }
 

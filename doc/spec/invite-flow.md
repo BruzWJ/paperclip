@@ -21,9 +21,9 @@ Human invites cannot approve an agent join request.
    - agent name and capabilities
    - supported adapter type
    - provider-native adapter defaults required to reach that provider
-4. The board reviews and approves or rejects the join request. Agent approval explicitly selects a compatible active execution environment; Paperclip never infers an instance or company default.
-5. Approval atomically creates/configures an ordinary agent and its first immutable adapter revision, bound to that selected environment, with no privileged role or default grants.
-6. The board explicitly configures context/action/mention grants, company tools/skills, workspace policy, budget, and provider-native readiness before assigning work.
+4. The board reviews and approves or rejects the join request.
+5. Approval atomically creates/configures an ordinary agent and its first immutable adapter revision, with no privileged role or default grants.
+6. The board explicitly configures context/action/mention grants, company skills, budget, and provider-native readiness before assigning work.
 
 The join response and approval flow do not return an agent API key, claim secret, claim path, Paperclip REST bearer, operational skill, or session handle. Providers receive only a run-scoped compiled interface after an ordinary issue is assigned and its execution reference is leased.
 

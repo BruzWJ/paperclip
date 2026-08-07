@@ -18,13 +18,11 @@ function parseAssignment(
 export function parseExplicitAdapterOverrides(
   typeValues: string[] | undefined,
   configValues: string[] | undefined,
-  defaultEnvironmentIdValues?: string[] | undefined,
   skillChannelValues?: string[] | undefined,
 ): Record<string, CompanyPortabilityAdapterOverride> | undefined {
   if (
     (!typeValues || typeValues.length === 0) &&
     (!configValues || configValues.length === 0) &&
-    (!defaultEnvironmentIdValues || defaultEnvironmentIdValues.length === 0) &&
     (!skillChannelValues || skillChannelValues.length === 0)
   ) {
     return undefined;
@@ -35,7 +33,6 @@ export function parseExplicitAdapterOverrides(
     {
       adapterType: string;
       adapterConfig?: Record<string, unknown>;
-      defaultEnvironmentId?: string;
       skillChannel?: CompanyPortabilityAdapterOverride["skillChannel"];
     }
   > = {};
@@ -108,39 +105,6 @@ export function parseExplicitAdapterOverrides(
     );
   }
 
-  const seenEnvironmentSlugs = new Set<string>();
-  for (const raw of defaultEnvironmentIdValues ?? []) {
-    const [slug, defaultEnvironmentId] = parseAssignment(
-      raw,
-      "--default-environment-id",
-      "slug=id",
-    );
-    if (
-      !slug ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        defaultEnvironmentId,
-      )
-    ) {
-      throw new Error(
-        `Invalid --default-environment-id "${raw}". Use slug=<environment UUID>.`,
-      );
-    }
-    if (seenEnvironmentSlugs.has(slug)) {
-      throw new Error(
-        `Duplicate --default-environment-id for agent slug "${slug}".`,
-      );
-    }
-    seenEnvironmentSlugs.add(slug);
-
-    const override = result[slug];
-    if (!override) {
-      throw new Error(
-        `--default-environment-id for "${slug}" requires a matching --adapter-override.`,
-      );
-    }
-    override.defaultEnvironmentId = defaultEnvironmentId;
-  }
-
   const seenSkillChannelSlugs = new Set<string>();
   for (const raw of skillChannelValues ?? []) {
     const [slug, rawSkillChannel] = parseAssignment(
@@ -181,11 +145,6 @@ export function parseExplicitAdapterOverrides(
     if (!override.adapterConfig) {
       throw new Error(
         `--adapter-override for "${slug}" requires a matching --adapter-config.`,
-      );
-    }
-    if (!override.defaultEnvironmentId) {
-      throw new Error(
-        `--adapter-override for "${slug}" requires a matching --default-environment-id.`,
       );
     }
     if (!override.skillChannel) {

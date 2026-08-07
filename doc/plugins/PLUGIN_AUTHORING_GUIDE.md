@@ -12,9 +12,6 @@ organizes that contract as an authoring workflow.
 - Plugin UI runs as same-origin JavaScript inside the main Paperclip app.
 - Worker-side host APIs are capability-gated.
 - Plugin UI is not sandboxed by manifest capabilities.
-- External object reference providers are trusted-install only in the MVP.
-  Capabilities gate provider detection/resolution and host API calls, but they
-  are not a sandbox boundary for untrusted marketplace code.
 - Plugin database migrations are restricted to a host-derived plugin namespace.
 - Plugin-managed surfaces are first-class records (agents, projects, routines, and
   skills) rather than private plugin-only state.
@@ -23,29 +20,6 @@ organizes that contract as an authoring workflow.
 - The host provides a small shared React component kit through
   `@paperclipai/plugin-sdk/ui`; use it for common Paperclip controls before
   building custom versions.
-
-## External object reference providers
-
-Plugins can contribute provider-neutral object reference detection and status
-resolution for URLs and future explicit links. Declare `objectReferences` in the
-manifest and add at least `external.objects.detect` and `external.objects.read`.
-
-```ts
-objectReferences: [
-  {
-    providerKey: "mocktracker",
-    displayName: "Mock Tracker",
-    objectTypes: ["ticket"],
-    urlPatterns: ["https://mock.example/tickets/:id"],
-  },
-],
-```
-
-Implement `onDetectExternalObjects()` in the worker to recognize sanitized URL
-candidates and return provider-stable identities. Implement
-`onResolveExternalObject()` to return normalized board-safe status metadata.
-Paperclip owns inline markdown rendering; plugins must not return React, HTML,
-or `dangerouslySetInnerHTML` content for inline references.
 
 ## Scaffold a plugin
 
@@ -92,7 +66,7 @@ Worker:
 - scoped state and plugin-owned entities
 - database namespace via `ctx.db`
 - scoped JSON API routes declared with `apiRoutes`
-- projects, project/execution workspaces, and plugin-managed projects
+- projects and plugin-managed projects
 - companies
 - issues, comments, namespaced `plugin:<pluginKey>` origins, blocker relations, and callback-bound ordinary-issue creation
 - agents and plugin-managed agents
@@ -103,8 +77,8 @@ Worker:
 - data/actions
 - agent tools
 
-Manifest-backed worker handlers also cover webhooks, environment drivers,
-external-object detection/resolution, and blocking before-prompt observation.
+Manifest-backed worker handlers also cover webhooks and blocking before-prompt
+observation.
 UI launchers and slots are declared under `manifest.ui` and run through the
 separate browser SDK.
 
@@ -349,8 +323,7 @@ Authoring rules:
   by managed agents. Reconcile skill declarations by `skillKey` and keep the
   declared skill markdown and files in sync with agent behavior.
 - Use managed projects to keep plugin-generated work organized and to give
-  project-scoped plugin UI a stable home. For filesystem access inside a
-  project, still resolve project workspaces through `ctx.projects`.
+  project-scoped plugin UI a stable home.
 - Keep defaults conservative. Managed declarations are suggestions owned by the
   plugin, but the resulting resources are normal Paperclip records that the
   operator can inspect, pause, and adjust.
@@ -363,7 +336,7 @@ broader than ordinary connector capabilities:
 
 | Capability | Generic host contract |
 | --- | --- |
-| `agent.tools.register` | Every declared tool is discovered from the ready installation manifest and compiled directly for all agents. The per-prompt DB compiler is the only tool catalog; no company-tool projection, per-agent selection, or in-memory registration is involved. |
+| `agent.tools.register` | Every declared tool is discovered from the ready installation manifest and compiled directly for all agents. The per-prompt DB compiler is the only tool catalog; no per-agent selection or in-memory registration is involved. |
 | `runtime.context.read` | An exact live tool handler can resolve its opaque `runContext` or ask whether a target issue is reachable under the agent's existing context-access matrix. |
 | `runtime.records.read` | The worker can read company-scoped provider-safe run/comment projections and snapshot-bounded canonical Session identity/messages/events. Mutable Session-head metadata is excluded; message deltas can key on creation or model-visible update sequence. |
 | `runtime.prompt.observe` | The worker receives a blocking `onBeforePrompt` callback for every exact provider prompt, may synchronize against the bounded canonical snapshot, and returns `null` or one non-empty `{ prependText }` contribution. Paperclip prepends successful contributions only to the outbound request; the canonical Session message remains unchanged. |
@@ -407,10 +380,9 @@ Mount surfaces currently wired in the host include:
 - `globalToolbarButton`
 - `toolbarButton`
 
-Entity-scoped mounts are exact: `detailTab` supports `project`, `issue`,
-`execution_workspace`, and `project_workspace`; `issueDetailView` supports
-only `issue`; `projectSidebarItem` supports only `project`; and
-`toolbarButton` supports `project`, `issue`, and `execution_workspace`.
+Entity-scoped mounts are exact: `detailTab` supports `project` and `issue`;
+`issueDetailView` supports only `issue`; `projectSidebarItem` supports only
+`project`; and `toolbarButton` supports `project` and `issue`.
 Launcher placements are limited to `sidebar`, `globalToolbarButton`, and
 `toolbarButton`; launcher toolbar buttons mount only for `project` and `issue`.
 Launcher component actions (`openModal`, `openDrawer`, and `openPopover`) require
@@ -483,10 +455,8 @@ export function PluginAssignmentControls({ companyId }: { companyId: string }) {
 
 ## File and path UI
 
-Plugin UI often needs to render a file tree, accept a folder path, or browse a
-project workspace. There are three different surfaces for that, and they map to
-different trust and data-flow boundaries. Pick the surface that matches the
-data the plugin actually has.
+Plugin UI often needs to render a file tree or accept a folder path. Pick the
+surface that matches the data the plugin actually has.
 
 ### When to use the shared `FileTree`
 
@@ -536,13 +506,6 @@ export function WikiTree() {
 }
 ```
 
-Good fit:
-
-- The example `plugin-file-browser-example` lazily fetches a directory's
-  children through a `loadFileList` action when `onToggleDir` fires, then
-  merges the children into the local tree state — letting the shared component
-  handle rendering and selection.
-
 Boundary rules:
 
 - Keep the prop surface serializable (`nodes`, `expandedPaths`, `checkedPaths`,
@@ -583,7 +546,7 @@ export const manifest = {
 
 Use this when:
 
-- The data lives outside any project workspace.
+- The data lives outside the plugin's configured folder.
 - Reads and writes need a company-scoped folder selection.
 - The operator picks the path once in plugin settings and the worker resolves
   files relative to that root.
@@ -593,29 +556,11 @@ filesystem — there is no such capability. The browser still goes through the
 worker via `getData` / `performAction`, and the worker only exposes paths it
 chose to expose.
 
-### When to keep worker-mediated project workspace browsing
-
-When the data lives inside an existing project workspace, keep the browsing
-flow worker-mediated:
-
-- The worker uses `ctx.projects.listWorkspaces()` to resolve the workspace
-  path, then reads its filesystem with normal Node APIs.
-- The plugin UI calls a `getData` handler for the root listing and an action
-  for lazy children, then renders them through `FileTree`.
-- The worker is the only side that touches the disk. The browser receives a
-  serializable tree and never sees raw absolute paths it can replay.
-
-The example `plugin-file-browser-example` is the reference for this pattern:
-the worker registers `fileList` (data) and `loadFileList` (action) over the
-same handler, and the UI uses the action for on-toggle directory loading so the
-shared `FileTree` stays the rendering surface.
-
 ### Mixing surfaces
 
-A single plugin can use more than one of these. The file browser example uses
-`ctx.projects.listWorkspaces`
-to pick a workspace and renders its on-disk tree through `FileTree` with lazy
-loading. Pick the boundary per data source, not per plugin.
+A single plugin can use more than one of these. A plugin can render its own
+serializable file tree through `FileTree` with lazy loading. Pick the boundary
+per data source, not per plugin.
 
 ## Company routes
 

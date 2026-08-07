@@ -163,7 +163,7 @@ Paperclip handles the hard orchestration details correctly.
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | **Atomic execution.**             | Issue ownership, execution admission, and budget enforcement are atomic, so no double-work or runaway spend.  |
 | **Issue-scoped sessions.**        | Continuity is isolated to one issue ownership epoch; no agent-wide conversational memory crosses issues.      |
-| **Compiled run tools.**           | Each run discovers only its explicitly granted issue actions, context reads, and selected company tools.      |
+| **Compiled run tools.**           | Each run discovers only its explicitly granted issue actions, context reads, and ready plugin tools.          |
 | **Governance with rollback.**     | Approval gates are enforced, config changes are revisioned, and bad changes can be rolled back safely.        |
 | **Explicit context control.**     | A nine-cell dial governs current-issue, sub-issue, and company issue visibility without implicit prompt prose. |
 | **Portable company templates.**   | Export/import orgs, agents, and skills with secret scrubbing and collision handling.                          |
@@ -231,7 +231,7 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 <tr>
 <td>
 
-**Workspaces & Runtime** — Project workspaces, isolated execution workspaces (git worktrees, operator branches), and runtime services (dev servers, preview URLs). Agents work in the right directory with the right context every time.
+**Run Runtime** — Internal execution workspaces and runtime services are resolved as part of each agent run, so agents receive the correct directory and context without exposing workspace administration as a board feature.
 
 </td>
 <td>
@@ -286,7 +286,7 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | **Not a chatbot.**           | Agents have jobs, not chat windows.                                                                                  |
 | **Not an agent framework.**  | We don't tell you how to build agents. We tell you how to run a company made of them.                                |
-| **Not a workflow builder.**  | No drag-and-drop pipelines. Paperclip models companies — with org charts, goals, budgets, and governance.            |
+| **Not a workflow builder.**  | Paperclip models companies — with org charts, goals, budgets, and governance.                                        |
 | **Not a prompt manager.**    | Agents bring their own prompts, models, and runtimes. Paperclip manages the organization they work in.               |
 | **Not a single-agent tool.** | This is for teams. If you have one agent, you probably don't need Paperclip. If you have twenty — you definitely do. |
 | **Not a code review tool.**  | Paperclip orchestrates work, not pull requests. Bring your own review process.                                       |
@@ -434,7 +434,7 @@ See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
 - ✅ Artifacts & Work Products
 - ✅ Deep Planning (planning mode, revisioned plans, plan approvals)
 - ✅ Enforced Outcomes (issue safeguards, system nudges, review gates)
-- ✅ MCP Tool Gateway & Apps (governed tool access)
+- ✅ Run-scoped tool capabilities with governed execution
 - ✅ Secrets Manager with per-agent access
 - ✅ Activity log & action attribution
 - ✅ Self-healing runs & automatic recovery
@@ -444,11 +444,8 @@ See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
 - ⚪ Work Queues
 - ⚪ Self-Organization
 - ⚪ Automatic Organizational Learning
-- ✅ Board Chat backed by ordinary issues
-- 🟡 Cloud deployments (multi-tenant isolation & local→cloud sync shipped)
 - ⚪ Desktop App
 - ⚪ Bring-your-own-ticket-system (Asana / Linear / Jira as on-ramps)
-- ⚪ Connected Apps (one-click integrations, e.g. Vercel)
 
 This is the short roadmap preview. See the full roadmap in [ROADMAP.md](ROADMAP.md).
 

@@ -33,7 +33,7 @@ and issue-execution monitoring.
 ### 2. Execution Worker and ACPX-backed Agents
 
 Paperclip retains one server + worker topology. The worker resolves an
-ACPX-discovered data-only adapter revision, realizes the issue workspace, and
+ACPX-discovered data-only adapter revision, resolves the issue run directory, and
 uses ACPX's public runtime for one bounded prompt. ACPX resolves and launches
 the compatible local CLI; Paperclip neither supervises a raw ACP subprocess nor
 acts as a provider-specific ACP wire client.

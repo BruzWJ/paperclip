@@ -156,7 +156,7 @@ export type IssueSessionExecutionSource =
         | PluginExecutionActor;
     }
   | {
-      sourceKind: "issue_reopen" | "board_chat" | "human_comment_mention";
+      sourceKind: "issue_reopen" | "human_comment_mention";
       actor: UserOrBoardExecutionActor;
     }
   | {
@@ -653,7 +653,6 @@ function assertExecutionSourceActorPair(
       }
       break;
     case "issue_reopen":
-    case "board_chat":
     case "human_comment_mention":
     case "human_active_run_steering":
       if (source.actor.kind === "user/board") return;
@@ -696,7 +695,6 @@ export function v2MessageKindForExecutionSource(
     case "issue_request":
     case "issue_reassignment":
     case "issue_reopen":
-    case "board_chat":
     case "human_comment_mention":
     case "routine_dispatch":
     case "human_active_run_steering":
@@ -818,8 +816,7 @@ function commentInsert(author: IssueSessionCommentAuthor, body: string) {
 function userProjectionKind(
   sourceKind: string,
 ): IssueSessionCommentProjectionInput["sourceKind"] {
-  return sourceKind === "board_chat" ||
-    sourceKind === "human_comment_mention" ||
+  return sourceKind === "human_comment_mention" ||
     sourceKind === "issue_update"
     ? "human_comment"
     : "issue_request";

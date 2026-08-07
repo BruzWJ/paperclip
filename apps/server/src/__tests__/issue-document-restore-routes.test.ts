@@ -35,7 +35,6 @@ const mockInstanceSettingsService = vi.hoisted(() => ({
       censorUsernameInLogs: false,
     },
   })),
-  getExperimental: vi.fn(async () => ({})),
   listCompanyIds: vi.fn(async () => [companyId]),
 }));
 const mockRoutineService = vi.hoisted(() => ({
@@ -242,7 +241,6 @@ describe("issue document revision routes", () => {
         censorUsernameInLogs: false,
       },
     });
-    mockInstanceSettingsService.getExperimental.mockResolvedValue({});
     mockInstanceSettingsService.listCompanyIds.mockResolvedValue([companyId]);
     mockRoutineService.syncRunStatusForIssue.mockResolvedValue(undefined);
     mockLogActivity.mockResolvedValue(undefined);

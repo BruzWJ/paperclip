@@ -24,8 +24,6 @@ import type {
   CompanyPortabilityAdapterOverride,
   CompanyPortabilityCollisionStrategy,
   CompanySkillChannel,
-  Environment,
-  EnvironmentDriver,
 } from "@paperclipai/shared";
 import type {
   AdapterConfigSchema,
@@ -33,7 +31,6 @@ import type {
 } from "@paperclipai/adapter-utils";
 import { teamCatalogApi } from "../api/teamCatalog";
 import { agentsApi } from "../api/agents";
-import { environmentsApi } from "../api/environments";
 import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
 import {
   adapterConfigSchemaFieldErrors,
@@ -884,7 +881,6 @@ export function materializeCatalogAdapterOverride(
   return {
     adapterType,
     adapterConfig: { ...(values.adapterSchemaValues ?? {}) },
-    defaultEnvironmentId: values.defaultEnvironmentId ?? "",
     skillChannel,
   };
 }
@@ -907,9 +903,6 @@ export function catalogAdapterConfigurationIsReady(input: {
   isLoading: boolean;
   schemaError: string | null;
   adapterConfig: Record<string, unknown>;
-  defaultEnvironmentId: string;
-  /** When supplied, reject stale selections that the server no longer admits. */
-  executionEnvironmentIds?: readonly string[];
 }): boolean {
   return Boolean(
     !input.isLoading
@@ -919,11 +912,6 @@ export function catalogAdapterConfigurationIsReady(input: {
       input.schema,
       input.adapterConfig,
     ).length === 0
-    && input.defaultEnvironmentId
-    && (
-      !input.executionEnvironmentIds
-      || input.executionEnvironmentIds.includes(input.defaultEnvironmentId)
-    )
   );
 }
 
@@ -1040,8 +1028,6 @@ export function useInstallTeamCatalogEntry({
             {
               adapterType: override.adapterType,
               adapterConfig: { ...override.adapterConfig },
-              defaultEnvironmentId:
-                override.defaultEnvironmentId,
               skillChannel: override.skillChannel,
             },
           ]),
@@ -1454,7 +1440,6 @@ function TeamInstallerDialog({
 
             {currentStep === "agent_adapters" && (
               <StepAgentAdapters
-                companyId={companyId}
                 team={team}
                 adapterOverrides={adapterOverrides}
                 configValues={adapterConfigValues}
@@ -1860,7 +1845,6 @@ function toPreparation(skill: CatalogTeamSkillRequirement): CatalogTeamSkillPrep
 }
 
 export function StepAgentAdapters({
-  companyId,
   team,
   adapterOverrides,
   configValues,
@@ -1868,7 +1852,6 @@ export function StepAgentAdapters({
   onConfigChange,
   onConfigurationReadyChange,
 }: {
-  companyId: string;
   team: CatalogTeam;
   adapterOverrides: Record<string, CompanyPortabilityAdapterOverride>;
   configValues: Record<string, CreateConfigValues>;
@@ -1885,13 +1868,6 @@ export function StepAgentAdapters({
   ).length;
   const adapterOptions = useMemo(
     () => catalogAdapterOptions(admittedAdapters),
-    [admittedAdapters],
-  );
-  const adapterDriversByType = useMemo(
-    () => new Map(admittedAdapters.map((adapter) => [
-      adapter.type,
-      adapter.drivers,
-    ])),
     [admittedAdapters],
   );
   return (
@@ -1933,7 +1909,6 @@ export function StepAgentAdapters({
               </div>
               {override && (
                 <CatalogAgentAdapterConfiguration
-                  companyId={companyId}
                   slug={slug}
                   override={override}
                   values={
@@ -1945,7 +1920,6 @@ export function StepAgentAdapters({
                   }
                   onConfigChange={onConfigChange}
                   onConfigurationReadyChange={onConfigurationReadyChange}
-                  drivers={adapterDriversByType.get(adapterType) ?? []}
                 />
               )}
             </li>
@@ -1962,15 +1936,12 @@ export function StepAgentAdapters({
 }
 
 function CatalogAgentAdapterConfiguration({
-  companyId,
   slug,
   override,
   values,
   onConfigChange,
   onConfigurationReadyChange,
-  drivers,
 }: {
-  companyId: string;
   slug: string;
   override: CompanyPortabilityAdapterOverride;
   values: CreateConfigValues;
@@ -1979,30 +1950,7 @@ function CatalogAgentAdapterConfiguration({
     patch: Partial<CreateConfigValues>,
   ) => void;
   onConfigurationReadyChange: (slug: string, ready: boolean) => void;
-  drivers: readonly EnvironmentDriver[];
 }) {
-  const { data: environments = [] } = useQuery<Environment[]>({
-    queryKey: queryKeys.environments.list(companyId),
-    queryFn: () => environmentsApi.list(companyId),
-  });
-  const allowedDrivers = useMemo(
-    () => new Set(drivers),
-    [drivers],
-  );
-  const executionEnvironments = useMemo(
-    () =>
-      environments.filter((environment) => {
-        if (environment.status !== "active") return false;
-        if (!allowedDrivers.has(environment.driver)) return false;
-        if (environment.driver !== "sandbox") return true;
-        const provider =
-          typeof environment.config?.provider === "string"
-            ? environment.config.provider
-            : null;
-        return provider !== null && provider !== "fake";
-      }),
-    [allowedDrivers, environments],
-  );
   const {
     schema,
     isLoading,
@@ -2017,8 +1965,6 @@ function CatalogAgentAdapterConfiguration({
     isLoading,
     schemaError,
     adapterConfig: override.adapterConfig,
-    defaultEnvironmentId: override.defaultEnvironmentId,
-    executionEnvironmentIds: executionEnvironments.map((environment) => environment.id),
   });
 
   useEffect(() => {
@@ -2036,26 +1982,6 @@ function CatalogAgentAdapterConfiguration({
           The local CLI uses its native skill handling.
         </span>
       </div>
-      <label className="grid gap-1.5 text-xs">
-        <span className="font-medium">Execution environment</span>
-        <Select
-          value={override.defaultEnvironmentId}
-          onValueChange={(defaultEnvironmentId) =>
-            onConfigChange(slug, { defaultEnvironmentId })
-          }
-        >
-          <SelectTrigger aria-label={`${slug} execution environment`}>
-            <SelectValue placeholder="Select an execution environment" />
-          </SelectTrigger>
-          <SelectContent>
-            {executionEnvironments.map((environment) => (
-              <SelectItem key={environment.id} value={environment.id}>
-                {environment.name} · {environment.driver}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </label>
       {schema ? (
         <SchemaConfigFields
           mode="create"

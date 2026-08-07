@@ -20,7 +20,7 @@ function issue(
     status: "open",
     disposition: null,
     priority: "medium",
-    creator: { kind: "system", sourceKind: "watchdog" },
+    creator: { kind: "system", sourceKind: "recovery" },
     owner: { kind: "agent", agentId: "owner" },
     parentId,
     directChildCount: 0,

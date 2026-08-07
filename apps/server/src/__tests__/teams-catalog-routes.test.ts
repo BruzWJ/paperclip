@@ -81,7 +81,6 @@ function catalogTeam(overrides: Record<string, unknown> = {}) {
 }
 
 const companyId = "11111111-1111-4111-8111-111111111111";
-const environmentId = "22222222-2222-4222-8222-222222222222";
 
 describe("teams catalog routes", () => {
   beforeEach(() => {
@@ -222,19 +221,16 @@ describe("teams catalog routes", () => {
           "engineering-lead": {
             adapterType: "codex",
             adapterConfig: { model: "gpt-5.6" },
-            defaultEnvironmentId: environmentId,
             skillChannel: "operator_native",
           },
           "senior-coder": {
             adapterType: "codex",
             adapterConfig: { model: "gpt-5.6" },
-            defaultEnvironmentId: environmentId,
             skillChannel: "operator_native",
           },
           qa: {
             adapterType: "codex",
             adapterConfig: { model: "gpt-5.6" },
-            defaultEnvironmentId: environmentId,
             skillChannel: "operator_native",
           },
         },
@@ -251,7 +247,6 @@ describe("teams catalog routes", () => {
           "engineering-lead": {
             adapterType: "codex",
             adapterConfig: { model: "gpt-5.6" },
-            defaultEnvironmentId: environmentId,
             skillChannel: "operator_native",
           },
         }),
@@ -323,19 +318,16 @@ describe("teams catalog routes", () => {
           "engineering-lead": {
             adapterType: "codex",
             adapterConfig: { model: "gpt-5.6" },
-            defaultEnvironmentId: environmentId,
             skillChannel: "operator_native",
           },
           "senior-coder": {
             adapterType: "codex",
             adapterConfig: { model: "gpt-5.6" },
-            defaultEnvironmentId: environmentId,
             skillChannel: "operator_native",
           },
           qa: {
             adapterType: "codex",
             adapterConfig: { model: "gpt-5.6" },
-            defaultEnvironmentId: environmentId,
             skillChannel: "operator_native",
           },
         },
@@ -352,7 +344,6 @@ describe("teams catalog routes", () => {
           "engineering-lead": {
             adapterType: "codex",
             adapterConfig: { model: "gpt-5.6" },
-            defaultEnvironmentId: environmentId,
             skillChannel: "operator_native",
           },
         }),

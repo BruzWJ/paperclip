@@ -153,7 +153,6 @@ export interface RuntimeAgentConfigurationSnapshot {
   contextGrants: Partial<Record<AgentContextGrantKey, true>>;
   actionGrants: Partial<Record<PaperclipActionKey, true>>;
   mentionReachGrants: Partial<Record<AgentMentionReachGrantKey, true>>;
-  companyToolIds: string[];
 }
 
 /**

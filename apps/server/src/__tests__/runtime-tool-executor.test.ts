@@ -87,7 +87,6 @@ function setup(options: {
       data: { opaqueRunContext: await input.mintPluginRunContext() },
     }),
   );
-  const executeCompany = vi.fn(async () => ({ company: true }));
   const readCanonicalRunTrace = vi.fn(
     async ({ runId }: { runId: string }) => ({
       runId,
@@ -160,9 +159,6 @@ function setup(options: {
       },
     },
     actions,
-    companyTools: {
-      execute: executeCompany,
-    },
     pluginTools: {
       execute: executePlugin,
     },
@@ -191,7 +187,6 @@ function setup(options: {
     mentionBoard,
     classify,
     commitMentionAction,
-    executeCompany,
     executePlugin,
     readCanonicalRunTrace,
     mentionTransaction,
@@ -410,17 +405,6 @@ describe("runtime tool executor", () => {
       message: "Plugin tool is missing its immutable installation binding",
     },
     {
-      label: "company descriptor without a selection binding",
-      descriptor: {
-        name: "company_lookup",
-        title: "Lookup",
-        description: "",
-        inputSchema: {},
-        source: "company" as const,
-      },
-      message: "Selected company tool is missing its immutable selection id",
-    },
-    {
       label: "unknown Paperclip action descriptor",
       descriptor: {
         name: "unknown_paperclip_action",
@@ -570,8 +554,6 @@ describe("runtime tool executor", () => {
       creatorUpdateTargets: [],
       mentionTargets: [],
       configureTargets: [],
-      agentHireCompanyToolOptions: [],
-      selectedCompanyTools: [],
       pluginTools: [{
         installationId: "plugin-installation",
         manifestIdentity: "manifest-1",
@@ -606,9 +588,7 @@ describe("runtime tool executor", () => {
       mentionAgent,
       classify,
       commitMentionAction,
-      mentionTransaction,
     } = setup();
-    const commitMentionAudit = vi.fn(async () => undefined);
     const descriptor = compileRuntimeInterface({
       mode: "owner",
       contextDial: resolveContextDial({ agent: {} }).effective,
@@ -621,8 +601,6 @@ describe("runtime tool executor", () => {
         { id: "mentioned-agent", name: "Mentioned", capabilities: null },
       ],
       configureTargets: [],
-      agentHireCompanyToolOptions: [],
-      selectedCompanyTools: [],
       pluginTools: [],
     }).byName.get("mention_agent")!;
 
@@ -633,7 +611,6 @@ describe("runtime tool executor", () => {
       callIdentity: { source: "jsonrpc", id: "mention-1" },
       ingressOrdinal: 7,
       mintPluginRunContext,
-      commitMentionAudit,
     });
 
     expect(classify).toHaveBeenCalledWith({
@@ -658,7 +635,6 @@ describe("runtime tool executor", () => {
         result: { consulted: true },
       }),
     );
-    expect(commitMentionAudit).toHaveBeenCalledWith(mentionTransaction);
   });
 
   it("routes a Board request as a non-mention ledger action", async () => {
@@ -673,8 +649,6 @@ describe("runtime tool executor", () => {
       creatorUpdateTargets: [],
       mentionTargets: [],
       configureTargets: [],
-      agentHireCompanyToolOptions: [],
-      selectedCompanyTools: [],
       pluginTools: [],
     }).byName.get("mention_board")!;
 
@@ -738,8 +712,6 @@ describe("runtime tool executor", () => {
       creatorUpdateTargets: [],
       mentionTargets: [],
       configureTargets: [{ id: "agent" }],
-      agentHireCompanyToolOptions: [],
-      selectedCompanyTools: [],
       pluginTools: [],
     }).byName.get("agent_configure")!;
 

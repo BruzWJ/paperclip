@@ -90,27 +90,17 @@ import {
   isVideoLikeOutput,
 } from "../lib/issue-output";
 import { IssueSiblingNavigation } from "../components/IssueSiblingNavigation";
-import { MarkdownBody, type MarkdownExternalReferenceMap } from "../components/MarkdownBody";
+import { MarkdownBody } from "../components/MarkdownBody";
 import { IssuesList } from "../components/IssuesList";
 import { AgentIcon } from "../components/AgentIconPicker";
 import { IssueReferenceActivitySummary } from "../components/IssueReferenceActivitySummary";
 import { IssueRelatedWorkPanel } from "../components/IssueRelatedWorkPanel";
-import {
-  IssueMonitorBanner,
-  IssueMonitorComposerStrip,
-  hasVisibleMonitorSurface,
-} from "../components/IssueMonitorBanner";
 import { IssueProperties } from "../components/IssueProperties";
 import { PauseAffectsSummaryView } from "../components/owner-transition/OwnerTransitionViews";
 import { computePauseAffectsSummary } from "../lib/owner-transition";
-import { useIssueExternalObjects } from "../hooks/useIssueExternalObjects";
 import { IssueRunLedger } from "../components/IssueRunLedger";
-import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
 import type { MentionOption } from "../components/MarkdownEditor";
 import { ImageGalleryModal, type GalleryMediaItem } from "../components/ImageGalleryModal";
-import { FileViewerProvider, useRequiredFileViewer } from "../context/FileViewerContext";
-import { FileViewerSheet } from "../components/FileViewerSheet";
-import { ArtifactFileChip } from "../components/ArtifactFileChip";
 import { ScrollToBottom } from "../components/ScrollToBottom";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
@@ -153,7 +143,6 @@ import {
   Copy,
   EyeOff,
   Flag,
-  FileCode2,
   Hexagon,
   ListTree,
   MessageSquare,
@@ -170,8 +159,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import {
   deriveOriginatingActor,
-  getClosedIsolatedExecutionWorkspaceMessage,
-  isClosedIsolatedExecutionWorkspace,
   type ActivityEvent,
   type Agent,
   type BoardIssueCommentGroupPage,
@@ -183,8 +170,6 @@ import {
   type IssueWorkProduct,
   type IssueWorkMode,
   type IssueTreeControlMode,
-  type WorkspaceFileRef,
-  workspaceFileRefSchema,
 } from "@paperclipai/shared";
 
 type CommentOwnerChange = {
@@ -273,20 +258,6 @@ function readIssueRunStateFromCache(
     activeRuns,
     interruptibleIssueRun: resolveInterruptibleIssueRun(activeRuns),
   };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
-
-function extractWorkspaceFileRefFromWorkProduct(
-  workProduct: { metadata: Record<string, unknown> | null },
-): WorkspaceFileRef | null {
-  const metadata = asRecord(workProduct.metadata);
-  if (!metadata) return null;
-  const parsed = workspaceFileRefSchema.safeParse(metadata.resourceRef);
-  return parsed.success ? parsed.data : null;
 }
 
 function truncate(text: string, max: number): string {
@@ -698,7 +669,7 @@ type IssueDetailChatTabProps = {
   onLoadMoreCommentGroup: (rootCommentId: string) => Promise<void> | void;
   onWorkModeChange?: (workMode: IssueWorkMode) => Promise<void> | void;
   composerRef: Ref<IssueChatComposerHandle>;
-  /** Optional node rendered inline directly above the reply composer (e.g. the monitor strip). */
+  /** Optional node rendered inline directly above the reply composer. */
   composerAccessory?: ReactNode;
   footer?: ReactNode;
   agentMap: Map<string, Agent>;
@@ -725,8 +696,6 @@ type IssueDetailChatTabProps = {
   ownerUserId: string | null;
   onResumeFromBacklog?: () => Promise<void> | void;
   resumeFromBacklogPending?: boolean;
-  externalReferences?: MarkdownExternalReferenceMap;
-  linkCaseReferences?: boolean;
 };
 
 const IssueDetailChatTab = memo(function IssueDetailChatTab({
@@ -769,8 +738,6 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
   ownerUserId,
   onResumeFromBacklog,
   resumeFromBacklogPending,
-  externalReferences,
-  linkCaseReferences,
 }: IssueDetailChatTabProps) {
   const ThreadComponent = IssueChatThread;
   const { data: activity } = useQuery({
@@ -874,8 +841,6 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
         onResumeFromBacklog={onResumeFromBacklog}
         resumeFromBacklogPending={resumeFromBacklogPending}
         footer={footer}
-        externalReferences={externalReferences}
-        linkCaseReferences={linkCaseReferences}
       />
     </div>
   );
@@ -893,7 +858,6 @@ type IssueDetailActivityTabProps = {
   userProfileMap: Map<string, import("../lib/company-members").CompanyUserProfile>;
   pendingApprovalAction: { approvalId: string; action: "approve" | "reject" } | null;
   onApprovalAction: (approvalId: string, action: "approve" | "reject") => void;
-  externalReferences?: MarkdownExternalReferenceMap;
 };
 
 function IssueDetailActivityTab({
@@ -908,7 +872,6 @@ function IssueDetailActivityTab({
   userProfileMap,
   pendingApprovalAction,
   onApprovalAction,
-  externalReferences,
 }: IssueDetailActivityTabProps) {
   const { data: activity, isLoading: activityLoading } = useQuery({
     queryKey: queryKeys.issues.activity(issueId),
@@ -967,7 +930,6 @@ function IssueDetailActivityTab({
       <div className="mb-3">
         <IssueRunLedger
           issueId={issueId}
-          companyId={companyId}
           issueStatus={issueStatus}
           childIssues={childIssues}
           agentMap={agentMap}
@@ -1008,7 +970,6 @@ function IssueDetailActivityTab({
           ))}
         </div>
       )}
-      {/* Waiting-monitor state now lives in the pinned top banner (IssueMonitorBanner) — PAP-14557 decision 1. */}
     </>
   );
 }
@@ -1028,7 +989,6 @@ export function IssueDetail() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
-  const [fileViewerPromptOpen, setFileViewerPromptOpen] = useState(false);
   const [detailTab, setDetailTab] = useState("chat");
   const [pendingApprovalAction, setPendingApprovalAction] = useState<{
     approvalId: string;
@@ -1070,13 +1030,6 @@ export function IssueDetail() {
     enabled: !!issueId,
   });
   const resolvedCompanyId = issue?.companyId ?? selectedCompanyId;
-  const externalObjectsState = useIssueExternalObjects(issue?.id ?? null);
-  const commentComposerDisabledReason = useMemo(() => {
-    if (!issue?.currentExecutionWorkspace || !isClosedIsolatedExecutionWorkspace(issue.currentExecutionWorkspace)) {
-      return null;
-    }
-    return getClosedIsolatedExecutionWorkspaceMessage(issue.currentExecutionWorkspace);
-  }, [issue?.currentExecutionWorkspace]);
   const [commentGroupContinuations, setCommentGroupContinuations] = useState<
     ReadonlyMap<string, BoardIssueCommentGroupContinuation>
   >(() => new Map());
@@ -1341,16 +1294,7 @@ export function IssueDetail() {
     enabled: !!issueId,
     retry: false,
   });
-  const { data: instanceExperimentalSettings } = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-    enabled: !!issueId,
-    retry: false,
-  });
   const keyboardShortcutsEnabled = instanceGeneralSettings?.keyboardShortcuts === true;
-  // Experimental Cases: linkify `PAP-C7` chips in this issue's comment bodies.
-  const casesChipsEnabled = instanceExperimentalSettings?.enableCases === true;
-  const fileViewerEnabled = instanceExperimentalSettings?.enableExperimentalFileViewer === true;
   const { orderedProjects } = useProjectOrder({
     projects: projects ?? [],
     companyId: selectedCompanyId,
@@ -1952,26 +1896,6 @@ export function IssueDetail() {
     });
   }, [pushToast, updateIssueExecutionPolicy, updateIssueTitle]);
 
-  const checkIssueMonitorNow = useMutation({
-    mutationFn: () => issuesApi.checkMonitorNow(issueId!),
-    onSuccess: () => {
-      invalidateIssueDetail();
-      invalidateIssueRunState();
-      invalidateIssueCollections();
-      pushToast({
-        title: "Monitor check queued",
-        tone: "success",
-      });
-    },
-    onError: (err) => {
-      pushToast({
-        title: "Monitor check failed",
-        body: err instanceof Error ? err.message : "Unable to trigger the monitor right now",
-        tone: "error",
-      });
-    },
-  });
-
   const approvalDecision = useMutation({
     mutationFn: async ({ approvalId, action }: { approvalId: string; action: "approve" | "reject" }) => {
       if (action === "approve") {
@@ -2233,12 +2157,6 @@ export function IssueDetail() {
         onAddSubIssue={openNewSubIssue}
         onUpdate={handleIssuePropertiesUpdate}
         hasActiveRun={resolvedHasActiveRun}
-        externalObjects={externalObjectsState.isEnabled ? externalObjectsState.groups : undefined}
-        externalObjectsLoading={externalObjectsState.isEnabled ? externalObjectsState.isLoading : undefined}
-        externalObjectsError={externalObjectsState.isEnabled ? externalObjectsState.isError : undefined}
-        onRetryExternalObjects={externalObjectsState.isEnabled ? externalObjectsState.refetch : undefined}
-        onCheckMonitorNow={() => checkIssueMonitorNow.mutate()}
-        checkingMonitorNow={checkIssueMonitorNow.isPending}
       />
     );
     return () => closePanel();
@@ -2251,13 +2169,6 @@ export function IssueDetail() {
     panelChildIssues,
     panelIssue,
     resolvedHasActiveRun,
-    checkIssueMonitorNow.isPending,
-    checkIssueMonitorNow.mutate,
-    externalObjectsState.isEnabled,
-    externalObjectsState.groups,
-    externalObjectsState.isLoading,
-    externalObjectsState.isError,
-    externalObjectsState.refetch,
   ]);
 
   const goToInboxShortcutArmedRef = useRef(false);
@@ -2366,12 +2277,6 @@ export function IssueDetail() {
         setDetailTab("chat");
         setPendingCommentComposerFocusKey((current) => current + 1);
       }
-      if (action === "open_file_viewer") {
-        if (!fileViewerEnabled) return;
-        event.preventDefault();
-        event.stopPropagation();
-        setFileViewerPromptOpen(true);
-      }
     };
 
     document.addEventListener("pointerdown", handlePointerDown, true);
@@ -2383,7 +2288,7 @@ export function IssueDetail() {
       document.removeEventListener("focusin", handleFocusIn, true);
       document.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [fileViewerEnabled, keyboardShortcutsEnabled, navigate, sourceBreadcrumb.href]);
+  }, [keyboardShortcutsEnabled, navigate, sourceBreadcrumb.href]);
 
   // Scroll + briefly highlight work-product / direct-attachment anchors so the
   // company Artifacts page (PAP-10359) can deep-link to a specific artifact in
@@ -2421,20 +2326,6 @@ export function IssueDetail() {
     if (detailTab !== "chat") return;
     commentComposerRef.current?.focus();
   }, [detailTab, pendingCommentComposerFocusKey]);
-
-  useEffect(() => {
-    if (!fileViewerEnabled) return;
-    const handleOpenFileViewer = () => {
-      setFileViewerPromptOpen(true);
-    };
-    window.addEventListener("paperclip:open-file-viewer", handleOpenFileViewer as EventListener);
-    return () => {
-      window.removeEventListener(
-        "paperclip:open-file-viewer",
-        handleOpenFileViewer as EventListener,
-      );
-    };
-  }, [fileViewerEnabled]);
 
   const promotedOutputAttachmentIds = useMemo(() => getPromotedOutputAttachmentIds(workProducts), [workProducts]);
   const attachmentList = useMemo(
@@ -2942,7 +2833,6 @@ export function IssueDetail() {
   );
 
   return (
-    <FileViewerProvider issueId={issue.id} enabled={fileViewerEnabled}>
     <div className="max-w-3xl space-y-6">
       {/* Parent chain breadcrumb */}
       {ancestors.length > 0 && (
@@ -3196,17 +3086,6 @@ export function IssueDetail() {
                 <Archive className="h-4 w-4" />
               </Button>
             )}
-            {fileViewerEnabled ? (
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => setFileViewerPromptOpen(true)}
-                title="Open file... (g f)"
-                aria-label="Open file in this issue"
-              >
-                <FileCode2 className="h-4 w-4" />
-              </Button>
-            ) : null}
             <Button
               variant="ghost"
               size="icon-xs"
@@ -3343,25 +3222,12 @@ export function IssueDetail() {
           nullable
         />
 
-        <IssueMonitorBanner
-          issue={issue}
-          onCheckNow={() => checkIssueMonitorNow.mutate()}
-          checkingNow={checkIssueMonitorNow.isPending}
-        />
-
         <section className="space-y-2">
           <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Immutable request
           </h3>
           {issue.request ? (
-            <MarkdownBody
-              className="text-sm leading-7 text-foreground"
-              externalReferences={
-                externalObjectsState.isEnabled
-                  ? externalObjectsState.markdownReferences
-                  : undefined
-              }
-            >
+            <MarkdownBody className="text-sm leading-7 text-foreground">
               {issue.request}
             </MarkdownBody>
           ) : (
@@ -3461,7 +3327,6 @@ export function IssueDetail() {
         canDeleteDocuments={Boolean(session?.user?.id)}
         canManageDocumentLocks={Boolean(session?.user?.id)}
         mentions={mentionOptions}
-        externalReferences={externalObjectsState.isEnabled ? externalObjectsState.markdownReferences : undefined}
         imageUploadHandler={async (file) => {
           const attachment = await uploadAttachment.mutateAsync(file);
           return attachment.contentPath;
@@ -3524,41 +3389,6 @@ export function IssueDetail() {
         onOpenChange={setGalleryOpen}
       />
 
-      <IssueWorkspaceCard
-        issue={issue}
-        project={resolvedProject}
-        onUpdate={handleIssuePropertiesUpdate}
-        onBrowseFiles={fileViewerEnabled ? () => setFileViewerPromptOpen(true) : undefined}
-        onOpenFileByPath={fileViewerEnabled ? () => setFileViewerPromptOpen(true) : undefined}
-      />
-
-      {fileViewerEnabled && issue.workProducts && issue.workProducts.length > 0 && (() => {
-        const workProductsWithFileRefs = issue.workProducts
-          .map((product) => ({ product, fileRef: extractWorkspaceFileRefFromWorkProduct(product) }))
-          .filter(({ fileRef }) => fileRef !== null);
-
-        if (workProductsWithFileRefs.length === 0) return null;
-
-        return (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-medium text-muted-foreground">Artifacts</h3>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {workProductsWithFileRefs.map(({ product, fileRef }) => (
-                <ArtifactFileChip
-                  key={product.id}
-                  workspaceFileRef={fileRef!}
-                  title={product.title}
-                />
-              ))}
-            </div>
-          </div>
-        );
-      })()}
-
-      <Separator />
-
       <Tabs value={detailTab} onValueChange={setDetailTab} className="space-y-3">
         <TabsList variant="line" className="w-full justify-start gap-1">
           <TabsTrigger value="chat" className="gap-1.5">
@@ -3600,21 +3430,7 @@ export function IssueDetail() {
               onRefreshLatestComments={refetchLatestComments}
               onLoadMoreCommentGroup={loadMoreCommentGroup}
               composerRef={commentComposerRef}
-              composerAccessory={
-                hasVisibleMonitorSurface(issue) ||
-                humanLifecycleFormControls ? (
-                  <div className="flex flex-col gap-2">
-                    {hasVisibleMonitorSurface(issue) ? (
-                      <IssueMonitorComposerStrip
-                        issue={issue}
-                        onCheckNow={() => checkIssueMonitorNow.mutate()}
-                        checkingNow={checkIssueMonitorNow.isPending}
-                      />
-                    ) : null}
-                    {humanLifecycleFormControls}
-                  </div>
-                ) : null
-              }
+              composerAccessory={humanLifecycleFormControls}
               footer={
                 siblingNavigation ? (
                   <IssueSiblingNavigation
@@ -3635,7 +3451,7 @@ export function IssueDetail() {
               composerDisabledReason={
                 isUserCreatorWithdrawalOwner
                   ? "This task is withdrawn; finish its cancellation above."
-                  : commentComposerDisabledReason
+                  : null
               }
               composerHint={composerHint}
               onAdd={handleChatAdd}
@@ -3643,8 +3459,6 @@ export function IssueDetail() {
               onAttachImage={handleCommentAttachImage}
               onImageClick={handleChatImageClick}
               ownerUserId={issue.ownerUserId ?? null}
-              externalReferences={externalObjectsState.isEnabled ? externalObjectsState.markdownReferences : undefined}
-              linkCaseReferences={casesChipsEnabled}
             />
           ) : null}
         </TabsContent>
@@ -3665,20 +3479,12 @@ export function IssueDetail() {
               onApprovalAction={(approvalId, action) => {
                 approvalDecision.mutate({ approvalId, action });
               }}
-              externalReferences={externalObjectsState.isEnabled ? externalObjectsState.markdownReferences : undefined}
             />
           ) : null}
         </TabsContent>
 
         <TabsContent value="related-work">
-          <IssueRelatedWorkPanel
-            relatedWork={issue.relatedWork}
-            externalObjectsEnabled={externalObjectsState.isEnabled}
-            externalObjects={externalObjectsState.isEnabled ? externalObjectsState.groups : undefined}
-            externalObjectsLoading={externalObjectsState.isEnabled ? externalObjectsState.isLoading : undefined}
-            externalObjectsError={externalObjectsState.isEnabled ? externalObjectsState.isError : undefined}
-            onRetryExternalObjects={externalObjectsState.isEnabled ? externalObjectsState.refetch : undefined}
-          />
+          <IssueRelatedWorkPanel relatedWork={issue.relatedWork} />
         </TabsContent>
 
         {activePluginTab && (
@@ -3876,65 +3682,12 @@ export function IssueDetail() {
                 onUpdate={handleIssuePropertiesUpdate}
                 inline
                 hasActiveRun={resolvedHasActiveRun}
-                externalObjects={externalObjectsState.isEnabled ? externalObjectsState.groups : undefined}
-                externalObjectsLoading={externalObjectsState.isEnabled ? externalObjectsState.isLoading : undefined}
-                externalObjectsError={externalObjectsState.isEnabled ? externalObjectsState.isError : undefined}
-                onRetryExternalObjects={externalObjectsState.isEnabled ? externalObjectsState.refetch : undefined}
-                onCheckMonitorNow={() => checkIssueMonitorNow.mutate()}
-                checkingMonitorNow={checkIssueMonitorNow.isPending}
               />
             </div>
           </ScrollArea>
         </SheetContent>
       </Sheet>
-      {fileViewerEnabled ? (
-        <IssueFileViewer
-          issueId={issue.id}
-          companyId={issue.companyId}
-          promptOpen={fileViewerPromptOpen}
-          onPromptOpenChange={setFileViewerPromptOpen}
-        />
-      ) : null}
       <ScrollToBottom />
     </div>
-    </FileViewerProvider>
-  );
-}
-
-function IssueFileViewer({
-  issueId,
-  companyId,
-  promptOpen,
-  onPromptOpenChange,
-}: {
-  issueId: string;
-  companyId: string;
-  promptOpen: boolean;
-  onPromptOpenChange: (next: boolean) => void;
-}) {
-  const viewer = useRequiredFileViewer();
-  const open = viewer.state !== null || viewer.browse || promptOpen;
-  const showPromptWhenEmpty = (promptOpen || viewer.browse) && viewer.state === null;
-
-  useEffect(() => {
-    if (!promptOpen) return;
-    if (viewer.state === null && !viewer.browse) return;
-    onPromptOpenChange(false);
-  }, [onPromptOpenChange, promptOpen, viewer.browse, viewer.state]);
-
-  return (
-    <FileViewerSheet
-      issueId={issueId}
-      companyId={companyId}
-      open={open}
-      showPromptWhenEmpty={showPromptWhenEmpty}
-      onOpenChange={(next) => {
-        if (!next) {
-          onPromptOpenChange(false);
-          // Clears any file view and browse state from the URL.
-          viewer.close();
-        }
-      }}
-    />
   );
 }

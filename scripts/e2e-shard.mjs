@@ -24,7 +24,7 @@ export function listE2eSpecs(e2eDir = E2E_DIR, repoRoot = REPO_ROOT) {
 }
 
 // Playwright's own --shard balances by test count, which is useless here: one
-// spec (smoke-lab) is ~40% of the lane's wall clock. Reuse the deterministic
+// large spec can dominate the lane's wall clock. Reuse the deterministic
 // longest-processing-time partition already proven on the general-server lane
 // so every runner computes the identical, non-overlapping split.
 export function selectE2eShard(files, shardIndex, shardCount, durations = {}) {

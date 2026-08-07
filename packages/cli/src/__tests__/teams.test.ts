@@ -4,7 +4,6 @@ import { registerTeamCommands } from "../commands/client/teams.js";
 import { parseExplicitAdapterOverrides } from "../commands/client/adapter-overrides.js";
 
 const ORIGINAL_ENV = { ...process.env };
-const ENVIRONMENT_ID = "11111111-1111-4111-8111-111111111111";
 
 function makeProgram(): Command {
   const program = new Command();
@@ -77,14 +76,12 @@ describe("explicit adapter override parsing", () => {
       parseExplicitAdapterOverrides(
         ["lead=codex"],
         ['lead={"model":"gpt-5.6"}'],
-        [`lead=${ENVIRONMENT_ID}`],
         ["lead=operator_native"],
       ),
     ).toEqual({
       lead: {
         adapterType: "codex",
         adapterConfig: { model: "gpt-5.6" },
-        defaultEnvironmentId: ENVIRONMENT_ID,
         skillChannel: "operator_native",
       },
     });
@@ -108,26 +105,11 @@ describe("explicit adapter override parsing", () => {
         ["lead=codex"],
         ['lead={"model":"gpt-5.6"}'],
       )
-    ).toThrow("requires a matching --default-environment-id");
-    expect(() =>
-      parseExplicitAdapterOverrides(
-        ["lead=codex"],
-        ['lead={"model":"gpt-5.6"}'],
-        ["lead=not-a-uuid"],
-      )
-    ).toThrow("Use slug=<environment UUID>");
-    expect(() =>
-      parseExplicitAdapterOverrides(
-        ["lead=codex"],
-        ['lead={"model":"gpt-5.6"}'],
-        [`lead=${ENVIRONMENT_ID}`],
-      )
     ).toThrow("requires a matching --skill-channel");
     expect(() =>
       parseExplicitAdapterOverrides(
         ["lead=codex"],
         ['lead={"model":"gpt-5.6"}'],
-        [`lead=${ENVIRONMENT_ID}`],
         ["lead=workspace"],
       )
     ).toThrow("Invalid --skill-channel");
@@ -351,8 +333,6 @@ describe("teams CLI commands", () => {
       "architect=codex",
       "--adapter-config",
       'architect={"model":"gpt-5.6"}',
-      "--default-environment-id",
-      `architect=${ENVIRONMENT_ID}`,
       "--skill-channel",
       "architect=operator_native",
       "--allow-external-sources",
@@ -375,7 +355,6 @@ describe("teams CLI commands", () => {
             architect: {
               adapterType: "codex",
               adapterConfig: { model: "gpt-5.6" },
-              defaultEnvironmentId: ENVIRONMENT_ID,
               skillChannel: "operator_native",
             },
           },
@@ -409,8 +388,6 @@ describe("teams CLI commands", () => {
       "architect=codex",
       "--adapter-config",
       'architect={"model":"gpt-5.6"}',
-      "--default-environment-id",
-      `architect=${ENVIRONMENT_ID}`,
       "--skill-channel",
       "architect=operator_native",
       "--company-id",
@@ -432,7 +409,6 @@ describe("teams CLI commands", () => {
             architect: {
               adapterType: "codex",
               adapterConfig: { model: "gpt-5.6" },
-              defaultEnvironmentId: ENVIRONMENT_ID,
               skillChannel: "operator_native",
             },
           },
@@ -472,8 +448,6 @@ describe("teams CLI commands", () => {
       "architect=codex",
       "--adapter-config",
       'architect={"model":"gpt-5.6"}',
-      "--default-environment-id",
-      `architect=${ENVIRONMENT_ID}`,
       "--skill-channel",
       "architect=operator_native",
       "--company-id",
@@ -497,7 +471,6 @@ describe("teams CLI commands", () => {
             architect: {
               adapterType: "codex",
               adapterConfig: { model: "gpt-5.6" },
-              defaultEnvironmentId: ENVIRONMENT_ID,
               skillChannel: "operator_native",
             },
           },
@@ -543,8 +516,6 @@ describe("teams CLI commands", () => {
       "architect=codex",
       "--adapter-config",
       'architect={"model":"gpt-5.6"}',
-      "--default-environment-id",
-      `architect=${ENVIRONMENT_ID}`,
       "--skill-channel",
       "architect=operator_native",
       "--company-id",
@@ -571,7 +542,6 @@ describe("teams CLI commands", () => {
             architect: {
               adapterType: "codex",
               adapterConfig: { model: "gpt-5.6" },
-              defaultEnvironmentId: ENVIRONMENT_ID,
               skillChannel: "operator_native",
             },
           },
@@ -607,7 +577,6 @@ describe("teams CLI commands", () => {
               architect: {
                 adapterType: "codex",
                 adapterConfig: { model: "gpt-5.6" },
-                defaultEnvironmentId: ENVIRONMENT_ID,
                 skillChannel: "operator_native",
               },
             },
@@ -630,7 +599,6 @@ describe("teams CLI commands", () => {
             architect: {
               adapterType: "codex",
               adapterConfig: { model: "gpt-5.6" },
-              defaultEnvironmentId: ENVIRONMENT_ID,
               skillChannel: "operator_native",
             },
           },

@@ -28,7 +28,6 @@ import {
   pluginManifestV1Schema,
   pluginManagedRoutineDeclarationSchema,
   pluginManagedSkillDeclarationSchema,
-  pluginObjectReferenceProviderDeclarationSchema,
   pluginPackageNameSchema,
   pluginToolDeclarationSchema,
   pluginUiSlotDeclarationSchema,
@@ -288,7 +287,6 @@ describe("plugin manifest validators", () => {
       "routines",
       "skills",
       "localFolders",
-      "objectReferences",
     ] as const;
 
     for (const field of fields) {
@@ -642,18 +640,6 @@ describe("plugin nested declaration lists", () => {
       migrationsDir: "migrations",
       coreReadTables: [],
     }).success).toBe(false);
-    expect(pluginObjectReferenceProviderDeclarationSchema.safeParse({
-      providerKey: "tracker",
-      displayName: "Tracker",
-      objectTypes: ["ticket"],
-      urlPatterns: [],
-    }).success).toBe(false);
-    expect(pluginObjectReferenceProviderDeclarationSchema.safeParse({
-      providerKey: "tracker",
-      displayName: "Tracker",
-      objectTypes: ["ticket"],
-      webhookEndpointKeys: [],
-    }).success).toBe(false);
   });
 });
 
@@ -798,36 +784,23 @@ describe("plugin UI slot validators", () => {
       "onboarding",
       "companies",
       "company",
-      "apps",
       "skills",
       "org",
       "agents",
       "projects",
-      "workspaces",
       "issues",
       "search",
-      "tests",
       "routines",
-      "cases",
-      "review-queue",
-      "learnings",
-      "pipelines",
-      "execution-workspaces",
-      "goals",
       "artifacts",
       "approvals",
       "costs",
       "activity",
-      "board-chat",
-      "decisions",
-      "training",
       "inbox",
       "u",
       "design-guide",
       "instance",
     ]);
     expect(PLUGIN_RESERVED_COMPANY_SETTINGS_ROUTE_SEGMENTS).toEqual([
-      "cloud-upstream",
       "members",
       "invites",
       "secrets",
@@ -836,8 +809,6 @@ describe("plugin UI slot validators", () => {
     expect(PLUGIN_UI_SLOT_ENTITY_TYPES).toEqual([
       "project",
       "issue",
-      "execution_workspace",
-      "project_workspace",
     ]);
   });
 
@@ -893,8 +864,8 @@ describe("plugin UI slot validators", () => {
     expect(parsed.error.issues.some((issue) => issue.message.includes("reserved by the host"))).toBe(true);
   });
 
-  it("accepts workspace entity types as detailTab targets", () => {
-    const parsed = pluginUiSlotDeclarationSchema.parse({
+  it("rejects retired workspace entity types", () => {
+    const parsed = pluginUiSlotDeclarationSchema.safeParse({
       type: "detailTab",
       id: "workspace-inspector",
       displayName: "Inspector",
@@ -902,19 +873,7 @@ describe("plugin UI slot validators", () => {
       entityTypes: ["execution_workspace", "project_workspace"],
     });
 
-    expect(parsed.entityTypes).toEqual(["execution_workspace", "project_workspace"]);
-  });
-
-  it("accepts execution_workspace as a toolbarButton entityType", () => {
-    const parsed = pluginUiSlotDeclarationSchema.parse({
-      type: "toolbarButton",
-      id: "workspace-open-inspector",
-      displayName: "Open inspector",
-      exportName: "OpenWorkspaceInspectorButton",
-      entityTypes: ["execution_workspace"],
-    });
-
-    expect(parsed.entityTypes).toEqual(["execution_workspace"]);
+    expect(parsed.success).toBe(false);
   });
 
   it("rejects entity targets that have no mount for the selected slot", () => {

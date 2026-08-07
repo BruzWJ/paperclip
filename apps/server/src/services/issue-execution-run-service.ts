@@ -26,13 +26,10 @@ import {
   issueExecutionRunRefs,
   issueExecutionRuns,
   issueExecutionWorkspaceBindings,
-  issueExecutionWatchdogDecisions,
   issueComments,
   issueCommentProjectionSources,
   issueSessionEvents,
   issues,
-  toolCallEvents,
-  toolInvocations,
   workspaceOperations,
   type Db,
   type IssueExecutionAttempt,
@@ -345,43 +342,6 @@ export interface RedactedIssueExecutionSessionMessage {
   readonly timeUpdated: Date;
 }
 
-export interface RedactedIssueExecutionToolInvocation {
-  readonly id: string;
-  readonly toolName: string;
-  readonly riskLevel: string | null;
-  readonly policyDecision: string | null;
-  readonly approvalState: string;
-  readonly status: string;
-  readonly argumentsHash: string | null;
-  readonly argumentsSummary: unknown;
-  readonly resultHash: string | null;
-  readonly resultSummary: unknown;
-  readonly resultSizeBytes: number | null;
-  readonly errorCode: string | null;
-  readonly startedAt: Date | null;
-  readonly completedAt: Date | null;
-  readonly createdAt: Date;
-  readonly updatedAt: Date;
-}
-
-export interface RedactedIssueExecutionToolEvent {
-  readonly id: string;
-  readonly eventType: string;
-  readonly toolName: string | null;
-  readonly decision: string | null;
-  readonly reasonCode: string | null;
-  readonly outcome: string;
-  readonly latencyMs: number | null;
-  readonly argumentsSummary: unknown;
-  readonly requestHash: string | null;
-  readonly requestSummary: unknown;
-  readonly resultHash: string | null;
-  readonly resultSummary: unknown;
-  readonly resultSizeBytes: number | null;
-  readonly errorCode: string | null;
-  readonly createdAt: Date;
-}
-
 export interface RedactedIssueExecutionActivity {
   readonly id: string;
   readonly actorType: string;
@@ -434,17 +394,10 @@ export interface JoinedIssueExecutionRunDetail {
   readonly costs: BoundedIssueExecutionRunRecords<
     typeof costEvents.$inferSelect
   >;
-  readonly toolInvocations:
-    BoundedIssueExecutionRunRecords<RedactedIssueExecutionToolInvocation>;
-  readonly toolEvents:
-    BoundedIssueExecutionRunRecords<RedactedIssueExecutionToolEvent>;
   readonly activity:
     BoundedIssueExecutionRunRecords<RedactedIssueExecutionActivity>;
   readonly workspaceOperations: BoundedIssueExecutionRunRecords<
     typeof workspaceOperations.$inferSelect
-  >;
-  readonly watchdogDecisions: BoundedIssueExecutionRunRecords<
-    typeof issueExecutionWatchdogDecisions.$inferSelect
   >;
   readonly outputComments:
     BoundedIssueExecutionRunRecords<IssueExecutionRunOutputCommentLink>;
@@ -941,7 +894,7 @@ export async function readIssueExecutionRuntimeReadinessBinding(
         issueExecutionRuns.executionWorkspaceBindingId,
       currentAdapterConfigRevisionId: agents.currentAdapterConfigRevisionId,
       revisionId: agentAdapterConfigRevisions.id,
-      revisionEnvironmentId: agentAdapterConfigRevisions.defaultEnvironmentId,
+      revisionEnvironmentId: agentAdapterConfigRevisions.executionEnvironmentId,
       acpConfiguration: agentAdapterConfigRevisions.acpConfiguration,
       bindingId: issueExecutionWorkspaceBindings.id,
       bindingAbsoluteCwd: issueExecutionWorkspaceBindings.absoluteCwd,
@@ -2897,7 +2850,7 @@ function assertJoinedRunShape(input: {
 }
 
 /**
- * One bounded canonical join for REST, Tool Gateway, activity, and audit
+ * One bounded canonical join for REST, activity, and audit
  * projections. The caller owns authorization; this reader owns identical DB
  * bytes and structural redaction for every authorized consumer.
  */
@@ -2928,11 +2881,8 @@ async function readJoinedIssueExecutionRunDetail(
     cancellationRows,
     accountingRows,
     costRows,
-    invocationRows,
-    toolEventRows,
     activityRows,
     workspaceOperationRows,
-    watchdogDecisionRows,
     outputCommentRows,
     finalizationRows,
   ] = await Promise.all([
@@ -3091,63 +3041,6 @@ async function readJoinedIssueExecutionRunDetail(
       .limit(input.limit + 1),
     database
       .select({
-        id: toolInvocations.id,
-        toolName: toolInvocations.toolName,
-        riskLevel: toolInvocations.riskLevel,
-        policyDecision: toolInvocations.policyDecision,
-        approvalState: toolInvocations.approvalState,
-        status: toolInvocations.status,
-        argumentsHash: toolInvocations.argumentsHash,
-        argumentsSummary: toolInvocations.argumentsSummary,
-        resultHash: toolInvocations.resultHash,
-        resultSummary: toolInvocations.resultSummary,
-        resultSizeBytes: toolInvocations.resultSizeBytes,
-        errorCode: toolInvocations.errorCode,
-        startedAt: toolInvocations.startedAt,
-        completedAt: toolInvocations.completedAt,
-        createdAt: toolInvocations.createdAt,
-        updatedAt: toolInvocations.updatedAt,
-      })
-      .from(toolInvocations)
-      .where(
-        and(
-          eq(toolInvocations.companyId, input.companyId),
-          eq(toolInvocations.issueId, input.issueId),
-          eq(toolInvocations.runId, input.runId),
-        ),
-      )
-      .orderBy(asc(toolInvocations.createdAt), asc(toolInvocations.id))
-      .limit(input.limit + 1),
-    database
-      .select({
-        id: toolCallEvents.id,
-        eventType: toolCallEvents.eventType,
-        toolName: toolCallEvents.toolName,
-        decision: toolCallEvents.decision,
-        reasonCode: toolCallEvents.reasonCode,
-        outcome: toolCallEvents.outcome,
-        latencyMs: toolCallEvents.latencyMs,
-        argumentsSummary: toolCallEvents.argumentsSummary,
-        requestHash: toolCallEvents.requestHash,
-        requestSummary: toolCallEvents.requestSummary,
-        resultHash: toolCallEvents.resultHash,
-        resultSummary: toolCallEvents.resultSummary,
-        resultSizeBytes: toolCallEvents.resultSizeBytes,
-        errorCode: toolCallEvents.errorCode,
-        createdAt: toolCallEvents.createdAt,
-      })
-      .from(toolCallEvents)
-      .where(
-        and(
-          eq(toolCallEvents.companyId, input.companyId),
-          eq(toolCallEvents.issueId, input.issueId),
-          eq(toolCallEvents.runId, input.runId),
-        ),
-      )
-      .orderBy(asc(toolCallEvents.createdAt), asc(toolCallEvents.id))
-      .limit(input.limit + 1),
-    database
-      .select({
         id: activityLog.id,
         actorType: activityLog.actorType,
         actorId: activityLog.actorId,
@@ -3180,20 +3073,6 @@ async function readJoinedIssueExecutionRunDetail(
       .orderBy(
         asc(workspaceOperations.startedAt),
         asc(workspaceOperations.id),
-      )
-      .limit(input.limit + 1),
-    database
-      .select()
-      .from(issueExecutionWatchdogDecisions)
-      .where(
-        and(
-          eq(issueExecutionWatchdogDecisions.companyId, input.companyId),
-          eq(issueExecutionWatchdogDecisions.runId, input.runId),
-        ),
-      )
-      .orderBy(
-        asc(issueExecutionWatchdogDecisions.createdAt),
-        asc(issueExecutionWatchdogDecisions.id),
       )
       .limit(input.limit + 1),
     database
@@ -3350,12 +3229,6 @@ async function readJoinedIssueExecutionRunDetail(
     timeCreated: row.timeCreated,
     timeUpdated: row.timeUpdated,
   }));
-  const redactedInvocations = invocationRows.map((row) =>
-    redactIssueSessionPublicationValue(row),
-  );
-  const redactedToolEvents = toolEventRows.map((row) =>
-    redactIssueSessionPublicationValue(row),
-  );
   const redactedActivity = activityRows.map((row) =>
     redactIssueSessionPublicationValue(row),
   );
@@ -3384,14 +3257,11 @@ async function readJoinedIssueExecutionRunDetail(
     cancellations: boundedRecords(cancellationRows, input.limit),
     accounting: boundedRecords(accountingRows, input.limit),
     costs: boundedRecords(costRows, input.limit),
-    toolInvocations: boundedRecords(redactedInvocations, input.limit),
-    toolEvents: boundedRecords(redactedToolEvents, input.limit),
     activity: boundedRecords(redactedActivity, input.limit),
     workspaceOperations: boundedRecords(
       redactedWorkspaceOperations,
       input.limit,
     ),
-    watchdogDecisions: boundedRecords(watchdogDecisionRows, input.limit),
     outputComments: boundedRecords(
       outputCommentRows.map((row) => ({
         commentId: row.commentId,

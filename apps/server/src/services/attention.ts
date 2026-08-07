@@ -5,7 +5,6 @@ import {
   approvals,
   assets,
   companies,
-  decisionTrainingExamples,
   inboxDismissals,
   invites,
   issueApprovals,
@@ -17,7 +16,6 @@ import {
   issues,
   joinRequests,
   projects,
-  projectWorkspaces,
 } from "@paperclipai/db";
 import { compareMoneyAmounts, deriveProjectUrlKey, parseMoneyAmount } from "@paperclipai/shared";
 import type {
@@ -222,9 +220,8 @@ function createItem(input: CreateAttentionItemInput): AttentionItem {
     project: input.project ?? null,
     workspace: input.workspace ?? null,
     detail: input.detail ?? null,
-    trainingExampleId: null,
     rank: 0,
-  };
+  } as AttentionItem;
 }
 
 function compareAttentionItems(left: AttentionItem, right: AttentionItem) {
@@ -319,15 +316,9 @@ async function issueSummaryMap(
       projectName: projects.name,
       projectColor: projects.color,
       projectIcon: projects.icon,
-      workspaceId: projectWorkspaces.id,
-      workspaceName: projectWorkspaces.name,
     })
     .from(issues)
     .leftJoin(projects, and(eq(issues.projectId, projects.id), eq(projects.companyId, companyId)))
-    .leftJoin(projectWorkspaces, and(
-      eq(issues.projectWorkspaceId, projectWorkspaces.id),
-      eq(projectWorkspaces.companyId, companyId),
-    ))
     .where(and(
       eq(issues.companyId, companyId),
       inArray(issues.id, ids),
@@ -351,10 +342,7 @@ async function issueSummaryMap(
       color: row.projectColor,
       icon: row.projectIcon,
     } : null,
-    workspace: row.workspaceId && row.workspaceName ? {
-      id: row.workspaceId,
-      name: row.workspaceName,
-    } : null,
+    workspace: null,
   }]));
 }
 
@@ -776,35 +764,6 @@ export function attentionService(db: Db) {
       const items = [...deduped.values()]
         .sort(compareAttentionItems)
         .map((item, index) => ({ ...item, rank: index + 1 }));
-      if (options.userId) {
-        const trainable: Array<{ sourceKind: "approval"; sourceId: string }> = [];
-        for (const item of items) {
-          if (item.sourceKind === "approval") {
-            trainable.push({ sourceKind: "approval", sourceId: item.subject.id });
-          }
-        }
-        if (trainable.length > 0) {
-          const examples = await db
-            .select({
-              id: decisionTrainingExamples.id,
-              sourceKind: decisionTrainingExamples.sourceKind,
-              sourceId: decisionTrainingExamples.sourceId,
-            })
-            .from(decisionTrainingExamples)
-            .where(and(
-              eq(decisionTrainingExamples.companyId, companyId),
-              eq(decisionTrainingExamples.createdByUserId, options.userId),
-              inArray(decisionTrainingExamples.sourceId, trainable.map((item) => item.sourceId)),
-            ));
-          const exampleBySource = new Map(examples.map((row) => [`${row.sourceKind}:${row.sourceId}`, row.id]));
-          for (const item of items) {
-            const sourceKind = item.sourceKind === "approval" ? "approval" : null;
-            item.trainingExampleId = sourceKind
-              ? exampleBySource.get(`${sourceKind}:${item.subject.id}`) ?? null
-              : null;
-          }
-        }
-      }
       const countsBySourceKind = emptyCounts();
       for (const item of items) countsBySourceKind[item.sourceKind] += 1;
 

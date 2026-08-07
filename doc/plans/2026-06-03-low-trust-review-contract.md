@@ -15,7 +15,7 @@ This contract assumes the reviewer may process hostile PRs, diffs, comments, att
 1. `low_trust_review` must be deny-by-default and issue-scoped.
 2. Raw low-trust output must be quarantined from higher-trust agent heartbeat context.
 3. Phase 1 can store the preset in `issues.execution_policy` JSONB, but the shape must be app-typed and validator-locked, not free-form JSON.
-4. Plugins, secrets, runtime services, agent config, and cross-issue reads are must-block surfaces for the first slice.
+4. Plugins, secrets, host execution controls, agent config, and cross-issue reads are must-block surfaces for the first slice.
 
 ## Threat Model
 
@@ -24,14 +24,14 @@ This contract assumes the reviewer may process hostile PRs, diffs, comments, att
 - Company secrets, secret refs, and provider-backed secret material
 - Agent adapter/runtime config, instructions paths, session/runtime state
 - Comments, documents, work products, and attachments outside the assigned review issue
-- Runtime services, execution workspaces, preview servers, and environment leases
+- Run directories, provider sessions, and host execution controls
 - Plugin capabilities: outbound HTTP, local folders, DB namespaces, tool execution, secret resolution
 - Higher-trust agent wake payloads, heartbeat context, and continuation summaries
 
 ### Attacker model
 
 - A low-trust review agent receives hostile repository content or issue content designed to trigger prompt injection.
-- The attacker wants the review agent to exfiltrate secrets, pivot into runtime services, tamper with other issues, or poison a higher-trust agent's future wake context.
+- The attacker wants the review agent to exfiltrate secrets, pivot into host execution, tamper with other issues, or poison a higher-trust agent's future wake context.
 
 ### Primary threat classes
 
@@ -40,7 +40,7 @@ This contract assumes the reviewer may process hostile PRs, diffs, comments, att
 - `OWASP A01 Broken Access Control`: reviewer reaches agent config, attachments, or runtime controls it does not need.
 - `OWASP A10 SSRF / outbound abuse`: plugin or runtime surfaces create network reach.
 - `STRIDE Information Disclosure`: secrets/config/artifacts leak through issue reads, `GET /agents/me`, plugin configuration, or attachments.
-- `STRIDE Elevation of Privilege`: reviewer uses plugin tools, runtime service controls, or wake/recovery APIs to act as a more trusted worker.
+- `STRIDE Elevation of Privilege`: reviewer uses plugin capabilities, execution controls, or wake/recovery APIs to act as a more trusted worker.
 - `OWASP LLM02 Insecure Output Handling`: low-trust raw output is copied into higher-trust comments, wake payloads, or summaries.
 
 ## Current Surface Review
@@ -54,8 +54,6 @@ Relevant current behavior:
   - Mutations are mostly guarded by `assertAgentIssueMutationAllowed`, which protects against mutating another agent's active issue but does not narrow reads to a review issue.
 - `apps/server/src/routes/agents.ts`
   - `GET /agents/me` returns full agent detail, including raw `adapterConfig` and `runtimeConfig`, while other config routes are access-gated or redacted.
-- `apps/server/src/routes/workspace-runtime-service-authz.ts`
-  - CEO or reporting-tree agents can manage runtime services for linked workspaces.
 - `apps/server/src/routes/plugins.ts` and `packages/plugins/sdk/src/host-client-factory.ts`
   - Plugin tools, plugin state, outbound HTTP, DB namespace access, and local folders exist as grantable capabilities.
 - `apps/server/src/services/issue-continuation-summary.ts`
@@ -68,7 +66,7 @@ Relevant current behavior:
 ### Core rules
 
 1. The preset is issue-scoped, not company-scoped.
-2. The reviewer may only operate on its assigned review issue and the repo workspace attached to that issue.
+2. The reviewer may only operate on its assigned review issue and current run directory.
 3. The reviewer gets no ambient authority from org position, current company visibility defaults, plugin manifests, or existing agent grants.
 4. Safe defaults win: any unspecified API surface is denied.
 
@@ -86,8 +84,8 @@ Relevant current behavior:
 | Other agents / org | Optional read-only labels needed for mention rendering | Agent configuration routes, session routes, skill sync, agent wake/invoke, pause/resume | Avoid lateral movement |
 | Plugins | None in Phase 1 | Plugin tools, plugin bridge routes, plugin state, DB namespace, local folders, outbound HTTP, webhooks, jobs | Plugin capability model is too broad for low trust |
 | Secrets / env | None | Secret routes, provider health, direct secret-ref materialization, env/lease introspection | Secrets are outside review scope |
-| Runtime services | None | Start/stop/restart runtime services, environment probes, lease operations, execution workspace runtime control | Prevent runtime pivot and SSRF |
-| Recovery / watchdog | None except passive viewing of the review issue's own status notices | Resolve recovery actions, interrupt active runs, schedule monitors, wake other agents | Too much control-plane authority |
+| Host execution | None | Alter provider launch, inspect host execution state, or change run-directory handling | Prevent runtime pivot and SSRF |
+| Recovery controls | None except passive viewing of the review issue's own status notices | Resolve recovery actions, interrupt active runs, schedule monitors, wake other agents | Too much control-plane authority |
 | Interactions / approvals / child issues | None in Phase 1 | Create approvals, interactions, child issues, blocker graphs | Reviewer should report findings, not orchestrate the company |
 
 ## Raw-output quarantine rule
@@ -154,11 +152,11 @@ These surfaces must be explicitly denied or specially filtered for `low_trust_re
    Reason: HTTP, DB, filesystem, and tool pivot risk.
 
 4. Secret resolution
-   Surfaces: secret routes and environment secret references
+   Surfaces: secret routes and provider-bound secret references
    Reason: plaintext secret disclosure is catastrophic and unrelated to review scope.
 
-5. Runtime service management
-   Surfaces: workspace/project runtime control and environment lease/probe operations
+5. Host execution management
+   Surfaces: provider launch and run-directory control
    Reason: lets hostile content turn a reviewer into an infrastructure operator.
 
 6. Recovery and wake control
@@ -218,7 +216,7 @@ Add typed columns only if one of these becomes a real requirement:
 ## Residual risk
 
 - Hostile review output can still mislead a human board operator if the sanitized summary is poor.
-- Repo workspace content itself remains hostile; this contract narrows Paperclip API authority, not the semantic risk of reading bad code.
+- Repository content in the run directory remains hostile; this contract narrows Paperclip API authority, not the semantic risk of reading bad code.
 - A future plugin or runtime integration could silently widen the surface unless the preset enforcement layer sits above per-feature route checks.
 
 ## Follow-up issues implied by this contract

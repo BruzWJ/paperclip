@@ -23,30 +23,24 @@ import { companySkillPolicyRoutes } from "./routes/company-skill-policy.js";
 import { changeConsentRoutes } from "./routes/change-consents.js";
 import { inboxAgentPolicyRoutes } from "./routes/inbox-agent-policy.js";
 import { folderRoutes } from "./routes/folders.js";
-import { summarySlotRoutes } from "./routes/summary-slots.js";
+
 import { teamsCatalogRoutes } from "./routes/teams-catalog.js";
 import { agentRoutes } from "./routes/agents.js";
 import { projectRoutes } from "./routes/projects.js";
 import { issueRoutes } from "./routes/issues.js";
 import { issueTreeControlRoutes } from "./routes/issue-tree-control.js";
-import { caseRoutes } from "./routes/cases.js";
-import { fileResourceRoutes } from "./routes/file-resources.js";
+
 import { routineRoutes } from "./routes/routines.js";
-import { pipelineRoutes } from "./routes/pipelines.js";
-import { environmentRoutes } from "./routes/environments.js";
-import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
 import { goalRoutes } from "./routes/goals.js";
-import { boardChatRoutes } from "./routes/board-chat.js";
+
 import { approvalRoutes } from "./routes/approvals.js";
 import { secretRoutes } from "./routes/secrets.js";
-import { toolAccessRoutes } from "./routes/tool-access.js";
-import { smokeLabRoutes } from "./routes/smoke-lab.js";
+
 import { costRoutes } from "./routes/costs.js";
 import { activityRoutes } from "./routes/activity.js";
 import { runRoutes } from "./routes/runs.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { attentionRoutes } from "./routes/attention.js";
-import { decisionTrainingRoutes } from "./routes/decision-training.js";
 import { userProfileRoutes } from "./routes/user-profiles.js";
 import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
 import { sidebarPreferenceRoutes } from "./routes/sidebar-preferences.js";
@@ -58,7 +52,6 @@ import { llmRoutes } from "./routes/llms.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { pluginRoutes } from "./routes/plugins.js";
-import { mcpGatewayProtocolRoutes, toolGatewayRoutes } from "./routes/tool-gateway.js";
 import { runToolsRoutes } from "./routes/run-tools.js";
 import { adapterRoutes } from "./routes/adapters.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
@@ -68,10 +61,6 @@ import { pluginLoader } from "./services/plugin-loader.js";
 import type { PluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
 import { pluginJobStore } from "./services/plugin-job-store.js";
-import {
-  createToolGatewayService,
-  type ToolGatewayService,
-} from "./services/tool-gateway.js";
 import type { PromptCapabilityGateway } from "./services/prompt-capability-gateway.js";
 import type { IssueExecutionRunService } from "./services/issue-execution-run-service.js";
 import { pluginLifecycleManager } from "./services/plugin-lifecycle.js";
@@ -172,9 +161,6 @@ export async function createApp(
     pluginRunIssueContextReader: PluginRunIssueContextReader;
     pluginRuntimeRecordsReader: PluginRuntimeRecordsReader;
     issueSessionStore?: IssueSessionStore;
-    bindPromptCapabilityCompanyTools: (
-      execute: ToolGatewayService["executePromptCapabilityTool"],
-    ) => void;
     ordinaryIssueRuntime: OrdinaryIssueRuntime;
     issueExecutionRunService: Pick<
       IssueExecutionRunService,
@@ -240,7 +226,7 @@ export async function createApp(
   app.use("/api", apiCompression());
   app.use(httpLogger);
   // Prompt-capability authentication is intentionally isolated from the
-  // generic API actor middleware and from named-gateway credentials.
+  // generic API actor middleware and from other capability credentials.
   app.use("/api", runToolsRoutes(opts.promptCapabilityGateway));
   app.use("/api", rejectRunInterfaceBearerFromGenericApi());
   app.use(
@@ -289,7 +275,6 @@ export async function createApp(
   api.use(companySkillPolicyRoutes(db));
   api.use(changeConsentRoutes(db));
   api.use(inboxAgentPolicyRoutes(db));
-  api.use(summarySlotRoutes(db, { ordinaryIssues }));
   api.use(teamsCatalogRoutes(db, ordinaryIssues));
   api.use(
     agentRoutes(db, {
@@ -301,33 +286,18 @@ export async function createApp(
   );
   api.use(assetRoutes(db, opts.storageService));
   api.use(projectRoutes(db));
-  api.use(caseRoutes(db, opts.storageService));
   api.use(issueTreeControlRoutes(
     db,
     opts.issueExecutionCancellation,
   ));
-  api.use(fileResourceRoutes(db));
   api.use(routineRoutes(db, { ordinaryIssues }));
-  api.use(pipelineRoutes(db, {
-    ordinaryIssues,
-    issueExecutionCancellation: opts.issueExecutionCancellation,
-  }));
-  api.use(environmentRoutes(db, { pluginWorkerManager: workerManager }));
-  api.use(executionWorkspaceRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(goalRoutes(db));
-  api.use(
-    boardChatRoutes(db, { ordinaryIssues }),
-  );
   api.use(approvalRoutes(db, {
     pluginWorkerManager: workerManager,
     ordinaryIssues,
     issueExecutionCancellation: opts.issueExecutionCancellation,
   }));
   api.use(secretRoutes(db));
-  const trustedLocalStdioRuntimeHost =
-    process.env.PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST
-    ?? process.env.PAPERCLIP_TOOL_RUNTIME_TRUSTED_HOST
-    ?? null;
   api.use(costRoutes(db, {
     pluginWorkerManager: workerManager,
     issueExecutionCancellation: opts.issueExecutionCancellation,
@@ -342,7 +312,6 @@ export async function createApp(
   );
   api.use(dashboardRoutes(db));
   api.use(attentionRoutes(db));
-  api.use(decisionTrainingRoutes(db));
   api.use(userProfileRoutes(db));
   api.use(sidebarBadgeRoutes(db));
   api.use(sidebarPreferenceRoutes(db));
@@ -401,35 +370,12 @@ export async function createApp(
       };
     },
   });
-  const toolGateway = createToolGatewayService(db, {
-    deploymentExposure: opts.deploymentExposure,
-    trustedLocalStdioRuntimeHost,
-  });
-  opts.bindPromptCapabilityCompanyTools(
-    toolGateway.executePromptCapabilityTool.bind(toolGateway),
-  );
-  // Issue routes are intentionally mounted after the gateway is constructed because
-  // issue approval endpoints delegate to it. The intervening routers use distinct
-  // route prefixes, so this dependency does not change issue-route precedence.
   api.use(issueRoutes(db, opts.storageService, {
     pluginWorkerManager: workerManager,
     ordinaryIssues,
     pluginDomainEvents: opts.pluginDomainEvents,
   }));
-  app.use(mcpGatewayProtocolRoutes(toolGateway));
-  api.use(toolAccessRoutes(db, {
-    deploymentExposure: opts.deploymentExposure,
-    canonicalPublicUrl: opts.canonicalPublicUrl,
-    trustedLocalStdioRuntimeHost,
-    toolGateway,
-  }));
-  api.use(smokeLabRoutes(db, {
-    deploymentExposure: opts.deploymentExposure,
-  }));
   let viteHtmlRenderer: ReturnType<typeof createCachedViteHtmlRenderer> | null = null;
-  api.use(
-    toolGatewayRoutes(db, toolGateway),
-  );
   api.use(
     pluginRoutes(
       db,

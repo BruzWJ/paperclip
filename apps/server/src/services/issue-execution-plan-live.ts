@@ -88,7 +88,7 @@ function validatePlanEntry(value: AcpLivePlanEntry): void {
     !PLAN_STATUSES.has(value.status)
   ) {
     throw new IssueExecutionLivePlanViolation(
-      "Stable ACP plan contains a malformed or experimental entry",
+      "Stable ACP plan contains a malformed entry",
     );
   }
 }

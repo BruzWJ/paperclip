@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   agentActionGrants,
-  agentCompanyToolSelections,
   agentContextGrants,
   agentMentionReachGrants,
   agents,
@@ -12,10 +11,6 @@ import {
   plugins,
   principalPermissionGrants,
   runtimeAgentConfigurationAudits,
-  toolApplications,
-  toolCatalogEntries,
-  toolConnectionInstalls,
-  toolConnections,
   type Db,
   type RuntimeAgentConfigurationSnapshot,
 } from "@paperclipai/db";
@@ -34,14 +29,12 @@ import {
   type HireAgentApprovalPayload,
   type RuntimeAgentHireConfigurationInput,
   type RuntimeAgentUpdateConfigurationInput,
-  type RuntimeAgentCompanyToolOption,
 } from "@paperclipai/shared";
 import {
   and,
   asc,
   eq,
   inArray,
-  isNull,
   sql,
 } from "drizzle-orm";
 import {
@@ -55,7 +48,6 @@ import {
   type PromptCapabilityBinding,
 } from "./prompt-capability-gateway.js";
 import { lockActivePromptCapabilityBinding } from "./prompt-capability-gateway-postgres.js";
-import { lockToolSelectionRowsInOrder } from "./tool-selection-lock-order.js";
 import { budgetService } from "./budgets.js";
 
 export type RuntimeAgentConfigurationTransaction =
@@ -69,7 +61,6 @@ const CONFIGURATION_KEYS = [
   "contextGrants",
   "actionGrants",
   "mentionReachGrants",
-  "companyToolIds",
 ] as const;
 
 const PROTECTED_SELF_IDENTITY_KEYS = new Set([
@@ -88,7 +79,6 @@ export interface RuntimeAgentCreateConfiguration {
   contextGrants?: SparseGrantMap<AgentContextGrantKey>;
   actionGrants?: SparseGrantMap<PaperclipActionKey>;
   mentionReachGrants?: SparseGrantMap<AgentMentionReachGrantKey>;
-  companyToolIds?: string[];
 }
 
 export interface RuntimeAgentUpdateConfiguration {
@@ -99,7 +89,6 @@ export interface RuntimeAgentUpdateConfiguration {
   contextGrants?: SparseGrantMap<AgentContextGrantKey>;
   actionGrants?: SparseGrantMap<PaperclipActionKey>;
   mentionReachGrants?: SparseGrantMap<AgentMentionReachGrantKey>;
-  companyToolIds?: string[];
 }
 
 export interface RuntimeAgentConfigurationBoardActor {
@@ -188,7 +177,6 @@ interface ParsedCreateConfiguration {
   contextGrants: SparseGrantMap<AgentContextGrantKey>;
   actionGrants: SparseGrantMap<PaperclipActionKey>;
   mentionReachGrants: SparseGrantMap<AgentMentionReachGrantKey>;
-  companyToolIds: string[];
 }
 
 interface ParsedUpdateConfiguration extends RuntimeAgentUpdateConfiguration {}
@@ -208,20 +196,6 @@ type AgentRow = Pick<
   | "currentAdapterConfigRevisionId"
 >;
 
-interface SelectedTool {
-  catalogEntryId: string;
-  connectionId: string;
-  connectionInstallId: string;
-  catalogVersionHash: string;
-}
-
-interface LockedActiveToolCatalogEntry {
-  catalogEntryId: string;
-  connectionId: string;
-  applicationId: string;
-  catalogVersionHash: string;
-}
-
 interface ActorAuditColumns {
   actorKind: "board" | "agent" | "plugin";
   actorId: string;
@@ -230,104 +204,6 @@ interface ActorAuditColumns {
   actorPluginInstallationId: string | null;
   runId: string | null;
   issueExecutionRefId: string | null;
-}
-
-async function listCompanyToolOptionsForTarget(
-  db: Db,
-  input: {
-    companyId: string;
-    targetType: "company" | "agent";
-    targetId: string;
-  },
-): Promise<RuntimeAgentCompanyToolOption[]> {
-  const rows = await db
-    .select({
-      catalogEntryId: toolCatalogEntries.id,
-      connectionId: toolConnections.id,
-      connectionName: toolConnections.name,
-      entryName: toolCatalogEntries.name,
-      toolName: toolCatalogEntries.toolName,
-      title: toolCatalogEntries.title,
-      description: toolCatalogEntries.description,
-      catalogVersionHash: toolCatalogEntries.versionHash,
-      entryKind: toolCatalogEntries.entryKind,
-      entryStatus: toolCatalogEntries.status,
-      connectionStatus: toolConnections.status,
-      connectionEnabled: toolConnections.enabled,
-      applicationStatus: toolApplications.status,
-    })
-    .from(toolCatalogEntries)
-    .innerJoin(
-      toolConnections,
-      and(
-        eq(toolConnections.companyId, toolCatalogEntries.companyId),
-        eq(toolConnections.id, toolCatalogEntries.connectionId),
-      ),
-    )
-    .innerJoin(
-      toolApplications,
-      and(
-        eq(toolApplications.companyId, toolConnections.companyId),
-        eq(toolApplications.id, toolConnections.applicationId),
-      ),
-    )
-    .innerJoin(
-      toolConnectionInstalls,
-      and(
-        eq(toolConnectionInstalls.companyId, toolConnections.companyId),
-        eq(toolConnectionInstalls.connectionId, toolConnections.id),
-        eq(toolConnectionInstalls.targetType, input.targetType),
-        input.targetType === "company"
-          ? isNull(toolConnectionInstalls.targetAgentId)
-          : eq(toolConnectionInstalls.targetAgentId, input.targetId),
-      ),
-    )
-    .where(eq(toolCatalogEntries.companyId, input.companyId))
-    .orderBy(
-      asc(toolConnections.name),
-      asc(toolCatalogEntries.title),
-      asc(toolCatalogEntries.id),
-    );
-  return rows
-    .filter(
-      (row) =>
-        row.entryKind === "tool" &&
-        row.entryStatus === "active" &&
-        row.connectionStatus === "active" &&
-        row.connectionEnabled === true &&
-        row.applicationStatus === "active",
-    )
-    .map((row) => ({
-      catalogEntryId: row.catalogEntryId,
-      connectionId: row.connectionId,
-      connectionName: row.connectionName,
-      title: row.title?.trim() || row.entryName || row.toolName,
-      description: row.description ?? "",
-      catalogVersionHash: row.catalogVersionHash,
-    }));
-}
-
-export function listRuntimeAgentCreateCompanyToolOptions(
-  db: Db,
-  companyId: string,
-): Promise<RuntimeAgentCompanyToolOption[]> {
-  return listCompanyToolOptionsForTarget(db, {
-    companyId,
-    targetType: "company",
-    targetId: companyId,
-  });
-}
-
-export function listRuntimeAgentEditCompanyToolOptions(
-  db: Db,
-  companyId: string,
-  agentId: string,
-): Promise<RuntimeAgentCompanyToolOption[]> {
-  return listCompanyToolOptionsForTarget(db, {
-    companyId,
-    targetType: "agent",
-    targetId: agentId,
-  });
 }
 
 export class RuntimeAgentConfigurationInvalid extends Error {
@@ -464,28 +340,6 @@ function parseSparseGrantMap<Key extends string>(
   return parsed;
 }
 
-function parseCompanyToolIds(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    throw new RuntimeAgentConfigurationInvalid(
-      "companyToolIds must be an array",
-    );
-  }
-  const ids = value.map((entry) => {
-    if (typeof entry !== "string" || !isUuidLike(entry)) {
-      throw new RuntimeAgentConfigurationInvalid(
-        "companyToolIds must contain only UUIDs",
-      );
-    }
-    return entry;
-  });
-  if (new Set(ids).size !== ids.length) {
-    throw new RuntimeAgentConfigurationInvalid(
-      "companyToolIds must not contain duplicates",
-    );
-  }
-  return ids.sort();
-}
-
 function parseConfigurationRecord(value: unknown): Record<string, unknown> {
   if (!isPlainRecord(value)) {
     throw new RuntimeAgentConfigurationInvalid(
@@ -535,9 +389,6 @@ export function parseRuntimeAgentCreateConfiguration(
         "mentionReachGrants",
       )
       : {},
-    companyToolIds: present(record, "companyToolIds")
-      ? parseCompanyToolIds(record.companyToolIds)
-      : [],
   };
 }
 
@@ -584,9 +435,6 @@ export function parseRuntimeAgentUpdateConfiguration(
       AGENT_MENTION_REACH_GRANT_KEYS,
       "mentionReachGrants",
     );
-  }
-  if (present(record, "companyToolIds")) {
-    parsed.companyToolIds = parseCompanyToolIds(record.companyToolIds);
   }
   return parsed;
 }
@@ -752,36 +600,6 @@ function grantActorColumns(actor: InternalActor): {
   return { grantedByAgentId: null, grantedByUserId: null };
 }
 
-function selectionActorColumns(actor: InternalActor): {
-  kind: "user" | "agent" | "plugin";
-  agentId: string | null;
-  userId: string | null;
-  pluginInstallationId: string | null;
-} {
-  if (actor.kind === "agent") {
-    return {
-      kind: "agent",
-      agentId: actor.actorId,
-      userId: null,
-      pluginInstallationId: null,
-    };
-  }
-  if (actor.kind === "plugin") {
-    return {
-      kind: "plugin",
-      agentId: null,
-      userId: null,
-      pluginInstallationId: actor.pluginInstallationId,
-    };
-  }
-  return {
-    kind: "user",
-    agentId: null,
-    userId: actor.actorId,
-    pluginInstallationId: null,
-  };
-}
-
 function trueGrantMap<Key extends string>(
   keys: readonly Key[],
   rows: readonly { key: Key }[],
@@ -799,7 +617,7 @@ async function loadSnapshot(
   companyId: string,
   agentId: string,
 ): Promise<RuntimeAgentConfigurationSnapshot> {
-  const [agentRows, contextRows, actionRows, mentionRows, toolRows] =
+  const [agentRows, contextRows, actionRows, mentionRows] =
     await Promise.all([
       tx
         .select({
@@ -840,17 +658,6 @@ async function loadSnapshot(
             eq(agentMentionReachGrants.agentId, agentId),
           ),
         ),
-      tx
-        .select({ id: agentCompanyToolSelections.catalogEntryId })
-        .from(agentCompanyToolSelections)
-        .where(
-          and(
-            eq(agentCompanyToolSelections.companyId, companyId),
-            eq(agentCompanyToolSelections.agentId, agentId),
-            eq(agentCompanyToolSelections.status, "selected"),
-          ),
-        )
-        .orderBy(asc(agentCompanyToolSelections.catalogEntryId)),
     ]);
   const agent = agentRows[0];
   if (!agent) {
@@ -871,7 +678,6 @@ async function loadSnapshot(
       AGENT_MENTION_REACH_GRANT_KEYS,
       mentionRows,
     ),
-    companyToolIds: toolRows.map((row) => row.id),
   };
 }
 
@@ -955,14 +761,6 @@ function snapshotsChangedKeys(
     ) {
       changed.push(`mentionReachGrants.${key}`);
     }
-  }
-  if (
-    (!before && after.companyToolIds.length > 0) ||
-    (before &&
-      canonicalJson(before.companyToolIds) !==
-        canonicalJson(after.companyToolIds))
-  ) {
-    changed.push("companyToolIds");
   }
   return changed;
 }
@@ -1390,354 +1188,6 @@ async function assertAgentConfigureAuthority(
   }
 }
 
-async function lockActiveToolCatalogEntries(
-  tx: RuntimeAgentConfigurationTransaction,
-  companyId: string,
-  requestedIds: readonly string[],
-): Promise<LockedActiveToolCatalogEntry[]> {
-  if (requestedIds.length === 0) return [];
-
-  await lockToolSelectionRowsInOrder(tx, {
-    companyId,
-    catalogEntryIds: requestedIds,
-  });
-  const catalogRows = await tx
-    .select({
-      catalogEntryId: toolCatalogEntries.id,
-      connectionId: toolCatalogEntries.connectionId,
-      catalogVersionHash: toolCatalogEntries.versionHash,
-      entryKind: toolCatalogEntries.entryKind,
-      entryStatus: toolCatalogEntries.status,
-    })
-    .from(toolCatalogEntries)
-    .where(
-      and(
-        eq(toolCatalogEntries.companyId, companyId),
-        inArray(toolCatalogEntries.id, [...requestedIds]),
-      ),
-    )
-    .orderBy(asc(toolCatalogEntries.id));
-  const catalogById = new Map(
-    catalogRows.map((row) => [row.catalogEntryId, row]),
-  );
-  for (const requestedId of requestedIds) {
-    const row = catalogById.get(requestedId);
-    if (
-      !row ||
-      row.entryKind !== "tool" ||
-      row.entryStatus !== "active"
-    ) {
-      throw new RuntimeAgentConfigurationInvalid(
-        `Company tool ${requestedId} is not a current, active concrete tool`,
-      );
-    }
-  }
-
-  const connectionIds = Array.from(
-    new Set(catalogRows.map((row) => row.connectionId)),
-  ).sort();
-  await lockToolSelectionRowsInOrder(tx, {
-    companyId,
-    connectionIds,
-  });
-  const connectionRows = await tx
-    .select({
-      connectionId: toolConnections.id,
-      applicationId: toolConnections.applicationId,
-      connectionStatus: toolConnections.status,
-      connectionEnabled: toolConnections.enabled,
-    })
-    .from(toolConnections)
-    .where(
-      and(
-        eq(toolConnections.companyId, companyId),
-        inArray(toolConnections.id, connectionIds),
-      ),
-    )
-    .orderBy(asc(toolConnections.id));
-  const connectionById = new Map(
-    connectionRows.map((row) => [row.connectionId, row]),
-  );
-  for (const connectionId of connectionIds) {
-    const row = connectionById.get(connectionId);
-    if (
-      !row ||
-      row.connectionStatus !== "active" ||
-      row.connectionEnabled !== true
-    ) {
-      throw new RuntimeAgentConfigurationInvalid(
-        `Company tool connection ${connectionId} is not active`,
-      );
-    }
-  }
-
-  const applicationIds = Array.from(
-    new Set(connectionRows.map((row) => row.applicationId)),
-  ).sort();
-  await lockToolSelectionRowsInOrder(tx, {
-    companyId,
-    applicationIds,
-  });
-  const applicationRows = await tx
-    .select({
-      applicationId: toolApplications.id,
-      applicationStatus: toolApplications.status,
-    })
-    .from(toolApplications)
-    .where(
-      and(
-        eq(toolApplications.companyId, companyId),
-        inArray(toolApplications.id, applicationIds),
-      ),
-    )
-    .orderBy(asc(toolApplications.id));
-  const applicationById = new Map(
-    applicationRows.map((row) => [row.applicationId, row]),
-  );
-  for (const applicationId of applicationIds) {
-    const row = applicationById.get(applicationId);
-    if (!row || row.applicationStatus !== "active") {
-      throw new RuntimeAgentConfigurationInvalid(
-        `Company tool application ${applicationId} is not active`,
-      );
-    }
-  }
-
-  return requestedIds.map((catalogEntryId) => {
-    const catalog = catalogById.get(catalogEntryId)!;
-    const connection = connectionById.get(catalog.connectionId)!;
-    const application = applicationById.get(connection.applicationId)!;
-    return {
-      catalogEntryId,
-      connectionId: connection.connectionId,
-      applicationId: application.applicationId,
-      catalogVersionHash: catalog.catalogVersionHash,
-    };
-  });
-}
-
-export async function lockCreateCompanyToolSources(
-  tx: RuntimeAgentConfigurationTransaction,
-  companyId: string,
-  requestedIds: readonly string[],
-): Promise<LockedActiveToolCatalogEntry[]> {
-  const sources = await lockActiveToolCatalogEntries(
-    tx,
-    companyId,
-    requestedIds,
-  );
-  if (sources.length === 0) return [];
-  const connectionIds = Array.from(
-    new Set(sources.map((source) => source.connectionId)),
-  ).sort();
-  await lockToolSelectionRowsInOrder(tx, {
-    companyId,
-    installConnectionIds: connectionIds,
-  });
-  const companyInstallRows = await tx
-    .select({
-      id: toolConnectionInstalls.id,
-      connectionId: toolConnectionInstalls.connectionId,
-    })
-    .from(toolConnectionInstalls)
-    .where(
-      and(
-        eq(toolConnectionInstalls.companyId, companyId),
-        inArray(toolConnectionInstalls.connectionId, connectionIds),
-        eq(toolConnectionInstalls.targetType, "company"),
-        isNull(toolConnectionInstalls.targetAgentId),
-      ),
-    )
-    .orderBy(asc(toolConnectionInstalls.connectionId));
-  const installedConnectionIds = new Set(
-    companyInstallRows.map((row) => row.connectionId),
-  );
-  const missingConnectionId = connectionIds.find(
-    (connectionId) => !installedConnectionIds.has(connectionId),
-  );
-  if (missingConnectionId) {
-    throw new RuntimeAgentConfigurationInvalid(
-      `Company tool connection ${missingConnectionId} is not installed for company-wide agent creation`,
-    );
-  }
-  return sources;
-}
-
-export async function materializeCreateAgentConnectionInstalls(
-  tx: RuntimeAgentConfigurationTransaction,
-  input: {
-    companyId: string;
-    agentId: string;
-    sources: readonly LockedActiveToolCatalogEntry[];
-    actor: InternalActor;
-  },
-): Promise<void> {
-  const connectionIds = Array.from(
-    new Set(input.sources.map((source) => source.connectionId)),
-  ).sort();
-  if (connectionIds.length === 0) return;
-  const actorColumns = grantActorColumns(input.actor);
-  await tx
-    .insert(toolConnectionInstalls)
-    .values(
-      connectionIds.map((connectionId) => ({
-        companyId: input.companyId,
-        connectionId,
-        targetType: "agent" as const,
-        targetAgentId: input.agentId,
-        createdByAgentId: actorColumns.grantedByAgentId,
-        createdByUserId: actorColumns.grantedByUserId,
-      })),
-    )
-    .onConflictDoNothing();
-  await lockToolSelectionRowsInOrder(tx, {
-    companyId: input.companyId,
-    installConnectionIds: connectionIds,
-  });
-  const rows = await tx
-    .select({
-      id: toolConnectionInstalls.id,
-      connectionId: toolConnectionInstalls.connectionId,
-    })
-    .from(toolConnectionInstalls)
-    .where(
-      and(
-        eq(toolConnectionInstalls.companyId, input.companyId),
-        inArray(toolConnectionInstalls.connectionId, connectionIds),
-        eq(toolConnectionInstalls.targetType, "agent"),
-        eq(toolConnectionInstalls.targetAgentId, input.agentId),
-      ),
-    )
-    .orderBy(asc(toolConnectionInstalls.connectionId));
-  const installed = new Set(rows.map((row) => row.connectionId));
-  const missingConnectionId = connectionIds.find(
-    (connectionId) => !installed.has(connectionId),
-  );
-  if (missingConnectionId) {
-    throw new RuntimeAgentConfigurationConflict(
-      `Agent tool binding could not be materialized for connection ${missingConnectionId}`,
-    );
-  }
-}
-
-export async function resolveSelectedToolsForAgent(
-  tx: RuntimeAgentConfigurationTransaction,
-  companyId: string,
-  agentId: string,
-  requestedIds: readonly string[],
-): Promise<SelectedTool[]> {
-  const sources = await lockActiveToolCatalogEntries(
-    tx,
-    companyId,
-    requestedIds,
-  );
-  if (sources.length === 0) return [];
-  const connectionIds = Array.from(
-    new Set(sources.map((source) => source.connectionId)),
-  ).sort();
-  await lockToolSelectionRowsInOrder(tx, {
-    companyId,
-    installConnectionIds: connectionIds,
-  });
-  const installRows = await tx
-    .select({
-      id: toolConnectionInstalls.id,
-      connectionId: toolConnectionInstalls.connectionId,
-    })
-    .from(toolConnectionInstalls)
-    .where(
-      and(
-        eq(toolConnectionInstalls.companyId, companyId),
-        inArray(toolConnectionInstalls.connectionId, connectionIds),
-        eq(toolConnectionInstalls.targetType, "agent"),
-        eq(toolConnectionInstalls.targetAgentId, agentId),
-      ),
-    )
-    .orderBy(asc(toolConnectionInstalls.connectionId));
-  const installByConnectionId = new Map(
-    installRows.map((row) => [row.connectionId, row.id]),
-  );
-  return sources.map((source) => {
-    const connectionInstallId = installByConnectionId.get(
-      source.connectionId,
-    );
-    if (!connectionInstallId) {
-      throw new RuntimeAgentConfigurationInvalid(
-        `Company tool ${source.catalogEntryId} is not installed for this exact agent`,
-      );
-    }
-    return {
-      catalogEntryId: source.catalogEntryId,
-      connectionId: source.connectionId,
-      connectionInstallId,
-      catalogVersionHash: source.catalogVersionHash,
-    };
-  });
-}
-
-async function resolveResubmittedHireTools(
-  tx: RuntimeAgentConfigurationTransaction,
-  input: {
-    companyId: string;
-    agentId: string;
-    requestedIds: readonly string[];
-    actor: InternalActor;
-  },
-): Promise<SelectedTool[]> {
-  const sources = await lockActiveToolCatalogEntries(
-    tx,
-    input.companyId,
-    input.requestedIds,
-  );
-  if (sources.length === 0) return [];
-  const connectionIds = Array.from(
-    new Set(sources.map((source) => source.connectionId)),
-  ).sort();
-  await lockToolSelectionRowsInOrder(tx, {
-    companyId: input.companyId,
-    installConnectionIds: connectionIds,
-  });
-  const existingInstalls = await tx
-    .select({ connectionId: toolConnectionInstalls.connectionId })
-    .from(toolConnectionInstalls)
-    .where(
-      and(
-        eq(toolConnectionInstalls.companyId, input.companyId),
-        inArray(toolConnectionInstalls.connectionId, connectionIds),
-        eq(toolConnectionInstalls.targetType, "agent"),
-        eq(toolConnectionInstalls.targetAgentId, input.agentId),
-      ),
-    )
-    .orderBy(asc(toolConnectionInstalls.connectionId));
-  const installedConnectionIds = new Set(
-    existingInstalls.map((row) => row.connectionId),
-  );
-  const missingSourceIds = sources
-    .filter(
-      (source) => !installedConnectionIds.has(source.connectionId),
-    )
-    .map((source) => source.catalogEntryId);
-  if (missingSourceIds.length > 0) {
-    const materializationSources = await lockCreateCompanyToolSources(
-      tx,
-      input.companyId,
-      missingSourceIds,
-    );
-    await materializeCreateAgentConnectionInstalls(tx, {
-      companyId: input.companyId,
-      agentId: input.agentId,
-      sources: materializationSources,
-      actor: input.actor,
-    });
-  }
-  return resolveSelectedToolsForAgent(
-    tx,
-    input.companyId,
-    input.agentId,
-    input.requestedIds,
-  );
-}
-
 async function replaceContextGrants(
   tx: RuntimeAgentConfigurationTransaction,
   companyId: string,
@@ -1828,82 +1278,6 @@ async function replaceMentionReachGrants(
         key,
         ...provenance,
         createdAt: now,
-      })),
-    );
-  }
-}
-
-async function replaceCompanyTools(
-  tx: RuntimeAgentConfigurationTransaction,
-  companyId: string,
-  agentId: string,
-  tools: readonly SelectedTool[],
-  actor: InternalActor,
-  now: Date,
-): Promise<void> {
-  const active = await tx
-    .select()
-    .from(agentCompanyToolSelections)
-    .where(
-      and(
-        eq(agentCompanyToolSelections.companyId, companyId),
-        eq(agentCompanyToolSelections.agentId, agentId),
-        eq(agentCompanyToolSelections.status, "selected"),
-      ),
-    )
-    .for("update");
-  const requested = new Map(tools.map((tool) => [tool.catalogEntryId, tool]));
-  const actorColumns = selectionActorColumns(actor);
-  const retained = new Set<string>();
-
-  for (const row of active) {
-    const replacement = requested.get(row.catalogEntryId);
-    if (
-      replacement &&
-      replacement.connectionId === row.connectionId &&
-      replacement.connectionInstallId === row.connectionInstallId &&
-      replacement.catalogVersionHash === row.catalogVersionHash
-    ) {
-      retained.add(row.catalogEntryId);
-      continue;
-    }
-    await tx
-      .update(agentCompanyToolSelections)
-      .set({
-        status: "revoked",
-        revokedByKind: actorColumns.kind,
-        revokedByAgentId: actorColumns.agentId,
-        revokedByUserId: actorColumns.userId,
-        revokedByPluginInstallationId:
-          actorColumns.pluginInstallationId,
-        revocationReason: "runtime_agent_configuration_replaced",
-        revokedAt: now,
-        updatedAt: now,
-      })
-      .where(eq(agentCompanyToolSelections.id, row.id));
-  }
-
-  const additions = tools.filter(
-    (tool) => !retained.has(tool.catalogEntryId),
-  );
-  if (additions.length > 0) {
-    await tx.insert(agentCompanyToolSelections).values(
-      additions.map((tool) => ({
-        companyId,
-        agentId,
-        connectionId: tool.connectionId,
-        connectionInstallId: tool.connectionInstallId,
-        catalogEntryId: tool.catalogEntryId,
-        catalogVersionHash: tool.catalogVersionHash,
-        status: "selected" as const,
-        selectedByKind: actorColumns.kind,
-        selectedByAgentId: actorColumns.agentId,
-        selectedByUserId: actorColumns.userId,
-        selectedByPluginInstallationId:
-          actorColumns.pluginInstallationId,
-        selectedAt: now,
-        createdAt: now,
-        updatedAt: now,
       })),
     );
   }
@@ -2129,11 +1503,6 @@ export function createRuntimeAgentConfigurationService(
     assertUniqueName(input.configuration.name, locked.agents);
     assertReportsTo(agentId, reportsTo, locked.agents);
 
-    const createToolSources = await lockCreateCompanyToolSources(
-      tx,
-      input.companyId,
-      input.configuration.companyToolIds,
-    );
     const requiresApproval =
       input.actor.kind !== "board" &&
       locked.company.requireBoardApprovalForNewAgents;
@@ -2149,18 +1518,6 @@ export function createRuntimeAgentConfigurationService(
       createdAt: now,
       updatedAt: now,
     }, actorAuditColumns(input.actor).actorUserId);
-    await materializeCreateAgentConnectionInstalls(tx, {
-      companyId: input.companyId,
-      agentId,
-      sources: createToolSources,
-      actor: input.actor,
-    });
-    const selectedTools = await resolveSelectedToolsForAgent(
-      tx,
-      input.companyId,
-      agentId,
-      input.configuration.companyToolIds,
-    );
     await replaceContextGrants(
       tx,
       input.companyId,
@@ -2182,14 +1539,6 @@ export function createRuntimeAgentConfigurationService(
       input.companyId,
       agentId,
       input.configuration.mentionReachGrants,
-      input.actor,
-      now,
-    );
-    await replaceCompanyTools(
-      tx,
-      input.companyId,
-      agentId,
-      selectedTools,
       input.actor,
       now,
     );
@@ -2414,15 +1763,6 @@ export function createRuntimeAgentConfigurationService(
         );
       }
 
-      const selectedTools =
-        input.configuration.companyToolIds === undefined
-          ? null
-          : await resolveSelectedToolsForAgent(
-            tx,
-            input.companyId,
-            input.targetAgentId,
-            input.configuration.companyToolIds,
-          );
       const identityPatch: Partial<typeof agents.$inferInsert> = {
         updatedAt: now,
       };
@@ -2473,16 +1813,6 @@ export function createRuntimeAgentConfigurationService(
           input.companyId,
           input.targetAgentId,
           input.configuration.mentionReachGrants,
-          input.actor,
-          now,
-        );
-      }
-      if (selectedTools) {
-        await replaceCompanyTools(
-          tx,
-          input.companyId,
-          input.targetAgentId,
-          selectedTools,
           input.actor,
           now,
         );
@@ -2668,12 +1998,6 @@ export function createRuntimeAgentConfigurationService(
         input.configuration.reportsTo,
         locked.agents,
       );
-      const selectedTools = await resolveResubmittedHireTools(tx, {
-        companyId: existingApproval.companyId,
-        agentId: target.id,
-        requestedIds: input.configuration.companyToolIds,
-        actor: input.actor,
-      });
       const now = clock();
       const updatedTarget = await tx
         .update(agents)
@@ -2722,14 +2046,6 @@ export function createRuntimeAgentConfigurationService(
         existingApproval.companyId,
         target.id,
         input.configuration.mentionReachGrants,
-        input.actor,
-        now,
-      );
-      await replaceCompanyTools(
-        tx,
-        existingApproval.companyId,
-        target.id,
-        selectedTools,
         input.actor,
         now,
       );
@@ -2799,60 +2115,6 @@ export function createRuntimeAgentConfigurationService(
   }
 
   return {
-    async listCreateCompanyToolOptions(
-      companyId: string,
-    ): Promise<RuntimeAgentCompanyToolOption[]> {
-      if (!isUuidLike(companyId)) {
-        throw new RuntimeAgentConfigurationInvalid(
-          "companyId must be a UUID",
-        );
-      }
-      const company = await db
-        .select({ id: companies.id, status: companies.status })
-        .from(companies)
-        .where(eq(companies.id, companyId))
-        .limit(1)
-        .then((rows) => rows[0] ?? null);
-      if (!company || company.status !== "active") {
-        throw new RuntimeAgentConfigurationInvalid(
-          "Company must exist and be active",
-        );
-      }
-      return listRuntimeAgentCreateCompanyToolOptions(db, companyId);
-    },
-
-    async listAgentCompanyToolOptions(input: {
-      companyId: string;
-      agentId: string;
-    }): Promise<RuntimeAgentCompanyToolOption[]> {
-      if (!isUuidLike(input.companyId) || !isUuidLike(input.agentId)) {
-        throw new RuntimeAgentConfigurationInvalid(
-          "companyId and agentId must be UUIDs",
-        );
-      }
-      const agent = await db
-        .select({ id: agents.id, status: agents.status })
-        .from(agents)
-        .where(
-          and(
-            eq(agents.companyId, input.companyId),
-            eq(agents.id, input.agentId),
-          ),
-        )
-        .limit(1)
-        .then((rows) => rows[0] ?? null);
-      if (!agent || agent.status === "terminated") {
-        throw new RuntimeAgentConfigurationInvalid(
-          "Runtime-agent tool option target must be a non-terminated agent in the same company",
-        );
-      }
-      return listRuntimeAgentEditCompanyToolOptions(
-        db,
-        input.companyId,
-        input.agentId,
-      );
-    },
-
     async get(input: {
       companyId: string;
       targetAgentId: string;

@@ -61,7 +61,7 @@ const revision = {
       },
     },
     executionTargetSelector: {
-      defaultEnvironmentId: "00000000-0000-4000-8000-000000000005",
+      environmentId: "00000000-0000-4000-8000-000000000005",
       executionTargetDriver: "local",
       executionTargetDigest: identity.executionTargetIdentity,
     },

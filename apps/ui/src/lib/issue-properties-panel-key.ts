@@ -10,7 +10,6 @@ type IssuePropertiesPanelKeyIssue = Pick<
   | "ownerUserId"
   | "ownershipEpoch"
   | "projectId"
-  | "projectWorkspaceId"
   | "parentId"
   | "creatorKind"
   | "creatorAuthorityId"
@@ -22,13 +21,9 @@ type IssuePropertiesPanelKeyIssue = Pick<
   | "labelIds"
   | "executionPolicy"
   | "executionState"
-  | "executionWorkspacePreference"
-  | "executionWorkspaceSettings"
-  | "currentExecutionWorkspace"
   | "blocks"
   | "blockedBy"
   | "ancestors"
-  | "watchdog"
 >;
 
 type IssuePropertiesPanelKeyChild = Pick<Issue, "id" | "updatedAt" | "identifier" | "title">;
@@ -48,7 +43,6 @@ export function buildIssuePropertiesPanelKey(
     ownerUserId: issue.ownerUserId,
     ownershipEpoch: issue.ownershipEpoch,
     projectId: issue.projectId,
-    projectWorkspaceId: issue.projectWorkspaceId,
     parentId: issue.parentId,
     creatorKind: issue.creatorKind,
     creatorAuthorityId: issue.creatorAuthorityId,
@@ -58,23 +52,6 @@ export function buildIssuePropertiesPanelKey(
     creatorSystemSourceId: issue.creatorSystemSourceId,
     hiddenAt: issue.hiddenAt,
     labelIds: issue.labelIds ?? [],
-    executionWorkspacePreference: issue.executionWorkspacePreference,
-    executionWorkspaceSettings: issue.executionWorkspaceSettings ?? null,
-    currentExecutionWorkspace: issue.currentExecutionWorkspace
-      ? {
-          id: issue.currentExecutionWorkspace.id,
-          mode: issue.currentExecutionWorkspace.mode,
-          status: issue.currentExecutionWorkspace.status,
-          projectWorkspaceId: issue.currentExecutionWorkspace.projectWorkspaceId,
-          branchName: issue.currentExecutionWorkspace.branchName,
-          cwd: issue.currentExecutionWorkspace.cwd,
-          runtimeServices: (issue.currentExecutionWorkspace.runtimeServices ?? []).map((service) => ({
-            id: service.id,
-            status: service.status,
-            url: service.url,
-          })),
-        }
-      : null,
     executionPolicy: issue.executionPolicy ?? null,
     executionState: issue.executionState
       ? {
@@ -96,15 +73,6 @@ export function buildIssuePropertiesPanelKey(
       title: relation.title,
       boardPresentationStatus: relation.boardPresentationStatus,
     })),
-    watchdog: issue.watchdog
-      ? {
-          id: issue.watchdog.id,
-          status: issue.watchdog.status,
-          lastObservedFingerprint: issue.watchdog.lastObservedFingerprint,
-          lastTriggeredAt: issue.watchdog.lastTriggeredAt,
-          triggerCount: issue.watchdog.triggerCount,
-        }
-      : null,
     parentSummary: issue.ancestors?.[0]
       ? {
           id: issue.ancestors[0].id,

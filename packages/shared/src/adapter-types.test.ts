@@ -28,8 +28,6 @@ describe("dynamic adapter type validation schemas", () => {
       agentAdapterRevisionConfigurationSchema.parse({
         adapterType: "external_adapter",
         adapterConfig: {},
-        defaultEnvironmentId:
-          "11111111-1111-4111-8111-111111111111",
         runtimeConfig: {},
         companySkillPins: [],
         skillChannel: "operator_native",
@@ -42,16 +40,12 @@ describe("dynamic adapter type validation schemas", () => {
       agentAdapterRevisionConfigurationSchema.safeParse({
         adapterType: "   ",
         adapterConfig: {},
-        defaultEnvironmentId:
-          "11111111-1111-4111-8111-111111111111",
         runtimeConfig: {},
       }).success,
     ).toBe(false);
     expect(
       agentAdapterRevisionConfigurationSchema.safeParse({
         adapterType: "external_adapter",
-        defaultEnvironmentId:
-          "11111111-1111-4111-8111-111111111111",
         runtimeConfig: {},
       }).success,
     ).toBe(false);
@@ -102,7 +96,6 @@ describe("dynamic adapter type validation schemas", () => {
         mentionReachGrants: allFalse(
           AGENT_MENTION_REACH_GRANT_KEYS,
         ),
-        companyToolIds: [],
         role: "security",
       }).success,
     ).toBe(false);

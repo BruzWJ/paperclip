@@ -16,10 +16,8 @@ import {
 import { pickTextColorForSolidBg } from "@/lib/color-contrast";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
-import { executionWorkspacesApi } from "../api/execution-workspaces";
 import { issuesApi } from "../api/issues";
 import { MissingUserSecretsBanner } from "../pages/secrets/MissingUserSecretsBanner";
-import { instanceSettingsApi } from "../api/instanceSettings";
 import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
 import { accessApi } from "../api/access";
@@ -27,11 +25,6 @@ import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
 import { buildMarkdownMentionOptions, isAgentTaskTarget } from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
-import { orderReusableExecutionWorkspaces } from "../lib/reusable-execution-workspaces";
-import {
-  defaultExecutionWorkspaceModeForProject,
-  defaultProjectWorkspaceIdForProject,
-} from "../lib/project-workspace-defaults";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
@@ -76,7 +69,6 @@ import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./Ma
 import { AgentIcon } from "./AgentIconPicker";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 import { getTrustPreset } from "../lib/trust-policy-ui";
-import { ReusableExecutionWorkspaceSelect } from "./ReusableExecutionWorkspaceSelect";
 import { IssueContextAccessMaskMatrix } from "./IssueContextAccessMaskMatrix";
 
 const DRAFT_KEY = "paperclip:issue-request-draft:v2";
@@ -93,10 +85,6 @@ interface IssueDraft {
   reviewerValue: string;
   approverValue: string;
   projectId: string;
-  projectWorkspaceId?: string;
-  executionWorkspaceMode?: string;
-  selectedExecutionWorkspaceId?: string;
-  useIsolatedExecutionWorkspace?: boolean;
   workMode?: IssueWorkMode;
   contextAccessMask?: ContextAccess | null;
 }
@@ -248,27 +236,6 @@ const priorities = [
   { value: "low", label: "Low", icon: ArrowDown, color: priorityColor.low ?? priorityColorDefault },
 ];
 
-const EXECUTION_WORKSPACE_MODES = [
-  { value: "shared_workspace", label: "Project default" },
-  { value: "isolated_workspace", label: "New isolated workspace" },
-  { value: "reuse_existing", label: "Reuse existing workspace" },
-] as const;
-
-function defaultExecutionWorkspaceModeForIssueDefaults(
-  defaults: {
-    executionWorkspaceId?: unknown;
-    executionWorkspaceMode?: unknown;
-  },
-  project: { executionWorkspacePolicy?: { enabled?: boolean; defaultMode?: string | null } | null } | null | undefined,
-) {
-  if (typeof defaults.executionWorkspaceId === "string" && defaults.executionWorkspaceId.length > 0) {
-    return "reuse_existing";
-  }
-  return typeof defaults.executionWorkspaceMode === "string" && defaults.executionWorkspaceMode.length > 0
-    ? defaults.executionWorkspaceMode
-    : defaultExecutionWorkspaceModeForProject(project);
-}
-
 function isWorkModePeriodShortcut(e: Pick<React.KeyboardEvent, "code" | "ctrlKey" | "key" | "metaKey">) {
   const isPeriod = e.code === "Period" || e.key === ".";
   return (e.metaKey || e.ctrlKey) && isPeriod;
@@ -407,16 +374,12 @@ export function NewIssueDialog() {
   const [showApproverRow, setShowApproverRow] = useState(false);
   const [participantMenuOpen, setParticipantMenuOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
-  const [projectWorkspaceId, setProjectWorkspaceId] = useState("");
-  const [executionWorkspaceMode, setExecutionWorkspaceMode] = useState<string>("shared_workspace");
-  const [selectedExecutionWorkspaceId, setSelectedExecutionWorkspaceId] = useState("");
   const [workMode, setWorkMode] = useState<IssueWorkMode>("standard");
   const [expanded, setExpanded] = useState(false);
   const [dialogCompanyId, setDialogCompanyId] = useState<string | null>(null);
   const [stagedFiles, setStagedFiles] = useState<StagedIssueFile[]>([]);
   const [isFileDragOver, setIsFileDragOver] = useState(false);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const executionWorkspaceDefaultProjectId = useRef<string | null>(null);
   const initializationKeyRef = useRef<string | null>(null);
   const createIdempotencyKeyRef = useRef<string | null>(null);
 
@@ -425,8 +388,6 @@ export function NewIssueDialog() {
   const isSubIssueMode = Boolean(newIssueDefaults.parentId);
   const parentIssueLabel = newIssueDefaults.parentIdentifier
     ?? (newIssueDefaults.parentId ? newIssueDefaults.parentId.slice(0, 8) : "");
-  const parentExecutionWorkspaceId = newIssueDefaults.executionWorkspaceId ?? "";
-  const parentExecutionWorkspaceLabel = newIssueDefaults.parentExecutionWorkspaceLabel ?? parentExecutionWorkspaceId;
 
   // Popover states
   const [statusOpen, setStatusOpen] = useState(false);
@@ -455,24 +416,6 @@ export function NewIssueDialog() {
     queryFn: () => projectsApi.list(effectiveCompanyId!),
     enabled: !!effectiveCompanyId && newIssueOpen,
   });
-  const {
-    data: reusableExecutionWorkspaces,
-    isLoading: reusableExecutionWorkspacesLoading,
-    isError: reusableExecutionWorkspacesError,
-  } = useQuery({
-    queryKey: queryKeys.executionWorkspaces.summaryList(effectiveCompanyId!, {
-      projectId,
-      projectWorkspaceId: projectWorkspaceId || undefined,
-      reuseEligible: true,
-    }),
-    queryFn: () =>
-      executionWorkspacesApi.listSummaries(effectiveCompanyId!, {
-        projectId,
-        projectWorkspaceId: projectWorkspaceId || undefined,
-        reuseEligible: true,
-      }),
-    enabled: Boolean(effectiveCompanyId) && newIssueOpen && Boolean(projectId),
-  });
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
@@ -481,12 +424,6 @@ export function NewIssueDialog() {
     queryKey: queryKeys.access.companyUserDirectory(effectiveCompanyId!),
     queryFn: () => accessApi.listUserDirectory(effectiveCompanyId!),
     enabled: Boolean(effectiveCompanyId) && newIssueOpen,
-  });
-  const { data: experimentalSettings } = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-    enabled: newIssueOpen,
-    retry: false,
   });
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
   const activeProjects = useMemo(
@@ -609,9 +546,6 @@ export function NewIssueDialog() {
       reviewerValue,
       approverValue,
       projectId,
-      projectWorkspaceId,
-      executionWorkspaceMode,
-      selectedExecutionWorkspaceId,
       workMode,
       contextAccessMask,
     });
@@ -624,9 +558,6 @@ export function NewIssueDialog() {
     reviewerValue,
     approverValue,
     projectId,
-    projectWorkspaceId,
-    executionWorkspaceMode,
-    selectedExecutionWorkspaceId,
     workMode,
     contextAccessMask,
   ]);
@@ -659,9 +590,6 @@ export function NewIssueDialog() {
     reviewerValue,
     approverValue,
     projectId,
-    projectWorkspaceId,
-    executionWorkspaceMode,
-    selectedExecutionWorkspaceId,
     workMode,
     contextAccessMask,
     newIssueOpen,
@@ -679,59 +607,35 @@ export function NewIssueDialog() {
     if (initializationKeyRef.current === initializationKey) return;
     initializationKeyRef.current = initializationKey;
     setDialogCompanyId(selectedCompanyId);
-    executionWorkspaceDefaultProjectId.current = null;
 
     const draft = loadDraft();
     if (newIssueDefaults.parentId) {
       const nextWorkMode = isIssueWorkMode(newIssueDefaults.workMode) ? newIssueDefaults.workMode : "standard";
       const defaultProjectId = newIssueDefaults.projectId ?? "";
-      const defaultProject = orderedProjects.find((project) => project.id === defaultProjectId);
-      const hasExplicitProjectWorkspaceId = newIssueDefaults.projectWorkspaceId !== undefined;
-      const defaultProjectWorkspaceId = newIssueDefaults.projectWorkspaceId
-        ?? defaultProjectWorkspaceIdForProject(defaultProject);
-      const defaultExecutionWorkspaceMode = defaultExecutionWorkspaceModeForIssueDefaults(newIssueDefaults, defaultProject);
       setIssueText(newIssueDefaults.title ?? "", newIssueDefaults.request ?? "");
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
       setProjectId(defaultProjectId);
-      setProjectWorkspaceId(defaultProjectWorkspaceId);
       setOwnerAgentId(newIssueDefaults.ownerAgentId ?? "");
       setContextAccessMask(null);
-      setExecutionWorkspaceMode(defaultExecutionWorkspaceMode);
       setWorkMode(nextWorkMode);
-      setSelectedExecutionWorkspaceId(newIssueDefaults.executionWorkspaceId ?? "");
-      executionWorkspaceDefaultProjectId.current = hasExplicitProjectWorkspaceId || defaultProject
-        ? defaultProjectId || null
-        : null;
     } else if (newIssueDefaults.title || newIssueDefaults.request) {
       const nextWorkMode = isIssueWorkMode(newIssueDefaults.workMode) ? newIssueDefaults.workMode : "standard";
       setIssueText(newIssueDefaults.title ?? "", newIssueDefaults.request ?? "");
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
       const defaultProjectId = newIssueDefaults.projectId ?? "";
-      const defaultProject = orderedProjects.find((project) => project.id === defaultProjectId);
-      const hasExplicitProjectWorkspaceId = newIssueDefaults.projectWorkspaceId !== undefined;
       setProjectId(defaultProjectId);
-      setProjectWorkspaceId(newIssueDefaults.projectWorkspaceId ?? defaultProjectWorkspaceIdForProject(defaultProject));
       setOwnerAgentId(newIssueDefaults.ownerAgentId ?? "");
       setContextAccessMask(null);
       setReviewerValue("");
       setApproverValue("");
       setShowReviewerRow(false);
       setShowApproverRow(false);
-      setExecutionWorkspaceMode(defaultExecutionWorkspaceModeForIssueDefaults(newIssueDefaults, defaultProject));
       setWorkMode(nextWorkMode);
-      setSelectedExecutionWorkspaceId(newIssueDefaults.executionWorkspaceId ?? "");
-      executionWorkspaceDefaultProjectId.current = hasExplicitProjectWorkspaceId || newIssueDefaults.executionWorkspaceId || defaultProject
-        ? defaultProjectId || null
-        : null;
     } else if (draft && (draft.title.trim() || draft.request.trim())) {
       const nextWorkMode = isIssueWorkMode(draft.workMode) ? draft.workMode : "standard";
       const restoredProjectId = newIssueDefaults.projectId ?? draft.projectId;
-      const restoredProject = orderedProjects.find((project) => project.id === restoredProjectId);
-      const hasExplicitProjectWorkspaceId = newIssueDefaults.projectWorkspaceId !== undefined;
-      const hasExplicitExecutionWorkspaceId = newIssueDefaults.executionWorkspaceId !== undefined;
-      const hasExplicitExecutionWorkspaceMode = newIssueDefaults.executionWorkspaceMode !== undefined;
       setIssueText(draft.title, draft.request);
       setStatus(draft.status || "todo");
       setPriority(draft.priority);
@@ -742,49 +646,20 @@ export function NewIssueDialog() {
       setShowReviewerRow(!!(draft.reviewerValue));
       setShowApproverRow(!!(draft.approverValue));
       setProjectId(restoredProjectId);
-      setProjectWorkspaceId(
-        hasExplicitProjectWorkspaceId
-          ? (newIssueDefaults.projectWorkspaceId ?? "")
-          : (draft.projectWorkspaceId ?? defaultProjectWorkspaceIdForProject(restoredProject)),
-      );
-      setExecutionWorkspaceMode(
-        hasExplicitExecutionWorkspaceId || hasExplicitExecutionWorkspaceMode
-          ? defaultExecutionWorkspaceModeForIssueDefaults(newIssueDefaults, restoredProject)
-          : (
-              draft.executionWorkspaceMode
-              ?? (draft.useIsolatedExecutionWorkspace ? "isolated_workspace" : defaultExecutionWorkspaceModeForProject(restoredProject))
-            ),
-      );
       setWorkMode(nextWorkMode);
-      setSelectedExecutionWorkspaceId(
-        hasExplicitExecutionWorkspaceId
-          ? (newIssueDefaults.executionWorkspaceId ?? "")
-          : (draft.selectedExecutionWorkspaceId ?? ""),
-      );
-      executionWorkspaceDefaultProjectId.current = hasExplicitProjectWorkspaceId || hasExplicitExecutionWorkspaceId || draft.projectWorkspaceId || restoredProject
-        ? restoredProjectId || null
-        : null;
     } else {
       setWorkMode("standard");
       const defaultProjectId = newIssueDefaults.projectId ?? "";
-      const defaultProject = orderedProjects.find((project) => project.id === defaultProjectId);
-      const hasExplicitProjectWorkspaceId = newIssueDefaults.projectWorkspaceId !== undefined;
       setIssueText("", "");
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
       setProjectId(defaultProjectId);
-      setProjectWorkspaceId(newIssueDefaults.projectWorkspaceId ?? defaultProjectWorkspaceIdForProject(defaultProject));
       setOwnerAgentId(newIssueDefaults.ownerAgentId ?? "");
       setContextAccessMask(null);
       setReviewerValue("");
       setApproverValue("");
       setShowReviewerRow(false);
       setShowApproverRow(false);
-      setExecutionWorkspaceMode(defaultExecutionWorkspaceModeForIssueDefaults(newIssueDefaults, defaultProject));
-      setSelectedExecutionWorkspaceId(newIssueDefaults.executionWorkspaceId ?? "");
-      executionWorkspaceDefaultProjectId.current = hasExplicitProjectWorkspaceId || newIssueDefaults.executionWorkspaceId || defaultProject
-        ? defaultProjectId || null
-        : null;
     }
   }, [newIssueOpen, newIssueDefaults, orderedProjects, selectedCompanyId, setIssueText]);
 
@@ -826,16 +701,12 @@ export function NewIssueDialog() {
     setShowReviewerRow(false);
     setShowApproverRow(false);
     setProjectId("");
-    setProjectWorkspaceId("");
-    setExecutionWorkspaceMode("shared_workspace");
-    setSelectedExecutionWorkspaceId("");
     setWorkMode("standard");
     setExpanded(false);
     setDialogCompanyId(null);
     setStagedFiles([]);
     setIsFileDragOver(false);
     setCompanyOpen(false);
-    executionWorkspaceDefaultProjectId.current = null;
     initializationKeyRef.current = null;
     createIdempotencyKeyRef.current = null;
   }
@@ -851,9 +722,6 @@ export function NewIssueDialog() {
     setShowReviewerRow(false);
     setShowApproverRow(false);
     setProjectId("");
-    setProjectWorkspaceId("");
-    setExecutionWorkspaceMode("shared_workspace");
-    setSelectedExecutionWorkspaceId("");
     setWorkMode("standard");
     createIdempotencyKeyRef.current = null;
   }
@@ -887,7 +755,6 @@ export function NewIssueDialog() {
       ...(newIssueDefaults.parentId ? { parentId: newIssueDefaults.parentId } : {}),
       ...(newIssueDefaults.goalId ? { goalId: newIssueDefaults.goalId } : {}),
       ...(projectId ? { projectId } : {}),
-      ...(projectWorkspaceId ? { projectWorkspaceId } : {}),
       ...(canonicalContextAccessMask
         ? { contextAccessMask: canonicalContextAccessMask }
         : {}),
@@ -987,22 +854,6 @@ export function NewIssueDialog() {
     },
     [currentOwner?.adapterConfig, currentProject?.env, selectedOwnerAgentId, status],
   );
-  const currentProjectExecutionWorkspacePolicy =
-    experimentalSettings?.enableIsolatedWorkspaces === true
-      ? currentProject?.executionWorkspacePolicy ?? null
-      : null;
-  const currentProjectSupportsExecutionWorkspace = Boolean(currentProjectExecutionWorkspacePolicy?.enabled);
-  const selectableReusableWorkspaces = reusableExecutionWorkspaces ?? [];
-  const selectedReusableExecutionWorkspace = selectableReusableWorkspaces.find(
-    (workspace) => workspace.id === selectedExecutionWorkspaceId,
-  );
-  const isUsingParentExecutionWorkspace = isSubIssueMode && parentExecutionWorkspaceId
-    ? executionWorkspaceMode === "reuse_existing" && selectedExecutionWorkspaceId === parentExecutionWorkspaceId
-    : false;
-  const showParentWorkspaceWarning = isSubIssueMode
-    && currentProjectSupportsExecutionWorkspace
-    && Boolean(parentExecutionWorkspaceId)
-    && !isUsingParentExecutionWorkspace;
   const recentOwnerAgentIds = useMemo(() => getRecentAssigneeIds(), [newIssueOpen]);
   const recentOwnerOptionIds = recentOwnerAgentIds;
   const recentProjectIds = useMemo(() => getRecentProjectIds(), [newIssueOpen]);
@@ -1051,29 +902,7 @@ export function NewIssueDialog() {
   const handleProjectChange = useCallback((nextProjectId: string) => {
     if (nextProjectId) trackRecentProject(nextProjectId);
     setProjectId(nextProjectId);
-    const nextProject = orderedProjects.find((project) => project.id === nextProjectId);
-    executionWorkspaceDefaultProjectId.current = nextProjectId || null;
-    setProjectWorkspaceId(defaultProjectWorkspaceIdForProject(nextProject));
-    setExecutionWorkspaceMode(defaultExecutionWorkspaceModeForProject(nextProject));
-    setSelectedExecutionWorkspaceId("");
-  }, [orderedProjects]);
-
-  useEffect(() => {
-    if (
-      !newIssueOpen ||
-      !projectId ||
-      selectedExecutionWorkspaceId ||
-      executionWorkspaceDefaultProjectId.current === projectId
-    ) {
-      return;
-    }
-    const project = orderedProjects.find((entry) => entry.id === projectId);
-    if (!project) return;
-    executionWorkspaceDefaultProjectId.current = projectId;
-    setProjectWorkspaceId(defaultProjectWorkspaceIdForProject(project));
-    setExecutionWorkspaceMode(defaultExecutionWorkspaceModeForProject(project));
-    setSelectedExecutionWorkspaceId("");
-  }, [newIssueOpen, orderedProjects, projectId, selectedExecutionWorkspaceId]);
+  }, []);
   const currentWorkMode = workModeMetaFor(workMode);
   const CurrentWorkModeIcon = currentWorkMode.icon;
 
@@ -1498,59 +1327,6 @@ export function NewIssueDialog() {
             </div>
             </div>
           ) : null}
-
-          {currentProject && currentProjectSupportsExecutionWorkspace && (
-            <div className="px-4 py-3 space-y-2">
-            <div className="space-y-1.5">
-              <label
-                htmlFor="new-issue-execution-workspace-mode"
-                className="text-xs font-medium"
-              >
-                Execution workspace
-              </label>
-              <div className="text-(length:--text-micro) text-muted-foreground">
-                Control whether this task runs in the shared workspace, a new isolated workspace, or an existing one.
-              </div>
-              <select
-                id="new-issue-execution-workspace-mode"
-                className="w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={executionWorkspaceMode}
-                onChange={(e) => {
-                  setExecutionWorkspaceMode(e.target.value);
-                  if (e.target.value !== "reuse_existing") {
-                    setSelectedExecutionWorkspaceId("");
-                  }
-                }}
-              >
-                {EXECUTION_WORKSPACE_MODES.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              {executionWorkspaceMode === "reuse_existing" && (
-                <ReusableExecutionWorkspaceSelect
-                  value={selectedExecutionWorkspaceId}
-                  workspaces={selectableReusableWorkspaces}
-                  onValueChange={(workspaceId) => setSelectedExecutionWorkspaceId(workspaceId)}
-                  loading={reusableExecutionWorkspacesLoading}
-                  error={reusableExecutionWorkspacesError}
-                  disablePortal
-                />
-              )}
-              {executionWorkspaceMode === "reuse_existing" && selectedReusableExecutionWorkspace && (
-                <div className="text-(length:--text-micro) text-muted-foreground">
-                  Reusing {selectedReusableExecutionWorkspace.name} from {selectedReusableExecutionWorkspace.branchName ?? selectedReusableExecutionWorkspace.cwd ?? "existing execution workspace"}.
-                </div>
-              )}
-              {showParentWorkspaceWarning ? (
-                <div className="rounded-md border border-amber-300/60 bg-amber-50 px-2 py-1.5 text-(length:--text-micro) text-amber-900 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-100">
-                  Warning: this sub-task will no longer use the parent task workspace{parentExecutionWorkspaceLabel ? ` (${parentExecutionWorkspaceLabel})` : ""}.
-                </div>
-              ) : null}
-            </div>
-            </div>
-          )}
 
           {/* Immutable request */}
           <div

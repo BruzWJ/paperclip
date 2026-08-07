@@ -7,11 +7,11 @@ import {
   type PersistedDevServerStatus,
 } from "../dev-server-status.js";
 import { logger } from "../middleware/logger.js";
-import { instanceSettingsService } from "./instance-settings.js";
 import {
   listIssueExecutionRunsForActivity,
   type IssueExecutionRunListCursor,
 } from "./issue-execution-run-service.js";
+import { instanceSettingsService } from "./instance-settings.js";
 
 const DEFAULT_CHECK_INTERVAL_MS = 2_500;
 const ACTIVE_RUN_STATUSES = [
@@ -64,16 +64,14 @@ export function createDevServerRestartCoordinator(
 ): DevServerRestartCoordinator {
   const env = opts.env ?? process.env;
   const log = logger.child({ service: "dev-server-restart-coordinator" });
-  const settings = instanceSettingsService(db);
   const dependencies: DevServerRestartCoordinatorDependencies = {
     readStatus: () => readPersistedDevServerStatus(env),
     readRequest: () => readDevServerRestartRequest(env),
     writeRequest: (request) =>
       writeDevServerRestartRequest(request, env, { preserveExisting: true }),
-    getAutoRestartEnabled: async () => {
-      const experimental = await settings.getExperimental();
-      return experimental.autoRestartDevServerWhenIdle === true;
-    },
+    getAutoRestartEnabled: async () =>
+      (await instanceSettingsService(db).getGeneral())
+        .autoRestartDevServerWhenIdle === true,
     getActiveRunCount: () => countActiveIssueExecutionRuns(db),
     now: () => new Date(),
     ...opts.dependencies,

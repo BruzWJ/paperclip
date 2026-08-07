@@ -64,8 +64,8 @@ test("the weighted partition keeps the shards close to balanced", () => {
 
   const heaviest = Math.max(...weights);
   const total = weights.reduce((sum, weight) => sum + weight, 0);
-  // Round-robin/count-based sharding would strand the ~168s smoke-lab spec on
-  // one runner. Assert the weighted split stays within 15% of an even cut so a
+  // Round-robin/count-based sharding can strand a long-running spec on one
+  // runner. Assert the weighted split stays within 15% of an even cut so a
   // future spec-time regression surfaces here instead of on the PR critical path.
   assert.ok(
     heaviest <= (total / SHARD_COUNT) * 1.15,

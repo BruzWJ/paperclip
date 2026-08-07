@@ -95,24 +95,6 @@ function loadSavedAdapterConfiguration(
   if (typeof stored.cheapModelEnabled === "boolean") {
     values.cheapModelEnabled = stored.cheapModelEnabled;
   }
-  if (typeof stored.workspaceStrategyType === "string") {
-    values.workspaceStrategyType = stored.workspaceStrategyType;
-  }
-  if (typeof stored.workspaceBaseRef === "string") {
-    values.workspaceBaseRef = stored.workspaceBaseRef;
-  }
-  if (typeof stored.workspaceBranchTemplate === "string") {
-    values.workspaceBranchTemplate = stored.workspaceBranchTemplate;
-  }
-  if (typeof stored.worktreeParentDir === "string") {
-    values.worktreeParentDir = stored.worktreeParentDir;
-  }
-  if (typeof stored.runtimeServicesJson === "string") {
-    values.runtimeServicesJson = stored.runtimeServicesJson;
-  }
-  if (typeof stored.defaultEnvironmentId === "string") {
-    values.defaultEnvironmentId = stored.defaultEnvironmentId;
-  }
   if (
     stored.adapterSchemaValues
     && typeof stored.adapterSchemaValues === "object"
@@ -161,11 +143,6 @@ function loadSavedRuntimeAccess(
       defaults.mentionReachGrants,
       stored.mentionReachGrants,
     ),
-    companyToolIds: Array.isArray(stored.companyToolIds)
-      ? stored.companyToolIds.filter(
-          (value): value is string => typeof value === "string",
-        )
-      : [],
   };
 }
 
@@ -753,7 +730,7 @@ export function OnboardingWizard() {
                             additional agents and reporting lines later.
                           </>
                         ) : step === 4 ? (
-                          <>Choose this agent&apos;s explicit adapter, provider configuration, and environment.</>
+                          <>Choose this agent&apos;s adapter and provider configuration.</>
                         ) : (
                           <>Everything&apos;s set up — your first agent is ready to work.</>
                         )}
@@ -1173,7 +1150,6 @@ export function OnboardingWizard() {
                     />
                   </div>
                   <RuntimeAgentConfigurationFields
-                    companyId={createdCompanyId ?? ""}
                     value={runtimeAccess}
                     onChange={setRuntimeAccess}
                     disabled={loading}
@@ -1315,7 +1291,6 @@ export function OnboardingWizard() {
                     }
                     showAdapterTypeField={false}
                     applyAdapterSchemaDefaults={false}
-                    requireExplicitExecutionEnvironment
                   />
 
                   <div className="space-y-3 rounded-md border border-border p-3">

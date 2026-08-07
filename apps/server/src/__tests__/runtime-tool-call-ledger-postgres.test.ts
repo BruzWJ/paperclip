@@ -95,7 +95,6 @@ function toolCallRow(overrides: Record<string, unknown> = {}) {
     callIdentityType: "string",
     callIdentityValue: "call-0",
     toolName: nonMentionDescriptor.name,
-    companyToolSelectionId: null,
     pluginInstallationId: null,
     argumentsDigest: digest('{"a":1,"b":2}'),
     status: "executing",

@@ -9,10 +9,7 @@ import type {
   CompanySkillUsageAgent,
 } from "@paperclipai/shared";
 import { ForkSkillDialog } from "@/components/skill-studio/ForkSkillDialog";
-import {
-  ProjectScanNotice,
-  SkillLineageChip,
-} from "@/components/skill-studio/SkillProvenance";
+import { SkillLineageChip } from "@/components/skill-studio/SkillProvenance";
 import { AgentsUsingSkillBadge } from "@/components/skill-studio/AgentsUsingSkillDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -243,27 +240,6 @@ export const ForkedSkillHeader: Story = {
           <AgentsUsingSkillBadge companyId={COMPANY_ID} skill={fork} />
         </div>
       </Seed>
-    );
-  },
-};
-
-/** Repo-synced (project_scan) source notice with the "Edit a copy instead" path (§3.3). */
-export const ProjectScanSourceNotice: Story = {
-  render: () => {
-    const skill = makeSkill({
-      name: "Repo Linter",
-      sourceType: "local_path",
-      sourceBadge: "local",
-      metadata: { sourceKind: "project_scan" },
-      sourcePath: "acme-app/.claude/skills/repo-linter",
-      sourceLabel: "acme-app",
-      editable: true,
-      editableReason: null,
-    });
-    return (
-      <div className="w-[30rem] max-w-full overflow-hidden rounded-md border border-border bg-card">
-        <ProjectScanNotice skill={skill} onEditACopy={() => {}} />
-      </div>
     );
   },
 };

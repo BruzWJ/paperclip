@@ -15,7 +15,6 @@ const hostMocks = vi.hoisted(() => ({
   assertPluginInstallationRequestScope: vi.fn(async () => undefined),
   getCompanySettings: vi.fn(async () => null as Record<string, unknown> | null),
   upsertCompanySettings: vi.fn(async () => undefined),
-  getExecutionWorkspaceById: vi.fn(async () => null as Record<string, unknown> | null),
   resolveManagedProject: vi.fn(async () => ({
     status: "missing",
     projectId: null,
@@ -32,12 +31,6 @@ vi.mock("../services/plugin-registry.js", () => ({
   pluginRegistryService: () => ({
     getCompanySettings: hostMocks.getCompanySettings,
     upsertCompanySettings: hostMocks.upsertCompanySettings,
-  }),
-}));
-
-vi.mock("../services/execution-workspaces.js", () => ({
-  executionWorkspaceService: () => ({
-    getById: hostMocks.getExecutionWorkspaceById,
   }),
 }));
 
@@ -118,49 +111,6 @@ describe("plugin orchestration APIs without a database process", () => {
         fs.rm(root, { recursive: true, force: true })
       ),
     );
-  });
-
-  it("returns only plugin-safe execution workspace metadata for its company", async () => {
-    const workspaceId = randomUUID();
-    const projectId = randomUUID();
-    hostMocks.getExecutionWorkspaceById.mockResolvedValue({
-      id: workspaceId,
-      companyId,
-      projectId,
-      projectWorkspaceId: null,
-      mode: "isolated_workspace",
-      strategyType: "git_worktree",
-      name: "Feature workspace",
-      status: "active",
-      cwd: "/tmp/paperclip-feature",
-      repoUrl: "https://example.com/paperclip.git",
-      baseRef: "main",
-      branchName: "feature/workspace",
-      providerType: "git_worktree",
-      providerRef: "/tmp/paperclip-feature",
-      metadata: {
-        providerMetadata: { sandboxId: "sandbox-1" },
-        workspaceRealizationRequest: { hiddenInternal: true },
-      },
-    });
-    const host = services({ pluginKey: "paperclip.workspace" });
-
-    await expect(
-      host.executionWorkspaces.get({ workspaceId, companyId }),
-    ).resolves.toMatchObject({
-      id: workspaceId,
-      companyId,
-      projectId,
-      path: "/tmp/paperclip-feature",
-      providerType: "git_worktree",
-      providerMetadata: { sandboxId: "sandbox-1" },
-    });
-    await expect(
-      host.executionWorkspaces.get({
-        workspaceId,
-        companyId: "00000000-0000-4000-8000-000000000099",
-      }),
-    ).resolves.toBeNull();
   });
 
   it("exposes only the retained plugin issue control-plane surface", () => {

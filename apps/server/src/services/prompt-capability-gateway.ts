@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { IssueExecutionRefMode } from "@paperclipai/shared";
-import { contextDialDigest } from "./context-dial-resolver.js";
 import {
   compileRuntimeInterface,
   RuntimeToolUnavailable,
@@ -8,9 +7,6 @@ import {
   type RuntimeInterfaceCompileInput,
   type RuntimeToolSource,
 } from "./runtime-interface-compiler.js";
-import type {
-  IssueSessionDbTransaction,
-} from "./issue-session/event-store.js";
 
 const PROMPT_CAPABILITY_BEARER_PREFIX = "pc_run_v1_";
 const PLUGIN_RUN_CONTEXT_HANDLE_PREFIX = "pc_plugin_ctx_v1_";
@@ -92,17 +88,6 @@ export type PromptCapabilityCallIdentity =
   | { readonly source: "provider"; readonly id: string }
   | { readonly source: "jsonrpc"; readonly id: string | number };
 
-export interface PromptCapabilityAudit {
-  readonly capability: PromptCapabilityIngressBinding | null;
-  readonly event: "list" | "call" | "reject" | "plugin_context";
-  readonly outcome: "allowed" | "denied";
-  readonly toolName?: string;
-  readonly reason?: string;
-  readonly dialDigest?: string;
-  readonly grantSnapshot?: Readonly<Record<string, boolean>>;
-  readonly occurredAt: Date;
-}
-
 export interface PromptCapabilityPluginContext {
   readonly capability: PromptCapabilityBinding;
   readonly runInterfaceToolCallId: string;
@@ -150,10 +135,6 @@ export interface PromptCapabilityGatewayRepository {
     handleHash: string,
     at: Date,
   ): Promise<PromptCapabilityPluginContext | null>;
-  writeAudit(
-    event: PromptCapabilityAudit,
-    transaction?: IssueSessionDbTransaction,
-  ): Promise<void>;
 }
 
 export interface PromptCapabilityToolExecutor {
@@ -162,7 +143,6 @@ export interface PromptCapabilityToolExecutor {
     descriptor: Pick<
       CompiledRunToolDescriptor,
       | "name"
-      | "selectedCompanyToolSelectionId"
       | "pluginInstallationId"
     >;
     arguments: unknown;
@@ -181,9 +161,6 @@ export interface PromptCapabilityToolExecutor {
       pluginInstallationId: string;
       pluginManifestIdentity: string;
     }): Promise<string>;
-    commitMentionAudit?(
-      transaction: IssueSessionDbTransaction,
-    ): Promise<void>;
   }): Promise<PromptCapabilityToolExecutionResult>;
 }
 
@@ -237,33 +214,12 @@ export function mintPromptCapabilityBearer(
   return `${PROMPT_CAPABILITY_BEARER_PREFIX}${Buffer.from(entropy).toString("base64url")}`;
 }
 
-function grantSnapshot(
-  input: RuntimeInterfaceCompileInput,
-): Readonly<Record<string, boolean>> {
-  return Object.fromEntries(
-    Object.entries(input.actionGrants).map(([key, value]) => [
-      key,
-      value === true,
-    ]),
-  );
-}
-
 export function assertRunBearerRejectedByGenericApi(
   credential: string,
 ): void {
   if (credential.startsWith(PROMPT_CAPABILITY_BEARER_PREFIX)) {
     throw new PromptCapabilityAuthenticationError(
       "Prompt-capability bearers are not valid generic API credentials",
-    );
-  }
-}
-
-export function assertRunBearerRejectedByNamedGateway(
-  credential: string,
-): void {
-  if (credential.startsWith(PROMPT_CAPABILITY_BEARER_PREFIX)) {
-    throw new PromptCapabilityAuthenticationError(
-      "Prompt-capability bearers are not valid named-gateway credentials",
     );
   }
 }
@@ -311,75 +267,26 @@ export function createPromptCapabilityGateway(options: {
 }) {
   const now = options.now ?? (() => new Date());
 
-  async function audit(
-    capability: PromptCapabilityIngressBinding | null,
-    event: Omit<PromptCapabilityAudit, "capability" | "occurredAt">,
-  ): Promise<void> {
-    await options.repository.writeAudit({
-      capability,
-      occurredAt: now(),
-      ...event,
-    });
-  }
-
   async function authenticate(
     bearer: string,
   ): Promise<PromptCapabilityBinding> {
-    try {
-      assertPromptCapabilityCredential(bearer);
-    } catch (error) {
-      await audit(null, {
-        event: "reject",
-        outcome: "denied",
-        reason: "wrong_credential_class",
-      });
-      throw error;
-    }
+    assertPromptCapabilityCredential(bearer);
     const result = await options.repository.authenticateBearerHash(
       sha256(bearer),
       now(),
     );
-    try {
-      return authenticated(result);
-    } catch (error) {
-      await audit(null, {
-        event: "reject",
-        outcome: "denied",
-        reason:
-          result.kind === "authority_invalid"
-            ? result.reason
-            : "inactive_or_expired",
-      });
-      throw error;
-    }
+    return authenticated(result);
   }
 
   async function authenticateIngress(
     bearer: string,
   ): Promise<PromptCapabilityIngressBinding> {
-    try {
-      assertPromptCapabilityCredential(bearer);
-    } catch (error) {
-      await audit(null, {
-        event: "reject",
-        outcome: "denied",
-        reason: "wrong_credential_class",
-      });
-      throw error;
-    }
+    assertPromptCapabilityCredential(bearer);
     const result = await options.repository.authenticateIngressBearerHash(
       sha256(bearer),
       now(),
     );
     if (result.kind === "authenticated") return result.capability;
-    await audit(null, {
-      event: "reject",
-      outcome: "denied",
-      reason:
-        result.kind === "authority_invalid"
-          ? result.reason
-          : "inactive_or_expired",
-    });
     if (result.kind === "authority_invalid") {
       throw new PromptCapabilityAuthorityError(result.reason);
     }
@@ -408,10 +315,6 @@ export function createPromptCapabilityGateway(options: {
       handleHash: sha256(handle),
       createdAt: now(),
     });
-    await audit(current, {
-      event: "plugin_context",
-      outcome: "allowed",
-    });
     return handle;
   }
 
@@ -424,12 +327,6 @@ export function createPromptCapabilityGateway(options: {
         await options.repository.resolveCompileInput(capability);
       const compiled = compileRuntimeInterface(compileInput);
       await requireStillAuthoritative(capability);
-      await audit(capability, {
-        event: "list",
-        outcome: "allowed",
-        dialDigest: contextDialDigest(compileInput.contextDial),
-        grantSnapshot: grantSnapshot(compileInput),
-      });
       return compiled.descriptors;
     },
 
@@ -457,29 +354,9 @@ export function createPromptCapabilityGateway(options: {
           ingressOrdinal: input.ingressOrdinal,
           error: unavailable,
         });
-        await audit(capability, {
-          event: "call",
-          outcome: "denied",
-          toolName: input.toolName,
-          reason: "tool_not_in_current_interface",
-          dialDigest: contextDialDigest(compileInput.contextDial),
-          grantSnapshot: grantSnapshot(compileInput),
-        });
         throw unavailable;
       }
       const current = await requireStillAuthoritative(capability);
-      const canonicalMention =
-        input.toolName === "mention_agent" ||
-        input.toolName === "mention_board";
-      const callAudit: PromptCapabilityAudit = {
-        capability: current,
-        occurredAt: now(),
-        event: "call",
-        outcome: "allowed",
-        toolName: input.toolName,
-        dialDigest: contextDialDigest(compileInput.contextDial),
-        grantSnapshot: grantSnapshot(compileInput),
-      };
       const result = await options.executor.execute({
         capability: current,
         descriptor,
@@ -488,14 +365,7 @@ export function createPromptCapabilityGateway(options: {
         ingressOrdinal: input.ingressOrdinal,
         mintPluginRunContext: (pluginInput) =>
           mintPluginRunContext({ capability: current, ...pluginInput }),
-        ...(canonicalMention
-          ? {
-              commitMentionAudit: (transaction: IssueSessionDbTransaction) =>
-                options.repository.writeAudit(callAudit, transaction),
-            }
-          : {}),
       });
-      if (!canonicalMention) await options.repository.writeAudit(callAudit);
       return result;
     },
 
@@ -518,14 +388,6 @@ export function createPromptCapabilityGateway(options: {
         callIdentity: input.callIdentity,
         ingressOrdinal: input.ingressOrdinal,
         error: input.error,
-      });
-      await audit(capability, {
-        event: "call",
-        outcome: "denied",
-        ...(input.toolName === null
-          ? {}
-          : { toolName: input.toolName }),
-        reason: "terminal_invalid_tools_call",
       });
     },
 

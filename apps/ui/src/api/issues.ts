@@ -20,7 +20,6 @@ import type {
   IssueLabel,
   IssueTreeControlPreview,
   IssueTreeHold,
-  IssueWatchdog,
   IssueWorkProduct,
   PreviewIssueTreeControl,
   ReassignIssue,
@@ -30,7 +29,6 @@ import type {
   UpdateIssueExecutionPolicy,
   DecideIssueExecutionStage,
   UpdateIssueTitle,
-  UpsertIssueWatchdog,
   UpsertIssueDocument,
 } from "@paperclipai/shared";
 import { api, type RequestOptions } from "./client";
@@ -91,8 +89,6 @@ export type IssueListFilters = {
   inboxArchivedByUserId?: string;
   unreadForUserId?: string;
   labelId?: string;
-  workspaceId?: string;
-  executionWorkspaceId?: string;
   originKind?: string;
   originKindPrefix?: string;
   originId?: string;
@@ -122,8 +118,6 @@ function issueListSearchParams(filters?: IssueListFilters) {
   if (filters?.inboxArchivedByUserId) params.set("inboxArchivedByUserId", filters.inboxArchivedByUserId);
   if (filters?.unreadForUserId) params.set("unreadForUserId", filters.unreadForUserId);
   if (filters?.labelId) params.set("labelId", filters.labelId);
-  if (filters?.workspaceId) params.set("workspaceId", filters.workspaceId);
-  if (filters?.executionWorkspaceId) params.set("executionWorkspaceId", filters.executionWorkspaceId);
   if (filters?.originKind) params.set("originKind", filters.originKind);
   if (filters?.originKindPrefix) params.set("originKindPrefix", filters.originKindPrefix);
   if (filters?.originId) params.set("originId", filters.originId);
@@ -189,10 +183,6 @@ export const issuesApi = {
   get: (id: string, options?: RequestOptions) => options
     ? api.get<Issue>(`/issues/${id}`, options)
     : api.get<Issue>(`/issues/${id}`),
-  getWatchdog: (id: string) => api.get<IssueWatchdog | null>(`/issues/${id}/watchdog`),
-  upsertWatchdog: (id: string, data: UpsertIssueWatchdog) =>
-    api.put<IssueWatchdog>(`/issues/${id}/watchdog`, data),
-  deleteWatchdog: (id: string) => api.delete<{ ok: true }>(`/issues/${id}/watchdog`),
   markRead: (id: string) => api.post<{ id: string; lastReadAt: Date }>(`/issues/${id}/read`, {}),
   markUnread: (id: string) => api.delete<{ id: string; removed: boolean }>(`/issues/${id}/read`),
   archiveFromInbox: (id: string) =>
@@ -278,7 +268,6 @@ export const issuesApi = {
     }>(`/issues/${id}/tree-control/state`),
   releaseTreeHold: (id: string, holdId: string, data: ReleaseIssueTreeHold) =>
     api.post<IssueTreeHold>(`/issues/${id}/tree-holds/${holdId}/release`, data),
-  checkMonitorNow: (id: string) => api.post<{ ok: true }>(`/issues/${id}/monitor/check-now`, {}),
   listComments: (
     id: string,
     filters?: {

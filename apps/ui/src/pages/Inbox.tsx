@@ -23,14 +23,12 @@ import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { ApiError } from "../api/client";
 import { dashboardApi } from "../api/dashboard";
-import { executionWorkspacesApi } from "../api/execution-workspaces";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
 import {
   ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
   runsApi,
 } from "../api/runs";
-import { instanceSettingsApi } from "../api/instanceSettings";
 import { projectsApi } from "../api/projects";
 import {
   BLOCKED_GROUP_OPTIONS,
@@ -44,7 +42,6 @@ import { useGeneralSettings } from "../context/GeneralSettingsContext";
 import { useSidebar } from "../context/SidebarContext";
 import { queryKeys } from "../lib/queryKeys";
 import { useDialogActions } from "../context/DialogContext";
-import { useIssueExternalObjectSummaries } from "../hooks/useIssueExternalObjects";
 import {
   applyIssueFilters,
   countActiveIssueFilters,
@@ -168,7 +165,6 @@ import {
   buildGroupedInboxSections,
   buildInboxIssueGroupCreateDefaults,
   buildInboxKeyboardNavEntries,
-  getAvailableInboxIssueColumns,
   getInboxWorkItemKey,
   getApprovalsForTab,
   getArchivedInboxSearchIssues,
@@ -187,15 +183,13 @@ import {
   loadInboxWorkItemGroupBy,
   normalizeInboxIssueColumns,
   resolveInboxNestingEnabled,
-  shouldResetInboxWorkspaceGrouping,
-  resolveIssueWorkspaceName,
   resolveInboxSelectionIndex,
   saveInboxFilterPreferences,
   saveCollapsedInboxGroupKeys,
   saveInboxIssueColumns,
   saveInboxNesting,
   saveInboxWorkItemGroupBy,
-  type InboxWorkspaceGroupingOptions,
+  inboxIssueColumns,
   type InboxApprovalFilter,
   type InboxCategoryFilter,
   type InboxFilterPreferences,
@@ -610,7 +604,6 @@ function ApprovalInboxRow({
 }
 
 function JoinRequestInboxRow({
-  companyId,
   joinRequest,
   onApprove,
   onReject,
@@ -622,9 +615,8 @@ function JoinRequestInboxRow({
   selected = false,
   className,
 }: {
-  companyId: string;
   joinRequest: JoinRequest;
-  onApprove: (input: { defaultEnvironmentId?: string }) => void;
+  onApprove: () => void;
   onReject: () => void;
   isPending: boolean;
   unreadState?: NonIssueUnreadState;
@@ -684,9 +676,6 @@ function JoinRequestInboxRow({
         </div>
       </div>
       <JoinRequestApprovalControls
-        companyId={companyId}
-        requestType={joinRequest.requestType}
-        adapterType={joinRequest.adapterType}
         onApprove={onApprove}
         onReject={onReject}
         isPending={isPending}
@@ -707,12 +696,6 @@ export function Inbox() {
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
   const { keyboardShortcutsEnabled } = useGeneralSettings();
-  const { data: experimentalSettings } = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-    retry: false,
-  });
-  const experimentalSettingsLoaded = experimentalSettings !== undefined;
   const [searchQuery, setSearchQuery] = useState("");
   const normalizedSearchQuery = searchQuery.trim();
   const [filterPreferences, setFilterPreferences] =
@@ -782,18 +765,6 @@ export function Inbox() {
     queryFn: () => issuesApi.listLabels(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
-  const isolatedWorkspacesEnabled =
-    experimentalSettings?.enableIsolatedWorkspaces === true;
-  const externalObjectsEnabled =
-    experimentalSettings?.enableExternalObjects === true;
-  const { data: executionWorkspaces = [] } = useQuery({
-    queryKey: selectedCompanyId
-      ? queryKeys.executionWorkspaces.summaryList(selectedCompanyId)
-      : ["execution-workspaces", "__disabled__"],
-    queryFn: () => executionWorkspacesApi.listSummaries(selectedCompanyId!),
-    enabled: !!selectedCompanyId && isolatedWorkspacesEnabled,
-  });
-
   useEffect(() => {
     setBreadcrumbs([{ label: "Inbox" }]);
   }, [setBreadcrumbs]);
@@ -1100,33 +1071,6 @@ export function Inbox() {
     enabled: shouldUseIssueSearchSupplement,
     placeholderData: (previousData) => previousData,
   });
-  const inboxIssueIdsForExternalObjectSummaries = useMemo(() => {
-    const issueIds = new Set<string>();
-    for (const issue of mineIssues) issueIds.add(issue.id);
-    for (const issue of touchedIssues) issueIds.add(issue.id);
-    for (const issue of remoteIssueSearchResults) issueIds.add(issue.id);
-    return [...issueIds];
-  }, [mineIssues, remoteIssueSearchResults, touchedIssues]);
-  const {
-    summaries: externalObjectSummaryByIssueId,
-    isLoading: externalObjectSummariesLoading,
-    isReady: externalObjectSummariesReady,
-  } = useIssueExternalObjectSummaries(
-    selectedCompanyId,
-    inboxIssueIdsForExternalObjectSummaries,
-  );
-  const issueFilterContext = useMemo(
-    () => ({
-      externalObjectSummaryByIssueId,
-      externalObjectSummariesReady:
-        externalObjectSummariesReady && !externalObjectSummariesLoading,
-    }),
-    [
-      externalObjectSummariesLoading,
-      externalObjectSummariesReady,
-      externalObjectSummaryByIssueId,
-    ],
-  );
   const visibleMineIssues = useMemo(
     () =>
       applyIssueFilters(
@@ -1135,9 +1079,8 @@ export function Inbox() {
         currentUserId,
         true,
         liveIssueIds,
-        issueFilterContext,
       ),
-    [mineIssues, issueFilters, currentUserId, liveIssueIds, issueFilterContext],
+    [mineIssues, issueFilters, currentUserId, liveIssueIds],
   );
   const visibleTouchedIssues = useMemo(
     () =>
@@ -1147,14 +1090,12 @@ export function Inbox() {
         currentUserId,
         true,
         liveIssueIds,
-        issueFilterContext,
       ),
     [
       touchedIssues,
       issueFilters,
       currentUserId,
       liveIssueIds,
-      issueFilterContext,
     ],
   );
   const unreadTouchedIssues = useMemo(
@@ -1249,60 +1190,9 @@ export function Inbox() {
     }
     return map;
   }, [projects]);
-  const projectWorkspaceById = useMemo(() => {
-    const map = new Map<string, { name: string; projectId: string }>();
-    for (const project of projects ?? []) {
-      for (const workspace of project.workspaces ?? []) {
-        map.set(workspace.id, { name: workspace.name, projectId: project.id });
-      }
-    }
-    return map;
-  }, [projects]);
-  const defaultProjectWorkspaceIdByProjectId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const project of projects ?? []) {
-      const defaultWorkspaceId =
-        project.executionWorkspacePolicy?.defaultProjectWorkspaceId ??
-        project.primaryWorkspace?.id ??
-        null;
-      if (defaultWorkspaceId) map.set(project.id, defaultWorkspaceId);
-    }
-    return map;
-  }, [projects]);
-  const executionWorkspaceById = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        name: string;
-        mode:
-          | "shared_workspace"
-          | "isolated_workspace"
-          | "operator_branch"
-          | "adapter_managed"
-          | "cloud_sandbox";
-        projectWorkspaceId: string | null;
-        projectId: string | null;
-      }
-    >();
-    for (const workspace of executionWorkspaces) {
-      const projectWorkspace = workspace.projectWorkspaceId
-        ? (projectWorkspaceById.get(workspace.projectWorkspaceId) ?? null)
-        : null;
-      map.set(workspace.id, {
-        name: workspace.name,
-        mode: workspace.mode,
-        projectWorkspaceId: workspace.projectWorkspaceId ?? null,
-        projectId: projectWorkspace?.projectId ?? null,
-      });
-    }
-    return map;
-  }, [executionWorkspaces, projectWorkspaceById]);
-  const inboxWorkspaceGrouping = useMemo<InboxWorkspaceGroupingOptions>(
+  const inboxGrouping = useMemo(
     () => ({
       agentById,
-      executionWorkspaceById,
-      projectWorkspaceById,
-      defaultProjectWorkspaceIdByProjectId,
       projectById,
       userLabelById: companyUserLabelMap,
       currentUserId,
@@ -1311,20 +1201,14 @@ export function Inbox() {
       agentById,
       companyUserLabelMap,
       currentUserId,
-      defaultProjectWorkspaceIdByProjectId,
-      executionWorkspaceById,
       projectById,
-      projectWorkspaceById,
     ],
   );
   const visibleIssueColumnSet = useMemo(
     () => new Set(visibleIssueColumns),
     [visibleIssueColumns],
   );
-  const availableIssueColumns = useMemo(
-    () => getAvailableInboxIssueColumns(isolatedWorkspacesEnabled),
-    [isolatedWorkspacesEnabled],
-  );
+  const availableIssueColumns = inboxIssueColumns;
   const availableIssueColumnSet = useMemo(
     () => new Set(availableIssueColumns),
     [availableIssueColumns],
@@ -1422,12 +1306,7 @@ export function Inbox() {
     if (!q) return workItemsToRender;
     return workItemsToRender.filter((item) => {
       if (item.kind === "issue") {
-        return matchesInboxIssueSearch(item.issue, q, {
-          isolatedWorkspacesEnabled,
-          executionWorkspaceById,
-          projectWorkspaceById,
-          defaultProjectWorkspaceIdByProjectId,
-        });
+        return matchesInboxIssueSearch(item.issue, q);
       }
       if (item.kind === "approval") {
         const a = item.approval;
@@ -1464,12 +1343,8 @@ export function Inbox() {
   }, [
     workItemsToRender,
     agentById,
-    defaultProjectWorkspaceIdByProjectId,
-    executionWorkspaceById,
     issueById,
-    isolatedWorkspacesEnabled,
     normalizedSearchQuery,
-    projectWorkspaceById,
   ]);
 
   const archivedSearchIssues = useMemo(
@@ -1479,18 +1354,10 @@ export function Inbox() {
             visibleIssues: visibleMineIssues,
             searchableIssues: visibleTouchedIssues,
             query: normalizedSearchQuery,
-            isolatedWorkspacesEnabled,
-            executionWorkspaceById,
-            projectWorkspaceById,
-            defaultProjectWorkspaceIdByProjectId,
           })
         : [],
     [
-      defaultProjectWorkspaceIdByProjectId,
-      executionWorkspaceById,
-      isolatedWorkspacesEnabled,
       normalizedSearchQuery,
-      projectWorkspaceById,
       tab,
       visibleMineIssues,
       visibleTouchedIssues,
@@ -1507,13 +1374,11 @@ export function Inbox() {
         currentUserId,
         enableRoutineVisibilityFilter: true,
         liveIssueIds,
-        issueFilterContext,
       }),
     [
       archivedSearchIssues,
       currentUserId,
       filteredWorkItems,
-      issueFilterContext,
       issueFilters,
       liveIssueIds,
       normalizedSearchQuery,
@@ -1537,18 +1402,6 @@ export function Inbox() {
     nestingPreferenceEnabled,
     isMobile,
   );
-  useEffect(() => {
-    if (
-      !shouldResetInboxWorkspaceGrouping(
-        groupBy,
-        isolatedWorkspacesEnabled,
-        experimentalSettingsLoaded,
-      )
-    )
-      return;
-    setGroupBy("none");
-    saveInboxWorkItemGroupBy("none");
-  }, [experimentalSettingsLoaded, groupBy, isolatedWorkspacesEnabled]);
   const toggleNesting = useCallback(() => {
     setNestingPreferenceEnabled((prev) => {
       const next = !prev;
@@ -1592,13 +1445,13 @@ export function Inbox() {
       ...buildGroupedInboxSections(
         filteredWorkItems,
         groupBy,
-        inboxWorkspaceGrouping,
+        inboxGrouping,
         { nestingEnabled },
       ),
       ...buildGroupedInboxSections(
         getInboxWorkItems({ issues: archivedSearchIssues, approvals: [] }),
         groupBy,
-        inboxWorkspaceGrouping,
+        inboxGrouping,
         {
           keyPrefix: "archived-search:",
           searchSection: "archived",
@@ -1611,7 +1464,7 @@ export function Inbox() {
           approvals: [],
         }),
         groupBy,
-        inboxWorkspaceGrouping,
+        inboxGrouping,
         { keyPrefix: "other-search:", searchSection: "other", nestingEnabled },
       ),
     ],
@@ -1619,7 +1472,7 @@ export function Inbox() {
       archivedSearchIssues,
       filteredWorkItems,
       groupBy,
-      inboxWorkspaceGrouping,
+      inboxGrouping,
       issueSearchSupplementResults,
       nestingEnabled,
     ],
@@ -1631,12 +1484,12 @@ export function Inbox() {
         group.key,
         groupBy,
         group.displayItems,
-        inboxWorkspaceGrouping,
+        inboxGrouping,
       );
       if (!defaults) return;
       openNewIssue(defaults);
     },
-    [groupBy, inboxWorkspaceGrouping, openNewIssue],
+    [groupBy, inboxGrouping, openNewIssue],
   );
   const totalVisibleWorkItems = useMemo(
     () =>
@@ -1759,20 +1612,6 @@ export function Inbox() {
     },
     [updateFilterPreferences],
   );
-  useEffect(() => {
-    if (
-      !experimentalSettingsLoaded ||
-      externalObjectsEnabled ||
-      issueFilters.externalObjectStatuses.length === 0
-    )
-      return;
-    updateIssueFilters({ externalObjectStatuses: [] });
-  }, [
-    experimentalSettingsLoaded,
-    externalObjectsEnabled,
-    issueFilters.externalObjectStatuses.length,
-    updateIssueFilters,
-  ]);
   const updateAllCategoryFilter = useCallback(
     (value: InboxCategoryFilter) => {
       updateFilterPreferences((previous) => ({
@@ -1824,16 +1663,8 @@ export function Inbox() {
   });
 
   const approveJoinMutation = useMutation({
-    mutationFn: ({
-      joinRequest,
-      defaultEnvironmentId,
-    }: {
-      joinRequest: JoinRequest;
-      defaultEnvironmentId?: string;
-    }) =>
-      accessApi.approveJoinRequest(selectedCompanyId!, joinRequest.id, {
-        defaultEnvironmentId,
-      }),
+    mutationFn: (joinRequest: JoinRequest) =>
+      accessApi.approveJoinRequest(selectedCompanyId!, joinRequest.id),
     onSuccess: () => {
       setActionError(null);
       queryClient.invalidateQueries({
@@ -2621,17 +2452,9 @@ export function Inbox() {
                     color: label.color,
                   }))}
                   currentUserId={currentUserId}
-                  enableExternalObjectFilters={externalObjectsEnabled}
                   enableRoutineVisibilityFilter
                   buttonVariant="outline"
                   iconOnly
-                  workspaces={
-                    isolatedWorkspacesEnabled
-                      ? executionWorkspaces
-                          .filter((w) => w.mode === "isolated_workspace")
-                          .map((w) => ({ id: w.id, name: w.name }))
-                      : undefined
-                  }
                 />
                 <Popover>
                   <PopoverTrigger asChild>
@@ -2752,17 +2575,9 @@ export function Inbox() {
                     color: label.color,
                   }))}
                   currentUserId={currentUserId}
-                  enableExternalObjectFilters={externalObjectsEnabled}
                   enableRoutineVisibilityFilter
                   buttonVariant="outline"
                   iconOnly
-                  workspaces={
-                    isolatedWorkspacesEnabled
-                      ? executionWorkspaces
-                          .filter((w) => w.mode === "isolated_workspace")
-                          .map((w) => ({ id: w.id, name: w.name }))
-                      : undefined
-                  }
                 />
                 <Popover>
                   <PopoverTrigger asChild>
@@ -2787,9 +2602,6 @@ export function Inbox() {
                           ["type", "Type"],
                           ["owner", "Owner"],
                           ["project", "Project"],
-                          ...(isolatedWorkspacesEnabled
-                            ? ([["workspace", "Workspace"]] as const)
-                            : []),
                         ] as const
                       ).map(([value, label]) => (
                         <button
@@ -2934,7 +2746,6 @@ export function Inbox() {
           currentUserId={currentUserId}
           liveIssueIds={liveIssueIds}
           subtreeLiveCounts={subtreeLiveCounts}
-          workspaceFilterContext={inboxWorkspaceGrouping}
           showStatusColumn={
             visibleIssueColumnSet.has("status") &&
             availableIssueColumnSet.has("status")
@@ -3054,9 +2865,6 @@ export function Inbox() {
                       issueLinkState={issueLinkState}
                       treeGuides={depth}
                       hideDivider={hasChildren && isExpanded}
-                      externalObjectSummary={
-                        externalObjectSummaryByIssueId.get(issue.id) ?? null
-                      }
                       selected={selected}
                       className={
                         isArchiving
@@ -3162,11 +2970,6 @@ export function Inbox() {
                             columns={visibleTrailingIssueColumns}
                             projectName={project?.name ?? null}
                             projectColor={project?.color ?? null}
-                            workspaceName={resolveIssueWorkspaceName(issue, {
-                              executionWorkspaceById,
-                              projectWorkspaceById,
-                              defaultProjectWorkspaceIdByProjectId,
-                            })}
                             ownerName={agentName(issue.ownerAgentId)}
                             ownerUserName={
                               formatOwnerUserLabel(
@@ -3465,15 +3268,9 @@ export function Inbox() {
                       const row = (
                         <JoinRequestInboxRow
                           key={joinKey}
-                          companyId={selectedCompanyId!}
                           joinRequest={item.joinRequest}
                           selected={isSelected}
-                          onApprove={({ defaultEnvironmentId }) =>
-                            approveJoinMutation.mutate({
-                              joinRequest: item.joinRequest,
-                              defaultEnvironmentId,
-                            })
-                          }
+                          onApprove={() => approveJoinMutation.mutate(item.joinRequest)}
                           onReject={() =>
                             rejectJoinMutation.mutate(item.joinRequest)
                           }

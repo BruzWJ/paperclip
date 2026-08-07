@@ -11,6 +11,7 @@ import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
+  projectAgentAdapterAcpConfiguration,
 } from "@paperclipai/shared";
 import { agentRoutes } from "../routes/agents.js";
 import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
@@ -30,8 +31,6 @@ const mockRuntimeAgentConfiguration = vi.hoisted(() => ({
   create: vi.fn(),
   get: vi.fn(),
   update: vi.fn(),
-  listCreateCompanyToolOptions: vi.fn(),
-  listAgentCompanyToolOptions: vi.fn(),
 }));
 const mockAdapterConfigurations = vi.hoisted(() => ({
   listRevisions: vi.fn(),
@@ -118,7 +117,6 @@ function runtimeConfiguration() {
     mentionReachGrants: fullGrantMap(
       AGENT_MENTION_REACH_GRANT_KEYS,
     ),
-    companyToolIds: [],
   };
 }
 
@@ -136,7 +134,6 @@ function agent(overrides: Record<string, unknown> = {}) {
     adapterConfig: { model: "fixture-model" },
     currentAdapterConfigRevisionId: revisionId,
     runtimeConfig: {},
-    defaultEnvironmentId: environmentId,
     budgetMonthlyAmount: "0",
     knownSpendAmount: "0",
     pauseReason: null,
@@ -155,7 +152,7 @@ function revision(overrides: Record<string, unknown> = {}) {
     adapterType: CANONICAL_TEST_ADAPTER_TYPE,
     implementationIdentity:
       CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
-    defaultEnvironmentId: environmentId,
+    executionEnvironmentId: environmentId,
     executionTargetDriver: "local",
     executionTargetDigest: "a".repeat(64),
   });
@@ -232,22 +229,6 @@ describe("agent control-plane routes", () => {
       auditId: "audit-2",
       retried: false,
     });
-    const toolOptions = [
-      {
-        catalogEntryId:
-          "55555555-5555-4555-8555-555555555555",
-        connectionId:
-          "66666666-6666-4666-8666-666666666666",
-        connectionName: "Records",
-        title: "Lookup record",
-        description: "Look up a record",
-        catalogVersionHash: "catalog-v1",
-      },
-    ];
-    mockRuntimeAgentConfiguration.listCreateCompanyToolOptions
-      .mockResolvedValue(toolOptions);
-    mockRuntimeAgentConfiguration.listAgentCompanyToolOptions
-      .mockResolvedValue(toolOptions);
     mockAdapterConfigurations.createRevision.mockResolvedValue({
       revision: revision(),
       current: agent({
@@ -405,36 +386,10 @@ describe("agent control-plane routes", () => {
     expect(mockAdapterConfigurationDraftTest.test).not.toHaveBeenCalled();
   });
 
-  it("serves disjoint create and exact-agent company-tool option catalogs", async () => {
-    const app = createApp();
-    const createOptions = await request(app).get(
-      "/api/companies/company-1/runtime-agent-tool-options",
-    );
-    const editOptions = await request(app).get(
-      `/api/agents/${agentId}/runtime-configuration/tool-options`,
-    );
-    expect(createOptions.status).toBe(200);
-    expect(editOptions.status).toBe(200);
-    expect(createOptions.body).toEqual(editOptions.body);
-    expect(createOptions.body[0]).not.toHaveProperty(
-      "connectionInstallId",
-    );
-    expect(
-      mockRuntimeAgentConfiguration.listCreateCompanyToolOptions,
-    ).toHaveBeenCalledWith("company-1");
-    expect(
-      mockRuntimeAgentConfiguration.listAgentCompanyToolOptions,
-    ).toHaveBeenCalledWith({
-      companyId: "company-1",
-      agentId,
-    });
-  });
-
   it("appends and reads redacted first-class adapter revisions", async () => {
     const configuration = {
       adapterType: CANONICAL_TEST_ADAPTER_TYPE,
       adapterConfig: { model: "fixture-model" },
-      defaultEnvironmentId: environmentId,
       runtimeConfig: {},
       companySkillPins: [],
       skillChannel: "operator_native",
@@ -452,7 +407,9 @@ describe("agent control-plane routes", () => {
     expect(created.body).toMatchObject({
       revision: {
         id: revisionId,
-        acpConfiguration: revision().acpConfiguration,
+        acpConfiguration: projectAgentAdapterAcpConfiguration(
+          revision().acpConfiguration,
+        ),
       },
       current: {
         agentId,
@@ -469,10 +426,7 @@ describe("agent control-plane routes", () => {
       "createdAt",
       "createdByAgentId",
       "createdByUserId",
-      "defaultEnvironmentId",
       "digest",
-      "executionTargetDigest",
-      "executionTargetDriver",
       "id",
       "implementationIdentity",
       "normalizedConfig",
@@ -483,19 +437,17 @@ describe("agent control-plane routes", () => {
     expect(Object.keys(created.body.revision.acpConfiguration).sort()).toEqual([
       "companySkillPins",
       "contractVersion",
-      "executionTargetSelector",
       "launchProfile",
       "model",
       "sessionConfigSelections",
       "skillChannel",
-      "workspaceSelector",
     ]);
     expect(history.status).toBe(200);
     expect(history.body.map((row: { revisionNumber: number }) =>
       row.revisionNumber)).toEqual([2, 1]);
     expect(current.status).toBe(200);
     expect(current.body.acpConfiguration).toEqual(
-      revision().acpConfiguration,
+      projectAgentAdapterAcpConfiguration(revision().acpConfiguration),
     );
     for (const response of [created.body, history.body, current.body]) {
       const serialized = JSON.stringify(response);
@@ -507,6 +459,8 @@ describe("agent control-plane routes", () => {
       expect(serialized).not.toContain("operatorNativeConfig");
       expect(serialized).not.toContain("secretReferenceIdentities");
       expect(serialized).not.toContain("runtimeFlags");
+      expect(serialized).not.toContain("executionTargetSelector");
+      expect(serialized).not.toContain("workspaceSelector");
     }
   });
 

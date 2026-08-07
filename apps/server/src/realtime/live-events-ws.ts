@@ -117,7 +117,7 @@ async function authorizeUpgrade(
   const token = authToken ?? (queryToken.length > 0 ? queryToken : null);
 
   // The live control-plane stream is board-authenticated. Generic bearer
-  // credentials, including run-interface and named-gateway tokens, are not
+  // credentials, including run-interface tokens, are not
   // accepted here.
   if (token) return null;
   if (!opts.resolveSessionFromHeaders) {

@@ -28,14 +28,12 @@ The schema owns:
 - issue-execution references, leases, authorities, native correlations, and
   reset generations
 - creator edges and ordered deliveries
-- execution-workspace bindings
 - context/action/mention grants
-- selected company tools, installed plugin manifests and exact plugin tool-call
-  bindings, and genuine company skills
+- installed plugin manifests and exact plugin tool-call bindings, and genuine
+  company skills
 
-Company, issue, run, Session, authority, reference, workspace, and grant
-relations remain company-scoped with database uniqueness and foreign-key
-enforcement.
+Company, issue, run, Session, authority, reference, and grant relations remain
+company-scoped with database uniqueness and foreign-key enforcement.
 
 ### `packages/shared`
 
@@ -46,7 +44,6 @@ The shared package exports the closed canonical vocabulary:
 - two mention-reach keys
 - canonical owner/creator/lifecycle/disposition types
 - `IssueExecutionRef`
-- `RemoteWorkspaceLaunch`
 - `paperclip.run-tools/v1`
 - strict board-ingress and compiled-tool schemas
 
@@ -58,14 +55,13 @@ wake operations, managed instruction injection, or interaction-card contracts.
 
 Adapters receive a split request:
 
-- server-only control data for budgets, target, workspace, cancellation, and
-  accounting
-- provider invocation data containing lowered messages, resolved local `cwd`
-  or closed remote launch, opaque operator-native configuration, optional
+- server-only control data for budgets, target, cancellation, and accounting
+- provider invocation data containing lowered messages, resolved local `cwd`,
+  opaque operator-native configuration, optional
   validated native correlation, and compiled run-tools transport
 
 Provider invocation scrubbers reject caller identity, general Paperclip
-credentials, workspace metadata, Paperclip-managed prompt/instruction state,
+credentials, run-directory metadata, Paperclip-managed prompt/instruction state,
 and noncanonical continuity fields.
 
 ## Server runtime
@@ -98,7 +94,7 @@ requires byte-equivalent source, Session, prompt, and event arguments.
 - `issue-execution-dispatcher-postgres.ts` locks and validates dispatchable
   refs before it creates a run attempt and lease.
 - `issue-execution-prompt-cycle-postgres.ts` resolves the exact current
-  attempt, immutable ACP revision, workspace, tools, and native-session
+  attempt, immutable ACP revision, run directory, capabilities, and native-session
   operation under that lease.
 - `issue-execution-attempt-executor.ts` drives the Session runner and adapter.
   A missing correlated ACP target is invalidated and retried once as a fresh
@@ -137,15 +133,12 @@ mutate historical runs.
 General REST authentication never accepts a compiled bearer. The compiler never
 exposes false-grant surfaces.
 
-### Workspaces
+### Run directories
 
-Execution workspace services and the issue-execution resolver use
-`issue_execution_workspace_bindings` as the ownership/selection source for one
-issue epoch. Projectless workspaces are valid. The ACPX public-runtime bridge
-supplies the resolved workspace to the same bounded single-prompt ACPX path. ACPX launches
-the local compatible CLI itself; adapter definitions do not execute or
-transport provider work. The current public ACPX runtime is local-only, so
-remote driver selection is not admitted.
+The issue-execution resolver supplies the resolved local directory to the
+bounded single-prompt ACPX path. ACPX launches the local compatible CLI itself;
+adapter definitions do not execute or transport provider work. The current
+public ACPX runtime is local-only, so remote driver selection is not admitted.
 
 ### Creator routing and recovery
 
@@ -174,8 +167,7 @@ Board/user REST routes provide:
 - issue-execution fresh-session control
 - agent lifecycle/configuration/grant/selection administration
 - run inspection/cancellation
-- company, project, goal, routine, plugin, tool, approval, workspace, and audit
-  control
+- company, project, goal, routine, plugin, approval, and audit control
 
 Every issue route rejects a provider actor. There is no generic
 description/status/assignee patch, checkout/release protocol, comment reopen,
@@ -199,9 +191,9 @@ The UI and CLI are board/operator clients. They:
   idempotency key
 - show owner/creator/lifecycle terminology
 - expose distinct title/reassign/reopen/comment/fresh-session controls
-- configure the context matrix and independent action/mention/tool/skill
-  selections, with create-and-assign as one action grant and relationship-derived
-  lifecycle updates
+- configure the context matrix and independent action/mention/skill selections,
+  with create-and-assign as one action grant and relationship-derived lifecycle
+  updates
 - inspect structured transcripts without provider-native handles
 - configure bind/exposure without selecting a different identity path
 
@@ -224,15 +216,15 @@ before-prompt observation, and managed private-network HTTP. Those
 capabilities are install-time visible, company-fenced, and revalidated at
 invocation time. They do not add a plugin-specific REST route, provider
 credential, or provider-session authority. Contributed tools remain inside the
-canonical prompt-capability and audit boundary without being projected into the
-company-tool policy system. Before-prompt hooks receive only Paperclip-owned
+canonical prompt-capability and audit boundary. Before-prompt hooks receive only
+Paperclip-owned
 identities and an immutable source-message snapshot; they return no provider
 content, run in deterministic installation order, and fail closed before
 provider transmission. Core sends the canonical source message byte-for-byte.
 
 Routine executions create ordinary issues with immutable request and configured
-owner. Derived summary cards/projectors link to the canonical source
-comment/run. No built-in summarizer identity or provider draft stream exists.
+owner. Their canonical comment and run history remains the source of record. No
+built-in summarizer identity or provider draft stream exists.
 
 Company archive marks the current company graph inactive and fences new
 execution. Reactivation makes that same graph available and starts no prior

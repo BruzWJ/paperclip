@@ -2,7 +2,6 @@ import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import {
   ISSUE_EXECUTION_RUN_STATUSES,
-  issueExecutionWatchdogDecisionInputSchema,
   normalizeIssueIdentifier,
   type IssueExecutionRunEnvelopeRecord,
   type IssueExecutionRunListPageRecord,
@@ -22,9 +21,6 @@ import {
   accessService,
   issueService,
 } from "../services/index.js";
-import {
-  createIssueExecutionWatchdogDecisionService,
-} from "../services/issue-execution-watchdog-decisions.js";
 import type {
   AdapterConfigurationPreflightService,
 } from "../services/adapter-configuration-preflight.js";
@@ -114,7 +110,6 @@ function serializeRunEnvelope(
     ownershipEpoch: run.ownershipEpoch,
     targetAgentId: run.targetAgentId,
     adapterConfigRevisionId: run.adapterConfigRevisionId,
-    executionWorkspaceBindingId: run.executionWorkspaceBindingId,
     executionMode: run.executionMode,
     issueExecutionAuthorityId: run.issueExecutionAuthorityId,
     consultExecutionId: run.consultExecutionId,
@@ -149,7 +144,6 @@ export function runRoutes(
   adapterConfigurationPreflight: AdapterConfigurationPreflightService,
 ) {
   const router = Router();
-  const watchdogDecisions = createIssueExecutionWatchdogDecisionService(db);
   const issues = issueService(db);
   const access = accessService(db);
 
@@ -316,23 +310,6 @@ export function runRoutes(
       res.json(
         await adapterConfigurationPreflight.inspect(identity),
       );
-    },
-  );
-
-  router.post(
-    "/runs/:runId/watchdog-decisions",
-    validate(issueExecutionWatchdogDecisionInputSchema),
-    async (req, res) => {
-      assertBoard(req);
-      const runId = req.params.runId as string;
-      const identity = await accessibleIdentity(req, res, runId);
-      if (!identity) return;
-      const row = await watchdogDecisions.record({
-        runId: identity.runId,
-        actor: { kind: "user", userId: req.actor.userId },
-        decision: req.body,
-      });
-      res.status(201).json(row);
     },
   );
 

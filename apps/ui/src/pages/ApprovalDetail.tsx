@@ -173,7 +173,6 @@ export function ApprovalDetail() {
             AGENT_MENTION_REACH_GRANT_KEYS,
             current.mentionReachGrants,
           ),
-          companyToolIds: current.companyToolIds,
         },
       });
     },

@@ -51,7 +51,7 @@ Paperclip listens on `http://127.0.0.1:3100` by default. The CLI talks to that s
 > must be the one running that branch's code. A long-lived control-plane host
 > may be on older code and silently return `API route not found` for routes the
 > branch added, which makes the plugin look broken when the real problem is the
-> test target. See [Targeting a branch / issue-workspace runtime](#targeting-a-branch--issue-workspace-runtime)
+> test target. See [Targeting a branch runtime](#targeting-a-branch-runtime)
 > before you install.
 
 ### 2. Scaffold the plugin
@@ -65,7 +65,7 @@ This creates `~/dev/paperclip-plugins/hello-plugin/` with `src/manifest.ts`, `sr
 Useful flags:
 
 - `--category <connector|workspace|automation|ui>` — required manifest category.
-- `--template <standard|environment>` — generated structure; `standard` is the default, while `environment` adds the distinct environment-driver lifecycle.
+- `--template standard` — generated standard plugin structure (the default).
 - `--display-name`, `--description`, `--author` — manifest metadata.
 - `--sdk-path <absolute-path>` — point at a specific `packages/plugins/sdk` checkout if you have more than one.
 
@@ -109,7 +109,7 @@ Paperclip watches rebuilt dist output and reloads the plugin worker.
 
 Read that first line. If the API URL, version, or exposure is not the instance
 you expect, stop and re-point the CLI (see
-[Targeting a branch / issue-workspace runtime](#targeting-a-branch--issue-workspace-runtime))
+[Targeting a branch runtime](#targeting-a-branch-runtime))
 before trusting the result. Pass `--no-verify-target` to skip the probe, or run
 `paperclipai plugin target` to see the same diagnostics without installing
 anything.
@@ -129,7 +129,7 @@ error. `inspect` accepts only that installation UUID and prints the same record
 with the full last error if there is one. Both accept `--json` if you want to
 script against them.
 
-## Targeting a branch / issue-workspace runtime
+## Targeting a branch runtime
 
 The five-step loop above assumes one Paperclip on `http://127.0.0.1:3100`. That breaks down the moment your plugin depends on **server code that only exists on a branch**. Examples:
 
@@ -233,4 +233,4 @@ When you are done iterating locally, publish the package and reinstall the npm-p
 - **Edits do not seem to reload.** Confirm `pnpm dev` is still running and writing to the installed manifest's entrypoint paths. If you rename an entrypoint, update `src/manifest.ts`, rebuild, and reinstall or upgrade the plugin.
 - **Worker restarts but UI is stale.** Confirm the UI build rewrote `dist/ui/`, then hard-reload the page.
 - **Path arguments fail on Windows.** Quote paths that contain spaces, and prefer absolute paths over `~`-prefixed paths in non-bash shells.
-- **Plugin behaves as if a route or field is missing (e.g. `API route not found`, empty data, or a fallback path triggering unexpectedly).** You are probably installed into a Paperclip instance that does not run your branch code. Run `paperclipai plugin target` and compare the reported API URL and `version` against the branch service you meant to test. See [Targeting a branch / issue-workspace runtime](#targeting-a-branch--issue-workspace-runtime) to run the branch server and point the CLI at it explicitly.
+- **Plugin behaves as if a route or field is missing (e.g. `API route not found`, empty data, or a fallback path triggering unexpectedly).** You are probably installed into a Paperclip instance that does not run your branch code. Run `paperclipai plugin target` and compare the reported API URL and `version` against the branch service you meant to test. See [Targeting a branch runtime](#targeting-a-branch-runtime) to run the branch server and point the CLI at it explicitly.

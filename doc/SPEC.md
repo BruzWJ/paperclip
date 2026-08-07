@@ -3,8 +3,8 @@
 Status: current fresh-redesign architecture
 
 Paperclip is a board-operated control plane for issue-backed provider work. It
-owns durable authority, execution admission, audit, costs, workspaces, and the
-issue-session projection. Providers remain operator-chosen runtimes.
+owns durable authority, execution admission, audit, costs, and the issue-session
+projection. Providers remain operator-chosen runtimes.
 
 ## Core invariants
 
@@ -40,8 +40,7 @@ Every product entity is company-scoped. An agent stores:
 - verbatim capabilities
 - lifecycle status and budgets
 - adapter binding and immutable adapter-configuration revisions
-- independently stored context, action, mention, company-tool, and company-skill
-  selections
+- independently stored context, action, mention, and company-skill selections
 
 There is no persisted role or privileged default identity. Every new grant is
 false or absent until a human explicitly configures it. Provider-native
@@ -68,8 +67,8 @@ Creation requires exact request bytes, an explicit eligible owner, and an
 idempotency key. Reassignment is a creator/board operation, advances the
 ownership epoch, revokes the former engagement, and starts the new owner fresh.
 A board reopen is a separate audited command: it preserves request, owner,
-epoch, Session, and workspace binding while re-applying the native-continuity
-fence, clearing the terminal disposition, and re-evaluating creator
+epoch, and Session while re-applying the native-continuity fence, clearing the
+terminal disposition, and re-evaluating creator
 receivability. The preserved
 invokable-agent branch commits exactly one ref; the named-user or
 collective-board-owned system-escalation branch is provider-free and commits no
@@ -121,7 +120,7 @@ fresh Paperclip run, but the receiving agent may resume its own compatible ACP
 backend session when `carry_context` and this exact scope match; it never
 receives the caller's handle. Reassignment, adapter revision change, board/user
 fresh execution, and false-carry work cannot reuse it. The opaque handle is
-never shown in API, UI, CLI, logs, prompt text, workspace metadata, or generic
+never shown in API, UI, CLI, logs, prompt text, run-directory metadata, or generic
 adapter context.
 
 The Session log remains complete for audit and inspection. Paperclip does not
@@ -142,8 +141,8 @@ The seven possible issue actions are:
 - `agent_configure`
 
 The runtime compiler derives the exact interface from the leased issue
-reference, live owner/creator authority, context/action/mention grants, and
-selected company tools. The five configurable action grants govern
+reference, live owner/creator authority, and context/action/mention grants.
+The five configurable action grants govern
 `issue_create`, `mention_agent`, `mention_board`, `agent_hire`, and
 `agent_configure`; `issue_create` also enables reassignment of eligible direct
 children created by that exact execution. `issue_update` is relationship-derived
@@ -213,30 +212,23 @@ is a distinct root-level issue only after the canonical creator edge is
 structurally or exhaustively unreceivable. Titles, creation order, and budget
 reranking never select escalation authority.
 
-## Workspaces and provider boundary
+## Provider boundary
 
-Every run resolves a persisted `(company, issue, ownership epoch)` workspace
-binding before launch, including projectless work. The ACPX public-runtime
-bridge uses that resolved local workspace for the compatible CLI that ACPX
-launches. The current ACPX public runtime has no Paperclip-managed SSH,
-sandbox, or plugin transport; a declarative adapter definition receives no
-process callback or alternate remote transport.
+Every run receives a resolved local working directory before launch. The ACPX
+public-runtime bridge uses that directory for the compatible CLI that ACPX
+launches. The current ACPX public runtime has no Paperclip-managed SSH, sandbox,
+or plugin transport; a declarative adapter definition receives no process
+callback or alternate remote transport.
 
-Paperclip does not inject an ambient caller profile, company/workspace
-metadata, a general REST credential, provider instructions, or another issue's
-cwd/home into a provider child. A canonical source created by an
-agent-reaching managed tool may identify that tool's locked source agent,
-target issue, and lifecycle state in its own persisted message envelope. The
-only Paperclip capability is still the compiled run interface. Explicitly
-selected genuine company skills may be materialized as workspace content but
-grant no authority.
+Paperclip does not inject an ambient caller profile, working-directory metadata,
+a general REST credential, provider instructions, or another issue's cwd/home
+into a provider child. A canonical source created by an agent-reaching managed
+tool may identify that tool's locked source agent, target issue, and lifecycle
+state in its own persisted message envelope. The only Paperclip capability is
+still the compiled run interface. Explicitly selected genuine company skills may
+be materialized for a run but grant no authority.
 
-## Board Chat, plugins, and routines
-
-Board Chat creates an ordinary board/user-authored issue for the explicitly
-selected eligible agent. The first message is the immutable request; follow-ups
-use creator-targeted updates. No concierge identity, standing chat issue, prompt
-relay, or hidden transcript exists.
+## Plugins and routines
 
 Plugins may create callback-bound ordinary issues and receive canonical
 lifecycle/comment callbacks. They cannot invoke agents, open provider sessions,
@@ -245,15 +237,15 @@ creator. Managed agents remain ordinary identities and cannot be reclaimed
 after board adoption or termination.
 
 Routine slots create ordinary issues with configured owners and minimal
-immutable requests. Summary projections derive from canonical comment/run
-output; no built-in summarizer agent or draft token stream exists.
+immutable requests. Their canonical comment and run history remains the source
+of record; no built-in summarizer agent or draft token stream exists.
 
 ## Company lifecycle
 
 Company archive and reactivation are ordinary product operations over the
 current schema. Archiving fences new execution and hides the company from normal
 active views while retaining its coherent issue, Session, run, comment,
-workspace, tool, and audit graph. Reactivation restores availability but starts
+prompt-capability, and audit graph. Reactivation restores availability but starts
 no prior execution. Cancellation-gated hard deletion removes the complete
 company graph atomically.
 

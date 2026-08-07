@@ -198,9 +198,6 @@ function main() {
     lines.push("   Allowlist (sites intentionally left as hardcoded / functional literals,");
     lines.push("   NOT converted to tokens — each also carries an inline");
     lines.push("   `token-extraction: allowlisted` comment at the site):");
-    lines.push("   - pages/CompanyEnvironments.tsx (fontSize: 12) — xterm.js terminal theme");
-    lines.push("     config; functional third-party numeric option, not a rendered CSS value.");
-    lines.push("     Same allowlisted object as Batch 1's color entry for this file.");
     lines.push("   - pages/CompanySkills.tsx (fontSize: Math.round(size * 0.42)) — computed at");
     lines.push("     runtime from a prop; not a static literal, nothing to extract.");
     lines.push("*/");

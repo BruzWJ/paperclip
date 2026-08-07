@@ -1,6 +1,5 @@
 import {
   Inbox,
-  ListChecks,
   CircleDot,
   Target,
   LayoutDashboard,
@@ -11,16 +10,12 @@ import {
   Network,
   Boxes,
   Repeat,
-  Layers,
-  GitBranch,
   Package,
   Settings,
   FolderOpen,
   PanelLeftClose,
   PanelLeftOpen,
   Pin,
-  AppWindow,
-  MessagesSquare,
   GanttChartSquare,
 } from "lucide-react";
 import { useState } from "react";
@@ -29,19 +24,15 @@ import { NavLink } from "@/lib/router";
 import { SidebarSection } from "./SidebarSection";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarAgents } from "./SidebarAgents";
-import { SidebarProjects } from "./SidebarProjects";
 import { SidebarStarredProjects } from "./SidebarStarredProjects";
 import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
-import { attentionApi } from "../api/attention";
 import {
   ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
   runsApi,
 } from "../api/runs";
-import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
-import { attentionBadgeCount } from "../lib/attention";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
 import { Button } from "@/components/ui/button";
@@ -61,10 +52,6 @@ export function Sidebar() {
   const { isMobile, collapsed, collapseLocked, peeking, toggleCollapsed, setCollapsed } = useSidebar();
   const rail = collapsed && !peeking;
   const inboxBadge = useInboxBadge(selectedCompanyId);
-  const { data: experimentalSettings } = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-  });
   const activeRunStatuses = ACTIVE_ISSUE_EXECUTION_RUN_STATUSES;
   const activeRunsQueryKey = queryKeys.runs(selectedCompanyId!, {
     status: activeRunStatuses,
@@ -91,34 +78,6 @@ export function Sidebar() {
   });
   usePublishSharedQueryData(sharedLiveRuns, activeRunPage, activeRunsUpdatedAt);
   const liveRunCount = activeRunPage?.items.length ?? 0;
-  const showWorkspacesLink = experimentalSettings?.enableIsolatedWorkspaces === true;
-  const showApps = experimentalSettings?.enableApps === true;
-  const showPipelines = experimentalSettings?.enablePipelines === true;
-  const goalsLinkPending = experimentalSettings === undefined;
-  const showGoalsLink = experimentalSettings?.enableGoalsSidebarLink === true;
-  const decisionsEnabled = experimentalSettings?.enableDecisions === true;
-  const { data: attentionFeed } = useQuery({
-    queryKey: queryKeys.attention(selectedCompanyId!),
-    queryFn: () => attentionApi.list(selectedCompanyId!),
-    // Board mentions are canonical notifications, so their feed cannot be
-    // hidden behind the experimental Decisions preference.
-    enabled: !!selectedCompanyId,
-    refetchInterval: 60_000,
-  });
-  const showDecisions = decisionsEnabled ||
-    attentionFeed?.items.some((item) => item.sourceKind === "mention_board") === true;
-  const attentionCount = attentionBadgeCount(attentionFeed);
-  const showCases = experimentalSettings?.enableCases === true;
-  // Streamlined left navigation (top-level Projects link + starred children) is
-  // now the standard product sidebar (PAP-12472). The former experimental
-  // opt-out was retired; classic per-project collapsible mode is no longer
-  // user-selectable. Kept as a constant so the classic branch below stays as a
-  // documented reference until it is fully removed. Routes are unaffected.
-  const streamlined = true;
-  // Conference Room Chat flag (PAP-136/PAP-137): the Conference Room nav item
-  // is a new surface, hidden entirely while the flag is off (same no-flash
-  // pattern as showWorkspacesLink above).
-  const conferenceRoomChatEnabled = experimentalSettings?.enableConferenceRoomChat === true;
 
   const pluginContext = {
     companyId: selectedCompanyId,
@@ -210,8 +169,7 @@ export function Sidebar() {
             );
           })()}
           <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
-          <SidebarNavItem
-            to="/inbox"
+          <SidebarNavItem to="/inbox"
             label="Inbox"
             icon={Inbox}
             badge={inboxBadge.inbox}
@@ -219,49 +177,16 @@ export function Sidebar() {
             badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
             alert={inboxBadge.failedRuns > 0}
           />
-          {showDecisions ? (
-            <SidebarNavItem
-              to="/decisions"
-              label="Decisions"
-              icon={ListChecks}
-              badge={attentionCount}
-              badgeLabel="decisions"
-            />
-          ) : null}
-          {conferenceRoomChatEnabled ? (
-            <SidebarNavItem to="/board-chat" label="Conference Room" icon={MessagesSquare} />
-          ) : null}
         </div>
 
         <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
           <SidebarNavItem to="/issues" label="Tasks" icon={CircleDot} />
-          {showCases ? (
-            <SidebarNavItem to="/cases" label="Cases" icon={Layers} textBadge="beta" />
-          ) : null}
           <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />
-          {showPipelines ? (
-            <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
-          ) : null}
-          {showGoalsLink ? (
-            <SidebarNavItem to="/goals" label="Goals" icon={Target} />
-          ) : goalsLinkPending ? (
-            <div
-              data-testid="sidebar-goals-placeholder"
-              className="h-8 pointer-coarse:h-7"
-              aria-hidden="true"
-            />
-          ) : null}
+          <SidebarNavItem to="/goals" label="Goals" icon={Target} />
           <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
-          {showWorkspacesLink ? (
-            <SidebarNavItem to="/workspaces" label="Workspaces" icon={GitBranch} />
-          ) : null}
-          {streamlined ? (
-            <>
-              <SidebarNavItem to="/projects" label="Projects" icon={FolderOpen} />
-              <SidebarStarredProjects />
-            </>
-          ) : null}
+          <SidebarNavItem to="/projects" label="Projects" icon={FolderOpen} />
+          <SidebarStarredProjects />
           <PluginSlotOutlet
             slotTypes={["sidebar"]}
             context={pluginContext}
@@ -277,14 +202,10 @@ export function Sidebar() {
           />
         </SidebarSection>
 
-        {/* Classic mode restores the per-project collapsible below Work. */}
-        {streamlined ? null : <SidebarProjects />}
-
-        <SidebarAgents streamlined={streamlined} />
+        <SidebarAgents />
 
         <SidebarSection label="Company" collapsible={{ open: companyOpen, onOpenChange: setCompanyOpen }}>
           <SidebarNavItem to="/org" label="Org" icon={Network} />
-          {showApps ? <SidebarNavItem to="/apps" label="Apps" icon={AppWindow} /> : null}
           <SidebarNavItem to="/timeline" label="Timeline" icon={GanttChartSquare} />
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
           <SidebarNavItem to="/activity" label="Activity" icon={History} />

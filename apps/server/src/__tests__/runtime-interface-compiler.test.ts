@@ -24,8 +24,6 @@ function compileInput(
     creatorUpdateTargets: [],
     mentionTargets: [],
     configureTargets: [],
-    agentHireCompanyToolOptions: [],
-    selectedCompanyTools: [],
     pluginTools: [],
     ...overrides,
   };
@@ -519,21 +517,10 @@ describe("runtime interface compiler", () => {
   });
 
   it("exposes only the closed runtime-agent configuration cells", () => {
-    const companyToolId = "11111111-1111-4111-8111-111111111111";
     const result = compileRuntimeInterface(
       compileInput({
         actionGrants: { agent_hire: true, agent_configure: true },
         configureTargets: [{ id: "agent-1" }],
-        agentHireCompanyToolOptions: [
-          {
-            catalogEntryId: companyToolId,
-            connectionId: "22222222-2222-4222-8222-222222222222",
-            connectionName: "Records",
-            title: "Lookup record",
-            description: "Look up a record",
-            catalogVersionHash: "catalog-v1",
-          },
-        ],
       }),
     );
     const hire = result.byName.get("agent_hire")!;
@@ -563,12 +550,8 @@ describe("runtime interface compiler", () => {
       "contextGrants",
       "actionGrants",
       "mentionReachGrants",
-      "companyToolIds",
     ]);
     expect(hire.inputSchema.properties).not.toHaveProperty("reportsTo");
-    expect(
-      hire.inputSchema.properties?.companyToolIds.items?.enum,
-    ).toEqual([companyToolId]);
     const completeHire = {
       name: "Child",
       title: null,
@@ -583,20 +566,7 @@ describe("runtime interface compiler", () => {
         AGENT_MENTION_REACH_GRANT_KEYS.map((key) => [key, false]),
       ),
     };
-    expect(() =>
-      hire.validateArguments?.({
-        ...completeHire,
-        companyToolIds: [companyToolId],
-      }),
-    ).not.toThrow();
-    expect(() =>
-      hire.validateArguments?.({
-        ...completeHire,
-        companyToolIds: [
-          "33333333-3333-4333-8333-333333333333",
-        ],
-      }),
-    ).toThrow(/companyToolIds/);
+    expect(() => hire.validateArguments?.(completeHire)).not.toThrow();
     expect(configure.inputSchema.properties?.agentId).toEqual({
       type: "string",
       enum: ["agent-1"],
@@ -612,20 +582,6 @@ describe("runtime interface compiler", () => {
       "adapterConfig",
     );
     expect(configure.inputSchema.properties).not.toHaveProperty("role");
-  });
-
-  it("accepts only an empty hire tool selection when no create option exists", () => {
-    const hire = compileRuntimeInterface(
-      compileInput({
-        actionGrants: { agent_hire: true },
-        agentHireCompanyToolOptions: [],
-      }),
-    ).byName.get("agent_hire")!;
-    expect(hire.inputSchema.properties?.companyToolIds).toMatchObject({
-      type: "array",
-      minItems: 0,
-      maxItems: 0,
-    });
   });
 
   it("validates a configure call against its current id-only catalog", () => {
@@ -645,24 +601,6 @@ describe("runtime interface compiler", () => {
     expect(
       configure.validateArguments?.({ agentId: "agent-1", title: null }),
     ).toEqual({ agentId: "agent-1", title: null });
-  });
-
-  it("rejects company tool collisions with the closed Paperclip catalog", () => {
-    expect(() =>
-      compileRuntimeInterface(
-        compileInput({
-          selectedCompanyTools: [
-            {
-              id: "tool-1",
-              name: "issue_update",
-              title: "Collision",
-              description: "Bad",
-              inputSchema: { type: "object" },
-            },
-          ],
-        }),
-      ),
-    ).toThrow(/collides/);
   });
 
   it("compiles administrator-installed plugin tools with immutable installation identity", () => {

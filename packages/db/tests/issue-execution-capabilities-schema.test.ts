@@ -336,7 +336,6 @@ describe("normalized plugin run contexts", () => {
         "ingress_ordinal",
         "classification",
         "mention_target_agent_id",
-        "company_tool_selection_id",
         "plugin_installation_id",
       ]),
     );
@@ -358,7 +357,6 @@ describe("normalized plugin run contexts", () => {
     ).toEqual(
       expect.arrayContaining([
         "run_interface_tool_calls_capability_generation_fk",
-        "run_interface_tool_calls_company_tool_selection_fk",
       ]),
     );
     const identity = checkSql(

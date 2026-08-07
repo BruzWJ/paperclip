@@ -420,7 +420,7 @@ function EntityRowsDemo({ empty = false }: { empty?: boolean }) {
           leading: <Bot className="h-4 w-4 text-cyan-600" />,
           identifier: "agent",
           title: "CodexCoder",
-          subtitle: "Senior Product Engineer · active in Storybook worktree",
+          subtitle: "Senior Product Engineer · active in Storybook preview",
           trailing: <StatusBadge status="running" />,
           selected: true,
         },

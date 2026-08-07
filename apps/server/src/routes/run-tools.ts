@@ -162,7 +162,7 @@ function mcpToolResult(result: PromptCapabilityToolExecutionResult) {
 
 /**
  * The only provider-facing Paperclip capability endpoint. It has no selector,
- * session-creation, generic API, profile, or named-gateway fallback.
+ * session-creation, generic API, profile, or alternate capability fallback.
  */
 export function runToolsRoutes(gateway: PromptCapabilityGateway) {
   const router = Router();

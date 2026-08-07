@@ -10,7 +10,6 @@ test("rejects every retired run-store surface", () => {
   const terms = [
     "heartbeat_runs",
     "heartbeat_run_events",
-    "heartbeat_run_watchdog_decisions",
     "heartbeatRuns",
     "heartbeatRunEvents",
     "HeartbeatRunStatus",

@@ -187,8 +187,6 @@ export function IssueDocumentAnnotations({
   const annotationsQuery = useQuery({
     queryKey: target?.kind === "routine"
       ? queryKeys.routines.documentAnnotations(target.routineId, target.documentKey, "all")
-      : target?.kind === "case"
-        ? queryKeys.cases.documentAnnotations(target.caseId, target.documentKey, "all")
       : queryKeys.issues.documentAnnotations(issueId, doc.key, "all"),
     queryFn: () => target
       ? documentAnnotationsApi.listForTarget(target, { status: "all", includeComments: true })
@@ -435,8 +433,6 @@ export function DocumentAnnotationsCountChip({
   const annotationsQuery = useQuery({
     queryKey: target?.kind === "routine"
       ? queryKeys.routines.documentAnnotations(target.routineId, target.documentKey, "all")
-      : target?.kind === "case"
-        ? queryKeys.cases.documentAnnotations(target.caseId, target.documentKey, "all")
       : queryKeys.issues.documentAnnotations(issueId, docKey, "all"),
     queryFn: () => target
       ? documentAnnotationsApi.listForTarget(target, { status: "all", includeComments: true })

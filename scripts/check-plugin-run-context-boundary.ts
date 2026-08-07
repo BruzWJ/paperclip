@@ -221,7 +221,7 @@ export function pluginRunContextBoundaryViolations(
     const params = between(
       protocol,
       "export interface ExecuteToolParams",
-      "export interface PluginExternalObjectUrlCandidate",
+      "\n}\n",
     );
     if (params === null) {
       violations.push(`${SDK_PROTOCOL}: ExecuteToolParams is missing`);
@@ -272,7 +272,7 @@ export function pluginRunContextBoundaryViolations(
     const handler = between(
       worker,
       "async function handleExecuteTool",
-      "async function handleDetectExternalObjects",
+      "\n  function methodNotImplemented",
     );
     if (handler === null) {
       violations.push(`${SDK_WORKER}: execute-tool handler is missing`);

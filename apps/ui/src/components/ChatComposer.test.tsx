@@ -151,8 +151,8 @@ describe("ChatComposer", () => {
   });
 
   it("default (multiline) mode soft-wraps and auto-grows instead of clipping (PAP-116)", () => {
-    // The conference room composer adopts this default mode. Text must wrap and
-    // the box grow up to a cap — never clip horizontally or show an idle scrollbar.
+    // Text must wrap and the box grow up to a cap — never clip horizontally or
+    // show an idle scrollbar.
     const root = createRoot(container);
     act(() => {
       root.render(<Harness />);

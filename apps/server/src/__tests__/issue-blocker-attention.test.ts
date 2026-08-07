@@ -121,7 +121,6 @@ async function classify(input: {
     [],
     [],
     [],
-    [],
   ];
   for (const level of input.levels) {
     select.push(level.explicit ?? [], level.children ?? []);

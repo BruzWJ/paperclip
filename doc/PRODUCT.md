@@ -14,7 +14,7 @@ A company has:
 
 - a goal and a hierarchy of projects and issues that explain why work exists;
 - configured agent identities connected by reporting lines;
-- board users, budgets, approvals, tools, skills, environments, and workspaces;
+- board users, budgets, approvals, and skills;
 - an auditable issue-session log and human-facing comment thread.
 
 ### Agents Are Configured Identities
@@ -79,12 +79,11 @@ Provider-native continuity is separately correlated to the exact
 correlation. A new issue or ownership epoch cannot inherit another issue's
 Paperclip-authored context.
 
-### Workspaces and Provider Targets
+### Provider Targets
 
-Before launch, every issue execution resolves a persisted workspace binding for
-its issue and ownership epoch. A workspace may be projectless. There is no
-agent-home, adapter-configured working-directory, process-directory, or prior
-session fallback.
+Before launch, every issue execution receives a resolved local working
+directory. There is no agent-home, adapter-configured working-directory,
+process-directory, or prior-session fallback.
 
 The ACPX public-runtime bridge carries the immutable run interface to one
 locally installed compatible CLI discovered from ACPX's public registry.
@@ -96,19 +95,17 @@ exports a generic API credential or identity bridge into the provider process.
 The current public ACPX runtime is local-only, so remote target drivers are not
 advertised for ACPX agents.
 
-### Tools and Skills
+### Actions and Skills
 
-Paperclip actions and company tools are separate:
+Paperclip actions and skills are separate:
 
 - Paperclip actions are the exhaustive seven-action catalog dynamically compiled
   from the current execution's authority.
-- Company tools are concrete enabled catalog entries explicitly selected for an
-  agent and further reduced by safety and approval policy.
 - Plugin tools are a separate, administrator-installed runtime source. Every
-  declared tool is available to agents in enabled companies without company-tool
-  catalog projection.
-- Company skills are explicitly selected workspace content. They grant no
-  authority and are not announced through synthesized prompt prose.
+  declared tool remains inside the canonical prompt-capability and audit
+  boundary.
+- Company skills are explicitly selected run content. They grant no authority
+  and are not announced through synthesized prompt prose.
 
 No virtual search/run wrapper, static Paperclip operational skill, ambient MCP
 surface, or generic REST instruction bundle is injected into a run.
@@ -134,7 +131,7 @@ surface, or generic REST instruction bundle is injected into a run.
 
 1. Create a company and state its goal.
 2. Configure one ordinary agent identity and an explicit provider target.
-3. Optionally add reporting relationships, selected skills/tools, budgets, and
+3. Optionally add reporting relationships, selected skills, budgets, and
    further agents.
 4. Create a board issue with an immutable request and an invokable agent owner.
 5. Observe its typed issue execution, comments, work products, cost, and

@@ -28,7 +28,7 @@ This should be built as the **text-document slice** of the broader artifact syst
 
 - **Documents**: editable text content with stable keys and revision history.
 - **Attachments**: uploaded/generated opaque files backed by storage (`assets` + `issue_attachments`).
-- **Artifacts**: later umbrella/read-model that can unify documents, attachments, previews, and workspace files.
+- **Artifacts**: later umbrella/read-model that can unify documents, attachments, and previews.
 
 Recommendation:
 
@@ -51,7 +51,7 @@ This keeps `PAP-448` focused while still fitting the larger artifact direction.
 
 - full collaborative doc editing
 - binary-file version history
-- browser IDE or workspace editor
+- browser IDE or run-directory editor
 - full artifact-system implementation in the same change
 - generalized polymorphic relations for every entity type on day one
 
@@ -399,7 +399,6 @@ Recommendation:
   - issue documents
   - issue attachments
   - preview URLs
-  - workspace-file references
 
 The artifact proposal currently has no explicit `document` kind. It should.
 
@@ -409,7 +408,6 @@ Recommended future shape:
 type ArtifactKind =
   | "document"
   | "attachment"
-  | "workspace_file"
   | "preview"
   | "report_link";
 ```

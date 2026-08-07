@@ -85,7 +85,7 @@ pnpm paperclipai agent runtime:update <agent-id> \
   --payload-json '{...}' [--idempotency-key <key>]
 
 pnpm paperclipai agent adapter-revision:create <agent-id> \
-  --payload-json '{"adapterType":"<acpx-registry-name>","adapterConfig":{"<acpx-option-id>":"<selected-advertised-value>"},"defaultEnvironmentId":"11111111-1111-4111-8111-111111111111","runtimeConfig":{},"companySkillPins":[],"skillChannel":"operator_native"}'
+  --payload-json '{"adapterType":"<acpx-registry-name>","adapterConfig":{"<acpx-option-id>":"<selected-advertised-value>"},"runtimeConfig":{},"companySkillPins":[],"skillChannel":"operator_native"}'
 pnpm paperclipai agent adapter-revisions <agent-id>
 pnpm paperclipai agent adapter-revision:current <agent-id>
 
@@ -100,9 +100,9 @@ pnpm paperclipai agent terminate <agent-id>
 The three mutation families are deliberately disjoint:
 
 - Runtime configuration owns display identity, reporting, capabilities, the
-  complete 9/6/2 grant maps, and exact company-tool selections.
-- Adapter revisions own adapter type/configuration, exact execution environment,
-  runtime configuration, sorted immutable company-skill pins, and the exact
+  complete 9/6/2 grant maps and exact company-skill selections.
+- Adapter revisions own adapter type/configuration, runtime configuration,
+  sorted immutable company-skill pins, and the exact
   `isolated_skills_home` or `operator_native` channel. Provider credentials and
   CLI-native configuration remain outside Paperclip. Revisions are append-only;
   there is no rollback command.
@@ -187,11 +187,32 @@ pnpm paperclipai dashboard get
 ```sh
 pnpm paperclipai instance settings:general
 pnpm paperclipai instance settings:general:update --payload-json '{...}'
-pnpm paperclipai instance settings:experimental
-pnpm paperclipai instance settings:experimental:update --payload-json '{...}'
 ```
 
-Experimental features are opt-in and are provided without compatibility guarantees. They may break, change, or be removed at any time. Use them at your own risk.
+`settings:general` returns the instance-wide settings. `settings:general:update`
+PATCHes a JSON object and requires instance-admin access. The retained General
+settings are:
+
+| Key | Default | Behavior |
+| --- | --- | --- |
+| `enableWorkspaceBranchReconcileForward` | On | Allows a clean worktree to advance only when its checked-out branch is a proven descendant of the recorded branch. |
+| `enableWorkspaceDirtyQuarantineRepair` | On | Preserves dirty foreign-branch work on a rescue branch before restoring the recorded branch. |
+| `enableServerInfoDebugView` | Off | Shows server restart, running commit, and checkout-state details in the account-menu **Server Info** debug view. It changes only that view. |
+| `autoRestartDevServerWhenIdle` | Off | Lets the managed dev runner request a restart for backend changes after there are no queued or running issue executions. Migrations remain explicit. |
+| `enableWorktreeRunExecution` | Off | In a worktree instance, permits automatic schedule and webhook dispatch only for routines created after the server-recorded activation cutoff. Normal instances are unaffected. |
+
+For the worktree dispatch control, the server—not the client—controls the
+returned `worktreeRunExecutionActivatedAt` and
+`worktreeRunExecutionActivationInstanceId` metadata. They cannot be sent in an
+update payload; a worktree is armed only when that state matches its running
+instance, and missing, copied, mismatched, or unreadable state fails closed.
+
+For example:
+
+```sh
+pnpm paperclipai instance settings:general:update \
+  --payload-json '{"autoRestartDevServerWhenIdle":true}'
+```
 
 There is no direct agent-invocation command. Provider work starts only from a
 committed canonical issue source and persisted issue-execution reference.

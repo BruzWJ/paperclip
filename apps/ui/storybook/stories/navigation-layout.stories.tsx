@@ -294,7 +294,6 @@ function NavigationLayoutStories() {
                 <SidebarAccountMenu
                   open
                   onOpenChange={() => undefined}
-                  version="0.3.1"
                 />
               </div>
             </div>

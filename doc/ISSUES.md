@@ -48,7 +48,7 @@ contract.
 
 Every source uses the same ordinary issue runtime and invokable-owner resolver:
 
-- board/user issue creation and Board Chat;
+- board/user issue creation;
 - an authorized parent execution's `issue_create` action;
 - plugin-created issues with immutable installation/callback creator identity;
 - routine dispatch;
@@ -126,12 +126,10 @@ Provider-native continuity is a separate protected envelope scoped to:
 It is read and written only when effective `carry_context` is true. Paperclip
 never uses an agent-wide conversational-session key.
 
-## Workspaces
+## Run directory
 
-The launch workspace is selected from the persisted
-`issue_execution_workspace_bindings` row for the issue and ownership epoch. It
-may be projectless. Legacy issue/workspace provenance columns are migration
-evidence only and are not runtime selectors.
+The server resolves the local run directory for each issue and ownership epoch.
+It is internal execution plumbing, not a board-selectable resource.
 
 ## Dependencies and Recovery
 

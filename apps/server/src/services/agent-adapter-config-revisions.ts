@@ -34,7 +34,6 @@ import {
   type ServerAdapterModule,
 } from "@paperclipai/adapter-utils";
 import { notFound, unprocessable } from "../errors.js";
-import { assertEnvironmentSelectionForCompany } from "../routes/environment-selection.js";
 import { environmentService } from "./environments.js";
 import {
   requireSecretMutationActor,
@@ -67,7 +66,6 @@ export interface SelectAgentAdapterConfigRevisionInput {
   adapterType: string;
   adapterConfig: Record<string, unknown>;
   runtimeConfig: Record<string, unknown>;
-  defaultEnvironmentId: string;
   companySkillPins: readonly CompanySkillPin[];
   skillChannel: CompanySkillChannel;
   createdByAgentId?: string | null;
@@ -78,7 +76,7 @@ export interface DerivedAgentAdapterConfigRevision {
   adapterType: string;
   implementationIdentity: AdapterImplementationIdentity;
   adapterConfigSchemaVersion: string;
-  defaultEnvironmentId: string;
+  executionEnvironmentId: string;
   executionTargetDriver: EnvironmentDriver;
   executionTargetDigest: string;
   normalizedConfig: Record<string, unknown>;
@@ -477,7 +475,7 @@ export function deriveAgentAdapterConfigRevision(input: {
     agentAdapterAcpConfigurationSchema.safeParse({
       ...declarativeAcpConfiguration,
       executionTargetSelector: {
-        defaultEnvironmentId: executionTarget.environmentId,
+        environmentId: executionTarget.environmentId,
         executionTargetDriver: executionTarget.driver,
         executionTargetDigest: executionTarget.digest,
       },
@@ -506,7 +504,7 @@ export function deriveAgentAdapterConfigRevision(input: {
         adapterType: input.adapterType,
         implementationIdentity: input.runtimeMetadata.implementationIdentity,
         adapterConfigSchemaVersion: AGENT_ADAPTER_CONFIG_SCHEMA_VERSION,
-        defaultEnvironmentId: executionTarget.environmentId,
+        executionEnvironmentId: executionTarget.environmentId,
         executionTargetDriver: executionTarget.driver,
         executionTargetDigest: executionTarget.digest,
         normalizedConfig,
@@ -519,7 +517,7 @@ export function deriveAgentAdapterConfigRevision(input: {
     adapterType: input.adapterType,
     implementationIdentity: input.runtimeMetadata.implementationIdentity,
     adapterConfigSchemaVersion: AGENT_ADAPTER_CONFIG_SCHEMA_VERSION,
-    defaultEnvironmentId: executionTarget.environmentId,
+    executionEnvironmentId: executionTarget.environmentId,
     executionTargetDriver: executionTarget.driver,
     executionTargetDigest: executionTarget.digest,
     normalizedConfig,
@@ -755,36 +753,25 @@ export async function selectAgentAdapterConfigRevision(
     throw unprocessable("Agent current adapter configuration revision is invalid");
   }
 
-  // Resolve the current ACPX-admitted definition before accepting an
-  // environment. This replaces the former all-Paperclip-drivers precheck and
-  // ensures the exact driver list comes from the same runtime metadata later
-  // pinned into the immutable revision.
+  // Resolve the current ACPX-admitted definition before stamping the
+  // automatic local execution environment into the immutable revision.
   const resolvedRuntime = await resolveRegisteredAdapterRuntimeConfiguration({
     adapterType: input.adapterType,
     adapterConfig: input.adapterConfig,
   });
-  await assertEnvironmentSelectionForCompany(
-    environmentService(db),
-    input.companyId,
-    input.defaultEnvironmentId,
-    {
-      allowedDrivers: [
-        ...resolvedRuntime.runtimeMetadata.definition.environment.drivers,
-      ],
-    },
-  );
-  const executionEnvironment = await environmentService(db).getById(
-    input.defaultEnvironmentId,
-  );
+  const executionEnvironment = await environmentService(db).ensureLocalEnvironment();
   if (
-    !executionEnvironment
-    || executionEnvironment.status !== "active"
+    executionEnvironment.status !== "active"
+    || !resolvedRuntime.runtimeMetadata.definition.environment.drivers.includes(
+      executionEnvironment.driver,
+    )
   ) {
     throw unprocessable(
-      "Agent execution environment must exist and be active",
+      "Agent runtime does not support the required local execution environment",
       {
-        code: "agent_execution_environment_unavailable",
-        environmentId: input.defaultEnvironmentId,
+        code: "agent_execution_environment_unsupported",
+        environmentId: executionEnvironment.id,
+        driver: executionEnvironment.driver,
       },
     );
   }
@@ -1113,7 +1100,6 @@ export function createAgentAdapterConfigurationService(
           typeof locked.adapterType !== "string"
           || !isRecord(locked.adapterConfig)
           || !isRecord(locked.runtimeConfig)
-          || typeof locked.defaultEnvironmentId !== "string"
         ) {
           throw unprocessable(
             "Agent adapter configuration is incomplete",
@@ -1145,7 +1131,6 @@ export function createAgentAdapterConfigurationService(
           adapterType: locked.adapterType,
           adapterConfig: locked.adapterConfig,
           runtimeConfig: locked.runtimeConfig,
-          defaultEnvironmentId: locked.defaultEnvironmentId,
           companySkillPins: requestedPins,
           skillChannel: requestedSkillChannel,
           createdByAgentId: attribution.agentId,
@@ -1158,7 +1143,6 @@ export function createAgentAdapterConfigurationService(
             adapterType: revision.adapterType,
             adapterConfig: revision.normalizedConfig,
             runtimeConfig: locked.runtimeConfig,
-            defaultEnvironmentId: revision.defaultEnvironmentId,
             currentAdapterConfigRevisionId: revision.id,
             updatedAt: new Date(),
           })
@@ -1227,7 +1211,6 @@ export function createAgentAdapterConfigurationService(
         ) as Record<string, unknown>;
         const normalizedRuntimeConfig =
           normalizeRuntimeConfiguration(parsed.data.runtimeConfig);
-
         const previousRevisionId =
           locked.currentAdapterConfigRevisionId;
         const revision = await selectAgentAdapterConfigRevision(txDb, {
@@ -1236,8 +1219,6 @@ export function createAgentAdapterConfigurationService(
           adapterType: parsed.data.adapterType,
           adapterConfig: normalizedAdapterConfig,
           runtimeConfig: normalizedRuntimeConfig,
-          defaultEnvironmentId:
-            parsed.data.defaultEnvironmentId,
           companySkillPins: parsed.data.companySkillPins,
           skillChannel: parsed.data.skillChannel,
           createdByAgentId: attribution.agentId,
@@ -1250,8 +1231,6 @@ export function createAgentAdapterConfigurationService(
             adapterType: revision.adapterType,
             adapterConfig: revision.normalizedConfig,
             runtimeConfig: normalizedRuntimeConfig,
-            defaultEnvironmentId:
-              revision.defaultEnvironmentId,
             currentAdapterConfigRevisionId: revision.id,
             updatedAt: new Date(),
           })

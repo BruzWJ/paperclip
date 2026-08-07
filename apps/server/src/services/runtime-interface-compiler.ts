@@ -4,13 +4,12 @@ import {
   PAPERCLIP_ACTION_KEYS,
   PAPERCLIP_RUNTIME_ACTION_KEYS,
   runtimeAgentConfigureActionSchemaForTargets,
-  runtimeAgentHireConfigurationSchemaForCompanyTools,
+  runtimeAgentHireConfigurationSchema,
   isMcpToolName,
   type AgentMentionReachGrantKey,
   type IssueExecutionRefMode,
   type JsonSchema,
   type PaperclipActionKey,
-  type RuntimeAgentCompanyToolOption,
 } from "@paperclipai/shared";
 import { z } from "zod";
 import {
@@ -43,7 +42,7 @@ const PAPERCLIP_RUNTIME_TOOL_NAMES = [
 export type PaperclipRuntimeToolName =
   (typeof PAPERCLIP_RUNTIME_TOOL_NAMES)[number];
 
-export type RuntimeToolSource = "paperclip" | "company" | "plugin";
+export type RuntimeToolSource = "paperclip" | "plugin";
 
 export interface CompiledRunToolDescriptor {
   name: string;
@@ -51,7 +50,6 @@ export interface CompiledRunToolDescriptor {
   description: string;
   inputSchema: JsonSchema;
   source: RuntimeToolSource;
-  selectedCompanyToolSelectionId?: string;
   /** Server-only immutable installation identity for a direct plugin tool. */
   pluginInstallationId?: string;
   /** Server-only exact manifest identity compiled with this declaration. */
@@ -94,15 +92,6 @@ interface CreatorUpdateTargetCatalogEntry {
   issueId: string;
 }
 
-export interface SelectedCompanyTool {
-  selectionId: string;
-  catalogEntryId: string;
-  name: string;
-  title: string;
-  description: string;
-  inputSchema: JsonSchema;
-}
-
 /** A tool declared by a ready administrator-installed plugin. */
 export interface RuntimePluginTool {
   installationId: string;
@@ -129,8 +118,6 @@ export interface RuntimeInterfaceCompileInput {
   creatorUpdateTargets: readonly CreatorUpdateTargetCatalogEntry[];
   mentionTargets: readonly AgentCatalogEntry[];
   configureTargets: readonly RuntimeAgentConfigureTarget[];
-  agentHireCompanyToolOptions: readonly RuntimeAgentCompanyToolOption[];
-  selectedCompanyTools: readonly SelectedCompanyTool[];
   /** Ready plugin tools are host-managed and available to every agent. */
   pluginTools: readonly RuntimePluginTool[];
 }
@@ -897,17 +884,13 @@ function mentionBoardDescriptor(): CompiledRunToolDescriptor {
   };
 }
 
-function hireDescriptor(
-  options: readonly RuntimeAgentCompanyToolOption[],
-): CompiledRunToolDescriptor {
+function hireDescriptor(): CompiledRunToolDescriptor {
   return canonicalActionDescriptor({
     name: "agent_hire",
     title: "Hire direct-report agent",
     description:
       "Create one ordinary direct-report agent. Provider, adapter, budget, lifecycle, and operational fields are not accepted.",
-    schema: runtimeAgentHireConfigurationSchemaForCompanyTools(
-      options.map((option) => option.catalogEntryId),
-    ),
+    schema: runtimeAgentHireConfigurationSchema,
   });
 }
 
@@ -918,7 +901,7 @@ function configureDescriptor(
     name: "agent_configure",
     title: "Configure runtime agent",
     description:
-      "Update authorized runtime-agent identity, context cells, grants, and selected company tools only.",
+      "Update authorized runtime-agent identity, context cells, and grants only.",
     schema: runtimeAgentConfigureActionSchemaForTargets(
       targets.map((target) => target.id),
     ),
@@ -965,7 +948,7 @@ function actionDescriptors(
     descriptors.push(mentionBoardDescriptor());
   }
   if (input.actionGrants.agent_hire === true) {
-    descriptors.push(hireDescriptor(input.agentHireCompanyToolOptions));
+    descriptors.push(hireDescriptor());
   }
   if (
     input.actionGrants.agent_configure === true &&
@@ -975,19 +958,6 @@ function actionDescriptors(
   }
 
   return descriptors;
-}
-
-function companyDescriptors(
-  selected: readonly SelectedCompanyTool[],
-): CompiledRunToolDescriptor[] {
-  return selected.map((tool) => ({
-    name: tool.name,
-    title: tool.title,
-    description: tool.description,
-    inputSchema: tool.inputSchema,
-    source: "company",
-    selectedCompanyToolSelectionId: tool.selectionId,
-  }));
 }
 
 function pluginDescriptors(
@@ -1045,7 +1015,6 @@ export function compileRuntimeInterface(
     ...buildRuntimeRetrievalAbi(input.contextDial).descriptors,
     ...actionDescriptors(input),
     ...pluginDescriptors(input.pluginTools),
-    ...companyDescriptors(input.selectedCompanyTools),
   ];
   const byName = new Map<string, CompiledRunToolDescriptor>();
   for (const descriptor of descriptors) {
@@ -1127,8 +1096,6 @@ function compiledRuntimeInterfaceDigest(
       description: descriptor.description,
       inputSchema: descriptor.inputSchema,
       source: descriptor.source,
-      selectedCompanyToolSelectionId:
-        descriptor.selectedCompanyToolSelectionId,
       pluginInstallationId: descriptor.pluginInstallationId,
       pluginManifestIdentity: descriptor.pluginManifestIdentity,
       pluginToolName: descriptor.pluginToolName,

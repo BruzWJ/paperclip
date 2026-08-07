@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, projects } from "@paperclipai/db";
+import { agents } from "@paperclipai/db";
 import {
   LOW_TRUST_REVIEW_PRESET,
   type SourceTrustMetadata,
@@ -22,7 +22,6 @@ export type SourceTrustActor = {
 export type SourceTrustIssueContext = {
   id: string;
   companyId: string;
-  projectId?: string | null;
   executionPolicy?: unknown;
 };
 
@@ -101,7 +100,7 @@ export async function resolveActorSourceTrustForIssue(input: {
 }): Promise<SourceTrustMetadata | null> {
   if (input.actor.actorType !== "agent" || !input.actor.agentId) return null;
 
-  const [agent, project, runLinkage] = await Promise.all([
+  const [agent, runLinkage] = await Promise.all([
     input.db
       .select({
         companyId: agents.companyId,
@@ -110,16 +109,6 @@ export async function resolveActorSourceTrustForIssue(input: {
       .from(agents)
       .where(and(eq(agents.id, input.actor.agentId), eq(agents.companyId, input.issue.companyId)))
       .then((rows) => rows[0] ?? null),
-    input.issue.projectId
-      ? input.db
-          .select({
-            companyId: projects.companyId,
-            executionWorkspacePolicy: projects.executionWorkspacePolicy,
-          })
-          .from(projects)
-          .where(and(eq(projects.id, input.issue.projectId), eq(projects.companyId, input.issue.companyId)))
-          .then((rows) => rows[0] ?? null)
-      : Promise.resolve(null),
     input.actor.runId
       ? resolveProductiveRunLinkage(input.db, {
           runId: input.actor.runId,
@@ -147,7 +136,6 @@ export async function resolveActorSourceTrustForIssue(input: {
     agent: agent
       ? { companyId: agent.companyId, governance: agent.permissions }
       : null,
-    project,
     issue: {
       companyId: input.issue.companyId,
       executionPolicy: input.issue.executionPolicy,

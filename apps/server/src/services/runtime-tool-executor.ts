@@ -52,16 +52,6 @@ export interface RuntimeActionPort {
   agentConfigure(input: RuntimeActionInvocation): Promise<unknown>;
 }
 
-export interface RuntimeCompanyToolPort {
-  execute(input: {
-    capability: PromptCapabilityBinding;
-    companyToolSelectionId: string;
-    arguments: unknown;
-    callIdentity: PromptCapabilityCallIdentity;
-    runInterfaceToolCallId: string;
-  }): Promise<unknown>;
-}
-
 export interface RuntimePluginToolPort {
   execute(input: {
     capability: PromptCapabilityBinding;
@@ -159,7 +149,6 @@ export function createRuntimeToolExecutor(options: {
   retrieval: ContextRetrievalService;
   retrievalScope: RuntimeRetrievalScopeResolver;
   actions: RuntimeActionPort;
-  companyTools: RuntimeCompanyToolPort;
   pluginTools: RuntimePluginToolPort;
   callLedger: RuntimeToolCallLedger;
 }): PromptCapabilityToolExecutor {
@@ -247,7 +236,6 @@ export function createRuntimeToolExecutor(options: {
       callIdentity,
       ingressOrdinal,
       mintPluginRunContext,
-      commitMentionAudit,
     }) {
       const claim = await options.callLedger.claim({
         capability,
@@ -356,20 +344,6 @@ export function createRuntimeToolExecutor(options: {
               pluginManifestIdentity: descriptor.pluginManifestIdentity!,
             }),
           });
-        } else if (descriptor.source === "company") {
-          if (!descriptor.selectedCompanyToolSelectionId) {
-            throw new RuntimeInterfaceConflict(
-              "Selected company tool is missing its immutable selection id",
-            );
-          }
-          result = await options.companyTools.execute({
-            capability,
-            companyToolSelectionId:
-              descriptor.selectedCompanyToolSelectionId,
-            arguments: validatedArguments,
-            callIdentity,
-            runInterfaceToolCallId: claim.id,
-          });
         } else {
           const handler = action[descriptor.name as keyof typeof action];
           if (!handler) {
@@ -401,7 +375,6 @@ export function createRuntimeToolExecutor(options: {
                 targetAgentId: mentionTargetAgentId,
                 result,
               });
-              await commitMentionAudit?.(transaction);
               mentionActionCommitted = true;
               return committed;
             },

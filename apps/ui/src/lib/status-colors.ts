@@ -12,9 +12,7 @@
 // PAP-75 brand mapping ("blue = liveness"): todo → amber (queued), in_progress
 // → blue (live). See `issueStatusColor` below for the canonical chip palette.
 //
-// The brand mapping is the default status palette. Chat-specific gating stays
-// isolated to the Conference Room route/nav/API and does not control task
-// status presentation.
+// The brand mapping is the default status palette and does not vary by view.
 
 /** StatusIcon circle: text + border classes */
 export const issueStatusIcon: Record<string, string> = {
@@ -104,9 +102,8 @@ export const statusBadge: Record<string, string> = {
   approved: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
   rejected: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
 
-  // Case statuses (PAP-12968 E3) — `draft` is the neutral pre-work state,
-  // rendered as a muted gray alias of `backlog`/`planned`. The other case
-  // statuses (in_progress/in_review/approved/done/cancelled) already map above.
+  // `draft` is the neutral pre-work state, rendered as a muted gray alias of
+  // `backlog`/`planned`.
   draft: "bg-muted text-muted-foreground",
 
   // Issue statuses — consistent hues with issueStatusIcon above (PAP-75 brand
@@ -119,7 +116,7 @@ export const statusBadge: Record<string, string> = {
   done: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
   cancelled: "bg-muted text-muted-foreground",
 
-  // Tool access — policy decisions, catalog, and runtime health (Tools & Access, PAP-10389)
+  // Policy decision statuses.
   allowed: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
   denied: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
   block: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
@@ -297,85 +294,3 @@ export const priorityColor: Record<string, string> = {
 };
 
 export const priorityColorDefault = "text-yellow-600 dark:text-yellow-400";
-
-// ---------------------------------------------------------------------------
-// External object status — colors & severity ranking
-// ---------------------------------------------------------------------------
-//
-// Categories come from `EXTERNAL_OBJECT_STATUS_CATEGORIES` in @paperclipai/shared.
-// The map keys here intentionally mirror the union — keep them in sync.
-//
-// Tone reuse rationale (see UX spec §1):
-//   unknown   → backlog hue (muted, dashed circle)
-//   open      → todo / blue
-//   waiting   → amber (distinct from internal in_progress yellow)
-//   running   → status blue (gallery r2; was cyan), animated when motion is allowed
-//   succeeded → done / green
-//   failed    → red
-//   blocked   → red
-//   closed    → muted neutral
-//   archived  → muted neutral
-//   auth_required → amber + dashed
-//   unreachable   → red + dashed
-
-export const externalObjectStatusIcon: Record<string, string> = {
-  unknown: "text-muted-foreground border-muted-foreground",
-  open: "text-blue-600 border-blue-600 dark:text-blue-400 dark:border-blue-400",
-  waiting: "text-amber-600 border-amber-600 dark:text-amber-400 dark:border-amber-400",
-  running: "text-blue-600 border-blue-600 dark:text-blue-400 dark:border-blue-400", // Gallery feedback r2: running = status blue (pulse animation still distinguishes it from static blue `open`).
-  succeeded: "text-green-600 border-green-600 dark:text-green-400 dark:border-green-400",
-  merged: "text-violet-600 border-violet-600 dark:text-violet-400 dark:border-violet-400",
-  failed: "text-red-600 border-red-600 dark:text-red-400 dark:border-red-400",
-  blocked: "text-red-600 border-red-600 dark:text-red-400 dark:border-red-400",
-  closed: "text-neutral-500 border-neutral-500",
-  archived: "text-neutral-500 border-neutral-500",
-  auth_required: "text-amber-600 border-amber-600 dark:text-amber-400 dark:border-amber-400",
-  unreachable: "text-red-600 border-red-600 dark:text-red-400 dark:border-red-400",
-};
-
-export const externalObjectStatusIconDefault = "text-muted-foreground border-muted-foreground";
-
-export const externalObjectStatusBadge: Record<string, string> = {
-  unknown: "bg-muted text-muted-foreground",
-  open: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
-  waiting: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
-  running: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300", // Gallery feedback r2: running = status blue (now shares tint with `open`; liveness animation differentiates).
-  succeeded: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
-  failed: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
-  blocked: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
-  closed: "bg-muted text-muted-foreground",
-  archived: "bg-muted text-muted-foreground",
-  auth_required: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
-  unreachable: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
-};
-
-export const externalObjectStatusBadgeDefault = "bg-muted text-muted-foreground";
-
-/**
- * Liveness overlay applied on top of the base status tone. We deliberately
- * encode it as utility classes (not a tone change) so callers can append the
- * overlay to any pill, icon, or marker without redefining colors.
- *
- * The dashed border + reduced opacity guarantees a non-color differentiator
- * for stale / auth_required / unreachable per WCAG 1.4.1.
- */
-export const externalObjectLivenessOverlay: Record<string, string> = {
-  unknown: "",
-  fresh: "",
-  stale: "opacity-70 [border-style:dashed]",
-  auth_required: "[border-style:dashed]",
-  unreachable: "[border-style:dashed]",
-};
-
-/**
- * Severity ranking used by sidebar/list rollups. Higher number = more
- * attention-worthy. Anything ≤ `muted` should be hidden when summarising.
- */
-export const externalObjectStatusToneSeverity: Record<string, number> = {
-  muted: 0,
-  neutral: 1,
-  success: 2,
-  info: 3,
-  warning: 4,
-  danger: 5,
-};

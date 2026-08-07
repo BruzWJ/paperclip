@@ -3,12 +3,9 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
   Agent,
   AgentAdapterConfigurationTestResult,
-  Environment,
 } from "@paperclipai/shared";
 import { agentsApi } from "../api/agents";
 import { adaptersApi } from "../api/adapters";
-import { environmentsApi } from "../api/environments";
-import { instanceSettingsApi } from "../api/instanceSettings";
 import { assetsApi } from "../api/assets";
 import {
   Popover,
@@ -47,7 +44,6 @@ type AgentConfigFormProps = {
   hideInlineSave?: boolean;
   showAdapterTypeField?: boolean;
   applyAdapterSchemaDefaults?: boolean;
-  requireExplicitExecutionEnvironment?: boolean;
   /** "cards" renders each section as heading + bordered card (for settings pages). Default: "inline" (border-b dividers). */
   sectionLayout?: "inline" | "cards";
 } & (
@@ -96,25 +92,6 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const { selectedCompanyId } = useCompany();
 
   const admittedAdapters = useAdapterCatalogSync();
-
-  const { data: experimentalSettings } = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-    retry: false,
-  });
-  const environmentsEnabled = experimentalSettings?.enableEnvironments === true;
-
-  const { data: instanceSettings } = useQuery({
-    queryKey: queryKeys.instance.settings,
-    queryFn: () => instanceSettingsApi.get(),
-    retry: false,
-  });
-
-  const { data: environments = [] } = useQuery<Environment[]>({
-    queryKey: selectedCompanyId ? queryKeys.environments.list(selectedCompanyId) : ["environments", "none"],
-    queryFn: () => environmentsApi.list(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId) && environmentsEnabled,
-  });
 
   const uploadMarkdownImage = useMutation({
     mutationFn: async ({ file, namespace }: { file: File; namespace: string }) => {
@@ -197,81 +174,10 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     () => admittedAdapters.find((adapter) => adapter.type === adapterType) ?? null,
     [adapterType, admittedAdapters],
   );
-  const requiresExplicitExecutionEnvironment =
-    isCreate && (props.requireExplicitExecutionEnvironment ?? true);
-  const supportedEnvironmentDrivers = useMemo(
-    () => new Set(uiAdapter?.drivers ?? []),
-    [uiAdapter],
-  );
   const val = isCreate ? props.values : null;
   const set = isCreate
     ? (patch: Partial<CreateConfigValues>) => props.onChange(patch)
     : null;
-  const rawCurrentDefaultEnvironmentId = isCreate
-    ? val!.defaultEnvironmentId ?? ""
-    : eff("identity", "defaultEnvironmentId", props.agent.defaultEnvironmentId ?? "");
-  const currentDefaultEnvironmentId = useMemo(() => {
-    if (!rawCurrentDefaultEnvironmentId) return "";
-    const selected = environments.find((environment) => environment.id === rawCurrentDefaultEnvironmentId) ?? null;
-    if (!selected) return "";
-    if (
-      selected.driver === "local"
-      && !requiresExplicitExecutionEnvironment
-    ) return "";
-    if (!supportedEnvironmentDrivers.has(selected.driver)) return "";
-    if (selected.driver === "sandbox") {
-      const provider = typeof selected.config?.provider === "string" ? selected.config.provider : null;
-      if (!provider || provider === "fake") return "";
-    }
-    return rawCurrentDefaultEnvironmentId;
-  }, [
-    environments,
-    rawCurrentDefaultEnvironmentId,
-    requiresExplicitExecutionEnvironment,
-    supportedEnvironmentDrivers,
-  ]);
-  const instanceDefaultEnvironmentId = useMemo(() => {
-    const environmentId = instanceSettings?.defaultEnvironmentId ?? null;
-    if (!environmentId) return "";
-    const selected = environments.find((environment) => environment.id === environmentId) ?? null;
-    return selected?.driver === "local" ? "" : environmentId;
-  }, [environments, instanceSettings?.defaultEnvironmentId]);
-  const instanceDefaultEnvironment = useMemo(
-    () => environments.find((environment) => environment.id === instanceDefaultEnvironmentId) ?? null,
-    [environments, instanceDefaultEnvironmentId],
-  );
-
-  const runnableEnvironments = useMemo(
-    () => environments.filter((environment) => {
-      if (environment.status !== "active") return false;
-      if (!supportedEnvironmentDrivers.has(environment.driver)) return false;
-      if (
-        environment.driver === "local"
-        && !requiresExplicitExecutionEnvironment
-      ) return false;
-      if (environment.driver !== "sandbox") return true;
-      const provider = typeof environment.config?.provider === "string" ? environment.config.provider : null;
-      return provider !== null && provider !== "fake";
-    }),
-    [
-      environments,
-      requiresExplicitExecutionEnvironment,
-      supportedEnvironmentDrivers,
-    ],
-  );
-  const environmentOptions = runnableEnvironments;
-  // `runnableEnvironments` excludes the always-available Local environment, so a
-  // single entry already means the user has more than one environment configured
-  // (Local + that environment) and the override selector is meaningful.
-  const showEnvironmentOverrideControl =
-    requiresExplicitExecutionEnvironment
-    || environmentsEnabled && (
-      currentDefaultEnvironmentId.length > 0
-      || runnableEnvironments.length >= 1
-    );
-  const inheritedEnvironmentLabel = instanceDefaultEnvironment
-    ? `${instanceDefaultEnvironment.name} (${instanceDefaultEnvironment.driver})`
-    : "Local";
 
   const { data: companyAgents = [] } = useQuery({
     queryKey: selectedCompanyId ? queryKeys.agents.list(selectedCompanyId) : ["agents", "none", "list"],
@@ -499,61 +405,6 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         </div>
       )}
 
-      {/* ---- Execution ---- */}
-      {showEnvironmentOverrideControl ? (
-        <div className={cn(!cards && (isCreate ? "border-t border-border" : "border-b border-border"))}>
-          {cards
-            ? <h3 className="text-sm font-medium mb-3">Environment</h3>
-            : <div className="px-4 py-2 text-xs font-medium text-muted-foreground">Environment</div>
-          }
-          <div className={cn(cards ? "border border-border rounded-lg p-4 space-y-3" : "px-4 pb-3 space-y-3")}>
-            <Field
-              label={
-                requiresExplicitExecutionEnvironment
-                  ? "Execution environment"
-                  : "Environment override"
-              }
-              hint={
-                requiresExplicitExecutionEnvironment
-                  ? "Required. The adapter revision is bound to this exact execution target."
-                  : undefined
-              }
-            >
-              <div className="space-y-2">
-                <select
-                  className={inputClass}
-                  aria-label={
-                    requiresExplicitExecutionEnvironment
-                      ? "Execution environment"
-                      : "Environment override"
-                  }
-                  value={currentDefaultEnvironmentId}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    if (isCreate) {
-                      set!({ defaultEnvironmentId: nextValue });
-                      return;
-                    }
-                    mark("identity", "defaultEnvironmentId", nextValue || null);
-                  }}
-                >
-                  <option value="">
-                    {requiresExplicitExecutionEnvironment
-                      ? "Select an execution environment"
-                      : `Default: ${inheritedEnvironmentLabel}`}
-                  </option>
-                  {environmentOptions.map((environment) => (
-                    <option key={environment.id} value={environment.id}>
-                      {environment.name} · {environment.driver}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </Field>
-          </div>
-        </div>
-      ) : null}
-
       {/* ---- Adapter ---- */}
       <div className={cn(!cards && (isCreate ? "border-t border-border" : "border-b border-border"))}>
         <div className={cn(cards ? "flex items-center justify-between mb-3" : "px-4 py-2 flex items-center justify-between gap-2")}>
@@ -609,7 +460,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 <p className="text-xs text-muted-foreground">
                   Test the exact unsaved model and other runtime settings in a
                   disposable no-prompt session. This does not save the agent
-                  or prove a future execution workspace is ready.
+                  or verify local execution readiness.
                 </p>
                 <Button
                   type="button"

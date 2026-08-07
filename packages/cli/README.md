@@ -143,7 +143,7 @@ Paperclip handles the hard orchestration details correctly.
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | **Atomic execution.**             | Persisted refs, views, leases, and budget enforcement serialize each exact issue execution.                   |
 | **Issue-scoped continuity.**      | Continuity can resume only within one issue/epoch/agent/revision; nothing Paperclip-authored crosses issues.  |
-| **Explicit capabilities.**        | Selected company tools and genuine skills appear only when that agent and run are authorized for them.        |
+| **Explicit capabilities.**        | Compiled prompt capabilities and genuine skills appear only when that agent and run are authorized for them.   |
 | **Governance with rollback.**     | Approval gates are enforced, config changes are revisioned, and bad changes can be rolled back safely.        |
 | **Goal-aware execution.**         | Issues carry full goal ancestry so agents consistently see the "why," not just a title.                        |
 | **Portable company templates.**   | Export/import orgs, agents, and skills with secret scrubbing and collision handling.                          |
@@ -165,8 +165,8 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 │  └───────────┘  └───────────┘  └───────────┘  └───────────┘  │
 │                                                              │
 │  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐  │
-│  │ Org Chart │  │Workspaces │  │  Plugins  │  │  Budget   │  │
-│  │ & Agents  │  │ & Runtime │  │           │  │ & Costs   │  │
+│  │ Org Chart │  │  Adapter  │  │  Plugins  │  │  Budget   │  │
+│  │ & Agents  │  │  Runtime  │  │           │  │ & Costs   │  │
 │  └───────────┘  └───────────┘  └───────────┘  └───────────┘  │
 │                                                              │
 │  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐  │
@@ -196,8 +196,8 @@ issue-execution refs. Every mutation is traced to a real authenticated actor.
 <td width="50%">
 
 **Org Chart & Agents** — Agents have display identity, direct reporting lines,
-explicit context/action grants, provider configuration, selected tools/skills,
-and budgets. Org position and title grant nothing.
+explicit context/action grants, provider configuration, selected skills, and
+budgets. Org position and title grant nothing.
 
 </td>
 </tr>
@@ -212,7 +212,7 @@ documents, attachments, work products, labels, and inbox state.
 <td>
 
 **Issue Execution** — Persisted refs, leases, and views drive budget checks,
-workspace resolution, dynamic interface compilation, and adapter invocation.
+run-directory resolution, dynamic interface compilation, and adapter invocation.
 Runs append Paperclip Session events, costs, comments, and audit evidence; no
 agent-wide session state crosses issues.
 
@@ -221,7 +221,9 @@ agent-wide session state crosses issues.
 <tr>
 <td>
 
-**Workspaces & Runtime** — Project workspaces, isolated execution workspaces (git worktrees, operator branches), and runtime services (dev servers, preview URLs). Agents work in the right directory with the right context every time.
+**Adapter Runtime** — Paperclip resolves the local working directory and
+compiles the bounded provider interface for each run. Agents receive only the
+context and capabilities authorized for that execution.
 
 </td>
 <td>
@@ -278,7 +280,7 @@ so operators can audit what happened and why.
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | **Not a chatbot.**           | Agents have jobs, not chat windows.                                                                                  |
 | **Not an agent framework.**  | We don't tell you how to build agents. We tell you how to run a company made of them.                                |
-| **Not a workflow builder.**  | No drag-and-drop pipelines. Paperclip models companies — with org charts, goals, budgets, and governance.            |
+| **Not a workflow builder.**  | Paperclip models companies — with org charts, goals, budgets, and governance.                                        |
 | **Not a prompt manager.**    | Agents bring their own prompts, models, and runtimes. Paperclip manages the organization they work in.               |
 | **Not a single-agent tool.** | This is for teams. If you have one agent, you probably don't need Paperclip. If you have twenty — you definitely do. |
 | **Not a code review tool.**  | Paperclip orchestrates work, not pull requests. Bring your own review process.                                       |
@@ -354,21 +356,6 @@ schedules do so by having routines create ordinary issues.
 
 <br/>
 
-## Paperclip Cloud Sync
-
-Cloud upstream sync is behind the `Cloud Sync` experimental setting. Enable it in Instance Settings before pushing.
-
-```bash
-paperclipai cloud connect https://your-stack.paperclip.app
-paperclipai cloud connect https://your-stack.paperclip.app --no-browser
-paperclipai cloud push --company <local-company-id> --dry-run
-paperclipai cloud push --company <local-company-id>
-```
-
-`cloud connect` authorizes the local instance against the target stack and stores the upstream token in the local instance secret store. The default path opens a browser for consent; `--no-browser` uses the device-code flow and prints the verification URL and user code.
-
-`cloud push --dry-run` exports the selected local company, sends a preview bundle to the connected Cloud stack, and exits with code `2` when conflicts need user resolution. A schema mismatch exits with code `3`. Running without `--dry-run` stages chunks idempotently, applies the run, and prints the final summary and recent progress events.
-
 ## Development
 
 ```bash
@@ -409,7 +396,6 @@ See [doc/DEVELOPING.md](https://github.com/paperclipai/paperclip/blob/master/doc
 - ⚪ Work Queues
 - ⚪ Self-Organization
 - ⚪ Audited Process Improvement
-- ⚪ Board Chat
 - ⚪ Cloud deployments
 - ⚪ Desktop App
 

@@ -57,15 +57,6 @@ export function resolveShell(): string {
   return shell;
 }
 
-export interface ExecutionWorkspaceInput {
-  baseCwd: string;
-  source: "project_primary" | "issue_execution";
-  projectId: string | null;
-  workspaceId: string | null;
-  repoUrl: string | null;
-  repoRef: string | null;
-}
-
 export interface ExecutionWorkspaceIssueRef {
   id: string;
   identifier: string | null;
@@ -79,15 +70,19 @@ export interface ExecutionWorkspaceAgentRef {
   companyId: string;
 }
 
-export interface RealizedExecutionWorkspace extends ExecutionWorkspaceInput {
-  strategy: "project_primary" | "git_worktree";
+export interface RealizedExecutionWorkspace {
+  baseCwd: string;
+  source: "project_primary" | "issue_execution";
+  projectId: string | null;
+  workspaceId: string | null;
+  repoUrl: string | null;
+  repoRef: string | null;
+  strategy: "project_primary";
   cwd: string;
   branchName: string | null;
   worktreePath: string | null;
   warnings: string[];
   created: boolean;
-  baseRefSha?: string | null;
-  pendingForwardBranchReconcile?: PendingForwardBranchReconcile | null;
 }
 
 export class WorkspaceRuntimeValidationFailure extends Error {
@@ -392,43 +387,6 @@ function toRuntimeServiceRef(record: RuntimeServiceRecord, overrides?: Partial<R
   };
 }
 
-function sanitizeSlugPart(value: string | null | undefined, fallback: string): string {
-  const raw = (value ?? "").trim().toLowerCase();
-  const normalized = raw
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^[-_]+|[-_]+$/g, "");
-  return normalized.length > 0 ? normalized : fallback;
-}
-
-function renderWorkspaceTemplate(template: string, input: {
-  issue: ExecutionWorkspaceIssueRef | null;
-  agent: ExecutionWorkspaceAgentRef;
-  projectId: string | null;
-  repoRef: string | null;
-}) {
-  const issueIdentifier = input.issue?.identifier ?? input.issue?.id ?? "issue";
-  const slug = sanitizeSlugPart(input.issue?.title, sanitizeSlugPart(issueIdentifier, "issue"));
-  return renderTemplate(template, {
-    issue: {
-      id: input.issue?.id ?? "",
-      identifier: input.issue?.identifier ?? "",
-      title: input.issue?.title ?? "",
-    },
-    agent: {
-      id: input.agent.id ?? "",
-      name: input.agent.name,
-    },
-    project: {
-      id: input.projectId ?? "",
-    },
-    workspace: {
-      repoRef: input.repoRef ?? "",
-    },
-    slug,
-  });
-}
-
 function sanitizeBranchName(value: string): string {
   return value
     .trim()
@@ -569,108 +527,8 @@ function gitErrorIncludes(error: unknown, needle: string) {
   return message.toLowerCase().includes(needle.toLowerCase());
 }
 
-function parseRemoteTrackingRef(ref: string): { remote: string; branch: string } | null {
-  const trimmed = ref.trim();
-  const refsRemotesPrefix = "refs/remotes/";
-  const normalized = trimmed.startsWith(refsRemotesPrefix)
-    ? trimmed.slice(refsRemotesPrefix.length)
-    : trimmed;
-  const slashIndex = normalized.indexOf("/");
-  if (slashIndex <= 0 || slashIndex === normalized.length - 1) return null;
-  const remote = normalized.slice(0, slashIndex);
-  const branch = normalized.slice(slashIndex + 1);
-  if (!/^[A-Za-z0-9._-]+$/.test(remote)) return null;
-  return { remote, branch };
-}
-
-async function refreshRemoteTrackingBaseRef(repoRoot: string, baseRef: string): Promise<string[]> {
-  const remoteTracking = parseRemoteTrackingRef(baseRef);
-  if (!remoteTracking) return [];
-
-  const remoteExists = await runGit(["remote", "get-url", remoteTracking.remote], repoRoot)
-    .then(() => true)
-    .catch(() => false);
-  if (!remoteExists) return [];
-
-  try {
-    await runGit([
-      "fetch",
-      "--prune",
-      remoteTracking.remote,
-      `+refs/heads/${remoteTracking.branch}:refs/remotes/${remoteTracking.remote}/${remoteTracking.branch}`,
-    ], repoRoot);
-    return [];
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return [`Could not refresh base ref ${baseRef} before preparing the execution workspace: ${message}`];
-  }
-}
-
-async function resolveBaseRefSha(repoRoot: string, baseRef: string): Promise<string | null> {
-  return await runGit(["rev-parse", "--verify", `${baseRef}^{commit}`], repoRoot).catch(() => null);
-}
-
-function readRecordedBaseRefSha(metadata: Record<string, unknown> | null | undefined): string | null {
-  const snapshot = parseObject(metadata?.baseRefSnapshot);
-  const resolvedSha = snapshot.resolvedSha;
-  return typeof resolvedSha === "string" && resolvedSha.trim().length > 0 ? resolvedSha.trim() : null;
-}
-
-export async function inspectExecutionWorkspaceBaseDrift(input: {
-  repoRoot: string;
-  worktreePath: string;
-  branchName: string | null;
-  baseRef: string | null;
-  recordedBaseRefSha?: string | null;
-  skipRefresh?: boolean;
-}): Promise<{
-  warnings: string[];
-  currentBaseRefSha: string | null;
-  branchBaseRefSha: string | null;
-}> {
-  const baseRef = input.baseRef?.trim();
-  if (!baseRef) {
-    return { warnings: [], currentBaseRefSha: null, branchBaseRefSha: null };
-  }
-
-  const warnings = input.skipRefresh ? [] : await refreshRemoteTrackingBaseRef(input.repoRoot, baseRef);
-  const currentBaseRefSha = await resolveBaseRefSha(input.repoRoot, baseRef);
-  if (!currentBaseRefSha) {
-    warnings.push(`Could not resolve base ref ${baseRef} while checking execution workspace freshness.`);
-    return { warnings, currentBaseRefSha: null, branchBaseRefSha: null };
-  }
-
-  const branchBaseRefSha = await runGit(["merge-base", "HEAD", baseRef], input.worktreePath).catch(() => null);
-  if (!branchBaseRefSha) {
-    warnings.push(`Could not compare execution workspace ${input.branchName ?? "branch"} against base ref ${baseRef}.`);
-    return { warnings, currentBaseRefSha, branchBaseRefSha: null };
-  }
-
-  if (branchBaseRefSha !== currentBaseRefSha) {
-    const behindCountRaw = await runGit(["rev-list", "--count", `HEAD..${baseRef}`], input.worktreePath).catch(() => "");
-    const behindCount = Number.parseInt(behindCountRaw, 10);
-    const behindText = Number.isFinite(behindCount) && behindCount > 0
-      ? `${behindCount} commit${behindCount === 1 ? "" : "s"}`
-      : "newer commits";
-    const recordedText = input.recordedBaseRefSha
-      ? `recorded base ${formatShortSha(input.recordedBaseRefSha)}`
-      : `merge-base ${formatShortSha(branchBaseRefSha)}`;
-    warnings.push(
-      `Execution workspace branch ${input.branchName ? `"${input.branchName}"` : "HEAD"} is behind ${baseRef} by ${behindText}: ${recordedText}, current base ${formatShortSha(currentBaseRefSha)}. Refresh or rebase the workspace before relying on recent base-branch fixes.`,
-    );
-  }
-
-  return { warnings, currentBaseRefSha, branchBaseRefSha };
-}
-
 async function localBranchExists(repoRoot: string, branch: string): Promise<boolean> {
   return runGit(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], repoRoot)
-    .then(() => true)
-    .catch(() => false);
-}
-
-async function remoteExists(repoRoot: string, remote: string): Promise<boolean> {
-  return runGit(["remote", "get-url", remote], repoRoot)
     .then(() => true)
     .catch(() => false);
 }
@@ -686,7 +544,6 @@ type GitWorktreeBranchContention = NonNullable<GitWorktreeBranchIncoherenceEvide
 type GitWorktreeBranchCoherenceResult = {
   branchName: string | null;
   reconciledForward: boolean;
-  pendingForwardBranchReconcile?: PendingForwardBranchReconcile | null;
   dirtyQuarantineRepair?: DirtyQuarantineRepairResult | null;
   warnings: string[];
 };
@@ -698,13 +555,6 @@ type DirtyQuarantineRepairResult = {
   clearedInProgressOperation: GitWorktreeInProgressOperation | null;
   sourceAuditCommentId: string | null;
   claimantAuditCommentId: string | null;
-};
-
-export type PendingForwardBranchReconcile = {
-  recordedBranchName: string;
-  adoptedBranchName: string;
-  prePersistenceFingerprint: string;
-  reason: string;
 };
 
 function formatBranchForMessage(branch: string | null | undefined) {
@@ -1522,7 +1372,7 @@ async function recordForwardBranchReconcileOperation(input: {
   expectedHeadSha: string | null;
   actualHeadSha: string | null;
   ancestryVerdict: GitWorktreeBranchAncestryVerdict;
-  mode: "record_updated" | "adopt_for_realize";
+  mode: "record_updated";
   auditCommentId?: string | null;
 }) {
   if (!input.recorder) return;
@@ -1548,9 +1398,7 @@ async function recordForwardBranchReconcileOperation(input: {
     run: async () => ({
       status: "succeeded",
       system:
-        input.mode === "record_updated"
-          ? `Reconciled execution workspace branch record from ${input.expectedBranchName} to ${input.actualBranchName}; worktree left unchanged.\n`
-          : `Adopted live git worktree branch ${input.actualBranchName} for this execution workspace realization; worktree left unchanged.\n`,
+        `Reconciled execution workspace branch record from ${input.expectedBranchName} to ${input.actualBranchName}; worktree left unchanged.\n`,
     }),
   });
 }
@@ -1608,9 +1456,8 @@ export async function ensureGitWorktreeBranchCoherent(input: {
   executionWorkspaceId?: string | null;
   actualBranchName?: string | null;
   runId?: string | null;
-  enableWorkspaceBranchReconcileForward?: boolean;
-  enableWorkspaceDirtyQuarantineRepair?: boolean;
-  persistForwardReconcile?: boolean;
+  enableWorkspaceBranchReconcileForward: boolean;
+  enableWorkspaceDirtyQuarantineRepair: boolean;
   reconcileOperationPhase?: "worktree_prepare" | "workspace_finalize";
   recorder?: WorkspaceOperationRecorder | null;
 }): Promise<GitWorktreeBranchCoherenceResult> {
@@ -1634,7 +1481,12 @@ export async function ensureGitWorktreeBranchCoherent(input: {
     executionWorkspaceId: input.executionWorkspaceId ?? null,
   });
 
-  if (evidence.cleanliness === "dirty" && input.enableWorkspaceDirtyQuarantineRepair === true) {
+  if (evidence.cleanliness === "dirty") {
+    if (!input.enableWorkspaceDirtyQuarantineRepair) {
+      evidence.safeRepair.eligible = false;
+      evidence.safeRepair.reason = "dirty workspace quarantine repair is disabled in General settings";
+      throw branchIncoherenceValidationFailure(evidence);
+    }
     if (!input.db) {
       evidence.safeRepair.reason = "dirty quarantine repair requires database access for claimant checks and audit";
       throw branchIncoherenceValidationFailure(evidence);
@@ -1687,88 +1539,84 @@ export async function ensureGitWorktreeBranchCoherent(input: {
   }
 
   if (
-    input.enableWorkspaceBranchReconcileForward === true &&
+    !input.enableWorkspaceBranchReconcileForward &&
+    evidence.provenance.ancestryVerdict === "ancestor" &&
+    !evidence.provenance.sameHead
+  ) {
+    evidence.safeRepair.eligible = false;
+    evidence.safeRepair.reason = "forward branch reconciliation is disabled in General settings";
+    throw branchIncoherenceValidationFailure(evidence);
+  }
+
+  if (
+    input.enableWorkspaceBranchReconcileForward &&
     evidence.provenance.ancestryVerdict === "ancestor" &&
     !evidence.provenance.sameHead &&
     evidence.cleanliness === "clean" &&
     currentBranch
   ) {
     const reason = "Automatic forward reconciliation: recorded branch is an ancestor of the checked-out branch.";
-    if (input.executionWorkspaceId && input.persistForwardReconcile !== false) {
-      if (!input.db) {
-        evidence.safeRepair.reason = "forward reconciliation requires database access to update the execution workspace record";
-        throw branchIncoherenceValidationFailure(evidence);
-      }
-      try {
-        const result = await executionWorkspaceService(input.db).reconcileExecutionWorkspaceBranch(
-          input.executionWorkspaceId,
-          {
-            mode: "forward",
-            issueId: evidence.sourceIssueId,
-            reason,
-            actor: {
-              actorType: "system",
-              actorId: "workspace_runtime",
-              runId: input.runId ?? null,
-            },
-          },
-        );
-        await logForwardBranchReconcileActivity({
-          db: input.db,
-          companyId: result.workspace.companyId,
-          executionWorkspaceId: result.workspace.id,
-          sourceIssueId: result.boundIssueId,
-          runId: input.runId ?? null,
-          mode: "forward",
-          reason,
-          fromBranch: result.inspection.fromBranch,
-          toBranch: result.inspection.toBranch,
-          fromSha: result.inspection.fromSha,
-          toSha: result.inspection.toSha,
-          ancestryVerdict: result.inspection.ancestryVerdict,
-          fingerprint: result.inspection.fingerprint,
-          auditCommentId: result.auditCommentId,
-        });
-        await recordForwardBranchReconcileOperation({
-          recorder: input.recorder,
-          phase: input.reconcileOperationPhase,
-          cwd: input.worktreePath,
-          repoRoot: result.inspection.repoRoot,
-          worktreePath: result.inspection.worktreePath,
-          expectedBranchName: result.inspection.fromBranch,
-          actualBranchName: result.inspection.toBranch,
-          executionWorkspaceId: result.workspace.id,
-          sourceIssueId: result.boundIssueId,
-          fingerprint: result.inspection.fingerprint,
-          expectedHeadSha: result.inspection.fromSha,
-          actualHeadSha: result.inspection.toSha,
-          ancestryVerdict: result.inspection.ancestryVerdict,
-          mode: "record_updated",
-          auditCommentId: result.auditCommentId,
-        });
-        return { branchName: result.inspection.toBranch, reconciledForward: true, warnings: [] };
-      } catch (error) {
-        evidence.safeRepair.reason =
-          `forward reconciliation failed: ${error instanceof Error ? error.message : String(error)}`;
-        throw branchIncoherenceValidationFailure(evidence);
-      }
-    }
-
-    if (!input.db) {
-      evidence.safeRepair.reason = "forward reconciliation adoption requires database access to audit after workspace realization";
+    if (!input.executionWorkspaceId) {
+      evidence.safeRepair.reason = "forward reconciliation requires a persisted execution workspace id";
       throw branchIncoherenceValidationFailure(evidence);
     }
-    return {
-      branchName: currentBranch,
-      reconciledForward: true,
-      warnings: [],
-      pendingForwardBranchReconcile: {
-        recordedBranchName: expectedBranchName,
-        adoptedBranchName: currentBranch,
-        prePersistenceFingerprint: evidence.fingerprint,
+    if (!input.db) {
+      evidence.safeRepair.reason = "forward reconciliation requires database access to update the execution workspace record";
+      throw branchIncoherenceValidationFailure(evidence);
+    }
+    try {
+      const result = await executionWorkspaceService(input.db).reconcileExecutionWorkspaceBranch(
+        input.executionWorkspaceId,
+        {
+          mode: "forward",
+          issueId: evidence.sourceIssueId,
+          reason,
+          actor: {
+            actorType: "system",
+            actorId: "workspace_runtime",
+            runId: input.runId ?? null,
+          },
+        },
+      );
+      await logForwardBranchReconcileActivity({
+        db: input.db,
+        companyId: result.workspace.companyId,
+        executionWorkspaceId: result.workspace.id,
+        sourceIssueId: result.boundIssueId,
+        runId: input.runId ?? null,
+        mode: "forward",
         reason,
-      },
-    };
+        fromBranch: result.inspection.fromBranch,
+        toBranch: result.inspection.toBranch,
+        fromSha: result.inspection.fromSha,
+        toSha: result.inspection.toSha,
+        ancestryVerdict: result.inspection.ancestryVerdict,
+        fingerprint: result.inspection.fingerprint,
+        auditCommentId: result.auditCommentId,
+      });
+      await recordForwardBranchReconcileOperation({
+        recorder: input.recorder,
+        phase: input.reconcileOperationPhase,
+        cwd: input.worktreePath,
+        repoRoot: result.inspection.repoRoot,
+        worktreePath: result.inspection.worktreePath,
+        expectedBranchName: result.inspection.fromBranch,
+        actualBranchName: result.inspection.toBranch,
+        executionWorkspaceId: result.workspace.id,
+        sourceIssueId: result.boundIssueId,
+        fingerprint: result.inspection.fingerprint,
+        expectedHeadSha: result.inspection.fromSha,
+        actualHeadSha: result.inspection.toSha,
+        ancestryVerdict: result.inspection.ancestryVerdict,
+        mode: "record_updated",
+        auditCommentId: result.auditCommentId,
+      });
+      return { branchName: result.inspection.toBranch, reconciledForward: true, warnings: [] };
+    } catch (error) {
+      evidence.safeRepair.reason =
+        `forward reconciliation failed: ${error instanceof Error ? error.message : String(error)}`;
+      throw branchIncoherenceValidationFailure(evidence);
+    }
   }
 
   if (!evidence.safeRepair.eligible) {
@@ -1888,131 +1736,9 @@ export async function ensureGitWorktreeBranchCoherent(input: {
   };
 }
 
-// Resolve the authoritative base ref for a fresh worktree. A configured local
-// branch is mapped to its `origin/<branch>` counterpart so unpushed local
-// divergence never leaks into the issue branch; remote-tracking refs, SHAs, and
-// tags are used verbatim, and an unset/`HEAD` base falls back to the detected
-// default branch (which already prefers `origin/master`).
-async function resolveAuthoritativeBaseRef(
-  repoRoot: string,
-  configuredBaseRef: string | null,
-): Promise<{ baseRef: string; warnings: string[]; refreshed: boolean }> {
-  const warnings: string[] = [];
-  const detectOrHead = async () => (await detectDefaultBranch(repoRoot)) ?? "HEAD";
-
-  const configured = configuredBaseRef?.trim();
-  if (!configured || configured === "HEAD") {
-    return { baseRef: await detectOrHead(), warnings, refreshed: false };
-  }
-
-  if (parseRemoteTrackingRef(configured)) {
-    return { baseRef: configured, warnings, refreshed: false };
-  }
-
-  if (await localBranchExists(repoRoot, configured)) {
-    const remoteCandidate = `origin/${configured}`;
-    // Refresh here and keep the warnings; the caller skips its own refresh of
-    // the returned ref (see `refreshed`) so we never fetch the same ref twice.
-    warnings.push(...await refreshRemoteTrackingBaseRef(repoRoot, remoteCandidate));
-    if (await resolveBaseRefSha(repoRoot, remoteCandidate)) {
-      return { baseRef: remoteCandidate, warnings, refreshed: true };
-    }
-    if (await remoteExists(repoRoot, "origin")) {
-      warnings.push(
-        `Configured base ref "${configured}" is a local branch with no matching origin/${configured}; basing the execution workspace on the local ref, which may include unpushed commits.`,
-      );
-    }
-    return { baseRef: configured, warnings, refreshed: false };
-  }
-
-  return { baseRef: configured, warnings, refreshed: false };
-}
-
-// Auto-refresh a reused worktree to the latest base only when it is provably
-// unstarted: no issue commits past the base and a clean tree (including untracked
-// files). This pulls an idle worktree forward to the freshest `origin/master`
-// after a long planning phase without ever destroying in-progress work. Only
-// remote-tracking bases are eligible; local-only bases keep warn-only drift.
-async function refreshUnstartedWorktreeToBase(input: {
-  repoRoot: string;
-  worktreePath: string;
-  branchName: string | null;
-  baseRef: string;
-  currentBaseRefSha: string;
-  recorder?: WorkspaceOperationRecorder | null;
-}): Promise<{ refreshed: boolean; baseRefSha: string | null }> {
-  if (!parseRemoteTrackingRef(input.baseRef)) {
-    return { refreshed: false, baseRefSha: null };
-  }
-
-  const headSha = await runGit(["rev-parse", "HEAD"], input.worktreePath).catch(() => null);
-  if (!headSha) {
-    return { refreshed: false, baseRefSha: null };
-  }
-  if (headSha === input.currentBaseRefSha) {
-    return { refreshed: false, baseRefSha: input.currentBaseRefSha };
-  }
-
-  const commitsPastBaseRaw = await runGit(
-    ["rev-list", "--count", `${input.currentBaseRefSha}..HEAD`],
-    input.worktreePath,
-  ).catch(() => null);
-  const commitsPastBase = commitsPastBaseRaw === null ? null : Number.parseInt(commitsPastBaseRaw, 10);
-  if (commitsPastBase === null || !Number.isFinite(commitsPastBase) || commitsPastBase > 0) {
-    return { refreshed: false, baseRefSha: null };
-  }
-
-  // Force `--untracked-files=all` so untracked files are counted regardless of a
-  // local `status.showUntrackedFiles=no`; otherwise the clean-tree guard could
-  // pass and the `reset --hard` below would destroy untracked work.
-  const status = await runGit(
-    ["status", "--porcelain", "--untracked-files=all"],
-    input.worktreePath,
-  ).catch(() => null);
-  if (status === null || status.trim().length > 0) {
-    return { refreshed: false, baseRefSha: null };
-  }
-
-  await recordGitOperation(input.recorder, {
-    phase: "worktree_prepare",
-    args: ["reset", "--hard", input.currentBaseRefSha],
-    cwd: input.worktreePath,
-    metadata: {
-      repoRoot: input.repoRoot,
-      worktreePath: input.worktreePath,
-      branchName: input.branchName,
-      baseRef: input.baseRef,
-      previousHeadSha: headSha,
-      baseRefSha: input.currentBaseRefSha,
-      refreshedUnstartedWorktree: true,
-    },
-    successMessage: `Refreshed unstarted git worktree at ${input.worktreePath} to ${input.baseRef} (${formatShortSha(input.currentBaseRefSha)})\n`,
-    failureLabel: `git reset --hard ${input.currentBaseRefSha}`,
-  });
-
-  return { refreshed: true, baseRefSha: input.currentBaseRefSha };
-}
-
-
 type GitWorktreeListEntry = {
   worktree: string;
   branch: string | null;
-};
-
-export type ManagedGitWorktreeBranchInspection = {
-  valid: boolean;
-  reason: string | null;
-  reasonCode:
-    | "missing_worktree"
-    | "not_a_git_checkout"
-    | "not_registered"
-    | "wrong_repository_root"
-    | "branch_mismatch"
-    | null;
-  repoRoot: string | null;
-  worktreePath: string;
-  expectedBranchName: string | null;
-  actualBranchName: string | null;
 };
 
 function parseGitWorktreeListPorcelain(raw: string): GitWorktreeListEntry[] {
@@ -2047,26 +1773,6 @@ function parseGitWorktreeListPorcelain(raw: string): GitWorktreeListEntry[] {
   return entries;
 }
 
-async function resolveGitOwnerRepoRoot(cwd: string): Promise<string> {
-  const checkoutRoot = path.resolve(await runGit(["rev-parse", "--show-toplevel"], cwd));
-  const commonDir = await runGit(["rev-parse", "--git-common-dir"], checkoutRoot).catch(() => null);
-  if (!commonDir) return checkoutRoot;
-  return path.dirname(path.resolve(checkoutRoot, commonDir));
-}
-
-async function findRegisteredGitWorktreeByBranch(repoRoot: string, branchName: string): Promise<string | null> {
-  const raw = await runGit(["worktree", "list", "--porcelain"], repoRoot).catch(() => null);
-  if (!raw) return null;
-
-  const expectedBranchRef = `refs/heads/${branchName}`;
-  for (const entry of parseGitWorktreeListPorcelain(raw)) {
-    if (entry.branch !== expectedBranchRef) continue;
-    return path.resolve(entry.worktree);
-  }
-
-  return null;
-}
-
 async function findRegisteredGitWorktreeByPath(repoRoot: string, worktreePath: string): Promise<GitWorktreeListEntry | null> {
   const raw = await runGit(["worktree", "list", "--porcelain"], repoRoot).catch(() => null);
   if (!raw) return null;
@@ -2080,175 +1786,9 @@ async function findRegisteredGitWorktreeByPath(repoRoot: string, worktreePath: s
   return null;
 }
 
-async function isGitCheckout(cwd: string): Promise<boolean> {
-  return Boolean(await runGit(["rev-parse", "--git-dir"], cwd).catch(() => null));
-}
-
-async function detectDefaultBranch(repoRoot: string): Promise<string | null> {
-  const originMasterRef = "origin/master";
-  await refreshRemoteTrackingBaseRef(repoRoot, originMasterRef);
-  if (await resolveBaseRefSha(repoRoot, originMasterRef)) {
-    return originMasterRef;
-  }
-
-  // Try the explicit remote HEAD first (set by git clone or git remote set-head)
-  try {
-    const remoteHead = await runGit(
-      ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
-      repoRoot,
-    );
-    if (remoteHead) {
-      await refreshRemoteTrackingBaseRef(repoRoot, remoteHead);
-      if (await resolveBaseRefSha(repoRoot, remoteHead)) return remoteHead;
-    }
-  } catch {
-    // Not set — fall through to heuristic
-  }
-
-  // Fallback: check for common default branch names on the remote
-  for (const candidate of ["origin/master", "origin/main", "main", "master"]) {
-    try {
-      await refreshRemoteTrackingBaseRef(repoRoot, candidate);
-      await runGit(["rev-parse", "--verify", `${candidate}^{commit}`], repoRoot);
-      return candidate;
-    } catch {
-      // Not found — try next
-    }
-  }
-
-  return null;
-}
-
-async function directoryExists(value: string) {
-  return fs.stat(value).then((stats) => stats.isDirectory()).catch(() => false);
-}
-
 async function resolvePathForWorktreeComparison(value: string): Promise<string> {
   const resolved = path.resolve(value);
   return fs.realpath(resolved).then((realPath) => path.resolve(realPath)).catch(() => resolved);
-}
-
-async function listLinkedGitWorktreePaths(repoRoot: string): Promise<Set<string>> {
-  const output = await runGit(["worktree", "list", "--porcelain"], repoRoot);
-  const paths = new Set<string>();
-  for (const line of output.split("\n")) {
-    if (!line.startsWith("worktree ")) continue;
-    const worktree = line.slice("worktree ".length).trim();
-    if (!worktree) continue;
-    paths.add(await resolvePathForWorktreeComparison(worktree));
-  }
-  return paths;
-}
-
-export async function inspectManagedGitWorktreeBranch(input: {
-  worktreePath: string;
-  expectedBranchName: string | null | undefined;
-  repoRoot?: string | null;
-}): Promise<ManagedGitWorktreeBranchInspection> {
-  const worktreePath = await resolvePathForWorktreeComparison(input.worktreePath);
-  const expectedBranchName = asString(input.expectedBranchName, "").trim() || null;
-  const base = {
-    worktreePath,
-    expectedBranchName,
-    actualBranchName: null,
-  };
-
-  if (!await directoryExists(worktreePath)) {
-    return {
-      ...base,
-      valid: false,
-      reason: `worktree path "${worktreePath}" does not exist`,
-      reasonCode: "missing_worktree",
-      repoRoot: input.repoRoot ? path.resolve(input.repoRoot) : null,
-    };
-  }
-
-  const repoRoot = input.repoRoot
-    ? path.resolve(input.repoRoot)
-    : await resolveGitOwnerRepoRoot(worktreePath).catch(() => null);
-  if (!repoRoot) {
-    return {
-      ...base,
-      valid: false,
-      reason: "path is not a git checkout",
-      reasonCode: "not_a_git_checkout",
-      repoRoot: null,
-    };
-  }
-
-  const listedWorktrees = await listLinkedGitWorktreePaths(repoRoot).catch(() => null);
-  if (!listedWorktrees?.has(worktreePath)) {
-    return {
-      ...base,
-      valid: false,
-      reason: "path is not registered in `git worktree list`",
-      reasonCode: "not_registered",
-      repoRoot,
-    };
-  }
-
-  const worktreeTopLevel = await runGit(["rev-parse", "--show-toplevel"], worktreePath).catch(() => null);
-  if (!worktreeTopLevel || path.resolve(worktreeTopLevel) !== worktreePath) {
-    return {
-      ...base,
-      valid: false,
-      reason: "git resolves this path to a different repository root",
-      reasonCode: "wrong_repository_root",
-      repoRoot,
-    };
-  }
-
-  const actualBranchName = await runGit(
-    ["symbolic-ref", "--quiet", "--short", "HEAD"],
-    worktreePath,
-  ).catch(() => null);
-  if (expectedBranchName && actualBranchName !== expectedBranchName) {
-    return {
-      ...base,
-      valid: false,
-      reason: `worktree HEAD is on "${actualBranchName ?? "<detached>"}" instead of "${expectedBranchName}"`,
-      reasonCode: "branch_mismatch",
-      repoRoot,
-      actualBranchName,
-    };
-  }
-
-  return {
-    ...base,
-    valid: true,
-    reason: null,
-    reasonCode: null,
-    repoRoot,
-    actualBranchName,
-  };
-}
-
-async function validateLinkedGitWorktree(input: {
-  repoRoot: string;
-  worktreePath: string;
-  expectedBranchName: string | null;
-}): Promise<
-  | { valid: true }
-  | {
-    valid: false;
-    reason: string;
-    reasonCode: Exclude<ManagedGitWorktreeBranchInspection["reasonCode"], null>;
-    actualBranchName?: string | null;
-  }
-> {
-  const inspection = await inspectManagedGitWorktreeBranch({
-    repoRoot: input.repoRoot,
-    worktreePath: input.worktreePath,
-    expectedBranchName: input.expectedBranchName,
-  });
-  return inspection.valid
-    ? { valid: true }
-    : {
-        valid: false,
-        reason: inspection.reason ?? "unknown git worktree mismatch",
-        reasonCode: inspection.reasonCode ?? "not_a_git_checkout",
-        actualBranchName: inspection.actualBranchName,
-      };
 }
 
 function terminateChildProcess(child: ChildProcess) {
@@ -2264,32 +1804,6 @@ function terminateChildProcess(child: ChildProcess) {
   if (!child.killed) {
     child.kill("SIGTERM");
   }
-}
-
-function quoteShellArg(value: string) {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-function resolveRepoManagedWorkspaceCommand(command: string, repoRoot: string) {
-  const patterns = [
-    /^(?<prefix>(?:bash|sh|zsh)\s+)(?<quote>["']?)(?<relative>\.\/[^"'\s]+)\k<quote>(?<suffix>(?:\s.*)?)$/s,
-    /^(?<quote>["']?)(?<relative>\.\/[^"'\s]+)\k<quote>(?<suffix>(?:\s.*)?)$/s,
-  ];
-
-  for (const pattern of patterns) {
-    const match = command.match(pattern);
-    if (!match?.groups) continue;
-
-    const relativePath = match.groups.relative;
-    const repoManagedPath = path.join(repoRoot, relativePath.slice(2));
-    if (!existsSync(repoManagedPath)) continue;
-
-    const prefix = match.groups.prefix ?? "";
-    const suffix = match.groups.suffix ?? "";
-    return `${prefix}${quoteShellArg(repoManagedPath)}${suffix}`;
-  }
-
-  return command;
 }
 
 async function runWorkspaceCommand(input: {
@@ -2442,708 +1956,6 @@ async function recordWorkspaceCommandOperation(
       ? `${input.label} failed: ${details}`
       : `${input.label} failed with exit code ${code ?? -1}`,
   );
-}
-
-async function provisionExecutionWorktree(input: {
-  strategy: Record<string, unknown>;
-  repoRoot: string;
-  worktreePath: string;
-  branchName: string;
-  created: boolean;
-  recorder?: WorkspaceOperationRecorder | null;
-}) {
-  const provisionCommand = asString(input.strategy.provisionCommand, "").trim();
-  if (!provisionCommand) return;
-  const resolvedProvisionCommand = resolveRepoManagedWorkspaceCommand(provisionCommand, input.repoRoot);
-  const provisionEnv = sanitizeRuntimeServiceBaseEnv(process.env);
-  for (const key of [
-    "PAPERCLIP_CONFIG",
-    "PAPERCLIP_HOME",
-    "PAPERCLIP_INSTANCE_ID",
-    "PAPERCLIP_WORKTREES_DIR",
-  ] as const) {
-    const value = process.env[key];
-    if (value !== undefined) provisionEnv[key] = value;
-  }
-
-  await recordWorkspaceCommandOperation(input.recorder, {
-    phase: "workspace_provision",
-    command: provisionCommand,
-    resolvedCommand: resolvedProvisionCommand,
-    cwd: input.worktreePath,
-    env: provisionEnv,
-    label: `Execution workspace provision command "${provisionCommand}"`,
-    metadata: {
-      repoRoot: input.repoRoot,
-      worktreePath: input.worktreePath,
-      branchName: input.branchName,
-      created: input.created,
-      resolvedCommand: resolvedProvisionCommand === provisionCommand ? null : resolvedProvisionCommand,
-    },
-    successMessage: `Provisioned workspace at ${input.worktreePath}\n`,
-  });
-}
-
-async function resolveGitRepoRootForWorkspaceCleanup(
-  worktreePath: string,
-  projectWorkspaceCwd: string | null,
-): Promise<string | null> {
-  if (projectWorkspaceCwd) {
-    const resolvedProjectWorkspaceCwd = path.resolve(projectWorkspaceCwd);
-    const gitDir = await runGit(["rev-parse", "--git-common-dir"], resolvedProjectWorkspaceCwd)
-      .catch(() => null);
-    if (gitDir) {
-      const resolvedGitDir = path.resolve(resolvedProjectWorkspaceCwd, gitDir);
-      return path.dirname(resolvedGitDir);
-    }
-  }
-
-  const gitDir = await runGit(["rev-parse", "--git-common-dir"], worktreePath).catch(() => null);
-  if (!gitDir) return null;
-  const resolvedGitDir = path.resolve(worktreePath, gitDir);
-  return path.dirname(resolvedGitDir);
-}
-
-export async function realizeExecutionWorkspace(input: {
-  db?: Db | null;
-  base: ExecutionWorkspaceInput;
-  config: Record<string, unknown>;
-  issue: ExecutionWorkspaceIssueRef | null;
-  agent: ExecutionWorkspaceAgentRef;
-  runId?: string | null;
-  enableWorkspaceBranchReconcileForward?: boolean;
-  enableWorkspaceDirtyQuarantineRepair?: boolean;
-  recorder?: WorkspaceOperationRecorder | null;
-}): Promise<RealizedExecutionWorkspace> {
-  const rawStrategy = parseObject(input.config.workspaceStrategy);
-  const strategyType = asString(rawStrategy.type, "project_primary");
-  if (strategyType !== "git_worktree") {
-    return {
-      ...input.base,
-      strategy: "project_primary",
-      cwd: input.base.baseCwd,
-      branchName: null,
-      worktreePath: null,
-      warnings: [],
-      created: false,
-      baseRefSha: null,
-    };
-  }
-
-  const repoRoot = await resolveGitOwnerRepoRoot(input.base.baseCwd);
-  const branchTemplate = asString(rawStrategy.branchTemplate, "{{issue.identifier}}-{{slug}}");
-  const renderedBranch = renderWorkspaceTemplate(branchTemplate, {
-    issue: input.issue,
-    agent: input.agent,
-    projectId: input.base.projectId,
-    repoRef: input.base.repoRef,
-  });
-  let branchName = sanitizeBranchName(renderedBranch);
-  const configuredParentDir = asString(rawStrategy.worktreeParentDir, "");
-  const worktreeParentDir = configuredParentDir
-    ? resolveConfiguredPath(configuredParentDir, repoRoot)
-    : path.join(repoRoot, ".paperclip", "worktrees");
-  const worktreePath = path.join(worktreeParentDir, branchName);
-  let pendingForwardBranchReconcile: PendingForwardBranchReconcile | null = null;
-  const configuredBaseRef = typeof rawStrategy.baseRef === "string" && rawStrategy.baseRef.length > 0
-    ? rawStrategy.baseRef
-    : input.base.repoRef ?? null;
-  const {
-    baseRef,
-    warnings: baseRefResolutionWarnings,
-    refreshed: baseRefAlreadyRefreshed,
-  } = await resolveAuthoritativeBaseRef(repoRoot, configuredBaseRef);
-  const baseRefreshWarnings = [
-    ...baseRefResolutionWarnings,
-    ...(baseRefAlreadyRefreshed ? [] : await refreshRemoteTrackingBaseRef(repoRoot, baseRef)),
-  ];
-  const currentBaseRefSha = await resolveBaseRefSha(repoRoot, baseRef);
-
-  await fs.mkdir(worktreeParentDir, { recursive: true });
-
-  async function reuseExistingWorktree(reusablePath: string, effectiveBranchName = branchName, extraWarnings: string[] = []) {
-    const refresh = currentBaseRefSha
-      ? await refreshUnstartedWorktreeToBase({
-          repoRoot,
-          worktreePath: reusablePath,
-          branchName: effectiveBranchName,
-          baseRef,
-          currentBaseRefSha,
-          recorder: input.recorder ?? null,
-        })
-      : { refreshed: false, baseRefSha: null };
-    const baseDrift = await inspectExecutionWorkspaceBaseDrift({
-      repoRoot,
-      worktreePath: reusablePath,
-      branchName,
-      baseRef,
-      recordedBaseRefSha: null,
-      skipRefresh: true,
-    });
-    if (input.recorder) {
-      await input.recorder.recordOperation({
-        phase: "worktree_prepare",
-        cwd: repoRoot,
-        metadata: {
-          repoRoot,
-          worktreePath: reusablePath,
-          branchName: effectiveBranchName,
-          baseRef,
-          currentBaseRefSha: baseDrift.currentBaseRefSha,
-          branchBaseRefSha: baseDrift.branchBaseRefSha,
-          created: false,
-          reused: true,
-        },
-        run: async () => ({
-          status: "succeeded",
-          exitCode: 0,
-          system: `Reused existing git worktree at ${reusablePath}\n`,
-        }),
-      });
-    }
-    await provisionExecutionWorktree({
-      strategy: rawStrategy,
-      repoRoot,
-      worktreePath: reusablePath,
-      branchName: effectiveBranchName,
-      created: false,
-      recorder: input.recorder ?? null,
-    });
-    return {
-      ...input.base,
-      repoRef: baseRef,
-      strategy: "git_worktree" as const,
-      cwd: reusablePath,
-      branchName: effectiveBranchName,
-      worktreePath: reusablePath,
-      warnings: [...extraWarnings, ...baseRefreshWarnings, ...baseDrift.warnings],
-      created: false,
-      baseRefSha: refresh.baseRefSha ?? baseDrift.branchBaseRefSha ?? baseDrift.currentBaseRefSha,
-      pendingForwardBranchReconcile,
-    };
-  }
-
-  async function validateReusableWorktree(reusablePath: string) {
-    const validation = await validateLinkedGitWorktree({
-      repoRoot,
-      worktreePath: reusablePath,
-      expectedBranchName: branchName,
-    }).catch(() => null);
-    if (validation && !validation.valid && validation.reasonCode === "branch_mismatch") {
-      const coherence = await ensureGitWorktreeBranchCoherent({
-        db: input.db ?? null,
-        repoRoot,
-        worktreePath: reusablePath,
-        expectedBranchName: branchName,
-        actualBranchName: validation.actualBranchName ?? null,
-        sourceIssue: input.issue,
-        executionWorkspaceId: null,
-        runId: input.runId ?? null,
-        enableWorkspaceBranchReconcileForward: input.enableWorkspaceBranchReconcileForward === true,
-        enableWorkspaceDirtyQuarantineRepair: input.enableWorkspaceDirtyQuarantineRepair === true,
-        reconcileOperationPhase: "worktree_prepare",
-        recorder: input.recorder ?? null,
-      });
-      const effectiveBranchName = coherence.branchName ?? branchName;
-      if (coherence.reconciledForward) {
-        branchName = effectiveBranchName;
-        pendingForwardBranchReconcile = coherence.pendingForwardBranchReconcile ?? null;
-      }
-      const nextValidation = await validateLinkedGitWorktree({
-        repoRoot,
-        worktreePath: reusablePath,
-        expectedBranchName: effectiveBranchName,
-      }).catch(() => null);
-      return {
-        validation: nextValidation,
-        branchName: effectiveBranchName,
-        warnings: coherence.warnings,
-      };
-    }
-    return { validation, branchName, warnings: [] };
-  }
-
-  const existingWorktree = await directoryExists(worktreePath);
-  if (existingWorktree) {
-    const reusable = await validateReusableWorktree(worktreePath);
-    if (reusable.validation?.valid) {
-      return await reuseExistingWorktree(worktreePath, reusable.branchName, reusable.warnings);
-    }
-    const validation = reusable.validation;
-    const reason = validation && !validation.valid ? ` (${validation.reason})` : "";
-    throw new Error(`Configured worktree path "${worktreePath}" already exists and is not a reusable git worktree${reason}.`);
-  }
-
-  const registeredBranchWorktree = await findRegisteredGitWorktreeByBranch(repoRoot, branchName);
-  if (registeredBranchWorktree) {
-    const reusable = await validateReusableWorktree(registeredBranchWorktree);
-    if (reusable.validation?.valid) {
-      return await reuseExistingWorktree(registeredBranchWorktree, reusable.branchName, reusable.warnings);
-    }
-    const validation = reusable.validation;
-    const reason = validation && !validation.valid ? ` (${validation.reason})` : "";
-    throw new Error(`Registered worktree for branch "${branchName}" at "${registeredBranchWorktree}" is not reusable${reason}.`);
-  }
-
-  try {
-    await recordGitOperation(input.recorder, {
-      phase: "worktree_prepare",
-      args: ["worktree", "add", "-b", branchName, worktreePath, baseRef],
-      cwd: repoRoot,
-      metadata: {
-        repoRoot,
-        worktreePath,
-        branchName,
-        baseRef,
-        baseRefSha: currentBaseRefSha,
-        created: true,
-      },
-      successMessage: `Created git worktree at ${worktreePath}\n`,
-      failureLabel: `git worktree add ${worktreePath}`,
-    });
-  } catch (error) {
-    if (!gitErrorIncludes(error, "already exists")) {
-      throw error;
-    }
-    try {
-      await recordGitOperation(input.recorder, {
-        phase: "worktree_prepare",
-        args: ["worktree", "add", worktreePath, branchName],
-        cwd: repoRoot,
-        metadata: {
-          repoRoot,
-          worktreePath,
-          branchName,
-          baseRef,
-          baseRefSha: currentBaseRefSha,
-          created: false,
-          reusedExistingBranch: true,
-        },
-        successMessage: `Attached existing branch ${branchName} at ${worktreePath}\n`,
-        failureLabel: `git worktree add ${worktreePath}`,
-      });
-    } catch (attachError) {
-      if (!gitErrorIncludes(attachError, "already checked out")) {
-        throw attachError;
-      }
-      const reusablePath = await findRegisteredGitWorktreeByBranch(repoRoot, branchName);
-      if (!reusablePath || !await isGitCheckout(reusablePath)) {
-        throw attachError;
-      }
-      return await reuseExistingWorktree(reusablePath);
-    }
-  }
-  await provisionExecutionWorktree({
-    strategy: rawStrategy,
-    repoRoot,
-    worktreePath,
-    branchName,
-    created: true,
-    recorder: input.recorder ?? null,
-  });
-
-  return {
-    ...input.base,
-    repoRef: baseRef,
-    strategy: "git_worktree",
-    cwd: worktreePath,
-    branchName,
-    worktreePath,
-    warnings: baseRefreshWarnings,
-    created: true,
-    baseRefSha: currentBaseRefSha,
-  };
-}
-
-export async function ensurePersistedExecutionWorkspaceAvailable(input: {
-  db?: Db | null;
-  base: ExecutionWorkspaceInput;
-  workspace: {
-    id?: string | null;
-    mode: string | null | undefined;
-    strategyType: string | null | undefined;
-    cwd: string | null | undefined;
-    providerRef: string | null | undefined;
-    projectId: string | null | undefined;
-    projectWorkspaceId: string | null | undefined;
-    repoUrl: string | null | undefined;
-    baseRef: string | null | undefined;
-    branchName: string | null | undefined;
-    metadata?: Record<string, unknown> | null;
-    config?: {
-      provisionCommand?: string | null;
-    } | null;
-  };
-  issue: ExecutionWorkspaceIssueRef | null;
-  agent: ExecutionWorkspaceAgentRef;
-  runId?: string | null;
-  enableWorkspaceBranchReconcileForward?: boolean;
-  enableWorkspaceDirtyQuarantineRepair?: boolean;
-  recorder?: WorkspaceOperationRecorder | null;
-}): Promise<RealizedExecutionWorkspace | null> {
-  const cwd = asString(input.workspace.cwd ?? input.workspace.providerRef, "").trim();
-  if (!cwd) return null;
-
-  const strategy = input.workspace.strategyType === "git_worktree" ? "git_worktree" : "project_primary";
-  const realized: RealizedExecutionWorkspace = {
-    baseCwd: input.base.baseCwd,
-    source: input.workspace.mode === "shared_workspace" ? "project_primary" : "issue_execution",
-    projectId: input.workspace.projectId ?? input.base.projectId,
-    workspaceId: input.workspace.projectWorkspaceId ?? input.base.workspaceId,
-    repoUrl: input.workspace.repoUrl ?? input.base.repoUrl,
-    repoRef: input.workspace.baseRef ?? input.base.repoRef,
-    strategy,
-    cwd,
-    branchName: input.workspace.branchName ?? null,
-    worktreePath: strategy === "git_worktree" ? (input.workspace.providerRef ?? cwd) : null,
-    warnings: [],
-    created: false,
-    baseRefSha: readRecordedBaseRefSha(input.workspace.metadata),
-  };
-  const provisionCommand = asString(input.workspace.config?.provisionCommand, "").trim();
-
-  if (strategy !== "git_worktree") {
-    if (!await directoryExists(cwd)) {
-      return null;
-    }
-    return realized;
-  }
-  const repoRoot = await runGit(["rev-parse", "--show-toplevel"], input.base.baseCwd);
-  const recordedBaseRefSha = readRecordedBaseRefSha(input.workspace.metadata);
-  if (await directoryExists(cwd)) {
-    const reuseBaseRef = input.workspace.baseRef ?? input.base.repoRef ?? null;
-    const reuseWorktreePath = realized.worktreePath ?? cwd;
-    const repairWarnings: string[] = [];
-    if (await isGitCheckout(reuseWorktreePath)) {
-      const coherence = await ensureGitWorktreeBranchCoherent({
-        db: input.db ?? null,
-        repoRoot,
-        worktreePath: reuseWorktreePath,
-        expectedBranchName: realized.branchName,
-        sourceIssue: input.issue,
-        executionWorkspaceId: input.workspace.id ?? null,
-        runId: input.runId ?? null,
-        enableWorkspaceBranchReconcileForward: input.enableWorkspaceBranchReconcileForward === true,
-        enableWorkspaceDirtyQuarantineRepair: input.enableWorkspaceDirtyQuarantineRepair === true,
-        persistForwardReconcile: false,
-        reconcileOperationPhase: "worktree_prepare",
-        recorder: input.recorder ?? null,
-      });
-      if (coherence.branchName) {
-        realized.branchName = coherence.branchName;
-      }
-      if (coherence.reconciledForward) {
-        realized.pendingForwardBranchReconcile = coherence.pendingForwardBranchReconcile ?? null;
-      }
-      repairWarnings.push(...coherence.warnings);
-    }
-    const validation = await validateLinkedGitWorktree({
-      repoRoot,
-      worktreePath: reuseWorktreePath,
-      expectedBranchName: realized.branchName,
-    });
-    if (!validation.valid) {
-      throw new WorkspaceRuntimeValidationFailure(
-        `Persisted git worktree "${reuseWorktreePath}" is not reusable (${validation.reason}).`,
-        {
-          workspaceValidation: {
-            reason: "git_worktree_not_reusable",
-            reasonCode: validation.reasonCode,
-            worktreePath: reuseWorktreePath,
-            executionWorkspaceId: input.workspace.id ?? null,
-          },
-        },
-      );
-    }
-    const baseRefreshWarnings = reuseBaseRef
-      ? await refreshRemoteTrackingBaseRef(repoRoot, reuseBaseRef)
-      : [];
-    const currentBaseRefSha = reuseBaseRef ? await resolveBaseRefSha(repoRoot, reuseBaseRef) : null;
-    const refresh = reuseBaseRef && currentBaseRefSha
-      ? await refreshUnstartedWorktreeToBase({
-          repoRoot,
-          worktreePath: reuseWorktreePath,
-          branchName: realized.branchName,
-          baseRef: reuseBaseRef,
-          currentBaseRefSha,
-          recorder: input.recorder ?? null,
-        })
-      : { refreshed: false, baseRefSha: null };
-    const baseDrift = await inspectExecutionWorkspaceBaseDrift({
-      repoRoot,
-      worktreePath: reuseWorktreePath,
-      branchName: realized.branchName,
-      baseRef: reuseBaseRef,
-      recordedBaseRefSha,
-      skipRefresh: true,
-    });
-    realized.warnings = [...repairWarnings, ...baseRefreshWarnings, ...baseDrift.warnings];
-    realized.baseRefSha = refresh.baseRefSha ?? recordedBaseRefSha ?? baseDrift.branchBaseRefSha ?? baseDrift.currentBaseRefSha;
-    if (provisionCommand) {
-      await provisionExecutionWorktree({
-        strategy: {
-          type: "git_worktree",
-          provisionCommand,
-        },
-        repoRoot,
-        worktreePath: realized.worktreePath ?? cwd,
-        branchName: realized.branchName ?? "",
-        created: false,
-        recorder: input.recorder ?? null,
-      });
-    }
-    return realized;
-  }
-
-  const worktreePath = realized.worktreePath ?? cwd;
-  const branchName = asString(input.workspace.branchName, "").trim();
-  if (!branchName) {
-    throw new Error(`Execution workspace "${cwd}" is missing and cannot be restored because no branch name is recorded.`);
-  }
-
-  await fs.mkdir(path.dirname(worktreePath), { recursive: true });
-  await runGit(["worktree", "prune"], repoRoot).catch(() => {});
-  const restoreBaseRef = input.workspace.baseRef ?? input.base.repoRef ?? null;
-  const restoreRefreshWarnings = restoreBaseRef ? await refreshRemoteTrackingBaseRef(repoRoot, restoreBaseRef) : [];
-  const restoreCurrentBaseRefSha = restoreBaseRef ? await resolveBaseRefSha(repoRoot, restoreBaseRef) : null;
-
-  let created = false;
-  try {
-    await recordGitOperation(input.recorder, {
-      phase: "worktree_prepare",
-      args: ["worktree", "add", worktreePath, branchName],
-      cwd: repoRoot,
-      metadata: {
-        repoRoot,
-        worktreePath,
-        branchName,
-        baseRef: input.workspace.baseRef ?? input.base.repoRef ?? null,
-        currentBaseRefSha: restoreCurrentBaseRefSha,
-        created: false,
-        restored: true,
-      },
-      successMessage: `Reattached missing git worktree at ${worktreePath}\n`,
-      failureLabel: `git worktree add ${worktreePath}`,
-    });
-  } catch (error) {
-    if (
-      !gitErrorIncludes(error, "invalid reference")
-      && !gitErrorIncludes(error, "not a commit")
-      && !gitErrorIncludes(error, "unknown revision")
-    ) {
-      throw error;
-    }
-    const baseRef = input.workspace.baseRef ?? await detectDefaultBranch(repoRoot) ?? "HEAD";
-    const recreatedBaseRefSha = await resolveBaseRefSha(repoRoot, baseRef);
-    await recordGitOperation(input.recorder, {
-      phase: "worktree_prepare",
-      args: ["worktree", "add", "-b", branchName, worktreePath, baseRef],
-      cwd: repoRoot,
-      metadata: {
-        repoRoot,
-        worktreePath,
-        branchName,
-        baseRef,
-        baseRefSha: recreatedBaseRefSha,
-        created: true,
-        restored: true,
-      },
-      successMessage: `Recreated missing git worktree at ${worktreePath}\n`,
-      failureLabel: `git worktree add ${worktreePath}`,
-    });
-    created = true;
-  }
-
-  const baseDrift = await inspectExecutionWorkspaceBaseDrift({
-    repoRoot,
-    worktreePath,
-    branchName,
-    baseRef: input.workspace.baseRef ?? input.base.repoRef ?? null,
-    recordedBaseRefSha,
-    skipRefresh: true,
-  });
-
-  await provisionExecutionWorktree({
-    strategy: {
-      type: "git_worktree",
-      ...(provisionCommand ? { provisionCommand } : {}),
-    },
-    repoRoot,
-    worktreePath,
-    branchName,
-    created,
-    recorder: input.recorder ?? null,
-  });
-
-  return {
-    ...realized,
-    cwd: worktreePath,
-    worktreePath,
-    warnings: [...restoreRefreshWarnings, ...baseDrift.warnings],
-    created,
-    baseRefSha:
-      recordedBaseRefSha
-      ?? (created ? restoreCurrentBaseRefSha : baseDrift.branchBaseRefSha)
-      ?? baseDrift.currentBaseRefSha,
-  };
-}
-
-export async function cleanupExecutionWorkspaceArtifacts(input: {
-  workspace: {
-    id: string;
-    cwd: string | null;
-    providerType: string;
-    providerRef: string | null;
-    branchName: string | null;
-    repoUrl: string | null;
-    baseRef: string | null;
-    projectId: string | null;
-    projectWorkspaceId: string | null;
-    sourceIssueId: string | null;
-    metadata?: Record<string, unknown> | null;
-  };
-  projectWorkspace?: {
-    cwd: string | null;
-    cleanupCommand: string | null;
-  } | null;
-  cleanupCommand?: string | null;
-  teardownCommand?: string | null;
-  recorder?: WorkspaceOperationRecorder | null;
-}) {
-  const warnings: string[] = [];
-  const workspacePath = input.workspace.providerRef ?? input.workspace.cwd;
-  const repoRoot = input.workspace.providerType === "git_worktree" && workspacePath
-    ? await resolveGitRepoRootForWorkspaceCleanup(
-      workspacePath,
-      input.projectWorkspace?.cwd ?? null,
-    )
-    : null;
-  const cleanupEnv = sanitizeRuntimeServiceBaseEnv(process.env);
-  const createdByRuntime = input.workspace.metadata?.createdByRuntime === true;
-  const cleanupCommands = [
-    input.cleanupCommand ?? null,
-    input.projectWorkspace?.cleanupCommand ?? null,
-    input.teardownCommand ?? null,
-  ]
-    .map((value) => asString(value, "").trim())
-    .filter(Boolean);
-
-  for (const command of cleanupCommands) {
-    try {
-      const resolvedCommand = repoRoot
-        ? resolveRepoManagedWorkspaceCommand(command, repoRoot)
-        : command;
-      await recordWorkspaceCommandOperation(input.recorder, {
-        phase: "workspace_teardown",
-        command,
-        resolvedCommand,
-        cwd: workspacePath ?? input.projectWorkspace?.cwd ?? process.cwd(),
-        env: cleanupEnv,
-        label: `Execution workspace cleanup command "${command}"`,
-        metadata: {
-          workspaceId: input.workspace.id,
-          workspacePath,
-          branchName: input.workspace.branchName,
-          providerType: input.workspace.providerType,
-          resolvedCommand: resolvedCommand === command ? null : resolvedCommand,
-        },
-        successMessage: `Completed cleanup command "${command}"\n`,
-      });
-    } catch (err) {
-      warnings.push(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  if (input.workspace.providerType === "git_worktree" && workspacePath) {
-    const worktreeExists = await directoryExists(workspacePath);
-    if (worktreeExists) {
-      if (!repoRoot) {
-        warnings.push(`Could not resolve git repo root for "${workspacePath}".`);
-      } else {
-        try {
-          await recordGitOperation(input.recorder, {
-            phase: "worktree_cleanup",
-            args: ["worktree", "remove", "--force", workspacePath],
-            cwd: repoRoot,
-            metadata: {
-              workspaceId: input.workspace.id,
-              workspacePath,
-              branchName: input.workspace.branchName,
-              cleanupAction: "worktree_remove",
-            },
-            successMessage: `Removed git worktree ${workspacePath}\n`,
-            failureLabel: `git worktree remove ${workspacePath}`,
-          });
-        } catch (err) {
-          warnings.push(err instanceof Error ? err.message : String(err));
-        }
-      }
-    }
-    if (createdByRuntime && input.workspace.branchName) {
-      if (!repoRoot) {
-        warnings.push(`Could not resolve git repo root to delete branch "${input.workspace.branchName}".`);
-      } else {
-        try {
-          await recordGitOperation(input.recorder, {
-            phase: "worktree_cleanup",
-            args: ["branch", "-d", input.workspace.branchName],
-            cwd: repoRoot,
-            metadata: {
-              workspaceId: input.workspace.id,
-              workspacePath,
-              branchName: input.workspace.branchName,
-              cleanupAction: "branch_delete",
-            },
-            successMessage: `Deleted branch ${input.workspace.branchName}\n`,
-            failureLabel: `git branch -d ${input.workspace.branchName}`,
-          });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          warnings.push(`Skipped deleting branch "${input.workspace.branchName}": ${message}`);
-        }
-      }
-    }
-  } else if (input.workspace.providerType === "local_fs" && createdByRuntime && workspacePath) {
-    const projectWorkspaceCwd = input.projectWorkspace?.cwd ? path.resolve(input.projectWorkspace.cwd) : null;
-    const resolvedWorkspacePath = path.resolve(workspacePath);
-    const containsProjectWorkspace = projectWorkspaceCwd
-      ? (
-          resolvedWorkspacePath === projectWorkspaceCwd ||
-          projectWorkspaceCwd.startsWith(`${resolvedWorkspacePath}${path.sep}`)
-        )
-      : false;
-    if (containsProjectWorkspace) {
-      warnings.push(`Refusing to remove path "${workspacePath}" because it contains the project workspace.`);
-    } else {
-      await fs.rm(resolvedWorkspacePath, { recursive: true, force: true });
-      if (input.recorder) {
-        await input.recorder.recordOperation({
-          phase: "workspace_teardown",
-          cwd: projectWorkspaceCwd ?? process.cwd(),
-          metadata: {
-            workspaceId: input.workspace.id,
-            workspacePath: resolvedWorkspacePath,
-            cleanupAction: "remove_local_fs",
-          },
-          run: async () => ({
-            status: "succeeded",
-            exitCode: 0,
-            system: `Removed local workspace directory ${resolvedWorkspacePath}\n`,
-          }),
-        });
-      }
-    }
-  }
-
-  const cleaned =
-    !workspacePath ||
-    !(await directoryExists(workspacePath));
-
-  return {
-    cleanedPath: workspacePath,
-    cleaned,
-    warnings,
-  };
 }
 
 async function allocatePort(): Promise<number> {
@@ -4749,7 +3561,6 @@ export async function restartDesiredRuntimeServicesOnStartup(db: Db) {
       projectId: executionWorkspaces.projectId,
       projectWorkspaceId: executionWorkspaces.projectWorkspaceId,
       mode: executionWorkspaces.mode,
-      strategyType: executionWorkspaces.strategyType,
       cwd: executionWorkspaces.cwd,
       repoUrl: executionWorkspaces.repoUrl,
       baseRef: executionWorkspaces.baseRef,
@@ -4817,10 +3628,10 @@ export async function restartDesiredRuntimeServicesOnStartup(db: Db) {
           workspaceId: row.projectWorkspaceId ?? null,
           repoUrl: row.repoUrl ?? null,
           repoRef: row.baseRef ?? null,
-          strategy: row.strategyType === "git_worktree" ? "git_worktree" : "project_primary",
+          strategy: "project_primary",
           cwd: row.cwd,
           branchName: row.branchName ?? null,
-          worktreePath: row.strategyType === "git_worktree" ? row.cwd : null,
+          worktreePath: null,
           warnings: [],
           created: false,
         },

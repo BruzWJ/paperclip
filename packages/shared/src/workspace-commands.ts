@@ -1,4 +1,4 @@
-import type { WorkspaceCommandDefinition, WorkspaceRuntimeService } from "./types/workspace-runtime.js";
+import type { WorkspaceCommandDefinition } from "./types/workspace-runtime.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -160,49 +160,4 @@ export function findWorkspaceCommandDefinition(
   const normalizedId = readNonEmptyString(workspaceCommandId);
   if (!normalizedId) return null;
   return listWorkspaceCommandDefinitions(workspaceRuntime).find((command) => command.id === normalizedId) ?? null;
-}
-
-export function scoreWorkspaceRuntimeServiceMatch(
-  command: Pick<WorkspaceCommandDefinition, "serviceIndex" | "name" | "command" | "cwd">,
-  runtimeService: Pick<WorkspaceRuntimeService, "configIndex" | "serviceName" | "command" | "cwd">,
-) {
-  if (command.command && runtimeService.command && runtimeService.command !== command.command) {
-    return -1;
-  }
-
-  if (command.serviceIndex !== null && runtimeService.configIndex !== null && runtimeService.configIndex !== undefined) {
-    return runtimeService.configIndex === command.serviceIndex ? 100 : -1;
-  }
-
-  let score = 0;
-  if (runtimeService.serviceName === command.name) score += 4;
-  if ((runtimeService.command ?? null) === (command.command ?? null)) score += 4;
-  if (
-    command.cwd
-    && runtimeService.cwd
-    && (runtimeService.cwd === command.cwd || runtimeService.cwd.endsWith(`/${command.cwd}`))
-  ) {
-    score += 2;
-  }
-  return score;
-}
-
-export function matchWorkspaceRuntimeServiceToCommand<
-  T extends Pick<WorkspaceRuntimeService, "configIndex" | "serviceName" | "command" | "cwd">,
->(
-  command: Pick<WorkspaceCommandDefinition, "serviceIndex" | "name" | "command" | "cwd">,
-  runtimeServices: T[] | null | undefined,
-) {
-  let bestMatch: T | null = null;
-  let bestScore = -1;
-
-  for (const runtimeService of runtimeServices ?? []) {
-    const score = scoreWorkspaceRuntimeServiceMatch(command, runtimeService);
-    if (score > bestScore) {
-      bestMatch = runtimeService;
-      bestScore = score;
-    }
-  }
-
-  return bestScore > 0 ? bestMatch : null;
 }

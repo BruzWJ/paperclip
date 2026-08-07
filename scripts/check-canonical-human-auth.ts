@@ -1068,23 +1068,6 @@ export function scanHttpActorBoundary(
     }
   }
 
-  const namedGatewayRoutes = byPath.get(
-    "apps/server/src/routes/tool-gateway.ts",
-  );
-  if (
-    namedGatewayRoutes
-    && !/\bassertRunBearerRejectedByNamedGateway\b/.test(
-      namedGatewayRoutes.source,
-    )
-  ) {
-    addHttpActorViolation(
-      violations,
-      namedGatewayRoutes,
-      0,
-      "named MCP gateway routes must categorically reject run-interface bearer credentials",
-    );
-  }
-
   return violations;
 }
 

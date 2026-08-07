@@ -3,7 +3,6 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  discoverProjectWorkspaceSkillDirectories,
   findMissingLocalSkillIds,
   normalizeGitHubSkillDirectory,
   parseSkillImportSourceInput,
@@ -124,45 +123,6 @@ describe("project workspace skill discovery", () => {
     expect(normalizeGitHubSkillDirectory("", "fallback-skill")).toBe("fallback-skill");
   });
 
-  it("finds bounded skill roots under supported workspace paths", async () => {
-    const workspace = await makeTempDir("paperclip-skill-workspace-");
-    await writeSkillDir(workspace, "Workspace Root");
-    await writeSkillDir(path.join(workspace, "skills", "find-skills"), "Find Skills");
-    await writeSkillDir(path.join(workspace, ".agents", "skills", "release"), "Release");
-    await writeSkillDir(path.join(workspace, "skills", ".system", "paperclip"), "Paperclip");
-    await fs.writeFile(path.join(workspace, "README.md"), "# ignore\n", "utf8");
-
-    const discovered = await discoverProjectWorkspaceSkillDirectories({
-      projectId: "11111111-1111-1111-1111-111111111111",
-      projectName: "Repo",
-      workspaceId: "22222222-2222-2222-2222-222222222222",
-      workspaceName: "Main",
-      workspaceCwd: workspace,
-    });
-
-    expect(discovered).toEqual([
-      { skillDir: path.resolve(workspace), directoryRoot: ".", relativePath: ".", inventoryMode: "project_root" },
-      {
-        skillDir: path.resolve(workspace, ".agents", "skills", "release"),
-        directoryRoot: ".agents/skills",
-        relativePath: ".agents/skills/release",
-        inventoryMode: "full",
-      },
-      {
-        skillDir: path.resolve(workspace, "skills", ".system", "paperclip"),
-        directoryRoot: "skills/.system",
-        relativePath: "skills/.system/paperclip",
-        inventoryMode: "full",
-      },
-      {
-        skillDir: path.resolve(workspace, "skills", "find-skills"),
-        directoryRoot: "skills",
-        relativePath: "skills/find-skills",
-        inventoryMode: "full",
-      },
-    ]);
-  });
-
   it("limits root SKILL.md imports to skill-related support folders", async () => {
     const workspace = await makeTempDir("paperclip-root-skill-");
     await writeSkillDir(workspace, "Workspace Skill");
@@ -179,7 +139,7 @@ describe("project workspace skill discovery", () => {
     const imported = await readLocalSkillImportFromDirectory(
       "33333333-3333-4333-8333-333333333333",
       workspace,
-      { inventoryMode: "project_root", metadata: { sourceKind: "project_scan" } },
+      { inventoryMode: "project_root" },
     );
 
     expect(new Set(imported.fileInventory.map((entry) => entry.path))).toEqual(new Set([
@@ -189,23 +149,7 @@ describe("project workspace skill discovery", () => {
       "SKILL.md",
     ]));
     expect(imported.fileInventory.map((entry) => entry.kind)).toContain("script");
-    expect(imported.metadata?.sourceKind).toBe("project_scan");
-  });
-
-  it("rejects symlinks reachable from a project-scanned skill", async () => {
-    const workspace = await makeTempDir("paperclip-linked-skill-file-");
-    const skillDir = path.join(workspace, ".codex", "skills", "linked-file");
-    const outsideFile = path.join(await makeTempDir("paperclip-linked-skill-outside-"), "outside.md");
-    await writeSkillDir(skillDir, "Linked File");
-    await fs.mkdir(path.join(skillDir, "references"), { recursive: true });
-    await fs.writeFile(outsideFile, "outside workspace\n", "utf8");
-    await fs.symlink(outsideFile, path.join(skillDir, "references", "outside.md"));
-
-    await expect(readLocalSkillImportFromDirectory(
-      "33333333-3333-4333-8333-333333333333",
-      skillDir,
-      { inventoryMode: "full", workspaceRoot: workspace },
-    )).rejects.toThrow(/symbolic link/);
+    expect(imported.metadata?.sourceKind).toBe("local_path");
   });
 
   it("parses inline object array items in skill frontmatter metadata", async () => {

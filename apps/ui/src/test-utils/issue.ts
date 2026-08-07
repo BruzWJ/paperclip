@@ -1,4 +1,4 @@
-import type { ExecutionWorkspace, Issue } from "@paperclipai/shared";
+import type { Issue } from "@paperclipai/shared";
 
 export type TestIssueOverrides = {
   [Key in keyof Issue]?: Issue[Key];
@@ -179,7 +179,6 @@ export function createTestIssue(overrides: TestIssueOverrides = {}): Issue {
     id: "issue-1",
     companyId: "company-1",
     projectId: null,
-    projectWorkspaceId: null,
     goalId: null,
     parentId: null,
     title: "Test issue",
@@ -189,8 +188,6 @@ export function createTestIssue(overrides: TestIssueOverrides = {}): Issue {
     identifier: "PAP-1",
     requestDepth: 0,
     billingCode: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
     startedAt: null,
     completedAt: null,
     cancelledAt: null,
@@ -211,38 +208,4 @@ export function createTestIssue(overrides: TestIssueOverrides = {}): Issue {
     ownerFields(overrides),
     creatorFields(overrides),
   );
-}
-
-export function createTestExecutionWorkspace(
-  overrides: Partial<ExecutionWorkspace> = {},
-): ExecutionWorkspace {
-  return {
-    id: "execution-workspace-1",
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
-    sourceIssueId: "issue-1",
-    mode: "isolated_workspace",
-    strategyType: "git_worktree",
-    name: "Test workspace",
-    status: "active",
-    cwd: "/tmp/paperclip-test-workspace",
-    repoUrl: null,
-    baseRef: null,
-    branchName: null,
-    providerType: "local_fs",
-    providerRef: null,
-    derivedFromExecutionWorkspaceId: null,
-    lastUsedAt: new Date("2026-01-01T00:00:00.000Z"),
-    openedAt: new Date("2026-01-01T00:00:00.000Z"),
-    closedAt: null,
-    cleanupEligibleAt: null,
-    cleanupReason: null,
-    config: null,
-    metadata: null,
-    runtimeServices: [],
-    createdAt: new Date("2026-01-01T00:00:00.000Z"),
-    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
-    ...overrides,
-  };
 }

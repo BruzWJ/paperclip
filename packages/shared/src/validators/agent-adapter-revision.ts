@@ -83,6 +83,12 @@ const canonicalCompanySkillPinsSchema = companySkillPinsSchema.superRefine(
   },
 );
 
+const executionTargetSelectorSchema = z.object({
+  environmentId: z.string().uuid(),
+  executionTargetDriver: z.enum(ENVIRONMENT_DRIVERS),
+  executionTargetDigest: z.string().regex(/^[0-9a-f]{64}$/),
+}).strict();
+
 /**
  * The sole immutable, non-secret ACP execution configuration persisted by an
  * agent adapter revision. Provider credentials and CLI-native state have no
@@ -106,13 +112,7 @@ export const agentAdapterAcpConfigurationSchema = z
       })
       .strict()
       .nullable(),
-    executionTargetSelector: z
-      .object({
-        defaultEnvironmentId: z.string().uuid(),
-        executionTargetDriver: z.enum(ENVIRONMENT_DRIVERS),
-        executionTargetDigest: z.string().regex(/^[0-9a-f]{64}$/),
-      })
-      .strict(),
+    executionTargetSelector: executionTargetSelectorSchema,
     workspaceSelector: z
       .object({
         kind: z.literal("issue_execution_workspace"),
@@ -126,3 +126,28 @@ export const agentAdapterAcpConfigurationSchema = z
 export type AgentAdapterAcpConfigurationInput = z.infer<
   typeof agentAdapterAcpConfigurationSchema
 >;
+
+/**
+ * Board-facing projection of a persisted ACP revision. Environment and
+ * workspace selectors are internal execution authority, not operator config.
+ */
+export const publicAgentAdapterAcpConfigurationSchema =
+  agentAdapterAcpConfigurationSchema.omit({
+    executionTargetSelector: true,
+    workspaceSelector: true,
+  });
+
+export type PublicAgentAdapterAcpConfigurationInput = z.infer<
+  typeof publicAgentAdapterAcpConfigurationSchema
+>;
+
+export function projectAgentAdapterAcpConfiguration(
+  input: unknown,
+): PublicAgentAdapterAcpConfigurationInput {
+  const {
+    executionTargetSelector: _executionTargetSelector,
+    workspaceSelector: _workspaceSelector,
+    ...publicConfiguration
+  } = agentAdapterAcpConfigurationSchema.parse(input);
+  return publicAgentAdapterAcpConfigurationSchema.parse(publicConfiguration);
+}

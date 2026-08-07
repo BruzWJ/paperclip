@@ -317,69 +317,6 @@ export interface CompanySkillImportResult {
   warnings: string[];
 }
 
-export interface CompanySkillProjectScanRequest {
-  projectIds?: string[];
-  workspaceIds?: string[];
-  mode?: "import" | "preview";
-  selection?: Array<{
-    workspaceId: string;
-    path: string;
-    slug?: string;
-  }>;
-}
-
-export type CompanySkillProjectScanCandidateStatus = "new" | "already_imported" | "conflict" | "skipped";
-
-export interface CompanySkillProjectScanCandidate {
-  slug: string;
-  name: string;
-  description: string | null;
-  workspaceId: string;
-  workspaceName: string;
-  projectId: string;
-  projectName: string;
-  directoryRoot: string;
-  relativePath: string;
-  status: CompanySkillProjectScanCandidateStatus;
-  existingSkillId?: string;
-  reason?: string;
-}
-
-export interface CompanySkillProjectScanSkipped {
-  projectId: string | null;
-  projectName: string | null;
-  workspaceId: string | null;
-  workspaceName: string | null;
-  path: string | null;
-  reason: string;
-}
-
-export interface CompanySkillProjectScanConflict {
-  slug: string;
-  key: string;
-  projectId: string;
-  projectName: string;
-  workspaceId: string;
-  workspaceName: string;
-  path: string;
-  existingSkillId: string;
-  existingSkillKey: string;
-  existingSourceLocator: string | null;
-  reason: string;
-}
-
-export interface CompanySkillProjectScanResult {
-  scannedProjects: number;
-  scannedWorkspaces: number;
-  discovered: number;
-  imported: CompanySkill[];
-  updated: CompanySkill[];
-  skipped: CompanySkillProjectScanSkipped[];
-  conflicts: CompanySkillProjectScanConflict[];
-  candidates: CompanySkillProjectScanCandidate[];
-  warnings: string[];
-}
-
 export interface CompanySkillCreateRequest {
   folderId?: string | null;
   name: string;

@@ -15,22 +15,11 @@ import {
   updateIssueExecutionPolicySchema,
   updateIssueTitleSchema,
   upsertIssueDocumentSchema,
-  upsertIssueWatchdogSchema,
 } from "./issue.js";
 import {
   adapterConfigSchema,
   agentRuntimeConfigSchema,
 } from "./agent.js";
-import type { CompactIssue, Issue } from "../types/issue.js";
-
-type AssertFalse<T extends false> = T;
-type _IssueHasNoScheduledRetry = AssertFalse<"scheduledRetry" extends keyof Issue ? true : false>;
-type _CompactIssueHasNoScheduledRetry =
-  AssertFalse<"scheduledRetry" extends keyof CompactIssue ? true : false>;
-// @ts-expect-error The issue-level scheduled-retry DTO is intentionally retired.
-type _RetiredIssueScheduledRetryExport = import("../index.js").IssueScheduledRetry;
-// @ts-expect-error The manual issue retry-now response is intentionally retired.
-type _RetiredIssueRetryNowResponseExport = import("../index.js").IssueRetryNowResponse;
 
 describe("issue validators", () => {
   const ownerAgentId = "22222222-2222-4222-8222-222222222222";
@@ -103,8 +92,8 @@ describe("issue validators", () => {
       "requestDepth",
       "ownerAdapterOverrides",
       "executionPolicy",
-      "watchdog",
-      "watchdogDiscovery",
+      "legacyScheduler",
+      "legacySchedulerDiscovery",
       "createdByUserId",
       "responsibleUserId",
     ]) {
@@ -113,45 +102,6 @@ describe("issue validators", () => {
         retiredField,
       ).toBe(false);
     }
-  });
-
-  it("preserves explicit execution-workspace intent at canonical ingress", () => {
-    const executionWorkspaceId =
-      "33333333-3333-4333-8333-333333333333";
-    const parsed = createIssueSchema.parse({
-      request: "Continue in the explicitly pinned workspace",
-      ownerAgentId,
-      idempotencyKey: "board-create-workspace",
-      executionWorkspaceId,
-      executionWorkspacePreference: "reuse_existing",
-      executionWorkspaceSettings: {
-        mode: "reuse_existing",
-        environmentId: null,
-        workspaceStrategy: {
-          type: "project_primary",
-          baseRef: "main",
-        },
-      },
-    });
-
-    expect(parsed).toMatchObject({
-      executionWorkspaceId,
-      executionWorkspacePreference: "reuse_existing",
-      executionWorkspaceSettings: {
-        mode: "reuse_existing",
-        environmentId: null,
-        workspaceStrategy: {
-          type: "project_primary",
-          baseRef: "main",
-        },
-      },
-    });
-  });
-
-  it("enables the system safeguard with an empty strict payload", () => {
-    expect(upsertIssueWatchdogSchema.parse({})).toEqual({});
-    expect(upsertIssueWatchdogSchema.safeParse({ agentId: ownerAgentId }).success).toBe(false);
-    expect(upsertIssueWatchdogSchema.safeParse({ instructions: "legacy prompt" }).success).toBe(false);
   });
 
   it("accepts raw booleans and canonicalizes context-access masks to sparse false-only cells", () => {

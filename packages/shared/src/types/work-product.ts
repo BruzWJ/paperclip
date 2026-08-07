@@ -36,7 +36,6 @@ export interface IssueWorkProduct {
   companyId: string;
   projectId: string | null;
   issueId: string;
-  executionWorkspaceId: string | null;
   runtimeServiceId: string | null;
   type: IssueWorkProductType;
   provider: IssueWorkProductProvider | string;

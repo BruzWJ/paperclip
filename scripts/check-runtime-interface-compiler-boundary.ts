@@ -24,8 +24,6 @@ const COMPILER_REQUIRED = [
   "creatorUpdateTargets:",
   "mentionTargets:",
   "configureTargets:",
-  "agentHireCompanyToolOptions:",
-  "selectedCompanyTools:",
   "input.actionGrants.agent_configure === true",
   "compileRuntimeInterface",
   "compiledRuntimeInterfaceDigest",
@@ -38,12 +36,10 @@ const DATABASE_REQUIRED = [
   "actionGrants.agent_configure === true",
   "explicitConfigureTargets(",
   ": []",
-  "selectedCompanyTools(",
 ] as const;
 
 const CAPABILITY_REQUIRED = [
   "compileRuntimeInterface",
-  "grantSnapshot",
 ] as const;
 
 const RUN_TOOLS_REQUIRED = [

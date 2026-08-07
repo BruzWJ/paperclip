@@ -69,7 +69,7 @@ const NEW_TOKENS = [
   { name: "hex-64748b", value: "#64748b", comment: "ActivityCharts.tsx status 'backlog'; also the widely-repeated 'no project assigned' muted-slate fallback color (TOKEN-AUDIT.md 1.3) across Routines/MarkdownEditor/RoutineRunVariablesDialog/RoutineList/IssueColumns/editable-sections." },
 
   // --- Project-color-fallback indigo cluster (TOKEN-AUDIT.md 1.3) ---
-  { name: "hex-6366f1", value: "#6366f1", comment: "Project-color-fallback indigo seed default (ProjectDetail/PipelineSettings/IssueProperties/NewIssueDialog) — new-project-color-picker-seed family per TOKEN-AUDIT.md 1.3." },
+  { name: "hex-6366f1", value: "#6366f1", comment: "Project-color-fallback indigo seed default (ProjectDetail/IssueProperties/NewIssueDialog) — new-project-color-picker-seed family per TOKEN-AUDIT.md 1.3." },
 
   // --- Gradient tokens (verbatim, one per distinct gradient string; DESIGN.md: mint, don't collapse) ---
   { name: "gradient-extract-1", value: "linear-gradient(180deg,rgba(255,80,80,0.12),rgba(255,255,255,0.02))", comment: "Dashboard.tsx budget-alert card gradient." },
@@ -182,13 +182,6 @@ const SITES = [
     ],
   },
   {
-    file: "pages/PipelineSettings.tsx",
-    replaceAll: [
-      ['backgroundColor: selectedAutomationProject.color ?? "#6366f1"', 'backgroundColor: selectedAutomationProject.color ?? "var(--hex-6366f1)"'],
-      ['backgroundColor: project?.color ?? "#6366f1"', 'backgroundColor: project?.color ?? "var(--hex-6366f1)"'],
-    ],
-  },
-  {
     file: "components/issue-properties/IssueProperties.tsx",
     replaceAll: [
       ['backgroundColor: orderedProjects.find((p) => p.id === issue.projectId)?.color ?? "#6366f1"', 'backgroundColor: orderedProjects.find((p) => p.id === issue.projectId)?.color ?? "var(--hex-6366f1)"'],
@@ -288,11 +281,6 @@ const SITES = [
 // (idempotent: only injected if not already present).
 const ALLOWLIST_COMMENTS = [
   {
-    file: "pages/CompanyEnvironments.tsx",
-    anchor: 'background: "#0a0a0a",',
-    commentLine: "        // token-extraction: allowlisted — xterm.js terminal theme config; functional third-party option object, not a rendered CSS value.",
-  },
-  {
     file: "pages/CompanySettings.tsx",
     anchor: '                  <input\n                    type="color"',
     commentLine: "                  {/* token-extraction: allowlisted — <input type=\"color\"> value must be a real hex string, not a var() reference. */}",
@@ -316,11 +304,6 @@ const ALLOWLIST_COMMENTS = [
     file: "components/CompanyPatternIcon.tsx",
     anchor: "ctx.fillStyle = `rgb(${offR} ${offG} ${offB})`;",
     commentLine: "  // token-extraction: allowlisted — canvas 2D fillStyle computed at runtime from numeric channel props; not a static literal.",
-  },
-  {
-    file: "components/FileViewerSheet.tsx",
-    anchor: 'isHighlighted && "bg-[var(--paperclip-code-highlight-bg,rgba(250,204,21,0.12))]",',
-    commentLine: "                // token-extraction: allowlisted — half-migrated var(--x, fallback) pattern; --paperclip-code-highlight-bg/-border don't exist in index.css yet. Needs human decision (see TOKEN-AUDIT.md 2) before minting, since defining the var changes a fallback-CSS-var-expression, not a plain literal swap.",
   },
 ];
 
@@ -393,7 +376,7 @@ function main() {
 
   if (!cssOriginal.includes(marker)) {
     const tokenLines = NEW_TOKENS.map((t) => `  --${t.name}: ${t.value}; /* ${t.comment} */`).join("\n");
-    const block = `\n${marker}\n/* Batch 1/4: color literals only. Reused-from-existing-token sites (see\n   TOKEN-AUDIT.md section 1.1) are NOT duplicated here — they reference\n   --status-task-in_progress / --status-task-done directly at the call site.\n\n   Allowlist (sites intentionally left as hardcoded / functional literals,\n   NOT converted to tokens — each also carries an inline\n   \`token-extraction: allowlisted\` comment at the site):\n   - pages/CompanyEnvironments.tsx — xterm.js terminal theme config; functional JS values, third-party.\n   - pages/CompanySettings.tsx — <input type="color"> value; functional form control, not a rendered value.\n   - components/issue-properties/IssueProperties.tsx (newLabelColor) — color-picker seed persisted into label-create payload.\n   - pages/CompanySkills.tsx (DISCOVERY_ACCENTS) — persisted/compared skill.color JS data, not just rendered.\n   - components/IssueColumns.tsx (accentColor fallback) — also feeds pickTextColorForPillBg() contrast math.\n   - components/CompanyPatternIcon.tsx — canvas fillStyle computed at runtime from numeric props, not a static literal.\n   - components/FileViewerSheet.tsx — half-migrated var(--paperclip-code-highlight-*, fallback) pattern; needs human decision, see TOKEN-AUDIT.md section 2.\n   - pages/InviteUxLab.tsx (brandColor prop, x2) — demo/showcase-only prop feeding CompanyPatternIcon's hexToHue() color math, not a rendered CSS value.\n*/\n:root {\n${tokenLines}\n}\n`;
+    const block = `\n${marker}\n/* Batch 1/4: color literals only. Reused-from-existing-token sites (see\n   TOKEN-AUDIT.md section 1.1) are NOT duplicated here — they reference\n   --status-task-in_progress / --status-task-done directly at the call site.\n\n   Allowlist (sites intentionally left as hardcoded / functional literals,\n   NOT converted to tokens — each also carries an inline\n   \`token-extraction: allowlisted\` comment at the site):\n   - pages/CompanySettings.tsx — <input type="color"> value; functional form control, not a rendered value.\n   - components/issue-properties/IssueProperties.tsx (newLabelColor) — color-picker seed persisted into label-create payload.\n   - pages/CompanySkills.tsx (DISCOVERY_ACCENTS) — persisted/compared skill.color JS data, not just rendered.\n   - components/IssueColumns.tsx (accentColor fallback) — also feeds pickTextColorForPillBg() contrast math.\n   - components/CompanyPatternIcon.tsx — canvas fillStyle computed at runtime from numeric props, not a static literal.\n   - pages/InviteUxLab.tsx (brandColor prop, x2) — demo/showcase-only prop feeding CompanyPatternIcon's hexToHue() color math, not a rendered CSS value.\n*/\n:root {\n${tokenLines}\n}\n`;
     cssNext = cssOriginal + block;
     cssChanged = true;
   }

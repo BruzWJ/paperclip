@@ -97,7 +97,6 @@ export function decodeIssueDisposition(value: unknown): IssueDisposition {
 }
 
 export const SYSTEM_CREATOR_SOURCE_KINDS = [
-  "watchdog",
   "recovery",
   "liveness",
 ] as const;
@@ -119,7 +118,7 @@ export function decodeSystemCreatorSourceKind(
 ): SystemCreatorSourceKind {
   if (!isSystemCreatorSourceKind(value)) {
     throw new TypeError(
-      "System creator source must be watchdog, recovery, or liveness",
+      "System creator source must be recovery or liveness",
     );
   }
   return value;
@@ -209,7 +208,6 @@ export interface RuntimeAgentConfigurationSnapshot {
   contextGrants: SparseBooleanGrantMap<AgentContextGrantKey>;
   actionGrants: SparseBooleanGrantMap<PaperclipActionKey>;
   mentionReachGrants: SparseBooleanGrantMap<AgentMentionReachGrantKey>;
-  companyToolIds: string[];
 }
 
 export interface RuntimeAgentConfigurationUpdate {
@@ -220,7 +218,6 @@ export interface RuntimeAgentConfigurationUpdate {
   contextGrants?: SparseBooleanGrantMap<AgentContextGrantKey>;
   actionGrants?: SparseBooleanGrantMap<PaperclipActionKey>;
   mentionReachGrants?: SparseBooleanGrantMap<AgentMentionReachGrantKey>;
-  companyToolIds?: string[];
 }
 
 export const AGENT_VISIBLE_ISSUE_STATUSES = [
@@ -310,7 +307,6 @@ export const ISSUE_EXECUTION_REF_SOURCE_KINDS = [
   "issue_request",
   "issue_reassignment",
   "issue_reopen",
-  "board_chat",
   "human_comment_mention",
   "routine_dispatch",
   "issue_update",
@@ -469,7 +465,6 @@ export interface RemoteWorkspaceLaunch {
   repositoryLocator: string;
   repositoryRef: string | null;
   pullRequestSelector: string | null;
-  environmentSelector: string | null;
 }
 
 export const PAPERCLIP_RUN_TOOLS_KIND = "paperclip.run-tools/v1" as const;

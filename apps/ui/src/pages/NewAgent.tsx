@@ -149,7 +149,6 @@ export function NewAgent() {
       !selectedCompanyId
       || !name.trim()
       || !initialRequest.trim()
-      || !configValues.defaultEnvironmentId
       || !adapterConfiguration.valid
     ) return;
     setFormError(null);
@@ -248,7 +247,6 @@ export function NewAgent() {
 
         <div className="border-t border-border px-4 py-4">
           <RuntimeAgentConfigurationFields
-            companyId={selectedCompanyId ?? ""}
             value={runtimeAccess}
             onChange={setRuntimeAccess}
             disabled={createAgent.isPending}
@@ -261,7 +259,6 @@ export function NewAgent() {
           values={configValues}
           onChange={(patch) => setConfigValues((prev) => ({ ...prev, ...patch }))}
           applyAdapterSchemaDefaults={false}
-          requireExplicitExecutionEnvironment
         />
 
         <div className="border-t border-border px-4 py-4">
@@ -390,7 +387,6 @@ export function NewAgent() {
                 disabled={
                   !name.trim()
                   || !initialRequest.trim()
-                  || !configValues.defaultEnvironmentId
                   || !adapterConfiguration.valid
                   || createAgent.isPending
                 }

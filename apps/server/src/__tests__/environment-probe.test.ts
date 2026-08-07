@@ -232,7 +232,6 @@ describe("probeEnvironment", () => {
     const result = await probeEnvironment({} as any, environment, {
       companyId: "company-1",
       pluginWorkerManager: {} as any,
-      applyCustomImageTemplate: true,
       acquireSandboxRuntimeLease: true,
     });
 
@@ -249,7 +248,6 @@ describe("probeEnvironment", () => {
       runId: null,
       persistedExecutionWorkspace: null,
       adapterType: null,
-      applyCustomImageTemplate: true,
     }));
     expect(mockRuntimeAcquireRunLease.mock.calls[0]?.[0].environment.config).toMatchObject({
       provider: "daytona",

@@ -8,8 +8,8 @@ summary: Canonical agent identity, explicit grants, provider configuration, and 
 - Org position is display/delegation structure, not authority.
 - No role, first-agent, root-agent, title, or manager default grants permissions.
 - Paperclip does not manage prompt templates, instruction files/bundles, provider homes, generic API keys, or agent-wide sessions.
-- Context grants, five configurable action grants, mention reach, company tools,
-  and genuine company skills are selected explicitly and default false/empty.
+- Context grants, five configurable action grants, mention reach, and genuine
+  company skills are selected explicitly.
   Issue updates are relationship-derived: the owner receives its active-issue
   update and an exact creator execution receives eligible-child updates. Both
   use one canonical comment with an automatic counterpart mention. A creator may
@@ -32,18 +32,16 @@ The creation dialog contains:
 
 ### Provider adapter
 
-Select an adapter and configure only its supported operator-owned native fields. Authentication/configuration declarations are target-scoped and opaque. The form has no Paperclip prompt, bootstrap instructions, agent home, adapter-configured workspace fallback, session-key strategy, or general Paperclip credential.
+Select an adapter and configure only its supported operator-owned native fields. Authentication/configuration declarations are target-scoped and opaque. The form has no Paperclip prompt, bootstrap instructions, agent home, adapter-configured run-directory fallback, session-key strategy, or general Paperclip credential.
 
 ### Runtime policy
 
 - lifecycle eligibility and budget
 - execution timeout/grace controls
-- execution-workspace policy
 - nine context-dial cells
 - five configurable action grants, including one combined create-and-assign
   grant
 - two mention-reach grants
-- selected company tools
 - selected genuine company skills
 
 The creation request writes explicit values. Missing grants resolve false and missing selections resolve empty; the UI never stamps privileged defaults for the first agent.
@@ -66,7 +64,12 @@ Show:
 
 ### Configuration
 
-Board users can edit identity metadata, provider-native declaration, runtime limits, workspace policy, and explicit grants/selections. Present the nine context cells as a 3×3 matrix and the action/mention/tool/skill grants as independent controls. Do not render separate assign or lifecycle controls: create-and-assign is one grant, while the canonical lifecycle/creator update follows the issue owner/creator relationship and automatically mentions its counterpart.
+Board users can edit identity metadata, provider-native declaration, runtime
+limits, and explicit grants/selections. Present the nine context cells as a 3×3
+matrix and the action/mention/skill grants as independent controls. Do not
+render separate assign or lifecycle controls: create-and-assign is one grant,
+while the canonical lifecycle/creator update follows the issue owner/creator
+relationship and automatically mentions its counterpart.
 
 Explain prospective behavior: narrowing a dial changes gateway acceptance immediately, but content already inside one live provider-native conversation remains there; the board/user issue-execution fresh-session action is required to discard it.
 
@@ -76,7 +79,9 @@ List structured productive and consult issue-execution runs. Show status, issue,
 
 ### Skills and tools
 
-Skills list only the genuine company skills explicitly selected for this agent, including version/provenance. Tools list only explicit company-tool selections and their current readiness. Neither selection grants Paperclip issue authority.
+Skills list only the genuine company skills explicitly selected for this agent,
+including version/provenance. Skill selection grants no Paperclip issue
+authority.
 
 ## Issue-scoped controls
 
@@ -86,7 +91,7 @@ Fresh-session, reassignment, and reopen live on the issue/execution surface:
 | --- | --- |
 | Fresh session | Board/user only; one issue execution; cancels its live run, drops Paperclip's correlation, audits actor/scope/reason |
 | Reassign | Creator/board authority; advances ownership epoch and starts the new owner fresh |
-| Reopen | Board-user audited command; preserves owner/epoch/session/workspace, clears terminal disposition, and returns either one invokable-agent execution ref or a provider-free system-escalation board-only result |
+| Reopen | Board-user audited command; preserves owner/epoch/session/run-directory binding, clears terminal disposition, and returns either one invokable-agent execution ref or a provider-free system-escalation board-only result |
 
 These are distinct operations. Editing agent configuration does not perform any of them.
 

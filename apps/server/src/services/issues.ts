@@ -10,9 +10,7 @@ import {
   companies,
   companyMemberships,
   documentRevisions,
-  goals,
   routineRuns,
-  executionWorkspaces,
   issueApprovals,
   issueAttachments,
   issueCreateIdempotencyKeys,
@@ -20,7 +18,6 @@ import {
   issueExecutionRefs,
   issueInboxArchives,
   issueLabels,
-  issueWatchdogs,
   issueRelations,
   issueComments,
   issueCommentProjectionSources,
@@ -29,7 +26,7 @@ import {
   issueReadStates,
   issues,
   labels,
-  projectWorkspaces,
+  goals,
   projects,
   workspaceOperations,
   authUsers,
@@ -54,7 +51,6 @@ import type {
   IssueExecutionRunStatus,
   IssueRelationIssueSummary,
   IssueStatus,
-  IssueWatchdog,
   LowTrustBoundary,
 } from "@paperclipai/shared";
 import {
@@ -68,34 +64,17 @@ import {
 } from "@paperclipai/shared";
 import { parseObject } from "@paperclipai/adapter-utils/server-utils";
 import { conflict, notFound, unprocessable } from "../errors.js";
-import {
-  defaultIssueExecutionWorkspaceSettingsForProject,
-  gateProjectExecutionWorkspacePolicy,
-  issueExecutionWorkspaceModeForPersistedWorkspace,
-  isUnrunnableWorktreeCombo,
-  parseIssueExecutionWorkspaceSettings,
-  parseProjectExecutionWorkspacePolicy,
-  resolvePinnedIssueWorkspaceStrategyType,
-  WORKSPACE_WORKTREE_REQUIRES_PROJECT_CODE,
-  WORKSPACE_WORKTREE_REQUIRES_PROJECT_MESSAGE,
-  WORKSPACE_WORKTREE_REQUIRES_PROJECT_REMEDIATION,
-  type ParsedExecutionWorkspaceMode,
-} from "./execution-workspace-policy.js";
-import { mergeExecutionWorkspaceConfig } from "./execution-workspaces.js";
-import { buildInitialIssueMonitorFields, normalizeIssueExecutionPolicy } from "./issue-execution-policy.js";
 import { instanceSettingsService } from "./instance-settings.js";
 import { redactCurrentUserText } from "../log-redaction.js";
 import { redactSensitiveText } from "../redaction.js";
-import { resolveIssueGoalId, resolveNextIssueGoalId } from "./issue-goal-fallback.js";
+import { resolveNextIssueGoalId } from "./issue-goal-fallback.js";
 import { syncIssue } from "./issue-references.js";
 import { getDefaultCompanyGoal } from "./goals.js";
 import {
   InvokableIssueOwnerRejected,
   resolveInvokableIssueOwnerFromDb,
 } from "./agent-invokability.js";
-import { summarizeIssueWatchdog } from "./issue-watchdogs.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
-import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
 import { resolveCurrentIssueOwnerRunLinkages } from "./productive-run-linkage.js";
 import {
   listLiveOwnerIssueIds,
@@ -225,85 +204,6 @@ function applyStatusSideEffects(
   return patch;
 }
 
-function workspaceWorktreeRequiresProjectDetails() {
-  return {
-    code: WORKSPACE_WORKTREE_REQUIRES_PROJECT_CODE,
-    remediation: WORKSPACE_WORKTREE_REQUIRES_PROJECT_REMEDIATION,
-  };
-}
-
-function assertExplicitPinnedWorktreeIssueRunnable(input: {
-  projectId: string | null | undefined;
-  projectWorkspaceId: string | null | undefined;
-  executionWorkspaceId: string | null | undefined;
-  executionWorkspacePreference: string | null | undefined;
-  executionWorkspaceSettings: unknown;
-}) {
-  const settings = parseIssueExecutionWorkspaceSettings(input.executionWorkspaceSettings);
-  const mode = settings?.mode;
-  if (mode !== "isolated_workspace" && mode !== "operator_branch") return;
-
-  const resolvedMode = mode as ParsedExecutionWorkspaceMode;
-  if (
-    isUnrunnableWorktreeCombo({
-      issue: {
-        projectId: input.projectId ?? null,
-        projectWorkspaceId: input.projectWorkspaceId ?? null,
-      },
-      resolvedMode,
-      resolvedStrategy: resolvePinnedIssueWorkspaceStrategyType({
-        mode: resolvedMode,
-        issueSettings: settings,
-      }),
-      reusableExecutionWorkspaceAvailable:
-        input.executionWorkspacePreference === "reuse_existing" &&
-        Boolean(input.executionWorkspaceId),
-    })
-  ) {
-    throw unprocessable(
-      WORKSPACE_WORKTREE_REQUIRES_PROJECT_MESSAGE,
-      workspaceWorktreeRequiresProjectDetails(),
-    );
-  }
-}
-
-function buildReusedExecutionWorkspaceConfigPatchFromIssueSettings(
-  settings: ReturnType<typeof parseIssueExecutionWorkspaceSettings>,
-) {
-  return {
-    environmentId: settings?.environmentId ?? null,
-    provisionCommand: settings?.workspaceStrategy?.provisionCommand ?? null,
-    teardownCommand: settings?.workspaceStrategy?.teardownCommand ?? null,
-    workspaceRuntime: settings?.workspaceRuntime ?? null,
-  };
-}
-
-// Accepted-plan children are not realized yet, so carry only unresolved
-// workspace intent and let the first child run render/persist its own branch.
-function buildPreRealizationExecutionWorkspaceSettings(raw: unknown): Record<string, unknown> | null {
-  const settings = parseIssueExecutionWorkspaceSettings(raw, { includeEnvironmentId: true });
-  if (!settings) return null;
-  const mode =
-    settings.mode && settings.mode !== "inherit" && settings.mode !== "reuse_existing"
-      ? settings.mode
-      : null;
-  const next: Record<string, unknown> = {};
-  if (mode) next.mode = mode;
-  if (settings.environmentId !== undefined) next.environmentId = settings.environmentId;
-  if (settings.workspaceRuntime) next.workspaceRuntime = settings.workspaceRuntime;
-  if (settings.workspaceStrategy) {
-    next.workspaceStrategy = {
-      type: settings.workspaceStrategy.type,
-      ...(settings.workspaceStrategy.baseRef ? { baseRef: settings.workspaceStrategy.baseRef } : {}),
-      ...(settings.workspaceStrategy.branchTemplate ? { branchTemplate: settings.workspaceStrategy.branchTemplate } : {}),
-      ...(settings.workspaceStrategy.worktreeParentDir ? { worktreeParentDir: settings.workspaceStrategy.worktreeParentDir } : {}),
-      ...(settings.workspaceStrategy.provisionCommand ? { provisionCommand: settings.workspaceStrategy.provisionCommand } : {}),
-      ...(settings.workspaceStrategy.teardownCommand ? { teardownCommand: settings.workspaceStrategy.teardownCommand } : {}),
-    };
-  }
-  return Object.keys(next).length > 0 ? next : null;
-}
-
 // Express's default `qs` parser binds repeated query keys to a `string[]`,
 // so a request like `?status=todo&status=in_progress` arrives here as an
 // array. Single-key + comma-separated forms remain valid too; normalize the
@@ -341,8 +241,6 @@ export interface IssueFilters {
   inboxArchivedByUserId?: string;
   unreadForUserId?: string;
   projectId?: string;
-  workspaceId?: string;
-  executionWorkspaceId?: string;
   parentId?: string;
   descendantOf?: string;
   labelId?: string;
@@ -396,7 +294,6 @@ type IssueControlStateUpdate = Partial<
     | "completedAt"
     | "cancelledAt"
     | "createdAt"
-    | "executionWorkspaceId"
   >
 > & {
   labelIds?: string[];
@@ -418,7 +315,6 @@ type IssueActiveRunRow = {
 type IssueLabelEnrichment = {
   labels: IssueLabelRow[];
   labelIds: string[];
-  watchdog?: IssueWatchdog | null;
 };
 type IssueWithLabels = IssueRow & IssueLabelEnrichment;
 type IssueWithLabelsAndRun = IssueWithLabels & { activeRun: IssueActiveRunRow | null };
@@ -799,6 +695,7 @@ async function listUnresolvedBlockerIssueIds(
     )
     .then((rows) => rows.map((row) => row.id));
 }
+
 async function getProjectDefaultGoalId(
   db: ProjectGoalReader,
   companyId: string,
@@ -1198,9 +1095,8 @@ async function withIssueLabels<
 >(dbOrTx: any, rows: T[]): Promise<Array<T & IssueLabelEnrichment>> {
   if (rows.length === 0) return [];
   const issueIds = rows.map((row) => row.id);
-  const [labelsByIssueId, watchdogByIssueId, workspaceBindings] = await Promise.all([
+  const [labelsByIssueId, workspaceBindings] = await Promise.all([
     labelMapForIssues(dbOrTx, issueIds),
-    watchdogMapForIssues(dbOrTx, rows),
     dbOrTx
       .select({
         companyId: issueExecutionWorkspaceBindings.companyId,
@@ -1239,38 +1135,8 @@ async function withIssueLabels<
       executionWorkspaceId: currentBindingByIssueId.get(row.id) ?? null,
       labels: issueLabels,
       labelIds: issueLabels.map((label) => label.id),
-      watchdog: watchdogByIssueId.get(row.id) ?? null,
     };
   });
-}
-
-async function watchdogMapForIssues<
-  T extends Pick<IssueRow, "id" | "companyId">,
->(dbOrTx: any, rows: T[]): Promise<Map<string, IssueWatchdog>> {
-  const map = new Map<string, IssueWatchdog>();
-  if (rows.length === 0) return map;
-  const byCompany = new Map<string, string[]>();
-  for (const row of rows) {
-    const ids = byCompany.get(row.companyId) ?? [];
-    ids.push(row.id);
-    byCompany.set(row.companyId, ids);
-  }
-  for (const [companyId, issueIds] of byCompany.entries()) {
-    for (const issueIdChunk of chunkList([...new Set(issueIds)], ISSUE_LIST_RELATED_QUERY_CHUNK_SIZE)) {
-      const watchdogRows = await dbOrTx
-        .select()
-        .from(issueWatchdogs)
-        .where(and(
-          eq(issueWatchdogs.companyId, companyId),
-          inArray(issueWatchdogs.issueId, issueIdChunk),
-          eq(issueWatchdogs.status, "active"),
-        ));
-      for (const row of watchdogRows) {
-        map.set(row.issueId, summarizeIssueWatchdog(row));
-      }
-    }
-  }
-  return map;
 }
 
 const BLOCKER_ATTENTION_PENDING_APPROVAL_STATUSES = ["pending", "revision_requested"];
@@ -1926,7 +1792,6 @@ const issueListSelect = {
   id: issues.id,
   companyId: issues.companyId,
   projectId: issues.projectId,
-  projectWorkspaceId: issues.projectWorkspaceId,
   goalId: issues.goalId,
   parentId: issues.parentId,
   parentOwnershipEpoch: issues.parentOwnershipEpoch,
@@ -1979,11 +1844,6 @@ const issueListSelect = {
   billingCode: issues.billingCode,
   executionPolicy: sql<null>`null`,
   executionState: sql<null>`null`,
-  monitorNextCheckAt: issues.monitorNextCheckAt,
-  monitorLastTriggeredAt: issues.monitorLastTriggeredAt,
-  monitorAttemptCount: issues.monitorAttemptCount,
-  monitorNotes: issues.monitorNotes,
-  monitorScheduledBy: issues.monitorScheduledBy,
   executionWorkspaceId: sql<string | null>`(
     select ${issueExecutionWorkspaceBindings.executionWorkspaceId}
     from ${issueExecutionWorkspaceBindings}
@@ -1992,8 +1852,6 @@ const issueListSelect = {
       and ${issueExecutionWorkspaceBindings.ownershipEpoch} = ${issues.ownershipEpoch}
     limit 1
   )`,
-  executionWorkspacePreference: issues.executionWorkspacePreference,
-  executionWorkspaceSettings: sql<null>`null`,
   sourceTrust: issues.sourceTrust,
   startedAt: issues.startedAt,
   completedAt: issues.completedAt,
@@ -2459,9 +2317,8 @@ async function listIssueBlockedInboxAttentionMap(
       continue;
     }
 
-    const hasMonitor = Boolean(row.monitorNextCheckAt && row.monitorNextCheckAt.getTime() > Date.now());
     const external =
-      row.boardPresentationStatus === "blocked" && !hasMonitor
+      row.boardPresentationStatus === "blocked"
         ? externalWaitFromRequest(row.request)
         : null;
     if (external) {
@@ -2523,17 +2380,6 @@ function assertValidOwnerAgentFilter(ownerAgentFilter: string | null | undefined
   }
 }
 
-function currentExecutionWorkspaceBindingCondition(executionWorkspaceId: string) {
-  return sql<boolean>`exists (
-    select 1
-    from ${issueExecutionWorkspaceBindings}
-    where ${issueExecutionWorkspaceBindings.companyId} = ${issues.companyId}
-      and ${issueExecutionWorkspaceBindings.issueId} = ${issues.id}
-      and ${issueExecutionWorkspaceBindings.ownershipEpoch} = ${issues.ownershipEpoch}
-      and ${issueExecutionWorkspaceBindings.executionWorkspaceId} = ${executionWorkspaceId}
-  )`;
-}
-
 async function blockedInboxIssueConditions(
   dbOrTx: any,
   companyId: string,
@@ -2586,15 +2432,6 @@ async function blockedInboxIssueConditions(
   if (inboxArchivedByUserId) conditions.push(inboxVisibleForUserCondition(companyId, inboxArchivedByUserId));
   if (unreadForUserId) conditions.push(unreadForUserCondition(companyId, unreadForUserId));
   if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
-  if (filters?.workspaceId) {
-    conditions.push(or(
-      currentExecutionWorkspaceBindingCondition(filters.workspaceId),
-      eq(issues.projectWorkspaceId, filters.workspaceId),
-    )!);
-  }
-  if (filters?.executionWorkspaceId) {
-    conditions.push(currentExecutionWorkspaceBindingCondition(filters.executionWorkspaceId));
-  }
   if (filters?.parentId) conditions.push(eq(issues.parentId, filters.parentId));
   if (filters?.originKind) conditions.push(eq(issues.originKind, filters.originKind));
   if (filters?.originKindPrefix) conditions.push(like(issues.originKind, `${filters.originKindPrefix}%`));
@@ -3518,52 +3355,6 @@ export function issueService(db: Db) {
     });
   }
 
-  async function assertValidProjectWorkspace(
-    companyId: string,
-    projectId: string | null | undefined,
-    projectWorkspaceId: string,
-    dbOrTx: DbReader = db,
-  ) {
-    const workspace = await dbOrTx
-      .select({
-        id: projectWorkspaces.id,
-        companyId: projectWorkspaces.companyId,
-        projectId: projectWorkspaces.projectId,
-      })
-      .from(projectWorkspaces)
-      .where(eq(projectWorkspaces.id, projectWorkspaceId))
-      .then((rows) => rows[0] ?? null);
-    if (!workspace) throw notFound("Project workspace not found");
-    if (workspace.companyId !== companyId) throw unprocessable("Project workspace must belong to same company");
-    if (projectId && workspace.projectId !== projectId) {
-      throw unprocessable("Project workspace must belong to the selected project");
-    }
-    return workspace;
-  }
-
-  async function assertValidExecutionWorkspace(
-    companyId: string,
-    projectId: string | null | undefined,
-    executionWorkspaceId: string,
-    dbOrTx: DbReader = db,
-  ) {
-    const workspace = await dbOrTx
-      .select({
-        id: executionWorkspaces.id,
-        companyId: executionWorkspaces.companyId,
-        projectId: executionWorkspaces.projectId,
-      })
-      .from(executionWorkspaces)
-      .where(eq(executionWorkspaces.id, executionWorkspaceId))
-      .then((rows) => rows[0] ?? null);
-    if (!workspace) throw notFound("Execution workspace not found");
-    if (workspace.companyId !== companyId) throw unprocessable("Execution workspace must belong to same company");
-    if (projectId && workspace.projectId !== projectId) {
-      throw unprocessable("Execution workspace must belong to the selected project");
-    }
-    return workspace;
-  }
-
   async function assertValidLabelIds(companyId: string, labelIds: string[], dbOrTx: any = db) {
     if (labelIds.length === 0) return;
     const existing = await dbOrTx
@@ -3877,15 +3668,6 @@ export function issueService(db: Db) {
         conditions.push(unreadForUserCondition(companyId, unreadForUserId));
       }
       if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
-      if (filters?.workspaceId) {
-        conditions.push(or(
-          currentExecutionWorkspaceBindingCondition(filters.workspaceId),
-          eq(issues.projectWorkspaceId, filters.workspaceId),
-        )!);
-      }
-      if (filters?.executionWorkspaceId) {
-        conditions.push(currentExecutionWorkspaceBindingCondition(filters.executionWorkspaceId));
-      }
       if (filters?.parentId) conditions.push(eq(issues.parentId, filters.parentId));
       if (filters?.originKind) conditions.push(eq(issues.originKind, filters.originKind));
       if (filters?.originKindPrefix) conditions.push(like(issues.originKind, `${filters.originKindPrefix}%`));
@@ -4046,15 +3828,6 @@ export function issueService(db: Db) {
       }
       if (filters?.ownerUserId) conditions.push(eq(issues.ownerUserId, filters.ownerUserId));
       if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
-      if (filters?.workspaceId) {
-        conditions.push(or(
-          currentExecutionWorkspaceBindingCondition(filters.workspaceId),
-          eq(issues.projectWorkspaceId, filters.workspaceId),
-        )!);
-      }
-      if (filters?.executionWorkspaceId) {
-        conditions.push(currentExecutionWorkspaceBindingCondition(filters.executionWorkspaceId));
-      }
       if (filters?.parentId) conditions.push(eq(issues.parentId, filters.parentId));
       if (filters?.originKind) conditions.push(eq(issues.originKind, filters.originKind));
       if (filters?.originKindPrefix) conditions.push(like(issues.originKind, `${filters.originKindPrefix}%`));
@@ -4538,12 +4311,6 @@ export function issueService(db: Db) {
         actorUserId,
         ...issueData
       } = data;
-      const isolatedWorkspacesEnabled = (await instanceSettings.getExperimental()).enableIsolatedWorkspaces;
-      if (!isolatedWorkspacesEnabled) {
-        delete issueData.executionWorkspacePreference;
-        delete issueData.executionWorkspaceSettings;
-      }
-
       if (issueData.boardPresentationStatus) {
         assertTransition(
           existing.boardPresentationStatus,
@@ -4599,69 +4366,6 @@ export function issueService(db: Db) {
           throw error;
         }
       }
-      let nextProjectId = issueData.projectId !== undefined ? issueData.projectId : existing.projectId;
-      const nextProjectWorkspaceId =
-        issueData.projectWorkspaceId !== undefined ? issueData.projectWorkspaceId : existing.projectWorkspaceId;
-      const currentExecutionWorkspaceId = await dbOrTx
-        .select({
-          executionWorkspaceId: issueExecutionWorkspaceBindings.executionWorkspaceId,
-        })
-        .from(issueExecutionWorkspaceBindings)
-        .where(and(
-          eq(issueExecutionWorkspaceBindings.companyId, existing.companyId),
-          eq(issueExecutionWorkspaceBindings.issueId, existing.id),
-          eq(issueExecutionWorkspaceBindings.ownershipEpoch, existing.ownershipEpoch),
-        ))
-        .then((rows: Array<{ executionWorkspaceId: string }>) => rows[0]?.executionWorkspaceId ?? null);
-      const nextExecutionWorkspacePreference =
-        issueData.executionWorkspacePreference !== undefined
-          ? issueData.executionWorkspacePreference
-          : existing.executionWorkspacePreference;
-      const nextExecutionWorkspaceSettings =
-        issueData.executionWorkspaceSettings !== undefined
-          ? parseIssueExecutionWorkspaceSettings(issueData.executionWorkspaceSettings)
-          : parseIssueExecutionWorkspaceSettings(existing.executionWorkspaceSettings);
-      if (issueData.executionWorkspaceSettings !== undefined) {
-        patch.executionWorkspaceSettings = nextExecutionWorkspaceSettings
-          ? { ...nextExecutionWorkspaceSettings }
-          : null;
-      }
-      let validatedProjectWorkspace: { projectId: string } | null = null;
-      let validatedExecutionWorkspace: { projectId: string | null } | null = null;
-      if (!nextProjectId && nextProjectWorkspaceId) {
-        const workspace = await assertValidProjectWorkspace(existing.companyId, null, nextProjectWorkspaceId);
-        validatedProjectWorkspace = workspace;
-        nextProjectId = workspace.projectId;
-        patch.projectId = workspace.projectId;
-      }
-      if (!nextProjectId && currentExecutionWorkspaceId) {
-        const workspace = await assertValidExecutionWorkspace(existing.companyId, null, currentExecutionWorkspaceId);
-        validatedExecutionWorkspace = workspace;
-        if (workspace.projectId) {
-          nextProjectId = workspace.projectId;
-          patch.projectId = workspace.projectId;
-        }
-      }
-      if (nextProjectWorkspaceId) {
-        if (!validatedProjectWorkspace) {
-          await assertValidProjectWorkspace(existing.companyId, nextProjectId, nextProjectWorkspaceId);
-        }
-      }
-      if (currentExecutionWorkspaceId) {
-        if (!validatedExecutionWorkspace) {
-          await assertValidExecutionWorkspace(existing.companyId, nextProjectId, currentExecutionWorkspaceId);
-        }
-      }
-      if (isolatedWorkspacesEnabled && issueData.executionWorkspaceSettings !== undefined) {
-        assertExplicitPinnedWorktreeIssueRunnable({
-          projectId: nextProjectId ?? null,
-          projectWorkspaceId: nextProjectWorkspaceId ?? null,
-          executionWorkspaceId: currentExecutionWorkspaceId,
-          executionWorkspacePreference: nextExecutionWorkspacePreference ?? null,
-          executionWorkspaceSettings: issueData.executionWorkspaceSettings,
-        });
-      }
-
       applyStatusSideEffects(issueData.boardPresentationStatus, patch);
       if (
         issueData.boardPresentationStatus &&
@@ -4702,14 +4406,6 @@ export function issueService(db: Db) {
           .returning()
           .then((rows: Array<typeof issues.$inferSelect>) => rows[0] ?? null);
         if (!updated) return null;
-        if (
-          (updated.boardPresentationStatus === "done" ||
-            updated.boardPresentationStatus === "cancelled") &&
-          existing.boardPresentationStatus !==
-            updated.boardPresentationStatus
-        ) {
-          await finalizeSummarySlotsForTerminalIssue(tx, updated);
-        }
         if (nextLabelIds !== undefined) {
           await syncIssueLabels(updated.id, existing.companyId, nextLabelIds, tx);
         }
@@ -4725,75 +4421,11 @@ export function issueService(db: Db) {
             tx,
           );
         }
-        if (
-          issueData.executionWorkspaceSettings !== undefined &&
-          currentExecutionWorkspaceId &&
-          nextExecutionWorkspacePreference === "reuse_existing"
-        ) {
-          const workspace = await tx
-            .select({
-              id: executionWorkspaces.id,
-              metadata: executionWorkspaces.metadata,
-            })
-            .from(executionWorkspaces)
-            .where(
-              and(
-                eq(executionWorkspaces.id, currentExecutionWorkspaceId),
-                eq(executionWorkspaces.companyId, existing.companyId),
-              ),
-            )
-            .then((rows: Array<{ id: string; metadata: unknown }>) => rows[0] ?? null);
-          if (workspace) {
-            await tx
-              .update(executionWorkspaces)
-              .set({
-                metadata: mergeExecutionWorkspaceConfig(
-                  (workspace.metadata as Record<string, unknown> | null) ?? null,
-                  buildReusedExecutionWorkspaceConfigPatchFromIssueSettings(nextExecutionWorkspaceSettings),
-                ),
-                updatedAt: new Date(),
-              })
-              .where(eq(executionWorkspaces.id, workspace.id));
-          }
-        }
         const [enriched] = await withIssueLabels(tx, [updated]);
         return enriched;
       };
 
       return dbOrTx === db ? db.transaction(runUpdate) : runUpdate(dbOrTx);
-    },
-
-    clearExecutionWorkspaceEnvironmentSelection: async (companyId: string, environmentId: string) => {
-      const rows = await db
-        .select({
-          id: issues.id,
-          executionWorkspaceSettings: issues.executionWorkspaceSettings,
-        })
-        .from(issues)
-        .where(eq(issues.companyId, companyId));
-
-      let cleared = 0;
-      for (const row of rows) {
-        const settings = parseIssueExecutionWorkspaceSettings(
-          row.executionWorkspaceSettings,
-          { includeEnvironmentId: true },
-        );
-        if (settings?.environmentId !== environmentId) continue;
-
-        await db
-          .update(issues)
-          .set({
-            executionWorkspaceSettings: {
-              ...settings,
-              environmentId: null,
-            },
-            updatedAt: new Date(),
-          })
-          .where(eq(issues.id, row.id));
-        cleared += 1;
-      }
-
-      return cleared;
     },
 
     listLabels: (companyId: string) =>
@@ -5291,7 +4923,7 @@ export function issueService(db: Db) {
         currentId = parent.parentId ?? null;
       }
 
-      // Batch-fetch referenced projects and goals
+      // Batch-fetch referenced projects and goals.
       const projectIds = [...new Set(raw.map(a => a.projectId).filter((id): id is string => id != null))];
       const goalIds = [...new Set(raw.map(a => a.goalId).filter((id): id is string => id != null))];
 
@@ -5301,74 +4933,16 @@ export function issueService(db: Db) {
         description: string | null;
         status: string;
         goalId: string | null;
-        workspaces: Array<{
-          id: string;
-          companyId: string;
-          projectId: string;
-          name: string;
-          cwd: string | null;
-          repoUrl: string | null;
-          repoRef: string | null;
-          metadata: Record<string, unknown> | null;
-          isPrimary: boolean;
-          createdAt: Date;
-          updatedAt: Date;
-        }>;
-        primaryWorkspace: {
-          id: string;
-          companyId: string;
-          projectId: string;
-          name: string;
-          cwd: string | null;
-          repoUrl: string | null;
-          repoRef: string | null;
-          metadata: Record<string, unknown> | null;
-          isPrimary: boolean;
-          createdAt: Date;
-          updatedAt: Date;
-        } | null;
       }>();
       const goalMap = new Map<string, { id: string; title: string; description: string | null; level: string; status: string }>();
 
       if (projectIds.length > 0) {
-        const workspaceRows = await db
-          .select()
-          .from(projectWorkspaces)
-          .where(inArray(projectWorkspaces.projectId, projectIds))
-          .orderBy(desc(projectWorkspaces.isPrimary), asc(projectWorkspaces.createdAt), asc(projectWorkspaces.id));
-        const workspaceMap = new Map<string, Array<(typeof workspaceRows)[number]>>();
-        for (const workspace of workspaceRows) {
-          const existing = workspaceMap.get(workspace.projectId);
-          if (existing) existing.push(workspace);
-          else workspaceMap.set(workspace.projectId, [workspace]);
-        }
-
         const rows = await db.select({
           id: projects.id, name: projects.name, description: projects.description,
           status: projects.status, goalId: projects.goalId,
         }).from(projects).where(inArray(projects.id, projectIds));
         for (const r of rows) {
-          const projectWorkspaceRows = workspaceMap.get(r.id) ?? [];
-          const workspaces = projectWorkspaceRows.map((workspace) => ({
-            id: workspace.id,
-            companyId: workspace.companyId,
-            projectId: workspace.projectId,
-            name: workspace.name,
-            cwd: workspace.cwd,
-            repoUrl: workspace.repoUrl ?? null,
-            repoRef: workspace.repoRef ?? null,
-            metadata: (workspace.metadata as Record<string, unknown> | null) ?? null,
-            isPrimary: workspace.isPrimary,
-            createdAt: workspace.createdAt,
-            updatedAt: workspace.updatedAt,
-          }));
-          const primaryWorkspace = workspaces.find((workspace) => workspace.isPrimary) ?? workspaces[0] ?? null;
-          projectMap.set(r.id, {
-            ...r,
-            workspaces,
-            primaryWorkspace,
-          });
-          // Also collect goalIds from projects
+          projectMap.set(r.id, r);
           if (r.goalId && !goalIds.includes(r.goalId)) goalIds.push(r.goalId);
         }
       }

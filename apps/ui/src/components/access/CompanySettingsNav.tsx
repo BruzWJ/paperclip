@@ -5,15 +5,12 @@ import { useLocation, useNavigate } from "@/lib/router";
 
 const items = [
   { value: "general", label: "General", href: "/company/settings" },
-  { value: "cloud-upstream", label: "Cloud upstream", href: "/company/settings/cloud-upstream" },
   { value: "members", label: "Members", href: "/company/settings/members" },
   { value: "invites", label: "Invites", href: "/company/settings/invites" },
   { value: "secrets", label: "Secrets", href: "/company/settings/secrets" },
   { value: "instance-profile", label: "Instance profile", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/profile` },
   { value: "instance-general", label: "Instance general", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/general` },
-  { value: "instance-environments", label: "Instance environments", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/environments` },
   { value: "instance-access", label: "Instance access", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/access` },
-  { value: "instance-experimental", label: "Instance experimental", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/experimental` },
   { value: "instance-plugins", label: "Instance plugins", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/plugins` },
   { value: "instance-adapters", label: "Instance adapters", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/adapters` },
 ] as const;
@@ -29,14 +26,6 @@ export function getCompanySettingsTab(pathname: string): CompanySettingsTab | nu
     return "instance-access";
   }
 
-  if (pathname.includes(`${INSTANCE_SETTINGS_PATH_PREFIX}/environments`)) {
-    return "instance-environments";
-  }
-
-  if (pathname.includes(`${INSTANCE_SETTINGS_PATH_PREFIX}/experimental`)) {
-    return "instance-experimental";
-  }
-
   if (pathname.includes(`${INSTANCE_SETTINGS_PATH_PREFIX}/plugins`)) {
     return "instance-plugins";
   }
@@ -47,10 +36,6 @@ export function getCompanySettingsTab(pathname: string): CompanySettingsTab | nu
 
   if (pathname.includes(`${INSTANCE_SETTINGS_PATH_PREFIX}/general`)) {
     return "instance-general";
-  }
-
-  if (pathname.includes("/company/settings/cloud-upstream")) {
-    return "cloud-upstream";
   }
 
   if (pathname.includes("/company/settings/members")) {

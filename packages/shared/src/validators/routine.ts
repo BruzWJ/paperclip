@@ -9,9 +9,7 @@ import {
   ROUTINE_VARIABLE_TYPES,
 } from "../constants.js";
 import {
-  ISSUE_EXECUTION_WORKSPACE_PREFERENCES,
   issueCreationContextAccessSchema,
-  issueExecutionWorkspaceSettingsSchema,
 } from "./issue.js";
 import { envConfigSchema } from "./secret.js";
 import { isValidRoutineDateString } from "../routine-variables.js";
@@ -165,13 +163,9 @@ export const runRoutineSchema = z.object({
   payload: z.record(z.string(), z.unknown()).optional().nullable(),
   variables: z.record(z.string(), routineVariableValueSchema).optional().nullable(),
   projectId: z.string().uuid().optional().nullable(),
-  projectWorkspaceId: z.string().uuid().optional().nullable(),
   assigneeAgentId: z.string().uuid().optional().nullable(),
   idempotencyKey: z.string().trim().max(255).optional().nullable(),
   source: z.enum(["manual", "api"]).optional().default("manual"),
-  executionWorkspaceId: z.string().uuid().optional().nullable(),
-  executionWorkspacePreference: z.enum(ISSUE_EXECUTION_WORKSPACE_PREFERENCES).optional().nullable(),
-  executionWorkspaceSettings: issueExecutionWorkspaceSettingsSchema.optional().nullable(),
 });
 
 export type RunRoutine = z.infer<typeof runRoutineSchema>;

@@ -125,7 +125,6 @@ function registerModuleMocks() {
     goalService: () => ({}),
     instanceSettingsService: () => ({
       get: vi.fn(async () => ({ id: "settings", general: {} })),
-      getExperimental: vi.fn(async () => ({})),
       getGeneral: vi.fn(async () => ({})),
       listCompanyIds: vi.fn(async () => [companyId]),
     }),

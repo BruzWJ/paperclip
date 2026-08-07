@@ -60,8 +60,7 @@ Content-Type: application/json
   "mentionReachGrants": {
     "mention_any_descendant": false,
     "mention_any_ancestor": false
-  },
-  "companyToolIds": []
+  }
 }
 ```
 
@@ -87,11 +86,10 @@ creator update may send a message or set nonterminal `open`/`blocked`.
 ```http
 GET /api/agents/{agentId}/runtime-configuration
 PATCH /api/agents/{agentId}/runtime-configuration
-GET /api/agents/{agentId}/runtime-configuration/tool-options
 ```
 
 Runtime configuration owns only identity, reporting structure, context/action
-grants, mention reach, and explicit company-tool selection. Adapter, budget,
+grants, mention reach, and explicit company-skill selection. Adapter, budget,
 lifecycle, and provider-native state are separate owners.
 
 ## Immutable ACP adapter revisions
@@ -111,7 +109,6 @@ the live ACPX-backed adapter catalog before creating a revision:
   "adapterConfig": {
     "<acpx-option-id>": "<selected-advertised-value>"
   },
-  "defaultEnvironmentId": "00000000-0000-4000-8000-000000000002",
   "runtimeConfig": {},
   "companySkillPins": [],
   "skillChannel": "operator_native"
@@ -130,9 +127,9 @@ option id and one advertised value in `adapterConfig`. Paperclip stores that
 selection in the revision and applies it at session setup; it never creates a
 provider-specific reasoning field on its own.
 
-Provider authentication stays in the selected CLI's native login state on the
-execution target. Paperclip neither stores nor probes it. There is no default
-adapter inference or fallback to another registered name.
+Provider authentication stays in the selected CLI's native login state.
+Paperclip neither stores nor probes it. There is no default adapter inference
+or fallback to another registered name.
 
 ## Operational configuration
 
@@ -168,11 +165,10 @@ POST /api/companies/{companyId}/adapters/{adapterType}/test-configuration
 ```
 
 The response is the exact model catalog currently discovered through ACPX for
-that data-only adapter revision. Structural readiness requires the current
-ACPX registry membership, execution-target/workspace binding, legal stable
-ACPX configuration selections, selected-tool/skill integrity, and the agent's
-live eligibility/budget state. It uses a disposable no-prompt ACPX probe and
-never sends a model conversation.
+that data-only adapter revision. Structural readiness requires current ACPX
+registry membership, legal stable ACPX configuration selections, selected-skill
+integrity, and the agent's live eligibility/budget state. It uses a disposable
+no-prompt ACPX probe and never sends a model conversation.
 
 The configuration-test endpoint accepts the exact unsaved generic ACPX
 selection object:
@@ -187,7 +183,6 @@ selection object:
 
 It requires board authority with `agents:create`, applies the canonical ACPX
 configuration resolver, and opens a strictly disposable no-prompt ACPX session
-in a fresh temporary workspace. The request cannot select an environment or
-workspace, and the response is only a `ready` or sanitized `failed`
-observation. It creates no agent, revision, run, or durable workspace and does
-not claim that a future execution workspace is ready.
+in a fresh temporary directory. The response is only a `ready` or sanitized
+`failed` observation. It creates no agent, revision, or run and does not claim
+that a future execution can start.

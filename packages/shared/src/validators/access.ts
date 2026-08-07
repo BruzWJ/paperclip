@@ -55,14 +55,13 @@ export const listJoinRequestsQuerySchema = z.object({
 export type ListJoinRequestsQuery = z.infer<typeof listJoinRequestsQuerySchema>;
 
 /**
- * Board approval of an agent join request must name the execution environment
- * and company-skill channel for the initial immutable adapter revision. Human
- * joins do not need either, so those semantic requirements are enforced after
- * the locked join request has established its request type.
+ * Board approval may select the company-skill channel for an initial immutable
+ * adapter revision. Runtime execution targets are resolved internally. Human
+ * joins do not need either, so semantic requirements are enforced after the
+ * locked join request has established its request type.
  */
 export const approveJoinRequestSchema = z
   .object({
-    defaultEnvironmentId: z.string().uuid().optional().nullable(),
     skillChannel: companySkillChannelSchema.optional().nullable(),
   })
   .strict();

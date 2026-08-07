@@ -6,7 +6,6 @@ const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "33333333-3333-4333-8333-333333333333";
 const INVITE_ID = "44444444-4444-4444-8444-444444444444";
 const JOIN_ID = "55555555-5555-4555-8555-555555555555";
-const ENVIRONMENT_ID = "77777777-7777-4777-8777-777777777777";
 const MEMBER_ID = "66666666-6666-4666-8666-666666666666";
 
 function createProgram(): Command {
@@ -47,15 +46,7 @@ describe("access parity commands", () => {
     await run(["invite", "show", "token-1"]);
     await run(["invite", "accept", "token-1"]);
     await run(["join", "list", "--company-id", COMPANY_ID, "--status", "pending"]);
-    await run([
-      "join",
-      "approve",
-      JOIN_ID,
-      "--company-id",
-      COMPANY_ID,
-      "--environment-id",
-      ENVIRONMENT_ID,
-    ]);
+    await run(["join", "approve", JOIN_ID, "--company-id", COMPANY_ID]);
     await run(["join", "reject", JOIN_ID, "--company-id", COMPANY_ID]);
     await run(["member", "list", "--company-id", COMPANY_ID]);
     await run(["member", "update", MEMBER_ID, "--company-id", COMPANY_ID, "--payload-json", "{}"]);
@@ -84,9 +75,7 @@ describe("access parity commands", () => {
       ["POST", `http://localhost:3100/api/admin/users/${USER_ID}/promote-instance-admin`],
       ["PUT", `http://localhost:3100/api/admin/users/${USER_ID}/company-access`],
     ]);
-    expect(fetchMock.mock.calls[10]?.[1]?.body).toBe(
-      JSON.stringify({ defaultEnvironmentId: ENVIRONMENT_ID }),
-    );
+    expect(fetchMock.mock.calls[10]?.[1]?.body).toBe(JSON.stringify({}));
   });
 
   it("exposes only Better Auth session inspection and company authorization profiles", () => {

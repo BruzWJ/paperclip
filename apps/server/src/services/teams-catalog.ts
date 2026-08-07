@@ -509,7 +509,6 @@ function catalogAdapterRevisionId(
           slug,
           override.adapterType,
           canonicalJson(override.adapterConfig),
-          override.defaultEnvironmentId,
           override.skillChannel,
         ].join("\0"),
       )
@@ -567,8 +566,6 @@ async function renderCatalogProvenanceYaml(
             adapterType: adapterOverrides[slug].adapterType,
             adapterConfig: adapterOverrides[slug].adapterConfig,
             runtimeConfig: {},
-            sourceEnvironmentId:
-              adapterOverrides[slug].defaultEnvironmentId,
             skillChannel: adapterOverrides[slug].skillChannel,
           },
           contextGrants: explicitFalseMap(AGENT_CONTEXT_GRANT_KEYS),
@@ -576,7 +573,6 @@ async function renderCatalogProvenanceYaml(
           mentionReachGrants: explicitFalseMap(
             AGENT_MENTION_REACH_GRANT_KEYS,
           ),
-          companyToolIds: [],
         }
       : {}),
     metadata: {

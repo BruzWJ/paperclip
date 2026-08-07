@@ -41,7 +41,6 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
-import { AgentToolsTab } from "./AgentToolsTab";
 import {
   isUuidLike,
   compareMoneyAmounts,
@@ -79,12 +78,11 @@ function formatOrgChainHealthPath(agent: AgentDetailRecord) {
     .join(" -> ") ?? agent.name;
 }
 
-type AgentDetailView = "dashboard" | "configuration" | "skills" | "tools" | "runs" | "budget";
+type AgentDetailView = "dashboard" | "configuration" | "skills" | "runs" | "budget";
 
 function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "configure" || value === "configuration") return "configuration";
   if (value === "skills") return "skills";
-  if (value === "tools") return "tools";
   if (value === "budget") return "budget";
   if (value === "runs") return value;
   return "dashboard";
@@ -250,13 +248,11 @@ export function AgentDetail() {
           ? "configuration"
           : activeView === "skills"
             ? "skills"
-            : activeView === "tools"
-              ? "tools"
-              : activeView === "runs"
-                ? "runs"
-                : activeView === "budget"
-                  ? "budget"
-              : "dashboard";
+            : activeView === "runs"
+              ? "runs"
+              : activeView === "budget"
+                ? "budget"
+                : "dashboard";
     if (routeAgentRef !== canonicalAgentRef || urlTab !== canonicalTab) {
       navigate(`/agents/${canonicalAgentRef}/${canonicalTab}`, { replace: true });
       return;
@@ -366,8 +362,6 @@ export function AgentDetail() {
         crumbs.push({ label: "Configuration" });
       // } else if (activeView === "skills") { // TODO: bring back later
       //   crumbs.push({ label: "Skills" });
-      } else if (activeView === "tools") {
-        crumbs.push({ label: "Tools" });
       } else if (activeView === "runs") {
         crumbs.push({ label: "Runs" });
       } else if (activeView === "budget") {
@@ -563,7 +557,6 @@ export function AgentDetail() {
               { value: "dashboard", label: "Dashboard" },
               { value: "skills", label: "Skills" },
               { value: "configuration", label: "Configuration" },
-              { value: "tools", label: "Tools" },
               { value: "runs", label: "Runs" },
               { value: "budget", label: "Budget" },
             ]}
@@ -713,10 +706,6 @@ export function AgentDetail() {
           agent={agent}
           companyId={resolvedCompanyId ?? undefined}
         />
-      )}
-
-      {!isPluginTriage && activeView === "tools" && resolvedCompanyId && (
-        <AgentToolsTab agent={agent} companyId={resolvedCompanyId} />
       )}
 
       {!isPluginTriage && activeView === "runs" && (
@@ -1562,55 +1551,6 @@ function RunDetail({ run: initialRun }: { run: IssueExecutionRunEnvelopeRecord }
         )}
       />
 
-      <BoundedRecordSection
-        title="Tool invocations"
-        items={detail?.toolInvocations.items ?? []}
-        truncated={detail?.toolInvocations.truncated ?? false}
-        render={(invocation) => (
-          <div key={invocation.id} className="space-y-2 p-3 text-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{invocation.toolName}</span>
-              <Badge variant="outline" className="capitalize">{invocation.status}</Badge>
-              <Badge variant="outline" className="capitalize">{invocation.approvalState.replace(/_/g, " ")}</Badge>
-              <span className="ml-auto">{relativeTime(invocation.createdAt)}</span>
-            </div>
-            {invocation.argumentsSummary !== null ? <JsonData value={invocation.argumentsSummary} /> : null}
-            {invocation.resultSummary !== null ? <JsonData value={invocation.resultSummary} /> : null}
-            {invocation.errorCode ? <p className="text-destructive">{invocation.errorCode}</p> : null}
-          </div>
-        )}
-      />
-
-      <BoundedRecordSection
-        title="Workspace operations"
-        items={detail?.workspaceOperations.items ?? []}
-        truncated={detail?.workspaceOperations.truncated ?? false}
-        render={(operation) => (
-          <div key={operation.id} className="space-y-1 p-3 text-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium capitalize">{operation.phase.replace(/_/g, " ")}</span>
-              <Badge variant="outline" className="capitalize">{operation.status}</Badge>
-              <span className="ml-auto">{relativeTime(operation.startedAt)}</span>
-            </div>
-            <span className="font-mono text-muted-foreground">{operation.id}</span>
-          </div>
-        )}
-      />
-
-      <BoundedRecordSection
-        title="Watchdog decisions"
-        items={detail?.watchdogDecisions.items ?? []}
-        truncated={detail?.watchdogDecisions.truncated ?? false}
-        render={(decision) => (
-          <div key={decision.id} className="space-y-1 p-3 text-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="capitalize">{decision.decision.replace(/_/g, " ")}</Badge>
-              <span className="ml-auto">{relativeTime(decision.createdAt)}</span>
-            </div>
-            {decision.reason ? <p className="text-muted-foreground">{decision.reason}</p> : null}
-          </div>
-        )}
-      />
     </div>
   );
 }

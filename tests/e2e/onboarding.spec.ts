@@ -21,16 +21,7 @@ type CreatedAgent = {
   reportsTo: string | null;
   adapterType: string | null;
   adapterConfig: Record<string, unknown> | null;
-  defaultEnvironmentId: string | null;
 };
-
-async function enableEnvironmentSelection(request: APIRequestContext) {
-  const response = await request.patch(
-    "/api/instance/settings/experimental",
-    { data: { enableEnvironments: true } },
-  );
-  expect(response.ok()).toBe(true);
-}
 
 async function openCreateCompanyPath(page: Page) {
   await page.goto("/onboarding");
@@ -55,12 +46,6 @@ async function configureCodexAgent(page: Page) {
   await modelField.getByRole("button").last().click();
   await page.getByRole("button", { name: "GPT-5.6", exact: true }).click();
 
-  const environmentSelect = page
-    .locator("select")
-    .filter({ hasText: "Local · local" });
-  await expect(environmentSelect).toBeVisible({ timeout: 15_000 });
-  await environmentSelect.selectOption({ label: "Local · local" });
-  return environmentSelect.inputValue();
 }
 
 async function listRuns(request: APIRequestContext, companyId: string, agentId: string) {
@@ -82,7 +67,6 @@ test.describe("Onboarding wizard", () => {
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
 
-    await enableEnvironmentSelection(request);
     await openCreateCompanyPath(page);
 
     await expect(
@@ -134,7 +118,7 @@ test.describe("Onboarding wizard", () => {
     expect(await agentsBeforeConfiguration.json()).toEqual([]);
 
     await page.getByRole("button", { name: /^Next/ }).click();
-    const selectedEnvironmentId = await configureCodexAgent(page);
+    await configureCodexAgent(page);
     const createAgentButton = page.getByRole("button", {
       name: "Create agent",
     });
@@ -157,7 +141,6 @@ test.describe("Onboarding wizard", () => {
       title: AGENT_TITLE,
       reportsTo: null,
       adapterType: "codex",
-      defaultEnvironmentId: selectedEnvironmentId,
     });
     expect(agent.adapterConfig).toMatchObject({
       model: CODEX_MODEL,

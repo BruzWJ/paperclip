@@ -1,35 +1,33 @@
-# Sandbox file-sync lifecycle hooks
+# Sandbox file-transfer lifecycle hooks
 
-A sandbox environment provider moves workspace and asset files between the host
-and the sandbox around every run. By default the runtime synthesizes that
-transfer over the single `environmentExecute` verb: it base64-encodes bytes and
-pipes them through `base64 -d` shell commands, one bounded round-trip per chunk.
-That works everywhere but is slow for large workspaces because it cannot use a
-provider's native bulk file transport.
+This is an internal execution-provider contract, not a board configuration
+surface. An execution provider moves run-directory and asset files between the
+host and sandbox around a run. The baseline runtime performs that transfer over
+the `environmentExecute` verb by base64-encoding bounded chunks and piping them
+through `base64 -d` shell commands. It is portable, but it cannot use a
+provider's native bulk-file transport.
 
-The two **optional, opt-in** hooks documented here let a provider replace that
-base64-over-exec transfer with its own native mechanism:
+Providers may advertise the two lifecycle hooks below to implement the same
+orchestrator-owned transfers with their native transport:
 
-- **`onEnvironmentSyncIn`** — before execution: place a set of host
-  files/directories at target sandbox paths.
-- **`onEnvironmentSyncOut`** — after execution: copy a set of sandbox
-  files/directories back to target host paths.
+- `onEnvironmentSyncIn` — before execution, place host files and directories
+  at sandbox paths.
+- `onEnvironmentSyncOut` — after execution, copy sandbox files and directories
+  back to host paths.
 
-They are entirely opt-in. A provider that does not define them keeps the exact
-base64 fallback, byte-for-byte — there is **zero behavior change** for existing
-providers.
+These hooks only change the implementation of an already-authorized runtime
+transfer. They do not create an operator-facing configuration or file surface.
 
-## Opt-in / no-op semantics
+## Capability negotiation and fallback
 
-A hook is opted into exactly like `onEnvironmentExecute`: defining it on your
-`PluginDefinition` makes the worker advertise the matching verb in
-`InitializeResult.supportedMethods`; leaving it undefined omits the verb and the
-guarded handler throws `METHOD_NOT_IMPLEMENTED` if it is ever called.
+A `PluginDefinition` advertises a hook in `InitializeResult.supportedMethods`
+by defining it. Leaving it undefined omits the corresponding method, and a
+guarded call returns `METHOD_NOT_IMPLEMENTED`.
 
-**Both hooks are advertised and consumed as a pair.** The host runtime uses the
-native path only when the worker advertises **both** `environmentSyncIn` and
-`environmentSyncOut`; if a provider advertises only one, the orchestrator keeps
-the base64 fallback for both directions. Define both or neither.
+**The hooks are consumed as a pair.** The runtime uses the native transfer path
+only when the provider advertises both `environmentSyncIn` and
+`environmentSyncOut`. If either is absent, it uses the baseline transfer in both
+directions. This keeps the observable file result identical for all providers.
 
 ```ts
 export default definePlugin({
@@ -43,162 +41,145 @@ export default definePlugin({
 });
 ```
 
-## The operation / file-mapping contract
+## Operation and mapping contract
 
-Each hook receives an ordered list of **operations**. Each operation carries an
-opaque id and a list of source→target **file mappings**:
+Each hook receives an ordered list of operations. An operation has an opaque ID
+and one or more source-to-target mappings:
 
 ```ts
 interface PluginSyncOperation {
-  operationId: string;               // opaque, non-sensitive; do NOT interpret it
+  operationId: string; // opaque, non-sensitive; do not interpret it
   files: PluginSyncFileMapping[];
 }
 
 interface PluginSyncFileMapping {
-  sourcePath: string;                // absolute
-  targetPath: string;                // absolute
+  sourcePath: string; // absolute
+  targetPath: string; // absolute
   kind: "file" | "directory";
-  mode?: number;                     // POSIX mode to apply at the target
-  exclude?: string[];                // glob excludes for a directory mapping
-  followSymlinks?: boolean;          // directory symlink handling; see below
+  mode?: number; // POSIX mode at the target
+  exclude?: string[]; // glob excludes for a directory mapping
+  followSymlinks?: boolean;
 }
 
 interface PluginEnvironmentSyncResult {
-  operations: { operationId: string; filesTransferred: number; bytesTransferred: number }[];
+  operations: {
+    operationId: string;
+    filesTransferred: number;
+    bytesTransferred: number;
+  }[];
 }
 ```
 
-For `onEnvironmentSyncIn`, `sourcePath` is a **host** path and `targetPath` a
-**sandbox** path. For `onEnvironmentSyncOut` the direction is reversed. All
-sandbox paths are POSIX. Return per-operation `filesTransferred` /
-`bytesTransferred` for observability.
+For `onEnvironmentSyncIn`, `sourcePath` is a host path and `targetPath` is a
+sandbox path. `onEnvironmentSyncOut` reverses that direction. All sandbox paths
+use POSIX separators. Return `filesTransferred` and `bytesTransferred` for each
+operation for runtime observability.
 
-### Ordering
+### Ordering and ownership
 
-Operations are applied strictly in array order, and the orchestrator invokes the
-hooks in a fixed lifecycle order (inbound before execution, outbound after). The
-orchestrator owns *what* and *when*; a provider only executes the opaque
-transfers it is handed and must not reorder them.
+Apply operations in array order. The orchestrator invokes inbound transfer
+before execution and outbound transfer after execution. It owns what is moved,
+where it is moved, and when it is moved; a provider must execute the opaque
+transfers it receives without reordering or widening them.
 
-### A provider may tar internally
+`operationId` is authored by the orchestrator. It is non-sensitive and safe to
+log, but a provider must not parse it, derive a path from it, or rely on its
+format.
 
-The contract only describes the observable source→target result. How you move
-the bytes is yours: bulk upload API, an internal `tar` stream, per-file
-enumeration — all are fine. Whatever you do, the materialized target must be
-observationally identical to the mapping (same files, same contents, same modes,
-same symlink treatment) so the native and fallback paths are interchangeable.
+### Transport implementation
 
-### `operationId` is opaque
+The mapping describes the observable result, not the transport. Bulk upload,
+an internal `tar` stream, or per-file enumeration are all valid. The
+materialized target must have the same files, contents, modes, and symlink
+treatment as the baseline transfer so implementations remain interchangeable.
 
-`operationId` is an opaque, non-sensitive token authored by the orchestrator. It
-is **not** derived from any secret or user data, it is safe to log and safe to
-expose to the sandbox, and a provider **must not** parse or depend on its value.
-Do not echo it into a path or a place where it could collide with real data.
+## Symlinks
 
-## Symlink contract (`followSymlinks`)
+`followSymlinks` applies only to `kind: "directory"` mappings and matches
+`tar -h` semantics:
 
-`followSymlinks` applies to `kind: "directory"` mappings and has exactly the
-meaning of `tar`'s `-h` flag:
+- falsy (the default): preserve symlinks as links;
+- `true`: dereference each symlink to its target bytes.
 
-- **falsy (default)** — archive and recreate symlinks **as links** (preserve).
-- **`true`** — **dereference** each symlink to its target bytes.
+A provider handling a directory mapping must reproduce that result. There is no
+separate extraction-side switch; symlink treatment is carried solely by this
+field.
 
-A provider honoring a directory mapping MUST reproduce this: preserve links when
-falsy, dereference to bytes when `true`. The orchestrator passes the same value
-it passes to its own tar create step, so native and fallback are observationally
-identical. There is no separate extract-side symlink flag and no execution-time
-special case — symlink handling lives entirely in this one flag.
+## Atomicity and failures
 
-## Atomicity contract
+Native transfers must preserve the baseline integrity floor:
 
-The required guarantee level is deliberately equal to the base64 fallback's
-floor, so opting in never weakens integrity and never over-promises.
+- **Single-file mappings are atomic-replace.** Stage bytes at a temporary path
+  in the same directory and filesystem as `targetPath`, then atomically rename
+  them into place. Do not leave a truncated target after an interrupted
+  transfer. Reserve `.paperclip-upload*` scratch names to avoid colliding with
+  the baseline transport or a real target.
+- **Directory mappings are not transactional.** They are
+  destroy-then-replace operations and may leave a partial tree after a crash.
+  Deliver an individually integrity-sensitive file as its own file mapping so
+  it receives atomic replacement.
+- **Every operation fails loudly.** Complete it or raise to the orchestrator;
+  never report partial success as successful. The runtime can then retry or use
+  its baseline transfer.
 
-- **Single-file mappings (`kind: "file"`) MUST be atomic-replace (REQUIRED).**
-  Stage the bytes to a provider-chosen temporary path, then atomically rename
-  onto `targetPath`, so an interrupted transfer never leaves a truncated file at
-  `targetPath`. This mirrors the fallback, which stages to
-  `<path>.paperclip-upload` and then `mv -f`.
-  - The temp file MUST live in the **same directory (same filesystem)** as
-    `targetPath`. A cross-device rename degrades to copy-then-unlink and
-    reintroduces the truncation window it is meant to close.
-  - Reserve the `.paperclip-upload*` scratch names: a provider-chosen temp must
-    not collide with the fallback scratch name or with a real target.
+## Secret material and modes
 
-- **Directory mappings and the sync as a whole are NOT atomic / NOT
-  transactional.** A directory transfer is destroy-then-replace: a crash
-  mid-transfer can leave a partial tree, and the runtime does not roll back
-  already-moved bytes across operations. This matches today's behavior; do not
-  assume a directory operation is atomic. Where an individual file must be
-  integrity-protected, deliver it as its own `kind: "file"` mapping so it inherits
-  the single-file atomic-replace guarantee.
+Mappings can contain credential-bearing files. For those files, `mode` is
+required in practice:
 
-- **Every operation is fail-loud.** An operation either completes or raises to
-  the orchestrator; never report partial success silently. The orchestrator may
-  then retry or fall back.
+- Apply the requested mode (for example `0o600`) without a world-readable
+  interval: create with the mode or chmod before writing bytes, never after.
+- Honor modes for files inside directory mappings as well as direct file
+  mappings. A `tar` implementation must preserve permissions; an enumerating
+  implementation must apply them as each file lands.
+- Directory transfer is not atomic. If an individual secret needs integrity
+  protection, send it as a direct file mapping or protect its integrity outside
+  this transport.
 
-## Secret material and file modes
+## Host-side path confinement
 
-This seam can carry credential-bearing files (for example an auth directory).
-Treat `mode` as mandatory for such mappings:
+The sandbox is untrusted relative to the host. The orchestrator, rather than
+the provider, owns and confines every source and target path before handing an
+operation to the provider. It canonicalizes a path and restricts it to an
+orchestrator-owned run directory or specific asset directory, rejecting absolute
+escapes and `..` traversal fail-closed.
 
-- Apply the requested `mode` (e.g. `0o600`) with **no world-readable window** —
-  create the target with the mode, or `chmod` **before** writing any bytes, never
-  after.
-- `mode` MUST be honored for files **inside a directory mapping** too, not only
-  for `kind: "file"` mappings. If you tar internally, preserve permissions; if
-  you enumerate, set the mode as each file lands. A credential that rides a
-  directory mapping otherwise silently loses its `0o600` guarantee.
-- A directory mapping is not atomic (see above). If a directory carries an
-  individually-sensitive secret whose integrity matters, prefer delivering that
-  secret as a `kind: "file"` mapping so it gets atomic-replace, or protect its
-  integrity out of band.
+Providers receive only orchestrator-authored, already-confined paths. They must
+not widen them, including by following a sandbox-planted outbound symlink beyond
+the intended root. Path confinement is complete mediation at the host boundary;
+it is never delegated to a provider.
 
-## Host-side path confinement (required of the orchestrator)
+## Resource bounds and shell safety
 
-The sandbox is untrusted relative to the host, so **the orchestrator — not the
-provider — owns and confines every path**. Before an operation is handed to a
-provider, the runtime canonicalizes each mapping's `sourcePath`/`targetPath` and
-confines it to an orchestrator-owned root (the workspace directory or a specific
-asset directory), rejecting absolute escapes and `..` traversal fail-closed. A
-provider receives only already-confined, orchestrator-authored paths and MUST
-NOT widen them (for example by following a sandbox-planted symlink out of the
-intended root on an outbound write). Confinement is a host-side complete-mediation
-guard and is never delegated below the trust boundary.
+The baseline transport has transfer caps to avoid unbounded memory use. Native
+providers must retain equivalent bounds: stream or chunk large transfers and
+fail closed on an oversized inline payload.
 
-## Resource bounds
+If a provider builds a shell command (for example a pod-exec
+`tar`/`base64`/`mv` pipeline), it must single-quote every interpolated path so
+shell metacharacters are transferred literally. A typed non-shell bulk-upload
+API does not need shell quoting.
 
-The base64 fallback enforces transfer caps so a runaway payload cannot exhaust
-memory. A native provider MUST keep an equivalent bound — stream or chunk large
-transfers rather than buffering unboundedly, and fail closed on an oversized
-inline payload rather than silently removing the cap.
-
-## Shell safety (native providers that shell out)
-
-If your native transfer builds shell command strings (for example a pod-exec
-`tar`/`base64`/`mv` pipeline), single-quote **every** interpolated path so a path
-containing shell metacharacters is transferred literally, never interpreted.
-Providers whose transport is a non-shell API (a typed bulk-upload call) do not
-need this, but any shell interpolation must quote.
-
-## Reference: minimal shape
+## Minimal shape
 
 ```ts
 async onEnvironmentSyncIn({ operations }) {
   const results = [];
-  for (const op of operations) {          // apply in order
+  for (const operation of operations) {
     let filesTransferred = 0;
     let bytesTransferred = 0;
-    for (const f of op.files) {
-      if (f.kind === "file") {
-        // stage to a same-dir temp, then atomic rename onto f.targetPath,
-        // applying f.mode with no world-readable window
+    for (const file of operation.files) {
+      if (file.kind === "file") {
+        // Stage in the target directory, apply mode safely, then rename.
       } else {
-        // materialize f.sourcePath at f.targetPath (destroy-then-replace),
-        // honoring f.exclude and f.followSymlinks, applying per-file modes
+        // Materialize source at target, honoring excludes and symlink handling.
       }
     }
-    results.push({ operationId: op.operationId, filesTransferred, bytesTransferred });
+    results.push({
+      operationId: operation.operationId,
+      filesTransferred,
+      bytesTransferred,
+    });
   }
   return { operations: results };
 }

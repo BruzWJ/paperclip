@@ -46,7 +46,7 @@ describe("dev server status helpers", () => {
     });
   });
 
-  it("derives waiting-for-idle health state", () => {
+  it("derives restart-required health state with automatic idle restart enabled", () => {
     const health = toDevServerHealthStatus(
       {
         dirty: true,
@@ -55,7 +55,7 @@ describe("dev server status helpers", () => {
         changedPathsSample: ["apps/server/src/app.ts"],
         lastRestartAt: "2026-03-20T11:30:00.000Z",
       },
-      { autoRestartEnabled: true, activeRunCount: 3 },
+      { activeRunCount: 2, autoRestartEnabled: true },
     );
 
     expect(health).toMatchObject({
@@ -63,8 +63,28 @@ describe("dev server status helpers", () => {
       restartRequired: true,
       reason: "backend_changes",
       autoRestartEnabled: true,
-      activeRunCount: 3,
+      activeRunCount: 2,
       waitingForIdle: true,
+    });
+  });
+
+  it("does not wait for idle when automatic idle restart is disabled", () => {
+    const health = toDevServerHealthStatus(
+      {
+        dirty: true,
+        lastChangedAt: "2026-03-20T12:00:00.000Z",
+        changedPathCount: 2,
+        changedPathsSample: ["apps/server/src/app.ts"],
+        lastRestartAt: "2026-03-20T11:30:00.000Z",
+      },
+      { activeRunCount: 2, autoRestartEnabled: false },
+    );
+
+    expect(health).toMatchObject({
+      restartRequired: true,
+      autoRestartEnabled: false,
+      activeRunCount: 2,
+      waitingForIdle: false,
     });
   });
 
@@ -107,7 +127,7 @@ describe("dev server status helpers", () => {
     expect(requestPath && existsSync(requestPath)).toBe(false);
   });
 
-  it("accepts the server-owned automatic restart reason", () => {
+  it("accepts automatic idle restart requests", () => {
     const filePath = createTempStatusFile({
       dirty: true,
       changedPathsSample: ["apps/server/src/app.ts"],
@@ -118,7 +138,6 @@ describe("dev server status helpers", () => {
       requestedAt: "2026-03-20T12:05:00.000Z",
       reason: "auto_restart_when_idle",
     }, env)).toBe(true);
-
     expect(readDevServerRestartRequest(env)).toEqual({
       requestedAt: "2026-03-20T12:05:00.000Z",
       reason: "auto_restart_when_idle",
@@ -138,7 +157,7 @@ describe("dev server status helpers", () => {
 
     expect(writeDevServerRestartRequest({
       requestedAt: "2026-03-20T12:05:00.000Z",
-      reason: "auto_restart_when_idle",
+      reason: "manual_restart_now",
     }, env, { preserveExisting: true })).toBe(false);
     expect(readDevServerRestartRequest(env)).toEqual({
       requestedAt: "2026-03-20T12:04:00.000Z",

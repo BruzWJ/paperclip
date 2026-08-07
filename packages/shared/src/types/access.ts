@@ -114,7 +114,6 @@ export interface JoinRequest {
   capabilities: string | null;
   agentDefaultsPayload: Record<string, unknown> | null;
   createdAgentId: string | null;
-  approvedEnvironmentId: string | null;
   createdAgentAdapterConfigRevisionId: string | null;
   approvedByUserId: string | null;
   approvedAt: Date | null;

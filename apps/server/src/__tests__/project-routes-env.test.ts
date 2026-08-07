@@ -39,6 +39,7 @@ vi.mock("../services/index.js", () => ({
   logActivity: mockLogActivity,
   projectService: () => mockProjectService,
   secretService: () => mockSecretService,
+  toPublicProject: <T>(project: T) => project,
   workspaceOperationService: () => mockWorkspaceOperationService,
 }));
 
@@ -66,6 +67,7 @@ function registerModuleMocks() {
     logActivity: mockLogActivity,
     projectService: () => mockProjectService,
     secretService: () => mockSecretService,
+    toPublicProject: <T>(project: T) => project,
     workspaceOperationService: () => mockWorkspaceOperationService,
   }));
 
@@ -128,7 +130,6 @@ function buildProject(overrides: Record<string, unknown> = {}) {
     env: null,
     pauseReason: null,
     pausedAt: null,
-    executionWorkspacePolicy: null,
     codebase: {
       workspaceId: null,
       repoUrl: null,

@@ -25,8 +25,6 @@ interface ProjectCreateOptions extends BaseClientOptions {
   leadAgentId?: string;
   targetDate?: string;
   color?: string;
-  envJson?: string;
-  executionWorkspacePolicyJson?: string;
 }
 
 interface ProjectUpdateOptions extends BaseClientOptions {
@@ -38,8 +36,6 @@ interface ProjectUpdateOptions extends BaseClientOptions {
   leadAgentId?: string;
   targetDate?: string;
   color?: string;
-  envJson?: string;
-  executionWorkspacePolicyJson?: string;
   archivedAt?: string;
 }
 
@@ -116,8 +112,6 @@ export function registerProjectCommands(program: Command): void {
       .option("--lead-agent-id <id>", "Lead agent ID")
       .option("--target-date <date>", "Target date")
       .option("--color <value>", "Project color")
-      .option("--env-json <json>", "Project env binding JSON")
-      .option("--execution-workspace-policy-json <json>", "Execution workspace policy JSON")
       .action(async (opts: ProjectCreateOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
@@ -130,8 +124,6 @@ export function registerProjectCommands(program: Command): void {
             leadAgentId: parseNullableString(opts.leadAgentId),
             targetDate: parseNullableString(opts.targetDate),
             color: parseNullableString(opts.color),
-            env: parseOptionalJson(opts.envJson),
-            executionWorkspacePolicy: parseOptionalJson(opts.executionWorkspacePolicyJson),
           });
           const created = await ctx.api.post<Project>(apiPath`/api/companies/${ctx.companyId}/projects`, payload);
           printOutput(created, { json: ctx.json });
@@ -156,8 +148,6 @@ export function registerProjectCommands(program: Command): void {
       .option("--lead-agent-id <id|null>", "Lead agent ID")
       .option("--target-date <date|null>", "Target date")
       .option("--color <value|null>", "Project color")
-      .option("--env-json <json|null>", "Project env binding JSON")
-      .option("--execution-workspace-policy-json <json|null>", "Execution workspace policy JSON")
       .option("--archived-at <iso8601|null>", "Archive timestamp or null")
       .action(async (projectRef: string, opts: ProjectUpdateOptions) => {
         try {
@@ -171,8 +161,6 @@ export function registerProjectCommands(program: Command): void {
             leadAgentId: parseNullableString(opts.leadAgentId),
             targetDate: parseNullableString(opts.targetDate),
             color: parseNullableString(opts.color),
-            env: parseOptionalJson(opts.envJson),
-            executionWorkspacePolicy: parseOptionalJson(opts.executionWorkspacePolicyJson),
             archivedAt: parseNullableString(opts.archivedAt),
           });
           const query = ctx.companyId ? `?${new URLSearchParams({ companyId: ctx.companyId }).toString()}` : "";
@@ -215,14 +203,4 @@ function parseCsv(value: string | undefined): string[] | undefined {
 function parseNullableString(value: string | undefined): string | null | undefined {
   if (value === undefined) return undefined;
   return value.trim().toLowerCase() === "null" ? null : value;
-}
-
-function parseOptionalJson(value: string | undefined): unknown {
-  if (value === undefined) return undefined;
-  if (value.trim().toLowerCase() === "null") return null;
-  try {
-    return JSON.parse(value);
-  } catch (err) {
-    throw new Error(`Invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
-  }
 }

@@ -32,12 +32,6 @@ const ACTIVITY_ROW_VERBS: Record<string, string> = {
   "issue.document_locked": "locked document on",
   "issue.document_unlocked": "unlocked document on",
   "issue.document_deleted": "deleted document from",
-  "issue.monitor_scheduled": "scheduled monitor on",
-  "issue.monitor_triggered": "triggered monitor for",
-  "issue.monitor_cleared": "cleared monitor on",
-  "issue.monitor_skipped": "skipped monitor for",
-  "issue.monitor_exhausted": "exhausted monitor on",
-  "issue.monitor_escalated_to_board": "escalated monitor for",
   "issue.commented": "commented on",
   "agent.created": "created",
   "agent.updated": "updated",
@@ -77,12 +71,6 @@ const ISSUE_ACTIVITY_LABELS: Record<string, string> = {
   "issue.document_locked": "locked a document",
   "issue.document_unlocked": "unlocked a document",
   "issue.document_deleted": "deleted a document",
-  "issue.monitor_scheduled": "scheduled a monitor",
-  "issue.monitor_triggered": "triggered a monitor",
-  "issue.monitor_cleared": "cleared a monitor",
-  "issue.monitor_skipped": "skipped a monitor",
-  "issue.monitor_exhausted": "exhausted a monitor",
-  "issue.monitor_escalated_to_board": "escalated a monitor to the board",
   "agent.created": "created an agent",
   "agent.updated": "updated the agent",
   "agent.paused": "paused the agent",
@@ -340,15 +328,6 @@ export function formatIssueActivityAction(
     forIssueDetail: true,
   });
   if (structuredChange) return structuredChange;
-
-  if (action.startsWith("issue.monitor_") && details) {
-    const serviceName =
-      typeof details.serviceName === "string" && details.serviceName.trim()
-        ? details.serviceName.trim()
-        : null;
-    const base = ISSUE_ACTIVITY_LABELS[action] ?? action.replace(/[._]/g, " ");
-    return serviceName ? `${base} for ${serviceName}` : base;
-  }
 
   if (
     (action === "issue.document_created" ||

@@ -12,7 +12,6 @@ import {
   companySkillInstallCatalogSchema,
   companySkillInstallUpdateSchema,
   companySkillListQuerySchema,
-  companySkillProjectScanRequestSchema,
   companySkillResetSchema,
   companySkillTestInputCreateSchema,
   companySkillTestInputUpdateSchema,
@@ -1065,38 +1064,6 @@ export function companySkillRoutes(
       });
 
       res.status(result.action === "created" ? 201 : 200).json(result);
-    },
-  );
-
-  router.post(
-    "/companies/:companyId/skills/scan-projects",
-    validate(companySkillProjectScanRequestSchema),
-    async (req, res) => {
-      const companyId = req.params.companyId as string;
-      await assertCanMutateCompanySkills(req, companyId, "skills.import", { sourceType: "workspace" });
-      const result = await svc.scanProjectWorkspaces(companyId, req.body);
-
-      const actor = boardActivityActor(req);
-      await logActivity(db, {
-        companyId,
-        ...actor,
-        action: "company.skills_scanned",
-        entityType: "company",
-        entityId: companyId,
-        details: {
-          mode: req.body.mode ?? "import",
-          scannedProjects: result.scannedProjects,
-          scannedWorkspaces: result.scannedWorkspaces,
-          discovered: result.discovered,
-          candidateCount: result.candidates.length,
-          importedCount: result.imported.length,
-          updatedCount: result.updated.length,
-          conflictCount: result.conflicts.length,
-          warningCount: result.warnings.length,
-        },
-      });
-
-      res.json(result);
     },
   );
 

@@ -209,7 +209,7 @@ describe("unsaved adapter configuration test", () => {
       adapterType: ADAPTER_TYPE,
       reason: "acp_initialization_failed",
       message:
-        "Paperclip could not prepare an isolated workspace for the local agent test.",
+        "Paperclip could not prepare an execution workspace for the local agent test.",
       testedAt: TESTED_AT.toISOString(),
     });
     expect(JSON.stringify(result)).not.toContain("secret filesystem detail");

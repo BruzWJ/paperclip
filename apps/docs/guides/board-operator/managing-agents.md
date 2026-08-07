@@ -35,7 +35,7 @@ Create agents from the Agents page. Each agent requires:
 - **Adapter config** — only the model and session settings that ACPX advertises
 - **Capabilities** — verbatim description shown when another agent selects an owner
 - **Context and action grants** — independent, explicit per-agent permissions
-- **Company tools and skills** — explicit selections only
+- **Company skills** — explicit selections only
 
 The agent picker is dynamic. Install and authenticate a compatible local CLI.
 When the runtime can initialize that local entry, Paperclip surfaces its exact
@@ -61,14 +61,14 @@ Edit an agent's configuration from the agent detail page:
   advertises it)
 - **Runtime settings** — cooldown and concurrent-run limits
 - **Context and action grants** — explicit booleans; absent means denied
-- **Selected tools and skills** — explicit company catalog entries
+- **Selected skills** — explicit company catalog entries
 - **Budget** — monthly spend limit
 
 Use **Test Agent** before saving to apply the exact unsaved model and other
 advertised settings through a disposable, no-prompt ACPX session. The test
 persists no agent, revision, run, or ACPX state. It verifies the local ACPX
-runtime and selected session settings only; execution-workspace readiness is
-still evaluated for the persisted run.
+runtime and selected session settings only; normal run admission still
+evaluates the persisted configuration.
 
 Configuration changes produce a new immutable adapter revision for later issue
 executions. A run already in progress stays on the revision it started with.

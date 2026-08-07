@@ -21,7 +21,6 @@ import {
 import {
   createRuntimeToolExecutor,
   type RuntimeActionPort,
-  type RuntimeCompanyToolPort,
   type RuntimePluginToolPort,
 } from "./runtime-tool-executor.js";
 import {
@@ -53,7 +52,6 @@ export interface PostgresPromptCapabilityRuntimeOptions {
   /** Canonical redacted Session read authority shared with runtime plugins. */
   issueSessionStore: IssueSessionStore;
   actions: RuntimeActionPort;
-  companyTools: RuntimeCompanyToolPort;
   pluginTools: RuntimePluginToolPort;
   now?: () => Date;
 }
@@ -83,7 +81,6 @@ export function createPostgresPromptCapabilityRuntime(
     retrieval,
     retrievalScope: createRuntimeRetrievalScopeResolver(compiler),
     actions: options.actions,
-    companyTools: options.companyTools,
     pluginTools: options.pluginTools,
     callLedger: createRuntimeToolCallLedger(db),
   });

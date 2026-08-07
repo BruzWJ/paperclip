@@ -27,13 +27,6 @@ export function buildNewAgentControlPlanePayloads(input: {
   companySkillPins: readonly CompanySkillPin[];
   skillChannel: CompanySkillChannel;
 }): NewAgentControlPlanePayloads {
-  const defaultEnvironmentId =
-    input.configValues.defaultEnvironmentId;
-  if (!defaultEnvironmentId) {
-    throw new Error(
-      "Select an explicit execution environment before creating the agent.",
-    );
-  }
   return {
     runtimeAgent: {
       name: input.name.trim(),
@@ -43,12 +36,10 @@ export function buildNewAgentControlPlanePayloads(input: {
       contextGrants: { ...input.runtimeAccess.contextGrants },
       actionGrants: { ...input.runtimeAccess.actionGrants },
       mentionReachGrants: { ...input.runtimeAccess.mentionReachGrants },
-      companyToolIds: [...input.runtimeAccess.companyToolIds],
     },
     adapterRevision: {
       adapterType: input.configValues.adapterType,
       adapterConfig: input.adapterConfig,
-      defaultEnvironmentId,
       runtimeConfig: buildNewAgentRuntimeConfig({
         cheapModel: input.configValues.cheapModel,
         cheapModelEnabled: input.configValues.cheapModelEnabled,

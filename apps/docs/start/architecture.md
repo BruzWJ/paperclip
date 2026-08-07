@@ -13,7 +13,7 @@ Paperclip is a TypeScript monorepo built around a PostgreSQL control plane.
 │ Board control, issue/session inspection  │
 ├───────────────────────────────────────────┤
 │ Express API + runtime services            │
-│ Auth, issue authority, dispatcher, tools │
+│ Auth, issue authority, dispatcher, run interface │
 ├───────────────────────────────────────────┤
 │ PostgreSQL + Drizzle                      │
 │ Issues, Sessions, refs, runs, audit       │
@@ -58,13 +58,12 @@ intentionally standalone rather than a pnpm root workspace.
    epoch, owner, adapter revision, mode, and source.
 3. The context resolver computes effective grants and an immutable composition
    view. Context that is not granted is absent.
-4. The runtime interface compiler creates the exact Paperclip/company tool
-   schema for that authenticated ref.
-5. Workspace resolution binds the run to the issue/epoch execution-workspace
-   record; projectless work receives an absolute issue-owned cwd.
+4. The runtime interface compiler creates the exact prompt-capability schema
+   for that authenticated ref.
+5. The server resolves the local run directory used for the attempt.
 6. The worker uses the ACPX-discovered exact registry name to create a
-   disposable ACPX runtime in the selected local execution workspace. ACPX,
-   not Paperclip, supplies availability and launches the compatible CLI.
+   disposable ACPX runtime in that directory. ACPX, not Paperclip, supplies
+   availability and launches the compatible CLI.
 7. ACPX configures the provider backend session or performs the frozen resume
    operation, receives the request-scoped MCP server set and exact prompt, and
    returns structured updates for Paperclip to project into its Session graph.
@@ -75,10 +74,10 @@ intentionally standalone rather than a pnpm root workspace.
    never fabricates a generic wake, agent-wide session, or singleton run link
    on the issue.
 
-Board Chat, routines, plugin work, mentions, creator updates, and system nudges
-all enter this same flow. There is no direct agent invoke/heartbeat endpoint,
-static Paperclip MCP, provider-held Paperclip credential, issue checkout, or
-agent polling loop.
+Routines, plugin work, mentions, creator updates, and system nudges all enter
+this same flow. There is no direct agent invoke/heartbeat endpoint, static
+Paperclip MCP, provider-held Paperclip credential, issue checkout, or agent
+polling loop.
 
 ## Session and Continuity Model
 
@@ -115,9 +114,9 @@ raw-provider, or provider-specific execution adapters do not exist.
 - Every provider attempt belongs to an admitted issue-execution ref.
 - Issue creator and request are immutable; ownership changes advance the epoch.
 - Agent org position, title, or creation order grants no authority.
-- Context and actions default false and are evaluated independently.
+- Context and actions are explicit and evaluated independently.
 - The provider never receives generic Paperclip API credentials or ambient
-  identity/workspace environment variables.
+  identity/run-directory environment variables.
 - Comments are projected from typed Session events; generic writers are absent.
 - Company archive and hard deletion fence and drain the complete Session/run
   graph before purge.

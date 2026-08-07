@@ -198,7 +198,7 @@ export function readPersistedDevServerStatus(
 
 export function toDevServerHealthStatus(
   persisted: PersistedDevServerStatus,
-  opts: { autoRestartEnabled: boolean; activeRunCount: number },
+  opts: { activeRunCount: number; autoRestartEnabled: boolean },
 ): DevServerHealthStatus {
   const hasPathChanges = persisted.changedPathCount > 0;
   const reason = hasPathChanges ? "backend_changes" : null;
@@ -213,7 +213,8 @@ export function toDevServerHealthStatus(
     changedPathsSample: persisted.changedPathsSample,
     autoRestartEnabled: opts.autoRestartEnabled,
     activeRunCount: opts.activeRunCount,
-    waitingForIdle: restartRequired && opts.autoRestartEnabled && opts.activeRunCount > 0,
+    waitingForIdle:
+      opts.autoRestartEnabled && restartRequired && opts.activeRunCount > 0,
     lastRestartAt: persisted.lastRestartAt,
   };
 }

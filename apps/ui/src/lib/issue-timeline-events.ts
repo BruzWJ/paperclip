@@ -20,24 +20,8 @@ export interface IssueTimelineEvent {
     from: IssueTimelineOwner;
     to: IssueTimelineOwner;
   };
-  workspaceChange?: {
-    from: IssueTimelineWorkspace;
-    to: IssueTimelineWorkspace;
-  };
   commentId?: string | null;
   followUpRequested?: boolean;
-}
-
-export interface IssueTimelineWorkspace {
-  label: string | null;
-  projectWorkspaceId: string | null;
-  executionWorkspaceId: string | null;
-  mode: string | null;
-}
-
-export function formatTimelineWorkspaceLabel(workspace: IssueTimelineWorkspace) {
-  const fallbackId = workspace.executionWorkspaceId ?? workspace.projectWorkspaceId;
-  return workspace.label ?? (fallbackId ? fallbackId.slice(0, 8) : "None");
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -79,33 +63,6 @@ function ownerFromRecord(value: unknown): IssueTimelineOwner | null {
     return { ownerKind, ownerAgentId: null, ownerUserId: null };
   }
   return null;
-}
-
-function sameWorkspace(left: IssueTimelineWorkspace, right: IssueTimelineWorkspace) {
-  return left.projectWorkspaceId === right.projectWorkspaceId
-    && left.executionWorkspaceId === right.executionWorkspaceId
-    && left.mode === right.mode
-    && left.label === right.label;
-}
-
-function workspaceFromRecord(value: unknown): IssueTimelineWorkspace | null {
-  const record = asRecord(value);
-  if (!record) return null;
-  return {
-    label: nullableString(record.label),
-    projectWorkspaceId: nullableString(record.projectWorkspaceId),
-    executionWorkspaceId: nullableString(record.executionWorkspaceId),
-    mode: nullableString(record.mode),
-  };
-}
-
-function workspaceChangeFromDetails(details: Record<string, unknown>) {
-  const change = asRecord(details.workspaceChange);
-  if (!change) return null;
-  const from = workspaceFromRecord(change.from);
-  const to = workspaceFromRecord(change.to);
-  if (!from || !to || sameWorkspace(from, to)) return null;
-  return { from, to };
 }
 
 function sortTimelineEvents<T extends { createdAt: Date | string; id: string }>(events: T[]) {
@@ -173,15 +130,9 @@ export function extractIssueTimelineEvents(activity: ActivityEvent[] | null | un
       }
     }
 
-    const workspaceChange = workspaceChangeFromDetails(details);
-    if (workspaceChange) {
-      timelineEvent.workspaceChange = workspaceChange;
-    }
-
     if (
       timelineEvent.lifecycleStatusChange
       || timelineEvent.ownerChange
-      || timelineEvent.workspaceChange
       || timelineEvent.followUpRequested
     ) {
       events.push(timelineEvent);

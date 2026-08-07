@@ -324,8 +324,6 @@ function compileInput(): RuntimeInterfaceCompileInput {
     creatorUpdateTargets: [],
     mentionTargets: [],
     configureTargets: [],
-    agentHireCompanyToolOptions: [],
-    selectedCompanyTools: [],
     pluginTools: [],
   };
 }
@@ -343,10 +341,6 @@ function setup(compile = compileInput()) {
     kind: "authenticated" as const,
     capability,
   }));
-  const writeAudit = vi.fn(async (
-    _event: unknown,
-    _transaction?: IssueSessionDbTransaction,
-  ) => undefined);
   const repository: PromptCapabilityGatewayRepository = {
     authenticateIngressBearerHash,
     authenticateBearerHash,
@@ -354,24 +348,17 @@ function setup(compile = compileInput()) {
     resolveCompileInput: vi.fn(async () => compile),
     createPluginRunContext: vi.fn(async () => undefined),
     resolvePluginRunContextHash: vi.fn(async () => null),
-    writeAudit,
   };
   const registerTerminalInvalid = vi.fn(async () => undefined);
-  const mentionAuditTransaction = {} as IssueSessionDbTransaction;
   const execute = vi.fn(async (
     input: Parameters<PromptCapabilityToolExecutor["execute"]>[0],
-  ) => {
-    await input.commitMentionAudit?.(mentionAuditTransaction);
-    return { source: "paperclip" as const, value: { accepted: true } };
-  });
+  ) => ({ source: "paperclip" as const, value: { accepted: true } }));
   return {
     authenticateIngressBearerHash,
     authenticateBearerHash,
     execute,
     registerTerminalInvalid,
     revalidate,
-    mentionAuditTransaction,
-    writeAudit,
     gateway: createPromptCapabilityGateway({
       repository,
       executor: { execute, registerTerminalInvalid },
@@ -436,7 +423,6 @@ function composedPluginToolRuntime() {
     revalidate: authenticated,
     resolveCompileInput: vi.fn(async () => compile),
     createPluginRunContext,
-    writeAudit: vi.fn(async () => undefined),
   } as unknown as PromptCapabilityGatewayRepository;
   const unused = vi.fn(async () => undefined);
   const executor = createRuntimeToolExecutor({
@@ -451,7 +437,6 @@ function composedPluginToolRuntime() {
       agentHire: unused,
       agentConfigure: unused,
     } as never,
-    companyTools: {} as never,
     pluginTools: createRuntimePluginToolPort({ getWorker } as never),
     callLedger: {
       claim: vi.fn(async () => ({
@@ -590,7 +575,7 @@ describe("prompt-capability gateway", () => {
     );
   });
 
-  it("commits a canonical mention audit through the action transaction", async () => {
+  it("executes a canonical board mention through the action port", async () => {
     const runtime = setup({
       ...compileInput(),
       actionGrants: { mention_board: true },
@@ -608,10 +593,10 @@ describe("prompt-capability gateway", () => {
       value: { accepted: true },
     });
 
-    expect(runtime.writeAudit).toHaveBeenCalledOnce();
-    expect(runtime.writeAudit.mock.calls[0]![1]).toBe(
-      runtime.mentionAuditTransaction,
-    );
+    expect(runtime.execute).toHaveBeenCalledWith(expect.objectContaining({
+      capability,
+      descriptor: expect.objectContaining({ name: "mention_board" }),
+    }));
   });
 
   it("rejects every credential class other than a prompt capability", async () => {

@@ -106,7 +106,7 @@ export function registerAgentCommands(program: Command): void {
     agent
       .command("runtime:create")
       .description(
-        "Create an ordinary runtime-agent identity with complete explicit grants and tool selections",
+        "Create an ordinary runtime-agent identity with complete explicit grants and runtime configuration",
       )
       .option("-C, --company-id <id>", "Company ID")
       .requiredOption(
@@ -144,7 +144,7 @@ export function registerAgentCommands(program: Command): void {
     agent
       .command("runtime:get")
       .description(
-        "Get an agent's runtime identity, grants, and company-tool selections",
+        "Get an agent's runtime identity and grants",
       )
       .argument("<agentId>", "Agent ID")
       .action(async (agentId: string, opts: BaseClientOptions) => {
@@ -164,7 +164,7 @@ export function registerAgentCommands(program: Command): void {
     agent
       .command("runtime:update")
       .description(
-        "Update only an agent's runtime identity, grants, or company-tool selections",
+        "Update only an agent's runtime identity or grants",
       )
       .argument("<agentId>", "Agent ID")
       .requiredOption(
@@ -209,7 +209,7 @@ export function registerAgentCommands(program: Command): void {
       .argument("<agentId>", "Agent ID")
       .requiredOption(
         "--payload-json <json>",
-        "Adapter revision JSON with explicit adapterType, adapterConfig, defaultEnvironmentId, runtimeConfig, companySkillPins, and skillChannel",
+        "Adapter revision JSON with explicit adapterType, adapterConfig, runtimeConfig, companySkillPins, and skillChannel",
       )
       .action(async (agentId: string, opts: AgentJsonPayloadOptions) => {
         try {

@@ -182,7 +182,6 @@ export const portabilityAgentManifestEntrySchema = z.object({
     adapterType: z.string().min(1),
     adapterConfig: portabilityAgentAdapterConfigSchema,
     runtimeConfig: portabilityAgentRuntimeConfigSchema,
-    sourceEnvironmentId: z.string().uuid(),
     skillChannel: companySkillChannelSchema,
   }).strict(),
   contextGrants: exactBooleanMap(AGENT_CONTEXT_GRANT_KEYS),
@@ -190,7 +189,6 @@ export const portabilityAgentManifestEntrySchema = z.object({
   mentionReachGrants: exactBooleanMap(
     AGENT_MENTION_REACH_GRANT_KEYS,
   ),
-  companyToolIds: z.array(z.string().uuid()),
   governance: agentGovernancePolicySchema,
   permissionGrants: z.array(z.object({
     permissionKey: z.enum(PERMISSION_KEYS),
@@ -228,20 +226,6 @@ export const portabilityProjectManifestEntrySchema = z.object({
   targetDate: z.string().nullable(),
   color: z.string().nullable(),
   status: z.string().nullable(),
-  executionWorkspacePolicy: z.record(z.string(), z.unknown()).nullable(),
-  workspaces: z.array(z.object({
-    key: z.string().min(1),
-    name: z.string().min(1),
-    sourceType: z.string().nullable(),
-    repoUrl: z.string().nullable(),
-    repoRef: z.string().nullable(),
-    defaultRef: z.string().nullable(),
-    visibility: z.string().nullable(),
-    setupCommand: z.string().nullable(),
-    cleanupCommand: z.string().nullable(),
-    metadata: z.record(z.string(), z.unknown()).nullable(),
-    isPrimary: z.boolean(),
-  }).strict()),
   metadata: z.record(z.string(), z.unknown()).nullable(),
 }).strict();
 
@@ -279,7 +263,6 @@ export const portabilityIssueManifestEntrySchema = z.object({
   title: z.string().min(1).nullable(),
   path: z.string().min(1),
   projectSlug: z.string().min(1).nullable(),
-  projectWorkspaceKey: z.string().min(1).nullable(),
   ownerAgentSlug: z.string().min(1),
   request: z.string().min(1),
   recurring: z.boolean(),
@@ -291,7 +274,6 @@ export const portabilityIssueManifestEntrySchema = z.object({
   priority: z.string().nullable(),
   labelIds: z.array(z.string().min(1)),
   billingCode: z.string().nullable(),
-  executionWorkspaceSettings: z.record(z.string(), z.unknown()).nullable(),
   comments: z.array(portabilityIssueCommentManifestEntrySchema),
   metadata: z.record(z.string(), z.unknown()).nullable(),
 })
@@ -382,7 +364,6 @@ export type CompanyPortabilityExport = z.infer<typeof companyPortabilityExportSc
 export const portabilityAdapterOverrideSchema = z.object({
   adapterType: z.string().min(1),
   adapterConfig: portabilityAgentAdapterConfigSchema,
-  defaultEnvironmentId: z.string().uuid(),
   skillChannel: companySkillChannelSchema,
 }).strict();
 

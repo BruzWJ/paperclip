@@ -123,13 +123,6 @@ function installStorybookApiFixtures() {
       });
     }
 
-    if (url.pathname === "/api/instance/settings/experimental") {
-      return Response.json({
-        enableIsolatedWorkspaces: true,
-        autoRestartDevServerWhenIdle: false,
-      });
-    }
-
     if (url.pathname === "/api/adapters") {
       return Response.json([
         {

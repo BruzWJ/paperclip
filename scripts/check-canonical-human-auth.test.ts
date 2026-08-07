@@ -472,32 +472,6 @@ describe("canonical HTTP actor boundary", () => {
     );
   });
 
-  it("requires an explicit run-bearer wall at named MCP gateways", () => {
-    const violations = scanHttpActorBoundary(
-      files({
-        "apps/server/src/routes/tool-gateway.ts": `
-          router.post("/mcp/gateways/:id", handleNamedGateway);
-        `,
-      }),
-    );
-    assert.ok(
-      violations.some((entry) =>
-        entry.message.includes("named MCP gateway")
-      ),
-    );
-    assert.deepEqual(
-      scanHttpActorBoundary(
-        files({
-          "apps/server/src/routes/tool-gateway.ts": `
-            assertRunBearerRejectedByNamedGateway(bearer);
-            router.post("/mcp/gateways/:id", handleNamedGateway);
-          `,
-        }),
-      ),
-      [],
-    );
-  });
-
   it("requires the exact Better Auth session-user binding before live-event authorization", () => {
     const canonical = `
       async function authorizeUpgrade() {
@@ -561,12 +535,12 @@ describe("Better Auth table writer boundary", () => {
           export * from "./auth.js";
         `,
         "apps/server/src/services/direct.ts": `
-          import { people as importedPeople } from "../../../../../packages/db/schema/auth-barrel.js";
+          import { people as importedPeople } from "../../../../packages/db/schema/auth-barrel.js";
           const localPeople = importedPeople;
           db.insert(localPeople).values({});
         `,
         "apps/server/src/services/namespace.ts": `
-          import * as schema from "../../../../../packages/db/schema/auth-barrel.js";
+          import * as schema from "../../../../packages/db/schema/auth-barrel.js";
           const tables = schema;
           const { authSessions: sessions } = tables;
           tx.update(sessions).set({});

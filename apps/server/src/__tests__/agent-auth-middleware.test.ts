@@ -92,7 +92,6 @@ describe("generic API bearer authentication", () => {
     ["retired agent API key", "pcp_agent_legacy_key"],
     ["JWT-shaped credential", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZ2VudC0xIn0.invalid"],
     ["prompt-capability bearer", "pc_run_v1_not-a-real-run-token"],
-    ["named tool-gateway bearer", "pcgt_not-a-real-session.not-a-real-secret"],
   ])("rejects a %s on generic API routes", async (_label, token) => {
     const response = await request(createApp())
       .get("/protected")

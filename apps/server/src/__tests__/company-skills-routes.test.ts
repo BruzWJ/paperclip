@@ -35,7 +35,6 @@ const mockCompanySkillService = vi.hoisted(() => ({
   updateSkill: vi.fn(),
   updateFile: vi.fn(),
   deleteFile: vi.fn(),
-  scanProjectWorkspaces: vi.fn(),
   deleteSkill: vi.fn(),
   auditSkill: vi.fn(),
   getById: vi.fn(),
@@ -257,17 +256,6 @@ describe("company skill mutation permissions", () => {
       imported: [],
       warnings: [],
     });
-    mockCompanySkillService.scanProjectWorkspaces.mockResolvedValue({
-      scannedProjects: 0,
-      scannedWorkspaces: 0,
-      discovered: 0,
-      imported: [],
-      updated: [],
-      skipped: [],
-      conflicts: [],
-      candidates: [],
-      warnings: [],
-    });
     mockCatalogService.listCatalogSkillsOrEmpty.mockReturnValue([]);
     mockCompanySkillService.list.mockResolvedValue([]);
     mockCompanySkillService.categoryCounts.mockResolvedValue([]);
@@ -486,16 +474,6 @@ describe("company skill mutation permissions", () => {
       path: "references",
       target: "folder",
       deletedPaths: ["references/example.md"],
-    });
-    mockCompanySkillService.scanProjectWorkspaces.mockResolvedValue({
-      scannedProjects: 0,
-      scannedWorkspaces: 0,
-      discovered: 0,
-      imported: [],
-      updated: [],
-      skipped: [],
-      conflicts: [],
-      warnings: [],
     });
     mockCompanySkillService.deleteSkill.mockResolvedValue({
       id: "skill-1",
@@ -728,81 +706,6 @@ describe("company skill mutation permissions", () => {
       warnings: [],
     });
   }, 10_000);
-
-  it("forwards preview and selective scan-projects requests through the existing skill mutation gate", async () => {
-    const workspaceId = "11111111-1111-4111-8111-111111111111";
-    mockCompanySkillService.scanProjectWorkspaces.mockResolvedValue({
-      scannedProjects: 1,
-      scannedWorkspaces: 1,
-      discovered: 1,
-      imported: [],
-      updated: [],
-      skipped: [],
-      conflicts: [],
-      candidates: [{
-        slug: "review",
-        name: "Review",
-        description: null,
-        workspaceId,
-        workspaceName: "Primary",
-        projectId: "22222222-2222-4222-8222-222222222222",
-        projectName: "Paperclip",
-        directoryRoot: ".codex/skills",
-        relativePath: ".codex/skills/review",
-        status: "new",
-      }],
-      warnings: [],
-    });
-    const app = await createApp(companyOperatorActor());
-
-    const preview = await request(app)
-      .post("/api/companies/company-1/skills/scan-projects")
-      .send({ mode: "preview", workspaceIds: [workspaceId] });
-    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
-    expect(preview.body.candidates).toHaveLength(1);
-    expect(mockCompanySkillService.scanProjectWorkspaces).toHaveBeenCalledWith("company-1", {
-      mode: "preview",
-      workspaceIds: [workspaceId],
-    });
-
-    const selective = await request(app)
-      .post("/api/companies/company-1/skills/scan-projects")
-      .send({
-        mode: "import",
-        workspaceIds: [workspaceId],
-        selection: [{ workspaceId, path: ".codex/skills/review", slug: "review-project" }],
-      });
-    expect(selective.status, JSON.stringify(selective.body)).toBe(200);
-    expect(mockCompanySkillService.scanProjectWorkspaces).toHaveBeenLastCalledWith("company-1", {
-      mode: "import",
-      workspaceIds: [workspaceId],
-      selection: [{ workspaceId, path: ".codex/skills/review", slug: "review-project" }],
-    });
-    expect(mockAccessService.decide).toHaveBeenCalledWith(expect.objectContaining({
-      action: "skill_config:update",
-      resource: { type: "company", companyId: "company-1" },
-    }));
-    expect(mockLogActivity).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
-      action: "company.skills_scanned",
-      details: expect.objectContaining({ mode: "import", candidateCount: 1 }),
-    }));
-  });
-
-  it("blocks unauthorized preview scan-projects requests before candidate data is returned", async () => {
-    const workspaceId = "11111111-1111-4111-8111-111111111111";
-    mockAccessService.decide.mockResolvedValue(denySkillChangeDecision(
-      "deny_actor_restricted",
-      "Actor is restricted from changing skill configuration.",
-    ));
-
-    const res = await request(await createApp(companyOperatorActor()))
-      .post("/api/companies/company-1/skills/scan-projects")
-      .send({ mode: "preview", workspaceIds: [workspaceId] });
-
-    expect(res.status, JSON.stringify(res.body)).toBe(403);
-    expect(res.body.error).toBe("Actor is restricted from changing skill configuration.");
-    expect(mockCompanySkillService.scanProjectWorkspaces).not.toHaveBeenCalled();
-  });
 
   it("allows board users with skills:create to create, import, install, update, delete, audit, and reset company skills", async () => {
     const app = await createApp(companyOperatorActor());

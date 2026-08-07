@@ -1711,7 +1711,6 @@ export async function purgeCompanySessionGraphInTx(
     .update(agents)
     .set({
       currentAdapterConfigRevisionId: null,
-      defaultEnvironmentId: null,
       reportsTo: null,
     })
     .where(eq(agents.companyId, input.companyId));

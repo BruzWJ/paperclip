@@ -15,7 +15,6 @@ import type {
   PauseReason,
 } from "@paperclipai/shared";
 import { companies } from "./companies.js";
-import { environments } from "./environments.js";
 import { agentAdapterConfigRevisions } from "./agent_adapter_config_revisions.js";
 import {
   moneyAmountColumn,
@@ -40,7 +39,6 @@ export const agents = pgTable(
       { onDelete: "restrict" },
     ),
     runtimeConfig: jsonb("runtime_config").$type<Record<string, unknown>>().notNull().default({}),
-    defaultEnvironmentId: uuid("default_environment_id").references(() => environments.id, { onDelete: "set null" }),
     budgetMonthlyAmount: moneyAmountColumn("budget_monthly_amount").notNull(),
     pauseReason: text("pause_reason").$type<PauseReason>(),
     pausedAt: timestamp("paused_at", { withTimezone: true }),
@@ -58,10 +56,6 @@ export const agents = pgTable(
     unique("agents_company_id_uq").on(table.companyId, table.id),
     index("agents_company_status_idx").on(table.companyId, table.status),
     index("agents_company_reports_to_idx").on(table.companyId, table.reportsTo),
-    index("agents_company_default_environment_idx").on(
-      table.companyId,
-      table.defaultEnvironmentId,
-    ),
     index("agents_current_adapter_config_revision_idx").on(
       table.companyId,
       table.currentAdapterConfigRevisionId,

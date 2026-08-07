@@ -146,7 +146,7 @@ describe("canonical ACP adapter configuration revision", () => {
           limits: null,
         },
         executionTargetSelector: {
-          defaultEnvironmentId: "00000000-0000-4000-8000-000000000001",
+          environmentId: "00000000-0000-4000-8000-000000000001",
           executionTargetDriver: "local",
           executionTargetDigest: "b".repeat(64),
         },

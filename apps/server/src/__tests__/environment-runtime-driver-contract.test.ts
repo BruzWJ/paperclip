@@ -58,7 +58,7 @@ function lease(driver: string, status: "active" | "released" = "active"): Enviro
     cleanupStatus: "not_required",
     metadata: {
       driver,
-      executionWorkspaceMode: "isolated",
+      executionWorkspaceMode: "shared_workspace",
     },
     createdAt: now,
     updatedAt: now,
@@ -104,7 +104,7 @@ describe.each(["local", "sandbox", "ssh"])(
         runId,
         persistedExecutionWorkspace: {
           id: workspaceId,
-          mode: "isolated",
+          mode: "shared_workspace",
         },
         adapterType: "codex",
       })).resolves.toEqual({
@@ -112,7 +112,7 @@ describe.each(["local", "sandbox", "ssh"])(
         lease: activeLease,
         leaseContext: {
           executionWorkspaceId: workspaceId,
-          executionWorkspaceMode: "isolated",
+          executionWorkspaceMode: "shared_workspace",
         },
       });
 
@@ -123,9 +123,8 @@ describe.each(["local", "sandbox", "ssh"])(
         agentId: "55555555-5555-4555-8555-555555555555",
         runId,
         executionWorkspaceId: workspaceId,
-        executionWorkspaceMode: "isolated",
+        executionWorkspaceMode: "shared_workspace",
         adapterType: "codex",
-        applyCustomImageTemplate: false,
       });
 
       await expect(runtime.releaseRunLeases(runId)).resolves.toEqual([{
@@ -133,7 +132,7 @@ describe.each(["local", "sandbox", "ssh"])(
         lease: lease(driverKey, "released"),
         leaseContext: {
           executionWorkspaceId: workspaceId,
-          executionWorkspaceMode: "isolated",
+          executionWorkspaceMode: "shared_workspace",
         },
       }]);
       expect(contract.releaseRunLease).toHaveBeenCalledWith({

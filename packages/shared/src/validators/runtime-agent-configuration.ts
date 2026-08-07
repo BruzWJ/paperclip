@@ -49,53 +49,6 @@ export const agentMentionReachGrantMapSchema = z
   .object(requiredBooleanShape(AGENT_MENTION_REACH_GRANT_KEYS))
   .strict();
 
-const companyToolIdsSchema = z
-  .array(z.string().uuid())
-  .superRefine((ids, ctx) => {
-    const firstIndexById = new Map<string, number>();
-    ids.forEach((id, index) => {
-      const firstIndex = firstIndexById.get(id);
-      if (firstIndex === undefined) {
-        firstIndexById.set(id, index);
-        return;
-      }
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Duplicate company tool id (first supplied at index ${firstIndex})`,
-        path: [index],
-      });
-    });
-  });
-
-function companyToolIdsSchemaForOptions(
-  companyToolIds: readonly string[],
-) {
-  const ids = Array.from(new Set(companyToolIds)).sort();
-  const itemSchema =
-    ids.length > 0
-      ? z.enum(ids as [string, ...string[]])
-      : z.string().uuid();
-  const schema =
-    ids.length > 0
-      ? z.array(itemSchema)
-      : z.array(itemSchema).length(0);
-  return schema.superRefine((values, ctx) => {
-    const firstIndexById = new Map<string, number>();
-    values.forEach((id, index) => {
-      const firstIndex = firstIndexById.get(id);
-      if (firstIndex === undefined) {
-        firstIndexById.set(id, index);
-        return;
-      }
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Duplicate company tool id (first supplied at index ${firstIndex})`,
-        path: [index],
-      });
-    });
-  });
-}
-
 const runtimeAgentConfigurationFieldsSchema = z
   .object({
     name: z.string().trim().min(1).max(160),
@@ -105,7 +58,6 @@ const runtimeAgentConfigurationFieldsSchema = z
     contextGrants: agentContextGrantMapSchema,
     actionGrants: paperclipActionGrantMapSchema,
     mentionReachGrants: agentMentionReachGrantMapSchema,
-    companyToolIds: companyToolIdsSchema,
   })
   .strict();
 
@@ -120,40 +72,10 @@ export const runtimeAgentHireConfigurationSchema =
     .strict();
 
 /**
- * Builds the provider-side hire contract for the exact create-eligible
- * company-tool catalog compiled for one run. An empty live catalog accepts
- * only `companyToolIds: []`.
- */
-export function runtimeAgentHireConfigurationSchemaForCompanyTools(
-  companyToolIds: readonly string[],
-) {
-  return runtimeAgentConfigurationFieldsSchema
-    .omit({ reportsTo: true, companyToolIds: true })
-    .extend({
-      companyToolIds: companyToolIdsSchemaForOptions(companyToolIds),
-    })
-    .strict();
-}
-
-export const runtimeAgentCompanyToolOptionSchema = z
-  .object({
-    catalogEntryId: z.string().uuid(),
-    connectionId: z.string().uuid(),
-    connectionName: z.string().min(1),
-    title: z.string().min(1),
-    description: z.string(),
-    catalogVersionHash: z.string().min(1),
-  })
-  .strict();
-
-export const runtimeAgentCompanyToolOptionsSchema = z
-  .array(runtimeAgentCompanyToolOptionSchema);
-
-/**
  * The complete ordinary runtime-agent configuration.
  *
  * Creation is intentionally explicit: callers supply every identity field,
- * every dial cell, and both tool-selection sets. No adapter, provider, or
+ * every dial cell. No adapter, provider, or
  * board-operational field is accepted at this boundary.
  */
 export const runtimeAgentCreateConfigurationSchema =
@@ -218,7 +140,6 @@ export const agentAdapterRevisionConfigurationSchema = z
   .object({
     adapterType: agentAdapterTypeSchema,
     adapterConfig: adapterConfigSchema,
-    defaultEnvironmentId: z.string().uuid(),
     runtimeConfig: agentRuntimeConfigSchema,
     companySkillPins: companySkillPinsSchema,
     skillChannel: companySkillChannelSchema,
@@ -302,9 +223,6 @@ export type RuntimeAgentCreateConfigurationInput = z.infer<
 >;
 export type RuntimeAgentHireConfigurationInput = z.infer<
   typeof runtimeAgentHireConfigurationSchema
->;
-export type RuntimeAgentCompanyToolOption = z.infer<
-  typeof runtimeAgentCompanyToolOptionSchema
 >;
 export type RuntimeAgentUpdateConfigurationInput = z.infer<
   typeof runtimeAgentUpdateConfigurationSchema

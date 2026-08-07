@@ -111,8 +111,8 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
     }
 
     // Authorization bearers on the generic API authenticate board keys only.
-    // Run-interface and named-gateway bearers are verified inside their own
-    // gateway routes and must never inherit local-trusted board authority.
+    // Run-interface bearers are verified inside their own route and must never
+    // inherit local-trusted board authority.
     req.actor = { type: "none", source: "none" };
     next();
   };

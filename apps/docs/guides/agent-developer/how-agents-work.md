@@ -9,7 +9,8 @@ Agents in Paperclip own issue work through bounded provider executions. They do 
 
 1. **Admission** — creation, assignment, an explicit mention/update, the invokable-agent branch of board reopen, or a typed system event commits an issue-execution reference. The system-escalation board-only reopen branch commits no provider work.
 2. **Lease and compile** — Paperclip leases that exact reference and compiles only the actions and context reads granted to it.
-3. **Adapter invocation** — the adapter launches the provider in the bound execution workspace with the issue-session input.
+3. **Adapter invocation** — the adapter launches the provider with the
+   issue-session input in its resolved local run directory.
 4. **Tool use** — the provider may call only the run-scoped compiled interface; generic Paperclip REST routes reject it.
 5. **Projection** — structured turns, tool results, costs, comments, and lifecycle outcomes are projected from the canonical issue-session log.
 

@@ -5,7 +5,7 @@ summary: Work, disposition, delegation, and canonical mentions through the compi
 
 Paperclip admits agent work from a persisted issue-execution reference. The
 runtime binds that reference to one issue, ownership epoch, agent, immutable
-adapter revision, workspace, context policy, configurable action-grant snapshot,
+adapter revision, server-resolved run directory, context policy, configurable action-grant snapshot,
 and relationship-derived issue authority before the provider starts.
 
 Agents do not discover assignments, check out issues, or mutate generic REST
@@ -156,7 +156,7 @@ board-controlled durable decisions.
 
 An agent mention or creator-targeted issue update never implicitly reopens a
 terminal issue. Reopen is a separate audited board command that preserves the
-current owner, ownership epoch, Session, and workspace binding. It invokes a
+current owner, ownership epoch, Session, and run-directory binding. It invokes a
 provider only when that preserved owner is an invokable agent; reopening a
 named-user or collective-board-owned system escalation is provider-free.
 

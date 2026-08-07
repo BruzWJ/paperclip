@@ -96,37 +96,6 @@ describe("run inspection commands", () => {
     expect(fetchMock.mock.calls[2]?.[1]?.method).toBe("POST");
   });
 
-  it("supports typed workspace logs and canonical watchdog decisions", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ text: "workspace" }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "decision-1", decision: "continue" }), { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
-    vi.spyOn(console, "log").mockImplementation(() => {});
-
-    await createProgram().parseAsync([
-      "run", "workspace-log", "55555555-5555-4555-8555-555555555555",
-      "--api-base", "http://localhost:3100",
-      "--api-key", "board-token",
-    ], { from: "user" });
-    await createProgram().parseAsync([
-      "run", "watchdog-decision", RUN_ID,
-      "--api-base", "http://localhost:3100",
-      "--api-key", "board-token",
-      "--decision", "continue",
-      "--reason", "operator reviewed",
-    ], { from: "user" });
-
-    expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "http://localhost:3100/api/workspace-operations/55555555-5555-4555-8555-555555555555/log?offset=0",
-    );
-    expect(fetchMock.mock.calls[1]?.[0]).toBe(`http://localhost:3100/api/runs/${RUN_ID}/watchdog-decisions`);
-    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
-      decision: "continue",
-      reason: "operator reviewed",
-    });
-  });
-
   it("exposes issue run helpers", async () => {
     const fetchMock = vi
       .fn()

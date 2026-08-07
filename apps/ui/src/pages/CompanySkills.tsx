@@ -13,7 +13,6 @@ import type {
   CompanySkillFileDetail,
   CompanySkillFileInventoryEntry,
   CompanySkillListItem,
-  CompanySkillProjectScanResult,
   CompanySkillSharingScope,
   CompanySkillSourceBadge,
   CompanySkillTrustLevel,
@@ -85,7 +84,6 @@ import {
   type SkillCreateDraft,
 } from "../lib/skill-create";
 import { SkillCardIcon } from "../components/SkillCardIcon";
-import { ImportSkillsFromProjectDialog } from "./skills/ImportSkillsFromProjectDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -132,7 +130,6 @@ import {
   Folder,
   FolderInput,
   FolderOpen,
-  FolderSearch,
   GitFork,
   Github,
   Globe,
@@ -284,17 +281,6 @@ function middleTruncate(value: string, maxLength = 72) {
   if (value.length <= maxLength) return value;
   const edgeLength = Math.floor((maxLength - 3) / 2);
   return `${value.slice(0, edgeLength)}...${value.slice(value.length - edgeLength)}`;
-}
-
-function formatProjectScanSummary(result: CompanySkillProjectScanResult) {
-  const parts = [
-    `${result.discovered} found`,
-    `${result.imported.length} imported`,
-    `${result.updated.length} updated`,
-  ];
-  if (result.conflicts.length > 0) parts.push(`${result.conflicts.length} conflicts`);
-  if (result.skipped.length > 0) parts.push(`${result.skipped.length} skipped`);
-  return `${parts.join(", ")} across ${result.scannedWorkspaces} workspace${result.scannedWorkspaces === 1 ? "" : "s"}.`;
 }
 
 function fileIcon(kind: CompanySkillFileInventoryEntry["kind"]) {
@@ -1033,11 +1019,7 @@ export function DiscoveryGrid({
   totalCount,
   onCreate,
   onImport,
-  onImportFromProject,
   onBrowseCatalog,
-  onScan,
-  scanPending,
-  scanStatus,
   folderResult,
   folderSelection = "all",
   foldersLoading = false,
@@ -1080,11 +1062,7 @@ export function DiscoveryGrid({
   totalCount: number;
   onCreate: () => void;
   onImport: () => void;
-  onImportFromProject: () => void;
   onBrowseCatalog: () => void;
-  onScan: () => void;
-  scanPending: boolean;
-  scanStatus: string | null;
   folderResult?: FolderListResult | null;
   folderSelection?: FolderSelection;
   foldersLoading?: boolean;
@@ -1236,15 +1214,6 @@ export function DiscoveryGrid({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={onScan}
-            disabled={scanPending}
-            title="Scan project workspaces for skills"
-          >
-            <RefreshCw className={cn("h-4 w-4", scanPending && "animate-spin")} />
-          </Button>
           <Button asChild variant="outline" size="sm">
             <Link to="/skills/studio">
               <FlaskConical data-icon="inline-start" className="h-3.5 w-3.5" />
@@ -1271,10 +1240,6 @@ export function DiscoveryGrid({
               <DropdownMenuItem onSelect={onImport}>
                 <Globe className="mr-2 h-4 w-4" />
                 Import from path or URL
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onImportFromProject}>
-                <FolderSearch className="mr-2 h-4 w-4" />
-                Import skills from project
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1354,7 +1319,6 @@ export function DiscoveryGrid({
 
         {/* Grid body */}
         <div className="min-h-0 flex-1 overflow-auto p-4">
-          {scanStatus ? <p className="mb-3 text-xs text-muted-foreground">{scanStatus}</p> : null}
           {showFolderRail && onFolderSelect ? (
             <div className="mb-4">
               <FolderBreadcrumb result={folderResult} selection={folderSelection} onSelect={onFolderSelect} />
@@ -3956,7 +3920,6 @@ export function CompanySkills() {
   const [draft, setDraft] = useState("");
   const [displayedDetail, setDisplayedDetail] = useState<CompanySkillDetail | null>(null);
   const [displayedFile, setDisplayedFile] = useState<CompanySkillFileDetail | null>(null);
-  const [scanStatusMessage, setScanStatusMessage] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTargetSkillId, setDeleteTargetSkillId] = useState<string | null>(null);
   const [deleteTargetDetail, setDeleteTargetDetail] = useState<CompanySkillDetail | null>(null);
@@ -3979,7 +3942,6 @@ export function CompanySkills() {
   const [discoverySort, setDiscoverySort] = useState<DiscoverySort>("agents");
   const [createError, setCreateError] = useState<string | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [importFromProjectOpen, setImportFromProjectOpen] = useState(false);
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [folderDialogTarget, setFolderDialogTarget] = useState<FolderListItem | null>(null);
   const [folderDialogParentId, setFolderDialogParentId] = useState<string | null>(null);
@@ -4291,42 +4253,6 @@ export function CompanySkills() {
       reportSkillError(error, "Skill import failed", "Failed to import skill source.", "Importing skills");
     },
   });
-
-  const scanProjects = useMutation({
-    mutationFn: () => companySkillsApi.scanProjects(selectedCompanyId!),
-    onMutate: () => {
-      setScanStatusMessage("Scanning project workspaces for skills...");
-    },
-    onSuccess: async (result) => {
-      setScanStatusMessage("Refreshing skills list...");
-      await queryClient.invalidateQueries({ queryKey: queryKeys.companySkills.list(selectedCompanyId!) });
-      const summary = formatProjectScanSummary(result);
-      setScanStatusMessage(summary);
-      pushToast({
-        tone: "success",
-        title: "Project skill scan complete",
-        body: summary,
-      });
-      if (result.conflicts[0]) {
-        pushToast({
-          tone: "warn",
-          title: "Skill conflicts found",
-          body: result.conflicts[0].reason,
-        });
-      } else if (result.warnings[0]) {
-        pushToast({
-          tone: "warn",
-          title: "Scan warnings",
-          body: result.warnings[0],
-        });
-      }
-    },
-    onError: (error) => {
-      setScanStatusMessage(null);
-      reportSkillError(error, "Project skill scan failed", "Failed to scan project workspaces.", "Scanning projects for skills");
-    },
-  });
-
 
   const createSkill = useMutation({
     mutationFn: (payload: CompanySkillCreateRequest) => companySkillsApi.create(selectedCompanyId!, payload),
@@ -5234,17 +5160,6 @@ export function CompanySkills() {
         </DialogContent>
       </Dialog>
 
-      {selectedCompanyId ? (
-        <ImportSkillsFromProjectDialog
-          open={importFromProjectOpen}
-          onOpenChange={setImportFromProjectOpen}
-          companyId={selectedCompanyId}
-          onImportFromPath={() => {
-            setImportFromProjectOpen(false);
-            setImportDialogOpen(true);
-          }}
-        />
-      ) : null}
       <FolderFormDialog
         open={folderDialogOpen}
         kind="skill"
@@ -5345,11 +5260,7 @@ export function CompanySkills() {
           totalCount={discoveryCards.length}
           onCreate={() => void openNewSkill()}
           onImport={() => setImportDialogOpen(true)}
-          onImportFromProject={() => setImportFromProjectOpen(true)}
           onBrowseCatalog={() => setDiscoveryTab("catalog")}
-          onScan={() => scanProjects.mutate()}
-          scanPending={scanProjects.isPending}
-          scanStatus={scanStatusMessage}
           folderResult={showInstalledFolders ? railSkillFolderResult : null}
           folderSelection={folderSelection}
           foldersLoading={skillFoldersQuery.isLoading}

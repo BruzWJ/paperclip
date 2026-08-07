@@ -13,17 +13,13 @@ type JsonRecord = Record<string, unknown>;
 
 export const LOW_TRUST_ISSUE_ANCESTRY_MAX_DEPTH = 12;
 
-export type TrustPresetPolicySource = "agent" | "project" | "issue" | "run";
+export type TrustPresetPolicySource = "agent" | "issue" | "run";
 
 export type ResolveCoreTrustPresetInput = {
   companyId: string;
   agent?: {
     companyId?: string | null;
     governance?: unknown;
-  } | null;
-  project?: {
-    companyId?: string | null;
-    executionWorkspacePolicy?: unknown;
   } | null;
   issue?: {
     companyId?: string | null;
@@ -278,11 +274,6 @@ export function resolveCoreTrustPreset(input: ResolveCoreTrustPresetInput): Trus
   );
   if ("kind" in agent) return agent;
   sources.push(agent);
-
-  const projectPolicy = asRecord(input.project?.executionWorkspacePolicy);
-  const project = parseSource("project", input.project?.companyId, projectPolicy, projectPolicy?.authorizationPolicy, sourcePresets);
-  if ("kind" in project) return project;
-  sources.push(project);
 
   const issuePolicy = asRecord(input.issue?.executionPolicy);
   const issue = parseSource("issue", input.issue?.companyId, issuePolicy, issuePolicy?.authorizationPolicy, sourcePresets);

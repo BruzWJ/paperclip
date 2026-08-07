@@ -1,5 +1,3 @@
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
@@ -8,17 +6,13 @@ import {
   type AgentMentionReachGrantKey,
   type PaperclipActionKey,
 } from "@paperclipai/shared";
-import { Checkbox } from "@/components/ui/checkbox";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
-import { agentsApi } from "../api/agents";
-import { queryKeys } from "../lib/queryKeys";
 import { ContextAccessMatrix } from "./ContextAccessMatrix";
 
 export type RuntimeAgentConfigurationValues = {
   contextGrants: Record<AgentContextGrantKey, boolean>;
   actionGrants: Record<PaperclipActionKey, boolean>;
   mentionReachGrants: Record<AgentMentionReachGrantKey, boolean>;
-  companyToolIds: string[];
 };
 
 type ContextAccessPreset =
@@ -124,7 +118,6 @@ export function createEmptyRuntimeAgentConfigurationValues(): RuntimeAgentConfig
     contextGrants: booleanMap(AGENT_CONTEXT_GRANT_KEYS),
     actionGrants: booleanMap(PAPERCLIP_ACTION_KEYS),
     mentionReachGrants: booleanMap(AGENT_MENTION_REACH_GRANT_KEYS),
-    companyToolIds: [],
   };
 }
 
@@ -172,59 +165,15 @@ function ConfigurationRow({
 }
 
 export function RuntimeAgentConfigurationFields({
-  companyId,
-  agentId,
   value,
   onChange,
   disabled = false,
 }: {
-  companyId: string;
-  agentId?: string | null;
   value: RuntimeAgentConfigurationValues;
   onChange: (value: RuntimeAgentConfigurationValues) => void;
   disabled?: boolean;
 }) {
-  const toolOptions = useQuery({
-    queryKey: agentId
-      ? queryKeys.agents.runtimeToolOptions(agentId)
-      : queryKeys.agents.createRuntimeToolOptions(companyId),
-    queryFn: () =>
-      agentId
-        ? agentsApi.listRuntimeAgentToolOptions(agentId, companyId)
-        : agentsApi.listCreateRuntimeAgentToolOptions(companyId),
-    enabled: Boolean(companyId),
-  });
-  const availableTools = useMemo(() => {
-    return (toolOptions.data ?? [])
-      .map((option) => ({
-        id: option.catalogEntryId,
-        label: option.title,
-        description: option.description,
-        connectionName: option.connectionName,
-      }))
-      .sort(
-        (left, right) =>
-          left.connectionName.localeCompare(right.connectionName) ||
-          left.label.localeCompare(right.label),
-      );
-  }, [toolOptions.data]);
-  const availableToolIds = useMemo(
-    () => new Set(availableTools.map((tool) => tool.id)),
-    [availableTools],
-  );
-  const unavailableSelectedToolIds = value.companyToolIds.filter(
-    (id) => !availableToolIds.has(id),
-  );
-  const toolsLoading = toolOptions.isLoading;
-  const toolsError = toolOptions.error;
   const activePreset = matchingContextAccessPreset(value.contextGrants);
-
-  function toggleCompanyTool(id: string, checked: boolean) {
-    const next = checked
-      ? [...new Set([...value.companyToolIds, id])]
-      : value.companyToolIds.filter((candidate) => candidate !== id);
-    onChange({ ...value, companyToolIds: next.sort() });
-  }
 
   return (
     <div className="space-y-4">
@@ -343,63 +292,6 @@ export function RuntimeAgentConfigurationFields({
         ))}
       </div>
 
-      <div className="rounded-lg border border-border p-4">
-        <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Company tools
-        </h4>
-        <p className="mb-3 text-xs text-muted-foreground">
-          {agentId
-            ? "Only concrete tools installed for this exact agent can be selected. Tool policy can still narrow calls at runtime."
-            : "Select from company-installed tools. Their exact connections are bound to the new agent atomically when it is created."}
-        </p>
-        {toolsLoading ? (
-          <p className="text-xs text-muted-foreground">Loading company tools…</p>
-        ) : toolsError ? (
-          <p role="alert" className="text-xs text-destructive">
-            {toolsError instanceof Error
-              ? toolsError.message
-              : "Company tools could not be loaded."}
-          </p>
-        ) : availableTools.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            {agentId
-              ? "No active tools are installed for this exact agent."
-              : "No active company-installed tools are available for agent creation."}
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {availableTools.map((tool) => {
-              const inputId = `runtime-tool-${agentId ?? "new"}-${tool.id}`;
-              return (
-                <div key={tool.id} className="flex items-start gap-3">
-                  <Checkbox
-                    id={inputId}
-                    checked={value.companyToolIds.includes(tool.id)}
-                    disabled={disabled}
-                    onCheckedChange={(checked) =>
-                      toggleCompanyTool(tool.id, checked === true)
-                    }
-                  />
-                  <label htmlFor={inputId} className="grid gap-0.5 leading-none">
-                    <span className="text-sm font-medium">{tool.label}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {tool.connectionName}
-                      {tool.description ? ` · ${tool.description}` : ""}
-                    </span>
-                  </label>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        {unavailableSelectedToolIds.length > 0 ? (
-          <p role="alert" className="mt-3 text-xs text-destructive">
-            {unavailableSelectedToolIds.length} selected tool
-            {unavailableSelectedToolIds.length === 1 ? "" : "s"} no longer
-            resolve to an active install. Deselect them before saving.
-          </p>
-        ) : null}
-      </div>
     </div>
   );
 }

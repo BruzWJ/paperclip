@@ -3,28 +3,23 @@ import { companies, instanceSettings } from "@paperclipai/db";
 import {
   instanceGeneralSettingsSchema,
   type InstanceGeneralSettings,
-  instanceExperimentalSettingsSchema,
-  type InstanceExperimentalSettings,
   type PatchInstanceGeneralSettings,
   type InstanceSettings,
-  type PatchInstanceSettings,
-  type PatchInstanceExperimentalSettings,
 } from "@paperclipai/shared";
 import { eq } from "drizzle-orm";
 
 const DEFAULT_SINGLETON_KEY = "default";
 const instanceGeneralSettingsStorageSchema = instanceGeneralSettingsSchema.strip();
-const instanceExperimentalSettingsStorageSchema = instanceExperimentalSettingsSchema.strip();
 const TRUTHY_RUNTIME_ENV_VALUES = new Set(["1", "true", "yes", "on"]);
 
-interface InstanceSettingsServiceOptions {
+export interface InstanceSettingsServiceOptions {
   runtimeEnv?: Record<string, string | undefined>;
   now?: () => Date;
 }
 
 type WorktreeRunExecutionSuppressedReason =
   | "not_worktree_runtime"
-  | "flag_disabled"
+  | "setting_disabled"
   | "missing_cutoff"
   | "missing_instance_id"
   | "instance_id_mismatch"
@@ -45,7 +40,10 @@ export type WorktreeRunExecutionActivationState =
     };
 
 export function isTruthyRuntimeEnvValue(value: string | undefined) {
-  return typeof value === "string" && TRUTHY_RUNTIME_ENV_VALUES.has(value.trim().toLowerCase());
+  return (
+    typeof value === "string" &&
+    TRUTHY_RUNTIME_ENV_VALUES.has(value.trim().toLowerCase())
+  );
 }
 
 function getRuntimeInstanceId(env: Record<string, string | undefined>) {
@@ -53,59 +51,15 @@ function getRuntimeInstanceId(env: Record<string, string | undefined>) {
   return instanceId ? instanceId : null;
 }
 
-function stripServerManagedExperimentalPatchFields(
-  patch: PatchInstanceExperimentalSettings | Record<string, unknown>,
-): PatchInstanceExperimentalSettings {
+function stripServerManagedGeneralPatchFields(
+  patch: PatchInstanceGeneralSettings | Record<string, unknown>,
+): PatchInstanceGeneralSettings {
   const {
     worktreeRunExecutionActivatedAt: _ignoredActivatedAt,
     worktreeRunExecutionActivationInstanceId: _ignoredActivationInstanceId,
     ...patchable
   } = patch as Record<string, unknown>;
-  return patchable as PatchInstanceExperimentalSettings;
-}
-
-export function applyExperimentalSettingsPatch(
-  current: unknown,
-  patch: PatchInstanceExperimentalSettings | Record<string, unknown>,
-  options: InstanceSettingsServiceOptions = {},
-): InstanceExperimentalSettings {
-  const previousExperimental = normalizeExperimentalSettings(current);
-  const patchable = stripServerManagedExperimentalPatchFields(patch);
-  const nextExperimental = normalizeExperimentalSettings({
-    ...previousExperimental,
-    ...patchable,
-  });
-  const hasWorktreeRunExecutionPatch = Object.prototype.hasOwnProperty.call(
-    patchable,
-    "enableWorktreeRunExecution",
-  );
-
-  if (!hasWorktreeRunExecutionPatch) {
-    return nextExperimental;
-  }
-
-  if (nextExperimental.enableWorktreeRunExecution !== true) {
-    return {
-      ...nextExperimental,
-      worktreeRunExecutionActivatedAt: null,
-      worktreeRunExecutionActivationInstanceId: null,
-    };
-  }
-
-  if (previousExperimental.enableWorktreeRunExecution === true) {
-    return nextExperimental;
-  }
-
-  const runtimeEnv = options.runtimeEnv ?? process.env;
-  if (!isTruthyRuntimeEnvValue(runtimeEnv.PAPERCLIP_IN_WORKTREE)) {
-    return nextExperimental;
-  }
-
-  return {
-    ...nextExperimental,
-    worktreeRunExecutionActivatedAt: (options.now ?? (() => new Date()))().toISOString(),
-    worktreeRunExecutionActivationInstanceId: getRuntimeInstanceId(runtimeEnv),
-  };
+  return patchable as PatchInstanceGeneralSettings;
 }
 
 function suppressWorktreeRunExecution(
@@ -120,44 +74,119 @@ function suppressWorktreeRunExecution(
   };
 }
 
+function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
+  const parsed = instanceGeneralSettingsStorageSchema.safeParse(raw ?? {});
+  if (parsed.success) {
+    return {
+      censorUsernameInLogs: parsed.data.censorUsernameInLogs ?? false,
+      keyboardShortcuts: parsed.data.keyboardShortcuts ?? false,
+      enableWorkspaceBranchReconcileForward:
+        parsed.data.enableWorkspaceBranchReconcileForward ?? true,
+      enableWorkspaceDirtyQuarantineRepair:
+        parsed.data.enableWorkspaceDirtyQuarantineRepair ?? true,
+      enableServerInfoDebugView: parsed.data.enableServerInfoDebugView ?? false,
+      autoRestartDevServerWhenIdle:
+        parsed.data.autoRestartDevServerWhenIdle ?? false,
+      enableWorktreeRunExecution:
+        parsed.data.enableWorktreeRunExecution ?? false,
+      worktreeRunExecutionActivatedAt:
+        parsed.data.worktreeRunExecutionActivatedAt ?? null,
+      worktreeRunExecutionActivationInstanceId:
+        parsed.data.worktreeRunExecutionActivationInstanceId ?? null,
+    };
+  }
+  return {
+    censorUsernameInLogs: false,
+    keyboardShortcuts: false,
+    enableWorkspaceBranchReconcileForward: true,
+    enableWorkspaceDirtyQuarantineRepair: true,
+    enableServerInfoDebugView: false,
+    autoRestartDevServerWhenIdle: false,
+    enableWorktreeRunExecution: false,
+    worktreeRunExecutionActivatedAt: null,
+    worktreeRunExecutionActivationInstanceId: null,
+  };
+}
+
+export function applyGeneralSettingsPatch(
+  current: unknown,
+  patch: PatchInstanceGeneralSettings | Record<string, unknown>,
+  options: InstanceSettingsServiceOptions = {},
+): InstanceGeneralSettings {
+  const previousGeneral = normalizeGeneralSettings(current);
+  const patchable = stripServerManagedGeneralPatchFields(patch);
+  const nextGeneral = normalizeGeneralSettings({
+    ...previousGeneral,
+    ...patchable,
+  });
+  const hasWorktreeRunExecutionPatch = Object.prototype.hasOwnProperty.call(
+    patchable,
+    "enableWorktreeRunExecution",
+  );
+
+  if (!hasWorktreeRunExecutionPatch) return nextGeneral;
+
+  if (nextGeneral.enableWorktreeRunExecution !== true) {
+    return {
+      ...nextGeneral,
+      worktreeRunExecutionActivatedAt: null,
+      worktreeRunExecutionActivationInstanceId: null,
+    };
+  }
+
+  if (previousGeneral.enableWorktreeRunExecution === true) return nextGeneral;
+
+  const runtimeEnv = options.runtimeEnv ?? process.env;
+  if (!isTruthyRuntimeEnvValue(runtimeEnv.PAPERCLIP_IN_WORKTREE)) {
+    return nextGeneral;
+  }
+
+  return {
+    ...nextGeneral,
+    worktreeRunExecutionActivatedAt: (options.now ?? (() => new Date()))()
+      .toISOString(),
+    worktreeRunExecutionActivationInstanceId: getRuntimeInstanceId(runtimeEnv),
+  };
+}
+
 export function resolveWorktreeRunExecutionActivation(
-  experimental: InstanceExperimentalSettings,
+  general: InstanceGeneralSettings,
   currentInstanceId: string | null | undefined,
 ): WorktreeRunExecutionActivationState {
-  if (experimental.enableWorktreeRunExecution !== true) {
+  if (general.enableWorktreeRunExecution !== true) {
     return suppressWorktreeRunExecution(
-      "flag_disabled",
-      experimental.worktreeRunExecutionActivationInstanceId,
+      "setting_disabled",
+      general.worktreeRunExecutionActivationInstanceId,
     );
   }
-  if (!experimental.worktreeRunExecutionActivatedAt) {
+  if (!general.worktreeRunExecutionActivatedAt) {
     return suppressWorktreeRunExecution(
       "missing_cutoff",
-      experimental.worktreeRunExecutionActivationInstanceId,
+      general.worktreeRunExecutionActivationInstanceId,
     );
   }
   if (!currentInstanceId) {
     return suppressWorktreeRunExecution(
       "missing_instance_id",
-      experimental.worktreeRunExecutionActivationInstanceId,
+      general.worktreeRunExecutionActivationInstanceId,
     );
   }
-  if (experimental.worktreeRunExecutionActivationInstanceId !== currentInstanceId) {
+  if (general.worktreeRunExecutionActivationInstanceId !== currentInstanceId) {
     return suppressWorktreeRunExecution(
       "instance_id_mismatch",
-      experimental.worktreeRunExecutionActivationInstanceId,
+      general.worktreeRunExecutionActivationInstanceId,
     );
   }
   return {
     armed: true,
-    cutoff: experimental.worktreeRunExecutionActivatedAt,
+    cutoff: general.worktreeRunExecutionActivatedAt,
     activationInstanceId: currentInstanceId,
     reason: null,
   };
 }
 
 export async function resolveWorktreeRunExecutionActivationState(options: {
-  getExperimental: () => Promise<InstanceExperimentalSettings>;
+  getGeneral: () => Promise<InstanceGeneralSettings>;
   runtimeEnv?: Record<string, string | undefined>;
 }): Promise<WorktreeRunExecutionActivationState> {
   const runtimeEnv = options.runtimeEnv ?? process.env;
@@ -166,7 +195,7 @@ export async function resolveWorktreeRunExecutionActivationState(options: {
   }
   try {
     return resolveWorktreeRunExecutionActivation(
-      await options.getExperimental(),
+      await options.getGeneral(),
       getRuntimeInstanceId(runtimeEnv),
     );
   } catch {
@@ -174,87 +203,19 @@ export async function resolveWorktreeRunExecutionActivationState(options: {
   }
 }
 
-function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
-  const parsed = instanceGeneralSettingsStorageSchema.safeParse(raw ?? {});
-  if (parsed.success) {
-    return {
-      censorUsernameInLogs: parsed.data.censorUsernameInLogs ?? false,
-      keyboardShortcuts: parsed.data.keyboardShortcuts ?? false,
-    };
-  }
-  return {
-    censorUsernameInLogs: false,
-    keyboardShortcuts: false,
-  };
-}
-
-export function normalizeExperimentalSettings(raw: unknown): InstanceExperimentalSettings {
-  const parsed = instanceExperimentalSettingsStorageSchema.safeParse(raw ?? {});
-  if (parsed.success) {
-    return {
-      enableEnvironments: parsed.data.enableEnvironments ?? false,
-      enableIsolatedWorkspaces: parsed.data.enableIsolatedWorkspaces ?? false,
-      enableStreamlinedLeftNavigation: parsed.data.enableStreamlinedLeftNavigation ?? true,
-      enableApps: parsed.data.enableApps ?? false,
-      enablePipelines: parsed.data.enablePipelines ?? false,
-      enableCases: parsed.data.enableCases ?? false,
-      enableConferenceRoomChat: parsed.data.enableConferenceRoomChat ?? false,
-      enableExperimentalFileViewer: parsed.data.enableExperimentalFileViewer ?? false,
-      enableIssueWatchdogs: parsed.data.enableIssueWatchdogs ?? false,
-      enableCloudSync: parsed.data.enableCloudSync ?? false,
-      enableExternalObjects: parsed.data.enableExternalObjects ?? false,
-      enableSmokeLab: parsed.data.enableSmokeLab ?? false,
-      enableSummaries: parsed.data.enableSummaries ?? false,
-      enableDecisions: parsed.data.enableDecisions ?? false,
-      enableGoalsSidebarLink: parsed.data.enableGoalsSidebarLink ?? false,
-      enableServerInfoDebugView: parsed.data.enableServerInfoDebugView ?? false,
-      autoRestartDevServerWhenIdle: parsed.data.autoRestartDevServerWhenIdle ?? false,
-      enableWorkspaceBranchReconcileForward: parsed.data.enableWorkspaceBranchReconcileForward ?? true,
-      enableWorkspaceDirtyQuarantineRepair: parsed.data.enableWorkspaceDirtyQuarantineRepair ?? true,
-      enableWorktreeRunExecution: parsed.data.enableWorktreeRunExecution ?? false,
-      worktreeRunExecutionActivatedAt: parsed.data.worktreeRunExecutionActivatedAt ?? null,
-      worktreeRunExecutionActivationInstanceId:
-        parsed.data.worktreeRunExecutionActivationInstanceId ?? null,
-    };
-  }
-  return {
-    enableEnvironments: false,
-    enableIsolatedWorkspaces: false,
-    enableStreamlinedLeftNavigation: true,
-    enableApps: false,
-    enablePipelines: false,
-    enableCases: false,
-    enableConferenceRoomChat: false,
-    enableIssueWatchdogs: false,
-    enableExperimentalFileViewer: false,
-    enableCloudSync: false,
-    enableExternalObjects: false,
-    enableSmokeLab: false,
-    enableSummaries: false,
-    enableDecisions: false,
-    enableGoalsSidebarLink: false,
-    enableServerInfoDebugView: false,
-    autoRestartDevServerWhenIdle: false,
-    enableWorkspaceBranchReconcileForward: true,
-    enableWorkspaceDirtyQuarantineRepair: true,
-    enableWorktreeRunExecution: false,
-    worktreeRunExecutionActivatedAt: null,
-    worktreeRunExecutionActivationInstanceId: null,
-  };
-}
-
 function toInstanceSettings(row: typeof instanceSettings.$inferSelect): InstanceSettings {
   return {
     id: row.id,
-    defaultEnvironmentId: row.defaultEnvironmentId ?? null,
     general: normalizeGeneralSettings(row.general),
-    experimental: normalizeExperimentalSettings(row.experimental),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   } as InstanceSettings;
 }
 
-export function instanceSettingsService(db: Db, options: InstanceSettingsServiceOptions = {}) {
+export function instanceSettingsService(
+  db: Db,
+  options: InstanceSettingsServiceOptions = {},
+) {
   async function getOrCreateRow() {
     const existing = await db
       .select()
@@ -269,7 +230,6 @@ export function instanceSettingsService(db: Db, options: InstanceSettingsService
       .values({
         singletonKey: DEFAULT_SINGLETON_KEY,
         general: {},
-        experimental: {},
         createdAt: now,
         updatedAt: now,
       })
@@ -296,58 +256,23 @@ export function instanceSettingsService(db: Db, options: InstanceSettingsService
   return {
     get: async (): Promise<InstanceSettings> => toInstanceSettings(await getOrCreateRow()),
 
-    update: async (patch: PatchInstanceSettings): Promise<InstanceSettings> => {
-      const current = await getOrCreateRow();
-      const now = new Date();
-      const [updated] = await db
-        .update(instanceSettings)
-        .set({
-          ...(Object.prototype.hasOwnProperty.call(patch, "defaultEnvironmentId")
-            ? { defaultEnvironmentId: patch.defaultEnvironmentId ?? null }
-            : {}),
-          updatedAt: now,
-        })
-        .where(eq(instanceSettings.id, current.id))
-        .returning();
-      return toInstanceSettings(updated ?? current);
-    },
-
     getGeneral: async (): Promise<InstanceGeneralSettings> => {
       const row = await getOrCreateRow();
       return normalizeGeneralSettings(row.general);
     },
 
-    getExperimental: async (): Promise<InstanceExperimentalSettings> => {
-      const row = await getOrCreateRow();
-      return normalizeExperimentalSettings(row.experimental);
-    },
-
     updateGeneral: async (patch: PatchInstanceGeneralSettings): Promise<InstanceSettings> => {
       const current = await getOrCreateRow();
-      const nextGeneral = normalizeGeneralSettings({
-        ...normalizeGeneralSettings(current.general),
-        ...patch,
-      });
+      const nextGeneral = applyGeneralSettingsPatch(
+        current.general,
+        patch,
+        options,
+      );
       const now = new Date();
       const [updated] = await db
         .update(instanceSettings)
         .set({
           general: { ...nextGeneral },
-          updatedAt: now,
-        })
-        .where(eq(instanceSettings.id, current.id))
-        .returning();
-      return toInstanceSettings(updated ?? current);
-    },
-
-    updateExperimental: async (patch: PatchInstanceExperimentalSettings): Promise<InstanceSettings> => {
-      const current = await getOrCreateRow();
-      const nextExperimental = applyExperimentalSettingsPatch(current.experimental, patch, options);
-      const now = new Date();
-      const [updated] = await db
-        .update(instanceSettings)
-        .set({
-          experimental: { ...nextExperimental },
           updatedAt: now,
         })
         .where(eq(instanceSettings.id, current.id))

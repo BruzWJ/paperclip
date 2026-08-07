@@ -17,8 +17,6 @@ Community Edition even when EE policy editing is unavailable.
 
 - agent governance: `governance.trustPreset` and
   `governance.authorizationPolicy.trustBoundary`
-- project policy:
-  `executionWorkspacePolicy.authorizationPolicy.trustBoundary`
 - issue/run policy: `executionPolicy.authorizationPolicy.trustBoundary`
 
 The resolver intersects those sources. Narrower wins. A low-trust preset must
@@ -46,13 +44,10 @@ low-trust work must go through higher-trust review and promotion paths instead.
 Managed `low_trust_review` runs fail closed unless Paperclip can enforce the
 runtime boundary:
 
-- the selected execution environment must use the `sandbox` driver
-- the effective execution workspace mode must be `isolated_workspace`
+- the runtime must enforce the selected sandbox boundary
 - the issue being run must be inside the resolved low-trust boundary
 - secret references must use binding ids explicitly allowed by the boundary
-- inline sensitive environment values such as API keys and tokens are rejected
-- workspace runtime-service mutations are denied unless the boundary explicitly
-  grants the `runtime.manage` tool class
+- inline sensitive values such as API keys and tokens are rejected
 
 The Docker workflow in `doc/UNTRUSTED-PR-REVIEW.md` remains useful for manual
 local review, but Paperclip-managed low-trust execution requires a sandboxed

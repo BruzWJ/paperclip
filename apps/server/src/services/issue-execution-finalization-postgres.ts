@@ -20,7 +20,7 @@ import {
   issueUpdates,
   issueWorkProducts,
   issues,
-  toolCallEvents,
+  runInterfaceToolCalls,
   workspaceOperations,
   type Db,
 } from "@paperclipai/db";
@@ -346,13 +346,27 @@ async function insertProductiveLivenessFact(
       transaction
         .select({
           count: sql<number>`count(*)::int`,
-          latestAt: sql<Date | null>`max(${toolCallEvents.createdAt})`,
+          latestAt: sql<Date | null>`max(${runInterfaceToolCalls.createdAt})`,
         })
-        .from(toolCallEvents)
+        .from(runInterfaceToolCalls)
+        .innerJoin(
+          issueExecutionPromptCapabilities,
+          and(
+            eq(
+              runInterfaceToolCalls.capabilityConnectionId,
+              issueExecutionPromptCapabilities.capabilityConnectionId,
+            ),
+            eq(
+              runInterfaceToolCalls.capabilityGeneration,
+              issueExecutionPromptCapabilities.capabilityGeneration,
+            ),
+          ),
+        )
         .where(
           and(
-            eq(toolCallEvents.companyId, input.companyId),
-            eq(toolCallEvents.runId, input.runId),
+            eq(runInterfaceToolCalls.companyId, input.companyId),
+            eq(issueExecutionPromptCapabilities.companyId, input.companyId),
+            eq(issueExecutionPromptCapabilities.runId, input.runId),
           ),
         )
         .then((rows) => rows[0]),

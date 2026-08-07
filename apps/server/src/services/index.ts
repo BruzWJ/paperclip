@@ -24,7 +24,8 @@ export {
 export { assetService } from "./assets.js";
 export { documentService } from "./documents.js";
 export { documentAnnotationService } from "./document-annotations.js";
-export { projectService } from "./projects.js";
+export { projectService, toPublicProject, type InternalProject, type PublicProject } from "./projects.js";
+export { goalService } from "./goals.js";
 export {
   clampIssueListLimit,
   ISSUE_LIST_DEFAULT_LIMIT,
@@ -35,21 +36,9 @@ export {
 export { issueTreeControlService } from "./issue-tree-control.js";
 export { issueApprovalService } from "./issue-approvals.js";
 export { issueReferenceService } from "./issue-references.js";
-export { issueWatchdogService } from "./issue-watchdogs.js";
-export {
-  createExternalObjectDetectorRegistry,
-  createExternalObjectResolverRegistry,
-  externalObjectService,
-  type ExternalObjectDetector,
-  type ExternalObjectResolver,
-  type ExternalObjectResolveResult,
-  type ExternalObjectResolverSnapshot,
-} from "./external-objects.js";
-export { goalService } from "./goals.js";
 export { activityService, type ActivityFilters } from "./activity.js";
 export { workTimelineService, normalizeTimelineWindow } from "./work-timeline.js";
 export { attentionService } from "./attention.js";
-export { captureDecisionSnapshot, decisionTrainingService } from "./decision-training.js";
 export type {
   WorkTimelineActor,
   WorkTimelineEdge,
@@ -61,9 +50,6 @@ export type {
 export { approvalService } from "./approvals.js";
 export { budgetService } from "./budgets.js";
 export { secretService } from "./secrets.js";
-export { googleSheetsRobotEmailFromEnv, toolAccessService } from "./tool-access.js";
-export { smokeLabService } from "./smoke-lab.js";
-export { toolAccessPolicyService } from "./tool-access-policy.js";
 export { routineService } from "./routines.js";
 export { costService } from "./costs.js";
 export { financeService } from "./finance.js";
@@ -87,28 +73,10 @@ export type {
 } from "./authorization.js";
 export { boardAuthService } from "./board-auth.js";
 export { instanceSettingsService } from "./instance-settings.js";
-export { cloudUpstreamService, reconcileCloudUpstreamRunsOnStartup } from "./cloud-upstreams.js";
+
 export { companyPortabilityService } from "./company-portability.js";
 export { teamsCatalogService } from "./teams-catalog.js";
 export { environmentService } from "./environments.js";
-export {
-  applyCustomImageTemplateToSandboxConfig,
-  fingerprintEnvironmentSandboxProviderConfig,
-} from "./environment-custom-image-runtime.js";
-export {
-  environmentCustomImageService,
-} from "./environment-custom-images.js";
-export {
-  environmentCustomImageTerminalConnectionRegistry,
-  environmentCustomImageTerminalSessionStore,
-  EnvironmentCustomImageTerminalConnectionRegistry,
-  EnvironmentCustomImageTerminalSessionStore,
-  parseCustomImageSetupSshCommand,
-  type EnvironmentCustomImageTerminalConnectionClose,
-  type EnvironmentCustomImageTerminalSessionRecord,
-  type MintedEnvironmentCustomImageTerminalSession,
-  type ParsedCustomImageSetupSshCommand,
-} from "./environment-custom-image-terminal-sessions.js";
 export { executionWorkspaceService } from "./execution-workspaces.js";
 export {
   buildRuntimeInterfaceCompileInput,
@@ -125,7 +93,6 @@ export {
 export {
   assertPromptCapabilityCredential,
   assertRunBearerRejectedByGenericApi,
-  assertRunBearerRejectedByNamedGateway,
   createPromptCapabilityGateway,
   promptCapabilityGenerationIdentity,
   PromptCapabilityAuthenticationError,
@@ -186,12 +153,6 @@ export {
   type RequestedIssueExecutionSteering,
   type RequestIssueExecutionSteeringInput,
 } from "./issue-execution-run-service.js";
-export {
-  createIssueExecutionWatchdogDecisionService,
-  type IssueExecutionWatchdogDecisionActor,
-  type IssueExecutionWatchdogDecisionService,
-  type RecordIssueExecutionWatchdogDecisionInput,
-} from "./issue-execution-watchdog-decisions.js";
 export {
   buildIssueExecutionFinalizationPlan,
   IssueExecutionFinalizationRejected,
@@ -300,7 +261,6 @@ export {
 export {
   createRuntimeToolExecutor,
   type RuntimeActionPort,
-  type RuntimeCompanyToolPort,
   type RuntimeRetrievalScopeResolver,
 } from "./runtime-tool-executor.js";
 export {
@@ -364,11 +324,6 @@ export {
 } from "./join-request-approval.js";
 export {
   createRuntimeAgentConfigurationService,
-  listRuntimeAgentCreateCompanyToolOptions,
-  listRuntimeAgentEditCompanyToolOptions,
-  lockCreateCompanyToolSources,
-  materializeCreateAgentConnectionInstalls,
-  resolveSelectedToolsForAgent,
   RuntimeAgentConfigurationConflict,
   RuntimeAgentConfigurationDenied,
   RuntimeAgentConfigurationInvalid,
@@ -378,14 +333,9 @@ export {
   type RuntimeAgentConfigurationService,
 } from "./runtime-agent-configuration.js";
 export { workspaceOperationService } from "./workspace-operations.js";
-export {
-  lockToolSelectionRowsInOrder,
-  type ToolSelectionLockTransaction,
-} from "./tool-selection-lock-order.js";
-export { workspaceFileResourceService } from "./workspace-file-resources.js";
 export { workProductService } from "./work-products.js";
 export { logActivity, type LogActivityInput } from "./activity-log.js";
-export { summarySlotService } from "./summary-slots.js";
+
 export { publishLiveEvent, subscribeCompanyLiveEvents } from "./live-events.js";
 export {
   IssueExecutionLivePlanViolation,

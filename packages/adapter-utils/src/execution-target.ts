@@ -184,9 +184,9 @@ export { sanitizeRemoteExecutionEnv } from "./remote-execution-env.js";
 // last-resort kill switch, not the primary hang detector: genuinely hung runs
 // are caught much earlier by adapter-owned output-inactivity monitors. The
 // value intentionally matches the
-// recovery watchdog's ACTIVE_RUN_OUTPUT_CRITICAL_THRESHOLD_MS (4h) in
+// recovery service's ACTIVE_RUN_OUTPUT_CRITICAL_THRESHOLD_MS (4h) in
 // apps/server/src/services/recovery/service.ts so healthy long runs are never
-// killed by the adapter before the watchdog would even consider them stuck.
+// killed by the adapter before recovery would consider them stuck.
 export const DEFAULT_REMOTE_SANDBOX_ADAPTER_TIMEOUT_SEC = 14_400;
 
 function parseObject(value: unknown): Record<string, unknown> {

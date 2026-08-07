@@ -216,8 +216,6 @@ export function registerAccessCommands(program: Command): void {
   const instance = program.command("instance").description("Instance operations");
   addSimpleGet(instance, "settings:general", "Get general instance settings", "/api/instance/settings/general");
   addJsonPatch(instance, "settings:general:update", "Update general instance settings", "/api/instance/settings/general");
-  addSimpleGet(instance, "settings:experimental", "Get experimental instance settings", "/api/instance/settings/experimental");
-  addJsonPatch(instance, "settings:experimental:update", "Update experimental instance settings", "/api/instance/settings/experimental");
 
   const sidebar = program.command("sidebar").description("Sidebar preference and badge operations");
   addSimpleGet(sidebar, "preferences", "Get current sidebar preferences", "/api/sidebar-preferences/me");
@@ -351,24 +349,11 @@ function addJoinAction(parent: Command, action: "approve" | "reject"): void {
     .description(`${action} a join request`)
     .argument("<requestId>", "Join request ID")
     .option("-C, --company-id <id>", "Company ID");
-  if (action === "approve") {
-    command.option(
-      "--environment-id <id>",
-      "Explicit initial execution environment for an agent join request",
-    );
-  }
   addCommonClientOptions(
-    command.action(async (
-      requestId: string,
-      opts: CompanyOptions & { environmentId?: string },
-    ) => {
+    command.action(async (requestId: string, opts: CompanyOptions) => {
       try {
         const ctx = resolveCommandContext(opts, { requireCompany: true });
-        const payload =
-          action === "approve" && opts.environmentId
-            ? { defaultEnvironmentId: opts.environmentId }
-            : {};
-        printOutput(await ctx.api.post(`${apiPath`/api/companies/${ctx.companyId}/join-requests/${requestId}`}/${action}`, payload), { json: ctx.json });
+        printOutput(await ctx.api.post(`${apiPath`/api/companies/${ctx.companyId}/join-requests/${requestId}`}/${action}`, {}), { json: ctx.json });
       } catch (err) {
         handleCommandError(err);
       }

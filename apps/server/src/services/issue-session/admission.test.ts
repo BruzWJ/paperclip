@@ -262,10 +262,6 @@ describe("Issue Session canonical source authorship", () => {
       source: { sourceKind: "issue_reopen", actor: userActor },
       expected: "user",
     },
-    board_chat: {
-      source: { sourceKind: "board_chat", actor: userActor },
-      expected: "user",
-    },
     human_comment_mention: {
       source: { sourceKind: "human_comment_mention", actor: userActor },
       expected: "user",

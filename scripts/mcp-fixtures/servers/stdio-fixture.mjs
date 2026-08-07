@@ -25,7 +25,7 @@ async function handleJsonRpcRequest(request) {
       result: {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "paperclip-smoke-lab-stdio-fixture", version: "1.0.0" },
+        serverInfo: { name: "paperclip-stdio-fixture", version: "1.0.0" },
       },
     };
   }

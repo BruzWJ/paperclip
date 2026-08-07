@@ -381,11 +381,10 @@ export const accessApi = {
   approveJoinRequest: (
     companyId: string,
     requestId: string,
-    input: { defaultEnvironmentId?: string | null } = {},
   ) =>
     api.post<JoinRequest>(
       `/companies/${companyId}/join-requests/${requestId}/approve`,
-      input,
+      {},
     ),
 
   rejectJoinRequest: (companyId: string, requestId: string) =>

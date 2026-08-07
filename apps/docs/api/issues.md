@@ -67,7 +67,7 @@ PATCH /api/issues/{issueId}
 ```
 
 This route accepts exactly `title` (a non-empty string or `null`). It cannot
-change request, lifecycle, owner, priority, workspace, or any other field.
+change request, lifecycle, owner, priority, run-directory binding, or any other field.
 
 ## Reassign
 
@@ -94,7 +94,7 @@ POST /api/issues/{issueId}/reopen
 ```
 
 Reopen is separate from comments and metadata updates. It preserves the current
-owner, ownership epoch, Session, and workspace binding; clears the terminal
+owner, ownership epoch, Session, and run-directory binding; clears the terminal
 disposition; re-evaluates the creator edge; and returns exactly one branch:
 
 - `dispatch.kind = "agent_execution"` contains the one canonical persisted

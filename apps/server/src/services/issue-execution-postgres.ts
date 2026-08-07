@@ -26,7 +26,6 @@ import {
 } from "./run-interface-runtime.js";
 import type {
   RuntimeActionPort,
-  RuntimeCompanyToolPort,
   RuntimePluginToolPort,
 } from "./runtime-tool-executor.js";
 import type { PluginBeforePromptDispatcher } from "./plugin-before-prompt-dispatcher.js";
@@ -43,7 +42,6 @@ export interface PostgresIssueExecutionProductionRuntimeOptions {
   readonly capabilityEndpoint: string;
   readonly capabilityCursorSecret: string;
   readonly actions: RuntimeActionPort;
-  readonly companyTools: RuntimeCompanyToolPort;
   readonly pluginTools: RuntimePluginToolPort;
   /** App-owned, awaited post-commit plugin event publisher. */
   readonly pluginDomainEvents: PluginDomainEventPublisher;
@@ -141,7 +139,6 @@ export function createPostgresIssueExecutionProductionRuntime(
     cursorSecret: options.capabilityCursorSecret,
     issueSessionStore: options.issueSessionStore,
     actions: options.actions,
-    companyTools: options.companyTools,
     pluginTools: options.pluginTools,
     now,
   });

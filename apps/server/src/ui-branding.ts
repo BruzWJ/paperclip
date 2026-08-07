@@ -17,10 +17,8 @@ export type WorktreeUiBranding = {
   textColor: string | null;
   faviconHref: string | null;
   /**
-   * Runtime instance id for this worktree preview. Surfaced to the client so
-   * the experimental "Run tasks in this worktree" card can fail closed when a
-   * copied settings row was armed in a different instance. Null outside a
-   * worktree or when the runtime id is unset.
+   * Runtime instance id for this worktree preview. Null outside a worktree or
+   * when the runtime id is unset.
    */
   instanceId: string | null;
 };

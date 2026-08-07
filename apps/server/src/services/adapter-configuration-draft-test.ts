@@ -38,7 +38,7 @@ export interface AdapterConfigurationDraftTestDependencies {
   readonly probeAcpxRuntimeReadiness?: (
     input: AcpxRuntimeReadinessProbeInput,
   ) => Promise<AcpxRuntimeReadinessProbeResult>;
-  /** Test seams paired around the provider session's isolated workspace. */
+  /** Test seams paired around the provider session's execution workspace. */
   readonly createTemporarySessionCwd?: () => Promise<string>;
   readonly removeTemporarySessionCwd?: (cwd: string) => Promise<void>;
   readonly serviceCwd?: string;
@@ -109,7 +109,7 @@ export function createAdapterConfigurationDraftTestService(
           adapterType: input.adapterType,
           reason: "acp_initialization_failed",
           message:
-            "Paperclip could not prepare an isolated workspace for the local agent test.",
+            "Paperclip could not prepare an execution workspace for the local agent test.",
           now,
         });
       }

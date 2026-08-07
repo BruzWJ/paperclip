@@ -2,7 +2,6 @@ import path from "node:path";
 import { Command, Option } from "commander";
 import {
   PLUGIN_CATEGORIES,
-  PLUGIN_SCAFFOLD_TEMPLATES,
   pluginPackageDirectoryName,
   scaffoldPluginProject,
   shellQuote,
@@ -292,7 +291,7 @@ export function registerPluginCommands(program: Command): void {
     .option("--output <dir>", "Directory to create the plugin folder in")
     .addOption(
       new Option("--template <template>", "Starter template")
-        .choices([...PLUGIN_SCAFFOLD_TEMPLATES])
+        .choices(["standard"])
         .default("standard"),
     )
     .addOption(

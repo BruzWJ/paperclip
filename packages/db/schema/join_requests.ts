@@ -4,7 +4,6 @@ import { companies } from "./companies.js";
 import { invites } from "./invites.js";
 import { agents } from "./agents.js";
 import { authUsers } from "./auth.js";
-import { environments } from "./environments.js";
 import { agentAdapterConfigRevisions } from "./agent_adapter_config_revisions.js";
 
 export const joinRequests = pgTable(
@@ -25,7 +24,6 @@ export const joinRequests = pgTable(
     capabilities: text("capabilities"),
     agentDefaultsPayload: jsonb("agent_defaults_payload").$type<Record<string, unknown> | null>(),
     createdAgentId: uuid("created_agent_id").references(() => agents.id),
-    approvedEnvironmentId: uuid("approved_environment_id").references(() => environments.id),
     createdAgentAdapterConfigRevisionId: uuid("created_agent_adapter_config_revision_id").references(
       () => agentAdapterConfigRevisions.id,
     ),

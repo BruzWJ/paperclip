@@ -3,18 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockDb } from "./helpers/mock-db.js";
 
 const serviceMocks = vi.hoisted(() => ({
-  finalizeSummarySlotsForTerminalIssue: vi.fn(async () => undefined),
   recordNamedBoardLifecycleCommandInTransaction: vi.fn(async () => undefined),
   resolveCurrentIssueOwnerRunLinkages: vi.fn(async () => new Map()),
   requestRunningIssueInterruptionsInTransaction: vi.fn(),
   reconcileRequestedRunningIssueInterruptions: vi.fn(),
   requestScopeCancellationsInTransaction: vi.fn(),
   reconcileRequestedScopeCancellations: vi.fn(),
-}));
-
-vi.mock("../services/summary-slot-finalization.js", () => ({
-  finalizeSummarySlotsForTerminalIssue:
-    serviceMocks.finalizeSummarySlotsForTerminalIssue,
 }));
 
 vi.mock("../services/issue-board-lifecycle-command.js", () => ({
@@ -235,7 +229,7 @@ describe("issueTreeControlService without a database process", () => {
       ownerAgentId: randomUUID(),
     });
     const harness = createMockDb({
-      select: [[reopened], [], [], []],
+      select: [[reopened], [], []],
     });
 
     const preview = await issueTreeControlService(harness.db).preview(
@@ -485,8 +479,6 @@ describe("issueTreeControlService without a database process", () => {
       });
 
     expect(result.cancelledIssueIds).toEqual([childIssueId]);
-    expect(serviceMocks.finalizeSummarySlotsForTerminalIssue)
-      .toHaveBeenCalledWith(expect.anything(), updatedIssue);
     expect(serviceMocks.recordNamedBoardLifecycleCommandInTransaction)
       .toHaveBeenCalledWith(
         expect.anything(),

@@ -77,8 +77,6 @@ export type {
   PluginDatabaseDeclaration,
   PluginApiRouteDeclaration,
   PluginApiRouteCompanyResolution,
-  PluginObjectReferenceRefreshPolicy,
-  PluginObjectReferenceProviderDeclaration,
   JsonSchema,
   PluginCategory,
   PluginCapability,
@@ -453,74 +451,6 @@ export type PluginEntityQuery = PluginEntityQueryFilters & (
 );
 
 // ---------------------------------------------------------------------------
-// Project workspace metadata (read-only via ctx.projects)
-// ---------------------------------------------------------------------------
-
-/**
- * Workspace metadata provided by the host. Plugins use this to resolve local
- * filesystem paths for file browsing, git, terminal, and process operations.
- *
- * @see PLUGIN_SPEC.md §7 — Project Workspaces
- * @see PLUGIN_SPEC.md §20 — Local Tooling
- */
-export interface PluginWorkspace {
-  /** UUID primary key. */
-  id: string;
-  /** UUID of the parent project, absent for a checked projectless workspace. */
-  projectId: string | null;
-  /** Display name for this workspace. */
-  name: string;
-  /** Absolute filesystem path to the workspace directory. */
-  path: string;
-  /** Repository URL, when known. */
-  repoUrl: string | null;
-  /** Checkout/ref requested for the workspace, when known. */
-  repoRef: string | null;
-  /** Default comparison ref for workspace tooling, when known. */
-  defaultRef: string | null;
-  /** Whether this is the project's primary workspace. */
-  isPrimary: boolean;
-  /** ISO 8601 creation timestamp. */
-  createdAt: string;
-  /** ISO 8601 last-updated timestamp. */
-  updatedAt: string;
-}
-
-// ---------------------------------------------------------------------------
-// Execution workspace metadata (read-only via ctx.executionWorkspaces)
-// ---------------------------------------------------------------------------
-
-/**
- * Plugin-safe execution workspace metadata provided by the host. This exposes
- * the local/repository coordinates plugins need for workspace tooling without
- * giving the SDK a host-owned diff engine.
- */
-export interface PluginExecutionWorkspaceMetadata {
-  /** UUID primary key. */
-  id: string;
-  /** UUID of the owning company. */
-  companyId: string;
-  /** UUID of the parent project, absent for projectless workspaces. */
-  projectId: string | null;
-  /** UUID of the backing project workspace, when present. */
-  projectWorkspaceId: string | null;
-  /** Absolute filesystem path to the workspace when locally realized. */
-  path: string | null;
-  /** Current working directory for local workspace tooling. */
-  cwd: string | null;
-  /** Repository URL, when known. */
-  repoUrl: string | null;
-  /** Base ref configured for the workspace, when known. */
-  baseRef: string | null;
-  /** Branch name configured for the workspace, when known. */
-  branchName: string | null;
-  /** Host provider type for the realized workspace. */
-  providerType: string | null;
-  /** Provider metadata already safe for plugin consumption. */
-  providerMetadata: Record<string, unknown> | null;
-}
-
-// ---------------------------------------------------------------------------
 // Host API surfaces exposed via PluginContext
 // ---------------------------------------------------------------------------
 
@@ -871,7 +801,6 @@ export interface PluginActivityClient {
  * | `"instance"` | omit | Global flags, last full-sync timestamps |
  * | `"company"` | company UUID | Per-company sync cursors |
  * | `"project"` | project UUID | Per-project settings, branch tracking |
- * | `"project_workspace"` | workspace UUID | Per-workspace state |
  * | `"agent"` | agent UUID | Per-agent checkpoints |
  * | `"issue"` | issue UUID | Idempotency keys, linked external IDs |
  * | `"goal"` | goal UUID | Per-goal progress |
@@ -963,12 +892,9 @@ export interface PluginEntitiesClient {
 }
 
 /**
- * `ctx.projects` — read project and workspace metadata.
+ * `ctx.projects` — read project metadata.
  *
  * Requires `projects.read` capability.
- * Requires `project.workspaces.read` capability for workspace operations.
- *
- * @see PLUGIN_SPEC.md §7 — Project Workspaces
  */
 export interface PluginProjectsClient {
   /**
@@ -985,43 +911,12 @@ export interface PluginProjectsClient {
    */
   get(projectId: string, companyId: string): Promise<Project | null>;
 
-  /**
-   * List all workspaces attached to a project.
-   *
-   * @param projectId - UUID of the project
-   * @param companyId - UUID of the company that owns the project
-   * @returns All workspaces for the project, ordered with primary first
-   */
-  listWorkspaces(projectId: string, companyId: string): Promise<PluginWorkspace[]>;
-
-  /**
-   * Get the primary workspace for a project.
-   *
-   * @param projectId - UUID of the project
-   * @param companyId - UUID of the company that owns the project
-   * @returns The primary workspace, or `null` if no workspace is configured
-   */
-  getPrimaryWorkspace(projectId: string, companyId: string): Promise<PluginWorkspace | null>;
-
   /** Resolve and reconcile manifest-declared plugin-managed projects by stable key. Requires `projects.managed`. */
   managed: {
     get(projectKey: string, companyId: string): Promise<PluginManagedProjectResolution>;
     reconcile(projectKey: string, companyId: string): Promise<PluginManagedProjectResolution>;
     reset(projectKey: string, companyId: string): Promise<PluginManagedProjectResolution>;
   };
-}
-
-/**
- * `ctx.executionWorkspaces` — read execution workspace metadata.
- *
- * Requires `execution.workspaces.read`.
- */
-export interface PluginExecutionWorkspacesClient {
-  /**
-   * Return plugin-safe metadata for an execution workspace. The host enforces
-   * company access before returning any workspace coordinates.
-   */
-  get(workspaceId: string, companyId: string): Promise<PluginExecutionWorkspaceMetadata | null>;
 }
 
 /**
@@ -1453,7 +1348,7 @@ export interface PluginAuthorizationPolicySummary {
 }
 
 export interface PluginAuthorizationPolicyRecord {
-  resourceType: "company" | "agent" | "project" | "issue";
+  resourceType: "company" | "agent" | "issue";
   resourceId: string;
   companyId: string;
   policy: Record<string, unknown> | null;
@@ -1509,7 +1404,7 @@ export interface PluginAuthorizationClient {
     get(input: { companyId: string; resourceType: PluginAuthorizationPolicyRecord["resourceType"]; resourceId: string }): Promise<PluginAuthorizationPolicyRecord | null>;
     update(input: {
       companyId: string;
-      resourceType: "project" | "issue";
+      resourceType: "issue";
       resourceId: string;
       policy: Record<string, unknown> | null;
     }): Promise<PluginAuthorizationPolicyRecord>;
@@ -1595,11 +1490,8 @@ export interface PluginContext {
   /** Create and query plugin-owned entity records. */
   entities: PluginEntitiesClient;
 
-  /** Read project and workspace metadata. Requires `projects.read` / `project.workspaces.read`. */
+  /** Read project metadata. Requires `projects.read`. */
   projects: PluginProjectsClient;
-
-  /** Read execution workspace metadata. Requires `execution.workspaces.read`. */
-  executionWorkspaces: PluginExecutionWorkspacesClient;
 
   /** Resolve and reconcile plugin-managed routines. Requires `routines.managed`. */
   routines: PluginRoutinesClient;

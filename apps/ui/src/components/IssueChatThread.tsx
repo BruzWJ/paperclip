@@ -48,10 +48,8 @@ import {
   type StableThreadMessageCacheEntry,
 } from "../lib/issue-chat-messages";
 import {
-  formatTimelineWorkspaceLabel,
   type IssueTimelineOwner,
   type IssueTimelineEvent,
-  type IssueTimelineWorkspace,
 } from "../lib/issue-timeline-events";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -63,11 +61,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  MarkdownBody,
-  type MarkdownExternalReferenceMap,
-} from "./MarkdownBody";
-import { WorkspaceFileMarkdownBody } from "./WorkspaceFileMarkdownBody";
+import { MarkdownBody } from "./MarkdownBody";
 import {
   MarkdownEditor,
   type MentionOption,
@@ -174,9 +168,6 @@ interface IssueChatMessageContext {
   onImageClick?: (src: string) => void;
   onUploadImage?: (file: File) => Promise<string>;
   issueStatus?: string;
-  externalReferences?: MarkdownExternalReferenceMap;
-  /** Linkify `PAP-C7` case chips in comment bodies (experimental Cases flag). */
-  linkCaseReferences?: boolean;
   onReply?: (target: IssueChatReplyTarget) => void;
   onLoadMoreCommentGroup?: (rootCommentId: string) => Promise<void> | void;
 }
@@ -433,9 +424,6 @@ interface IssueChatThreadProps {
    * comment is in the loaded set before we scroll to it.
    */
   onRefreshLatestComments?: () => Promise<unknown> | void;
-  externalReferences?: MarkdownExternalReferenceMap;
-  /** Linkify `PAP-C7` case chips in comment bodies (experimental Cases flag). */
-  linkCaseReferences?: boolean;
 }
 
 type IssueChatErrorBoundaryProps = {
@@ -443,7 +431,6 @@ type IssueChatErrorBoundaryProps = {
   messages: readonly ThreadMessage[];
   emptyMessage: string;
   variant: "full" | "embedded";
-  externalReferences?: MarkdownExternalReferenceMap;
   children: ReactNode;
 };
 
@@ -484,7 +471,6 @@ class IssueChatErrorBoundary extends Component<
           messages={this.props.messages}
           emptyMessage={this.props.emptyMessage}
           variant={this.props.variant}
-          externalReferences={this.props.externalReferences}
         />
       );
     }
@@ -558,12 +544,10 @@ function IssueChatFallbackThread({
   messages,
   emptyMessage,
   variant,
-  externalReferences,
 }: {
   messages: readonly ThreadMessage[];
   emptyMessage: string;
   variant: "full" | "embedded";
-  externalReferences?: MarkdownExternalReferenceMap;
 }) {
   return (
     <div className={cn(variant === "embedded" ? "space-y-3" : "space-y-4")}>
@@ -617,7 +601,6 @@ function IssueChatFallbackThread({
                     lines.map((line, index) => (
                       <MarkdownBody
                         key={`${message.id}:fallback:${index}`}
-                        externalReferences={externalReferences}
                       >
                         {line}
                       </MarkdownBody>
@@ -716,10 +699,9 @@ const IssueChatTextPart = memo(function IssueChatTextPart({
   recessed?: boolean;
   onAccent?: boolean;
 }) {
-  const { onImageClick, externalReferences, linkCaseReferences } =
-    useContext(IssueChatCtx);
+  const { onImageClick } = useContext(IssueChatCtx);
   return (
-    <WorkspaceFileMarkdownBody
+    <MarkdownBody
       className={cn(
         "text-sm leading-6",
         onAccent && "paperclip-markdown-on-accent",
@@ -727,11 +709,9 @@ const IssueChatTextPart = memo(function IssueChatTextPart({
       style={recessed ? { opacity: 0.55 } : undefined}
       softBreaks
       onImageClick={onImageClick}
-      externalReferences={externalReferences}
-      linkCaseReferences={linkCaseReferences}
     >
       {text}
-    </WorkspaceFileMarkdownBody>
+    </MarkdownBody>
   );
 });
 
@@ -1838,7 +1818,7 @@ function IssueChatAssistantMessage({
               </Badge>
             ) : null}
           </div>
-          {/* Canonical conference-room agent bubble (BoardChat.tsx:712). */}
+          {/* Agent response bubble. */}
           <div
             className={cn(
               "min-w-0 break-words px-3 py-2 text-sm overflow-x-auto overflow-y-visible [border-radius:14px_14px_14px_4px]",
@@ -2004,29 +1984,6 @@ function isSourceTrustMetadata(value: unknown): value is SourceTrustMetadata {
     v.preset === "low_trust_review" &&
     (v.disposition === "quarantined" || v.disposition === "promoted")
   );
-}
-
-function isNullableString(value: unknown): value is string | null {
-  return value === null || typeof value === "string";
-}
-
-function isTimelineWorkspace(value: unknown): value is IssueTimelineWorkspace {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const workspace = value as Record<string, unknown>;
-  return (
-    isNullableString(workspace.label) &&
-    isNullableString(workspace.projectWorkspaceId) &&
-    isNullableString(workspace.executionWorkspaceId) &&
-    isNullableString(workspace.mode)
-  );
-}
-
-function isTimelineWorkspaceChange(
-  value: unknown,
-): value is NonNullable<IssueTimelineEvent["workspaceChange"]> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const change = value as Record<string, unknown>;
-  return isTimelineWorkspace(change.from) && isTimelineWorkspace(change.to);
 }
 
 function SystemNoticeCommentRow({
@@ -2274,10 +2231,6 @@ function IssueChatSystemMessage({ message }: { message: ThreadMessage }) {
           to: IssueTimelineOwner;
         })
       : null;
-  const workspaceChange = isTimelineWorkspaceChange(custom.workspaceChange)
-    ? custom.workspaceChange
-    : null;
-
   if (custom.kind === "system_notice") {
     return <SystemNoticeCommentRow message={message} anchorId={anchorId} />;
   }
@@ -2357,20 +2310,6 @@ function IssueChatSystemMessage({ message }: { message: ThreadMessage }) {
           </div>
         ) : null}
 
-        {workspaceChange ? (
-          <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="text-(length:--text-nano) font-medium uppercase tracking-wider text-muted-foreground/70">
-              Workspace
-            </span>
-            <span className="text-muted-foreground">
-              {formatTimelineWorkspaceLabel(workspaceChange.from)}
-            </span>
-            <ArrowRight className="h-3 w-3 text-muted-foreground/70" />
-            <span className="font-medium text-foreground">
-              {formatTimelineWorkspaceLabel(workspaceChange.to)}
-            </span>
-          </div>
-        ) : null}
       </IssueChatMetadataRow>
     );
   }
@@ -3915,8 +3854,6 @@ export function IssueChatThread({
   ownerUserId = null,
   onResumeFromBacklog,
   resumeFromBacklogPending = false,
-  externalReferences,
-  linkCaseReferences = false,
 }: IssueChatThreadProps) {
   const location = useLocation();
   const lastScrolledHashRef = useRef<string | null>(null);
@@ -4436,8 +4373,6 @@ export function IssueChatThread({
       onImageClick: stableOnImageClick,
       onUploadImage: stableOnUploadImage,
       issueStatus,
-      externalReferences,
-      linkCaseReferences,
       onReply: selectReplyTarget,
       onLoadMoreCommentGroup,
     }),
@@ -4456,8 +4391,6 @@ export function IssueChatThread({
       stableOnImageClick,
       stableOnUploadImage,
       issueStatus,
-      externalReferences,
-      linkCaseReferences,
       selectReplyTarget,
       onLoadMoreCommentGroup,
     ],
@@ -4500,7 +4433,6 @@ export function IssueChatThread({
             messages={messages}
             emptyMessage={resolvedEmptyMessage}
             variant={variant}
-            externalReferences={externalReferences}
           >
             <div data-testid="thread-root">
               <div

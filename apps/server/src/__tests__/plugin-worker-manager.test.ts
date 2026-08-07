@@ -391,36 +391,6 @@ describe("plugin-worker-manager stderr failure context", () => {
     }
   });
 
-  it.each([
-    [
-      ["resolveExternalObject"],
-      'Manifest object-reference declarations require the worker to advertise "detectExternalObjects"',
-    ],
-    [
-      ["detectExternalObjects"],
-      'Manifest object-reference declarations require the worker to advertise "resolveExternalObject"',
-    ],
-  ])("requires both external-object handlers for object-reference declarations", async (
-    extraSupportedMethods,
-    expected,
-  ) => {
-    const handle = configuredWorker({
-      ...TEST_MANIFEST,
-      capabilities: ["external.objects.detect", "external.objects.read"],
-      objectReferences: [{
-        providerKey: "tracker",
-        displayName: "Tracker",
-        objectTypes: ["issue"],
-      }],
-    }, { extraSupportedMethods });
-
-    try {
-      await expect(handle.start()).rejects.toThrow(expected);
-    } finally {
-      await handle.stop().catch(() => undefined);
-    }
-  });
-
   it("requires the complete environment-driver base lifecycle", async () => {
     for (const testCase of [
       {

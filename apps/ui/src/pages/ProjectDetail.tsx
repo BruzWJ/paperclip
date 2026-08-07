@@ -10,8 +10,6 @@ import {
   type MoneyAmount,
 } from "@paperclipai/shared";
 import { budgetsApi } from "../api/budgets";
-import { executionWorkspacesApi } from "../api/execution-workspaces";
-import { instanceSettingsApi } from "../api/instanceSettings";
 import { projectsApi } from "../api/projects";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
@@ -30,11 +28,8 @@ import { BudgetPolicyCard } from "../components/BudgetPolicyCard";
 import { IssuesList } from "../components/IssuesList";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
-import { ProjectWorkspacesContent } from "../components/ProjectWorkspacesContent";
-import { SummarySlotCard } from "../components/SummarySlotCard";
 import { MembershipAction } from "../components/MembershipAction";
 import { StarToggle } from "../components/StarToggle";
-import { buildProjectWorkspaceSummaries } from "../lib/project-workspaces-tab";
 import { collectLiveIssueIds } from "../lib/liveIssueIds";
 import { projectRouteRef } from "../lib/utils";
 import { PROJECT_ICONS } from "../lib/project-icons";
@@ -57,7 +52,7 @@ const ZERO_AMOUNT = parseMoneyAmount("0");
 
 /* ── Top-level tab types ── */
 
-type ProjectBaseTab = "overview" | "list" | "plugin-operations" | "workspaces" | "configuration" | "budget";
+type ProjectBaseTab = "overview" | "list" | "plugin-operations" | "configuration" | "budget";
 type ProjectPluginTab = `plugin:${string}`;
 type ProjectTab = ProjectBaseTab | ProjectPluginTab;
 
@@ -75,7 +70,6 @@ function resolveProjectTab(pathname: string, projectId: string): ProjectTab | nu
   if (tab === "budget") return "budget";
   if (tab === "issues") return "list";
   if (tab === "plugin-operations") return "plugin-operations";
-  if (tab === "workspaces") return "workspaces";
   return null;
 }
 
@@ -399,10 +393,6 @@ export function ProjectDetail() {
   const projectMembershipState = project?.id
     ? resourceMembershipState(membershipsQuery.data, "project", project.id)
     : "joined";
-  const experimentalSettingsQuery = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-  });
   const {
     slots: pluginDetailSlots,
     isLoading: pluginDetailSlotsLoading,
@@ -421,40 +411,6 @@ export function ProjectDetail() {
     [pluginDetailSlots],
   );
   const activePluginTab = pluginTabItems.find((item) => item.value === activeTab) ?? null;
-  const isolatedWorkspacesEnabled = experimentalSettingsQuery.data?.enableIsolatedWorkspaces === true;
-  const workspaceTabProjectId = project?.id ?? null;
-  const { data: workspaceTabIssues = [], isLoading: isWorkspaceTabIssuesLoading, error: workspaceTabIssuesError } = useQuery({
-    queryKey: workspaceTabProjectId && resolvedCompanyId
-      ? queryKeys.issues.listByProject(resolvedCompanyId, workspaceTabProjectId)
-      : ["issues", "__workspace-tab__", "disabled"],
-    queryFn: () => issuesApi.list(resolvedCompanyId!, { projectId: workspaceTabProjectId! }),
-    enabled: Boolean(resolvedCompanyId && workspaceTabProjectId && isolatedWorkspacesEnabled),
-  });
-  const {
-    data: workspaceTabExecutionWorkspaces = [],
-    isLoading: isWorkspaceTabExecutionWorkspacesLoading,
-    error: workspaceTabExecutionWorkspacesError,
-  } = useQuery({
-    queryKey: workspaceTabProjectId && resolvedCompanyId
-      ? queryKeys.executionWorkspaces.list(resolvedCompanyId, { projectId: workspaceTabProjectId })
-      : ["execution-workspaces", "__workspace-tab__", "disabled"],
-    queryFn: () => executionWorkspacesApi.list(resolvedCompanyId!, { projectId: workspaceTabProjectId! }),
-    enabled: Boolean(resolvedCompanyId && workspaceTabProjectId && isolatedWorkspacesEnabled),
-  });
-  const workspaceSummaries = useMemo(() => {
-    if (!project || !isolatedWorkspacesEnabled) return [];
-    return buildProjectWorkspaceSummaries({
-      project,
-      issues: workspaceTabIssues,
-      executionWorkspaces: workspaceTabExecutionWorkspaces,
-    });
-  }, [project, isolatedWorkspacesEnabled, workspaceTabIssues, workspaceTabExecutionWorkspaces]);
-  const showWorkspacesTab = isolatedWorkspacesEnabled && workspaceSummaries.length > 0;
-  const workspaceTabDecisionLoaded =
-    experimentalSettingsQuery.isFetched &&
-    (!isolatedWorkspacesEnabled || (!isWorkspaceTabIssuesLoading && !isWorkspaceTabExecutionWorkspacesLoading));
-  const workspaceTabError = (workspaceTabIssuesError ?? workspaceTabExecutionWorkspacesError) as Error | null;
-
   useEffect(() => {
     if (!project?.companyId || project.companyId === selectedCompanyId) return;
     setSelectedCompanyId(project.companyId, { source: "route_sync" });
@@ -542,10 +498,6 @@ export function ProjectDetail() {
     }
     if (activeTab === "plugin-operations") {
       navigate(`/projects/${canonicalProjectRef}/plugin-operations`, { replace: true });
-      return;
-    }
-    if (activeTab === "workspaces") {
-      navigate(`/projects/${canonicalProjectRef}/workspaces`, { replace: true });
       return;
     }
     if (activeTab === "list") {
@@ -671,10 +623,6 @@ export function ProjectDetail() {
     return <Navigate to={`/projects/${canonicalProjectRef}/issues`} replace />;
   }
 
-  if (activeTab === "workspaces" && workspaceTabDecisionLoaded && !showWorkspacesTab) {
-    return <Navigate to={`/projects/${canonicalProjectRef}/issues`} replace />;
-  }
-
   // Redirect bare /projects/:id to cached tab or default /issues
   if (routeProjectRef && activeTab === null) {
     let cachedTab: string | null = null;
@@ -692,12 +640,6 @@ export function ProjectDetail() {
     }
     if (cachedTab === "plugin-operations" && project?.managedByPlugin) {
       return <Navigate to={`/projects/${canonicalProjectRef}/plugin-operations`} replace />;
-    }
-    if (cachedTab === "workspaces" && workspaceTabDecisionLoaded && showWorkspacesTab) {
-      return <Navigate to={`/projects/${canonicalProjectRef}/workspaces`} replace />;
-    }
-    if (cachedTab === "workspaces" && !workspaceTabDecisionLoaded) {
-      return <PageSkeleton variant="detail" />;
     }
     if (isProjectPluginTab(cachedTab)) {
       return <Navigate to={`/projects/${canonicalProjectRef}?tab=${encodeURIComponent(cachedTab)}`} replace />;
@@ -729,8 +671,6 @@ export function ProjectDetail() {
     }
     if (tab === "overview") {
       navigate(`/projects/${canonicalProjectRef}/overview`);
-    } else if (tab === "workspaces") {
-      navigate(`/projects/${canonicalProjectRef}/workspaces`);
     } else if (tab === "budget") {
       navigate(`/projects/${canonicalProjectRef}/budget`);
     } else if (tab === "plugin-operations") {
@@ -823,14 +763,6 @@ export function ProjectDetail() {
         </div>
       </div>
 
-      <SummarySlotCard
-        companyId={resolvedCompanyId}
-        scopeKind="project"
-        scopeId={project.id}
-        title="Project summary"
-        description="A configured routine keeps the latest project status and operator-needed items here."
-      />
-
       <PluginSlotOutlet
         slotTypes={["toolbarButton"]}
         entityType="project"
@@ -868,7 +800,6 @@ export function ProjectDetail() {
             { value: "list", label: "Tasks" },
             { value: "overview", label: "Overview" },
             ...(project.managedByPlugin ? [{ value: "plugin-operations", label: "Plugin operations" }] : []),
-            ...(showWorkspacesTab ? [{ value: "workspaces", label: "Workspaces" }] : []),
             { value: "configuration", label: "Configuration" },
             { value: "budget", label: "Budget" },
             ...pluginTabItems.map((item) => ({
@@ -904,23 +835,6 @@ export function ProjectDetail() {
           pluginKey={project.managedByPlugin.pluginKey}
         />
       )}
-
-      {activeTab === "workspaces" ? (
-        workspaceTabDecisionLoaded ? (
-          workspaceTabError ? (
-            <p className="text-sm text-destructive">{workspaceTabError.message}</p>
-          ) : (
-            <ProjectWorkspacesContent
-              companyId={resolvedCompanyId!}
-              projectId={project.id}
-              projectRef={canonicalProjectRef}
-              summaries={workspaceSummaries}
-            />
-          )
-        ) : (
-          <p className="text-sm text-muted-foreground">Loading workspaces...</p>
-        )
-      ) : null}
 
       {activeTab === "configuration" && (
         <div className="max-w-4xl">

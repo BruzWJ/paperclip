@@ -38,7 +38,7 @@ The retired run-centric execution service previously owned this behavior.
 - orphaned-run recovery checks whether the recorded direct PID is alive
 - the recovery model is built around one tracked process, not a descendant tree
 
-### 2. Workspace runtime already uses stronger ownership
+### 2. Internal process supervision already uses stronger ownership
 
 `apps/server/src/services/workspace-runtime.ts`
 

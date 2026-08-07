@@ -47,7 +47,7 @@ Application-managed data is persisted under the bind mount (`./data/docker-paper
 
 - Uploaded assets
 - Local secrets key
-- Agent workspace data
+- Runtime support data
 
 ## Agent transports in Docker
 

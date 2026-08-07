@@ -43,11 +43,11 @@ The central nervous system. Manages:
 It also enforces execution-control semantics such as one canonical owner,
 monotonic ownership epochs, persisted issue-execution refs, immutable
 execution views, ordinary blockers, typed recovery/system escalation, and
-issue/epoch workspace bindings.
+issue/epoch run-directory bindings.
 
 ### 2. Execution Worker and ACP Agents
 
-Paperclip's worker realizes the issue workspace and invokes ACPX's public,
+Paperclip's worker resolves the issue's server-owned run directory and invokes ACPX's public,
 disposable local runtime for each prompt. ACPX supplies the exact local agent
 name, launch, models, and stable session configuration; Paperclip does not
 maintain a separate agent or model catalog. Each discovered agent is represented

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { workspaceFileRefSchema } from "./workspace-file-resource.js";
 
 function attachmentContentPath(attachmentId: string): string {
   return `/api/attachments/${attachmentId}/content`;
@@ -70,16 +69,13 @@ export const attachmentArtifactWorkProductMetadataSchema = z.object({
 export type AttachmentArtifactWorkProductMetadata = z.infer<typeof attachmentArtifactWorkProductMetadataSchema>;
 
 export const issueWorkProductMetadataSchema = z
-  .object({
-    resourceRef: workspaceFileRefSchema.optional().nullable(),
-  })
+  .object({})
   .passthrough();
 
 export type IssueWorkProductMetadata = z.infer<typeof issueWorkProductMetadataSchema>;
 
 export const createIssueWorkProductSchema = z.object({
   projectId: z.string().uuid().optional().nullable(),
-  executionWorkspaceId: z.string().uuid().optional().nullable(),
   runtimeServiceId: z.string().uuid().optional().nullable(),
   type: issueWorkProductTypeSchema,
   provider: z.string().min(1),

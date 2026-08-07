@@ -233,13 +233,14 @@ function ordinaryIssues() {
 function service(
   harness: MockDbHarness,
   ordinary = ordinaryIssues(),
+  runtimeEnv: Record<string, string | undefined> = {
+    PAPERCLIP_PUBLIC_URL: "https://paperclip.example/",
+  },
 ) {
   return {
     ordinary,
     service: routineService(harness.db, {
-      runtimeEnv: {
-        PAPERCLIP_PUBLIC_URL: "https://paperclip.example/",
-      },
+      runtimeEnv,
       ordinaryIssues: ordinary as never,
     }),
   };
@@ -835,7 +836,6 @@ describe("routine service contracts without a database", () => {
           [existing],
           [{ snapshot: boundSnapshot }],
           [],
-          [],
           [{ responsibleUserId: "revision-owner", snapshot: boundSnapshot }],
           [],
           [],
@@ -927,7 +927,6 @@ describe("routine service contracts without a database", () => {
             [existing],
             [{ snapshot: boundSnapshot }],
             [],
-            [],
             [{ responsibleUserId: "board-user", snapshot: boundSnapshot }],
             [activeIssue],
           ],
@@ -1010,6 +1009,73 @@ describe("routine service contracts without a database", () => {
           details: expect.objectContaining({ reason: "paused" }),
         }),
       );
+    });
+
+    it("suppresses an automatic schedule when worktree execution is disabled in General settings", async () => {
+      const existing = routine();
+      const trigger = {
+        id: "schedule-trigger",
+        companyId: COMPANY_ID,
+        routineId: ROUTINE_ID,
+        kind: "schedule",
+        enabled: true,
+        cronExpression: "*/15 * * * *",
+        timezone: "UTC",
+        nextRunAt: new Date("2026-07-25T12:00:00.000Z"),
+        createdAt: new Date("2026-07-25T10:00:00.000Z"),
+      };
+      const skippedRun = {
+        id: "run-skipped-worktree",
+        companyId: COMPANY_ID,
+        routineId: ROUTINE_ID,
+        triggerId: trigger.id,
+        source: "schedule",
+        status: "skipped",
+        failureReason: "worktree_execution_cutoff",
+        triggeredAt: NOW,
+      };
+      const harness = createMockDb({
+        select: [
+          [{
+            id: "instance-settings",
+            singletonKey: "default",
+            general: { enableWorktreeRunExecution: false },
+            createdAt: NOW,
+            updatedAt: NOW,
+          }],
+          [{ trigger, routine: existing, projectPausedAt: null }],
+        ],
+        update: [[{ id: trigger.id }], [], []],
+        insert: [[skippedRun]],
+      });
+      const ordinary = ordinaryIssues();
+
+      await expect(
+        service(harness, ordinary, {
+          PAPERCLIP_PUBLIC_URL: "https://paperclip.example/",
+          PAPERCLIP_IN_WORKTREE: "true",
+          PAPERCLIP_INSTANCE_ID: "worktree-1",
+        }).service.tickScheduledTriggers(NOW),
+      ).resolves.toEqual({ triggered: 0 });
+
+      expect(queryValues(harness, "insert")[0]).toEqual(
+        expect.objectContaining({
+          status: "skipped",
+          failureReason: "worktree_execution_cutoff",
+          linkedIssueId: null,
+        }),
+      );
+      expect(ordinary.create).not.toHaveBeenCalled();
+      expect(mocks.logActivity).toHaveBeenCalledWith(
+        harness.db,
+        expect.objectContaining({
+          action: "routine.run_skipped",
+          details: expect.objectContaining({
+            reason: "worktree_execution_cutoff",
+          }),
+        }),
+      );
+      expect(harness.remaining("select")).toBe(0);
     });
   });
 

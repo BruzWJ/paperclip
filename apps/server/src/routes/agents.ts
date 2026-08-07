@@ -13,6 +13,7 @@ import {
   agentOperationalConfigurationUpdateSchema,
   deriveAgentUrlKey,
   isUuidLike,
+  projectAgentAdapterAcpConfiguration,
   runtimeAgentCreateConfigurationSchema,
   runtimeAgentUpdateConfigurationSchema,
   type AgentAdapterConfigRevision,
@@ -25,7 +26,6 @@ import {
   accessService,
   approvalService,
   logActivity,
-  workspaceOperationService,
   createRuntimeAgentConfigurationService,
 } from "../services/index.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
@@ -65,25 +65,6 @@ import {
   type AdapterConfigurationDraftTestService,
 } from "../services/adapter-configuration-draft-test.js";
 
-const WORKSPACE_OPERATION_LOG_DEFAULT_LIMIT_BYTES = 256_000;
-const WORKSPACE_OPERATION_LOG_MAX_LIMIT_BYTES = 1024 * 1024;
-
-function readWorkspaceOperationLogLimitBytes(value: unknown) {
-  const parsed = Number(
-    value ?? WORKSPACE_OPERATION_LOG_DEFAULT_LIMIT_BYTES,
-  );
-  if (!Number.isFinite(parsed)) {
-    return WORKSPACE_OPERATION_LOG_DEFAULT_LIMIT_BYTES;
-  }
-  return Math.max(
-    1,
-    Math.min(
-      WORKSPACE_OPERATION_LOG_MAX_LIMIT_BYTES,
-      Math.trunc(parsed),
-    ),
-  );
-}
-
 export function agentRoutes(
   db: Db,
   options: {
@@ -110,7 +91,6 @@ export function agentRoutes(
       terminateAgentForHireRejectionInTransaction,
     dispatchRef: options.ordinaryIssues.dispatchRef,
   });
-  const workspaceOperations = workspaceOperationService(db);
   const instanceSettings = instanceSettingsService(db);
   const runtimeAgentConfiguration =
     createRuntimeAgentConfigurationService(db);
@@ -182,6 +162,10 @@ export function agentRoutes(
     return { membership, grants };
   }
 
+  function toPublicAgent<T extends object>(agent: T): T {
+    return agent;
+  }
+
   async function buildAgentDetail(
     agent: NonNullable<Awaited<ReturnType<typeof svc.getById>>>,
     options?: { restricted?: boolean },
@@ -198,7 +182,9 @@ export function agentRoutes(
     ]);
 
     return {
-      ...(options?.restricted ? redactForRestrictedAgentView(agent) : agent),
+      ...(options?.restricted
+        ? redactForRestrictedAgentView(agent)
+        : toPublicAgent(agent)),
       chainOfCommand,
       access: accessState,
       pluginManagement,
@@ -357,7 +343,7 @@ export function agentRoutes(
   function redactForRestrictedAgentView(agent: Awaited<ReturnType<typeof svc.getById>>) {
     if (!agent) return null;
     return {
-      ...agent,
+      ...toPublicAgent(agent),
       adapterConfig: agent.adapterConfig === null ? null : {},
       runtimeConfig: {},
     };
@@ -427,14 +413,13 @@ export function agentRoutes(
       adapterType: revision.adapterType,
       implementationIdentity: revision.implementationIdentity,
       adapterConfigSchemaVersion: revision.adapterConfigSchemaVersion,
-      defaultEnvironmentId: revision.defaultEnvironmentId,
-      executionTargetDriver: revision.executionTargetDriver,
-      executionTargetDigest: revision.executionTargetDigest,
       normalizedConfig: redactEventPayload(
         revision.normalizedConfig,
       ) ?? {},
       runtimeConfig: redactEventPayload(revision.runtimeConfig) ?? {},
-      acpConfiguration: revision.acpConfiguration,
+      acpConfiguration: projectAgentAdapterAcpConfiguration(
+        revision.acpConfiguration,
+      ),
       digest: revision.digest,
       parentRevisionId: revision.parentRevisionId,
       createdByAgentId: revision.createdByAgentId,
@@ -515,7 +500,7 @@ export function agentRoutes(
     const result = await filterAgentsForActor(req, await svc.list(companyId));
     const canReadConfigs = await actorCanReadConfigurationsForCompany(req, companyId);
     if (canReadConfigs) {
-      res.json(result);
+      res.json(result.map((agent) => toPublicAgent(agent)));
       return;
     }
     res.json(result.map((agent) => redactForRestrictedAgentView(agent)));
@@ -692,29 +677,11 @@ export function agentRoutes(
         }
 
         res.status(result.retried ? 200 : 201).json({
-          agent,
+          agent: toPublicAgent(agent),
           configuration: result.configuration,
           auditId: result.auditId,
           retried: result.retried,
         });
-      } catch (error) {
-        rethrowRuntimeAgentConfigurationError(error);
-      }
-    },
-  );
-
-  router.get(
-    "/companies/:companyId/runtime-agent-tool-options",
-    async (req, res) => {
-      assertBoard(req);
-      const companyId = req.params.companyId as string;
-      await assertCanCreateAgentsForCompany(req, companyId);
-      try {
-        res.json(
-          await runtimeAgentConfiguration.listCreateCompanyToolOptions(
-            companyId,
-          ),
-        );
       } catch (error) {
         rethrowRuntimeAgentConfigurationError(error);
       }
@@ -743,32 +710,6 @@ export function agentRoutes(
       rethrowRuntimeAgentConfigurationError(error);
     }
   });
-
-  router.get(
-    "/agents/:id/runtime-configuration/tool-options",
-    async (req, res) => {
-      assertBoard(req);
-      const id = req.params.id as string;
-      const existing = await getAccessibleResource(
-        req,
-        res,
-        svc.getById(id),
-        "Agent not found",
-      );
-      if (!existing) return;
-      await assertCanReadAgent(req, existing);
-      try {
-        res.json(
-          await runtimeAgentConfiguration.listAgentCompanyToolOptions({
-            companyId: existing.companyId,
-            agentId: existing.id,
-          }),
-        );
-      } catch (error) {
-        rethrowRuntimeAgentConfigurationError(error);
-      }
-    },
-  );
 
   router.patch(
     "/agents/:id/runtime-configuration",
@@ -1018,7 +959,7 @@ export function agentRoutes(
         },
       });
 
-      res.json(result.agent);
+      res.json(toPublicAgent(result.agent));
     },
   );
 
@@ -1076,7 +1017,7 @@ export function agentRoutes(
         entityId: terminated.id,
         details: { requestedAction: "pause" },
       });
-      res.json(terminated);
+      res.json(toPublicAgent(terminated));
       return;
     }
     await assertNotPluginManagedTriage(existing);
@@ -1098,7 +1039,7 @@ export function agentRoutes(
       entityId: agent.id,
     });
 
-    res.json(agent);
+    res.json(toPublicAgent(agent));
   });
 
   router.post("/agents/:id/resume", async (req, res) => {
@@ -1127,7 +1068,7 @@ export function agentRoutes(
       entityId: agent.id,
     });
 
-    res.json(agent);
+    res.json(toPublicAgent(agent));
   });
 
   router.post("/agents/:id/clear-error", async (req, res) => {
@@ -1159,7 +1100,7 @@ export function agentRoutes(
       entityId: agent.id,
     });
 
-    res.json(agent);
+    res.json(toPublicAgent(agent));
   });
 
   router.post("/agents/:id/terminate", async (req, res) => {
@@ -1209,7 +1150,7 @@ export function agentRoutes(
       return;
     }
 
-    res.json(agent);
+    res.json(toPublicAgent(agent));
   });
 
   router.post(
@@ -1229,29 +1170,11 @@ export function agentRoutes(
       const agent = await svc.getById(existing.id);
       if (!agent) throw notFound("Agent not found after adoption");
       res.json({
-        agent,
+        agent: toPublicAgent(agent),
         pluginManagement,
       });
     },
   );
-
-  router.get("/workspace-operations/:operationId/log", async (req, res) => {
-    const operationId = req.params.operationId as string;
-    const operation = await getAccessibleResource(req, res, workspaceOperations.getById(operationId), "Workspace operation not found");
-    if (!operation) return;
-
-    const offset = Number(req.query.offset ?? 0);
-    const limitBytes = readWorkspaceOperationLogLimitBytes(
-      req.query.limitBytes,
-    );
-    const result = await workspaceOperations.readLog(operationId, {
-      offset: Number.isFinite(offset) ? offset : 0,
-      limitBytes,
-    });
-
-    res.set("Cache-Control", "no-cache, no-store");
-    res.json(result);
-  });
 
   return router;
 }

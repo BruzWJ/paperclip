@@ -6,7 +6,6 @@ import { promisify } from "node:util";
 import { and, asc, desc, eq, exists, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
-  agents,
   executionWorkspaces,
   issueExecutionWorkspaceBindings,
   issueSessionContextEpochs,
@@ -19,23 +18,12 @@ import {
 import type {
   ExecutionWorkspace,
   ExecutionWorkspaceSummary,
-  ExecutionWorkspaceCloseAction,
-  ExecutionWorkspaceCloseGitReadiness,
-  ExecutionWorkspaceCloseReadiness,
   ExecutionWorkspaceConfig,
-  WorkspaceOverviewResponse,
-  WorkspaceOverviewItem,
-  WorkspaceOverviewLinkedIssue,
   WorkspaceRuntimeDesiredState,
   WorkspaceRuntimeService,
-  WorkspaceOverviewPrimaryService,
-  WorkspaceOverviewQuery,
   GitWorktreeBranchAncestryVerdict,
-  ExecutionWorkspaceMode,
-  IssueExecutionWorkspaceSettings,
 } from "@paperclipai/shared";
 import * as IssueSession from "@paperclipai/shared/issue-session";
-import { deriveProjectUrlKey, WORKSPACE_OVERVIEW_LINKED_ISSUE_LIMIT } from "@paperclipai/shared";
 import { resolvePaperclipInstanceRoot } from "@paperclipai/shared/home-paths";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import {
@@ -43,16 +31,6 @@ import {
   normalizeIssueExecutionPolicy,
   parseIssueExecutionState,
 } from "./issue-execution-policy.js";
-import {
-  isUnrunnableWorktreeCombo,
-  parseIssueExecutionWorkspaceSettings,
-  parseProjectExecutionWorkspacePolicy,
-  resolveEffectiveWorkspaceStrategyType,
-  resolveExecutionWorkspaceMode,
-  type ParsedExecutionWorkspaceMode,
-} from "./execution-workspace-policy.js";
-import { visibleIssueCondition } from "./issue-visibility.js";
-import { readProjectWorkspaceRuntimeConfig } from "./project-workspace-runtime-config.js";
 import {
   listCurrentRuntimeServicesForExecutionWorkspaces,
   listCurrentRuntimeServicesForProjectWorkspaces,
@@ -65,22 +43,14 @@ import {
   type IssueSessionDbTransaction,
 } from "./issue-session/event-store.js";
 import { publishIssueSessionEventInTx } from "./issue-session/publication.js";
+import { instanceSettingsService } from "./instance-settings.js";
 
 type ExecutionWorkspaceRow = typeof executionWorkspaces.$inferSelect;
 type WorkspaceRuntimeServiceRow = typeof workspaceRuntimeServices.$inferSelect;
 type RuntimeServiceReadDb = Pick<Db, "select">;
 const execFileAsync = promisify(execFile);
-const TERMINAL_ISSUE_STATUSES = new Set(["done", "cancelled"]);
 const WORKSPACE_BRANCH_INCOHERENCE_REASON = "git_worktree_branch_incoherence";
 const REUSABLE_WORKSPACE_STATUSES = ["active", "idle", "in_review"] as const;
-const ISSUE_WORKSPACE_MODES = new Set<ExecutionWorkspaceMode>([
-  "inherit",
-  "shared_workspace",
-  "isolated_workspace",
-  "operator_branch",
-  "reuse_existing",
-  "agent_default",
-]);
 
 export type ExecutionWorkspaceBranchReconcileMode = "forward" | "override" | "quarantine_restore";
 
@@ -200,16 +170,6 @@ function readServiceStates(value: unknown): ExecutionWorkspaceConfig["serviceSta
   return entries.length > 0
     ? Object.fromEntries(entries) as ExecutionWorkspaceConfig["serviceStates"]
     : null;
-}
-
-async function pathExists(value: string | null | undefined) {
-  if (!value) return false;
-  try {
-    await fs.access(value);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function runGit(args: string[], cwd: string) {
@@ -511,6 +471,7 @@ async function quarantineRestoreDirtyWorkspaceBranch(input: {
     .where(eq(issues.id, input.issueId))
     .then((rows) => rows[0] ?? null);
   if (!sourceIssue) throw notFound("Source issue not found");
+  const safeguards = await instanceSettingsService(input.db).getGeneral();
 
   const { ensureGitWorktreeBranchCoherent } = await import("./workspace-runtime.js");
   try {
@@ -524,9 +485,10 @@ async function quarantineRestoreDirtyWorkspaceBranch(input: {
       executionWorkspaceId: input.workspace.id,
       runId:
         input.actor.actorType === "user" ? null : input.actor.runId,
-      enableWorkspaceBranchReconcileForward: false,
-      enableWorkspaceDirtyQuarantineRepair: true,
-      persistForwardReconcile: false,
+      enableWorkspaceBranchReconcileForward:
+        safeguards.enableWorkspaceBranchReconcileForward,
+      enableWorkspaceDirtyQuarantineRepair:
+        safeguards.enableWorkspaceDirtyQuarantineRepair,
       reconcileOperationPhase: "worktree_prepare",
       recorder: null,
     });
@@ -555,141 +517,11 @@ async function quarantineRestoreDirtyWorkspaceBranch(input: {
   }
 }
 
-async function inspectGitCloseReadiness(workspace: ExecutionWorkspace): Promise<{
-  git: ExecutionWorkspaceCloseGitReadiness | null;
-  warnings: string[];
-}> {
-  const warnings: string[] = [];
-  const workspacePath = readNullableString(workspace.providerRef) ?? readNullableString(workspace.cwd);
-  const createdByRuntime = workspace.metadata?.createdByRuntime === true;
-  const expectsGitInspection =
-    workspace.providerType === "git_worktree" ||
-    Boolean(workspace.repoUrl || workspace.baseRef || workspace.branchName || workspacePath);
-
-  if (!expectsGitInspection) {
-    return { git: null, warnings };
-  }
-
-  if (!workspacePath) {
-    warnings.push("Workspace has no local path, so Paperclip cannot inspect git status before close.");
-    return { git: null, warnings };
-  }
-
-  if (!(await pathExists(workspacePath))) {
-    warnings.push(`Workspace path "${workspacePath}" does not exist, so Paperclip cannot inspect git status before close.`);
-    return {
-      git: {
-        repoRoot: null,
-        workspacePath,
-        branchName: workspace.branchName,
-        baseRef: workspace.baseRef,
-        hasDirtyTrackedFiles: false,
-        hasUntrackedFiles: false,
-        dirtyEntryCount: 0,
-        untrackedEntryCount: 0,
-        aheadCount: null,
-        behindCount: null,
-        isMergedIntoBase: null,
-        createdByRuntime,
-      },
-      warnings,
-    };
-  }
-
-  let repoRoot: string | null = null;
-  try {
-    repoRoot = (await runGit(["rev-parse", "--show-toplevel"], workspacePath)).stdout.trim() || null;
-  } catch (error) {
-    warnings.push(
-      `Could not inspect git status for "${workspacePath}": ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-
-  let branchName = workspace.branchName;
-  if (repoRoot && !branchName) {
-    try {
-      branchName = (await runGit(["rev-parse", "--abbrev-ref", "HEAD"], workspacePath)).stdout.trim() || null;
-    } catch {
-      branchName = workspace.branchName;
-    }
-  }
-
-  let dirtyEntryCount = 0;
-  let untrackedEntryCount = 0;
-  if (repoRoot) {
-    try {
-      const statusOutput = (await runGit(["status", "--porcelain=v1", "--untracked-files=all"], workspacePath)).stdout;
-      for (const line of statusOutput.split(/\r?\n/)) {
-        if (!line) continue;
-        if (line.startsWith("??")) {
-          untrackedEntryCount += 1;
-          continue;
-        }
-        dirtyEntryCount += 1;
-      }
-    } catch (error) {
-      warnings.push(
-        `Could not read git working tree status for "${workspacePath}": ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
-  let aheadCount: number | null = null;
-  let behindCount: number | null = null;
-  let isMergedIntoBase: boolean | null = null;
-  const baseRef = workspace.baseRef;
-
-  if (repoRoot && baseRef) {
-    try {
-      const counts = (await runGit(["rev-list", "--left-right", "--count", `${baseRef}...HEAD`], workspacePath)).stdout.trim();
-      const [behindRaw, aheadRaw] = counts.split(/\s+/);
-      behindCount = behindRaw ? Number.parseInt(behindRaw, 10) : 0;
-      aheadCount = aheadRaw ? Number.parseInt(aheadRaw, 10) : 0;
-    } catch (error) {
-      warnings.push(
-        `Could not compare this workspace against ${baseRef}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-
-    try {
-      await runGit(["merge-base", "--is-ancestor", "HEAD", baseRef], workspacePath);
-      isMergedIntoBase = true;
-    } catch (error) {
-      const code = typeof error === "object" && error && "code" in error ? (error as { code?: unknown }).code : null;
-      if (code === 1) isMergedIntoBase = false;
-      else {
-        warnings.push(
-          `Could not determine whether this workspace is merged into ${baseRef}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
-  }
-
-  return {
-    git: {
-      repoRoot,
-      workspacePath,
-      branchName,
-      baseRef,
-      hasDirtyTrackedFiles: dirtyEntryCount > 0,
-      hasUntrackedFiles: untrackedEntryCount > 0,
-      dirtyEntryCount,
-      untrackedEntryCount,
-      aheadCount,
-      behindCount,
-      isMergedIntoBase,
-      createdByRuntime,
-    },
-    warnings,
-  };
-}
-
 export function readExecutionWorkspaceConfig(metadata: Record<string, unknown> | null | undefined): ExecutionWorkspaceConfig | null {
   const raw = isRecord(metadata?.config) ? metadata.config : null;
   if (!raw) return null;
 
   const config: ExecutionWorkspaceConfig = {
-    environmentId: readNullableString(raw.environmentId),
     provisionCommand: readNullableString(raw.provisionCommand),
     teardownCommand: readNullableString(raw.teardownCommand),
     cleanupCommand: readNullableString(raw.cleanupCommand),
@@ -713,7 +545,6 @@ export function mergeExecutionWorkspaceConfig(
 ): Record<string, unknown> | null {
   const nextMetadata = isRecord(metadata) ? { ...metadata } : {};
   const current = readExecutionWorkspaceConfig(metadata) ?? {
-    environmentId: null,
     provisionCommand: null,
     teardownCommand: null,
     cleanupCommand: null,
@@ -728,7 +559,6 @@ export function mergeExecutionWorkspaceConfig(
   }
 
   const nextConfig: ExecutionWorkspaceConfig = {
-    environmentId: patch.environmentId !== undefined ? readNullableString(patch.environmentId) : current.environmentId,
     provisionCommand: patch.provisionCommand !== undefined ? readNullableString(patch.provisionCommand) : current.provisionCommand,
     teardownCommand: patch.teardownCommand !== undefined ? readNullableString(patch.teardownCommand) : current.teardownCommand,
     cleanupCommand: patch.cleanupCommand !== undefined ? readNullableString(patch.cleanupCommand) : current.cleanupCommand,
@@ -749,7 +579,6 @@ export function mergeExecutionWorkspaceConfig(
 
   if (hasConfig) {
     nextMetadata.config = {
-      environmentId: nextConfig.environmentId,
       provisionCommand: nextConfig.provisionCommand,
       teardownCommand: nextConfig.teardownCommand,
       cleanupCommand: nextConfig.cleanupCommand,
@@ -845,39 +674,6 @@ function toExecutionWorkspaceSummary(
   };
 }
 
-function maxDate(...values: Array<Date | string | null | undefined>): Date {
-  let latest = new Date(0);
-  for (const value of values) {
-    if (!value) continue;
-    const date = value instanceof Date ? value : new Date(value);
-    if (!Number.isNaN(date.getTime()) && date.getTime() > latest.getTime()) latest = date;
-  }
-  return latest;
-}
-
-function toWorkspaceOverviewPrimaryService(
-  service: WorkspaceRuntimeService | null,
-): WorkspaceOverviewPrimaryService | null {
-  if (!service) return null;
-  return {
-    id: service.id,
-    serviceName: service.serviceName,
-    status: service.status,
-    url: service.url,
-    port: service.port,
-    healthStatus: service.healthStatus,
-    updatedAt: service.updatedAt,
-  };
-}
-
-function selectPrimaryOverviewService(services: WorkspaceRuntimeService[]) {
-  return services.find((service) => service.status === "running" && service.url)
-    ?? services.find((service) => service.url)
-    ?? services.find((service) => service.status === "running")
-    ?? services[0]
-    ?? null;
-}
-
 function usesInheritedProjectRuntimeServices(row: ExecutionWorkspaceRow) {
   if (row.mode !== "shared_workspace" || !row.projectWorkspaceId) return false;
   return !readExecutionWorkspaceConfig((row.metadata as Record<string, unknown> | null) ?? null)?.workspaceRuntime;
@@ -936,13 +732,10 @@ type WorkspaceReservationIssue = Pick<
   | "companyId"
   | "parentId"
   | "projectId"
-  | "projectWorkspaceId"
   | "title"
   | "identifier"
   | "ownershipEpoch"
   | "ownerAgentId"
-  | "executionWorkspacePreference"
-  | "executionWorkspaceSettings"
 >;
 
 export interface ReserveIssueExecutionWorkspaceBindingInput {
@@ -952,7 +745,6 @@ export interface ReserveIssueExecutionWorkspaceBindingInput {
     parentSessionId?: string | null;
     now: Date;
   };
-  explicitReusableWorkspaceId?: string | null;
   provenance?: {
     agentId?: string | null;
     userId?: string | null;
@@ -991,61 +783,6 @@ function workspaceReservationDigest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function normalizedIssueWorkspacePreference(
-  value: string | null,
-): ExecutionWorkspaceMode | null {
-  if (value === null || value === "") return null;
-  if (!ISSUE_WORKSPACE_MODES.has(value as ExecutionWorkspaceMode)) {
-    rejectWorkspaceReservation(
-      "Issue execution workspace preference is invalid",
-      "workspace_preference_invalid",
-    );
-  }
-  return value as ExecutionWorkspaceMode;
-}
-
-function effectiveWorkspaceStrategy(
-  mode: ParsedExecutionWorkspaceMode,
-  issueSettings: IssueExecutionWorkspaceSettings | null,
-  projectPolicy: ReturnType<typeof parseProjectExecutionWorkspacePolicy>,
-  reuseRequested = false,
-) {
-  if (!reuseRequested && mode === "shared_workspace") {
-    return "project_primary" as const;
-  }
-  if (!reuseRequested && mode === "agent_default") {
-    return "adapter_managed" as const;
-  }
-  return resolveEffectiveWorkspaceStrategyType(mode, {
-    workspaceStrategy:
-      issueSettings?.workspaceStrategy ??
-      projectPolicy?.workspaceStrategy ??
-      undefined,
-  });
-}
-
-function persistedStrategyMatches(
-  persisted: string,
-  expected: ReturnType<typeof effectiveWorkspaceStrategy>,
-): boolean {
-  if (expected === "project_primary") {
-    return persisted === "local_fs" || persisted === "project_primary";
-  }
-  return persisted === expected;
-}
-
-function persistedModeForReservation(
-  mode: ParsedExecutionWorkspaceMode,
-): string {
-  return mode === "agent_default" ? "adapter_managed" : mode;
-}
-
-function persistedStrategyForReservation(
-  strategy: ReturnType<typeof effectiveWorkspaceStrategy>,
-): string {
-  return strategy === "project_primary" ? "local_fs" : strategy;
-}
-
 function absoluteProjectWorkspaceCwd(
   cwd: string | null | undefined,
 ): string | null {
@@ -1057,182 +794,6 @@ function absoluteProjectWorkspaceCwd(
     );
   }
   return path.resolve(cwd);
-}
-
-async function assertReusableWorkspaceLaunchable(
-  workspace: ExecutionWorkspaceRow,
-): Promise<void> {
-  if (!workspace.cwd || !path.isAbsolute(workspace.cwd)) {
-    rejectWorkspaceReservation(
-      "Reusable execution workspace cwd must be absolute",
-      "execution_workspace_cwd_invalid",
-    );
-  }
-  const absoluteCwd = path.resolve(workspace.cwd);
-  if (
-    workspace.providerType === "adapter_managed" ||
-    workspace.providerType === "cloud_sandbox"
-  ) {
-    await fs.mkdir(absoluteCwd, { recursive: true });
-    return;
-  }
-  let directory = false;
-  try {
-    directory = (await fs.stat(absoluteCwd)).isDirectory();
-  } catch {
-    directory = false;
-  }
-  if (!directory) {
-    rejectWorkspaceReservation(
-      "Reusable execution workspace cwd is not an available directory",
-      "execution_workspace_cwd_unavailable",
-    );
-  }
-  if (workspace.strategyType !== "git_worktree") return;
-  const insideWorktree = await readGitStdout(
-    ["rev-parse", "--is-inside-work-tree"],
-    absoluteCwd,
-  ).catch(() => null);
-  if (insideWorktree !== "true") {
-    rejectWorkspaceReservation(
-      "Reusable git-worktree workspace is not a valid Git checkout",
-      "execution_workspace_git_invalid",
-    );
-  }
-  if (workspace.branchName) {
-    const currentBranch = await readGitStdout(
-      ["branch", "--show-current"],
-      absoluteCwd,
-    ).catch(() => null);
-    if (currentBranch !== workspace.branchName) {
-      rejectWorkspaceReservation(
-        "Reusable git-worktree workspace branch does not match its persisted branch",
-        "execution_workspace_git_invalid",
-      );
-    }
-  }
-}
-
-async function realizeReservationGitWorktree(
-  tx: IssueSessionDbTransaction,
-  input: ReserveIssueExecutionWorkspaceBindingInput,
-  selectedProjectWorkspace: typeof projectWorkspaces.$inferSelect,
-  workspaceStrategy: NonNullable<
-    IssueExecutionWorkspaceSettings["workspaceStrategy"]
-  >,
-  mode: ParsedExecutionWorkspaceMode,
-) {
-  const baseCwd = absoluteProjectWorkspaceCwd(
-    selectedProjectWorkspace.cwd,
-  );
-  if (!baseCwd) {
-    rejectWorkspaceReservation(
-      "Git worktree selection requires a project workspace with an absolute repository cwd",
-      "workspace_worktree_base_missing",
-    );
-  }
-  const owner = input.issue.ownerAgentId
-    ? await tx
-        .select({ id: agents.id, name: agents.name })
-        .from(agents)
-        .where(
-          and(
-            eq(agents.companyId, input.issue.companyId),
-            eq(agents.id, input.issue.ownerAgentId),
-          ),
-        )
-        .limit(1)
-        .then((rows) => rows[0] ?? null)
-    : null;
-  const configuredBranchTemplate =
-    workspaceStrategy.branchTemplate?.trim() ||
-    "{{issue.identifier}}-{{slug}}";
-  const epochScopedBranchTemplate =
-    mode === "isolated_workspace"
-      ? `${configuredBranchTemplate}-epoch-${input.issue.ownershipEpoch}`
-      : configuredBranchTemplate;
-
-  try {
-    // workspace-runtime owns the existing, thoroughly validated git
-    // realization primitive. The import stays dynamic because that module
-    // consumes the execution-workspace read/service surface in this module;
-    // reservation remains the sole mutating issue-binding owner.
-    const { realizeExecutionWorkspace } =
-      await import("./workspace-runtime.js");
-    return await realizeExecutionWorkspace({
-      db: tx as unknown as Db,
-      base: {
-        baseCwd,
-        source: "project_primary",
-        projectId: input.issue.projectId,
-        workspaceId: selectedProjectWorkspace.id,
-        repoUrl: selectedProjectWorkspace.repoUrl ?? null,
-        repoRef:
-          selectedProjectWorkspace.repoRef ??
-          selectedProjectWorkspace.defaultRef ??
-          null,
-      },
-      config: {
-        workspaceStrategy: {
-          ...workspaceStrategy,
-          type: "git_worktree",
-          branchTemplate: epochScopedBranchTemplate,
-        },
-      },
-      issue: {
-        id: input.issue.id,
-        identifier: input.issue.identifier,
-        title: input.issue.title,
-      },
-      agent: {
-        id: owner?.id ?? input.issue.ownerAgentId,
-        name: owner?.name ?? "Agent",
-        companyId: input.issue.companyId,
-      },
-    });
-  } catch (error) {
-    rejectWorkspaceReservation(
-      `Git worktree realization failed: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-      "execution_workspace_realization_failed",
-    );
-  }
-}
-
-function reservationWorkspaceMetadata(input: {
-  issueSettings: IssueExecutionWorkspaceSettings | null;
-  projectPolicy: ReturnType<
-    typeof parseProjectExecutionWorkspacePolicy
-  >;
-  resolvedBaseRefSha?: string | null;
-}): Record<string, unknown> | null {
-  const strategy =
-    input.issueSettings?.workspaceStrategy ??
-    input.projectPolicy?.workspaceStrategy ??
-    null;
-  const seed = input.resolvedBaseRefSha
-    ? {
-        baseRefSnapshot: {
-          resolvedSha: input.resolvedBaseRefSha,
-        },
-      }
-    : null;
-  return mergeExecutionWorkspaceConfig(seed, {
-    environmentId:
-      input.issueSettings?.environmentId ??
-      input.projectPolicy?.environmentId ??
-      null,
-    provisionCommand: strategy?.provisionCommand ?? null,
-    teardownCommand: strategy?.teardownCommand ?? null,
-    cleanupCommand: null,
-    workspaceRuntime:
-      input.issueSettings?.workspaceRuntime ??
-      input.projectPolicy?.workspaceRuntime ??
-      null,
-    desiredState: null,
-    serviceStates: null,
-  });
 }
 
 async function currentContextGeneration(
@@ -1353,9 +914,9 @@ async function publishSessionMovedForWorkspaceInTx(
 /**
  * Sole production mutating owner for an issue-execution workspace binding.
  *
- * Selection is resolved from the issue's persisted intent on every ownership
- * epoch. Parent Sessions supply lineage only: neither a parent binding nor a
- * prior epoch cwd is an implicit workspace source.
+ * The workspace is resolved automatically from the issue's project on every
+ * ownership epoch. Parent Sessions supply lineage only: neither a parent
+ * binding nor a prior epoch cwd is an implicit workspace source.
  */
 export async function reserveIssueExecutionWorkspaceBinding(
   tx: IssueSessionDbTransaction,
@@ -1398,12 +959,7 @@ export async function reserveIssueExecutionWorkspaceBinding(
     .limit(1)
     .then((rows) => rows[0] ?? null);
   if (existingBinding) {
-    if (
-      existingBinding.sessionId !== input.session.id ||
-      (input.explicitReusableWorkspaceId &&
-        existingBinding.executionWorkspaceId !==
-          input.explicitReusableWorkspaceId)
-    ) {
+    if (existingBinding.sessionId !== input.session.id) {
       rejectWorkspaceReservation(
         "Issue workspace reservation was retried with different immutable identity",
         "workspace_binding_conflict",
@@ -1462,27 +1018,6 @@ export async function reserveIssueExecutionWorkspaceBinding(
     };
   }
 
-  const issueSettings = parseIssueExecutionWorkspaceSettings(
-    input.issue.executionWorkspaceSettings,
-    { includeEnvironmentId: true },
-  );
-  const issuePreference = normalizedIssueWorkspacePreference(
-    input.issue.executionWorkspacePreference,
-  );
-  const reuseRequested =
-    issuePreference === "reuse_existing" ||
-    issueSettings?.mode === "reuse_existing";
-  if (Boolean(input.explicitReusableWorkspaceId) !== reuseRequested) {
-    rejectWorkspaceReservation(
-      reuseRequested
-        ? "reuse_existing requires an explicit execution workspace"
-        : "An explicit execution workspace requires reuse_existing",
-      reuseRequested
-        ? "execution_workspace_missing"
-        : "execution_workspace_preference_invalid",
-    );
-  }
-
   const project = input.issue.projectId
     ? await tx
         .select()
@@ -1502,28 +1037,6 @@ export async function reserveIssueExecutionWorkspaceBinding(
       "project_invalid",
     );
   }
-  const parsedProjectPolicy = parseProjectExecutionWorkspacePolicy(
-    project?.executionWorkspacePolicy,
-  );
-  const projectPolicy = parsedProjectPolicy?.enabled
-    ? parsedProjectPolicy
-    : null;
-  const mode = resolveExecutionWorkspaceMode({
-    projectPolicy,
-    issueSettings,
-    issuePreference,
-  });
-  const strategy = effectiveWorkspaceStrategy(
-    mode,
-    issueSettings,
-    projectPolicy,
-    reuseRequested,
-  );
-
-  const selectedProjectWorkspaceId =
-    input.issue.projectWorkspaceId ??
-    projectPolicy?.defaultProjectWorkspaceId ??
-    null;
   const selectedProjectWorkspace = input.issue.projectId
     ? await tx
         .select()
@@ -1532,9 +1045,6 @@ export async function reserveIssueExecutionWorkspaceBinding(
           and(
             eq(projectWorkspaces.companyId, input.issue.companyId),
             eq(projectWorkspaces.projectId, input.issue.projectId),
-            selectedProjectWorkspaceId
-              ? eq(projectWorkspaces.id, selectedProjectWorkspaceId)
-              : sql`true`,
           ),
         )
         .orderBy(
@@ -1545,83 +1055,8 @@ export async function reserveIssueExecutionWorkspaceBinding(
         .limit(1)
         .then((rows) => rows[0] ?? null)
     : null;
-  if (selectedProjectWorkspaceId && !selectedProjectWorkspace) {
-    rejectWorkspaceReservation(
-      "Selected project workspace is not in the issue project",
-      "project_workspace_invalid",
-    );
-  }
-
   let workspace: ExecutionWorkspaceRow;
-  if (input.explicitReusableWorkspaceId) {
-    const reusable = await tx
-      .select()
-      .from(executionWorkspaces)
-      .where(
-        and(
-          eq(executionWorkspaces.companyId, input.issue.companyId),
-          eq(
-            executionWorkspaces.id,
-            input.explicitReusableWorkspaceId,
-          ),
-        ),
-      )
-      .for("update")
-      .then((rows) => rows[0] ?? null);
-    if (
-      !reusable ||
-      !REUSABLE_WORKSPACE_STATUSES.includes(
-        reusable.status as (typeof REUSABLE_WORKSPACE_STATUSES)[number],
-      ) ||
-      reusable.closedAt !== null ||
-      reusable.projectId !== input.issue.projectId ||
-      reusable.projectWorkspaceId !==
-        (selectedProjectWorkspace?.id ?? null) ||
-      !persistedStrategyMatches(reusable.strategyType, strategy) ||
-      !reusable.cwd ||
-      !path.isAbsolute(reusable.cwd)
-    ) {
-      rejectWorkspaceReservation(
-        "Reusable execution workspace is not compatible with the issue selection",
-        "execution_workspace_invalid",
-      );
-    }
-    await assertReusableWorkspaceLaunchable(reusable);
-    const refreshed = await tx
-      .update(executionWorkspaces)
-      .set({
-        status: "active",
-        lastUsedAt: input.session.now,
-        updatedAt: input.session.now,
-      })
-      .where(eq(executionWorkspaces.id, reusable.id))
-      .returning()
-      .then((rows) => rows[0] ?? null);
-    if (!refreshed) {
-      rejectWorkspaceReservation(
-        "Reusable execution workspace could not be reserved",
-        "execution_workspace_reservation_failed",
-      );
-    }
-    workspace = refreshed;
-  } else {
-    if (
-      isUnrunnableWorktreeCombo({
-        issue: {
-          projectId: input.issue.projectId,
-          projectWorkspaceId: selectedProjectWorkspace?.id ?? null,
-        },
-        resolvedMode: mode,
-        resolvedStrategy: strategy,
-        reusableExecutionWorkspaceAvailable: false,
-      })
-    ) {
-      rejectWorkspaceReservation(
-        "Projectless git worktree selection requires an explicit compatible reusable workspace",
-        "workspace_worktree_requires_project",
-      );
-    }
-
+  {
     const projectWorkspaceCwd = absoluteProjectWorkspaceCwd(
       selectedProjectWorkspace?.cwd,
     );
@@ -1632,76 +1067,22 @@ export async function reserveIssueExecutionWorkspaceBinding(
       input.issue.id,
       String(input.issue.ownershipEpoch),
     );
-    let absoluteCwd: string;
-    let realizedBaseRef =
-      issueSettings?.workspaceStrategy?.baseRef ??
-      projectPolicy?.workspaceStrategy?.baseRef ??
+    const absoluteCwd = projectWorkspaceCwd ?? perEpochRoot;
+    const realizedBaseRef =
       selectedProjectWorkspace?.repoRef ??
       selectedProjectWorkspace?.defaultRef ??
       null;
-    let realizedBranchName: string | null = null;
-    let realizedProviderRef: string | null = null;
-    let metadata = reservationWorkspaceMetadata({
-      issueSettings,
-      projectPolicy,
-    });
-    if (strategy === "git_worktree") {
-      const workspaceStrategy =
-        issueSettings?.workspaceStrategy ??
-        projectPolicy?.workspaceStrategy;
-      if (
-        !selectedProjectWorkspace ||
-        workspaceStrategy?.type !== "git_worktree"
-      ) {
-        rejectWorkspaceReservation(
-          "Git worktree selection has no explicit project workspace strategy",
-          "workspace_worktree_base_missing",
-        );
-      }
-      const realized = await realizeReservationGitWorktree(
-        tx,
-        input,
-        selectedProjectWorkspace,
-        workspaceStrategy,
-        mode,
-      );
-      if (!path.isAbsolute(realized.cwd)) {
-        rejectWorkspaceReservation(
-          "Git worktree realization returned a non-absolute cwd",
-          "execution_workspace_cwd_invalid",
-        );
-      }
-      absoluteCwd = path.resolve(realized.cwd);
-      realizedBaseRef = realized.repoRef;
-      realizedBranchName = realized.branchName;
-      realizedProviderRef = realized.worktreePath;
-      metadata = reservationWorkspaceMetadata({
-        issueSettings,
-        projectPolicy,
-        resolvedBaseRefSha: realized.baseRefSha,
-      });
-    } else {
-      absoluteCwd =
-        mode === "shared_workspace" && projectWorkspaceCwd
-          ? projectWorkspaceCwd
-          : perEpochRoot;
-      await fs.mkdir(absoluteCwd, { recursive: true });
-    }
-
-    if (mode === "shared_workspace") {
-      await tx.execute(
-        sql`select pg_advisory_xact_lock(hashtextextended(${[
-          "shared-execution-workspace",
-          input.issue.companyId,
-          input.issue.projectId ?? "global",
-          selectedProjectWorkspace?.id ?? "projectless",
-          absoluteCwd,
-        ].join(":")}, 0))`,
-      );
-    }
-    const reusableShared =
-      mode === "shared_workspace"
-        ? await tx
+    await fs.mkdir(absoluteCwd, { recursive: true });
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${[
+        "shared-execution-workspace",
+        input.issue.companyId,
+        input.issue.projectId ?? "global",
+        selectedProjectWorkspace?.id ?? "projectless",
+        absoluteCwd,
+      ].join(":")}, 0))`,
+    );
+    const reusableShared = await tx
             .select()
             .from(executionWorkspaces)
             .where(
@@ -1727,8 +1108,7 @@ export async function reserveIssueExecutionWorkspaceBinding(
             )
             .orderBy(asc(executionWorkspaces.createdAt))
             .limit(1)
-            .then((rows) => rows[0] ?? null)
-        : null;
+            .then((rows) => rows[0] ?? null);
     if (reusableShared) {
       workspace = await tx
         .update(executionWorkspaces)
@@ -1751,8 +1131,8 @@ export async function reserveIssueExecutionWorkspaceBinding(
             ? "project"
             : "projectless",
           sourceIssueId: null,
-          mode: persistedModeForReservation(mode),
-          strategyType: persistedStrategyForReservation(strategy),
+          mode: "shared_workspace",
+          strategyType: "local_fs",
           name:
             input.issue.title?.trim() ||
             input.issue.identifier?.trim() ||
@@ -1761,17 +1141,10 @@ export async function reserveIssueExecutionWorkspaceBinding(
           cwd: absoluteCwd,
           repoUrl: selectedProjectWorkspace?.repoUrl ?? null,
           baseRef: realizedBaseRef,
-          branchName: realizedBranchName,
-          providerType:
-            strategy === "git_worktree"
-              ? "git_worktree"
-              : strategy === "adapter_managed"
-                ? "adapter_managed"
-                : strategy === "cloud_sandbox"
-                  ? "cloud_sandbox"
-                  : "local_fs",
-          providerRef: realizedProviderRef,
-          metadata,
+          branchName: null,
+          providerType: "local_fs",
+          providerRef: null,
+          metadata: null,
           openedAt: input.session.now,
           lastUsedAt: input.session.now,
           createdAt: input.session.now,
@@ -1876,7 +1249,6 @@ export async function reserveIssueExecutionWorkspaceBinding(
       repositoryLocator: workspace.repoUrl,
       repositoryRef: workspace.branchName ?? workspace.baseRef,
       pullRequestSelector: null,
-      environmentSelector: issueSettings?.environmentId ?? null,
       boundByAgentId: input.provenance?.agentId ?? null,
       boundByUserId: input.provenance?.userId ?? null,
       createdAt: input.session.now,
@@ -1897,15 +1269,6 @@ export async function reserveIssueExecutionWorkspaceBinding(
     moved,
   };
 }
-
-type WorkspaceOverviewPageRow = ExecutionWorkspaceRow & {
-  projectName: string | null;
-  projectWorkspaceMetadata: Record<string, unknown> | null;
-};
-
-type WorkspaceOverviewIssueRow = WorkspaceOverviewLinkedIssue & {
-  executionWorkspaceId: string;
-};
 
 export function executionWorkspaceService(db: Db) {
   async function listCurrentBindingsForWorkspace(
@@ -2036,264 +1399,11 @@ export function executionWorkspaceService(db: Db) {
     if (filters?.reuseEligible) {
       conditions.push(inArray(executionWorkspaces.status, ["active", "idle", "in_review"]));
       conditions.push(isNull(executionWorkspaces.closedAt));
-      conditions.push(inArray(executionWorkspaces.mode, ["isolated_workspace", "operator_branch", "adapter_managed", "cloud_sandbox"]));
-    }
-    return conditions;
-  }
-
-  function buildOverviewConditions(companyId: string, filters: WorkspaceOverviewQuery) {
-    const conditions = [
-      eq(executionWorkspaces.companyId, companyId),
-      or(
-        isNull(executionWorkspaces.projectId),
-        exists(
-          db
-            .select({ id: projects.id })
-            .from(projects)
-            .where(
-              and(
-                eq(projects.companyId, companyId),
-                eq(projects.id, executionWorkspaces.projectId),
-              ),
-            ),
-        ),
-      )!,
-    ];
-    if (filters.projectId) conditions.push(eq(executionWorkspaces.projectId, filters.projectId));
-    if (filters.status && filters.status.length > 0) {
-      if (filters.status.length === 1) conditions.push(eq(executionWorkspaces.status, filters.status[0]!));
-      else conditions.push(inArray(executionWorkspaces.status, filters.status));
-    } else {
-      conditions.push(ne(executionWorkspaces.status, "archived"));
     }
     return conditions;
   }
 
   return {
-    listOverview: async (
-      companyId: string,
-      filters: WorkspaceOverviewQuery,
-    ): Promise<WorkspaceOverviewResponse> => {
-      const conditions = buildOverviewConditions(companyId, filters);
-      const whereClause = and(...conditions);
-
-      const [totalRow, rows] = await Promise.all([
-        db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(executionWorkspaces)
-          .leftJoin(
-            projects,
-            and(
-              eq(projects.id, executionWorkspaces.projectId),
-              eq(projects.companyId, companyId),
-            ),
-          )
-          .where(whereClause)
-          .then((result) => result[0] ?? { count: 0 }),
-        db
-          .select({
-            id: executionWorkspaces.id,
-            companyId: executionWorkspaces.companyId,
-            projectId: executionWorkspaces.projectId,
-            projectWorkspaceId: executionWorkspaces.projectWorkspaceId,
-            sourceIssueId: executionWorkspaces.sourceIssueId,
-            mode: executionWorkspaces.mode,
-            strategyType: executionWorkspaces.strategyType,
-            name: executionWorkspaces.name,
-            status: executionWorkspaces.status,
-            cwd: executionWorkspaces.cwd,
-            repoUrl: executionWorkspaces.repoUrl,
-            baseRef: executionWorkspaces.baseRef,
-            branchName: executionWorkspaces.branchName,
-            providerType: executionWorkspaces.providerType,
-            providerRef: executionWorkspaces.providerRef,
-            derivedFromExecutionWorkspaceId: executionWorkspaces.derivedFromExecutionWorkspaceId,
-            lastUsedAt: executionWorkspaces.lastUsedAt,
-            openedAt: executionWorkspaces.openedAt,
-            closedAt: executionWorkspaces.closedAt,
-            cleanupEligibleAt: executionWorkspaces.cleanupEligibleAt,
-            cleanupReason: executionWorkspaces.cleanupReason,
-            metadata: executionWorkspaces.metadata,
-            createdAt: executionWorkspaces.createdAt,
-            updatedAt: executionWorkspaces.updatedAt,
-            projectName: projects.name,
-            projectWorkspaceMetadata: projectWorkspaces.metadata,
-          })
-          .from(executionWorkspaces)
-          .leftJoin(
-            projects,
-            and(
-              eq(projects.id, executionWorkspaces.projectId),
-              eq(projects.companyId, companyId),
-            ),
-          )
-          .leftJoin(
-            projectWorkspaces,
-            and(
-              eq(projectWorkspaces.id, executionWorkspaces.projectWorkspaceId),
-              eq(projectWorkspaces.companyId, companyId),
-            ),
-          )
-          .where(whereClause)
-          .orderBy(
-            desc(executionWorkspaces.lastUsedAt),
-            desc(executionWorkspaces.updatedAt),
-            asc(executionWorkspaces.id),
-          )
-          .limit(filters.limit)
-          .offset(filters.offset),
-      ]);
-
-      const pageRows = rows as WorkspaceOverviewPageRow[];
-      if (pageRows.length === 0) {
-        return {
-          items: [],
-          total: totalRow.count,
-          limit: filters.limit,
-          offset: filters.offset,
-          hasMore: false,
-          nextOffset: null,
-        };
-      }
-
-      const workspaceIds = pageRows.map((row) => row.id);
-      const [runtimeServicesByWorkspaceId, linkedIssueCountRows, linkedIssueRows] = await Promise.all([
-        loadEffectiveRuntimeServicesByExecutionWorkspace(db, companyId, pageRows),
-        db
-          .select({
-            executionWorkspaceId: issueExecutionWorkspaceBindings.executionWorkspaceId,
-            count: sql<number>`count(*)::int`,
-          })
-          .from(issueExecutionWorkspaceBindings)
-          .innerJoin(
-            issues,
-            and(
-              eq(issues.companyId, issueExecutionWorkspaceBindings.companyId),
-              eq(issues.id, issueExecutionWorkspaceBindings.issueId),
-              eq(issues.ownershipEpoch, issueExecutionWorkspaceBindings.ownershipEpoch),
-            ),
-          )
-          .where(
-            and(
-              eq(issues.companyId, companyId),
-              visibleIssueCondition(),
-              inArray(issueExecutionWorkspaceBindings.executionWorkspaceId, workspaceIds),
-            ),
-          )
-          .groupBy(issueExecutionWorkspaceBindings.executionWorkspaceId),
-        db.execute(sql`
-          select
-            ranked.execution_workspace_id as "executionWorkspaceId",
-            ranked.id,
-            ranked.identifier,
-            ranked.title,
-            ranked.board_presentation_status as "boardPresentationStatus",
-            ranked.priority,
-            ranked.updated_at as "updatedAt"
-          from (
-            select
-              ${issueExecutionWorkspaceBindings.executionWorkspaceId} as execution_workspace_id,
-              ${issues.id} as id,
-              ${issues.identifier} as identifier,
-              ${issues.title} as title,
-              ${issues.boardPresentationStatus} as board_presentation_status,
-              ${issues.priority} as priority,
-              ${issues.updatedAt} as updated_at,
-              row_number() over (
-                partition by ${issueExecutionWorkspaceBindings.executionWorkspaceId}
-                order by ${issues.updatedAt} desc, ${issues.id} asc
-              ) as row_number
-            from ${issueExecutionWorkspaceBindings}
-            inner join ${issues}
-              on ${issues.companyId} = ${issueExecutionWorkspaceBindings.companyId}
-             and ${issues.id} = ${issueExecutionWorkspaceBindings.issueId}
-             and ${issues.ownershipEpoch} = ${issueExecutionWorkspaceBindings.ownershipEpoch}
-            where ${issueExecutionWorkspaceBindings.companyId} = ${companyId}
-              and ${issues.hiddenAt} is null
-              and ${issueExecutionWorkspaceBindings.executionWorkspaceId} in (${sql.join(workspaceIds.map((id) => sql`${id}`), sql`, `)})
-          ) ranked
-          where ranked.row_number <= ${WORKSPACE_OVERVIEW_LINKED_ISSUE_LIMIT}
-          order by ranked.execution_workspace_id asc, ranked.row_number asc
-        `),
-      ]);
-
-      const linkedIssueCountByWorkspaceId = new Map(
-        linkedIssueCountRows
-          .filter((row) => row.executionWorkspaceId)
-          .map((row) => [row.executionWorkspaceId!, row.count]),
-      );
-      const linkedIssuesByWorkspaceId = new Map<string, WorkspaceOverviewLinkedIssue[]>();
-      for (const issue of linkedIssueRows as unknown as WorkspaceOverviewIssueRow[]) {
-        const existing = linkedIssuesByWorkspaceId.get(issue.executionWorkspaceId) ?? [];
-        existing.push({
-          id: issue.id,
-          identifier: issue.identifier,
-          title: issue.title,
-          boardPresentationStatus: issue.boardPresentationStatus,
-          priority: issue.priority,
-          updatedAt: issue.updatedAt,
-        });
-        linkedIssuesByWorkspaceId.set(issue.executionWorkspaceId, existing);
-      }
-
-      const items: WorkspaceOverviewItem[] = pageRows.map((row) => {
-        const runtimeServices = (runtimeServicesByWorkspaceId.get(row.id) ?? []).map(toRuntimeService);
-        const runningServiceCount = runtimeServices.filter((service) => service.status === "running").length;
-        const primaryService = selectPrimaryOverviewService(runtimeServices);
-        const config = readExecutionWorkspaceConfig((row.metadata as Record<string, unknown> | null) ?? null);
-        const inheritedProjectRuntimeConfig = usesInheritedProjectRuntimeServices(row)
-          ? readProjectWorkspaceRuntimeConfig(row.projectWorkspaceMetadata)
-          : null;
-        const linkedIssues = linkedIssuesByWorkspaceId.get(row.id) ?? [];
-        const primaryServiceSummary = toWorkspaceOverviewPrimaryService(primaryService);
-
-        return {
-          key: `execution:${row.id}`,
-          kind: "execution_workspace",
-          workspaceId: row.id,
-          workspaceName: row.name,
-          projectId: row.projectId,
-          projectUrlKey:
-            row.projectId && row.projectName
-              ? deriveProjectUrlKey(row.projectName, row.projectId)
-              : null,
-          projectName: row.projectName,
-          mode: row.mode as WorkspaceOverviewItem["mode"],
-          strategyType: row.strategyType as WorkspaceOverviewItem["strategyType"],
-          cwd: row.cwd ?? null,
-          branchName: row.branchName ?? row.baseRef ?? null,
-          lastUpdatedAt: maxDate(
-            row.lastUsedAt,
-            row.updatedAt,
-            linkedIssues[0]?.updatedAt,
-            primaryServiceSummary?.updatedAt,
-          ),
-          projectWorkspaceId: row.projectWorkspaceId ?? null,
-          executionWorkspaceId: row.id,
-          executionWorkspaceStatus: row.status as WorkspaceOverviewItem["executionWorkspaceStatus"],
-          serviceCount: runtimeServices.length,
-          runningServiceCount,
-          primaryServiceUrl: primaryService?.url ?? null,
-          primaryServiceUrlRunning: primaryService?.status === "running",
-          primaryService: primaryServiceSummary,
-          hasRuntimeConfig: Boolean(config?.workspaceRuntime ?? inheritedProjectRuntimeConfig?.workspaceRuntime),
-          linkedIssueCount: linkedIssueCountByWorkspaceId.get(row.id) ?? 0,
-          linkedIssues,
-        };
-      });
-
-      const nextOffset = filters.offset + items.length;
-      const total = totalRow.count;
-      return {
-        items,
-        total,
-        limit: filters.limit,
-        offset: filters.offset,
-        hasMore: nextOffset < total,
-        nextOffset: nextOffset < total ? nextOffset : null,
-      };
-    },
-
     list: async (companyId: string, filters?: {
       projectId?: string;
       projectWorkspaceId?: string;
@@ -2466,6 +1576,7 @@ export function executionWorkspaceService(db: Db) {
       );
     },
 
+
     getById: async (id: string) => {
       const row = await db
         .select()
@@ -2478,284 +1589,6 @@ export function executionWorkspaceService(db: Db) {
         row,
         (runtimeServicesByWorkspaceId.get(row.id) ?? []).map(toRuntimeService),
       );
-    },
-
-    getCloseReadiness: async (id: string): Promise<ExecutionWorkspaceCloseReadiness | null> => {
-      const workspace = await db
-        .select()
-        .from(executionWorkspaces)
-        .where(eq(executionWorkspaces.id, id))
-        .then((rows) => rows[0] ?? null);
-      if (!workspace) return null;
-
-      const runtimeServicesByWorkspaceId = await loadEffectiveRuntimeServicesByExecutionWorkspace(db, workspace.companyId, [workspace]);
-      const runtimeServices = (runtimeServicesByWorkspaceId.get(workspace.id) ?? []).map(toRuntimeService);
-
-      const [linkedIssues, bindingCountRow] = await Promise.all([
-        db
-          .select({
-            id: issues.id,
-            identifier: issues.identifier,
-            title: issues.title,
-            boardPresentationStatus: issues.boardPresentationStatus,
-          })
-          .from(issueExecutionWorkspaceBindings)
-          .innerJoin(
-            issues,
-            and(
-              eq(issues.companyId, issueExecutionWorkspaceBindings.companyId),
-              eq(issues.id, issueExecutionWorkspaceBindings.issueId),
-              eq(issues.ownershipEpoch, issueExecutionWorkspaceBindings.ownershipEpoch),
-            ),
-          )
-          .where(
-            and(
-              eq(issueExecutionWorkspaceBindings.companyId, workspace.companyId),
-              eq(issueExecutionWorkspaceBindings.executionWorkspaceId, workspace.id),
-            ),
-          ),
-        db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(issueExecutionWorkspaceBindings)
-          .where(
-            and(
-              eq(issueExecutionWorkspaceBindings.companyId, workspace.companyId),
-              eq(issueExecutionWorkspaceBindings.executionWorkspaceId, workspace.id),
-            ),
-          )
-          .then((rows) => rows[0] ?? { count: 0 }),
-      ]);
-
-      const projectWorkspace = workspace.projectWorkspaceId
-        ? await db
-            .select({
-              id: projectWorkspaces.id,
-              cwd: projectWorkspaces.cwd,
-              cleanupCommand: projectWorkspaces.cleanupCommand,
-              isPrimary: projectWorkspaces.isPrimary,
-            })
-            .from(projectWorkspaces)
-            .where(
-              and(
-                eq(projectWorkspaces.companyId, workspace.companyId),
-                eq(projectWorkspaces.id, workspace.projectWorkspaceId),
-              ),
-            )
-            .then((rows) => rows[0] ?? null)
-        : null;
-
-      const primaryProjectWorkspace = workspace.projectId
-        ? await db
-            .select({
-              id: projectWorkspaces.id,
-            })
-            .from(projectWorkspaces)
-            .where(
-              and(
-                eq(projectWorkspaces.companyId, workspace.companyId),
-                eq(projectWorkspaces.projectId, workspace.projectId),
-                eq(projectWorkspaces.isPrimary, true),
-              ),
-            )
-            .then((rows) => rows[0] ?? null)
-        : null;
-
-      const projectPolicy = workspace.projectId
-        ? await db
-            .select({
-              executionWorkspacePolicy: projects.executionWorkspacePolicy,
-            })
-            .from(projects)
-            .where(and(eq(projects.id, workspace.projectId), eq(projects.companyId, workspace.companyId)))
-            .then((rows) => parseProjectExecutionWorkspacePolicy(rows[0]?.executionWorkspacePolicy))
-        : null;
-
-      const executionWorkspace = toExecutionWorkspace(workspace, runtimeServices);
-      const config = readExecutionWorkspaceConfig((workspace.metadata as Record<string, unknown> | null) ?? null);
-      const { git, warnings: gitWarnings } = await inspectGitCloseReadiness(executionWorkspace);
-      const warnings = [...gitWarnings];
-      const blockingReasons: string[] = [];
-      const isSharedWorkspace = executionWorkspace.mode === "shared_workspace";
-      const workspacePath = readNullableString(executionWorkspace.providerRef) ?? readNullableString(executionWorkspace.cwd);
-      const resolvedWorkspacePath = workspacePath ? path.resolve(workspacePath) : null;
-      const resolvedPrimaryWorkspacePath = projectWorkspace?.cwd ? path.resolve(projectWorkspace.cwd) : null;
-      const isProjectPrimaryWorkspace =
-        workspace.projectWorkspaceId != null
-        && workspace.projectWorkspaceId === primaryProjectWorkspace?.id
-        && resolvedWorkspacePath != null
-        && resolvedPrimaryWorkspacePath != null
-        && resolvedWorkspacePath === resolvedPrimaryWorkspacePath;
-
-      const linkedIssueSummaries = linkedIssues.map((issue) => ({
-        ...issue,
-        isTerminal: TERMINAL_ISSUE_STATUSES.has(issue.boardPresentationStatus),
-      }));
-
-      const blockingIssues = linkedIssueSummaries.filter((issue) => !issue.isTerminal);
-      if (isSharedWorkspace && bindingCountRow.count > 0) {
-        blockingReasons.push(
-          bindingCountRow.count === 1
-            ? "This shared workspace still has an ownership-epoch binding and cannot be archived or cleaned up."
-            : `This shared workspace still has ${bindingCountRow.count} ownership-epoch bindings and cannot be archived or cleaned up.`,
-        );
-      } else if (blockingIssues.length > 0) {
-        const linkedIssueMessage =
-          blockingIssues.length === 1
-            ? "This workspace is still linked to an open issue."
-            : `This workspace is still linked to ${blockingIssues.length} open issues.`;
-        blockingReasons.push(linkedIssueMessage);
-      }
-
-      if (isSharedWorkspace && bindingCountRow.count === 0) {
-        warnings.push("This shared workspace session points at project workspace infrastructure. Archiving it only removes the session record.");
-      }
-
-      if (runtimeServices.some((service) => service.status !== "stopped")) {
-        warnings.push(
-          runtimeServices.length === 1
-            ? "Closing this workspace will stop 1 attached runtime service."
-            : `Closing this workspace will stop ${runtimeServices.length} attached runtime services.`,
-        );
-      }
-
-      if (git?.hasDirtyTrackedFiles) {
-        warnings.push(
-          git.dirtyEntryCount === 1
-            ? "The workspace has 1 modified tracked file."
-            : `The workspace has ${git.dirtyEntryCount} modified tracked files.`,
-        );
-      }
-      if (git?.hasUntrackedFiles) {
-        warnings.push(
-          git.untrackedEntryCount === 1
-            ? "The workspace has 1 untracked file."
-            : `The workspace has ${git.untrackedEntryCount} untracked files.`,
-        );
-      }
-      if (git?.aheadCount && git.aheadCount > 0 && git.isMergedIntoBase === false) {
-        warnings.push(
-          git.aheadCount === 1
-            ? `This workspace is 1 commit ahead of ${git.baseRef ?? "the base ref"} and is not merged.`
-            : `This workspace is ${git.aheadCount} commits ahead of ${git.baseRef ?? "the base ref"} and is not merged.`,
-        );
-      }
-      if (git?.behindCount && git.behindCount > 0) {
-        warnings.push(
-          git.behindCount === 1
-            ? `This workspace is 1 commit behind ${git.baseRef ?? "the base ref"}.`
-            : `This workspace is ${git.behindCount} commits behind ${git.baseRef ?? "the base ref"}.`,
-        );
-      }
-
-      const plannedActions: ExecutionWorkspaceCloseAction[] = [
-        {
-          kind: "archive_record",
-          label: "Archive workspace record",
-          description: "Keep the execution workspace history and issue linkage, but remove it from active workspace lists.",
-          command: null,
-        },
-      ];
-
-      if (runtimeServices.some((service) => service.status !== "stopped")) {
-        plannedActions.push({
-          kind: "stop_runtime_services",
-          label: runtimeServices.length === 1 ? "Stop attached runtime service" : "Stop attached runtime services",
-          description:
-            runtimeServices.length === 1
-              ? `${runtimeServices[0]?.serviceName ?? "A runtime service"} will be stopped before cleanup.`
-              : `${runtimeServices.length} runtime services will be stopped before cleanup.`,
-          command: null,
-        });
-      }
-
-      const configuredCleanupCommands = [
-        {
-          kind: "cleanup_command" as const,
-          label: "Run workspace cleanup command",
-          description: "Workspace-specific cleanup runs before teardown.",
-          command: config?.cleanupCommand ?? null,
-        },
-        {
-          kind: "cleanup_command" as const,
-          label: "Run project workspace cleanup command",
-          description: "Project workspace cleanup runs before execution workspace teardown.",
-          command: projectWorkspace?.cleanupCommand ?? null,
-        },
-      ];
-      for (const action of configuredCleanupCommands) {
-        if (!action.command) continue;
-        plannedActions.push(action);
-      }
-
-      const teardownCommand = config?.teardownCommand ?? projectPolicy?.workspaceStrategy?.teardownCommand ?? null;
-      if (teardownCommand) {
-        plannedActions.push({
-          kind: "teardown_command",
-          label: "Run teardown command",
-          description: "Teardown runs after cleanup commands during workspace close.",
-          command: teardownCommand,
-        });
-      }
-
-      if (executionWorkspace.providerType === "git_worktree" && workspacePath) {
-        plannedActions.push({
-          kind: "git_worktree_remove",
-          label: "Remove git worktree",
-          description: `Paperclip will run git worktree cleanup for ${workspacePath}.`,
-          command: `git worktree remove --force ${workspacePath}`,
-        });
-      }
-
-      if (git?.createdByRuntime && executionWorkspace.branchName) {
-        plannedActions.push({
-          kind: "git_branch_delete",
-          label: "Delete runtime-created branch",
-          description: "Paperclip will try to delete the runtime-created branch after removing the worktree.",
-          command: `git branch -d ${executionWorkspace.branchName}`,
-        });
-      }
-
-      if (executionWorkspace.providerType === "local_fs" && git?.createdByRuntime && workspacePath) {
-        const resolvedWorkspacePath = path.resolve(workspacePath);
-        const resolvedProjectWorkspacePath = projectWorkspace?.cwd ? path.resolve(projectWorkspace.cwd) : null;
-        const containsProjectWorkspace = resolvedProjectWorkspacePath
-          ? (
-              resolvedWorkspacePath === resolvedProjectWorkspacePath ||
-              resolvedProjectWorkspacePath.startsWith(`${resolvedWorkspacePath}${path.sep}`)
-            )
-          : false;
-        if (containsProjectWorkspace) {
-          warnings.push(`Paperclip will archive this workspace but keep "${workspacePath}" because it contains the project workspace.`);
-        } else {
-          plannedActions.push({
-            kind: "remove_local_directory",
-            label: "Remove runtime-created directory",
-            description: `Paperclip will remove the runtime-created directory at ${workspacePath}.`,
-            command: `rm -rf ${workspacePath}`,
-          });
-        }
-      }
-
-      const state =
-        blockingReasons.length > 0
-          ? "blocked"
-          : warnings.length > 0
-            ? "ready_with_warnings"
-            : "ready";
-
-      return {
-        workspaceId: workspace.id,
-        state,
-        blockingReasons,
-        warnings,
-        linkedIssues: linkedIssueSummaries,
-        plannedActions,
-        isDestructiveCloseAllowed: blockingReasons.length === 0,
-        isSharedWorkspace,
-        isProjectPrimaryWorkspace,
-        git,
-        runtimeServices,
-      };
     },
 
     create: async (data: typeof executionWorkspaces.$inferInsert) => {
@@ -3011,11 +1844,6 @@ export function executionWorkspaceService(db: Db) {
               ownerUserId: issues.ownerUserId,
               executionPolicy: issues.executionPolicy,
               executionState: issues.executionState,
-              monitorNextCheckAt: issues.monitorNextCheckAt,
-              monitorLastTriggeredAt: issues.monitorLastTriggeredAt,
-              monitorAttemptCount: issues.monitorAttemptCount,
-              monitorNotes: issues.monitorNotes,
-              monitorScheduledBy: issues.monitorScheduledBy,
             })
             .from(issues)
             .where(
@@ -3033,7 +1861,6 @@ export function executionWorkspaceService(db: Db) {
           const transition = applyIssueExecutionPolicyTransition({
             issue: sourceBefore,
             policy,
-            previousPolicy: policy,
             requestedStatus,
             requestedOwnerPatch: {},
             actor: {
@@ -3106,36 +1933,6 @@ export function executionWorkspaceService(db: Db) {
       });
     },
 
-    clearEnvironmentSelection: async (companyId: string, environmentId: string) => {
-      return db.transaction(async (tx) => {
-        const rows = await tx
-          .select({
-            id: executionWorkspaces.id,
-            metadata: executionWorkspaces.metadata,
-          })
-          .from(executionWorkspaces)
-          .where(eq(executionWorkspaces.companyId, companyId));
-
-        let cleared = 0;
-        const updatedAt = new Date();
-        for (const row of rows) {
-          const metadata = (row.metadata as Record<string, unknown> | null) ?? null;
-          const config = readExecutionWorkspaceConfig(metadata);
-          if (config?.environmentId !== environmentId) continue;
-
-          await tx
-            .update(executionWorkspaces)
-            .set({
-              metadata: mergeExecutionWorkspaceConfig(metadata, { environmentId: null }),
-              updatedAt,
-            })
-            .where(eq(executionWorkspaces.id, row.id));
-          cleared += 1;
-        }
-
-        return cleared;
-      });
-    },
   };
 }
 

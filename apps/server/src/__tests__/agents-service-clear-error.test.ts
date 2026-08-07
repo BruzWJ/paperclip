@@ -31,7 +31,6 @@ function agentRow(status: string, id = randomUUID()): AgentRow {
     adapterConfig: { model: "gpt-5.6" },
     currentAdapterConfigRevisionId: null,
     runtimeConfig: {},
-    defaultEnvironmentId: null,
     budgetMonthlyAmount: parseMoneyAmount("0"),
     pauseReason: status === "error" ? "system" : null,
     pausedAt: status === "error" ? now : null,

@@ -18,19 +18,13 @@ const apiPrefixes: Record<string, string> = {
   "attention.ts": "/api",
   "approvals.ts": "/api",
   "assets.ts": "/api",
-  "board-chat.ts": "/api",
   "built-in-agents.ts": "/api",
-  "cloud-upstreams.ts": "/api",
   "companies.ts": "/api/companies",
   "company-skills.ts": "/api",
   "company-skill-policy.ts": "/api",
   "change-consents.ts": "/api",
   "costs.ts": "/api",
   "dashboard.ts": "/api",
-  "decision-training.ts": "/api",
-  "environments.ts": "/api",
-  "execution-workspaces.ts": "/api",
-  "file-resources.ts": "/api",
   "folders.ts": "/api",
   "goals.ts": "/api",
   "health.ts": "/api/health",
@@ -52,28 +46,38 @@ const apiPrefixes: Record<string, string> = {
   "secrets.ts": "/api",
   "sidebar-badges.ts": "/api",
   "sidebar-preferences.ts": "/api",
-  "summary-slots.ts": "/api",
   "teams-catalog.ts": "/api",
-  "tool-access.ts": "/api",
-  "tool-gateway.ts": "/api",
   "user-profiles.ts": "/api",
 };
 
 const ROUTE_LITERAL_PATTERN = /router\.(get|post|put|patch|delete)\(\s*["'`]([^"'`]+)["'`]/g;
 const ROUTER_METHOD_PATTERN = /router\.(get|post|put|patch|delete)\(/;
 const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
-const explicitOpenApiCoverageExclusions = new Set([
-  // Pipeline routes are experimental and not yet represented in the public OpenAPI document.
-  "pipelines.ts",
-  // Case routes are experimental (enableCases flag) and not yet in the public OpenAPI document.
-  "cases.ts",
-  // Smoke lab routes are experimental and not yet represented in the public OpenAPI document.
-  "smoke-lab.ts",
-]);
+const explicitOpenApiCoverageExclusions = new Set<string>([]);
 const betterAuthOwnedRuntimeRoutes = new Set([
   "GET /api/auth/get-session",
   "POST /api/auth/update-user",
 ]);
+const retiredExperimentalRoutePrefixes = [
+  "/api/board/chat",
+  "/api/cases/",
+  "/api/cloud-upstreams",
+  "/api/companies/{companyId}/cases",
+  "/api/companies/{companyId}/decision-training",
+  "/api/companies/{companyId}/environments",
+  "/api/companies/{companyId}/execution-workspaces",
+  "/api/companies/{companyId}/pipelines",
+  "/api/companies/{companyId}/smoke-lab",
+  "/api/companies/{companyId}/summary-slots",
+  "/api/companies/{companyId}/tools",
+  "/api/decision-training/",
+  "/api/environments/",
+  "/api/execution-workspaces/",
+  "/api/issues/{issueId}/external-object",
+  "/api/issues/{issueId}/file-resources",
+  "/api/mcp/gateways",
+  "/api/tool-gateway/",
+] as const;
 
 function createApp() {
   const app = express();
@@ -90,9 +94,6 @@ function normalizeExpressPath(routePath: string) {
 }
 
 function resolveMountedPath(file: string, prefix: string, routePath: string) {
-  if (file === "tool-gateway.ts" && routePath.startsWith("/mcp/gateways/")) {
-    return routePath;
-  }
   if ((file === "companies.ts" || file === "health.ts") && routePath === "/") {
     return prefix;
   }
@@ -168,32 +169,7 @@ describe("openapi routes", () => {
       "contextGrants",
       "actionGrants",
       "mentionReachGrants",
-      "companyToolIds",
     ]));
-    const createToolOptionsSchema =
-      res.body.paths[
-        "/api/companies/{companyId}/runtime-agent-tool-options"
-      ].get.responses["200"].content["application/json"].schema;
-    expect(createToolOptionsSchema.items).toMatchObject({
-      type: "object",
-      additionalProperties: false,
-      required: expect.arrayContaining([
-        "catalogEntryId",
-        "connectionId",
-        "connectionName",
-        "title",
-        "description",
-        "catalogVersionHash",
-      ]),
-    });
-    expect(
-      createToolOptionsSchema.items.properties,
-    ).not.toHaveProperty("connectionInstallId");
-    expect(
-      res.body.paths[
-        "/api/agents/{id}/runtime-configuration/tool-options"
-      ].get["x-paperclip-authorization"],
-    ).toEqual({ actor: "board" });
     expect(
       res.body.paths["/api/agents/{id}/adapter-config-revisions"].post
         ["x-paperclip-authorization"],
@@ -363,8 +339,6 @@ describe("openapi routes", () => {
     });
     expect(res.body.components.securitySchemes.AgentBearerAuth).toBeUndefined();
     expect(res.body.paths["/api/health"].get.security).toEqual([]);
-    expect(res.body.paths["/mcp/gateways/{gatewayPublicId}"].post.security).toEqual([]);
-    expect(res.body.paths["/api/mcp/gateways/{gatewayPublicId}"]).toBeUndefined();
     expect(res.body.paths["/api/companies"].post.responses["201"]).toBeDefined();
     expect(res.body.paths["/api/companies"].post.requestBody.content["application/json"].schema).toMatchObject({
       type: "object",
@@ -374,24 +348,14 @@ describe("openapi routes", () => {
       required: ["name"],
     });
     expect(JSON.stringify(res.body.paths["/api/companies"].post.responses)).not.toContain("candidates");
-    expect(res.body.paths["/api/companies/{companyId}/skills/scan-projects"].post.responses["200"].content[
-      "application/json"
-    ].schema).toMatchObject({
-      type: "object",
-      properties: {
-        candidates: { type: "array" },
-      },
-      required: expect.arrayContaining(["candidates"]),
-    });
+    expect(res.body.paths["/api/companies/{companyId}/skills/scan-projects"]).toBeUndefined();
+    for (const prefix of retiredExperimentalRoutePrefixes) {
+      expect(Object.keys(res.body.paths).some((routePath) => routePath.startsWith(prefix))).toBe(false);
+    }
     expect(res.body.paths["/api/companies/{companyId}/folders"].post.responses["201"]).toBeDefined();
     expect(res.body.paths["/api/companies/{companyId}/folders/items/move"].post.summary).toBe(
       "Move an item into or out of a folder",
     );
-    // PAPERCLIP_REMOVAL_NEGATIVE_FIXTURE: /api/tool-gateway/sessions, /api/tool-gateway/sessions/{sessionId}/revoke
-    expect(res.body.paths["/api/tool-gateway/sessions"]).toBeUndefined();
-    expect(res.body.paths["/api/tool-gateway/sessions/{sessionId}/revoke"]).toBeUndefined();
-    expect(res.body.paths["/api/tool-gateway/tools"]).toBeUndefined();
-    expect(res.body.paths["/api/tool-gateway/tools/call"]).toBeUndefined();
   });
 
   it("covers the mounted server routes exactly", () => {
@@ -441,13 +405,6 @@ describe("openapi routes", () => {
       });
     }
     expect(spec.paths["/api/plugins/{pluginId}/health"]).toBeUndefined();
-    expect(spec.paths["/api/execution-workspaces/{id}/reconcile-branch"].post.security).toEqual([
-      { BoardSessionAuth: [] },
-      { BoardApiKeyAuth: [] },
-    ]);
-    expect(spec.paths["/api/execution-workspaces/{id}/reconcile-branch"].post["x-paperclip-authorization"]).toEqual({
-      actor: "board",
-    });
     const costEventsPath =
       spec.paths["/api/companies/{companyId}/cost-events"];
     expect(costEventsPath.get.responses["200"]).toBeDefined();

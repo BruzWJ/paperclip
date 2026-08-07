@@ -193,8 +193,6 @@ describe("generated PostgreSQL migration contract", () => {
     const source = migrationSql(file!);
 
     for (const constraint of [
-      "agent_company_tool_selections_selected_by_plugin_installation_id_plugins_id_fk",
-      "agent_company_tool_selections_revoked_by_plugin_installation_id_plugins_id_fk",
       "issue_comments_author_plugin_installation_fk",
       "plugin_withdrawal_operations_plugin_installation_id_plugins_id_fk",
       "run_interface_tool_calls_plugin_installation_id_plugins_id_fk",

@@ -23,34 +23,36 @@ request or follow-up text.
 A fresh execution may prepend only the deterministic issue-session composition
 authorized by the current-issue comment/run dial cells. With both false, no
 prefix exists. Paperclip supplies no ambient caller profile, company context,
-goal ancestry, managed instructions, generic prompt template, workspace
+goal ancestry, managed instructions, generic prompt template, run-directory
 metadata, or generic REST bridge beyond fields deliberately rendered into that
 canonical managed-tool source.
 
 ## Interface
 
-Each lease receives a `paperclip.run-tools/v1` descriptor compiled from live context/action/mention grants, dynamic owner/creator authority, and selected company tools. False grants make surfaces absent. The bearer is accepted only by the compiled endpoint and expires with the lease.
+Each lease receives a `paperclip.run-tools/v1` descriptor compiled from live
+context/action/mention grants and dynamic owner/creator authority. Denied grants
+make surfaces absent. The bearer is accepted only by the compiled endpoint and
+expires with the lease.
 
 ## Session
 
 The canonical record is the issue's Paperclip Session log. Effective
 `carry_context` permits an encrypted opaque provider-native correlation only
 for the same issue, ownership epoch, agent, and adapter configuration identity.
-The workspace, owner/consult lane, execution target, and authorized context
-exposure must also match exactly. False-carry, reassignment, reset, or any
+The owner/consult lane, execution target, and authorized context exposure must
+also match exactly. Disabled carry, reassignment, reset, or any
 scope/revision change runs fresh; one agent's correlation is never shared with
 another agent.
 
 Provider-native storage is opaque. Paperclip does not read, display, delete, derive, or migrate it, and never carries it across issues.
 
-## Workspace
+## Run directory
 
-The execution workspace is selected only by the persisted issue/epoch binding.
-The ACPX public-runtime bridge uses that absolute workspace for its bounded
-single-prompt local session; ACPX owns the underlying CLI process, and no
-declarative adapter receives a process callback or alternate remote transport. No agent-home,
-adapter-configured cwd, process cwd, prior conversational session, or workspace
-environment metadata is a fallback.
+The server resolves the local directory used by the ACPX public-runtime bridge
+for its bounded single-prompt session. ACPX owns the underlying CLI process, and
+no declarative adapter receives a process callback or alternate remote
+transport. No agent-home, adapter-configured cwd, process cwd, prior
+conversational session, or directory metadata is a fallback.
 
 ## Output
 

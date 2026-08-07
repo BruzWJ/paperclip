@@ -1,12 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { FolderGit2, GitFork } from "lucide-react";
-import type { CompanySkillDetail } from "@paperclipai/shared";
+import { GitFork } from "lucide-react";
 import { Link } from "@/lib/router";
 import { companySkillsApi } from "@/api/companySkills";
 import { queryKeys } from "@/lib/queryKeys";
 import { skillStudioRoute } from "@/lib/company-skill-routes";
 import { formatLineageLabel } from "@/lib/skill-fork";
-import { Button } from "@/components/ui/button";
 
 /**
  * Lineage chip for forked skills (PAP-13112, plan §3.1): "Forked from
@@ -44,42 +42,5 @@ export function SkillLineageChip({
         Forked from <span className="font-medium text-foreground">{label}</span>
       </span>
     </Link>
-  );
-}
-
-/**
- * Persistent source notice for repo-synced (`project_scan`) skills (PAP-13112,
- * plan §3.3). These stay editable, but their saves land as uncommitted writes
- * in the user's project checkout — disclosed here, with a secondary path to
- * fork instead of touching the tree. No behaviour change (§3.3, Dotta 07-08).
- */
-export function ProjectScanNotice({
-  skill,
-  onEditACopy,
-}: {
-  skill: CompanySkillDetail;
-  onEditACopy: () => void;
-}) {
-  const location = skill.sourcePath ?? skill.sourceLabel ?? "the project working tree";
-
-  return (
-    <div className="flex flex-wrap items-start gap-2 border-b border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-      <FolderGit2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <span>
-          This skill lives in <span className="font-mono text-foreground">{location}</span>.
-          Saves write to the project working tree and are not committed.
-        </span>{" "}
-        <Button
-          type="button"
-          variant="link"
-          size="sm"
-          className="h-auto p-0 text-xs"
-          onClick={onEditACopy}
-        >
-          Edit a copy instead
-        </Button>
-      </div>
-    </div>
   );
 }

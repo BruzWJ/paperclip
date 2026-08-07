@@ -226,7 +226,7 @@ export function waitForExternalAdapters(): Promise<void> {
 
 /**
  * Paperclip no longer accepts declarative adapter packages as catalog input.
- * Agent names, models, and configuration must be observed from ACPX instead.
+ * Agent names, models, and configuration are supplied exclusively by ACPX.
  */
 export function registerServerAdapter(
   _adapter: ServerAdapterModule,

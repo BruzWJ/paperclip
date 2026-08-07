@@ -220,7 +220,7 @@ describe("publishIssueExecutionLivePlan", () => {
     ]),
     { kind: "plan_update", entries: [] } as never,
     { kind: "plan_removed" } as never,
-  ])("rejects malformed or experimental update %#", (event) => {
+  ])("rejects malformed or unsupported update %#", (event) => {
     const received: LiveEvent[] = [];
     const unsubscribe = subscribeCompanyLiveEvents(
       routedPrompt.companyId,

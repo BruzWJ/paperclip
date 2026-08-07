@@ -108,20 +108,7 @@ test("allows an owned Promise work queue but rejects issue-domain wording beside
   assert.ok(violations[0].includes('"task"'));
 });
 
-test("keeps an unrelated native Task API exception bound to its exact owner", () => {
-  const nativeOwnerRoot = fixture({
-    "doc/plans/2026-04-12-vscode-task-interoperability-plan.md":
-      "VS Code constructs a native `Task` from its task provider.\n",
-  });
-  assert.deepEqual(
-    scanIssueVocabulary(
-      nativeOwnerRoot,
-      ["doc/plans/2026-04-12-vscode-task-interoperability-plan.md"],
-      { checkRetainedContracts: false },
-    ),
-    [],
-  );
-
+test("rejects copied native Task API vocabulary outside retained contracts", () => {
   const violations = scan({
     "doc/plans/copied-vocabulary.md":
       "Paperclip constructs a Task from its task provider.\n",

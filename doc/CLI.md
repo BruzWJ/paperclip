@@ -2,7 +2,7 @@
 
 Paperclip CLI now supports both:
 
-- instance setup/diagnostics (`onboard`, `doctor`, `configure`, `env`, `allowed-hostname`, `env-lab`)
+- instance setup/diagnostics (`onboard`, `doctor`, `configure`, `env`, `allowed-hostname`)
 - control-plane client operations (issues, approvals, agents, activity, dashboard)
 
 ## Base Usage
@@ -40,15 +40,6 @@ Allow a private hostname (for example custom Tailscale DNS):
 
 ```sh
 pnpm paperclipai allowed-hostname dotta-macbook-pro
-```
-
-Bring up the default local SSH fixture for environment testing:
-
-```sh
-pnpm paperclipai env-lab up
-pnpm paperclipai env-lab doctor
-pnpm paperclipai env-lab status --json
-pnpm paperclipai env-lab down
 ```
 
 All client commands support:
@@ -222,13 +213,6 @@ pnpm paperclipai project update <project-id-or-shortname> [--status in_progress]
 pnpm paperclipai project delete <project-id-or-shortname> --yes [--company-id <company-id>]
 ```
 
-Advanced project fields accept JSON:
-
-```sh
-pnpm paperclipai project create --company-id <company-id> --name "Ops" --env-json '{"OPENAI_API_KEY":{"kind":"secret","secretName":"openai-api-key"}}'
-pnpm paperclipai project update <project-id> --execution-workspace-policy-json '{"enabled":true,"defaultMode":"shared_workspace"}'
-```
-
 ## Goal Commands
 
 ```sh
@@ -247,7 +231,7 @@ pnpm paperclipai agent get <agent-id>
 pnpm paperclipai agent runtime:create --company-id <company-id> --payload-json '{...}' [--idempotency-key <key>]
 pnpm paperclipai agent runtime:get <agent-id>
 pnpm paperclipai agent runtime:update <agent-id> --payload-json '{"title":"Senior Builder"}' [--idempotency-key <key>]
-pnpm paperclipai agent adapter-revision:create <agent-id> --payload-json '{"adapterType":"<acpx-registry-name>","adapterConfig":{"<acpx-option-id>":"<selected-advertised-value>"},"defaultEnvironmentId":"11111111-1111-4111-8111-111111111111","runtimeConfig":{},"companySkillPins":[],"skillChannel":"operator_native"}'
+pnpm paperclipai agent adapter-revision:create <agent-id> --payload-json '{"adapterType":"<acpx-registry-name>","adapterConfig":{"<acpx-option-id>":"<selected-advertised-value>"},"runtimeConfig":{},"companySkillPins":[],"skillChannel":"operator_native"}'
 pnpm paperclipai agent adapter-revisions <agent-id>
 pnpm paperclipai agent adapter-revision:current <agent-id>
 pnpm paperclipai agent operational:update <agent-id> --payload-json '{"budgetMonthlyAmount":"250"}'
@@ -258,9 +242,9 @@ pnpm paperclipai agent terminate <agent-id>
 ```
 
 `runtime:create` requires every identity field, all nine context cells, all five
-configurable Paperclip action-grant cells, both mention-reach cells, and the exact
-`companyToolIds` selection. Nullable values must be supplied as `null`; omitted
-values are not defaulted. Its payload shape is:
+configurable Paperclip action-grant cells and both mention-reach cells. Nullable
+values must be supplied as `null`; omitted values are not defaulted. Its payload
+shape is:
 
 ```json
 {
@@ -289,8 +273,7 @@ values are not defaulted. Its payload shape is:
   "mentionReachGrants": {
     "mention_any_descendant": false,
     "mention_any_ancestor": false
-  },
-  "companyToolIds": []
+  }
 }
 ```
 
@@ -308,12 +291,11 @@ Only the current owner may set terminal `done`/`cancelled` and
 `structuredResult`; a creator update may send a message or set nonterminal
 `open`/`blocked`.
 
-Runtime identity/grants/tools, immutable adapter/provider revisions, and
-operational display/environment/budget configuration are three non-overlapping
-owners. An agent created through `runtime:create` remains unconfigured and
-cannot dispatch until `adapter-revision:create` succeeds. Adapter revisions
-always state the exact execution environment, sorted immutable company-skill
-pins, and the ACPX-supported `skillChannel` (`operator_native`). Legacy
+Runtime identity/grants, immutable adapter/provider revisions, and operational
+display/budget configuration are three non-overlapping owners. An agent created
+through `runtime:create` remains unconfigured and cannot dispatch until
+`adapter-revision:create` succeeds. Adapter revisions contain sorted immutable
+company-skill pins and the ACPX-supported `skillChannel` (`operator_native`). Legacy
 `isolated_skills_home` revisions fail closed because ACPX exposes no generic
 skills-home contract. Provider credentials and CLI-native configuration stay
 outside Paperclip. Existing runs
@@ -340,15 +322,8 @@ productive and consult issue-execution runs.
 
 ```sh
 pnpm paperclipai run list --company-id <company-id> [--agent-id <agent-id>] [--limit 50]
-pnpm paperclipai run live --company-id <company-id> [--limit 50] [--min-count 0]
 pnpm paperclipai run get <run-id>
-pnpm paperclipai run events <run-id> [--after-seq 0] [--limit 200]
-pnpm paperclipai run log <run-id> [--offset 0] [--limit-bytes 16384] [--text]
 pnpm paperclipai run cancel <run-id>
-pnpm paperclipai run issues <run-id>
-pnpm paperclipai run workspace-operations <run-id>
-pnpm paperclipai run workspace-log <operation-id> [--offset 0] [--limit-bytes 16384] [--text]
-pnpm paperclipai run watchdog-decision <run-id> --decision continue [--reason "..."]
 ```
 
 ## Routine Commands
@@ -386,8 +361,8 @@ By default the command creates an ordinary issue whose immutable request is the 
 `paperclipai skills` covers three distinct operations:
 
 1. **Company install** — adds or updates a row in `company_skills` for the
-   whole company. This is what `skills install`, `skills import`, `skills create`,
-   and `skills scan-projects` do.
+   whole company. This is what `skills install`, `skills import`, and
+   `skills create` do.
 2. **Agent selection** — appends an immutable adapter revision containing the
    exact sorted company-skill version pins and selected skill channel.
 3. **Invocation exposure** — ACPX runs use `operator_native`; Paperclip does
@@ -395,8 +370,8 @@ By default the command creates an ordinary issue whose immutable request is the 
    Paperclip-authored request. A legacy `isolated_skills_home` selection is
    rejected before ACPX invocation.
 
-Company skill mutations (`skills install`, `skills import`, `skills create`, and
-`skills scan-projects`) are open to same-company actors by default. Missing
+Company skill mutations (`skills install`, `skills import`, and `skills create`)
+are open to same-company actors by default. Missing
 platform grants do not deny these commands; only an explicit company skill
 policy restriction does. Core safety and company boundary checks still apply,
 and `agents:create` remains required when a command also creates agents.
@@ -450,7 +425,6 @@ pnpm paperclipai skills show <skill-id-or-key-or-slug> --company-id <company-id>
 pnpm paperclipai skills file <skill-id-or-key-or-slug> [--path SKILL.md] --company-id <company-id>
 pnpm paperclipai skills import <source> --company-id <company-id>
 pnpm paperclipai skills create --name "Review PRs" [--slug review-prs] [--description "..."] [--body-file SKILL.md] --company-id <company-id>
-pnpm paperclipai skills scan-projects [--project-id <id>...] [--workspace-id <id>...] --company-id <company-id>
 pnpm paperclipai skills check [skill-id-or-key-or-slug] --company-id <company-id>
 pnpm paperclipai skills update <skill-id-or-key-or-slug> [--force] --company-id <company-id>
 pnpm paperclipai skills update --all [--force] --company-id <company-id>
@@ -607,7 +581,7 @@ pnpm paperclipai invite show <token>
 pnpm paperclipai invite accept <token> [--payload-json '{...}']
 pnpm paperclipai invite onboarding:text <token>
 pnpm paperclipai join list --company-id <company-id> [--status pending_approval]
-pnpm paperclipai join approve <request-id> --company-id <company-id> [--environment-id <environment-id>]
+pnpm paperclipai join approve <request-id> --company-id <company-id>
 pnpm paperclipai join reject <request-id> --company-id <company-id>
 pnpm paperclipai member list --company-id <company-id>
 pnpm paperclipai member update <member-id> --company-id <company-id> --payload-json '{...}'
@@ -638,11 +612,32 @@ pnpm paperclipai auth revoke-current
 ```sh
 pnpm paperclipai instance settings:general
 pnpm paperclipai instance settings:general:update --payload-json '{...}'
-pnpm paperclipai instance settings:experimental
-pnpm paperclipai instance settings:experimental:update --payload-json '{...}'
 ```
 
-Experimental features are opt-in and are provided without compatibility guarantees. They may break, change, or be removed at any time. Use them at your own risk.
+`settings:general` returns the instance-wide settings. `settings:general:update`
+PATCHes a JSON object and requires instance-admin access. The retained General
+settings are:
+
+| Key | Default | Behavior |
+| --- | --- | --- |
+| `enableWorkspaceBranchReconcileForward` | On | Allows a clean worktree to advance only when its checked-out branch is a proven descendant of the recorded branch. |
+| `enableWorkspaceDirtyQuarantineRepair` | On | Preserves dirty foreign-branch work on a rescue branch before restoring the recorded branch. |
+| `enableServerInfoDebugView` | Off | Shows server restart, running commit, and checkout-state details in the account-menu **Server Info** debug view. It changes only that view. |
+| `autoRestartDevServerWhenIdle` | Off | Lets the managed dev runner request a restart for backend changes after there are no queued or running issue executions. Migrations remain explicit. |
+| `enableWorktreeRunExecution` | Off | In a worktree instance, permits automatic schedule and webhook dispatch only for routines created after the server-recorded activation cutoff. Normal instances are unaffected. |
+
+For the worktree dispatch control, the server—not the client—controls the
+returned `worktreeRunExecutionActivatedAt` and
+`worktreeRunExecutionActivationInstanceId` metadata. They cannot be sent in an
+update payload; a worktree is armed only when that state matches its running
+instance, and missing, copied, mismatched, or unreadable state fails closed.
+
+For example:
+
+```sh
+pnpm paperclipai instance settings:general:update \
+  --payload-json '{"autoRestartDevServerWhenIdle":true}'
+```
 
 ```sh
 pnpm paperclipai sidebar preferences
@@ -686,7 +681,6 @@ pnpm paperclipai skill file <skill-id> --company-id <company-id> [--path SKILL.m
 pnpm paperclipai skill create --company-id <company-id> --payload-json '{...}'
 pnpm paperclipai skill file:update <skill-id> --company-id <company-id> --payload-json '{...}'
 pnpm paperclipai skill import --company-id <company-id> --payload-json '{"source":"github:owner/repo/path"}'
-pnpm paperclipai skill scan-projects --company-id <company-id> --payload-json '{...}'
 pnpm paperclipai skill update-status <skill-id> --company-id <company-id>
 pnpm paperclipai skill install-update <skill-id> --company-id <company-id>
 pnpm paperclipai skill delete <skill-id> --company-id <company-id>
@@ -718,40 +712,6 @@ pnpm paperclipai budget agent:update <agent-id> --payload-json '{"budgetMonthlyA
 pnpm paperclipai budget incident:resolve <incident-id> --company-id <company-id> [--payload-json '{...}']
 ```
 
-## Workspace And Environment Commands
-
-```sh
-pnpm paperclipai workspace list --company-id <company-id>
-pnpm paperclipai workspace get <execution-workspace-id>
-pnpm paperclipai workspace close-readiness <execution-workspace-id>
-pnpm paperclipai workspace operations <execution-workspace-id>
-pnpm paperclipai workspace update <execution-workspace-id> --payload-json '{...}'
-pnpm paperclipai workspace runtime-service <execution-workspace-id> start --payload-json '{...}'
-pnpm paperclipai workspace runtime-command <execution-workspace-id> run --payload-json '{...}'
-```
-
-```sh
-pnpm paperclipai environment list --company-id <company-id>
-pnpm paperclipai environment capabilities --company-id <company-id>
-pnpm paperclipai environment create --company-id <company-id> --payload-json '{...}'
-pnpm paperclipai environment get <environment-id>
-pnpm paperclipai environment leases <environment-id>
-pnpm paperclipai environment lease <lease-id>
-pnpm paperclipai environment update <environment-id> --payload-json '{...}'
-pnpm paperclipai environment delete <environment-id>
-pnpm paperclipai environment probe <environment-id>
-pnpm paperclipai environment probe-config --company-id <company-id> --payload-json '{...}'
-```
-
-```sh
-pnpm paperclipai project-workspace list <project-id>
-pnpm paperclipai project-workspace create <project-id> --payload-json '{...}'
-pnpm paperclipai project-workspace update <project-id> <workspace-id> --payload-json '{...}'
-pnpm paperclipai project-workspace delete <project-id> <workspace-id>
-pnpm paperclipai project-workspace runtime-service <project-id> <workspace-id> restart --payload-json '{...}'
-pnpm paperclipai project-workspace runtime-command <project-id> <workspace-id> run --payload-json '{...}'
-```
-
 ## Plugin Commands
 
 Plugin lifecycle commands include `plugin init`, `list`, `install`, `uninstall`,
@@ -759,7 +719,7 @@ Plugin lifecycle commands include `plugin init`, `list`, `install`, `uninstall`,
 administrators install an explicit local path or npm package.
 
 ```sh
-pnpm paperclipai plugin init <package-name> --category <connector|workspace|automation|ui> [--template <standard|environment>]
+pnpm paperclipai plugin init <package-name> --category <connector|workspace|automation|ui>
 pnpm paperclipai plugin list
 pnpm paperclipai plugin install <npm-package-name> [--version <version>]
 pnpm paperclipai plugin install --local <path>
@@ -799,7 +759,6 @@ Local Paperclip data lives under the selected instance root. `PAPERCLIP_HOME` ch
         ├── logs/
         ├── secrets/
         │   └── master.key                        # local_encrypted master key
-        └── projects/                             # managed project and issue-execution workspaces
 ```
 
 Default paths for the canonical install:

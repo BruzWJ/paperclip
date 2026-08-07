@@ -1,6 +1,5 @@
 import type {
   AgentAdapterType,
-  EnvironmentDriver,
   ModelProfileKey,
   PauseReason,
   AgentStatus,
@@ -15,7 +14,10 @@ import type {
 } from "../trust-policy.js";
 import type { AgentOrgChainHealth } from "../agent-eligibility.js";
 import type { AdapterImplementationIdentity } from "../adapter-implementation.js";
-import type { AgentAdapterAcpConfigurationInput } from "../validators/agent-adapter-revision.js";
+import type {
+  AgentAdapterAcpConfigurationInput,
+  PublicAgentAdapterAcpConfigurationInput,
+} from "../validators/agent-adapter-revision.js";
 import type { MoneyAmount } from "../money.js";
 
 export interface AgentGovernancePolicy extends Record<string, unknown> {
@@ -37,6 +39,9 @@ export interface AgentRuntimeConfig extends Record<string, unknown> {
 export type AgentAdapterAcpConfiguration =
   AgentAdapterAcpConfigurationInput;
 
+export type PublicAgentAdapterAcpConfiguration =
+  PublicAgentAdapterAcpConfigurationInput;
+
 export interface AgentAdapterConfigRevision {
   id: string;
   companyId: string;
@@ -45,12 +50,9 @@ export interface AgentAdapterConfigRevision {
   adapterType: string;
   implementationIdentity: AdapterImplementationIdentity;
   adapterConfigSchemaVersion: string;
-  defaultEnvironmentId: string;
-  executionTargetDriver: EnvironmentDriver;
-  executionTargetDigest: string;
   normalizedConfig: Record<string, unknown>;
   runtimeConfig: AgentRuntimeConfig;
-  acpConfiguration: AgentAdapterAcpConfiguration;
+  acpConfiguration: PublicAgentAdapterAcpConfiguration;
   digest: string;
   parentRevisionId: string | null;
   createdByAgentId: string | null;
@@ -106,7 +108,6 @@ export interface Agent {
   adapterConfig: Record<string, unknown> | null;
   currentAdapterConfigRevisionId: string | null;
   runtimeConfig: AgentRuntimeConfig;
-  defaultEnvironmentId?: string | null;
   budgetMonthlyAmount: MoneyAmount;
   knownSpendAmount: MoneyAmount;
   pauseReason: PauseReason | null;

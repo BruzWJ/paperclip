@@ -534,13 +534,6 @@ export function Routines() {
       ...(data?.variables && Object.keys(data.variables).length > 0 ? { variables: data.variables } : {}),
       ...(data?.assigneeAgentId !== undefined ? { assigneeAgentId: data.assigneeAgentId } : {}),
       ...(data?.projectId !== undefined ? { projectId: data.projectId } : {}),
-      ...(data?.executionWorkspaceId !== undefined ? { executionWorkspaceId: data.executionWorkspaceId } : {}),
-      ...(data?.executionWorkspacePreference !== undefined
-        ? { executionWorkspacePreference: data.executionWorkspacePreference }
-        : {}),
-      ...(data?.executionWorkspaceSettings !== undefined
-        ? { executionWorkspaceSettings: data.executionWorkspaceSettings }
-        : {}),
     }),
     onMutate: ({ id }) => {
       setRunningRoutineId(id);
@@ -1383,7 +1376,6 @@ export function Routines() {
         onOpenChange={(next) => {
           if (!next) setRunDialogRoutine(null);
         }}
-        companyId={selectedCompanyId}
         routineName={runDialogRoutine?.title ?? null}
         agents={agents ?? []}
         projects={projects ?? []}

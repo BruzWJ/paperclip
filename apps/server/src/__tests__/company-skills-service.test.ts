@@ -3,7 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  discoverProjectWorkspaceSkillDirectories,
   findMissingLocalSkillIds,
   isGitRepoSkillImportSource,
   normalizeGitHubSkillDirectory,
@@ -103,31 +102,6 @@ describe("company skill local inventory", () => {
         ["scripts/check.sh", "script"],
         ["SKILL.md", "skill"],
       ]);
-  });
-
-  it("discovers only canonical skill directories inside a project workspace", async () => {
-    const workspace = await tempDirectory("paperclip-project-skills-");
-    await writeFile(path.join(workspace, "SKILL.md"), "# Root skill\n");
-    await mkdir(path.join(workspace, ".agents", "skills", "reviewer"), { recursive: true });
-    await writeFile(path.join(workspace, ".agents", "skills", "reviewer", "SKILL.md"), "# Reviewer\n");
-    await mkdir(path.join(workspace, ".agents", "skills", "not-a-skill"), { recursive: true });
-    await writeFile(path.join(workspace, ".agents", "skills", "not-a-skill", "README.md"), "ignored\n");
-
-    const discovered = await discoverProjectWorkspaceSkillDirectories({
-      projectId: "project-1",
-      projectName: "Project",
-      workspaceId: "workspace-1",
-      workspaceName: "Primary",
-      workspaceCwd: workspace,
-    });
-
-    expect(discovered.map((entry) => ({
-      relativePath: entry.relativePath,
-      inventoryMode: entry.inventoryMode,
-    }))).toEqual([
-      { relativePath: ".", inventoryMode: "project_root" },
-      { relativePath: ".agents/skills/reviewer", inventoryMode: "full" },
-    ]);
   });
 
   it("reports missing local sources while ignoring remote skills", async () => {

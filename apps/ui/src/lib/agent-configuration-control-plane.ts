@@ -5,7 +5,7 @@ import type {
   AgentOperationalConfigurationUpdateInput,
   RuntimeAgentConfigurationUpdate,
 } from "@paperclipai/shared";
-import { agentAdapterAcpConfigurationSchema } from "@paperclipai/shared";
+import { publicAgentAdapterAcpConfigurationSchema } from "@paperclipai/shared";
 
 const RUNTIME_AGENT_IDENTITY_KEYS = [
   "name",
@@ -18,7 +18,6 @@ const ADAPTER_REVISION_KEYS = [
   "adapterType",
   "adapterConfig",
   "runtimeConfig",
-  "defaultEnvironmentId",
 ] as const;
 
 function selectOwnKeys(
@@ -67,7 +66,7 @@ export function buildAdapterRevisionConfiguration(input: {
       "Load the agent's exact current adapter revision before saving.",
     );
   }
-  const acpConfiguration = agentAdapterAcpConfigurationSchema.parse(
+  const acpConfiguration = publicAgentAdapterAcpConfigurationSchema.parse(
     input.currentRevision.acpConfiguration,
   );
   const adapterType =
@@ -81,18 +80,9 @@ export function buildAdapterRevisionConfiguration(input: {
       "Select an adapter and complete its configuration before saving.",
     );
   }
-  const defaultEnvironmentId =
-    (input.patch.defaultEnvironmentId as string | null | undefined) ??
-    input.agent.defaultEnvironmentId;
-  if (!defaultEnvironmentId) {
-    throw new Error(
-      "Select an execution environment before saving.",
-    );
-  }
   return {
     adapterType,
     adapterConfig,
-    defaultEnvironmentId,
     runtimeConfig:
       (input.patch.runtimeConfig as Record<string, unknown> | undefined) ??
       input.agent.runtimeConfig,

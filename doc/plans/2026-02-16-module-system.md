@@ -93,7 +93,6 @@ Modules live in a top-level `modules/` directory. Each module is a pnpm workspac
     "type": "object",
     "properties": {
       "retentionDays": { "type": "number", "default": 30 },
-      "enablePrometheus": { "type": "boolean", "default": false },
       "prometheusPort": { "type": "number", "default": 9090 }
     }
   },
@@ -339,8 +338,7 @@ Module config lives in the server's environment or a config file:
     "enabled": ["observability", "revenue", "notifications"],
     "config": {
       "observability": {
-        "retentionDays": 90,
-        "enablePrometheus": true
+        "retentionDays": 90
       },
       "revenue": {
         "stripeSecretKey": "$STRIPE_SECRET_KEY"

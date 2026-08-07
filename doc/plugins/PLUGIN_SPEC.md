@@ -41,7 +41,7 @@ This spec covers:
 - agent tool contributions
 - event, job, and webhook surfaces
 - plugin-to-plugin communication
-- local tooling approach for workspace plugins
+- trusted local-folder plugin workflows
 - Postgres persistence for extensions
 - uninstall and data lifecycle
 - plugin observability
@@ -67,7 +67,6 @@ Paperclip plugin design is based on the following assumptions:
 3. Plugins are administrator-trusted code, but host services still enforce
    the exact invocation company and actor authority.
 4. Board governance, approval gates, budget hard-stops, and core issue invariants remain owned by Paperclip core.
-5. Projects already have a real workspace model via `project_workspaces`, and local/runtime plugins should build on that instead of inventing a separate workspace abstraction.
 
 ## 3. Goals
 
@@ -106,12 +105,7 @@ The single Paperclip deployment an operator installs and controls.
 
 A first-class Paperclip business object inside the instance.
 
-### 5.3 Project Workspace
-
-A workspace attached to a project through `project_workspaces`.
-Plugins resolve workspace paths from this model to locate local directories for file, terminal, git, and process operations.
-
-### 5.4 Plugin
+### 5.3 Plugin
 
 An installable instance-wide extension package loaded through the Paperclip plugin runtime.
 
@@ -121,16 +115,15 @@ Examples:
 - GitHub Issues sync
 - Grafana widgets
 - Stripe revenue sync
-- file browser
 - terminal
 - git workflow
 
-### 5.5 Plugin Worker
+### 5.4 Plugin Worker
 
 The runtime process used for a plugin.
 In this spec, third-party plugins run out-of-process by default.
 
-### 5.6 Capability
+### 5.5 Capability
 
 A named permission the host grants to a plugin.
 Plugins may only call host APIs that are covered by granted capabilities.
@@ -154,17 +147,6 @@ Plugin categories:
 
 A plugin may declare more than one category.
 
-## 7. Project Workspaces
-
-Paperclip already has a concrete workspace model:
-
-- projects expose `workspaces`
-- projects expose `primaryWorkspace`
-- the database contains `project_workspaces`
-- project routes already manage workspaces
-
-Plugins that need local tooling (file browsing, git, terminals, process tracking) can resolve workspace paths through the project workspace APIs and then operate on the filesystem, spawn processes, and run git commands directly. The host does not wrap these operations — plugins own their own implementations.
-
 ## 8. Installation Model
 
 Plugin installation is global and operator-driven.
@@ -180,7 +162,6 @@ Examples:
 - one global Linear plugin install
 - mappings from company A to Linear team X and company B to Linear team Y
 - one global git plugin install
-- per-project workspace state stored under `project_workspace`
 
 ## 8.1 On-Disk Layout
 
@@ -308,7 +289,6 @@ export interface PaperclipPluginManifestV1 {
   }>;
   database?: PluginDatabaseDeclaration;
   apiRoutes?: PluginApiRouteDeclaration[];
-  environmentDrivers?: PluginEnvironmentDriverDeclaration[];
   agents?: PluginManagedAgentDeclaration[];
   projects?: PluginManagedProjectDeclaration[];
   routines?: PluginManagedRoutineDeclaration[];
@@ -334,7 +314,7 @@ export interface PaperclipPluginManifestV1 {
       /** Which export name in the UI bundle provides this component */
       exportName: string;
       /** Required by entity-scoped slots */
-      entityTypes?: Array<"project" | "issue" | "execution_workspace" | "project_workspace">;
+      entityTypes?: Array<"project" | "issue">;
       /** Required by page, routeSidebar, and companySettingsPage */
       routePath?: string;
     }>;
@@ -396,8 +376,8 @@ The worker executes the tool logic and returns a typed result. The host enforces
 
 Installing a plugin is an administrator trust decision. Every tool declared by
 a ready plugin with `agent.tools.register` is available to every agent. Plugin tools are a
-direct runtime source; they are not copied into the company-tool catalog and do
-not require per-agent selection, profiles, approval rules, or reconciliation.
+direct runtime source; they do not require per-agent selection, profiles,
+approval rules, or reconciliation.
 
 The database-backed runtime compiler is the sole tool-discovery and schema
 authority. It re-reads the exact ready installation, current manifest
@@ -518,24 +498,6 @@ Optional methods:
 - `performAction(input)`
 - `executeTool(input)`
 - `issues.creatorCallback.deliver(input)`
-- `detectExternalObjects(input)`
-- `resolveExternalObject(input)`
-- `environmentValidateConfig(input)`
-- `environmentProbe(input)`
-- `environmentAcquireLease(input)`
-- `environmentResumeLease(input)`
-- `environmentReleaseLease(input)`
-- `environmentDestroyLease(input)`
-- `environmentRealizeWorkspace(input)`
-- `environmentExecute(input)`
-- `environmentCancelExecution(input)`
-- `environmentSyncIn(input)`
-- `environmentSyncOut(input)`
-- `environmentStartInteractiveSetup(input)`
-- `environmentGetInteractiveSetup(input)`
-- `environmentCaptureTemplate(input)`
-- `environmentCancelInteractiveSetup(input)`
-- `environmentDeleteTemplate(input)`
 
 ### 13.1 `initialize`
 
@@ -690,7 +652,6 @@ Required SDK clients:
 - `ctx.state`
 - `ctx.entities`
 - `ctx.projects`
-- `ctx.executionWorkspaces`
 - `ctx.routines`
 - `ctx.skills`
 - `ctx.companies`
@@ -708,7 +669,7 @@ Required SDK clients:
 
 `ctx.data` and `ctx.actions` register handlers that the plugin's own UI calls through the host bridge. `ctx.data.register(key, handler)` backs `usePluginData(key)` on the frontend. `ctx.actions.register(key, handler)` backs `usePluginAction(key)`.
 
-Plugins that need filesystem, git, terminal, or process operations handle those directly using standard Node APIs or libraries. The host provides project workspace metadata through `ctx.projects` so plugins can resolve workspace paths, but the host does not proxy low-level OS operations.
+Plugins that need filesystem, git, terminal, or process operations handle those directly using standard Node APIs or libraries. The host provides project-scoped run-directory metadata through `ctx.projects` so plugins can resolve authorized paths, but the host does not proxy low-level OS operations.
 
 ## 14.1 Issue Orchestration APIs
 
@@ -774,8 +735,6 @@ The host enforces capabilities in the SDK layer and refuses calls outside the gr
 
 - `companies.read`
 - `projects.read`
-- `project.workspaces.read`
-- `execution.workspaces.read`
 - `issues.read`
 - `agents.read`
 - `goals.read`
@@ -785,7 +744,6 @@ The host enforces capabilities in the SDK layer and refuses calls outside the gr
 - `authorization.policies.read`
 - `authorization.audit.read`
 - `database.namespace.read`
-- `external.objects.read`
 
 ### Data Write
 
@@ -809,7 +767,6 @@ The host enforces capabilities in the SDK layer and refuses calls outside the gr
 - `telemetry.track`
 - `database.namespace.migrate`
 - `database.namespace.write`
-- `external.objects.detect`
 
 ### Plugin State
 
@@ -825,7 +782,6 @@ The host enforces capabilities in the SDK layer and refuses calls outside the gr
 - `api.routes.register`
 - `http.outbound`
 - `http.private-network`
-- `environment.drivers.register`
 - `local.folders`
 - `runtime.context.read`
 - `runtime.prompt.observe`
@@ -1098,14 +1054,14 @@ declarations are accepted only for the entity kinds listed here.
 | --- | --- | --- | --- |
 | `page` | Company plugin route | — | `ui.page.register` |
 | `routeSidebar` | Secondary sidebar for its paired `page` | — | `ui.sidebar.register` |
-| `detailTab` | Project, issue, execution-workspace, and project-workspace detail tabs | `project`, `issue`, `execution_workspace`, `project_workspace` | `ui.detailTab.register` |
+| `detailTab` | Project and issue detail tabs | `project`, `issue` | `ui.detailTab.register` |
 | `issueDetailView` | Inline issue detail region | `issue` | `ui.detailTab.register` |
 | `dashboardWidget` | Company dashboard | — | `ui.dashboardWidget.register` |
 | `sidebar` | Main company sidebar navigation | — | `ui.sidebar.register` |
 | `sidebarPanel` | Main company sidebar panel region | — | `ui.sidebar.register` |
 | `projectSidebarItem` | Each project row in the sidebar | `project` | `ui.sidebar.register` |
 | `globalToolbarButton` | Global breadcrumb toolbar | — | `ui.action.register` |
-| `toolbarButton` | Project, issue, and execution-workspace action rows | `project`, `issue`, `execution_workspace` | `ui.action.register` |
+| `toolbarButton` | Project and issue action rows | `project`, `issue` | `ui.action.register` |
 | `settingsPage` | Instance plugin settings detail | — | `instance.settings.register` |
 | `companySettingsPage` | Company Settings route and sidebar | — | `instance.settings.register` |
 
@@ -1136,8 +1092,6 @@ Plugins may add tabs to:
 
 - project detail
 - issue detail
-- execution-workspace detail
-- project-workspace detail
 
 Recommended route pattern:
 
@@ -1188,7 +1142,7 @@ The host SDK ships shared components that plugins can import to quickly build UI
 | `KeyValueList` | Label/value pairs in a definition-list layout | Entity metadata, config summary |
 | `JsonTree` | Collapsible JSON tree for debugging | Raw API responses, plugin state inspection |
 | `Spinner` | Loading indicator | Data fetch states |
-| `FileTree` | Host-styled file/directory tree | Wiki pages, workspace files, import previews |
+| `FileTree` | Host-styled file/directory tree | Plugin-owned file trees and import previews |
 | `IssuesList` | Host issue list | Plugin pages that need a native issue view |
 | `OwnerPicker` | Agent-only canonical issue-owner picker | Creating and reassigning ordinary plugin issues |
 | `ProjectPicker` | Host project picker | Creating issues, scoping dashboards, filtering work |
@@ -1251,13 +1205,13 @@ checked again before a worker is activated.
 
 For plugins that need richer settings UX beyond what JSON Schema can express, the plugin may declare a `settingsPage` slot in `ui.slots`. When present, the host renders the plugin's own React component instead of the auto-generated form. The plugin component communicates with its worker through the standard bridge to read and write config.
 
-For plugins that need a company-scoped settings surface, declare a `companySettingsPage` slot with a `routePath`. The host renders a sidebar item under Company Settings and mounts the component at `/:companyPrefix/company/settings/:routePath`. The page receives `companyId` and `companyPrefix` in its host context. The exact host-owned settings segments `cloud-upstream`, `members`, `invites`, `secrets`, and `instance` are reserved and cannot be shadowed by plugin declarations.
+For plugins that need a company-scoped settings surface, declare a `companySettingsPage` slot with a `routePath`. The host renders a sidebar item under Company Settings and mounts the component at `/:companyPrefix/company/settings/:routePath`. The page receives `companyId` and `companyPrefix` in its host context. The exact host-owned settings segments `members`, `invites`, `secrets`, and `instance` are reserved and cannot be shadowed by plugin declarations.
 
 ## 20. Local Tooling
 
 Plugins that need filesystem, git, terminal, or process operations implement those directly. The host does not wrap or proxy these operations.
 
-The host provides workspace metadata through `ctx.projects` (list workspaces, get primary workspace, resolve workspace from issue or agent/run). Plugins use this metadata to resolve local paths and then operate on the filesystem, spawn processes, shell out to `git`, or open PTY sessions using standard Node APIs or any libraries they choose.
+The host provides internal project and run-directory metadata through `ctx.projects` when a plugin needs an authorized local path. Plugins use that metadata to resolve local paths and then operate on the filesystem, spawn processes, shell out to `git`, or open PTY sessions using standard Node APIs or any libraries they choose.
 
 This keeps the host lean — it does not need to maintain a parallel API surface for every OS-level operation a plugin might need. Plugins own their own logic for file browsing, git workflows, terminal sessions, and process management.
 
@@ -1277,7 +1231,6 @@ If data becomes part of the actual Paperclip product model, it should become a f
 
 Examples:
 
-- `project_workspaces` is already first-party
 - if Paperclip later decides git state is core product data, it should become a first-party table too
 
 ## 21.3 Required Tables
@@ -1319,7 +1272,7 @@ Constraints:
 
 - `id` uuid pk
 - `plugin_id` uuid fk `plugins.id` not null
-- `scope_kind` enum: `instance | company | project | project_workspace | agent | issue | goal | run`
+- `scope_kind` enum: `instance | company | project | agent | issue | goal | run`
 - `scope_id` uuid/text null
 - `namespace` text not null
 - `state_key` text not null
@@ -1334,9 +1287,8 @@ Examples:
 
 - Linear external IDs keyed by `issue`
 - GitHub sync cursors keyed by `project`
-- file browser preferences keyed by `project_workspace`
-- git branch metadata keyed by `project_workspace`
-- process metadata keyed by `project_workspace` or `run`
+- git branch metadata keyed by `project`
+- process metadata keyed by `run`
 
 ### `plugin_jobs`
 
@@ -1520,7 +1472,7 @@ When a plugin is uninstalled, the host must handle plugin-owned data explicitly.
 4. Only after teardown and package cleanup succeed does one locked transaction drop the installation-scoped custom database namespace, revoke ephemeral run-context handles, and delete the installation. Foreign-key cascades delete all installation-owned configuration, settings, state, jobs/runs, webhooks, migrations, logs, entities, and managed-resource bindings.
 5. If teardown or package cleanup fails, the live `disabled` row remains. Repeating disable or uninstall retries cleanup without repeating the managed-agent and creator-edge transition.
 6. Suspension cancellation intents and escalation execution refs are durable transaction outputs. Failed immediate reconciliation or dispatch notification is recovered by the instance's persisted-execution recovery loop; repeating the plugin lifecycle transition does not recreate those outputs.
-7. Canonical comments, deliveries, withdrawals, run calls, and tool-selection audit rows retain immutable plugin actor/call UUIDs as values without a live installation foreign key. Optional live provenance links on external-object and secret-access records are cleared. The installation row itself is not retained.
+7. Canonical comments, deliveries, withdrawals, run calls, and tool-selection audit rows retain immutable plugin actor/call UUIDs as values without a live installation foreign key. Optional live provenance links on secret-access records are cleared. The installation row itself is not retained.
 8. Reinstalling the same plugin key creates a new installation row, id, operational state, and runtime namespace.
 
 ### 25.2 Upgrade Data Considerations
@@ -1705,7 +1657,6 @@ The host should publish a starter template (`create-paperclip-plugin`) that scaf
 
 This spec directly supports the following plugin types:
 
-- `@paperclip/plugin-workspace-files`
 - `@paperclip/plugin-terminal`
 - `@paperclip/plugin-git`
 - `@paperclip/plugin-linear`

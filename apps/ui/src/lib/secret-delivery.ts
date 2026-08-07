@@ -59,8 +59,6 @@ export function consumerTypeLabel(consumerType: SecretAccessEvent["consumerType"
   switch (consumerType) {
     case "agent_api":
       return "Agent API";
-    case "tool_connection":
-      return "Tool connection";
     default:
       return consumerType.charAt(0).toUpperCase() + consumerType.slice(1);
   }

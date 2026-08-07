@@ -31,14 +31,6 @@ function lowTrustBoundary(input: Partial<Omit<LowTrustBoundary, "mode">>): LowTr
   };
 }
 
-function boundaryPolicy(boundary: ReturnType<typeof lowTrustBoundary>) {
-  return {
-    authorizationPolicy: {
-      trustBoundary: boundary,
-    },
-  };
-}
-
 describe("resolveCoreTrustPreset", () => {
   it("defaults to standard with no boundary", () => {
     const result = resolveCoreTrustPreset({
@@ -53,7 +45,7 @@ describe("resolveCoreTrustPreset", () => {
     });
   });
 
-  it("intersects low-trust agent, project, and issue policy boundaries", () => {
+  it("intersects low-trust agent and issue policy boundaries", () => {
     const result = resolveCoreTrustPreset({
       companyId,
       agent: {
@@ -71,15 +63,6 @@ describe("resolveCoreTrustPreset", () => {
             }),
           },
         },
-      },
-      project: {
-        companyId,
-        executionWorkspacePolicy: boundaryPolicy(lowTrustBoundary({
-          projectIds: [projectB, projectC],
-          issueIds: [issueB, issueC],
-          allowedAgentIds: [agentB],
-          allowedToolClasses: ["git.read"],
-        })),
       },
       issue: {
         companyId,
@@ -100,9 +83,9 @@ describe("resolveCoreTrustPreset", () => {
       companyId,
       mode: LOW_TRUST_REVIEW_PRESET,
       rootIssueId,
-      projectIds: [projectB],
+      projectIds: [projectA, projectB],
       issueIds: [issueB],
-      allowedAgentIds: [agentB],
+      allowedAgentIds: [agentA, agentB],
       allowedToolClasses: ["git.read"],
     });
     expect(isIssueWithinLowTrustBoundary(result.boundary, { companyId, id: issueB, projectId: projectB })).toBe(true);
@@ -148,19 +131,6 @@ describe("resolveCoreTrustPreset", () => {
   });
 
   it("denies cross-company policy sources and boundaries", () => {
-    const sourceMismatch = resolveCoreTrustPreset({
-      companyId,
-      project: {
-        companyId: otherCompanyId,
-        executionWorkspacePolicy: boundaryPolicy(lowTrustBoundary({ projectIds: [projectA] })),
-      },
-    });
-    expect(sourceMismatch).toMatchObject({
-      kind: "denied",
-      reason: "cross_company_boundary",
-      source: "project",
-    });
-
     const boundaryMismatch = resolveCoreTrustPreset({
       companyId,
       issue: {

@@ -120,7 +120,6 @@ export class RuntimeToolCallInProgress extends Error {
 
 interface RuntimeToolCallBinding {
   readonly name: string;
-  readonly selectedCompanyToolSelectionId?: string;
   readonly pluginInstallationId?: string;
 }
 
@@ -171,8 +170,6 @@ function sameBinding(
   digest: string,
 ): boolean {
   return row.toolName === binding.name
-    && row.companyToolSelectionId ===
-      (binding.selectedCompanyToolSelectionId ?? null)
     && row.pluginInstallationId ===
       (binding.pluginInstallationId ?? null)
     && row.argumentsDigest === digest;
@@ -466,8 +463,6 @@ export function createRuntimeToolCallLedger(
         callIdentityType: input.identity.type,
         callIdentityValue: input.identity.value,
         toolName: input.binding.name,
-        companyToolSelectionId:
-          input.binding.selectedCompanyToolSelectionId ?? null,
         pluginInstallationId:
           input.binding.pluginInstallationId ?? null,
         argumentsDigest: digest,

@@ -19,12 +19,14 @@ const dirtyStatus: PersistedDevServerStatus = {
 function createCoordinator(input: {
   status?: PersistedDevServerStatus | null;
   request?: DevServerRestartRequest | null;
-  autoRestartEnabled?: boolean;
   activeRunCount?: number;
+  autoRestartEnabled?: boolean;
 }) {
   const writeRequest = vi.fn(() => true);
-  const getAutoRestartEnabled = vi.fn(async () => input.autoRestartEnabled ?? true);
   const getActiveRunCount = vi.fn(async () => input.activeRunCount ?? 0);
+  const getAutoRestartEnabled = vi.fn(
+    async () => input.autoRestartEnabled ?? true,
+  );
   const coordinator = createDevServerRestartCoordinator({} as Db, {
     dependencies: {
       readStatus: () => input.status === undefined ? dirtyStatus : input.status,
@@ -38,8 +40,8 @@ function createCoordinator(input: {
   return {
     coordinator,
     writeRequest,
-    getAutoRestartEnabled,
     getActiveRunCount,
+    getAutoRestartEnabled,
   };
 }
 
@@ -54,18 +56,6 @@ describe("dev-server restart coordinator", () => {
     });
   });
 
-  it("does nothing when automatic restart is disabled", async () => {
-    const {
-      coordinator,
-      writeRequest,
-      getActiveRunCount,
-    } = createCoordinator({ autoRestartEnabled: false });
-
-    await expect(coordinator.checkNow()).resolves.toBe(false);
-    expect(getActiveRunCount).not.toHaveBeenCalled();
-    expect(writeRequest).not.toHaveBeenCalled();
-  });
-
   it("waits while an agent run is queued or running", async () => {
     const { coordinator, writeRequest } = createCoordinator({ activeRunCount: 2 });
 
@@ -73,10 +63,21 @@ describe("dev-server restart coordinator", () => {
     expect(writeRequest).not.toHaveBeenCalled();
   });
 
+  it("does not request an automatic restart when the General setting is off", async () => {
+    const { coordinator, writeRequest, getActiveRunCount } = createCoordinator({
+      autoRestartEnabled: false,
+    });
+
+    await expect(coordinator.checkNow()).resolves.toBe(false);
+    expect(getActiveRunCount).not.toHaveBeenCalled();
+    expect(writeRequest).not.toHaveBeenCalled();
+  });
+
   it("does nothing when no restart is required", async () => {
     const {
       coordinator,
       writeRequest,
+      getActiveRunCount,
       getAutoRestartEnabled,
     } = createCoordinator({
       status: {
@@ -89,6 +90,7 @@ describe("dev-server restart coordinator", () => {
 
     await expect(coordinator.checkNow()).resolves.toBe(false);
     expect(getAutoRestartEnabled).not.toHaveBeenCalled();
+    expect(getActiveRunCount).not.toHaveBeenCalled();
     expect(writeRequest).not.toHaveBeenCalled();
   });
 
@@ -96,6 +98,7 @@ describe("dev-server restart coordinator", () => {
     const {
       coordinator,
       writeRequest,
+      getActiveRunCount,
       getAutoRestartEnabled,
     } = createCoordinator({
       request: {
@@ -106,6 +109,7 @@ describe("dev-server restart coordinator", () => {
 
     await expect(coordinator.checkNow()).resolves.toBe(false);
     expect(getAutoRestartEnabled).not.toHaveBeenCalled();
+    expect(getActiveRunCount).not.toHaveBeenCalled();
     expect(writeRequest).not.toHaveBeenCalled();
   });
 });

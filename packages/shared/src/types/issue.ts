@@ -3,12 +3,7 @@ import type {
   IssueCommentMetadataRowType,
   IssueCommentPresentationKind,
   IssueCommentPresentationTone,
-  IssueExecutionMonitorClearReason,
-  IssueExecutionMonitorKind,
-  IssueExecutionMonitorRecoveryPolicy,
-  IssueExecutionMonitorStateStatus,
   IssueExecutionDecisionOutcome,
-  IssueMonitorScheduledBy,
   IssueExecutionPolicyMode,
   IssueReferenceSourceKind,
   IssueExecutionStageType,
@@ -19,8 +14,7 @@ import type {
   IssueStatus,
 } from "../constants.js";
 import type { Goal } from "./goal.js";
-import type { Project, ProjectWorkspace } from "./project.js";
-import type { ExecutionWorkspace, IssueExecutionWorkspaceSettings } from "./workspace-runtime.js";
+import type { Project } from "./project.js";
 import type { IssueWorkProduct } from "./work-product.js";
 import type {
   LowTrustReviewPresetPolicy,
@@ -42,8 +36,6 @@ export interface IssueAncestorProject {
   description: string | null;
   status: string;
   goalId: string | null;
-  workspaces: ProjectWorkspace[];
-  primaryWorkspace: ProjectWorkspace | null;
 }
 
 export interface IssueAncestorGoal {
@@ -344,42 +336,12 @@ export interface IssueExecutionStage {
   participants: IssueExecutionStageParticipant[];
 }
 
-export interface IssueExecutionMonitorPolicy {
-  nextCheckAt: string;
-  notes: string | null;
-  scheduledBy: IssueMonitorScheduledBy;
-  kind?: IssueExecutionMonitorKind | null;
-  serviceName?: string | null;
-  externalRef?: string | null;
-  timeoutAt?: string | null;
-  maxAttempts?: number | null;
-  recoveryPolicy?: IssueExecutionMonitorRecoveryPolicy | null;
-}
-
 export interface IssueExecutionPolicy {
   mode: IssueExecutionPolicyMode;
   commentRequired: boolean;
   stages: IssueExecutionStage[];
-  monitor?: IssueExecutionMonitorPolicy | null;
   reviewPreset?: LowTrustReviewPresetPolicy;
   authorizationPolicy?: TrustAuthorizationPolicy;
-}
-
-export interface IssueExecutionMonitorState {
-  status: IssueExecutionMonitorStateStatus;
-  nextCheckAt: string | null;
-  lastTriggeredAt: string | null;
-  attemptCount: number;
-  notes: string | null;
-  scheduledBy: IssueMonitorScheduledBy | null;
-  kind?: IssueExecutionMonitorKind | null;
-  serviceName?: string | null;
-  externalRef?: string | null;
-  timeoutAt?: string | null;
-  maxAttempts?: number | null;
-  recoveryPolicy?: IssueExecutionMonitorRecoveryPolicy | null;
-  clearedAt: string | null;
-  clearReason: IssueExecutionMonitorClearReason | null;
 }
 
 export interface IssueReviewRequest {
@@ -397,7 +359,6 @@ export interface IssueExecutionState {
   completedStageIds: string[];
   lastDecisionId: string | null;
   lastDecisionOutcome: IssueExecutionDecisionOutcome | null;
-  monitor?: IssueExecutionMonitorState | null;
 }
 
 export interface IssueExecutionDecision {
@@ -415,25 +376,10 @@ export interface IssueExecutionDecision {
   updatedAt: Date;
 }
 
-export type IssueWatchdogStatus = "active" | "disabled";
-
-export interface IssueWatchdog {
-  id: string;
-  companyId: string;
-  issueId: string;
-  status: IssueWatchdogStatus;
-  lastObservedFingerprint: string | null;
-  lastTriggeredAt: Date | null;
-  triggerCount: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
 interface IssueBase {
   id: string;
   companyId: string;
   projectId: string | null;
-  projectWorkspaceId: string | null;
   goalId: string | null;
   parentId: string | null;
   ancestors?: IssueAncestor[];
@@ -461,13 +407,6 @@ interface IssueBase {
   billingCode: string | null;
   executionPolicy?: IssueExecutionPolicy | null;
   executionState?: IssueExecutionState | null;
-  monitorNextCheckAt?: Date | null;
-  monitorLastTriggeredAt?: Date | null;
-  monitorAttemptCount?: number;
-  monitorNotes?: string | null;
-  monitorScheduledBy?: IssueMonitorScheduledBy | null;
-  executionWorkspacePreference: string | null;
-  executionWorkspaceSettings: IssueExecutionWorkspaceSettings | null;
   startedAt: Date | null;
   completedAt: Date | null;
   cancelledAt: Date | null;
@@ -479,7 +418,6 @@ interface IssueBase {
   blocks?: IssueRelationIssueSummary[];
   blockerAttention?: IssueBlockerAttention;
   blockedInboxAttention?: IssueBlockedInboxAttention | null;
-  watchdog?: IssueWatchdog | null;
   liveDescendantCount?: number;
   relatedWork?: IssueRelatedWorkSummary;
   referencedIssueIdentifiers?: string[];
@@ -487,7 +425,6 @@ interface IssueBase {
   documentSummaries?: IssueDocumentSummary[];
   project?: Project | null;
   goal?: Goal | null;
-  currentExecutionWorkspace?: ExecutionWorkspace | null;
   workProducts?: IssueWorkProduct[];
   mentionedProjects?: Project[];
   myLastTouchAt?: Date | null;
@@ -603,7 +540,6 @@ export type CompactIssue = Pick<
   | "id"
   | "companyId"
   | "projectId"
-  | "projectWorkspaceId"
   | "goalId"
   | "parentId"
   | "title"

@@ -62,10 +62,6 @@ Some work needs more than an immutable issue request before execution starts. De
 
 Paperclip should get stricter about what counts as finished work. System safeguards, canonical persisted nudges, and review gates keep execution moving toward clear outcomes like merged code, published artifacts, shipped docs, or explicit decisions instead of vague status updates.
 
-### ✅ MCP Tool Gateway & Apps (governed tool access)
-
-MCP tools and apps should be available through a governed gateway instead of unmanaged direct access. Paperclip can apply company boundaries, approval gates, and activity attribution while giving agents the tools they need.
-
 ### ✅ Secrets Manager with per-agent access
 
 Secrets need to be centrally managed without giving every agent every credential. Per-agent access, scoped bindings, and audited resolution keep sensitive integrations usable while preserving least privilege.
@@ -105,19 +101,6 @@ As companies grow, agents should be able to propose useful structural changes su
 
 Paperclip should get better at turning completed work into reusable organizational knowledge. That includes capturing playbooks, recurring fixes, and decision patterns so future work starts from what the company has already learned.
 
-### ✅ Board Chat
-
-Board Chat is ordinary issue-backed work: the board chooses an explicit agent
-owner and the first message becomes the immutable request. Follow-ups are typed
-creator comments on that issue, with no standing concierge, special title, or
-cross-issue chat session.
-
-### 🟡 Cloud deployments (multi-tenant isolation & local→cloud sync shipped)
-
-Local-first remains important, but Paperclip also needs a cleaner shared deployment story. Teams should be able to run the same product in hosted or semi-hosted environments without changing the mental model.
-
-Shipped so far: multi-tenant isolation with per-company JWT keys and company-scoped cloud tenants, local→cloud upstream sync, and cloud-managed instance bootstrap.
-
 ### ⚪ Desktop App
 
 A desktop app can make Paperclip feel more accessible and persistent for day-to-day operators. The goal is easier access, better local ergonomics, and a smoother default experience for users who want the control plane always close at hand.
@@ -125,7 +108,3 @@ A desktop app can make Paperclip feel more accessible and persistent for day-to-
 ### ⚪ Bring-your-own-ticket-system (Asana / Linear / Jira as on-ramps)
 
 Existing ticket systems should be able to feed work into Paperclip without becoming the agent control plane themselves. Asana, Linear, and Jira can act as familiar on-ramps while Paperclip owns execution, governance, and outcomes.
-
-### ⚪ Connected Apps (one-click integrations, e.g. Vercel)
-
-Common services should connect without bespoke setup for every company. One-click integrations can package credentials, permissions, and useful workflows for apps such as Vercel while keeping access governed and auditable.

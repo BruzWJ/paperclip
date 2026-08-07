@@ -57,7 +57,6 @@ const sensitiveConfigurationResult = {
     contextGrants: { carry_context: true },
     actionGrants: { agent_configure: true },
     mentionReachGrants: { mention_any_ancestor: true },
-    companyToolIds: ["company-tool-1"],
   },
 };
 
@@ -93,11 +92,6 @@ function replayingExecutor(
       mentionAgent: vi.fn(),
       mentionBoard: vi.fn(),
       ...actions,
-    },
-    companyTools: {
-      async execute() {
-        throw new Error("company tools are not used by agent actions");
-      },
     },
     callLedger: callLedger as never,
   });
@@ -147,7 +141,6 @@ describe("runtime agent action provider receipts", () => {
       mentionReachGrants: Object.fromEntries(
         AGENT_MENTION_REACH_GRANT_KEYS.map((key) => [key, false]),
       ),
-      companyToolIds: [],
     };
     await expect(call("agent_hire", arguments_)).resolves.toEqual({
       source: "paperclip",

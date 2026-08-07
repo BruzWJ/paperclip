@@ -184,20 +184,13 @@ export interface HostServices {
     get(params: WorkerToHostMethods["companies.get"][0]): Promise<WorkerToHostMethods["companies.get"][1]>;
   };
 
-  /** Provides project reads, workspace reads, and managed project operations. */
+  /** Provides project reads and managed project operations. */
   projects: {
     list(params: WorkerToHostMethods["projects.list"][0]): Promise<WorkerToHostMethods["projects.list"][1]>;
     get(params: WorkerToHostMethods["projects.get"][0]): Promise<WorkerToHostMethods["projects.get"][1]>;
-    listWorkspaces(params: WorkerToHostMethods["projects.listWorkspaces"][0]): Promise<WorkerToHostMethods["projects.listWorkspaces"][1]>;
-    getPrimaryWorkspace(params: WorkerToHostMethods["projects.getPrimaryWorkspace"][0]): Promise<WorkerToHostMethods["projects.getPrimaryWorkspace"][1]>;
     getManaged(params: WorkerToHostMethods["projects.managed.get"][0]): Promise<WorkerToHostMethods["projects.managed.get"][1]>;
     reconcileManaged(params: WorkerToHostMethods["projects.managed.reconcile"][0]): Promise<WorkerToHostMethods["projects.managed.reconcile"][1]>;
     resetManaged(params: WorkerToHostMethods["projects.managed.reset"][0]): Promise<WorkerToHostMethods["projects.managed.reset"][1]>;
-  };
-
-  /** Provides `executionWorkspaces.get`. */
-  executionWorkspaces: {
-    get(params: WorkerToHostMethods["executionWorkspaces.get"][0]): Promise<WorkerToHostMethods["executionWorkspaces.get"][1]>;
   };
 
   /** Provides `routines.managed.*`. */
@@ -400,9 +393,6 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   // Projects
   "projects.list": "projects.read",
   "projects.get": "projects.read",
-  "projects.listWorkspaces": "project.workspaces.read",
-  "projects.getPrimaryWorkspace": "project.workspaces.read",
-  "executionWorkspaces.get": "execution.workspaces.read",
   "projects.managed.get": "projects.managed",
   "projects.managed.reconcile": "projects.managed",
     "projects.managed.reset": "projects.managed",
@@ -865,15 +855,6 @@ export function createHostClientHandlers(
     "projects.get": gated("projects.get", async (params) => {
       return services.projects.get(params);
     }),
-    "projects.listWorkspaces": gated("projects.listWorkspaces", async (params) => {
-      return services.projects.listWorkspaces(params);
-    }),
-    "projects.getPrimaryWorkspace": gated("projects.getPrimaryWorkspace", async (params) => {
-      return services.projects.getPrimaryWorkspace(params);
-    }),
-    "executionWorkspaces.get": gated("executionWorkspaces.get", async (params) => {
-      return services.executionWorkspaces.get(params);
-    }),
     "projects.managed.get": gated("projects.managed.get", async (params) => {
       return services.projects.getManaged(params);
     }),
@@ -1002,7 +983,7 @@ export function createHostClientHandlers(
       return services.goals.update(params);
     }),
 
-    // Access
+  // Access
     "access.members.list": gated("access.members.list", async (params) => {
       return services.access.listMembers(params);
     }),

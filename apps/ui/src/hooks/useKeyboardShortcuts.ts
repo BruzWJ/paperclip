@@ -31,7 +31,7 @@ export function useKeyboardShortcuts({
     if (!enabled) return;
 
     // g → i chord state. IssueDetail runs its own capture-phase handler with
-    // extra chords (g c, g f) and stops propagation when it handles one, so
+    // an extra comment-focus chord and stops propagation when it handles it, so
     // this bubble-phase chord only fires outside the issue detail page.
     let goChordArmed = false;
     let goChordTimeout: number | null = null;
@@ -81,9 +81,9 @@ export function useKeyboardShortcuts({
           onGoToInbox();
           return;
         }
-        if (chordAction === "focus_comment" || chordAction === "open_file_viewer") {
-          // Armed chord keys that only mean something on the issue detail
-          // page — swallow them so they don't trigger bare shortcuts (c).
+        if (chordAction === "focus_comment") {
+          // Swallow issue-detail-only chord keys so they do not trigger bare
+          // shortcuts.
           disarmGoChord();
           e.preventDefault();
           return;

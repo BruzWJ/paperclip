@@ -39,16 +39,8 @@ export function JoinRequestQueue() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: ({
-      requestId,
-      defaultEnvironmentId,
-    }: {
-      requestId: string;
-      defaultEnvironmentId?: string;
-    }) =>
-      accessApi.approveJoinRequest(selectedCompanyId!, requestId, {
-        defaultEnvironmentId,
-      }),
+    mutationFn: (requestId: string) =>
+      accessApi.approveJoinRequest(selectedCompanyId!, requestId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.access.joinRequests(selectedCompanyId!, `${status}:${requestType}`) });
       await queryClient.invalidateQueries({ queryKey: queryKeys.access.companyMembers(selectedCompanyId!) });
@@ -174,12 +166,7 @@ export function JoinRequestQueue() {
                     disabled={isPending}
                   >
                     <JoinRequestApprovalControls
-                      companyId={selectedCompanyId}
-                      requestType={request.requestType}
-                      adapterType={request.adapterType}
-                      onApprove={({ defaultEnvironmentId }) =>
-                        approveMutation.mutate({ requestId: request.id, defaultEnvironmentId })
-                      }
+                      onApprove={() => approveMutation.mutate(request.id)}
                       onReject={() => rejectMutation.mutate(request.id)}
                       isPending={isPending}
                       className="flex max-w-sm flex-wrap items-end justify-end gap-2"

@@ -389,9 +389,6 @@ export function applyOptimisticIssueFieldUpdate(
   assign("ownershipEpoch");
   assign("projectId");
   assign("parentId");
-  assign("projectWorkspaceId");
-  assign("executionWorkspacePreference");
-  assign("executionWorkspaceSettings");
   assign("hiddenAt");
 
   if (hasOwn("labelIds") && Array.isArray(data.labelIds)) {

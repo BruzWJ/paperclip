@@ -11,12 +11,6 @@ test("captures planning mode UI for desktop and mobile", async ({ page, request 
   const companyName = `PAP-3413-${timestamp}`;
   const screenshotDir = "test-results/planning-mode";
 
-  const flagResponse = await request.patch(
-    "/api/instance/settings/experimental",
-    { data: { enableEnvironments: true } },
-  );
-  expect(flagResponse.ok()).toBe(true);
-
   await page.goto("/onboarding");
   const startBtn = page.getByRole("button", { name: /Start Onboarding|New Company|Add Agent/ });
   if (await startBtn.count()) await startBtn.first().click();
@@ -51,11 +45,6 @@ test("captures planning mode UI for desktop and mobile", async ({ page, request 
   await expect(modelField).toBeVisible({ timeout: 15_000 });
   await modelField.getByRole("button").last().click();
   await page.getByRole("button", { name: "GPT-5.6", exact: true }).click();
-  const environmentSelect = page
-    .locator("select")
-    .filter({ hasText: "Local · local" });
-  await expect(environmentSelect).toBeVisible({ timeout: 15_000 });
-  await environmentSelect.selectOption({ label: "Local · local" });
   const createAgentButton = page.getByRole("button", { name: "Create agent" });
   await expect(createAgentButton).toBeEnabled({ timeout: 20_000 });
   await createAgentButton.click();

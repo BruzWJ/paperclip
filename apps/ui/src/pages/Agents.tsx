@@ -2,12 +2,10 @@ import { useState, useEffect, useMemo } from "react";
 import { Link, useNavigate, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
-import { environmentsApi } from "../api/environments";
 import {
   ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
   runsApi,
 } from "../api/runs";
-import { instanceSettingsApi } from "../api/instanceSettings";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -25,7 +23,7 @@ import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Bot, Plus, List, GitBranch } from "lucide-react";
-import { type Agent, type Environment, type EnvironmentCapabilities } from "@paperclipai/shared";
+import { type Agent } from "@paperclipai/shared";
 import {
   isStarred,
   resourceMembershipState,
@@ -53,24 +51,6 @@ const AGENT_FILTER_TAB_ITEMS: { value: FilterTab; label: string }[] = [
 function isFilterTab(value: string): value is FilterTab {
   return (AGENT_FILTER_TABS as readonly string[]).includes(value);
 }
-
-interface EnvironmentDescriptor {
-  label: string;
-  detail: string;
-  title: string;
-}
-
-const localEnvironmentDescriptor: EnvironmentDescriptor = {
-  label: "Local",
-  detail: "Paperclip host",
-  title: "Local - Paperclip host",
-};
-
-const loadingEnvironmentDescriptor: EnvironmentDescriptor = {
-  label: "—",
-  detail: "Loading environment",
-  title: "Loading environment",
-};
 
 // Agents in these states never appear in the agents list — `terminated` is
 // hidden like an archived company, and `pending_approval` is a hiring gate that
@@ -123,61 +103,6 @@ export function getConfiguredModel(agent: Agent): string | null {
   return nonEmptyDisplayString(adapterConfig.model);
 }
 
-function formatEnvironmentDriver(driver: Environment["driver"]): string {
-  if (driver === "ssh") return "SSH";
-  return driver.charAt(0).toUpperCase() + driver.slice(1);
-}
-
-function getSandboxProviderLabel(
-  environment: Environment,
-  capabilities?: EnvironmentCapabilities | null,
-): string {
-  const provider = typeof environment.config.provider === "string"
-    ? environment.config.provider.trim()
-    : "";
-  if (!provider) return "Sandbox";
-  return capabilities?.sandboxProviders?.[provider]?.displayName ?? provider;
-}
-
-function describeEnvironment(
-  environment: Environment,
-  capabilities?: EnvironmentCapabilities | null,
-): EnvironmentDescriptor {
-  const detail = environment.driver === "sandbox"
-    ? `${getSandboxProviderLabel(environment, capabilities)} sandbox provider`
-    : environment.driver === "local"
-      ? "Paperclip host"
-      : formatEnvironmentDriver(environment.driver);
-
-  return {
-    label: environment.name,
-    detail,
-    title: `${environment.name} - ${detail}`,
-  };
-}
-
-function describeMissingEnvironment(environmentId: string): EnvironmentDescriptor {
-  return {
-    label: "Unknown environment",
-    detail: environmentId.slice(0, 8),
-    title: `Unknown environment - ${environmentId}`,
-  };
-}
-
-function resolveAgentEnvironment(
-  agent: Agent,
-  environmentsById: Map<string, Environment>,
-  instanceDefaultEnvironmentId: string | null,
-  capabilities?: EnvironmentCapabilities | null,
-): EnvironmentDescriptor {
-  const environmentId = agent.defaultEnvironmentId ?? instanceDefaultEnvironmentId;
-  if (!environmentId) return localEnvironmentDescriptor;
-  const environment = environmentsById.get(environmentId);
-  return environment
-    ? describeEnvironment(environment, capabilities)
-    : describeMissingEnvironment(environmentId);
-}
-
 function filterOrgTree(nodes: OrgNode[], tab: FilterTab): OrgNode[] {
   return nodes
     .reduce<OrgNode[]>((acc, node) => {
@@ -210,11 +135,6 @@ export function Agents() {
   const forceListView = isMobile;
   const effectiveView: "list" | "org" = forceListView ? "list" : view;
 
-  const { data: instanceSettings } = useQuery({
-    queryKey: queryKeys.instance.settings,
-    queryFn: () => instanceSettingsApi.get(),
-    enabled: !!selectedCompanyId,
-  });
   const tab: FilterTab = requestedTab;
   const visibleTabItems = AGENT_FILTER_TAB_ITEMS;
 
@@ -228,20 +148,6 @@ export function Agents() {
     queryKey: queryKeys.org(selectedCompanyId!),
     queryFn: () => agentsApi.org(selectedCompanyId!),
     enabled: !!selectedCompanyId && effectiveView === "org",
-  });
-
-  const environmentsEnabled = instanceSettings?.experimental.enableEnvironments === true;
-
-  const { data: environments } = useQuery({
-    queryKey: queryKeys.environments.list(selectedCompanyId!),
-    queryFn: () => environmentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && environmentsEnabled,
-  });
-
-  const { data: environmentCapabilities } = useQuery({
-    queryKey: queryKeys.environments.capabilities(selectedCompanyId!),
-    queryFn: () => environmentsApi.capabilities(selectedCompanyId!),
-    enabled: !!selectedCompanyId && environmentsEnabled,
   });
 
   const activeRunStatuses = ACTIVE_ISSUE_EXECUTION_RUN_STATUSES;
@@ -290,28 +196,6 @@ export function Agents() {
     return map;
   }, [agents]);
 
-  const environmentsById = useMemo(() => {
-    const map = new Map<string, Environment>();
-    for (const environment of environments ?? []) map.set(environment.id, environment);
-    return map;
-  }, [environments]);
-
-  const environmentByAgentId = useMemo(() => {
-    const map = new Map<string, EnvironmentDescriptor>();
-    for (const agent of agents ?? []) {
-      map.set(
-        agent.id,
-        resolveAgentEnvironment(
-          agent,
-          environmentsById,
-          instanceSettings?.defaultEnvironmentId ?? null,
-          environmentCapabilities,
-        ),
-      );
-    }
-    return map;
-  }, [agents, environmentsById, environmentCapabilities, instanceSettings?.defaultEnvironmentId]);
-
   useEffect(() => {
     setBreadcrumbs([{ label: "Agents" }]);
   }, [setBreadcrumbs]);
@@ -326,14 +210,6 @@ export function Agents() {
 
   const filtered = filterAgents(agents ?? [], tab);
   const filteredOrg = filterOrgTree(orgTree ?? [], tab);
-  const environmentDataLoading = environmentsEnabled && environments === undefined;
-  const showEnvironmentColumn = environmentsEnabled && (environments === undefined || environments.length > 1);
-  const resolveRenderedEnvironment = (agentId: string) => (
-    environmentDataLoading
-      ? loadingEnvironmentDescriptor
-      : environmentByAgentId.get(agentId) ?? localEnvironmentDescriptor
-  );
-
   const renderAgentRow = (agent: Agent) => {
     const hasInvalidOrgChain = agent.orgChainHealth?.status === "invalid_org_chain";
     const agentPending =
@@ -372,8 +248,6 @@ export function Agents() {
             <div className="hidden xl:flex items-center gap-3">
               <AgentMetaColumns
                 agent={agent}
-                environment={resolveRenderedEnvironment(agent.id)}
-                showEnvironment={showEnvironmentColumn}
               />
             </div>
           </div>
@@ -524,9 +398,6 @@ export function Agents() {
               depth={0}
               agentMap={agentMap}
               liveRunByAgent={liveRunByAgent}
-              environmentByAgentId={environmentByAgentId}
-              environmentDataLoading={environmentDataLoading}
-              showEnvironment={showEnvironmentColumn}
               tab={tab}
               memberships={membershipsQuery.data}
               membershipMutation={membershipMutation}
@@ -555,9 +426,6 @@ function OrgTreeNode({
   depth,
   agentMap,
   liveRunByAgent,
-  environmentByAgentId,
-  environmentDataLoading,
-  showEnvironment,
   tab,
   memberships,
   membershipMutation,
@@ -566,9 +434,6 @@ function OrgTreeNode({
   depth: number;
   agentMap: Map<string, Agent>;
   liveRunByAgent: Map<string, { runId: string; liveCount: number }>;
-  environmentByAgentId: Map<string, EnvironmentDescriptor>;
-  environmentDataLoading: boolean;
-  showEnvironment: boolean;
   tab: FilterTab;
   memberships: ReturnType<typeof useResourceMemberships>["data"];
   membershipMutation: ReturnType<typeof useResourceMembershipMutation>;
@@ -633,12 +498,6 @@ function OrgTreeNode({
               <div className="hidden xl:flex items-center gap-3">
                 <AgentMetaColumns
                   agent={agent}
-                  environment={
-                    environmentDataLoading
-                      ? loadingEnvironmentDescriptor
-                      : environmentByAgentId.get(agent.id) ?? localEnvironmentDescriptor
-                  }
-                  showEnvironment={showEnvironment}
                 />
               </div>
             )}
@@ -689,9 +548,6 @@ function OrgTreeNode({
               depth={depth + 1}
               agentMap={agentMap}
               liveRunByAgent={liveRunByAgent}
-              environmentByAgentId={environmentByAgentId}
-              environmentDataLoading={environmentDataLoading}
-              showEnvironment={showEnvironment}
               tab={tab}
               memberships={memberships}
               membershipMutation={membershipMutation}
@@ -706,12 +562,8 @@ function OrgTreeNode({
 /** Adapter/model columns shared by the list and org views. */
 function AgentMetaColumns({
   agent,
-  environment,
-  showEnvironment,
 }: {
   agent: Agent;
-  environment: EnvironmentDescriptor;
-  showEnvironment: boolean;
 }) {
   const model = getConfiguredModel(agent);
   const adapterLabel = agent.adapterType
@@ -730,16 +582,6 @@ function AgentMetaColumns({
           {adapterLabel}
         </div>
       </div>
-      {showEnvironment && (
-        <div className="w-44 min-w-0 leading-tight">
-          <div className="truncate text-xs text-muted-foreground" title={environment.title}>
-            {environment.label}
-          </div>
-          <div className="truncate text-(length:--text-micro) text-muted-foreground/70">
-            {environment.detail}
-          </div>
-        </div>
-      )}
     </>
   );
 }

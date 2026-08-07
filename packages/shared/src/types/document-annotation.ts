@@ -57,7 +57,6 @@ export interface DocumentAnnotationThread {
   companyId: string;
   issueId: string | null;
   routineId?: string | null;
-  caseId?: string | null;
   documentId: string;
   documentKey: string;
   status: DocumentAnnotationThreadStatus;
@@ -90,7 +89,6 @@ export interface DocumentAnnotationComment {
   threadId: string;
   issueId: string | null;
   routineId?: string | null;
-  caseId?: string | null;
   documentId: string;
   body: string;
   authorType: IssueCommentAuthorType;

@@ -80,7 +80,7 @@ export function clearStaleChunkReloadFlag(
 /**
  * React.lazy for modules with NAMED exports:
  *
- *   const Cases = lazyPage(() => import("../pages/Cases"), "Cases");
+ *   const Issues = lazyPage(() => import("../pages/Issues"), "Issues");
  *
  * Multiple lazyPage() calls over the same import share one chunk. Failed
  * imports go through stale-chunk recovery (see recoverFromChunkLoadError).

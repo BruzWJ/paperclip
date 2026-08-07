@@ -86,16 +86,19 @@ export function healthRoutes(
 
   router.get("/", async (req, res) => {
     const exposeFullDetails = isBoardActor(req.actor);
-    // serverInfo (git SHA + process start) rides on the full-details responses
-    // only, so it reaches authenticated board actors and never anonymous
-    // callers. The enableServerInfoDebugView experimental flag gates the UI
-    // surface, not this already access-controlled field.
+    // This data is only returned to authenticated board actors. The General
+    // setting controls whether the account-menu debug view renders it.
     const serverInfo = opts.serverInfo ?? getServerInfoSnapshot();
 
     if (!db) {
       res.json(
         exposeFullDetails
-          ? { status: "ok", version: serverVersion, serverVersion: serverVersion, serverInfo }
+          ? {
+              status: "ok",
+              version: serverVersion,
+              serverVersion: serverVersion,
+              serverInfo,
+            }
           : {
               status: "ok",
               deploymentExposure: opts.deploymentExposure,
@@ -166,12 +169,14 @@ export function healthRoutes(
     const persistedDevServerStatus = readPersistedDevServerStatus();
     let devServer: ReturnType<typeof toDevServerHealthStatus> | undefined;
     if (persistedDevServerStatus && typeof (db as { select?: unknown }).select === "function") {
-      const instanceSettings = instanceSettingsService(db);
-      const experimentalSettings = await instanceSettings.getExperimental();
-      const activeRunCount = await countActiveIssueExecutionRuns(db);
+      const [generalSettings, activeRunCount] = await Promise.all([
+        instanceSettingsService(db).getGeneral(),
+        countActiveIssueExecutionRuns(db),
+      ]);
 
       devServer = toDevServerHealthStatus(persistedDevServerStatus, {
-        autoRestartEnabled: experimentalSettings.autoRestartDevServerWhenIdle ?? false,
+        autoRestartEnabled:
+          generalSettings.autoRestartDevServerWhenIdle === true,
         activeRunCount,
       });
     }

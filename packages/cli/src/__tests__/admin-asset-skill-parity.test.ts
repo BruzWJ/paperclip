@@ -135,7 +135,6 @@ describe("admin, asset, and skill parity commands", () => {
     await run(["skill", "create", "--company-id", COMPANY_ID, "--payload-json", "{}"]);
     await run(["skill", "file:update", SKILL_ID, "--company-id", COMPANY_ID, "--payload-json", "{}"]);
     await run(["skill", "import", "--company-id", COMPANY_ID, "--payload-json", "{}"]);
-    await run(["skill", "scan-projects", "--company-id", COMPANY_ID, "--payload-json", "{}"]);
     await run(["skill", "update-status", SKILL_ID, "--company-id", COMPANY_ID]);
     await run(["skill", "install-update", SKILL_ID, "--company-id", COMPANY_ID]);
     await run(["skill", "delete", SKILL_ID, "--company-id", COMPANY_ID]);
@@ -147,7 +146,6 @@ describe("admin, asset, and skill parity commands", () => {
       ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/skills`],
       ["PATCH", `http://localhost:3100/api/companies/${COMPANY_ID}/skills/${SKILL_ID}/files`],
       ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/skills/import`],
-      ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/skills/scan-projects`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/skills/${SKILL_ID}/update-status`],
       ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/skills/${SKILL_ID}/install-update`],
       ["DELETE", `http://localhost:3100/api/companies/${COMPANY_ID}/skills/${SKILL_ID}`],

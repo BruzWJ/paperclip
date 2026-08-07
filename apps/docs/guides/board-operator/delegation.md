@@ -42,7 +42,7 @@ Recursive subtree assignment and manager overrides do not exist.
 ## Board responsibilities
 
 - choose the initial owner and submit the exact request;
-- approve explicit hire, configuration, and tool actions when required;
+- approve explicit hire and configuration actions when required;
 - reassign or reopen through audited commands, recognizing that only the
   invokable-agent reopen branch dispatches provider work;
 - resolve board-owned system escalations;
@@ -51,10 +51,8 @@ Recursive subtree assignment and manager overrides do not exist.
 ## When work stops
 
 Check the current issue's owner, lifecycle, pending approvals, budget state, and
-latest issue-execution ref. A system watchdog first appends a typed nudge to the
-existing issue. It creates a separate escalation only after the durable creator
-edge becomes permanently unreceivable or exhausts its configured delivery
-policy.
+latest issue-execution ref. System escalation follows the durable creator edge
+only when its recorded delivery conditions require it.
 
 There is no fallback to a manager, CEO, root agent, or arbitrary invokable
 agent.

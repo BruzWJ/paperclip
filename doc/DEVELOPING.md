@@ -22,7 +22,7 @@ GitHub Actions owns `pnpm-lock.yaml`.
 - Pull request CI validates dependency resolution when manifests change.
 - Pushes to `master` regenerate `pnpm-lock.yaml` with `pnpm install --lockfile-only --no-frozen-lockfile`, commit it back if needed, and then run verification with `--frozen-lockfile`.
 
-## Monorepo Task Orchestration
+## Monorepo Workspace Orchestration
 
 Paperclip is a pnpm workspace orchestrated by Turborepo. The root
 `turbo.json` defines dependency-aware, cached workspace builds and typechecks:
@@ -71,8 +71,6 @@ This starts:
 `pnpm dev:once` auto-applies pending local migrations by default before starting the dev server.
 
 `pnpm dev` and `pnpm dev:once` are now idempotent for the current repo and instance: if the matching Paperclip dev runner is already alive, Paperclip reports the existing process instead of starting a duplicate.
-
-Issue execution may also use project execution workspace policies and workspace runtime services for per-project worktrees, preview servers, and managed dev commands. Configure those through the project workspace/runtime surfaces rather than starting long-running unmanaged processes when an issue needs a reusable service.
 
 ## Storybook
 
@@ -132,7 +130,12 @@ pnpm dev:list
 pnpm dev:stop
 ```
 
-`pnpm dev:once` tracks backend-relevant file changes. When the current boot is stale, the board UI shows a `Restart required` banner. You can also enable guarded auto-restart in `Instance Settings > Experimental`, which waits for queued/running local agent runs to finish before restarting the dev server. Database migrations remain an explicit `pnpm db:migrate` operation.
+`pnpm dev:once` tracks backend-relevant file changes. When the current boot is
+stale, the board UI shows a `Restart required` banner. Automatic idle restart
+is off by default; enable `autoRestartDevServerWhenIdle` in **Instance settings
+→ General** to let the managed runner request a restart after backend changes
+and after queued or running issue executions finish. Database migrations remain
+an explicit `pnpm db:migrate` operation.
 
 Private-network development:
 
@@ -260,7 +263,6 @@ Every local install keeps runtime state directly under the selected instance roo
     storage/                                     # local_disk uploads
   logs/
   secrets/master.key                             # local_encrypted master key
-  projects/                                      # managed project and issue-execution workspaces
 ```
 
 `PAPERCLIP_HOME` and `PAPERCLIP_INSTANCE_ID` override the home root and instance id respectively. `paperclipai onboard` echoes the resolved values in its banner (`Local home: <home> | instance: <id> | config: <path>`) so you can confirm where state will land before continuing.
@@ -298,9 +300,8 @@ pnpm paperclipai configure --section storage
 ## Issue Artifact Uploads
 
 When a provider run generates a file that a board user or reviewer should
-inspect, record the workspace-relative work product from the compiled interface
-when that action is granted, or attach it through a board/operator client. Do
-not rely on an unbound local path as the only access path.
+inspect, attach it through a board/operator client. Do not rely on an unbound
+local path as the only access path.
 
 Board CLI example:
 
@@ -310,17 +311,10 @@ pnpm paperclipai issue work-product:create <issue-id> \
   --payload-json '{"type":"artifact","title":"Demo video render"}'
 ```
 
-If a file intentionally remains workspace-only, create a work product with
-`metadata.resourceRef.kind: "workspace_file"` and include the workspace-relative
-path in the issue's normal owner update. Paperclip does not inject an
-operational upload skill or general REST credential into provider runtimes.
+Paperclip does not inject an operational upload skill or general REST credential
+into provider runtimes.
 
-## Issue Execution Workspaces
-
-Every productive ACP request resolves an execution workspace bound to the issue
-and its current ownership epoch before launch. A workspace may be projectless,
-but there is no agent-home, adapter-configured, server-process-cwd, or prior-
-issue fallback.
+## Agent Runtime
 
 Provider-native authentication and configuration remain operator-owned and
 opaque. Paperclip does not create, inspect, seed, copy, reconcile, quota-probe,
@@ -344,23 +338,7 @@ creates no provider process/HTTP callback, SDK, parser, or registry fallback.
 The pre-save **Test Agent** action reuses the exact same dynamic resolution and
 opens a disposable, no-prompt ACPX session with the draft's generic session
 selections. It persists no agent, revision, run, provider prompt, or ACPX state
-and deliberately makes no execution-workspace readiness claim.
-
-## Config Freshness
-
-Agent, project, environment, secret, skill, and workspace config edits are sampled
-at the next issue-execution boundary. An execution that is already running
-finishes with the immutable configuration revision it started with.
-
-When effective run config changes, Paperclip may invalidate the exact
-issue/epoch/agent/revision native-correlation scope, refresh persisted workspace
-runtime config, replace a reused execution workspace, or avoid reusing a
-sandbox/environment lease. Fresh execution can lose provider-native continuity,
-workspace state, or sandbox state; correctness of the next run's configuration
-takes priority over continuity. Plain environment values affect freshness
-through value hashes; run result JSON and workspace operation logs expose only
-the non-sensitive freshness decision categories, without storing secret values,
-full env maps, provider credentials, or private path details.
+and deliberately makes no claim that a future execution can start.
 
 ## Worktree-local Instances
 
@@ -422,8 +400,6 @@ Create `~/NAME` as a git worktree, then initialize a new Paperclip instance.
 | `--instance <id>` | Explicit isolated instance id |
 | `--home <path>` | Home root for worktree instances (default: `~/.paperclip-worktrees`) |
 | `--server-port <port>` | Preferred server port |
-
-For project execution worktrees, Paperclip can also run a project-defined provision command after it creates or reuses an isolated git worktree. Configure this on the project's execution workspace policy (`workspaceStrategy.provisionCommand`). The command runs inside the derived worktree as a launcher-side provisioning step. The ACPX public runtime receives the resolved directory as its session `cwd`; Paperclip does not serialize caller, issue, or workspace metadata into its environment.
 
 ## App-Shipped Skills Catalog
 

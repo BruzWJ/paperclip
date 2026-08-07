@@ -30,10 +30,7 @@ import {
   IssueDocumentAnnotations,
 } from "./IssueDocumentAnnotations";
 import type { DocumentAnnotationTarget } from "@/api/document-annotations";
-import {
-  MarkdownBody,
-  type MarkdownExternalReferenceMap,
-} from "./MarkdownBody";
+import { MarkdownBody } from "./MarkdownBody";
 import { MarkdownEditor, type MentionOption } from "./MarkdownEditor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -144,17 +141,12 @@ function saveFoldedDocumentKeys(issueId: string, keys: string[]) {
   );
 }
 
-function renderFoldableBody(
-  body: string,
-  className?: string,
-  externalReferences?: MarkdownExternalReferenceMap,
-) {
+function renderFoldableBody(body: string, className?: string) {
   return (
     <FoldCurtain>
       <MarkdownBody
         className={className}
         softBreaks={false}
-        externalReferences={externalReferences}
       >
         {body}
       </MarkdownBody>
@@ -325,7 +317,6 @@ export function IssueDocumentsSection({
   defaultAnnotationPanelOpenKeys,
   defaultAnnotationFocusedThreadIds,
   forceEditDocumentKey,
-  externalReferences,
 }: {
   issue?: Issue;
   subject?: DocumentSubjectConfig;
@@ -348,7 +339,6 @@ export function IssueDocumentsSection({
   defaultAnnotationFocusedThreadIds?: Readonly<Record<string, string>>;
   /** Force a doc into edit mode on mount (Storybook-only). */
   forceEditDocumentKey?: string | null;
-  externalReferences?: MarkdownExternalReferenceMap;
 }) {
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -367,7 +357,6 @@ export function IssueDocumentsSection({
       if (!configured) return undefined;
       if (typeof configured === "function") return configured(documentKey);
       if (configured.kind === "issue") return { ...configured, documentKey };
-      if (configured.kind === "case") return { ...configured, documentKey };
       return configured;
     },
     [documentSubject],
@@ -1621,7 +1610,6 @@ export function IssueDocumentsSection({
                           {renderFoldableBody(
                             activeConflict.serverDocument.body,
                             "text-sm leading-7",
-                            externalReferences,
                           )}
                         </div>
                       )}
@@ -1656,7 +1644,6 @@ export function IssueDocumentsSection({
                         renderFoldableBody(
                           displayedBody,
                           documentBodyContentClassName,
-                          externalReferences,
                         )
                       ) : activeDraft ? (
                         <MarkdownEditor
@@ -1691,7 +1678,6 @@ export function IssueDocumentsSection({
                         renderFoldableBody(
                           displayedBody,
                           documentBodyContentClassName,
-                          externalReferences,
                         )
                       );
 

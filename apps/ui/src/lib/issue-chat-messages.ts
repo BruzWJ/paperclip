@@ -267,11 +267,6 @@ function createTimelineEventMessage(args: {
       `Owner: ${ownerLabel(event.ownerChange.from)} -> ${ownerLabel(event.ownerChange.to)}`,
     );
   }
-  if (event.workspaceChange) {
-    lines.push(
-      `Workspace: ${event.workspaceChange.from.label ?? "none"} -> ${event.workspaceChange.to.label ?? "none"}`,
-    );
-  }
   const message: ThreadSystemMessage = {
     id: `activity:${event.id}`,
     role: "system",
@@ -287,7 +282,6 @@ function createTimelineEventMessage(args: {
         actorId: event.actorId,
         lifecycleStatusChange: event.lifecycleStatusChange ?? null,
         ownerChange: event.ownerChange ?? null,
-        workspaceChange: event.workspaceChange ?? null,
         followUpRequested: event.followUpRequested === true,
       },
     },

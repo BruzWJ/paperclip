@@ -4,7 +4,6 @@ import { registerAgentCommands } from "../commands/client/agent.js";
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
-const ENVIRONMENT_ID = "33333333-3333-4333-8333-333333333333";
 const IDEMPOTENCY_KEY = "runtime-agent-create-1";
 
 const runtimeConfiguration = {
@@ -34,7 +33,6 @@ const runtimeConfiguration = {
     mention_any_descendant: false,
     mention_any_ancestor: false,
   },
-  companyToolIds: [],
 };
 
 function createProgram(): Command {
@@ -73,7 +71,7 @@ describe("agent control-plane commands", () => {
     vi.restoreAllMocks();
   });
 
-  it("uses the runtime-agent owner for identity, grants, and tool selections", async () => {
+  it("uses the runtime-agent owner for identity, grants, and runtime configuration", async () => {
     const fetchMock = vi
       .fn()
       .mockImplementation(() => Promise.resolve(jsonResponse()));
@@ -147,7 +145,6 @@ describe("agent control-plane commands", () => {
     const adapterRevision = {
       adapterType: "codex",
       adapterConfig: { model: "gpt-5.6" },
-      defaultEnvironmentId: ENVIRONMENT_ID,
       runtimeConfig: {},
       companySkillPins: [],
       skillChannel: "operator_native",

@@ -373,7 +373,7 @@ describe("plugin access and authorization host services", () => {
         nested: { authorization: "Bearer should-not-persist", safeLabel: "kept" },
       },
     } as never)).rejects.toThrow(
-      "Plugin authorization policy updates only support project or issue resources.",
+      "Plugin authorization policy updates only support issue resources.",
     );
 
     expect(harness.calls).toEqual([]);

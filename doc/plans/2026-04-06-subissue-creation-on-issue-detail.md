@@ -55,9 +55,8 @@ The create-issue validator already accepts `parentId`.
 `apps/server/src/services/issues.ts` already uses:
 
 - `parentId` for parent-child issue relationships
-- `parentId` as the default workspace inheritance source when `inheritExecutionWorkspaceFromIssueId` is not provided
 
-That means the required API and workspace inheritance behavior already exist. No server or schema change is required for the first pass.
+That means the required parent-child API behavior already exists. No server or schema change is required for the first pass.
 
 ## 3. Proposed Implementation
 

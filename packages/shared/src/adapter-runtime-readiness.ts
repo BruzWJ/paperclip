@@ -25,7 +25,6 @@ export const adapterRuntimeReadinessScopeSchema = z
     agentId: z.string().uuid(),
     adapterConfigRevisionId: z.string().uuid(),
     environmentId: z.string().uuid(),
-    executionWorkspaceBindingId: z.string().uuid(),
   })
   .strict();
 

@@ -20,15 +20,12 @@ import {
   runtimeAgentConfigureActionSchema,
   runtimeAgentConfigureActionSchemaForTargets,
   runtimeAgentCreateConfigurationSchema,
-  runtimeAgentCompanyToolOptionSchema,
   runtimeAgentHireConfigurationSchema,
-  runtimeAgentHireConfigurationSchemaForCompanyTools,
   runtimeAgentUpdateConfigurationSchema,
 } from "./runtime-agent-configuration.js";
 
 const AGENT_ID = "00000000-0000-4000-8000-000000000001";
-const ENVIRONMENT_ID = "00000000-0000-4000-8000-000000000002";
-const TOOL_ID = "00000000-0000-4000-8000-000000000003";
+const OTHER_AGENT_ID = "00000000-0000-4000-8000-000000000003";
 const SKILL_VERSION_ID = "00000000-0000-4000-8000-000000000004";
 
 function falseMap<Key extends string>(
@@ -49,7 +46,6 @@ function runtimeAgentConfiguration() {
     contextGrants: falseMap(AGENT_CONTEXT_GRANT_KEYS),
     actionGrants: falseMap(PAPERCLIP_ACTION_KEYS),
     mentionReachGrants: falseMap(AGENT_MENTION_REACH_GRANT_KEYS),
-    companyToolIds: [TOOL_ID],
   };
 }
 
@@ -62,7 +58,7 @@ describe("runtime-agent control-plane validators", () => {
 
   it("requires every field and every boolean cell at creation", () => {
     const missingTopLevel = runtimeAgentConfiguration();
-    delete (missingTopLevel as Partial<typeof missingTopLevel>).companyToolIds;
+    delete (missingTopLevel as Partial<typeof missingTopLevel>).name;
     expect(
       runtimeAgentCreateConfigurationSchema.safeParse(missingTopLevel).success,
     ).toBe(false);
@@ -149,43 +145,6 @@ describe("runtime-agent control-plane validators", () => {
     ).toBe(false);
   });
 
-  it("binds provider hire company-tool ids to the live create catalog", () => {
-    const { reportsTo: _reportsTo, ...hire } = runtimeAgentConfiguration();
-    const withOption =
-      runtimeAgentHireConfigurationSchemaForCompanyTools([TOOL_ID]);
-    expect(withOption.safeParse(hire).success).toBe(true);
-    expect(
-      withOption.safeParse({
-        ...hire,
-        companyToolIds: [ENVIRONMENT_ID],
-      }).success,
-    ).toBe(false);
-    const withoutOptions =
-      runtimeAgentHireConfigurationSchemaForCompanyTools([]);
-    expect(
-      withoutOptions.safeParse({ ...hire, companyToolIds: [] }).success,
-    ).toBe(true);
-    expect(withoutOptions.safeParse(hire).success).toBe(false);
-  });
-
-  it("keeps company-tool option projection strict and install-id free", () => {
-    const option = {
-      catalogEntryId: TOOL_ID,
-      connectionId: ENVIRONMENT_ID,
-      connectionName: "Records",
-      title: "Lookup record",
-      description: "Look up a record",
-      catalogVersionHash: "catalog-v1",
-    };
-    expect(runtimeAgentCompanyToolOptionSchema.parse(option)).toEqual(option);
-    expect(
-      runtimeAgentCompanyToolOptionSchema.safeParse({
-        ...option,
-        connectionInstallId: AGENT_ID,
-      }).success,
-    ).toBe(false);
-  });
-
   it("builds a nonempty id-only configure action contract", () => {
     const schema = runtimeAgentConfigureActionSchemaForTargets([AGENT_ID]);
     const contextGrants = falseMap(AGENT_CONTEXT_GRANT_KEYS);
@@ -208,31 +167,16 @@ describe("runtime-agent control-plane validators", () => {
       }).success,
     ).toBe(false);
     expect(
-      schema.safeParse({ ...input, agentId: TOOL_ID }).success,
+      schema.safeParse({ ...input, agentId: OTHER_AGENT_ID }).success,
     ).toBe(false);
   });
 
-  it("rejects duplicate or malformed company-tool selections", () => {
-    expect(
-      runtimeAgentCreateConfigurationSchema.safeParse({
-        ...runtimeAgentConfiguration(),
-        companyToolIds: [TOOL_ID, TOOL_ID],
-      }).success,
-    ).toBe(false);
-    expect(
-      runtimeAgentCreateConfigurationSchema.safeParse({
-        ...runtimeAgentConfiguration(),
-        companyToolIds: ["not-a-uuid"],
-      }).success,
-    ).toBe(false);
-  });
 });
 
 describe("adapter-revision control-plane validator", () => {
   const valid = {
     adapterType: "codex",
     adapterConfig: { model: "gpt-5.6" },
-    defaultEnvironmentId: ENVIRONMENT_ID,
     runtimeConfig: {},
     companySkillPins: [],
     skillChannel: "operator_native" as const,
@@ -421,8 +365,8 @@ describe("agent operational control-plane validator", () => {
   it("rejects empty, malformed, system-owned, and cross-owner updates", () => {
     for (const invalid of [
       {},
-      { defaultEnvironmentId: ENVIRONMENT_ID },
-      { defaultEnvironmentId: "not-a-uuid" },
+      { environmentId: AGENT_ID },
+      { environmentId: "not-a-uuid" },
       { budgetMonthlyAmount: -1 },
       { knownSpendAmount: "10" },
       { status: "paused" },
@@ -444,7 +388,7 @@ describe("control-plane ownership walls", () => {
       { adapterConfig: {} },
       { runtimeConfig: {} },
       { icon: "bot" },
-      { defaultEnvironmentId: ENVIRONMENT_ID },
+      { environmentId: AGENT_ID },
       { budgetMonthlyAmount: "1000" },
       { status: "idle" },
       { knownSpendAmount: "0" },
@@ -488,7 +432,7 @@ describe("unsaved adapter configuration test contract", () => {
     expect(
       agentAdapterConfigurationTestInputSchema.safeParse({
         adapterConfig: {},
-        environmentId: ENVIRONMENT_ID,
+        environmentId: AGENT_ID,
       }).success,
     ).toBe(false);
     expect(

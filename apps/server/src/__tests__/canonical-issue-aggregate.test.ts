@@ -87,8 +87,8 @@ describe("canonical issue aggregate creator provenance", () => {
           ownerAgentId: null,
           creatorKind: "system",
           creatorUserId: null,
-          creatorSystemSourceKind: "watchdog",
-          creatorSystemSourceId: "watchdog:edge-1",
+          creatorSystemSourceKind: "recovery",
+          creatorSystemSourceId: "recovery:edge-1",
         }),
       ),
     ).toBe("escalation_provenance_invalid");

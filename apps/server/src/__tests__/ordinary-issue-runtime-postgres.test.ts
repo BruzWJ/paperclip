@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createOrdinaryIssueRuntime,
@@ -143,7 +142,10 @@ describe("ordinary issue runtime ingress", () => {
   });
 
   it("rejects an owner with no selected adapter revision before persisting the aggregate", async () => {
-    const harness = freshCreateDb();
+    const harness = createMockDb({
+      execute: [[], []],
+      select: [[], [company]],
+    });
     const dispatchRef = vi.fn(async () => undefined);
     mocks.resolveOwner.mockRejectedValueOnce(
       new InvokableIssueOwnerRejected(
@@ -166,6 +168,8 @@ describe("ordinary issue runtime ingress", () => {
     expect(mocks.admitExecutionSource).not.toHaveBeenCalled();
     expect(dispatchRef).not.toHaveBeenCalled();
     expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.remaining("update")).toBe(0);
   });
 
   it("persists exact immutable input and dispatches only the admitted stored ref", async () => {
@@ -251,9 +255,6 @@ describe("ordinary issue runtime ingress", () => {
       request: "Preserve these exact bytes.\n",
       ownerAgentId,
       projectId: null,
-      projectWorkspaceId: null,
-      executionWorkspacePreference: null,
-      executionWorkspaceSettings: null,
       goalId: null,
       parentId: null,
       priority: "medium",
@@ -271,7 +272,6 @@ describe("ordinary issue runtime ingress", () => {
       execute: [[]],
       select: [
         [{ issue: existing }],
-        [],
         [{ id: sessionId }],
         [{ id: authorityId }],
         [ref],
@@ -294,6 +294,7 @@ describe("ordinary issue runtime ingress", () => {
     expect(mocks.persistAggregate).not.toHaveBeenCalled();
     expect(mocks.admitExecutionSource).not.toHaveBeenCalled();
     expect(dispatchRef).toHaveBeenCalledWith(refId);
+    expect(harness.remaining("select")).toBe(0);
   });
 
   it("rejects immutable idempotency drift without dispatching", async () => {
@@ -303,9 +304,6 @@ describe("ordinary issue runtime ingress", () => {
       ownerAgentId,
       title: "Canonical ordinary issue",
       projectId: null,
-      projectWorkspaceId: null,
-      executionWorkspacePreference: null,
-      executionWorkspaceSettings: null,
       goalId: null,
       parentId: null,
       priority: "medium",
@@ -321,7 +319,7 @@ describe("ordinary issue runtime ingress", () => {
     };
     const harness = createMockDb({
       execute: [[]],
-      select: [[{ issue: existing }], []],
+      select: [[{ issue: existing }]],
     });
     const dispatchRef = vi.fn(async () => undefined);
     const runtime = createOrdinaryIssueRuntime(
@@ -333,22 +331,7 @@ describe("ordinary issue runtime ingress", () => {
       reason: "create_idempotency_conflict",
     });
     expect(dispatchRef).not.toHaveBeenCalled();
+    expect(harness.remaining("select")).toBe(0);
   });
 
-  it("validates execution-workspace intent before opening a transaction", async () => {
-    const harness = createMockDb();
-    const runtime = createOrdinaryIssueRuntime(harness.db, options());
-
-    await expect(runtime.create(createInput({
-      executionWorkspaceId: randomUUID(),
-    }))).rejects.toMatchObject({
-      reason: "execution_workspace_preference_invalid",
-    });
-    await expect(runtime.create(createInput({
-      executionWorkspacePreference: "reuse_existing",
-    }))).rejects.toMatchObject({
-      reason: "execution_workspace_missing",
-    });
-    expect(harness.calls).toEqual([]);
-  });
 });

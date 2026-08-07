@@ -118,7 +118,7 @@ export function createIssueExecutionTargetAcquirer(options: {
       const acquired =
         await options.environmentOrchestrator.acquireExecutionTargetForRun({
           companyId: input.companyId,
-          environmentId: selector.defaultEnvironmentId,
+          environmentId: selector.environmentId,
           executionTargetDriver: selector.executionTargetDriver,
           executionTargetDigest: selector.executionTargetDigest,
           issueId: input.issueId,
@@ -133,7 +133,7 @@ export function createIssueExecutionTargetAcquirer(options: {
         });
       const target = acquired.executionTarget;
       if (
-        target.environmentId !== selector.defaultEnvironmentId ||
+        target.environmentId !== selector.environmentId ||
         target.leaseId !== acquired.lease.id
       ) {
         await acquired.releaseExecutionTarget(true).catch(() => undefined);

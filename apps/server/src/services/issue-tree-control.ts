@@ -24,7 +24,6 @@ import {
   recordNamedBoardLifecycleCommandInTransaction,
   type NamedBoardLifecycleAffectedIssue,
 } from "./issue-board-lifecycle-command.js";
-import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
 import { resolveCurrentIssueOwnerRunLinkages } from "./productive-run-linkage.js";
 import type {
   IssueExecutionCancellationActor,
@@ -902,7 +901,6 @@ export function issueTreeControlService(
                 now,
               }),
           );
-          await finalizeSummarySlotsForTerminalIssue(tx, issue);
         }
         return {
           hold: createdHold,

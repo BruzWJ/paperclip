@@ -104,7 +104,6 @@ describe("routine run telemetry", () => {
         [routine],
         [{ snapshot }],
         [],
-        [],
         [existingRun],
       ],
       execute: [[]],

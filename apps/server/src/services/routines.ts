@@ -9,13 +9,12 @@ import {
   companySecrets,
   documentRevisions,
   documents,
-  executionWorkspaces,
   folders,
-  goals,
   issueInboxArchives,
   issueExecutionRefs,
   issueReadStates,
   issues,
+  goals,
   pluginManagedResources,
   plugins,
   projects,
@@ -24,7 +23,6 @@ import {
   routineDocuments,
   routines,
   routineTriggers,
-  summarySlots,
 } from "@paperclipai/db";
 import type {
   CreateRoutine,
@@ -45,9 +43,7 @@ import type {
   UpdateRoutineTrigger,
 } from "@paperclipai/shared";
 import {
-  WORKSPACE_BRANCH_ROUTINE_VARIABLE,
   getBuiltinRoutineVariableValues,
-  extractRoutineVariableNames,
   interpolateRoutineTemplate,
   isValidRoutineDateString,
   pluginOperationIssueOriginKind,
@@ -563,13 +559,9 @@ function normalizeRoutineDispatchFingerprintValue(value: unknown): unknown {
 function createRoutineDispatchFingerprint(input: {
   payload: Record<string, unknown> | null;
   projectId: string | null;
-  projectWorkspaceId: string | null;
   assigneeAgentId: string | null;
   routineRevisionId: string | null;
   routineEnvFingerprint: string | null;
-  executionWorkspaceId?: string | null;
-  executionWorkspacePreference?: string | null;
-  executionWorkspaceSettings?: Record<string, unknown> | null;
   title: string;
   description: string | null;
   contextAccessMask: Routine["contextAccessMask"];
@@ -597,11 +589,6 @@ function readManagedRoutineIssueTemplate(defaultsJson: Record<string, unknown> |
     originId: typeof value.originId === "string" && value.originId.trim() ? value.originId.trim() : null,
     billingCode: typeof value.billingCode === "string" && value.billingCode.trim() ? value.billingCode.trim() : null,
   };
-}
-
-function routineUsesWorkspaceBranch(routine: typeof routines.$inferSelect) {
-  return (routine.variables ?? []).some((variable) => variable.name === WORKSPACE_BRANCH_ROUTINE_VARIABLE)
-    || extractRoutineVariableNames([routine.title, routine.description]).includes(WORKSPACE_BRANCH_ROUTINE_VARIABLE);
 }
 
 function routineRevisionSnapshotRoutine(routine: RoutineRow): RoutineRevisionSnapshotV1["routine"] {
@@ -1280,16 +1267,22 @@ export function routineService(
     routine: typeof routines.$inferSelect,
     activation?: WorktreeRunExecutionActivationState,
   ) {
-    if (!isTruthyRuntimeEnvValue(runtimeEnv.PAPERCLIP_IN_WORKTREE)) return { eligible: true };
+    if (!isTruthyRuntimeEnvValue(runtimeEnv.PAPERCLIP_IN_WORKTREE)) {
+      return { eligible: true };
+    }
 
-    const resolvedActivation = activation ?? await resolveWorktreeRunExecutionActivationState({
-      getExperimental: instanceSettings.getExperimental,
-      runtimeEnv,
-    });
+    const resolvedActivation =
+      activation ??
+      (await resolveWorktreeRunExecutionActivationState({
+        getGeneral: instanceSettings.getGeneral,
+        runtimeEnv,
+      }));
     if (!resolvedActivation.armed) return { eligible: false };
 
     const cutoff = new Date(resolvedActivation.cutoff);
-    if (Number.isNaN(cutoff.getTime()) || routine.createdAt < cutoff) return { eligible: false };
+    if (Number.isNaN(cutoff.getTime()) || routine.createdAt < cutoff) {
+      return { eligible: false };
+    }
     return { eligible: true };
   }
 
@@ -1608,41 +1601,17 @@ export function routineService(
     payload?: Record<string, unknown> | null;
     variables?: Record<string, unknown> | null;
     projectId?: string | null;
-    projectWorkspaceId?: string | null;
     assigneeAgentId?: string | null;
     idempotencyKey?: string | null;
-    executionWorkspaceId?: string | null;
-    executionWorkspacePreference?: string | null;
-    executionWorkspaceSettings?: Record<string, unknown> | null;
     nextRunAtOverride?: Date | null;
     actor?: Actor;
   }) {
     const projectId = input.projectId ?? input.routine.projectId ?? null;
-    const projectWorkspaceId = input.projectWorkspaceId ?? null;
     const assigneeAgentId = input.assigneeAgentId ?? input.routine.assigneeAgentId ?? null;
     if (!assigneeAgentId) {
       throw unprocessable("Default agent required");
     }
     const automaticVariables: Record<string, string | number | boolean> = {};
-    if (input.executionWorkspaceId && routineUsesWorkspaceBranch(input.routine)) {
-      const workspace = await db
-        .select({
-          branchName: executionWorkspaces.branchName,
-          mode: executionWorkspaces.mode,
-        })
-        .from(executionWorkspaces)
-        .where(
-          and(
-            eq(executionWorkspaces.id, input.executionWorkspaceId),
-            eq(executionWorkspaces.companyId, input.routine.companyId),
-          ),
-        )
-        .then((rows) => rows[0] ?? null);
-      const branchName = workspace?.branchName?.trim();
-      if (workspace && workspace.mode !== "shared_workspace" && branchName) {
-        automaticVariables[WORKSPACE_BRANCH_ROUTINE_VARIABLE] = branchName;
-      }
-    }
     const resolvedVariables = resolveRoutineVariableValues(input.routine.variables ?? [], {
       ...input,
       automaticVariables,
@@ -1674,17 +1643,6 @@ export function routineService(
       interpolateRoutineTemplate(input.routine.description, allVariables) ?? "";
     const triggerPayload = mergeRoutineRunPayload(input.payload, { ...automaticVariables, ...resolvedVariables });
     const managedRoutineBinding = await getManagedRoutineBinding(input.routine);
-    const summarySlotBinding = await db
-      .select({ id: summarySlots.id })
-      .from(summarySlots)
-      .where(
-        and(
-          eq(summarySlots.companyId, input.routine.companyId),
-          eq(summarySlots.routineId, input.routine.id),
-        ),
-      )
-      .limit(1)
-      .then((rows) => rows[0] ?? null);
     const managedIssueTemplate = readManagedRoutineIssueTemplate(managedRoutineBinding?.defaultsJson);
     const issueOriginKind = managedIssueTemplate?.surfaceVisibility === "plugin_operation" && managedRoutineBinding
       ? pluginOperationIssueOriginKind(managedRoutineBinding.pluginKey)
@@ -1693,13 +1651,9 @@ export function routineService(
     const dispatchFingerprint = createRoutineDispatchFingerprint({
       payload: triggerPayload,
       projectId,
-      projectWorkspaceId,
       assigneeAgentId,
       routineRevisionId: input.routine.latestRevisionId,
       routineEnvFingerprint: createRoutineEnvFingerprint(input.routine.env),
-      executionWorkspaceId: input.executionWorkspaceId ?? null,
-      executionWorkspacePreference: input.executionWorkspacePreference ?? null,
-      executionWorkspaceSettings: input.executionWorkspaceSettings ?? null,
       title,
       description,
       contextAccessMask: boundContextAccessMask,
@@ -1818,22 +1772,6 @@ export function routineService(
           issueId: activeIssue.id,
           nextRunAt,
         }, txDb);
-        if (summarySlotBinding) {
-          await txDb
-            .update(summarySlots)
-            .set({
-              status: "generating",
-              failureReason: null,
-              generatingIssueId: activeIssue.id,
-              updatedAt: triggeredAt,
-            })
-            .where(
-              and(
-                eq(summarySlots.id, summarySlotBinding.id),
-                eq(summarySlots.routineId, input.routine.id),
-              ),
-            );
-        }
         return updated ?? createdRun;
       }
       if (input.routine.concurrencyPolicy !== "always_enqueue") {
@@ -1934,22 +1872,6 @@ export function routineService(
               },
               txDb,
             );
-            if (summarySlotBinding) {
-              await txDb
-                .update(summarySlots)
-                .set({
-                  status: "generating",
-                  failureReason: null,
-                  generatingIssueId: sourceLinkedIssueId,
-                  updatedAt: new Date(),
-                })
-                .where(
-                  and(
-                    eq(summarySlots.id, summarySlotBinding.id),
-                    eq(summarySlots.routineId, input.routine.id),
-                  ),
-                );
-            }
             return updated;
           });
         } else if (sourceRun?.status === "received") {
@@ -1986,12 +1908,6 @@ export function routineService(
           sourceKind: "routine_dispatch",
           title,
           projectId,
-          projectWorkspaceId,
-          executionWorkspaceId: input.executionWorkspaceId ?? null,
-          executionWorkspacePreference:
-            input.executionWorkspacePreference ?? null,
-          executionWorkspaceSettings:
-            input.executionWorkspaceSettings ?? null,
           goalId: input.routine.goalId,
           parentId: input.routine.parentIssueId,
           priority: input.routine.priority as
@@ -2036,22 +1952,6 @@ export function routineService(
               },
               txDb,
             );
-            if (summarySlotBinding) {
-              await tx
-                .update(summarySlots)
-                .set({
-                  status: "generating",
-                  failureReason: null,
-                  generatingIssueId: persisted.issue.id,
-                  updatedAt: new Date(),
-                })
-                .where(
-                  and(
-                    eq(summarySlots.id, summarySlotBinding.id),
-                    eq(summarySlots.routineId, input.routine.id),
-                  ),
-                );
-            }
           },
         });
         if (run.linkedIssueId !== created.issue.id) {
@@ -2097,22 +1997,6 @@ export function routineService(
                 },
                 txDb,
               );
-              if (summarySlotBinding) {
-                await txDb
-                  .update(summarySlots)
-                  .set({
-                    status: "failed",
-                    failureReason,
-                    generatingIssueId: null,
-                    updatedAt: new Date(),
-                  })
-                  .where(
-                    and(
-                      eq(summarySlots.id, summarySlotBinding.id),
-                      eq(summarySlots.routineId, input.routine.id),
-                    ),
-                  );
-              }
               return failed ?? run;
             })) ?? run;
         }
@@ -3192,36 +3076,8 @@ export function routineService(
         payload: input.payload as Record<string, unknown> | null | undefined,
         variables: input.variables as Record<string, unknown> | null | undefined,
         projectId: input.projectId ?? null,
-        projectWorkspaceId: input.projectWorkspaceId ?? null,
         assigneeAgentId: input.assigneeAgentId ?? null,
         idempotencyKey: input.idempotencyKey,
-        executionWorkspaceId: input.executionWorkspaceId ?? null,
-        executionWorkspacePreference: input.executionWorkspacePreference ?? null,
-        executionWorkspaceSettings:
-          (input.executionWorkspaceSettings as Record<string, unknown> | null | undefined) ?? null,
-        actor,
-      });
-    },
-
-    runPipelineStageEntryRoutine: async (id: string, input: RunRoutine, actor?: Actor) => {
-      const routine = await getRoutineById(id);
-      if (!routine) throw notFound("Routine not found");
-      if (routine.status === "archived") throw conflict("Routine is archived");
-      await assertProject(routine.companyId, input.projectId ?? null);
-      return dispatchRoutineRun({
-        routine,
-        trigger: null,
-        source: "api",
-        payload: input.payload as Record<string, unknown> | null | undefined,
-        variables: input.variables as Record<string, unknown> | null | undefined,
-        projectId: input.projectId ?? null,
-        projectWorkspaceId: input.projectWorkspaceId ?? null,
-        assigneeAgentId: input.assigneeAgentId ?? null,
-        idempotencyKey: input.idempotencyKey,
-        executionWorkspaceId: input.executionWorkspaceId ?? null,
-        executionWorkspacePreference: input.executionWorkspacePreference ?? null,
-        executionWorkspaceSettings:
-          (input.executionWorkspaceSettings as Record<string, unknown> | null | undefined) ?? null,
         actor,
       });
     },
@@ -3401,11 +3257,13 @@ export function routineService(
     },
 
     tickScheduledTriggers: async (now: Date = new Date()) => {
-      const worktreeActivation = isTruthyRuntimeEnvValue(runtimeEnv.PAPERCLIP_IN_WORKTREE)
+      const worktreeActivation = isTruthyRuntimeEnvValue(
+        runtimeEnv.PAPERCLIP_IN_WORKTREE,
+      )
         ? await resolveWorktreeRunExecutionActivationState({
-          getExperimental: instanceSettings.getExperimental,
-          runtimeEnv,
-        })
+            getGeneral: instanceSettings.getGeneral,
+            runtimeEnv,
+          })
         : undefined;
       const due = await db
         .select({
@@ -3436,13 +3294,20 @@ export function routineService(
         // at the next cron boundary instead of replaying missed firings. Routines with no
         // project are never suppressed here.
         const projectPaused = !!(row.routine.projectId && row.projectPausedAt);
-        const automaticEligibility = await getAutomaticRoutineDispatchEligibility(row.routine, worktreeActivation);
+        const automaticEligibility = await getAutomaticRoutineDispatchEligibility(
+          row.routine,
+          worktreeActivation,
+        );
         const worktreeSuppressed = !automaticEligibility.eligible;
 
         let runCount = 1;
         let claimedNextRunAt = nextCronTickInTimeZone(row.trigger.cronExpression, row.trigger.timezone, now);
 
-        if (!projectPaused && !worktreeSuppressed && row.routine.catchUpPolicy === "enqueue_missed_with_cap") {
+        if (
+          !projectPaused &&
+          !worktreeSuppressed &&
+          row.routine.catchUpPolicy === "enqueue_missed_with_cap"
+        ) {
           if (isSubHourlyCronExpression(row.trigger.cronExpression, row.trigger.timezone, now)) {
             claimedNextRunAt = nextCronTickInTimeZone(row.trigger.cronExpression, row.trigger.timezone, now);
           } else {

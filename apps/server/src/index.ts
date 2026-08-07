@@ -15,10 +15,8 @@ import detectPort from "detect-port";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
-import { setupEnvironmentCustomImageTerminalWebSocketServer } from "./realtime/environment-custom-image-terminal-ws.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import {
-  environmentCustomImageService,
   composeRuntimeActionPort,
   createOrdinaryIssueRuntime,
   createPostgresSystemEscalationService,
@@ -30,10 +28,8 @@ import {
   createRuntimeAgentActionPort,
   createRuntimeAgentConfigurationService,
   createRuntimeIssueActionPort,
-  reconcileCloudUpstreamRunsOnStartup,
   reconcilePersistedRuntimeServicesOnStartup,
   routineService,
-  toolAccessService,
 } from "./services/index.js";
 import { choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
@@ -54,11 +50,7 @@ import {
   resolvePaperclipInstanceRoot,
 } from "./home-paths.js";
 import { serverVersion } from "./version.js";
-import type { ToolGatewayService } from "./services/tool-gateway.js";
-import {
-  createRuntimePluginToolPort,
-  type RuntimeCompanyToolPort,
-} from "./services/runtime-tool-executor.js";
+import { createRuntimePluginToolPort } from "./services/runtime-tool-executor.js";
 import { createIssueExecutionSteeringResultBroker } from "./services/issue-execution-steering-results.js";
 import type { RequestAuthorityBoundary } from "./http/request-authority.js";
 import {
@@ -280,25 +272,6 @@ export async function startServer(): Promise<StartedServer> {
     issueActions,
     agentActions,
   );
-  let executePromptCapabilityTool:
-    | ToolGatewayService["executePromptCapabilityTool"]
-    | null = null;
-  const promptCapabilityCompanyTools: RuntimeCompanyToolPort = {
-    execute(input) {
-      if (!executePromptCapabilityTool) {
-        throw new Error(
-          "Prompt-capability company-tool executor is not initialized",
-        );
-      }
-      return executePromptCapabilityTool({
-        capability: input.capability,
-        companyToolSelectionId: input.companyToolSelectionId,
-        parameters: input.arguments,
-        callIdentity: input.callIdentity,
-        runInterfaceToolCallId: input.runInterfaceToolCallId,
-      });
-    },
-  };
   const promptCapabilityPluginTools = createRuntimePluginToolPort(
     pluginWorkerManager,
   );
@@ -345,7 +318,6 @@ export async function startServer(): Promise<StartedServer> {
           "prompt-capability-retrieval-cursor",
         ).toString("base64url"),
         actions,
-        companyTools: promptCapabilityCompanyTools,
         pluginTools: promptCapabilityPluginTools,
         pluginDomainEvents,
         beforePrompt: pluginBeforePrompt,
@@ -399,9 +371,6 @@ export async function startServer(): Promise<StartedServer> {
     pluginRuntimeRecordsReader:
       issueExecution.promptCapabilities.pluginRuntimeRecordsReader,
     issueSessionStore,
-    bindPromptCapabilityCompanyTools(execute) {
-      executePromptCapabilityTool = execute;
-    },
     ordinaryIssueRuntime: ordinaryIssues,
     issueExecutionRunService: issueExecution.runService,
     issueExecutionCancellation: issueExecution.cancellation,
@@ -426,10 +395,6 @@ export async function startServer(): Promise<StartedServer> {
     logger.warn(`Requested port is busy; using next free port (requestedPort=${requestedListenPort}, selectedPort=${listenPort})`);
   }
   
-  setupEnvironmentCustomImageTerminalWebSocketServer(server, db as any, {
-    pluginWorkerManager,
-    requestAuthorityBoundary,
-  });
   setupLiveEventsWebSocketServer(server, db as any, {
     resolveSessionFromHeaders,
     requestAuthorityBoundary,
@@ -446,19 +411,6 @@ export async function startServer(): Promise<StartedServer> {
     })
     .catch((err) => {
       logger.error({ err }, "startup reconciliation of persisted runtime services failed");
-    });
-
-  void reconcileCloudUpstreamRunsOnStartup(db as any)
-    .then((result) => {
-      if (result.reconciled > 0) {
-        logger.warn(
-          { reconciled: result.reconciled },
-          "reconciled cloud upstream runs from a previous server process",
-        );
-      }
-    })
-    .catch((err) => {
-      logger.error({ err }, "startup reconciliation of cloud upstream runs failed");
     });
 
   let issueExecutionSchedulerStopped = false;
@@ -479,14 +431,7 @@ export async function startServer(): Promise<StartedServer> {
       await Promise.allSettled([...issueExecutionSchedulerInFlight]);
     }
   };
-  const environmentCustomImages = environmentCustomImageService(db as any, { pluginWorkerManager });
   const routines = routineService(db as any, { ordinaryIssues });
-  const tools = toolAccessService(db as any, {
-    deploymentExposure: config.deploymentExposure,
-    trustedLocalStdioRuntimeHost: process.env.PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST
-      ?? process.env.PAPERCLIP_TOOL_RUNTIME_TRUSTED_HOST
-      ?? null,
-  });
 
   const reconcilePersistedIssueExecutions = async () => {
     // Durable exact stops are reconciled before any path may recover or
@@ -536,15 +481,6 @@ export async function startServer(): Promise<StartedServer> {
   trackIssueExecutionSchedulerWork(startupIssueExecutionRecovery);
   await startupIssueExecutionRecovery;
 
-  const setupCleanup = await environmentCustomImages.cleanupExpiredSetupSessions();
-  if (setupCleanup.timedOut > 0 || setupCleanup.failed > 0) {
-    logger.warn({ ...setupCleanup }, "startup environment customImage setup cleanup changed sessions");
-  }
-  const toolHealthSweep = await tools.sweepConnectionHealth();
-  if (toolHealthSweep.failed > 0) {
-    logger.warn({ ...toolHealthSweep }, "startup tool connection health sweep found failing connections");
-  }
-
   if (config.issueExecutionSchedulerEnabled) {
     issueExecutionSchedulerInterval = setInterval(() => {
       if (issueExecutionSchedulerStopped) return;
@@ -565,28 +501,6 @@ export async function startServer(): Promise<StartedServer> {
           })
           .catch((err) => {
             logger.error({ err }, "routine scheduler tick failed");
-          }),
-      );
-      trackIssueExecutionSchedulerWork(
-        environmentCustomImages.cleanupExpiredSetupSessions()
-          .then((result) => {
-            if (result.timedOut > 0 || result.failed > 0) {
-              logger.warn({ ...result }, "environment customImage setup cleanup changed sessions");
-            }
-          })
-          .catch((err) => {
-            logger.error({ err }, "environment customImage setup cleanup failed");
-          }),
-      );
-      trackIssueExecutionSchedulerWork(
-        tools.sweepConnectionHealth()
-          .then((result) => {
-            if (result.failed > 0) {
-              logger.warn({ ...result }, "periodic tool connection health sweep found failing connections");
-            }
-          })
-          .catch((err) => {
-            logger.error({ err }, "periodic tool connection health sweep failed");
           }),
       );
     }, config.issueExecutionSchedulerIntervalMs);
@@ -631,7 +545,7 @@ export async function startServer(): Promise<StartedServer> {
   });
 
   devServerRestartCoordinator.start();
-  
+
   {
     const shutdown = async (signal: "SIGINT" | "SIGTERM") => {
       devServerRestartCoordinator.stop();

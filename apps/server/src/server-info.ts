@@ -1,5 +1,9 @@
 import { execFileSync } from "node:child_process";
-import type { ServerGitInfo, ServerGitLocalChanges, ServerInfoSnapshot } from "@paperclipai/shared";
+import type {
+  ServerGitInfo,
+  ServerGitLocalChanges,
+  ServerInfoSnapshot,
+} from "@paperclipai/shared";
 import { parseBuildCommit, readBuildCommit } from "./build-commit.js";
 
 export type { ServerGitInfo, ServerInfoSnapshot };
@@ -101,7 +105,9 @@ function parseGitInfo(
     shortSha,
     branchName,
     subject: subject.trim() || "No commit subject",
-    committedAt: Number.isNaN(committedAtTime) ? null : new Date(committedAtTime).toISOString(),
+    committedAt: Number.isNaN(committedAtTime)
+      ? null
+      : new Date(committedAtTime).toISOString(),
     localChanges,
   };
 }
@@ -163,11 +169,6 @@ export function createServerInfoSnapshot(
   };
 }
 
-// processStartedAt is a true boot constant, but the running commit can change
-// without the Node process restarting: a managed dev-server restart re-runs the
-// code while keeping this module alive, so a commit captured once at boot goes
-// stale. Re-read git HEAD on demand, throttled by a short TTL so frequent health
-// polls don't spawn git on every request.
 const GIT_INFO_CACHE_TTL_MS = 3000;
 const processStartedAt = new Date().toISOString();
 let gitInfoCache: { value: ServerGitInfo; expiresAt: number } | null = null;

@@ -19,7 +19,6 @@ function ordinaryIssue(overrides: Record<string, unknown> = {}) {
     title: "Portable issue",
     path: "issues/portable-issue/ISSUE.md",
     projectSlug: null,
-    projectWorkspaceKey: null,
     ownerAgentSlug: "owner",
     request: "Do the portable work.",
     recurring: false,
@@ -31,7 +30,6 @@ function ordinaryIssue(overrides: Record<string, unknown> = {}) {
     priority: "medium",
     labelIds: [],
     billingCode: null,
-    executionWorkspaceSettings: null,
     comments: [],
     metadata: null,
     ...overrides,
@@ -223,13 +221,11 @@ describe("company portability declarative ACP configuration", () => {
         adapterType: "codex",
         adapterConfig: { model: "gpt-5.6", ...adapterConfig },
         runtimeConfig,
-        sourceEnvironmentId: "22222222-2222-4222-8222-222222222222",
         skillChannel: "operator_native",
       },
       contextGrants: falseMap(AGENT_CONTEXT_GRANT_KEYS),
       actionGrants: falseMap(PAPERCLIP_ACTION_KEYS),
       mentionReachGrants: falseMap(AGENT_MENTION_REACH_GRANT_KEYS),
-      companyToolIds: [],
       governance: {},
       permissionGrants: [],
       budgetMonthlyAmount: "0",
@@ -248,7 +244,6 @@ describe("company portability declarative ACP configuration", () => {
       portabilityAdapterOverrideSchema.parse({
         adapterType: "codex",
         adapterConfig: { model: "gpt-5.6" },
-        defaultEnvironmentId: "22222222-2222-4222-8222-222222222222",
         skillChannel: "operator_native",
       }).adapterConfig,
     ).toEqual({ model: "gpt-5.6" });
@@ -308,7 +303,6 @@ describe("company portability declarative ACP configuration", () => {
         portabilityAdapterOverrideSchema.safeParse({
           adapterType: "codex",
           adapterConfig,
-          defaultEnvironmentId: "22222222-2222-4222-8222-222222222222",
           skillChannel: "operator_native",
         }).success,
       ).toBe(false);

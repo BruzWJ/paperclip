@@ -58,7 +58,6 @@ function snapshot(
       harnessKind: null,
       originKind: "manual",
       executionPolicy: null,
-      projectExecutionPolicy: null,
     },
     agents: [
       {
@@ -208,61 +207,7 @@ function snapshot(
         ownerAgentId: "grandchild",
       },
     ],
-    agentHireCompanyToolOptions: [
-      {
-        catalogEntryId: "00000000-0000-4000-8000-000000000021",
-        connectionId: "00000000-0000-4000-8000-000000000022",
-        connectionName: "Records",
-        title: "Lookup record",
-        description: "Look up a record",
-        catalogVersionHash: "catalog-v1",
-      },
-    ],
     pluginTools: [],
-    selectedTools: [
-      {
-        id: "selection",
-        connectionId: "connection",
-        connectionInstallId: "install",
-        catalogEntryId: "catalog",
-        catalogVersionHash: "v1",
-        selectionStatus: "selected",
-        installTargetType: "agent",
-        installTargetAgentId: "owner",
-        entryKind: "tool",
-        entryName: "Lookup",
-        toolName: "company_lookup",
-        title: "Company lookup",
-        description: "Look up a record",
-        inputSchema: { type: "object" },
-        entryStatus: "active",
-        entryVersionHash: "v1",
-        connectionStatus: "active",
-        connectionEnabled: true,
-        applicationStatus: "active",
-      },
-      {
-        id: "stale-selection",
-        connectionId: "connection",
-        connectionInstallId: "install",
-        catalogEntryId: "stale-catalog",
-        catalogVersionHash: "v0",
-        selectionStatus: "selected",
-        installTargetType: "agent",
-        installTargetAgentId: "owner",
-        entryKind: "tool",
-        entryName: "Stale",
-        toolName: "stale_tool",
-        title: null,
-        description: null,
-        inputSchema: {},
-        entryStatus: "active",
-        entryVersionHash: "v1",
-        connectionStatus: "active",
-        connectionEnabled: true,
-        applicationStatus: "active",
-      },
-    ],
     ...overrides,
   };
 }
@@ -354,16 +299,6 @@ describe("Postgres runtime-interface compile snapshot", () => {
     ]);
     expect(compiled.configureTargets[0]).not.toHaveProperty("title");
     expect(compiled.configureTargets[0]).not.toHaveProperty("reportsTo");
-    expect(compiled.agentHireCompanyToolOptions).toEqual(
-      snapshot().agentHireCompanyToolOptions,
-    );
-    expect(compiled.selectedCompanyTools).toEqual([
-      expect.objectContaining({
-        selectionId: "selection",
-        catalogEntryId: "catalog",
-        name: "company_lookup",
-      }),
-    ]);
   });
 
   it("does not inherit creator lifecycle catalogs through a consult", () => {

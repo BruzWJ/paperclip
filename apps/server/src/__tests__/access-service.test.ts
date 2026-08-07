@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { accessService } from "../services/access.js";
-import { grantsForHumanRole } from "@paperclipai/shared";
 import { createMockDb } from "./helpers/mock-db.js";
 
 const mocks = vi.hoisted(() => ({
@@ -140,16 +139,6 @@ describe("access service", () => {
         { actorUserId: owner.principalUserId },
       ),
     ).rejects.toThrow("Instance admins cannot be removed from company access");
-  });
-
-  it("gives environment management only to owner and admin role defaults", () => {
-    const permissionKeys = (role: "owner" | "admin" | "operator" | "viewer") =>
-      grantsForHumanRole(role).map((grant) => grant.permissionKey);
-
-    expect(permissionKeys("owner")).toContain("environments:manage");
-    expect(permissionKeys("admin")).toContain("environments:manage");
-    expect(permissionKeys("operator")).not.toContain("environments:manage");
-    expect(permissionKeys("viewer")).not.toContain("environments:manage");
   });
 
   it("copies active user memberships with role-default grants for safe company imports", async () => {

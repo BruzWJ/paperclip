@@ -25,7 +25,7 @@ const SEND_TIMEOUT_MS = 5_000;
  * Deterministic, key-stable JSON serialization used to derive a content-stable
  * `batchId`. Object keys are sorted so two structurally-equal event sets always
  * produce the same string regardless of insertion order. Mirrors the
- * `stableStringify` exemplar in `external-objects-server.ts`.
+ * `stableStringify` implementation used for deterministic telemetry payloads.
  */
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) {

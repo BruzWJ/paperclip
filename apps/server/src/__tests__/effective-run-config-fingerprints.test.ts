@@ -81,7 +81,11 @@ describe("effective run config fingerprints", () => {
   it("reports changed categories independently", () => {
     const base = createEffectiveRunConfigFingerprints({
       session: { adapterType: "codex", model: "gpt-5.6" },
-      workspace: { workspaceStrategy: { type: "git_worktree", branchTemplate: "{{issue.identifier}}" } },
+      workspace: {
+        repoRef: "main",
+        repoUrl: "https://github.com/example/repo.git",
+        strategy: "project_primary",
+      },
       lease: { environmentId: "environment-1", reuseLease: true },
     });
 
@@ -89,7 +93,11 @@ describe("effective run config fingerprints", () => {
       base,
       createEffectiveRunConfigFingerprints({
         session: { adapterType: "codex", model: "gpt-5.6-sol" },
-        workspace: { workspaceStrategy: { type: "git_worktree", branchTemplate: "{{issue.identifier}}" } },
+        workspace: {
+          repoRef: "main",
+          repoUrl: "https://github.com/example/repo.git",
+          strategy: "project_primary",
+        },
         lease: { environmentId: "environment-1", reuseLease: true },
       }),
     )).toMatchObject({
@@ -102,7 +110,11 @@ describe("effective run config fingerprints", () => {
       base,
       createEffectiveRunConfigFingerprints({
         session: { adapterType: "codex", model: "gpt-5.6" },
-        workspace: { workspaceStrategy: { type: "git_worktree", branchTemplate: "custom-{{issue.identifier}}" } },
+        workspace: {
+          repoRef: "release",
+          repoUrl: "https://github.com/example/repo.git",
+          strategy: "project_primary",
+        },
         lease: { environmentId: "environment-1", reuseLease: true },
       }),
     ).changedCategories).toEqual(["workspace"]);
@@ -111,7 +123,11 @@ describe("effective run config fingerprints", () => {
       base,
       createEffectiveRunConfigFingerprints({
         session: { adapterType: "codex", model: "gpt-5.6" },
-        workspace: { workspaceStrategy: { type: "git_worktree", branchTemplate: "{{issue.identifier}}" } },
+        workspace: {
+          repoRef: "main",
+          repoUrl: "https://github.com/example/repo.git",
+          strategy: "project_primary",
+        },
         lease: { environmentId: "environment-2", reuseLease: true },
       }),
     ).changedCategories).toEqual(["lease"]);
@@ -289,10 +305,17 @@ describe("effective run config fingerprints", () => {
 
     expect(canonicalizeEffectiveRunConfigCategory({
       category: "workspace",
-      value: { cwd: "/explicit/runtime/workspace", workspaceStrategy: { type: "git_worktree" } },
+      value: {
+        cwd: "/explicit/runtime/workspace",
+        repoRef: "main",
+        repoUrl: "https://github.com/example/repo.git",
+        strategy: "project_primary",
+      },
     })).toEqual({
       cwd: "/explicit/runtime/workspace",
-      workspaceStrategy: { type: "git_worktree" },
+      repoRef: "main",
+      repoUrl: "https://github.com/example/repo.git",
+      strategy: "project_primary",
     });
   });
 });

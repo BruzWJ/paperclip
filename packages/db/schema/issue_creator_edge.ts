@@ -377,7 +377,7 @@ export const systemEscalationIdentities = pgTable(
   (table) => [
     check(
       "system_escalation_identities_source_check",
-      sql`${table.systemSource} in ('watchdog', 'recovery', 'liveness')`,
+      sql`${table.systemSource} in ('recovery', 'liveness')`,
     ),
     check(
       "system_escalation_identities_distinct_issue_check",

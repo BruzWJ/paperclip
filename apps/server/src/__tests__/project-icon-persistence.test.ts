@@ -27,7 +27,6 @@ function projectRow(input: {
     env: null,
     pauseReason: null,
     pausedAt: null,
-    executionWorkspacePolicy: null,
     archivedAt: null,
     createdAt: now,
     updatedAt: now,

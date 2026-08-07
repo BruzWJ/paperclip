@@ -35,9 +35,6 @@ const routeMocks = vi.hoisted(() => ({
   executionWorkspaces: {
     getCurrentForIssue: vi.fn(async () => null),
   },
-  externalObjects: {
-    syncIssueSafely: vi.fn(async () => undefined),
-  },
   logActivity: vi.fn(async () => undefined),
 }));
 
@@ -63,16 +60,6 @@ vi.mock("../services/execution-workspaces.js", async () => {
   return {
     ...actual,
     executionWorkspaceService: () => routeMocks.executionWorkspaces,
-  };
-});
-
-vi.mock("../services/external-objects.js", async () => {
-  const actual = await vi.importActual<typeof import("../services/external-objects.js")>(
-    "../services/external-objects.js",
-  );
-  return {
-    ...actual,
-    externalObjectService: () => routeMocks.externalObjects,
   };
 });
 
@@ -119,7 +106,7 @@ describe("issue identifier routes", () => {
     routeMocks.issues.getById.mockResolvedValue(issue);
     routeMocks.issues.updateTitle.mockResolvedValue(updatedIssue);
 
-    const harness = createMockDb({ select: [[]] });
+    const harness = createMockDb();
     const app = express();
     app.use(express.json());
     app.use((req, _res, next) => {
@@ -166,7 +153,6 @@ describe("issue identifier routes", () => {
       issueId,
       "Updated tenant identifier route",
     );
-    expect(routeMocks.externalObjects.syncIssueSafely).toHaveBeenCalledWith(issueId);
     expect(routeMocks.logActivity).toHaveBeenCalledWith(harness.db, expect.objectContaining({
       companyId,
       actorId: "cloud-user-1",

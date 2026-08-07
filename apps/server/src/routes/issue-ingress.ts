@@ -92,13 +92,6 @@ export function issueIngressRoutes(input: {
           sourceKind: "issue_request",
           title: req.body.title ?? null,
           projectId: req.body.projectId ?? null,
-          projectWorkspaceId: req.body.projectWorkspaceId ?? null,
-          executionWorkspaceId:
-            req.body.executionWorkspaceId ?? null,
-          executionWorkspacePreference:
-            req.body.executionWorkspacePreference ?? null,
-          executionWorkspaceSettings:
-            req.body.executionWorkspaceSettings ?? null,
           goalId: req.body.goalId ?? null,
           parentId: req.body.parentId ?? null,
           priority: req.body.priority,
@@ -139,13 +132,6 @@ export function issueIngressRoutes(input: {
           sourceKind: "issue_request",
           title: req.body.title ?? null,
           projectId: req.body.projectId ?? null,
-          projectWorkspaceId: req.body.projectWorkspaceId ?? null,
-          executionWorkspaceId:
-            req.body.executionWorkspaceId ?? null,
-          executionWorkspacePreference:
-            req.body.executionWorkspacePreference ?? null,
-          executionWorkspaceSettings:
-            req.body.executionWorkspaceSettings ?? null,
           goalId: req.body.goalId ?? null,
           parentId: parent.id,
           priority: req.body.priority,

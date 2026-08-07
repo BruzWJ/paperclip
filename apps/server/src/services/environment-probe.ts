@@ -19,7 +19,6 @@ export async function probeEnvironment(
     companyId?: string | null;
     pluginWorkerManager?: PluginWorkerManager;
     resolvedConfig?: ParsedEnvironmentConfig;
-    applyCustomImageTemplate?: boolean;
     acquireSandboxRuntimeLease?: boolean;
   } = {},
 ): Promise<EnvironmentProbeResult> {
@@ -27,10 +26,8 @@ export async function probeEnvironment(
   const parsed = options.resolvedConfig ?? (
     options.acquireSandboxRuntimeLease === true
       ? parseEnvironmentDriverConfig(environment)
-      : resolvedCompanyId || options.applyCustomImageTemplate === true
-      ? await resolveEnvironmentDriverConfigForRuntime(db, resolvedCompanyId, environment, {
-          applyCustomImageTemplate: options.applyCustomImageTemplate === true,
-        })
+      : resolvedCompanyId
+      ? await resolveEnvironmentDriverConfigForRuntime(db, resolvedCompanyId, environment)
       : parseEnvironmentDriverConfig(environment)
   );
 
@@ -86,7 +83,6 @@ export async function probeEnvironment(
           runId: null,
           persistedExecutionWorkspace: null,
           adapterType: null,
-          applyCustomImageTemplate: options.applyCustomImageTemplate === true,
         });
         const metadata = leaseRecord.lease.metadata ?? {};
         const provider = leaseRecord.lease.provider ?? parsed.config.provider;

@@ -49,7 +49,7 @@ function readWorkspaceRealizationRequest(value: unknown): WorkspaceRealizationRe
       projectWorkspaceId: readString(source.projectWorkspaceId),
       repoUrl: readString(source.repoUrl),
       repoRef: readString(source.repoRef),
-      strategy: source.strategy === "git_worktree" ? "git_worktree" : "project_primary",
+      strategy: "project_primary",
       branchName: readString(source.branchName),
       worktreePath: readString(source.worktreePath),
     },

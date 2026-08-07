@@ -4,7 +4,7 @@ First-party Paperclip adapter for a separately hosted
 [`@agentmemory/agentmemory`](https://www.npmjs.com/package/@agentmemory/agentmemory)
 service. The plugin automatically records canonical Paperclip work, injects
 relevant memory before each provider request, and exposes four read-only recall
-tools through Paperclip's normal agent-tool gateway. Paperclip core has no
+tools through Paperclip's run-scoped prompt interface. Paperclip core has no
 AgentMemory or memory-specific API.
 
 ## Memory matrix

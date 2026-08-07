@@ -26,7 +26,7 @@ function issue(
     status: "open",
     disposition: null,
     priority: "medium",
-    creator: { kind: "system", sourceKind: "watchdog" },
+    creator: { kind: "system", sourceKind: "recovery" },
     owner: { kind: "agent", agentId: "agent-1" },
     parentId,
     directChildCount: 0,
@@ -184,7 +184,7 @@ describe("context retrieval", () => {
       }),
       unsafeCreatorIssue("creator-system", {
         kind: "system",
-        sourceKind: "watchdog",
+        sourceKind: "recovery",
         sourceId: "must-not-leak-source",
       }),
     ];
@@ -198,7 +198,7 @@ describe("context retrieval", () => {
       { kind: "user/board", userId: "user-creator" },
       { kind: "plugin", pluginKey: "plugin-key" },
       { kind: "routine", routineId: "routine-1" },
-      { kind: "system", sourceKind: "watchdog" },
+      { kind: "system", sourceKind: "recovery" },
     ]);
     expect(JSON.stringify(result.items)).not.toContain("must-not-leak");
   });

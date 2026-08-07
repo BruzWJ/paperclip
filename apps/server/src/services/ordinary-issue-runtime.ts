@@ -15,7 +15,6 @@ import {
   issueExecutionPromptCapabilities,
   issueExecutionRefs,
   issueExecutionSessions,
-  issueExecutionWorkspaceBindings,
   issueLabels,
   issueSessionContextEpochs,
   issueSessions,
@@ -52,7 +51,6 @@ import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 import { persistCanonicalIssueAggregateInTx } from "./canonical-issue-aggregate.js";
 import {
   createIssueFormCommitRuntime,
-  loadWorkspaceBinding,
   revokeOutgoingOwnershipEpoch,
   RuntimeIssueActionConflict,
   RuntimeIssueActionDenied,
@@ -65,7 +63,6 @@ import {
   IssueExecutionWorkspaceReservationRejected,
   reserveIssueExecutionWorkspaceBinding,
 } from "./execution-workspaces.js";
-import { parseIssueExecutionWorkspaceSettings } from "./execution-workspace-policy.js";
 import {
   assertPluginPermittedIssueOwnerInTransaction,
 } from "./plugin-issue-authorization.js";
@@ -156,8 +153,6 @@ type PluginWithdrawalCommitOutcome =
     };
 
 const ISSUE_ROW_DATE_KEYS = [
-  "monitorNextCheckAt",
-  "monitorLastTriggeredAt",
   "startedAt",
   "completedAt",
   "cancelledAt",
@@ -231,14 +226,10 @@ export interface OrdinaryIssueCreateInput {
   idempotencyKey: string;
   sourceKind?: Extract<
     IssueExecutionRefSourceKind,
-    "issue_request" | "board_chat" | "routine_dispatch"
+    "issue_request" | "routine_dispatch"
   >;
   title?: string | null;
   projectId?: string | null;
-  projectWorkspaceId?: string | null;
-  executionWorkspaceId?: string | null;
-  executionWorkspacePreference?: string | null;
-  executionWorkspaceSettings?: Record<string, unknown> | null;
   goalId?: string | null;
   parentId?: string | null;
   priority?: "critical" | "high" | "medium" | "low";
@@ -309,7 +300,7 @@ export interface OrdinaryIssueDirectEventInput {
     IssueExecutionRefSourceKind,
     "system_nudge" | "termination_recovery"
   >;
-  /** Immutable watchdog or recovery record that caused this delivery. */
+  /** Immutable recovery or liveness record that caused this delivery. */
   sourceRecordId: string;
   idempotencyKey: string;
 }
@@ -404,14 +395,6 @@ function canonicalJson(value: unknown): string {
     .sort()
     .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
     .join(",")}}`;
-}
-
-function issueRequestsWorkspaceReuse(issue: IssueRow): boolean {
-  return (
-    issue.executionWorkspacePreference === "reuse_existing" ||
-    parseIssueExecutionWorkspaceSettings(issue.executionWorkspaceSettings)
-      ?.mode === "reuse_existing"
-  );
 }
 
 async function withOrdinaryWorkspaceReservationErrors<T>(
@@ -573,31 +556,12 @@ function executionSourceForOrdinaryCreate(
   input: Pick<OrdinaryIssueCreateInput, "creator" | "sourceKind">,
 ):
   | Extract<IssueSessionExecutionSource, { sourceKind: "issue_request" }>
-  | {
-      sourceKind: "board_chat";
-      actor: Extract<IssueSessionExecutionActor, { kind: "user/board" }>;
-    }
   | Extract<IssueSessionExecutionSource, { sourceKind: "routine_dispatch" }> {
   const sourceKind =
     input.sourceKind ??
     (input.creator.kind === "routine"
       ? "routine_dispatch"
       : "issue_request");
-  if (sourceKind === "board_chat") {
-    if (input.creator.kind !== "user/board") {
-      throw new OrdinaryIssueRuntimeRejected(
-        "Board Chat creation requires authenticated user provenance",
-        "board_chat_creator_invalid",
-      );
-    }
-    return {
-      sourceKind,
-      actor: {
-        kind: "user/board",
-        userId: input.creator.userId,
-      },
-    };
-  }
   if (sourceKind === "routine_dispatch") {
     if (input.creator.kind !== "routine") {
       throw new OrdinaryIssueRuntimeRejected(
@@ -1409,16 +1373,6 @@ export function createOrdinaryIssueRuntime(
         "reassignment_authority_missing",
       );
     }
-    const explicitReusableWorkspaceId =
-      issueRequestsWorkspaceReuse(issue)
-        ? (
-            await loadWorkspaceBinding(tx, {
-              companyId: issue.companyId,
-              issueId: issue.id,
-              ownershipEpoch: issue.ownershipEpoch,
-            })
-          ).executionWorkspaceId
-        : null;
     const now = clock();
     const revocation =
       await revokeOutgoingOwnershipEpoch(
@@ -1474,7 +1428,6 @@ export function createOrdinaryIssueRuntime(
             id: session.id,
             now,
           },
-          explicitReusableWorkspaceId,
           provenance: {
             agentId: null,
             userId: input.provenanceUserId,
@@ -1557,26 +1510,6 @@ export function createOrdinaryIssueRuntime(
           "priority_invalid",
         );
       }
-      const reuseExistingRequested =
-        input.executionWorkspacePreference === "reuse_existing" ||
-        parseIssueExecutionWorkspaceSettings(
-          input.executionWorkspaceSettings,
-        )?.mode === "reuse_existing";
-      if (input.executionWorkspaceId && !reuseExistingRequested) {
-        throw new OrdinaryIssueRuntimeRejected(
-          "An explicit execution workspace requires reuse_existing",
-          "execution_workspace_preference_invalid",
-        );
-      }
-      if (
-        !input.executionWorkspaceId &&
-        reuseExistingRequested
-      ) {
-        throw new OrdinaryIssueRuntimeRejected(
-          "reuse_existing requires an explicit execution workspace",
-          "execution_workspace_missing",
-        );
-      }
       const contextAccessMask = canonicalContextAccessMask(input.contextAccessMask);
       const key = `ordinary-issue-create:${input.companyId}:${input.idempotencyKey}`;
       const issueId = input.issueId?.trim() || deterministicUuid("ordinary-issue", key);
@@ -1613,41 +1546,12 @@ export function createOrdinaryIssueRuntime(
           .limit(1)
           .then((rows) => rows[0]?.issue ?? null);
         if (existing) {
-          const existingWorkspaceId = await tx
-            .select({
-              executionWorkspaceId:
-                issueExecutionWorkspaceBindings.executionWorkspaceId,
-            })
-            .from(issueExecutionWorkspaceBindings)
-            .where(
-              and(
-                eq(
-                  issueExecutionWorkspaceBindings.companyId,
-                  input.companyId,
-                ),
-                eq(issueExecutionWorkspaceBindings.issueId, existing.id),
-                eq(
-                  issueExecutionWorkspaceBindings.ownershipEpoch,
-                  1,
-                ),
-              ),
-            )
-            .limit(1)
-            .then((rows) => rows[0]?.executionWorkspaceId ?? null);
           if (
             existing.id !== issueId ||
             existing.request !== input.request ||
             existing.ownerAgentId !== input.ownerAgentId ||
             existing.title !== (input.title ?? null) ||
             existing.projectId !== (input.projectId ?? null) ||
-            (input.projectWorkspaceId != null &&
-              existing.projectWorkspaceId !== input.projectWorkspaceId) ||
-            (input.executionWorkspaceId != null &&
-              existingWorkspaceId !== input.executionWorkspaceId) ||
-            existing.executionWorkspacePreference !==
-              (input.executionWorkspacePreference ?? null) ||
-            canonicalJson(existing.executionWorkspaceSettings) !==
-              canonicalJson(input.executionWorkspaceSettings ?? null) ||
             existing.goalId !== (input.goalId ?? null) ||
             existing.parentId !== (input.parentId ?? null) ||
             existing.priority !== (input.priority ?? "medium") ||
@@ -1773,7 +1677,6 @@ export function createOrdinaryIssueRuntime(
             id: issueId,
             companyId: input.companyId,
             projectId: input.projectId ?? null,
-            projectWorkspaceId: input.projectWorkspaceId ?? null,
             goalId: input.goalId ?? null,
             parentId: input.parentId ?? null,
             title: input.title?.trim() || null,
@@ -1800,10 +1703,6 @@ export function createOrdinaryIssueRuntime(
             originFingerprint: input.originFingerprint ?? key,
             billingCode: input.billingCode ?? null,
             requestDepth: input.parentId ? 1 : 0,
-            executionWorkspacePreference:
-              input.executionWorkspacePreference ?? null,
-            executionWorkspaceSettings:
-              input.executionWorkspaceSettings ?? null,
             createdAt: now,
             updatedAt: now,
             },
@@ -1812,8 +1711,6 @@ export function createOrdinaryIssueRuntime(
               now,
             },
             workspaceReservation: {
-              explicitReusableWorkspaceId:
-                input.executionWorkspaceId ?? null,
               provenance: {
                 agentId: null,
                 userId:
@@ -3331,16 +3228,6 @@ export function createOrdinaryIssueRuntime(
             "withdrawal_self_assignment_authority_missing",
           );
         }
-        const explicitReusableWorkspaceId =
-          issueRequestsWorkspaceReuse(issue)
-            ? (
-                await loadWorkspaceBinding(tx, {
-                  companyId: input.companyId,
-                  issueId: issue.id,
-                  ownershipEpoch: issue.ownershipEpoch,
-                })
-              ).executionWorkspaceId
-            : null;
         const now = clock();
         const revocation =
           await revokeOutgoingOwnershipEpoch(
@@ -3395,7 +3282,6 @@ export function createOrdinaryIssueRuntime(
               id: sessionState.session.id,
               now,
             },
-            explicitReusableWorkspaceId,
             provenance: {
               agentId: null,
               userId: actorUserId,
@@ -3718,16 +3604,6 @@ export function createOrdinaryIssueRuntime(
           );
         }
         const now = clock();
-        const explicitReusableWorkspaceId =
-          issueRequestsWorkspaceReuse(issue)
-            ? (
-                await loadWorkspaceBinding(tx, {
-                  companyId: input.companyId,
-                  issueId: issue.id,
-                  ownershipEpoch: issue.ownershipEpoch,
-                })
-              ).executionWorkspaceId
-            : null;
         const revocation =
           await revokeOutgoingOwnershipEpoch(
             tx,
@@ -3783,7 +3659,6 @@ export function createOrdinaryIssueRuntime(
               id: session.id,
               now,
             },
-            explicitReusableWorkspaceId,
           }),
         );
         const comment = await sessions.appendNonDispatchControlNotice(

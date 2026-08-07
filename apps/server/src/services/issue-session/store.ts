@@ -144,7 +144,7 @@ export type IssueSessionCommentAuthor =
     }
   | {
       kind: "system";
-      source: "watchdog" | "recovery" | "liveness" | "control";
+      source: "recovery" | "liveness" | "control";
     };
 
 export interface IssueSessionSourceClaim {

@@ -12,8 +12,6 @@ const {
   createDevServerRestartCoordinatorMock,
   detectPortMock,
   devServerRestartCoordinatorMock,
-  environmentCustomImagesServiceMock,
-  environmentCustomImagesServiceFactoryMock,
   fakeServer,
   loadConfigMock,
   routineServiceFactoryMock,
@@ -43,10 +41,6 @@ const {
     () => devServerRestartCoordinatorMock,
   );
   const detectPortMock = vi.fn(async (port: number) => port);
-  const environmentCustomImagesServiceMock = {
-    cleanupExpiredSetupSessions: vi.fn(async () => ({ scanned: 0, timedOut: 0, failed: 0 })),
-  };
-  const environmentCustomImagesServiceFactoryMock = vi.fn(() => environmentCustomImagesServiceMock);
   const routineServiceMock = {
     tickScheduledTriggers: vi.fn(async () => ({ triggered: 0 })),
   };
@@ -69,8 +63,6 @@ const {
     createDevServerRestartCoordinatorMock,
     devServerRestartCoordinatorMock,
     detectPortMock,
-    environmentCustomImagesServiceMock,
-    environmentCustomImagesServiceFactoryMock,
     fakeServer,
     loadConfigMock,
     routineServiceFactoryMock,
@@ -150,10 +142,6 @@ vi.mock("../realtime/live-events-ws.js", () => ({
   setupLiveEventsWebSocketServer: vi.fn(),
 }));
 
-vi.mock("../realtime/environment-custom-image-terminal-ws.js", () => ({
-  setupEnvironmentCustomImageTerminalWebSocketServer: vi.fn(),
-}));
-
 vi.mock("../services/index.js", () => ({
   composeRuntimeActionPort: vi.fn(() => ({})),
   createIssueSessionStore: vi.fn(() => ({
@@ -204,8 +192,6 @@ vi.mock("../services/index.js", () => ({
   createRuntimeIssueActionPort: vi.fn((service) => service),
   environmentRuntimeService: vi.fn(() => ({})),
   environmentRunOrchestrator: vi.fn(() => ({})),
-  environmentCustomImageService: environmentCustomImagesServiceFactoryMock,
-  reconcileCloudUpstreamRunsOnStartup: vi.fn(async () => ({ reconciled: 0 })),
   runIssueSessionCutoversOnStartup: vi.fn(async () => ({
     applied: [],
     skipped: [],
@@ -219,14 +205,6 @@ vi.mock("../services/index.js", () => ({
   })),
   reconcilePersistedRuntimeServicesOnStartup: vi.fn(async () => ({ reconciled: 0 })),
   routineService: routineServiceFactoryMock,
-  toolAccessService: vi.fn(() => ({
-    sweepConnectionHealth: vi.fn(async () => ({
-      checked: 0,
-      healthy: 0,
-      needsAttention: 0,
-      failed: 0,
-    })),
-  })),
 }));
 
 vi.mock("../storage/index.js", () => ({
@@ -305,7 +283,7 @@ describe("startServer scheduler wiring", () => {
     process.env.BETTER_AUTH_SECRET = "test-secret";
   });
 
-  it("keeps routine ticks and setup cleanup active in the issue-execution scheduler", async () => {
+  it("keeps routine ticks active in the issue-execution scheduler", async () => {
     loadConfigMock.mockReturnValue(buildTestConfig({
       issueExecutionSchedulerEnabled: true,
       issueExecutionSchedulerIntervalMs: 30000,
@@ -329,8 +307,6 @@ describe("startServer scheduler wiring", () => {
     try {
       await startServer();
 
-      expect(environmentCustomImagesServiceMock.cleanupExpiredSetupSessions).toHaveBeenCalledTimes(1);
-
       const schedulerInterval = intervalCallbacks.find(
         ({ delay }) => delay === 30_000,
       );
@@ -340,7 +316,6 @@ describe("startServer scheduler wiring", () => {
       await Promise.resolve();
 
       expect(routineServiceMock.tickScheduledTriggers).toHaveBeenCalledTimes(1);
-      expect(environmentCustomImagesServiceMock.cleanupExpiredSetupSessions).toHaveBeenCalledTimes(2);
     } finally {
       setIntervalSpy.mockRestore();
     }

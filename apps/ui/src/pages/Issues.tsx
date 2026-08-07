@@ -16,7 +16,6 @@ import { IssuesList } from "../components/IssuesList";
 import { CircleDot } from "lucide-react";
 import type { Issue } from "@paperclipai/shared";
 
-const WORKSPACE_FILTER_ISSUE_LIMIT = 1000;
 const ISSUES_PAGE_SIZE = 100;
 
 export function getNextIssuesPageOffset(
@@ -72,8 +71,6 @@ export function Issues() {
     return urlSearch;
   }, [searchOverride, urlSearch, location.search]);
   const participantAgentId = searchParams.get("participantAgentId") ?? undefined;
-  const initialWorkspaces = searchParams.getAll("workspace").filter((workspaceId) => workspaceId.length > 0);
-  const workspaceIdFilter = initialWorkspaces.length === 1 ? initialWorkspaces[0] : undefined;
   const handleSearchChange = useCallback((search: string) => {
     const nextUrl = buildIssuesSearchUrl(window.location.href, search);
     if (!nextUrl) {
@@ -130,7 +127,7 @@ export function Issues() {
     setBreadcrumbs([{ label: "Tasks" }]);
   }, [setBreadcrumbs]);
 
-  const issuePageSize = workspaceIdFilter ? WORKSPACE_FILTER_ISSUE_LIMIT : ISSUES_PAGE_SIZE;
+  const issuePageSize = ISSUES_PAGE_SIZE;
 
   const {
     data: issuePages,
@@ -144,8 +141,6 @@ export function Issues() {
       ...queryKeys.issues.list(selectedCompanyId!),
       "participant-agent",
       participantAgentId ?? "__all__",
-      "workspace",
-      workspaceIdFilter ?? "__all__",
       "compact",
       "with-routine-executions",
       "infinite",
@@ -153,7 +148,6 @@ export function Issues() {
     ],
     queryFn: ({ pageParam, signal }) => issuesApi.listCompact(selectedCompanyId!, {
       participantAgentId,
-      workspaceId: workspaceIdFilter,
       includeRoutineExecutions: true,
       limit: issuePageSize,
       offset: pageParam,
@@ -194,13 +188,12 @@ export function Issues() {
       viewStateKey="paperclip:issues-view"
       issueLinkState={issueLinkState}
       initialOwners={searchParams.get("owner") ? [searchParams.get("owner")!] : undefined}
-      initialWorkspaces={initialWorkspaces.length > 0 ? initialWorkspaces : undefined}
       initialSearch={syncedSearch}
       onSearchChange={handleSearchChange}
       enableRoutineVisibilityFilter
       hasMoreIssues={hasMoreServerIssues}
       onLoadMoreIssues={loadMoreServerIssues}
-      searchFilters={participantAgentId || workspaceIdFilter ? { participantAgentId, workspaceId: workspaceIdFilter } : undefined}
+      searchFilters={participantAgentId ? { participantAgentId } : undefined}
     />
   );
 }

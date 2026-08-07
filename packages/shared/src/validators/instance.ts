@@ -3,72 +3,28 @@ import { z } from "zod";
 export const instanceGeneralSettingsSchema = z.object({
   censorUsernameInLogs: z.boolean().default(false),
   keyboardShortcuts: z.boolean().default(false),
-}).strict();
-
-export const patchInstanceGeneralSettingsSchema = instanceGeneralSettingsSchema.partial();
-
-export const instanceExperimentalSettingsSchema = z.object({
-  enableEnvironments: z.boolean().default(false),
-  enableIsolatedWorkspaces: z.boolean().default(false),
-  enableStreamlinedLeftNavigation: z.boolean().default(true),
-  enableApps: z.boolean().default(false),
-  enablePipelines: z.boolean().default(false),
-  enableCases: z.boolean().default(false),
-  enableConferenceRoomChat: z.boolean().default(false),
-  enableIssueWatchdogs: z.boolean().default(false),
-  enableExperimentalFileViewer: z.boolean().default(false),
-  enableCloudSync: z.boolean().default(false),
-  enableExternalObjects: z.boolean().default(false),
-  enableSmokeLab: z.boolean().default(false),
-  enableSummaries: z.boolean().default(false),
-  enableDecisions: z.boolean().default(false),
-  enableGoalsSidebarLink: z.boolean().default(false),
-  enableServerInfoDebugView: z.boolean().default(false),
-  autoRestartDevServerWhenIdle: z.boolean().default(false),
   enableWorkspaceBranchReconcileForward: z.boolean().default(true),
   enableWorkspaceDirtyQuarantineRepair: z.boolean().default(true),
+  enableServerInfoDebugView: z.boolean().default(false),
+  autoRestartDevServerWhenIdle: z.boolean().default(false),
   enableWorktreeRunExecution: z.boolean().default(false),
   worktreeRunExecutionActivatedAt: z.string().datetime().nullable().default(null),
   worktreeRunExecutionActivationInstanceId: z.string().min(1).nullable().default(null),
 }).strict();
 
-const patchInstanceExperimentalSettingsInputSchema = instanceExperimentalSettingsSchema
+export const patchInstanceGeneralSettingsSchema = instanceGeneralSettingsSchema
   .omit({
     worktreeRunExecutionActivatedAt: true,
     worktreeRunExecutionActivationInstanceId: true,
   })
-  .partial()
-  .extend({
-    worktreeRunExecutionActivatedAt: z.unknown().optional(),
-    worktreeRunExecutionActivationInstanceId: z.unknown().optional(),
-  })
-  .strict();
-
-export const patchInstanceExperimentalSettingsSchema =
-  patchInstanceExperimentalSettingsInputSchema.transform((input) => {
-    const {
-      worktreeRunExecutionActivatedAt: _activatedAt,
-      worktreeRunExecutionActivationInstanceId: _activationInstanceId,
-      ...patch
-    } = input;
-    return patch;
-  });
-
-export const patchInstanceSettingsSchema = z.object({
-  defaultEnvironmentId: z.string().uuid().nullable().optional(),
-}).strict();
+  .partial();
 
 export type InstanceGeneralSettings = z.infer<typeof instanceGeneralSettingsSchema>;
 export type PatchInstanceGeneralSettings = z.infer<typeof patchInstanceGeneralSettingsSchema>;
-export type InstanceExperimentalSettings = z.infer<typeof instanceExperimentalSettingsSchema>;
-export type PatchInstanceExperimentalSettings = z.infer<typeof patchInstanceExperimentalSettingsSchema>;
-export type PatchInstanceSettings = z.infer<typeof patchInstanceSettingsSchema>;
 
 export const instanceSettingsSchema = z.object({
   id: z.string().uuid(),
-  defaultEnvironmentId: z.string().uuid().nullable(),
   general: instanceGeneralSettingsSchema,
-  experimental: instanceExperimentalSettingsSchema,
   createdAt: z.union([z.date(), z.string().datetime()]),
   updatedAt: z.union([z.date(), z.string().datetime()]),
 }).strict();

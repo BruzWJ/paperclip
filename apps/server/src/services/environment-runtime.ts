@@ -132,13 +132,6 @@ export interface EnvironmentDriverAcquireInput {
    * configured default adapter.
    */
   adapterType: string | null;
-  /**
-   * Force applying the active custom-image template even when issueId and
-   * runId are null. Operator-initiated `Test` probes set this so the
-   * probe uses the operator-prepared custom image for the runtime lease instead
-   * of the base image, matching what real agent runs do.
-   */
-  applyCustomImageTemplate?: boolean;
 }
 
 export interface EnvironmentDriverReleaseInput {
@@ -585,7 +578,6 @@ function createSshEnvironmentDriver(db: Db): EnvironmentRuntimeDriver {
       const parsed = await resolveEnvironmentDriverConfigForRuntime(db, input.companyId, input.environment, {
         issueId: input.issueId,
         runId: input.runId,
-        applyCustomImageTemplate: input.applyCustomImageTemplate ?? false,
       });
       if (parsed.driver !== "ssh") {
         throw new Error(`Expected SSH environment config for driver "${input.environment.driver}".`);
@@ -816,7 +808,6 @@ function createSandboxEnvironmentDriver(
       const parsed = await resolveEnvironmentDriverConfigForRuntime(db, input.companyId, input.environment, {
         issueId: input.issueId,
         runId: input.runId,
-        applyCustomImageTemplate: input.applyCustomImageTemplate ?? false,
       });
       if (parsed.driver !== "sandbox" || storedParsed.driver !== "sandbox") {
         throw new Error(`Expected sandbox environment config for driver "${input.environment.driver}".`);
@@ -1994,12 +1985,6 @@ export function environmentRuntimeService(
       persistedExecutionWorkspace: Pick<ExecutionWorkspace, "id" | "mode"> | null;
       /** The agent's adapter type for this run (mixed-harness environments). */
       adapterType?: string | null;
-      /**
-       * Force applying the active custom-image template even for ad-hoc (no
-       * issue/run) invocations. Operator `Test` probes set this so the runtime
-       * lease uses the operator-prepared custom image.
-       */
-      applyCustomImageTemplate?: boolean;
     }): Promise<EnvironmentRuntimeLeaseRecord> {
       if (input.environment.status !== "active") {
         throw new Error(`Environment "${input.environment.name}" is not active.`);
@@ -2018,7 +2003,6 @@ export function environmentRuntimeService(
         executionWorkspaceId: leaseContext.executionWorkspaceId,
         executionWorkspaceMode: leaseContext.executionWorkspaceMode,
         adapterType: input.adapterType ?? null,
-        applyCustomImageTemplate: input.applyCustomImageTemplate ?? false,
       });
 
       return {

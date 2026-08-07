@@ -77,7 +77,7 @@ A skill in your company library records where it originated. The Store shows thi
 | `github` | GitHub | Imported from a GitHub repo (pinned to a commit) |
 | `skills_sh` | skills.sh | Imported via the [skills.sh](https://skills.sh) registry (resolves to GitHub) |
 | `url` | URL | Imported from a raw markdown URL |
-| `local_path` | Local | Created in-app or scanned from a project workspace on disk |
+| `local_path` | Local | Created in-app |
 
 External imports (`github`, `skills_sh`, `url`) are held to two rules: they must be
 `markdown_only` or `assets` (no scripts), and Git-backed sources **must resolve to a
@@ -138,15 +138,6 @@ Author a skill directly in the company library without any external source. This
 as a `local_path` / managed-local skill.
 
 - API: `POST /companies/:companyId/skills`
-
-### Scan a project workspace
-
-Agents and projects often already keep skills on disk under conventional folders
-(`skills/`, `.claude/skills/`, `.agents/skills/`, and many other tool-specific roots).
-The project scan walks a workspace, finds those `SKILL.md` directories, and offers to
-import them into the company library, reporting any conflicts or skips.
-
-- API: `POST /companies/:companyId/skills/scan-projects`
 
 ## Living with installed skills
 
@@ -219,12 +210,11 @@ can filter by it.
 
 Installing a skill is not the same as selecting it. At runtime, Paperclip
 materializes only the exact company-skill versions explicitly selected for
-that agent into the bound issue-execution workspace as `SKILL.md` directories.
-There is no company-wide auto-attach, ambient default set, or operational
-Paperclip bundle.
+that agent for its current run. There is no company-wide auto-attach, ambient
+default set, or operational Paperclip bundle.
 
-The provider discovers those files through its native workspace conventions
-or operator-authored native configuration. The files are static content: they
+The provider discovers those files through its native conventions or
+operator-authored native configuration. The files are static content: they
 grant no tools, permissions, reach, or issue context, and they are never copied
 into the Paperclip-authored user message.
 
@@ -249,7 +239,6 @@ All endpoints are under the company-skills router.
 - `DELETE /companies/:companyId/skills/:skillId` — remove from the library
 - `POST /companies/:companyId/skills/install-catalog` — install a catalog skill
 - `POST /companies/:companyId/skills/import` — import from GitHub / skills.sh / URL
-- `POST /companies/:companyId/skills/scan-projects` — scan workspaces for skills
 - `POST /companies/:companyId/skills/:skillId/fork` — fork a skill
 - `POST /companies/:companyId/skills/:skillId/versions` · `GET …/versions` · `GET …/versions/:versionId`
 - `GET /companies/:companyId/skills/:skillId/update-status`

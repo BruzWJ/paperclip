@@ -112,10 +112,10 @@ test.describe("Sidebar takeover (collapse + secondary pane)", () => {
     await expect(page.getByLabel(APP_SIDEBAR_EXPANDED_MARKER)).toHaveCount(0);
 
     // ...yet a settings nav label renders at its full text width, not clipped to
-    // zero. "Environments" is unique to the company-settings nav.
-    const envLabel = secondary.getByText("Environments", { exact: true });
-    await expect(envLabel).toBeVisible();
-    const labelBox = await envLabel.boundingBox();
+    // zero.
+    const generalLabel = secondary.getByText("General", { exact: true }).first();
+    await expect(generalLabel).toBeVisible();
+    const labelBox = await generalLabel.boundingBox();
     expect(labelBox).not.toBeNull();
     expect(labelBox!.width).toBeGreaterThan(20);
   });

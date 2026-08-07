@@ -9,7 +9,6 @@ import type {
   AgentPluginManagementBinding,
   ClearAgentErrorResponse,
   RuntimeAgentCreateConfigurationInput,
-  RuntimeAgentCompanyToolOption,
   RuntimeAgentConfigurationSnapshot,
   RuntimeAgentConfigurationUpdate,
   CompanySkillPin,
@@ -104,14 +103,6 @@ export const agentsApi = {
   getRuntimeConfiguration: (id: string, companyId?: string) =>
     api.get<RuntimeAgentConfigurationSnapshot>(
       agentPath(id, companyId, "/runtime-configuration"),
-    ),
-  listCreateRuntimeAgentToolOptions: (companyId: string) =>
-    api.get<RuntimeAgentCompanyToolOption[]>(
-      `/companies/${encodeURIComponent(companyId)}/runtime-agent-tool-options`,
-    ),
-  listRuntimeAgentToolOptions: (id: string, companyId?: string) =>
-    api.get<RuntimeAgentCompanyToolOption[]>(
-      agentPath(id, companyId, "/runtime-configuration/tool-options"),
     ),
   updateRuntimeConfiguration: (
     id: string,

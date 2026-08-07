@@ -4,19 +4,16 @@ import {
   // Agent
   agentCompanySkillPinsResponseSchema,
   agentCompanySkillPinsUpdateSchema,
-  agentAdapterAcpConfigurationSchema,
+  publicAgentAdapterAcpConfigurationSchema,
   agentAdapterConfigurationTestInputSchema,
   agentAdapterConfigurationTestResultSchema,
   agentAdapterRevisionConfigurationSchema,
   agentOperationalConfigurationUpdateSchema,
   environmentDriverSchema,
-  runtimeAgentCompanyToolOptionsSchema,
   runtimeAgentCreateConfigurationSchema,
   runtimeAgentUpdateConfigurationSchema,
-  refreshSummarySlotSchema,
   // Issue
   createIssueSchema,
-  issueCreationContextAccessSchema,
   updateIssueTitleSchema,
   updateIssueExecutionPolicySchema,
   decideIssueExecutionStageSchema,
@@ -35,12 +32,9 @@ import {
   updateIssueWorkProductSchema,
   upsertIssueDocumentSchema,
   restoreIssueDocumentRevisionSchema,
-  upsertIssueWatchdogSchema,
   // Project
   createProjectSchema,
   updateProjectSchema,
-  createProjectWorkspaceSchema,
-  updateProjectWorkspaceSchema,
   // Company
   createCompanySchema,
   updateCompanySchema,
@@ -84,7 +78,6 @@ import {
   updateCompanyBudgetSchema,
   upsertBudgetPolicySchema,
   resolveBudgetIncidentSchema,
-  issueExecutionWatchdogDecisionInputSchema,
   moneyAmountSchema,
   budgetCurrencySchema,
   ACP_COST_UNAVAILABLE_REASONS,
@@ -93,29 +86,11 @@ import {
   adapterRuntimeReadinessSchema,
   // Sidebar
   upsertSidebarOrderPreferenceSchema,
-  // Execution workspaces
-  reconcileExecutionWorkspaceBranchSchema,
-  updateExecutionWorkspaceSchema,
-  workspaceOverviewQuerySchema,
-  workspaceRuntimeControlTargetSchema,
-  // Environments
-  createEnvironmentSchema,
-  cancelEnvironmentCustomImageSetupSessionSchema,
-  createEnvironmentCustomImageTerminalSessionTokenSchema,
-  environmentCustomImageSetupSessionSchema,
-  environmentCustomImageTerminalSessionTokenSchema,
-  environmentCustomImageTemplateSchema,
-  finishEnvironmentCustomImageSetupSessionSchema,
-  updateEnvironmentSchema,
-  probeEnvironmentConfigSchema,
-  startEnvironmentCustomImageSetupSessionSchema,
   // Company skills
   companySkillCreateSchema,
   companySkillFileDeleteSchema,
   companySkillFileUpdateSchema,
   companySkillImportSchema,
-  companySkillProjectScanRequestSchema,
-  companySkillProjectScanResultSchema,
   companySkillTestInputCreateSchema,
   companySkillTestInputUpdateSchema,
   companySkillTestRunCreateSchema,
@@ -150,8 +125,6 @@ import {
   updateUserCompanyAccessSchema,
   // Instance settings
   patchInstanceGeneralSettingsSchema,
-  patchInstanceExperimentalSettingsSchema,
-  patchInstanceSettingsSchema,
   // Resource memberships
   updateResourceMembershipSchema,
   // Document annotations
@@ -164,39 +137,6 @@ import {
   secretProviderConfigDiscoveryPreviewSchema,
   remoteSecretImportPreviewSchema,
   remoteSecretImportSchema,
-  workspaceFileListQuerySchema,
-  workspaceFileResourceQuerySchema,
-  // Tool access
-  connectToolAppSchema,
-  createToolApplicationSchema,
-  updateToolApplicationSchema,
-  createToolConnectionSchema,
-  startConnectionAuthorizationSchema,
-  createToolStdioCommandTemplateSchema,
-  disableToolStdioCommandTemplateSchema,
-  finishToolAppSchema,
-  reconnectToolAppSchema,
-  updateToolConnectionSchema,
-  putToolConnectionInstallsSchema,
-  toolConnectionTestCallSchema,
-  createToolPolicySchema,
-  duplicateToolPolicySchema,
-  createToolProfileBindingForProfileSchema,
-  createToolProfileEntryForProfileSchema,
-  createToolProfileWithEntriesSchema,
-  deleteToolProfileSchema,
-  duplicateToolProfileSchema,
-  reorderToolPoliciesSchema,
-  reviewToolProfileNewToolsSchema,
-  updateToolPolicySchema,
-  updateToolProfileEntrySchema,
-  updateToolProfileWithEntriesSchema,
-  createToolTrustRuleFromActionRequestSchema,
-  revokeToolTrustRuleSchema,
-  unbindToolProfileBindingSchema,
-  importMcpJsonSchema,
-  toolPolicyTestRequestSchema,
-  createToolMcpGatewaySchema,
   pluginBridgeRequestSchema,
   pluginConfigRequestSchema,
   pluginDisableRequestSchema,
@@ -608,12 +548,9 @@ const publicAgentAdapterRevisionSchema = z.object({
   adapterConfigSchemaVersion: z.literal(
     "paperclip.acp-adapter-config/v1",
   ),
-  defaultEnvironmentId: z.string().uuid(),
-  executionTargetDriver: environmentDriverSchema,
-  executionTargetDigest: z.string().regex(/^[0-9a-f]{64}$/),
   normalizedConfig: z.record(z.unknown()),
   runtimeConfig: z.record(z.unknown()),
-  acpConfiguration: agentAdapterAcpConfigurationSchema,
+  acpConfiguration: publicAgentAdapterAcpConfigurationSchema,
   digest: z.string().regex(/^[0-9a-f]{64}$/),
   parentRevisionId: z.string().uuid().nullable(),
   createdByAgentId: z.string().uuid().nullable(),
@@ -639,26 +576,6 @@ const issueExecutionRunKindSchema = z.enum([
   "consult",
 ]);
 
-const issueExecutionWatchdogDecisionRecordSchema = z
-  .object({
-    id: z.string().uuid(),
-    companyId: z.string().uuid(),
-    runId: z.string().uuid(),
-    evaluationIssueId: z.string().uuid().nullable(),
-    decision: z.enum([
-      "snooze",
-      "continue",
-      "dismissed_false_positive",
-    ]),
-    snoozedUntil: z.string().datetime().nullable(),
-    reason: z.string().min(1).max(4000).nullable(),
-    createdByAgentId: z.string().uuid().nullable(),
-    createdByUserId: z.string().nullable(),
-    createdByRunId: z.string().uuid().nullable(),
-    createdAt: z.string().datetime(),
-  })
-  .strict();
-
 const issueExecutionRunEnvelopeRecordSchema = z
   .object({
     id: z.string().uuid(),
@@ -680,7 +597,6 @@ const issueExecutionRunEnvelopeRecordSchema = z
     ownershipEpoch: z.number().int().positive(),
     targetAgentId: z.string().uuid(),
     adapterConfigRevisionId: z.string().uuid(),
-    executionWorkspaceBindingId: z.string().uuid(),
     executionMode: z.enum(["owner", "consult"]),
     issueExecutionAuthorityId: z.string().uuid().nullable(),
     consultExecutionId: z.string().uuid().nullable(),
@@ -702,44 +618,6 @@ const issueExecutionRunEnvelopeRecordSchema = z
     updatedAt: z.string().datetime(),
   })
   .strict();
-
-const externalObjectSummariesBodySchema = z.object({
-  issueIds: z.array(z.string().uuid()).max(1000),
-}).strict();
-
-const refreshExternalObjectsBodySchema = z.object({
-  objectIds: z.array(z.string().uuid()).max(50).optional(),
-}).strict();
-
-const environmentCustomImageCompanyQuerySchema = z.object({
-  companyId: z.string().optional(),
-}).strict();
-
-const disableEnvironmentCustomImageTemplateQuerySchema =
-  environmentCustomImageCompanyQuerySchema.extend({
-    deleteProviderTemplate: z.enum(["true", "false"]).optional(),
-  });
-
-const environmentCustomImageOverviewSchema = z.object({
-  activeTemplate: environmentCustomImageTemplateSchema.nullable(),
-  activeSession: environmentCustomImageSetupSessionSchema.nullable(),
-  latestSession: environmentCustomImageSetupSessionSchema.nullable(),
-}).strict();
-
-const environmentCustomImageSetupSessionResultSchema = z.object({
-  session: environmentCustomImageSetupSessionSchema,
-  connectionPayload: z.record(z.string(), z.unknown()).nullable(),
-}).strict();
-
-const environmentCustomImageSetupSessionFinishResultSchema =
-  environmentCustomImageSetupSessionResultSchema.extend({
-    template: environmentCustomImageTemplateSchema,
-  });
-
-const environmentCustomImageTemplateRollbackResultSchema = z.object({
-  activeTemplate: environmentCustomImageTemplateSchema,
-  supersededTemplate: environmentCustomImageTemplateSchema,
-}).strict();
 
 const workTimelineQuerySchema = z.object({
   from: z.string().optional(),
@@ -886,17 +764,12 @@ const PUBLIC_OPERATIONS = new Set([
   "GET /api/invites/{token}/onboarding",
   "GET /api/invites/{token}/onboarding.txt",
   "POST /api/invites/{token}/accept",
-  "GET /mcp/gateways/{gatewayPublicId}",
-  "POST /mcp/gateways/{gatewayPublicId}",
-  "GET /api/tool-gateway/gateways/{gatewayId}/mcp",
-  "POST /api/tool-gateway/gateways/{gatewayId}/mcp",
   "POST /api/plugins/{pluginId}/webhooks/{endpointKey}",
 ]);
 
 const BOARD_ONLY_PREFIXES = [
   "/api/auth/",
   "/api/admin/",
-  "/api/cloud-upstreams",
   "/api/plugins",
   "/api/instance/",
 ];
@@ -915,9 +788,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/companies/{companyId}/members",
   "POST /api/companies/{companyId}/runtime-agents",
   "POST /api/companies/{companyId}/adapters/{type}/test-configuration",
-  "GET /api/companies/{companyId}/runtime-agent-tool-options",
   "GET /api/agents/{id}/runtime-configuration",
-  "GET /api/agents/{id}/runtime-configuration/tool-options",
   "PATCH /api/agents/{id}/runtime-configuration",
   "GET /api/agents/{id}/adapter-config-revisions",
   "GET /api/agents/{id}/adapter-config-revisions/current",
@@ -932,7 +803,6 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "PATCH /api/companies/{companyId}/members/{memberId}/permissions",
   "GET /api/companies/{companyId}/user-directory",
   "POST /api/runs/{runId}/runtime-readiness",
-  "POST /api/execution-workspaces/{id}/reconcile-branch",
   "GET /api/board-api-keys",
   "POST /api/board-api-keys",
   "DELETE /api/board-api-keys/{keyId}",
@@ -964,80 +834,6 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/secrets/{id}/usage",
   "GET /api/secrets/{id}/access-events",
   "POST /api/health/dev-server/restart",
-  "GET /api/issues/{issueId}/file-resources/content",
-  "GET /api/issues/{issueId}/file-resources/list",
-  "GET /api/issues/{issueId}/file-resources/resolve",
-  "GET /api/companies/{companyId}/tools/gallery",
-  "POST /api/companies/{companyId}/tools/apps/connect",
-  "POST /api/companies/{companyId}/tools/apps/{connectionId}/finish",
-  "GET /api/companies/{companyId}/tools/apps/attention",
-  "GET /api/companies/{companyId}/tools/action-requests",
-  "GET /api/companies/{companyId}/tools/examples",
-  "POST /api/companies/{companyId}/tools/examples/{id}/install",
-  "POST /api/companies/{companyId}/tools/examples/{id}/smoke",
-  "GET /api/companies/{companyId}/tools/applications",
-  "POST /api/companies/{companyId}/tools/applications",
-  "PATCH /api/tool-applications/{applicationId}",
-  "DELETE /api/tool-applications/{applicationId}",
-  "GET /api/companies/{companyId}/tools/connections",
-  "POST /api/companies/{companyId}/tools/connections",
-  "POST /api/companies/{companyId}/tools/connections/{connectionId}/start-authorization",
-  "GET /api/tool-connections/{connectionId}",
-  "GET /api/tool-connections/{connectionId}/grants",
-  "POST /api/tool-connections/{connectionId}/grants/installations",
-  "DELETE /api/tool-connections/{connectionId}/grants/{grantId}",
-  "GET /api/tool-connections/{connectionId}/usage",
-  "PATCH /api/tool-connections/{connectionId}",
-  "DELETE /api/tool-connections/{connectionId}",
-  "POST /api/tool-connections/{connectionId}/health-check",
-  "POST /api/tool-connections/{connectionId}/reconnect",
-  "POST /api/tool-connections/{connectionId}/catalog/refresh",
-  "GET /api/tool-connections/{connectionId}/catalog",
-  "GET /api/tool-connections/{connectionId}/activity",
-  "GET /api/tool-connections/{connectionId}/test-agents",
-  "POST /api/tool-connections/{connectionId}/test-calls",
-  "GET /api/tool-connections/{connectionId}/test-calls/{actionRequestId}",
-  "POST /api/tools/oauth/{connectionId}/start",
-  "GET /api/tools/oauth/callback",
-  "GET /api/companies/{companyId}/tools/profiles",
-  "POST /api/companies/{companyId}/tools/profiles",
-  "GET /api/companies/{companyId}/tools/profiles/effective/agents/{agentId}",
-  "GET /api/tool-profiles/{profileId}/new-tools",
-  "PATCH /api/tool-profiles/{profileId}",
-  "POST /api/tool-profiles/{profileId}/duplicate",
-  "DELETE /api/tool-profiles/{profileId}",
-  "POST /api/tool-profiles/{profileId}/new-tools/review",
-  "POST /api/tool-profiles/{profileId}/entries",
-  "PATCH /api/tool-profile-entries/{entryId}",
-  "DELETE /api/tool-profile-entries/{entryId}",
-  "POST /api/companies/{companyId}/tools/profiles/{profileId}/bind",
-  "POST /api/companies/{companyId}/tools/profiles/{profileId}/unbind",
-  "GET /api/companies/{companyId}/tools/runtime-slots",
-  "POST /api/companies/{companyId}/tools/runtime-slots/{id}/stop",
-  "POST /api/companies/{companyId}/tools/runtime-slots/{id}/restart",
-  "GET /api/companies/{companyId}/tools/runtime-health",
-  "GET /api/companies/{companyId}/tools/runs/{runId}/decisions",
-  "GET /api/companies/{companyId}/tools/trust-rules",
-  "GET /api/companies/{companyId}/tools/policies",
-  "POST /api/companies/{companyId}/tools/policies/reorder",
-  "POST /api/companies/{companyId}/tools/policies",
-  "POST /api/companies/{companyId}/tools/policies/{policyId}/duplicate",
-  "PATCH /api/companies/{companyId}/tools/policies/{policyId}",
-  "DELETE /api/companies/{companyId}/tools/policies/{policyId}",
-  "POST /api/companies/{companyId}/tools/action-requests/{actionRequestId}/trust-rule",
-  "POST /api/companies/{companyId}/tools/trust-rules/{policyId}/revoke",
-  "GET /api/companies/{companyId}/tools/stdio-templates",
-  "POST /api/companies/{companyId}/tools/stdio-templates",
-  "POST /api/companies/{companyId}/tools/stdio-templates/{templateId}/disable",
-  "POST /api/companies/{companyId}/tools/mcp/import-json",
-  "POST /api/companies/{companyId}/tools/policy/test",
-  "GET /api/companies/{companyId}/tools/gateways",
-  "POST /api/companies/{companyId}/tools/gateways",
-  "PATCH /api/tool-gateway/gateways/{gatewayId}",
-  "POST /api/tool-gateway/gateways/{gatewayId}/tokens",
-  "POST /api/tool-gateway/gateway-tokens/{tokenId}/revoke",
-  "POST /api/companies/{companyId}/tools/action-requests/{id}/approve",
-  "POST /api/companies/{companyId}/tools/action-requests/{id}/decline",
 ]);
 
 const INSTANCE_ADMIN_OPERATIONS = new Set([
@@ -1073,9 +869,6 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/invites",
   "POST /api/companies/{companyId}/finance-events",
   "POST /api/companies/{companyId}/secret-provider-configs",
-  "POST /api/companies/{companyId}/environments",
-  "POST /api/environments/{environmentId}/custom-image-setup-sessions",
-  "POST /api/companies/{companyId}/goals",
   "POST /api/companies/{companyId}/labels",
   "POST /api/issues/{id}/documents/{key}/annotations",
   "POST /api/issues/{id}/documents/{key}/annotations/{threadId}/comments",
@@ -1089,7 +882,6 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/issues/{id}/comments",
   "POST /api/companies/{companyId}/issues/{issueId}/attachments",
   "POST /api/companies/{companyId}/projects",
-  "POST /api/projects/{id}/workspaces",
   "POST /api/companies/{companyId}/routines",
   "POST /api/companies/{companyId}/folders",
   "POST /api/companies/{companyId}/folders/ensure-my",
@@ -1101,11 +893,7 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/skills/import",
   "POST /api/admin/users/{userId}/promote-instance-admin",
   "POST /api/plugins/install",
-  "POST /api/companies/{companyId}/tools/applications",
-  "POST /api/companies/{companyId}/tools/connections",
-  "POST /api/companies/{companyId}/tools/action-requests/{actionRequestId}/trust-rule",
-  "POST /api/companies/{companyId}/tools/gateways",
-  "POST /api/tool-gateway/gateways/{gatewayId}/tokens",
+  "POST /api/companies/{companyId}/goals",
 ]);
 
 const ACCEPTED_OPERATIONS = new Set([
@@ -1235,36 +1023,6 @@ registry.registerPath({
       version: z.string().optional(),
       bootstrapStatus: z.enum(["ready", "bootstrap_pending"]).optional(),
       bootstrapInviteActive: z.boolean().optional(),
-      serverInfo: z.object({
-        processStartedAt: z.string().datetime(),
-        git: z.union([
-          z.object({
-            available: z.literal(true),
-            fullSha: z.string(),
-            shortSha: z.string(),
-            branchName: z.string().nullable(),
-            subject: z.string(),
-            committedAt: z.string().datetime().nullable(),
-            localChanges: z.union([
-              z.object({
-                available: z.literal(true),
-                hasLocalChanges: z.boolean(),
-                stagedFileCount: z.number().int().nonnegative(),
-                unstagedFileCount: z.number().int().nonnegative(),
-                untrackedFileCount: z.number().int().nonnegative(),
-              }).strict(),
-              z.object({
-                available: z.literal(false),
-                unavailableReason: z.enum(["git_status_unavailable"]),
-              }).strict(),
-            ]),
-          }).strict(),
-          z.object({
-            available: z.literal(false),
-            unavailableReason: z.enum(["git_unavailable", "invalid_git_metadata"]),
-          }).strict(),
-        ]),
-      }).strict().optional(),
     })),
     503: { description: "Service unavailable", content: { "application/json": { schema: ErrorSchema } } },
   },
@@ -1333,20 +1091,6 @@ registry.registerPath({
       },
     },
     401: r.unauthorized,
-  },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/companies/{companyId}/runtime-agent-tool-options",
-  tags: ["agents"],
-  summary: "List active company-installed tools eligible for agent creation",
-  request: { params: z.object({ companyId: z.string().uuid() }) },
-  responses: {
-    200: r.ok(runtimeAgentCompanyToolOptionsSchema),
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
   },
 });
 
@@ -1466,48 +1210,6 @@ for (const route of [
 
 // ─── Agents ──────────────────────────────────────────────────────────────────
 
-const summarySlotParams = z.object({
-  companyId: z.string(),
-  scopeKind: z.string(),
-  slotKey: z.string(),
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/companies/{companyId}/summary-slots/{scopeKind}/{slotKey}",
-  tags: ["summaries"],
-  summary: "Get a summary slot with its latest document and generation state",
-  request: { params: summarySlotParams },
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/companies/{companyId}/summary-slots/{scopeKind}/{slotKey}/revisions",
-  tags: ["summaries"],
-  summary: "List dated revisions for a summary slot",
-  request: { params: summarySlotParams },
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/companies/{companyId}/summary-slots/{scopeKind}/{slotKey}/refresh",
-  tags: ["summaries"],
-  summary: "Dispatch a manual summary-slot refresh through its configured routine",
-  request: { params: summarySlotParams, body: jsonBody(refreshSummarySlotSchema) },
-  responses: {
-    200: r.ok(),
-    202: r.ok(),
-    400: r.badRequest,
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-    409: r.conflict,
-    422: r.unprocessable,
-  },
-});
-
 registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/agents",
@@ -1606,31 +1308,16 @@ registry.registerPath({
   method: "get",
   path: "/api/agents/{id}/runtime-configuration",
   tags: ["agents"],
-  summary: "Read explicit agent context, action, mention, and company-tool selections",
+  summary: "Read explicit agent context, action, and mention grants",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/agents/{id}/runtime-configuration/tool-options",
-  tags: ["agents"],
-  summary: "List active tools installed for this exact agent",
-  request: { params: z.object({ id: z.string().uuid() }) },
-  responses: {
-    200: r.ok(runtimeAgentCompanyToolOptionsSchema),
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-    422: r.unprocessable,
-  },
 });
 
 registry.registerPath({
   method: "patch",
   path: "/api/agents/{id}/runtime-configuration",
   tags: ["agents"],
-  summary: "Update explicit agent context, action, mention, and company-tool selections",
+  summary: "Update explicit agent context, action, and mention grants",
   request: {
     params: z.object({ id: z.string() }),
     body: jsonBody(runtimeAgentUpdateConfigurationSchema),
@@ -2085,36 +1772,6 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/watchdog",
-  tags: ["issues"],
-  summary: "Get active issue system safeguard",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "put",
-  path: "/api/issues/{id}/watchdog",
-  tags: ["issues"],
-  summary: "Enable an issue system safeguard",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(upsertIssueWatchdogSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "delete",
-  path: "/api/issues/{id}/watchdog",
-  tags: ["issues"],
-  summary: "Disable an issue system safeguard",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "get",
   path: "/api/issues/{id}/work-products",
   tags: ["issues"],
   summary: "List issue work products",
@@ -2323,61 +1980,6 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
-
-registry.registerPath({
-  method: "get",
-  path: "/api/issues/{issueId}/file-resources/list",
-  tags: ["issues"],
-  summary: "List workspace files for an issue",
-  request: {
-    params: z.object({ issueId: z.string() }),
-    query: workspaceFileListQuerySchema,
-  },
-  responses: {
-    200: r.ok(),
-    401: r.unauthorized,
-    404: r.notFound,
-    422: r.unprocessable,
-    429: r.tooManyRequests,
-  },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/issues/{issueId}/file-resources/resolve",
-  tags: ["issues"],
-  summary: "Resolve an issue workspace file",
-  request: {
-    params: z.object({ issueId: z.string() }),
-    query: workspaceFileResourceQuerySchema,
-  },
-  responses: {
-    200: r.ok(),
-    401: r.unauthorized,
-    404: r.notFound,
-    422: r.unprocessable,
-    429: r.tooManyRequests,
-  },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/issues/{issueId}/file-resources/content",
-  tags: ["issues"],
-  summary: "Read issue workspace file content",
-  request: {
-    params: z.object({ issueId: z.string() }),
-    query: workspaceFileResourceQuerySchema,
-  },
-  responses: {
-    200: r.ok(),
-    401: r.unauthorized,
-    404: r.notFound,
-    422: r.unprocessable,
-    429: r.tooManyRequests,
-  },
-});
-
 registry.registerPath({
   method: "get",
   path: "/api/issues/{id}/attachments",
@@ -2470,47 +2072,9 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
-registry.registerPath({
-  method: "get",
-  path: "/api/projects/{id}/workspaces",
-  tags: ["projects"],
-  summary: "List project workspaces",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
 
-registry.registerPath({
-  method: "post",
-  path: "/api/projects/{id}/workspaces",
-  tags: ["projects"],
-  summary: "Create a project workspace",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(createProjectWorkspaceSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
 
-registry.registerPath({
-  method: "patch",
-  path: "/api/projects/{id}/workspaces/{workspaceId}",
-  tags: ["projects"],
-  summary: "Update a project workspace",
-  request: {
-    params: z.object({ id: z.string(), workspaceId: z.string() }),
-    body: jsonBody(updateProjectWorkspaceSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
-});
 
-registry.registerPath({
-  method: "delete",
-  path: "/api/projects/{id}/workspaces/{workspaceId}",
-  tags: ["projects"],
-  summary: "Delete a project workspace",
-  request: { params: z.object({ id: z.string(), workspaceId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
 
 // ─── Routines ────────────────────────────────────────────────────────────────
 
@@ -3363,81 +2927,6 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
-// ─── Decision training ──────────────────────────────────────────────────────
-
-const decisionTrainingSourceKindSchema = z.enum(["interaction", "approval", "execution_decision"]);
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/decision-training",
-  tags: ["decision-training"],
-  summary: "Capture a decision training example",
-  body: z.object({
-    sourceKind: decisionTrainingSourceKindSchema,
-    sourceId: z.string().uuid(),
-    issueId: z.string().uuid(),
-    notes: z.string().max(100_000).default(""),
-  }).strict(),
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/decision-training/preview",
-  tags: ["decision-training"],
-  summary: "Preview a decision training snapshot",
-  body: z.object({
-    sourceKind: decisionTrainingSourceKindSchema,
-    sourceId: z.string().uuid(),
-    issueId: z.string().uuid(),
-  }).strict(),
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/decision-training",
-  tags: ["decision-training"],
-  summary: "List decision training examples",
-  query: z.object({
-    project: z.string().uuid().optional(),
-    kind: decisionTrainingSourceKindSchema.optional(),
-    author: z.string().optional(),
-    q: z.string().max(500).optional(),
-  }),
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/decision-training/export.jsonl",
-  tags: ["decision-training"],
-  summary: "Export decision training examples as JSONL",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/decision-training/{id}",
-  tags: ["decision-training"],
-  summary: "Get a decision training example",
-});
-
-registerCurrentRoute({
-  method: "patch",
-  path: "/api/decision-training/{id}",
-  tags: ["decision-training"],
-  summary: "Update decision training notes",
-  body: z.object({ notes: z.string().max(100_000) }).strict(),
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registerCurrentRoute({
-  method: "delete",
-  path: "/api/decision-training/{id}",
-  tags: ["decision-training"],
-  summary: "Delete a decision training example",
-  responses: { 204: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
 registry.registerPath({
   method: "get",
   path: "/api/sidebar-preferences/me",
@@ -3523,15 +3012,6 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: "patch",
-  path: "/api/instance/settings",
-  tags: ["instance"],
-  summary: "Update instance settings",
-  request: { body: jsonBody(patchInstanceSettingsSchema) },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
   method: "get",
   path: "/api/instance/settings/general",
   tags: ["instance"],
@@ -3546,50 +3026,6 @@ registry.registerPath({
   summary: "Update general instance settings",
   request: { body: jsonBody(patchInstanceGeneralSettingsSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/instance/settings/experimental",
-  tags: ["instance"],
-  summary: "Get experimental instance settings",
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "patch",
-  path: "/api/instance/settings/experimental",
-  tags: ["instance"],
-  summary: "Update experimental instance settings",
-  request: { body: jsonBody(patchInstanceExperimentalSettingsSchema) },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-// ─── Board chat (Conference Room Chat, experimental) ──────────────────────────
-
-registry.registerPath({
-  method: "post",
-  path: "/api/board/chat/messages",
-  tags: ["instance"],
-  summary: "Create an ordinary issue-backed Board Chat",
-  request: {
-    body: jsonBody(
-      z.object({
-        companyId: z.string(),
-        message: z.string(),
-        agentId: z.string(),
-        idempotencyKey: z.string().optional(),
-        contextAccessMask: issueCreationContextAccessSchema.optional(),
-      }).strict(),
-    ),
-  },
-  responses: {
-    200: r.ok(),
-    201: r.ok(),
-    400: r.badRequest,
-    401: r.unauthorized,
-    403: r.forbidden,
-  },
 });
 
 // ─── Run interface and narrow control-plane gates ────────────────────────────
@@ -3952,39 +3388,6 @@ registry.registerPath({
   },
 });
 
-registry.registerPath({
-  method: "post",
-  path: "/api/runs/{runId}/watchdog-decisions",
-  tags: ["runs"],
-  summary: "Record an audited watchdog decision for an issue execution run",
-  request: {
-    params: z.object({ runId: z.string().uuid() }),
-    body: jsonBody(issueExecutionWatchdogDecisionInputSchema),
-  },
-  responses: {
-    201: {
-      description: "Created",
-      content: {
-        "application/json": {
-          schema: issueExecutionWatchdogDecisionRecordSchema,
-        },
-      },
-    },
-    400: r.badRequest,
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-  },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/workspace-operations/{operationId}/log",
-  tags: ["runs"],
-  summary: "Get log for a workspace operation",
-  request: { params: z.object({ operationId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
 
 // ─── Issue tree ──────────────────────────────────────────────────────────────
 
@@ -4350,18 +3753,6 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/companies/{companyId}/skills/scan-projects",
-  tags: ["skills"],
-  summary: "Scan project for skills",
-  request: {
-    params: z.object({ companyId: z.string() }),
-    body: jsonBody(companySkillProjectScanRequestSchema),
-  },
-  responses: { 200: r.ok(companySkillProjectScanResultSchema), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
   path: "/api/companies/{companyId}/skills/{skillId}/install-update",
   tags: ["skills"],
   summary: "Install a skill update",
@@ -4462,349 +3853,15 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
 });
 
-// ─── Execution workspaces ─────────────────────────────────────────────────────
 
-registry.registerPath({
-  method: "get",
-  path: "/api/companies/{companyId}/execution-workspaces",
-  tags: ["execution-workspaces"],
-  summary: "List execution workspaces for a company",
-  request: { params: z.object({ companyId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
 
-registry.registerPath({
-  method: "get",
-  path: "/api/companies/{companyId}/workspace-overview",
-  tags: ["execution-workspaces"],
-  summary: "List bounded execution workspace overview rows for a company",
-  request: {
-    params: z.object({ companyId: z.string() }),
-    query: workspaceOverviewQuerySchema,
-  },
-  responses: { 200: r.ok(), 401: r.unauthorized, 422: r.unprocessable },
-});
 
-registry.registerPath({
-  method: "get",
-  path: "/api/execution-workspaces/{id}",
-  tags: ["execution-workspaces"],
-  summary: "Get an execution workspace",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
 
-registry.registerPath({
-  method: "get",
-  path: "/api/execution-workspaces/{id}/close-readiness",
-  tags: ["execution-workspaces"],
-  summary: "Check close-readiness of a workspace",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
 
-registry.registerPath({
-  method: "get",
-  path: "/api/execution-workspaces/{id}/workspace-operations",
-  tags: ["execution-workspaces"],
-  summary: "List workspace operations",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
 
-registry.registerPath({
-  method: "patch",
-  path: "/api/execution-workspaces/{id}",
-  tags: ["execution-workspaces"],
-  summary: "Update an execution workspace",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(updateExecutionWorkspaceSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
 
-registry.registerPath({
-  method: "post",
-  path: "/api/execution-workspaces/{id}/reconcile-branch",
-  tags: ["execution-workspaces"],
-  summary: "Reconcile an execution workspace branch record",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(reconcileExecutionWorkspaceBranchSchema),
-  },
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
-});
 
-registry.registerPath({
-  method: "post",
-  path: "/api/execution-workspaces/{id}/runtime-services/{action}",
-  tags: ["execution-workspaces"],
-  summary: "Control a runtime service in a workspace",
-  request: {
-    params: z.object({ id: z.string(), action: z.string() }),
-    body: jsonBody(workspaceRuntimeControlTargetSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
 
-registry.registerPath({
-  method: "post",
-  path: "/api/execution-workspaces/{id}/runtime-commands/{action}",
-  tags: ["execution-workspaces"],
-  summary: "Run a runtime command in a workspace",
-  request: {
-    params: z.object({ id: z.string(), action: z.string() }),
-    body: jsonBody(workspaceRuntimeControlTargetSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-// ─── Environments ─────────────────────────────────────────────────────────────
-
-registry.registerPath({
-  method: "get",
-  path: "/api/companies/{companyId}/environments",
-  tags: ["environments"],
-  summary: "List environments for a company",
-  request: { params: z.object({ companyId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/companies/{companyId}/environments/capabilities",
-  tags: ["environments"],
-  summary: "Get environment capabilities",
-  request: { params: z.object({ companyId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/companies/{companyId}/environments",
-  tags: ["environments"],
-  summary: "Create an environment",
-  request: {
-    params: z.object({ companyId: z.string() }),
-    body: jsonBody(createEnvironmentSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/environments/{id}",
-  tags: ["environments"],
-  summary: "Get an environment",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/environments/{id}/delete-blast-radius",
-  tags: ["environments"],
-  summary: "Get environment delete blast radius",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/environments/{id}/leases",
-  tags: ["environments"],
-  summary: "List leases for an environment",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/environment-leases/{leaseId}",
-  tags: ["environments"],
-  summary: "Get an environment lease",
-  request: { params: z.object({ leaseId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "patch",
-  path: "/api/environments/{id}",
-  tags: ["environments"],
-  summary: "Update an environment",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(updateEnvironmentSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "delete",
-  path: "/api/environments/{id}",
-  tags: ["environments"],
-  summary: "Delete an environment",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/environments/{id}/probe",
-  tags: ["environments"],
-  summary: "Probe an environment",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/companies/{companyId}/environments/probe-config",
-  tags: ["environments"],
-  summary: "Probe environment config",
-  request: {
-    params: z.object({ companyId: z.string() }),
-    body: jsonBody(probeEnvironmentConfigSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/environments/{environmentId}/custom-image-template",
-  tags: ["environments"],
-  summary: "Get the active customImage template and setup status for an environment",
-  request: {
-    params: z.object({ environmentId: z.string() }),
-    query: environmentCustomImageCompanyQuerySchema,
-  },
-  responses: { 200: r.ok(environmentCustomImageOverviewSchema), 401: r.unauthorized, 403: r.forbidden },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/environments/{environmentId}/custom-image-setup-sessions",
-  tags: ["environments"],
-  summary: "Start an interactive environment customImage setup session",
-  request: {
-    params: z.object({ environmentId: z.string() }),
-    query: environmentCustomImageCompanyQuerySchema,
-    body: jsonBody(startEnvironmentCustomImageSetupSessionSchema),
-  },
-  responses: {
-    201: r.ok(environmentCustomImageSetupSessionResultSchema),
-    400: r.badRequest,
-    401: r.unauthorized,
-    403: r.forbidden,
-    409: r.conflict,
-  },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/environment-custom-image-setup-sessions/{sessionId}",
-  tags: ["environments"],
-  summary: "Get and refresh an environment customImage setup session",
-  request: { params: z.object({ sessionId: z.string() }) },
-  responses: {
-    200: r.ok(environmentCustomImageSetupSessionResultSchema),
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-  },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/environment-custom-image-setup-sessions/{sessionId}/terminal-session-token",
-  tags: ["environments"],
-  summary: "Mint a short-lived terminal websocket token for a customImage SSH setup session",
-  request: {
-    params: z.object({ sessionId: z.string() }),
-    body: jsonBody(createEnvironmentCustomImageTerminalSessionTokenSchema),
-  },
-  responses: {
-    201: r.ok(environmentCustomImageTerminalSessionTokenSchema),
-    400: r.badRequest,
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-    409: r.conflict,
-    422: r.unprocessable,
-  },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/environment-custom-image-setup-sessions/{sessionId}/finish",
-  tags: ["environments"],
-  summary: "Capture and promote an environment customImage setup session",
-  request: {
-    params: z.object({ sessionId: z.string() }),
-    body: jsonBody(finishEnvironmentCustomImageSetupSessionSchema),
-  },
-  responses: {
-    200: r.ok(environmentCustomImageSetupSessionFinishResultSchema),
-    400: r.badRequest,
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-    409: r.conflict,
-  },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/environment-custom-image-setup-sessions/{sessionId}/cancel",
-  tags: ["environments"],
-  summary: "Cancel an environment customImage setup session",
-  request: {
-    params: z.object({ sessionId: z.string() }),
-    body: jsonBody(cancelEnvironmentCustomImageSetupSessionSchema),
-  },
-  responses: {
-    200: r.ok(environmentCustomImageSetupSessionSchema),
-    400: r.badRequest,
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-  },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/environments/{environmentId}/custom-image-template/rollback",
-  tags: ["environments"],
-  summary: "Roll back an environment customImage template to the previous captured template",
-  request: {
-    params: z.object({ environmentId: z.string() }),
-    query: environmentCustomImageCompanyQuerySchema,
-  },
-  responses: {
-    200: r.ok(environmentCustomImageTemplateRollbackResultSchema),
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-  },
-});
-
-registry.registerPath({
-  method: "delete",
-  path: "/api/environments/{environmentId}/custom-image-template",
-  tags: ["environments"],
-  summary: "Disable the active environment customImage template",
-  request: {
-    params: z.object({ environmentId: z.string() }),
-    query: disableEnvironmentCustomImageTemplateQuerySchema,
-  },
-  responses: {
-    200: r.ok(environmentCustomImageTemplateSchema),
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-  },
-});
 
 // ─── Adapters (full) ──────────────────────────────────────────────────────────
 
@@ -5187,62 +4244,6 @@ registry.registerPath({
   },
 });
 
-registry.registerPath({
-  method: "get",
-  path: "/api/issues/{id}/external-objects",
-  tags: ["issues"],
-  summary: "List external objects mentioned by an issue",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/issues/{id}/external-object-summary",
-  tags: ["issues"],
-  summary: "Get external object status summary for an issue",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/companies/{companyId}/issues/external-object-summaries",
-  tags: ["issues"],
-  summary: "Get external object status summaries for issues",
-  request: {
-    params: z.object({ companyId: z.string() }),
-    body: jsonBody(externalObjectSummariesBodySchema),
-  },
-  responses: {
-    200: r.ok(),
-    400: r.badRequest,
-    401: r.unauthorized,
-    403: r.forbidden,
-  },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/issues/{id}/external-objects/refresh",
-  tags: ["issues"],
-  summary: "Refresh external objects mentioned by an issue",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(refreshExternalObjectsBodySchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/projects/{id}/external-object-summary",
-  tags: ["projects"],
-  summary: "Get external object status summary for a project",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
 // ─── Org chart images ─────────────────────────────────────────────────────────
 
 registry.registerPath({
@@ -5382,32 +4383,6 @@ registry.registerPath({
   summary: "Demote a user from instance admin",
   request: { params: z.object({ userId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-// ─── Project workspace runtime ────────────────────────────────────────────────
-
-registry.registerPath({
-  method: "post",
-  path: "/api/projects/{id}/workspaces/{workspaceId}/runtime-services/{action}",
-  tags: ["projects"],
-  summary: "Control a runtime service in a project workspace",
-  request: {
-    params: z.object({ id: z.string(), workspaceId: z.string(), action: z.string() }),
-    body: jsonBody(workspaceRuntimeControlTargetSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/projects/{id}/workspaces/{workspaceId}/runtime-commands/{action}",
-  tags: ["projects"],
-  summary: "Run a runtime command in a project workspace",
-  request: {
-    params: z.object({ id: z.string(), workspaceId: z.string(), action: z.string() }),
-    body: jsonBody(workspaceRuntimeControlTargetSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
 // ─── Plugin UI static ─────────────────────────────────────────────────────────
@@ -5579,93 +4554,6 @@ for (const route of [
     ...(route[0] === "put" ? { body: updateResourceMembershipSchema } : {}),
   });
 }
-
-const cloudCompanyQuerySchema = z.object({
-  companyId: z.string().min(1),
-});
-const cloudCompanyBodySchema = z.object({
-  companyId: z.string().min(1),
-});
-const cloudConnectStartSchema = z.object({
-  companyId: z.string().min(1),
-  remoteUrl: z.string().min(1),
-  redirectUri: z.string().min(1),
-});
-const cloudConnectFinishSchema = z.object({
-  pendingConnectionId: z.string().min(1),
-  code: z.string().min(1),
-  state: z.string().min(1),
-});
-const cloudPushRunSchema = cloudCompanyBodySchema.extend({
-  retryOfRunId: z.string().optional(),
-});
-const cloudPushRunActivationSchema = cloudCompanyBodySchema.extend({
-  entityType: z.enum(["agents", "routines", "monitors"]),
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/cloud-upstreams",
-  tags: ["cloud-upstreams"],
-  summary: "List cloud upstream connections",
-  query: cloudCompanyQuerySchema,
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/cloud-upstreams/connect/start",
-  tags: ["cloud-upstreams"],
-  summary: "Start a cloud upstream connection",
-  body: cloudConnectStartSchema,
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/cloud-upstreams/connect/finish",
-  tags: ["cloud-upstreams"],
-  summary: "Finish a cloud upstream connection",
-  body: cloudConnectFinishSchema,
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/cloud-upstreams/{connectionId}/push-runs/preview",
-  tags: ["cloud-upstreams"],
-  summary: "Preview a cloud upstream push run",
-  body: cloudCompanyBodySchema,
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/cloud-upstreams/{connectionId}/push-runs",
-  tags: ["cloud-upstreams"],
-  summary: "Create a cloud upstream push run",
-  body: cloudPushRunSchema,
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/cloud-upstreams/{connectionId}/push-runs/{runId}",
-  tags: ["cloud-upstreams"],
-  summary: "Get a cloud upstream push run",
-  query: cloudCompanyQuerySchema,
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/cloud-upstreams/{connectionId}/push-runs/{runId}/cancel",
-  tags: ["cloud-upstreams"],
-  summary: "Cancel a cloud upstream push run",
-  body: cloudCompanyBodySchema,
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/cloud-upstreams/{connectionId}/push-runs/{runId}/activation",
-  tags: ["cloud-upstreams"],
-  summary: "Activate cloud upstream push run entities",
-  body: cloudPushRunActivationSchema,
-});
 
 for (const route of [
   ["get", "/api/companies/{companyId}/secret-providers/health", "Check configured secret providers"],
@@ -5918,665 +4806,6 @@ for (const route of [
       : {}),
   });
 }
-
-// --- Tool access -------------------------------------------------------------
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/gallery",
-  tags: ["tool-access"],
-  summary: "List tool app gallery entries",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/apps/connect",
-  tags: ["tool-access"],
-  summary: "Create a draft app connection from gallery input",
-  body: connectToolAppSchema,
-  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/apps/{connectionId}/finish",
-  tags: ["tool-access"],
-  summary: "Finish a gallery app connection and profile setup",
-  body: finishToolAppSchema,
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/apps/attention",
-  tags: ["tool-access"],
-  summary: "List tool apps needing attention",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/action-requests",
-  tags: ["tool-access"],
-  summary: "List pending tool action requests",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/examples",
-  tags: ["tool-access"],
-  summary: "List installable tool examples",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/examples/{id}/install",
-  tags: ["tool-access"],
-  summary: "Install a safe tool example",
-  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/examples/{id}/smoke",
-  tags: ["tool-access"],
-  summary: "Run tool example governance smoke checks",
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/applications",
-  tags: ["tool-access"],
-  summary: "List tool applications",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/applications",
-  tags: ["tool-access"],
-  summary: "Create a tool application",
-  body: createToolApplicationSchema,
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
-});
-
-registerCurrentRoute({
-  method: "patch",
-  path: "/api/tool-applications/{applicationId}",
-  tags: ["tool-access"],
-  summary: "Update a tool application",
-  body: updateToolApplicationSchema,
-});
-
-registerCurrentRoute({
-  method: "delete",
-  path: "/api/tool-applications/{applicationId}",
-  tags: ["tool-access"],
-  summary: "Delete a tool application",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/connections",
-  tags: ["tool-access"],
-  summary: "List tool connections",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/connections",
-  tags: ["tool-access"],
-  summary: "Create a tool connection",
-  body: createToolConnectionSchema,
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/tool-connections/{connectionId}",
-  tags: ["tool-access"],
-  summary: "Get a tool connection",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/connections/{connectionId}/start-authorization",
-  tags: ["tool-access"],
-  summary: "Start user authorization for a tool connection",
-  body: startConnectionAuthorizationSchema,
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/tool-connections/{connectionId}/grants",
-  tags: ["tool-access"],
-  summary: "List tool connection grants",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-connections/{connectionId}/grants/installations",
-  tags: ["tool-access"],
-  summary: "Add an installation grant to a tool connection",
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registerCurrentRoute({
-  method: "delete",
-  path: "/api/tool-connections/{connectionId}/grants/{grantId}",
-  tags: ["tool-access"],
-  summary: "Revoke a tool connection grant",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/tool-connections/{connectionId}/usage",
-  tags: ["tool-access"],
-  summary: "Get tool connection usage",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/tool-connections/{connectionId}/installs",
-  tags: ["tool-access"],
-  summary: "List tool connection installs",
-});
-
-registerCurrentRoute({
-  method: "put",
-  path: "/api/tool-connections/{connectionId}/installs",
-  tags: ["tool-access"],
-  summary: "Sync tool connection installs",
-  body: putToolConnectionInstallsSchema,
-});
-
-registerCurrentRoute({
-  method: "patch",
-  path: "/api/tool-connections/{connectionId}",
-  tags: ["tool-access"],
-  summary: "Update a tool connection",
-  body: updateToolConnectionSchema,
-});
-
-registerCurrentRoute({
-  method: "delete",
-  path: "/api/tool-connections/{connectionId}",
-  tags: ["tool-access"],
-  summary: "Archive a tool connection",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-connections/{connectionId}/health-check",
-  tags: ["tool-access"],
-  summary: "Run a tool connection health check",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-connections/{connectionId}/reconnect",
-  tags: ["tool-access"],
-  summary: "Reconnect a tool app with replacement credentials",
-  body: reconnectToolAppSchema,
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-connections/{connectionId}/catalog/refresh",
-  tags: ["tool-access"],
-  summary: "Refresh a tool connection catalog",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/tool-connections/{connectionId}/catalog",
-  tags: ["tool-access"],
-  summary: "List a tool connection catalog",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/tool-connections/{connectionId}/activity",
-  tags: ["tool-access"],
-  summary: "List tool connection activity",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/tool-connections/{connectionId}/test-agents",
-  tags: ["tool-access"],
-  summary: "List agents available for tool connection test calls",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-connections/{connectionId}/test-calls",
-  tags: ["tool-access"],
-  summary: "Run a tool connection test call",
-  body: toolConnectionTestCallSchema,
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable, 501: r.ok() },
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/tool-connections/{connectionId}/test-calls/{actionRequestId}",
-  tags: ["tool-access"],
-  summary: "Get a tool connection test call status",
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 501: r.ok() },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tools/oauth/{connectionId}/start",
-  tags: ["tool-access"],
-  summary: "Start OAuth sign-in for a tool connection",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/tools/oauth/callback",
-  tags: ["tool-access"],
-  summary: "Handle a tool app OAuth callback",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/profiles",
-  tags: ["tool-access"],
-  summary: "List tool access profiles with entries and bindings",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/profiles",
-  tags: ["tool-access"],
-  summary: "Create a tool access profile",
-  body: createToolProfileWithEntriesSchema,
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 409: r.conflict },
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/profiles/effective/agents/{agentId}",
-  tags: ["tool-access"],
-  summary: "Resolve effective tool access profiles for an agent",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/tool-profiles/{profileId}/new-tools",
-  tags: ["tool-access"],
-  summary: "List new catalog tools pending profile review",
-});
-
-registerCurrentRoute({
-  method: "patch",
-  path: "/api/tool-profiles/{profileId}",
-  tags: ["tool-access"],
-  summary: "Update a tool access profile",
-  body: updateToolProfileWithEntriesSchema,
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-profiles/{profileId}/duplicate",
-  tags: ["tool-access"],
-  summary: "Duplicate a tool access profile",
-  body: duplicateToolProfileSchema,
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 409: r.conflict },
-});
-
-registerCurrentRoute({
-  method: "delete",
-  path: "/api/tool-profiles/{profileId}",
-  tags: ["tool-access"],
-  summary: "Delete a tool access profile",
-  body: deleteToolProfileSchema,
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 422: r.unprocessable },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-profiles/{profileId}/new-tools/review",
-  tags: ["tool-access"],
-  summary: "Review new catalog tools for a profile",
-  body: reviewToolProfileNewToolsSchema,
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 422: r.unprocessable },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-profiles/{profileId}/entries",
-  tags: ["tool-access"],
-  summary: "Create a tool access profile entry",
-  body: createToolProfileEntryForProfileSchema,
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 422: r.unprocessable },
-});
-
-registerCurrentRoute({
-  method: "patch",
-  path: "/api/tool-profile-entries/{entryId}",
-  tags: ["tool-access"],
-  summary: "Update a tool access profile entry",
-  body: updateToolProfileEntrySchema,
-});
-
-registerCurrentRoute({
-  method: "delete",
-  path: "/api/tool-profile-entries/{entryId}",
-  tags: ["tool-access"],
-  summary: "Delete a tool access profile entry",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/profiles/{profileId}/bind",
-  tags: ["tool-access"],
-  summary: "Bind a tool access profile to a company, agent, project, routine, or issue",
-  body: createToolProfileBindingForProfileSchema,
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 409: r.conflict, 422: r.unprocessable },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/profiles/{profileId}/unbind",
-  tags: ["tool-access"],
-  summary: "Unbind a tool access profile from a company, agent, project, routine, or issue",
-  body: unbindToolProfileBindingSchema,
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/runtime-slots",
-  tags: ["tool-access"],
-  summary: "List MCP runtime slots",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/runtime-slots/{id}/stop",
-  tags: ["tool-access"],
-  summary: "Stop a local stdio MCP runtime slot",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/runtime-slots/{id}/restart",
-  tags: ["tool-access"],
-  summary: "Restart a local stdio MCP runtime slot",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/runtime-health",
-  tags: ["tool-access"],
-  summary: "Summarize MCP runtime health and alert recommendations",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/runs/{runId}/decisions",
-  tags: ["tool-access"],
-  summary: "Get governed tool decisions for a run transcript",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/trust-rules",
-  tags: ["tool-access"],
-  summary: "List tool trust rules",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/policies",
-  tags: ["tool-access"],
-  summary: "List tool policies",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/policies/reorder",
-  tags: ["tool-access"],
-  summary: "Reorder tool policies",
-  body: reorderToolPoliciesSchema,
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/policies",
-  tags: ["tool-access"],
-  summary: "Create a tool policy",
-  body: createToolPolicySchema,
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 409: r.conflict },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/policies/{policyId}/duplicate",
-  tags: ["tool-access"],
-  summary: "Duplicate a tool policy",
-  body: duplicateToolPolicySchema,
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 409: r.conflict },
-});
-
-registerCurrentRoute({
-  method: "patch",
-  path: "/api/companies/{companyId}/tools/policies/{policyId}",
-  tags: ["tool-access"],
-  summary: "Update a tool policy",
-  body: updateToolPolicySchema,
-});
-
-registerCurrentRoute({
-  method: "delete",
-  path: "/api/companies/{companyId}/tools/policies/{policyId}",
-  tags: ["tool-access"],
-  summary: "Delete a tool policy",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/action-requests/{actionRequestId}/trust-rule",
-  tags: ["tool-access"],
-  summary: "Create a tool trust rule from an action request",
-  body: createToolTrustRuleFromActionRequestSchema,
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/trust-rules/{policyId}/revoke",
-  tags: ["tool-access"],
-  summary: "Revoke a tool trust rule",
-  body: revokeToolTrustRuleSchema,
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/stdio-templates",
-  tags: ["tool-access"],
-  summary: "List approved stdio MCP templates",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/stdio-templates",
-  tags: ["tool-access"],
-  summary: "Create an approved stdio MCP template",
-  body: createToolStdioCommandTemplateSchema,
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 409: r.conflict },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/stdio-templates/{templateId}/disable",
-  tags: ["tool-access"],
-  summary: "Disable an approved stdio MCP template",
-  body: disableToolStdioCommandTemplateSchema,
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/mcp/import-json",
-  tags: ["tool-access"],
-  summary: "Preview MCP JSON import",
-  body: importMcpJsonSchema,
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/policy/test",
-  tags: ["tool-access"],
-  summary: "Test tool policy decision",
-  body: toolPolicyTestRequestSchema,
-});
-
-// --- Tool gateway ------------------------------------------------------------
-
-const toolGatewayCompanyQuerySchema = z.object({
-  companyId: z.string().optional(),
-});
-const toolGatewayCompanyBodySchema = z.object({
-  companyId: z.string(),
-}).passthrough();
-
-const mcpGatewayProtocolSchema = z.record(z.unknown());
-
-registerCurrentRoute({
-  method: "get",
-  path: "/mcp/gateways/{gatewayPublicId}",
-  tags: ["tool-gateway"],
-  summary: "Describe a public MCP gateway endpoint",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/mcp/gateways/{gatewayPublicId}",
-  tags: ["tool-gateway"],
-  summary: "Handle MCP gateway protocol requests by public id",
-  body: mcpGatewayProtocolSchema,
-  responses: { 200: r.ok(), 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 429: r.ok() },
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/tools/gateways",
-  tags: ["tool-gateway"],
-  summary: "List named MCP gateways",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/gateways",
-  tags: ["tool-gateway"],
-  summary: "Create a named MCP gateway",
-  body: createToolMcpGatewaySchema,
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
-});
-
-registerCurrentRoute({
-  method: "patch",
-  path: "/api/tool-gateway/gateways/{gatewayId}",
-  tags: ["tool-gateway"],
-  summary: "Update a named MCP gateway",
-  body: toolGatewayCompanyBodySchema,
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-gateway/gateways/{gatewayId}/tokens",
-  tags: ["tool-gateway"],
-  summary: "Create a named MCP gateway token",
-  body: toolGatewayCompanyBodySchema,
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-gateway/gateway-tokens/{tokenId}/revoke",
-  tags: ["tool-gateway"],
-  summary: "Revoke a named MCP gateway token",
-  body: toolGatewayCompanyQuerySchema.required({ companyId: true }),
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/tool-gateway/gateways/{gatewayId}/mcp",
-  tags: ["tool-gateway"],
-  summary: "Describe a named MCP gateway endpoint",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-gateway/gateways/{gatewayId}/mcp",
-  tags: ["tool-gateway"],
-  summary: "Handle named MCP gateway protocol requests",
-  body: mcpGatewayProtocolSchema,
-  responses: { 200: r.ok(), 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 429: r.ok() },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/action-requests/{id}/approve",
-  tags: ["tool-gateway"],
-  summary: "Approve a deferred tool gateway action request",
-  body: z.object({}).strict(),
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/tools/action-requests/{id}/decline",
-  tags: ["tool-gateway"],
-  summary: "Decline a deferred tool gateway action request",
-  body: z.object({}).strict(),
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/tool-gateway/runtime-slots",
-  tags: ["tool-gateway"],
-  summary: "List gateway runtime slots",
-  query: toolGatewayCompanyQuerySchema,
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-gateway/runtime-slots/{slotId}/stop",
-  tags: ["tool-gateway"],
-  summary: "Stop a gateway runtime slot",
-  query: toolGatewayCompanyQuerySchema,
-  body: z.object({ companyId: z.string().optional() }),
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-gateway/runtime-slots/{slotId}/restart",
-  tags: ["tool-gateway"],
-  summary: "Restart a gateway runtime slot",
-  query: toolGatewayCompanyQuerySchema,
-  body: z.object({ companyId: z.string().optional() }),
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/tool-gateway/audit",
-  tags: ["tool-gateway"],
-  summary: "List tool gateway audit events",
-  query: z.object({
-    companyId: z.string().optional(),
-    limit: z.number().int().positive().optional(),
-    app: z.string().optional(),
-    agent: z.string().optional(),
-    outcome: z.string().optional(),
-    window: z.enum(["1h", "24h", "7d", "30d"]).optional(),
-    search: z.string().optional(),
-    cursor: z.string().optional(),
-  }),
-});
 
 // ─── Spec builder ─────────────────────────────────────────────────────────────
 
