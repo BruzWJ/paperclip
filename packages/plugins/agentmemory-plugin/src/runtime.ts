@@ -10,11 +10,9 @@ import { AgentMemoryClient } from "./agentmemory-client.js";
 import {
   capturePromptComments,
   capturePromptSession,
-  currentPromptReceipts,
 } from "./capture.js";
 import {
   memoryPartition,
-  type MemoryPartition,
   type MemoryPartitionKind,
 } from "./memory-partitions.js";
 
@@ -119,7 +117,7 @@ export async function recall(input: {
 }
 
 /**
- * Blocking before-prompt memory barrier. The exact source Session range and
+ * Blocking before-prompt capture barrier. The exact source Session range and
  * shared comment snapshot are captured before Paperclip transmits the prompt.
  */
 export async function beforePrompt(
@@ -132,75 +130,12 @@ export async function beforePrompt(
     client,
     prompt: input,
   });
-  const excludedReceipts = [
-    ...currentPromptReceipts(input),
-    ...await capturePromptComments({
-      ctx,
-      client,
-      companyId: input.companyId,
-      issueId: input.issueId,
-      snapshotHighWaterSeq: input.snapshotHighWaterSeq,
-    }),
-  ];
-  const excludedByPartition = new Map<MemoryPartitionKind, Set<string>>();
-  for (const receipt of excludedReceipts) {
-    const excluded = excludedByPartition.get(receipt.partition.kind)
-      ?? new Set<string>();
-    excluded.add(receipt.sessionId);
-    excludedByPartition.set(receipt.partition.kind, excluded);
-  }
-
-  const partitions: MemoryPartition[] = [];
-  for (const kind of ["issue_agent", "issue_shared"] as const) {
-    if (
-      canReadIssueMemory(
-        kind,
-        { visible: true, relation: "active" },
-        input.contextAccess,
-      )
-    ) {
-      partitions.push(memoryPartition(kind, input));
-    }
-  }
-  if (
-    input.contextAccess.list_company_issues === true
-    && input.contextAccess.read_company_issue_agent_run === true
-  ) {
-    partitions.push(memoryPartition("company_agent", input));
-  }
-  if (
-    input.contextAccess.list_company_issues === true
-    && input.contextAccess.read_company_issue_comments === true
-  ) {
-    partitions.push(memoryPartition("company_shared", input));
-  }
-
-  const seenNarratives = new Set<string>();
-  const sections: string[] = [];
-  for (const partition of partitions) {
-    const result = await client.search(partition, input.sourceText);
-    const excluded = excludedByPartition.get(partition.kind) ?? new Set<string>();
-    const narratives = result.results.filter(({ sessionId, title, narrative }) => {
-      if (excluded.has(sessionId)) return false;
-      const identity = `${title}\0${narrative}`;
-      if (seenNarratives.has(identity)) return false;
-      seenNarratives.add(identity);
-      return true;
-    });
-    if (narratives.length === 0) continue;
-    const label = partition.kind
-      .split("_")
-      .join(" ");
-    sections.push([
-      `[${label} memory]`,
-      ...narratives.map(
-        ({ title, narrative }, index) => `${index + 1}. ${title}\n${narrative}`,
-      ),
-    ].join("\n\n"));
-  }
-
-  if (sections.length === 0) return null;
-  return {
-    prependText: `Relevant memory\n\n${sections.join("\n\n")}`,
-  };
+  await capturePromptComments({
+    ctx,
+    client,
+    companyId: input.companyId,
+    issueId: input.issueId,
+    snapshotHighWaterSeq: input.snapshotHighWaterSeq,
+  });
+  return null;
 }

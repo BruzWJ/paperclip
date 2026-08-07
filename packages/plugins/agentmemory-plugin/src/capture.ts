@@ -263,7 +263,7 @@ function commentObservations(
   }));
 }
 
-export interface CapturedMemoryReceipt {
+interface CapturedMemoryReceipt {
   partition: MemoryPartition;
   sessionId: string;
 }
@@ -687,25 +687,6 @@ async function captureSessionRange(input: {
   );
 }
 
-export function currentPromptReceipts(
-  prompt: PluginBeforePromptInput,
-): CapturedMemoryReceipt[] {
-  const identity = observationIdentity(
-    "session-message",
-    prompt.sessionId,
-    prompt.sourceMessageId,
-    prompt.sourceMessageSeq,
-    "prompt",
-  );
-  return privatePartitions(prompt).map((partition) => ({
-    partition,
-    sessionId: memoryObservationSessionId({
-      partition,
-      observationIdentity: identity,
-    }),
-  }));
-}
-
 /**
  * Captures every newly visible canonical Session message through the exact
  * prompt source before allowing provider dispatch.
@@ -812,7 +793,7 @@ async function captureIssueCommentsUnlocked(input: {
   companyId: string;
   issueId: string;
   maxSequence?: number;
-}): Promise<CapturedMemoryReceipt[]> {
+}): Promise<void> {
   const backendIdentity = input.client.backendIdentity;
   const stateKey = {
     scopeKind: "issue" as const,
@@ -853,16 +834,7 @@ async function captureIssueCommentsUnlocked(input: {
     input.maxSequence !== undefined
     && priorSequence > input.maxSequence
   ) {
-    return allComments
-      .filter((comment) => comment.sequence >= input.maxSequence!)
-      .flatMap((comment) => commentObservations([comment]))
-      .flatMap((observation) => partitions.map((partition) => ({
-        partition,
-        sessionId: memoryObservationSessionId({
-          partition,
-          observationIdentity: observation.identity,
-        }),
-      })));
+    return;
   }
   const comments = allComments.filter((comment) =>
     comment.sequence > priorSequence
@@ -880,22 +852,10 @@ async function captureIssueCommentsUnlocked(input: {
       checkpointFromReceipts(comment.sequence, receipts),
     );
   }
-  if (input.maxSequence === undefined) return [];
-  return allComments
-    .filter((comment) => comment.sequence >= input.maxSequence!)
-    .flatMap((comment) => commentObservations([comment]))
-    .flatMap((observation) => partitions.map((partition) => ({
-      partition,
-      sessionId: memoryObservationSessionId({
-        partition,
-        observationIdentity: observation.identity,
-      }),
-    })));
 }
 
 /**
- * Captures shared comments through the exact prompt snapshot cutoff and
- * returns current/future receipt ids that automatic recall must not inject.
+ * Captures shared comments through the exact prompt snapshot cutoff.
  */
 export async function capturePromptComments(input: {
   ctx: PluginContext;
@@ -903,7 +863,7 @@ export async function capturePromptComments(input: {
   companyId: string;
   issueId: string;
   snapshotHighWaterSeq: number;
-}): Promise<CapturedMemoryReceipt[]> {
+}): Promise<void> {
   return serializeCapture(
     `comments:${input.client.backendIdentity}:${input.companyId}:${input.issueId}`,
     () => captureIssueCommentsUnlocked({

@@ -2,10 +2,9 @@
 
 First-party Paperclip adapter for a separately hosted
 [`@agentmemory/agentmemory`](https://www.npmjs.com/package/@agentmemory/agentmemory)
-service. The plugin automatically records canonical Paperclip work, injects
-relevant memory before each provider request, and exposes four read-only recall
-tools through Paperclip's run-scoped prompt interface. Paperclip core has no
-AgentMemory or memory-specific API.
+service. The plugin automatically records canonical Paperclip work and exposes
+four read-only recall tools through Paperclip's run-scoped prompt interface.
+Paperclip core has no AgentMemory or memory-specific API.
 
 ## Memory matrix
 
@@ -49,13 +48,13 @@ directly:
 | `companyId + issueId` | opaque issue scope | opaque company-scoped shared principal |
 
 Raw Paperclip IDs never leave the plugin. Every coordinate is hashed, and every
-observation session ID carries an opaque scope prefix. Searches use both the
-exact AgentMemory project and exact agent principal; the plugin also rejects
-results whose session ID is not owned by that scope. This second check is
-required because AgentMemory 0.9.28 can let an orphaned search-index entry pass
-its project filter when its original session row is missing.
+observation session ID carries an opaque scope prefix. Memory-tool searches use
+both the exact AgentMemory project and exact agent principal; the plugin also
+rejects results whose session ID is not owned by that scope. This second check
+is required because AgentMemory 0.9.28 can let an orphaned search-index entry
+pass its project filter when its original session row is missing.
 
-## Automatic updates and injection
+## Automatic updates
 
 Immediately before each provider request, the blocking plugin hook:
 
@@ -64,22 +63,19 @@ Immediately before each provider request, the blocking plugin hook:
    bounded completed/failed non-memory tool results into issue-agent and
    company-agent memory;
 3. records canonical issue comments through the same projection boundary into
-   issue-shared and company-shared memory;
-4. searches only the current issue and company partitions authorized by the
-   context-access matrix, using the canonical source text as the query; and
-5. returns the filtered narratives as a prompt prelude. Paperclip composes that
-   prelude only for the outbound request and never changes the canonical Session
-   source message.
+   issue-shared and company-shared memory.
 
-The current source and any later comment are excluded from their own prelude.
-Identical narratives returned by overlapping issue/company partitions are
-deduplicated. A capture or search failure stops provider transmission, so an
-agent never advances past a memory update that the plugin could not confirm.
+The hook is capture-only: it never searches or injects memory into a provider
+request. Agents retrieve memory only by calling the four read-only
+Paperclip-managed memory tools. A capture failure stops provider transmission,
+so an agent never advances past a memory update that the plugin could not
+confirm.
 
 Terminal run events eagerly warm issue-agent and company-agent memory so a
-later request can recall the completed run even from another provider session.
+later memory-tool call can recall the completed run even from another provider
+session.
 Shared comments need no second event path: the next blocking prompt catches
-them up before searching.
+them up before provider transmission.
 
 Reasoning, provider metadata, Paperclip-redacted secrets, and AgentMemory recall
 tool calls/results are excluded from capture.

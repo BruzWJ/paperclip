@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,7 +18,6 @@ import {
 } from "../src/agentmemory-client.js";
 import {
   captureTerminalRun,
-  currentPromptReceipts,
   runObservations,
   sessionMessageObservations,
 } from "../src/capture.js";
@@ -27,7 +25,6 @@ import manifest from "../src/manifest.js";
 import {
   memoryObservationSessionId,
   memoryPartition,
-  type MemoryPartition,
   type MemoryPartitionKind,
 } from "../src/memory-partitions.js";
 import { MEMORY_TOOL_DEFINITIONS } from "../src/memory-tools.js";
@@ -320,34 +317,6 @@ function beforePromptContext(input: {
     state: state.api,
   } as unknown as PluginContext;
   return { ctx, state, readSession, readIssueComments };
-}
-
-function canonicalObservationIdentity(
-  kind: string,
-  ...coordinates: readonly unknown[]
-): string {
-  return createHash("sha256")
-    .update(
-      `paperclip-agentmemory-observation/v3\0${kind}\0${coordinates
-        .map((value) => JSON.stringify(value) ?? "null")
-        .join("\0")}`,
-    )
-    .digest("hex");
-}
-
-function commentSessionId(
-  partition: MemoryPartition,
-  comment: PluginRunIssueCommentProjection,
-): string {
-  return memoryObservationSessionId({
-    partition,
-    observationIdentity: canonicalObservationIdentity(
-      "issue-comment",
-      comment.issueId,
-      comment.id,
-      comment.sequence,
-    ),
-  });
 }
 
 function noLegacyMemoryCalls(requests: readonly StubRequest[]): void {
@@ -660,11 +629,14 @@ describe("AgentMemory authorization and search", () => {
   });
 });
 
-describe("AgentMemory automatic before-prompt memory", () => {
-  it("captures each between-message update before the next search without recapturing old rows", async () => {
+describe("AgentMemory automatic before-prompt capture", () => {
+  it("captures each between-message update before the next provider prompt without recapturing old rows", async () => {
     const access = {
       read_issue_agent_run: true,
       read_issue_comments: true,
+      list_company_issues: true,
+      read_company_issue_agent_run: true,
+      read_company_issue_comments: true,
     };
     const firstPrompt: PluginBeforePromptInput = {
       ...beforePromptInput(access),
@@ -722,52 +694,7 @@ describe("AgentMemory automatic before-prompt memory", () => {
       sequence: 3,
       createdAt: "2026-08-05T00:00:03.000Z",
     };
-    const issueAgent = memoryPartition("issue_agent", secondPrompt);
-    const issueShared = memoryPartition("issue_shared", secondPrompt);
-    const assistantReceipts = sessionMessageObservations(assistant, secondPrompt)
-      .map(({ identity }) => memoryObservationSessionId({
-        partition: issueAgent,
-        observationIdentity: identity,
-      }));
-    const currentReceipt = currentPromptReceipts(secondPrompt).find(
-      ({ partition }) => partition.kind === "issue_agent",
-    )!.sessionId;
-    const sharedReceipt = commentSessionId(issueShared, interveningComment);
-    let stub!: AgentMemoryStub;
-    stub = await startAgentMemoryStub({
-      search: (body) => {
-        if (body.query !== secondPrompt.sourceText) return narrativeSearch([]);
-        const available = (
-          body.project === issueAgent.project && body.agentId === issueAgent.agentId
-            ? [
-              {
-                sessionId: assistantReceipts[0]!,
-                title: "Updated assistant response",
-                narrative: "assistant update is searchable",
-              },
-              {
-                sessionId: assistantReceipts[1]!,
-                title: "Updated tool result",
-                narrative: "tool update is searchable",
-              },
-              {
-                sessionId: currentReceipt,
-                title: "Current source",
-                narrative: "must exclude current source",
-              },
-            ]
-            : body.project === issueShared.project
-                && body.agentId === issueShared.agentId
-              ? [{
-                sessionId: sharedReceipt,
-                title: "Updated comment",
-                narrative: "comment update is searchable",
-              }]
-              : []
-        ).filter(({ sessionId }) => stub.observations.has(sessionId));
-        return narrativeSearch(available);
-      },
-    });
+    const stub = await startAgentMemoryStub();
     const messages: PluginCanonicalSessionMessage[] = [firstSource];
     const comments: PluginRunIssueCommentProjection[] = [];
     const runtime = beforePromptContext({
@@ -779,12 +706,10 @@ describe("AgentMemory automatic before-prompt memory", () => {
     await expect(beforePrompt(runtime.ctx, firstPrompt)).resolves.toBeNull();
     messages.push(assistant, secondSource);
     comments.push(interveningComment);
-    const result = await beforePrompt(runtime.ctx, secondPrompt);
+    await expect(beforePrompt(runtime.ctx, secondPrompt)).resolves.toBeNull();
 
-    expect(result?.prependText).toContain("assistant update is searchable");
-    expect(result?.prependText).toContain("tool update is searchable");
-    expect(result?.prependText).toContain("comment update is searchable");
-    expect(result?.prependText).not.toContain("must exclude current source");
+    expect(stub.requests.some(({ path }) => path === "/agentmemory/search"))
+      .toBe(false);
     const observes = stub.requests.filter(({ path }) =>
       path === "/agentmemory/observe"
     );
@@ -806,7 +731,7 @@ describe("AgentMemory automatic before-prompt memory", () => {
     noLegacyMemoryCalls(stub.requests);
   });
 
-  it("does not search when the before-message capture barrier fails", async () => {
+  it("fails the before-message capture barrier without searching", async () => {
     const prompt = beforePromptInput({ read_issue_agent_run: true });
     const source = canonicalMessage({
       seq: prompt.sourceMessageSeq,
@@ -834,242 +759,6 @@ describe("AgentMemory automatic before-prompt memory", () => {
     expect(stub.requests.some(({ path }) => path === "/agentmemory/search"))
       .toBe(false);
     expect(runtime.state.values.size).toBe(0);
-  });
-
-  it("injects only authorized searches and excludes current or future source receipts", async () => {
-    const prompt = beforePromptInput({
-      read_issue_agent_run: true,
-      read_issue_comments: true,
-    });
-    const earlierMessage = canonicalMessage({
-      seq: 1,
-      id: "source-earlier",
-      agentId: prompt.agentId,
-      message: { type: "user", text: "Earlier source" },
-    });
-    const currentMessage = canonicalMessage({
-      seq: prompt.sourceMessageSeq,
-      id: prompt.sourceMessageId,
-      agentId: prompt.agentId,
-      message: { type: "user", text: prompt.sourceText },
-    });
-    const comments: PluginRunIssueCommentProjection[] = [
-      {
-        id: "comment-past",
-        issueId: prompt.issueId,
-        body: "Past shared decision",
-        author: { kind: "user", userId: "user" },
-        runId: null,
-        sequence: 2,
-        createdAt: "2026-08-05T00:00:02.000Z",
-      },
-      {
-        id: "comment-cutoff",
-        issueId: prompt.issueId,
-        body: "Current cutoff comment",
-        author: { kind: "user", userId: "user" },
-        runId: null,
-        sequence: prompt.snapshotHighWaterSeq,
-        createdAt: "2026-08-05T00:00:04.000Z",
-      },
-      {
-        id: "comment-future",
-        issueId: prompt.issueId,
-        body: "Future comment",
-        author: { kind: "user", userId: "user" },
-        runId: null,
-        sequence: prompt.snapshotHighWaterSeq + 1,
-        createdAt: "2026-08-05T00:00:05.000Z",
-      },
-    ];
-    const issueAgent = memoryPartition("issue_agent", prompt);
-    const issueShared = memoryPartition("issue_shared", prompt);
-    const companyAgent = memoryPartition("company_agent", prompt);
-    const companyShared = memoryPartition("company_shared", prompt);
-    const earlierIdentity = sessionMessageObservations(earlierMessage, prompt)[0]!
-      .identity;
-    const currentPrivateReceipts = currentPromptReceipts(prompt);
-    const stub = await startAgentMemoryStub({
-      search: (body) => {
-        if (
-          body.project === issueAgent.project
-          && body.agentId === issueAgent.agentId
-        ) {
-          return narrativeSearch([
-            {
-              sessionId: memoryObservationSessionId({
-                partition: issueAgent,
-                observationIdentity: earlierIdentity,
-              }),
-              title: "Earlier agent memory",
-              narrative: "inject private history",
-            },
-            {
-              sessionId: currentPrivateReceipts.find(({ partition }) =>
-                partition.kind === "issue_agent"
-              )!.sessionId,
-              title: "Current source",
-              narrative: "current source echo",
-            },
-          ]);
-        }
-        if (
-          body.project === issueShared.project
-          && body.agentId === issueShared.agentId
-        ) {
-          return narrativeSearch([
-            {
-              sessionId: commentSessionId(issueShared, comments[0]!),
-              title: "Past shared memory",
-              narrative: "inject shared history",
-            },
-            {
-              sessionId: commentSessionId(issueShared, comments[1]!),
-              title: "Cutoff comment",
-              narrative: "cutoff comment echo",
-            },
-            {
-              sessionId: commentSessionId(issueShared, comments[2]!),
-              title: "Future comment",
-              narrative: "future comment echo",
-            },
-          ]);
-        }
-        if (
-          (body.project === companyAgent.project
-            && body.agentId === companyAgent.agentId)
-          || (body.project === companyShared.project
-            && body.agentId === companyShared.agentId)
-        ) {
-          return narrativeSearch([{
-            sessionId: memoryObservationSessionId({
-              partition: companyShared,
-              observationIdentity: "unauthorized-company-source",
-            }),
-            title: "Company memory",
-            narrative: "must not be requested",
-          }]);
-        }
-        return narrativeSearch([]);
-      },
-    });
-    const runtime = beforePromptContext({
-      baseUrl: stub.baseUrl,
-      messages: [earlierMessage, currentMessage],
-      comments,
-    });
-
-    const result = await beforePrompt(runtime.ctx, prompt);
-
-    expect(result).not.toBeNull();
-    if (!result) throw new Error("Expected automatic memory injection");
-    expect(result.prependText).toContain("[issue agent memory]");
-    expect(result.prependText).toContain("inject private history");
-    expect(result.prependText).toContain("[issue shared memory]");
-    expect(result.prependText).toContain("inject shared history");
-    expect(result.prependText).not.toContain("current source echo");
-    expect(result.prependText).not.toContain("cutoff comment echo");
-    expect(result.prependText).not.toContain("future comment echo");
-    expect(result.prependText).not.toContain("must not be requested");
-    const searches = stub.requests.filter(({ path }) =>
-      path === "/agentmemory/search"
-    );
-    expect(searches).toHaveLength(2);
-    expect(searches.map(({ body }) => [body.project, body.agentId]))
-      .toEqual([
-        [issueAgent.project, issueAgent.agentId],
-        [issueShared.project, issueShared.agentId],
-      ]);
-    expect(JSON.stringify(
-      stub.requests.filter(({ path }) => path === "/agentmemory/observe"),
-    )).not.toContain("Future comment");
-    noLegacyMemoryCalls(stub.requests);
-  });
-
-  it("searches all granted scopes while routing Session and comment capture separately", async () => {
-    const prompt = beforePromptInput({
-      read_issue_agent_run: true,
-      read_issue_comments: true,
-      list_company_issues: true,
-      read_company_issue_agent_run: true,
-      read_company_issue_comments: true,
-    });
-    const source = canonicalMessage({
-      seq: prompt.sourceMessageSeq,
-      id: prompt.sourceMessageId,
-      agentId: prompt.agentId,
-      message: { type: "user", text: prompt.sourceText },
-    });
-    const comment: PluginRunIssueCommentProjection = {
-      id: "shared-comment",
-      issueId: prompt.issueId,
-      body: "A shared decision",
-      author: { kind: "user", userId: "user" },
-      runId: null,
-      sequence: 2,
-      createdAt: "2026-08-05T00:00:02.000Z",
-    };
-    const partitions = ([
-      "issue_agent",
-      "issue_shared",
-      "company_agent",
-      "company_shared",
-    ] as const).map((kind) => memoryPartition(kind, prompt));
-    const stub = await startAgentMemoryStub({
-      search: (body) => {
-        const partition = partitions.find((candidate) =>
-          candidate.project === body.project && candidate.agentId === body.agentId
-        );
-        return partition
-          ? narrativeSearch([{
-            sessionId: memoryObservationSessionId({
-              partition,
-              observationIdentity: `older-${partition.kind}`,
-            }),
-            title: `${partition.kind} result`,
-            narrative: `${partition.kind} injected`,
-          }])
-          : narrativeSearch([]);
-      },
-    });
-    const runtime = beforePromptContext({
-      baseUrl: stub.baseUrl,
-      messages: [source],
-      comments: [comment],
-    });
-
-    const result = await beforePrompt(runtime.ctx, prompt);
-
-    for (const partition of partitions) {
-      expect(result?.prependText).toContain(`[${partition.kind.replace("_", " ")} memory]`);
-      expect(result?.prependText).toContain(`${partition.kind} injected`);
-    }
-    expect(
-      stub.requests
-        .filter(({ path }) => path === "/agentmemory/search")
-        .map(({ body }) => [body.project, body.agentId]),
-    ).toEqual(partitions.map(({ project, agentId }) => [project, agentId]));
-
-    const starts = stub.requests.filter(({ path }) =>
-      path === "/agentmemory/session/start"
-    );
-    const privatePartitions = partitions.filter(({ kind }) =>
-      kind === "issue_agent" || kind === "company_agent"
-    );
-    const sharedPartitions = partitions.filter(({ kind }) =>
-      kind === "issue_shared" || kind === "company_shared"
-    );
-    expect(starts.filter(({ body }) =>
-      body.title === "Paperclip canonical Session messages"
-    ).map(({ body }) => [body.project, body.agentId])).toEqual(
-      privatePartitions.map(({ project, agentId }) => [project, agentId]),
-    );
-    expect(starts.filter(({ body }) =>
-      body.title === "Paperclip shared issue comment"
-    ).map(({ body }) => [body.project, body.agentId])).toEqual(
-      sharedPartitions.map(({ project, agentId }) => [project, agentId]),
-    );
-    expect(starts).toHaveLength(4);
   });
 
   it("backfills canonical history when a saved checkpoint receipt is missing", async () => {
@@ -1101,6 +790,8 @@ describe("AgentMemory automatic before-prompt memory", () => {
     expect(runtime.readSession).toHaveBeenCalledTimes(2);
     expect(stub.requests.filter(({ path }) => path === "/agentmemory/observe"))
       .toHaveLength(4);
+    expect(stub.requests.some(({ path }) => path === "/agentmemory/search"))
+      .toBe(false);
     noLegacyMemoryCalls(stub.requests);
   });
 });
