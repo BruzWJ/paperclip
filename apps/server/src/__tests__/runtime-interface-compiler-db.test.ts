@@ -295,6 +295,21 @@ describe("Postgres runtime-interface compile snapshot", () => {
     expect(compiled.configureTargets[0]).not.toHaveProperty("reportsTo");
   });
 
+  it("exposes recovery restoration only when the target has an instruction bootstrap", () => {
+    const base = snapshot({ restoreSession: true });
+    expect(buildRuntimeInterfaceCompileInput(base).restoreSession).toBe(false);
+
+    const instructed = {
+      ...base,
+      agents: base.agents.map((agent) =>
+        agent.id === "owner"
+          ? { ...agent, instruction: "Restore the role context." }
+          : agent,
+      ),
+    } satisfies RuntimeInterfaceCompilerSnapshot;
+    expect(buildRuntimeInterfaceCompileInput(instructed).restoreSession).toBe(true);
+  });
+
   it("does not inherit creator lifecycle catalogs through a consult", () => {
     const compiled = buildRuntimeInterfaceCompileInput(
       snapshot({

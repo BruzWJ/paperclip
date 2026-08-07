@@ -40,6 +40,11 @@ import type {
   RuntimePluginTool,
 } from "./runtime-interface-compiler.js";
 import type { RuntimeRetrievalScopeResolver } from "./runtime-tool-executor.js";
+import {
+  createPostgresRecoverySessionHistoryRepository,
+  isTargetNotFoundReplacement,
+  type RecoverySessionScope,
+} from "./recovery-session-history.js";
 import { listAuthorizedPluginAgentTools } from "./plugin-agent-tool-authority.js";
 import { pluginManifestIdentity } from "./plugin-manifest-identity.js";
 import { resolveExecutionModeContextMask } from "./execution-mode-context-mask.js";
@@ -54,6 +59,7 @@ import {
 type AgentRow = AgentOrgRow & {
   title: string | null;
   capabilities: string | null;
+  instruction?: string | null;
   currentAdapterConfigRevisionId: string | null;
 };
 
@@ -62,8 +68,40 @@ type ConfigureGrant = {
   scope: Record<string, unknown> | null;
 };
 
+function recoveryScopeForCapability(
+  capability: PromptCapabilityCompileScope,
+): RecoverySessionScope | undefined {
+  // Generic compiler callers omit these exact prompt fields and therefore
+  // cannot gain the recovery descriptor.
+  if (
+    typeof capability.sessionId !== "string" ||
+    typeof capability.runId !== "string" ||
+    typeof capability.attemptId !== "string" ||
+    typeof capability.refId !== "string" ||
+    typeof capability.refOrdinal !== "number" ||
+    typeof capability.segmentOrdinal !== "number" ||
+    !Number.isSafeInteger(capability.refOrdinal) ||
+    !Number.isSafeInteger(capability.segmentOrdinal)
+  ) {
+    return undefined;
+  }
+  return {
+    companyId: capability.companyId,
+    issueId: capability.issueId,
+    sessionId: capability.sessionId,
+    targetAgentId: capability.targetAgentId,
+    runId: capability.runId,
+    attemptId: capability.attemptId,
+    refId: capability.refId,
+    refOrdinal: capability.refOrdinal,
+    segmentOrdinal: capability.segmentOrdinal,
+  };
+}
+
 export interface RuntimeInterfaceCompilerSnapshot {
   capability: PromptCapabilityCompileScope;
+  /** Derived from prior canonical attempts; never a persisted runtime mode. */
+  restoreSession?: boolean;
   issue: {
     companyId: string;
     ownerKind: string | null;
@@ -351,6 +389,10 @@ export function buildRuntimeInterfaceCompileInput(
     mentionTargets,
     configureTargets,
     pluginTools: snapshot.pluginTools,
+    restoreSession:
+      snapshot.restoreSession === true &&
+      typeof sourceAgent.instruction === "string" &&
+      sourceAgent.instruction.trim().length > 0,
   };
 }
 
@@ -392,6 +434,7 @@ async function loadSnapshot(
         name: agents.name,
         title: agents.title,
         capabilities: agents.capabilities,
+        instruction: agents.instruction,
         reportsTo: agents.reportsTo,
         status: agents.status,
         currentAdapterConfigRevisionId:
@@ -568,11 +611,17 @@ async function loadSnapshot(
 export function createPostgresRuntimeInterfaceCompiler(
   db: Db,
 ): PostgresPromptCapabilityCompiler {
+  const recoveryHistory = createPostgresRecoverySessionHistoryRepository(db);
   return {
     async resolve(capability) {
-      return buildRuntimeInterfaceCompileInput(
-        await loadSnapshot(db, capability),
-      );
+      const snapshot = await loadSnapshot(db, capability);
+      return buildRuntimeInterfaceCompileInput({
+        ...snapshot,
+        restoreSession: await isTargetNotFoundReplacement(
+          recoveryHistory,
+          recoveryScopeForCapability(capability),
+        ),
+      });
     },
 
   };

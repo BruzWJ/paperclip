@@ -14,6 +14,7 @@ import {
   createAcpRuntime,
   createRuntimeStore,
 } from "acpx/runtime";
+import { RequestError } from "@agentclientprotocol/sdk";
 import { describe, expect, it, vi } from "vitest";
 import {
   executeAcpxOneShotPrompt,
@@ -597,6 +598,61 @@ describe("ACPX one-shot runtime bridge", () => {
       cwd: process.cwd(),
       resumeSessionId: "previous-provider-session",
     });
+    await expect(fs.access(stateDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("classifies an exact missing resumed provider session for a fresh successor", async () => {
+    const stateDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "paperclip-acpx-one-shot-test-"),
+    );
+    const ensureSession = vi.fn(async () => {
+      throw new RequestError(-32002, "provider session was not found");
+    });
+    const getStatus = vi.fn();
+    const startTurn = vi.fn();
+    const close = vi.fn();
+    const removeTemporaryStateDir = vi.fn(async (directory: string) => {
+      await fs.rm(directory, { recursive: true, force: true });
+    });
+    const runtime: AcpxOneShotRuntime = {
+      ensureSession,
+      getStatus,
+      startTurn,
+      cancel: async () => {},
+      close,
+    };
+
+    const result = await executeAcpxOneShotPrompt({
+      cwd: process.cwd(),
+      agentName: "fixture",
+      start: { kind: "resume", sessionId: "missing-provider-session" },
+      message: "continue the issue",
+      configSelections: [],
+      permissionMode: "deny-all",
+      dependencies: {
+        loadAgentRegistry: async () => registry(),
+        createAcpRuntime: () => runtime,
+        createRuntimeStore: () => store(),
+        createTemporaryStateDir: async () => stateDir,
+        removeTemporaryStateDir,
+        createSessionKey: () => "missing-resume-session",
+      },
+    });
+
+    expect(result).toEqual({
+      kind: "target_not_found",
+      cleanup: { stateRemoved: true, errors: [] },
+    });
+    expect(ensureSession).toHaveBeenCalledWith({
+      sessionKey: "missing-resume-session",
+      agent: "fixture",
+      mode: "persistent",
+      cwd: process.cwd(),
+      resumeSessionId: "missing-provider-session",
+    });
+    expect(getStatus).not.toHaveBeenCalled();
+    expect(startTurn).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
     await expect(fs.access(stateDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 

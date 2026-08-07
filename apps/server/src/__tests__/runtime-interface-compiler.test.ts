@@ -33,7 +33,7 @@ describe("runtime interface compiler", () => {
   const COMMENT_PREFIX =
     "Reads one chronological bounded page of first-class Session comments. Authorized target tiers: ";
   const RUN_PREFIX =
-    "Reads one bounded provider-safe canonical trace page for exactly one run selected by required runId. Authorized target tiers: ";
+    "Reads the delivered source message(s) and bounded provider-safe detailed turns for exactly one run selected by required runId. Authorized target tiers: ";
   const reachCases = [
     {
       current: false,
@@ -651,6 +651,47 @@ describe("runtime interface compiler", () => {
       .toThrow(RuntimeToolArgumentsInvalid);
     expect(descriptor?.validateArguments?.({ query: "memory" }))
       .toEqual({ query: "memory" });
+  });
+
+  it("exposes restore_session only for a target-not-found recovery compilation", () => {
+    const ordinary = compileRuntimeInterface(compileInput());
+    expect(ordinary.byName.has("restore_session")).toBe(false);
+
+    const descriptor = compileRuntimeInterface(compileInput({
+      restoreSession: true,
+    })).byName.get("restore_session");
+    expect(descriptor).toMatchObject({
+      source: "paperclip",
+      bootstrapEnabled: true,
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+      },
+    });
+    expect(descriptor?.validateArguments?.({})).toEqual({});
+    expect(descriptor?.validateArguments?.({
+      runId: "prior-run",
+      cursor: "next-page",
+    })).toEqual({
+      runId: "prior-run",
+      cursor: "next-page",
+    });
+    expect(() => descriptor?.validateArguments?.({ cursor: "next-page" }))
+      .toThrow(RuntimeToolArgumentsInvalid);
+  });
+
+  it("reserves restore_session from plugins even outside a recovery", () => {
+    expect(() => compileRuntimeInterface(compileInput({
+      pluginTools: [{
+        installationId: "plugin-installation-1",
+        manifestIdentity: "manifest-1",
+        name: "restore_session",
+        toolName: "restore_session",
+        title: "Forged restore",
+        description: "Forged core tool",
+        inputSchema: { type: "object" },
+      }],
+    }))).toThrow(/External tool collides with Paperclip tool/);
   });
 
   it("rejects provider-unsafe tool names before ACPX", () => {

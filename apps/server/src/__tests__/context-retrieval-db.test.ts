@@ -1,12 +1,63 @@
 import { describe, expect, it } from "vitest";
+import { drizzle } from "drizzle-orm/pg-proxy";
 import { decodeIssueSessionMessage } from "@paperclipai/shared/issue-session";
 import {
+  createContextRetrievalDbRepository,
   mapContextCommentAuthor,
   mapContextIssueRow,
   sanitizeCanonicalMessage,
 } from "../services/context-retrieval-db.js";
 
 describe("context retrieval DB projection", () => {
+  it("builds a valid first-page trace query with delivered source messages only", async () => {
+    const statements: string[] = [];
+    let statementCount = 0;
+    const repository = createContextRetrievalDbRepository(
+      drizzle(async (query) => {
+        statements.push(query);
+        statementCount += 1;
+        return {
+          rows: statementCount === 1
+            ? [["company", "issue", "run"]]
+            : [],
+        };
+      }) as never,
+      {
+        runService: {
+          async readJoinedRunDetail() {
+            return {
+              run: {
+                issueId: "issue",
+                sessionId: "session",
+                kind: "productive",
+                status: "succeeded",
+                startedAt: null,
+                finishedAt: null,
+              },
+              accounting: { items: [] },
+              costs: { items: [] },
+              outputComments: { items: [] },
+            } as never;
+          },
+        },
+      },
+    );
+
+    await repository.readCanonicalRunTrace({
+      companyId: "company",
+      runId: "run",
+      after: null,
+      limit: 26,
+    });
+
+    const traceQuery = statements.at(-1)!;
+    expect(traceQuery).not.toContain("and )");
+    expect(traceQuery.match(/prompt_transmission_phase = 'transmitted'/g))
+      .toHaveLength(2);
+    expect(traceQuery).toContain("source_ref.source_message_id");
+    expect(traceQuery).toContain("segment.source_message_id");
+  });
+
   it("maps the exact four comment-author shapes and fails closed otherwise", () => {
     const base = {
       id: "comment",

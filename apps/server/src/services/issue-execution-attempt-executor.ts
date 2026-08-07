@@ -98,6 +98,8 @@ export interface ResolvedIssueExecutionPrompt {
    * the canonical issue message.
    */
   readonly bootstrapInstruction: string | null;
+  /** True only for an instructed target-not-found replacement bootstrap. */
+  readonly restoreSession?: boolean;
   /** Exact effective context-access matrix compiled for this prompt. */
   readonly contextAccess: ContextDial;
   readonly carryContext: boolean;
@@ -424,6 +426,8 @@ function validatePrompt(prompt: ResolvedIssueExecutionPrompt): void {
     (prompt.bootstrapInstruction !== null &&
       (prompt.bootstrapInstruction.trim().length === 0 ||
         prompt.sessionOperation !== "new")) ||
+    (prompt.restoreSession === true &&
+      (prompt.bootstrapInstruction === null || prompt.sessionOperation !== "new")) ||
     !Number.isSafeInteger(prompt.sourceMessageSeq) ||
     prompt.sourceMessageSeq < 0 ||
     AGENT_CONTEXT_GRANT_KEYS.some(
@@ -537,8 +541,13 @@ function validatePrompt(prompt: ResolvedIssueExecutionPrompt): void {
   }
 }
 
-function instructionBootstrapMessage(instruction: string): string {
-  return `${instruction}\n\nNo task yet. Use enabled tools if needed, then end turn.`;
+function instructionBootstrapMessage(
+  instruction: string,
+  restoreSession = false,
+): string {
+  return restoreSession
+    ? `${instruction}\n\nContinuation. Call restore_session, then end turn.`
+    : `${instruction}\n\nNo task yet. Use enabled tools if needed, then end turn.`;
 }
 
 function waitForLeaseRenewalInterval(
@@ -956,6 +965,8 @@ export async function executeAcpxRuntimePrompt(
           };
         }
       }
+    } else if (result.kind === "target_not_found") {
+      outcome = { kind: "target_not_found" };
     } else if (result.kind === "failed") {
       outcome = {
         kind: "error",
@@ -1321,6 +1332,7 @@ export function createIssueExecutionAttemptExecutor(options: {
                 bootstrapPrompt: {
                   message: instructionBootstrapMessage(
                     input.prompt.bootstrapInstruction,
+                    input.prompt.restoreSession === true,
                   ),
                 },
               }),
@@ -1571,14 +1583,6 @@ export function createIssueExecutionAttemptExecutor(options: {
             message: outboundMessage,
             signal: executionController.signal,
           });
-          if (
-            cycle.decision.result.kind === "retry" &&
-            cycle.decision.result.reason === "target_not_found_new_session"
-          ) {
-            throw new IssueExecutionAttemptRejected(
-              "ACPX runtime never emits a target_not_found successor transition",
-            );
-          }
           const failed =
             (cycle.decision.result.kind === "terminal" &&
               cycle.decision.result.outcome === "failed") ||

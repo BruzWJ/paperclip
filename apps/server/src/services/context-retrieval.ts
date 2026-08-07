@@ -22,10 +22,6 @@ import {
   resolveContextRetrievalPolicy,
   type ContextDial,
 } from "./context-dial-resolver.js";
-import {
-  IssueSessionInvalidCursor,
-  type IssueSessionReadProjection,
-} from "./issue-session/store.js";
 
 export const CONTEXT_RETRIEVAL_DEFAULT_PAGE_SIZE = 25;
 export const CONTEXT_RETRIEVAL_MAX_PAGE_SIZE = 100;
@@ -196,11 +192,7 @@ export interface ContextRetrievalRepository {
   readCanonicalRunTrace(input: {
     companyId: string;
     runId: string;
-    projection: Extract<
-      IssueSessionReadProjection,
-      "run-trace" | "audit" | "export"
-    >;
-    cursor?: string | null;
+    after?: RetrievalCursorPosition | null;
     limit?: number;
   }): Promise<CanonicalRunTrace | null>;
 }
@@ -353,6 +345,15 @@ function commentPosition(
   comment: ContextRetrievalCommentProjection,
 ): RetrievalCursorPosition {
   return { sortValue: String(comment.sequence).padStart(20, "0"), id: comment.id };
+}
+
+function tracePosition(
+  turn: CanonicalRunTraceTurn,
+): RetrievalCursorPosition {
+  return {
+    sortValue: String(turn.seq).padStart(20, "0"),
+    id: turn.id,
+  };
 }
 
 function assertIssueProjection(issue: ContextRetrievalIssueProjection): void {
@@ -757,7 +758,58 @@ export function createContextRetrievalService(
     throw new Error("Context retrieval cursor secret is required");
   }
 
+  async function readCanonicalAgentRunTrace(input: {
+    companyId: string;
+    runId: string;
+    cursor?: string | null;
+  }): Promise<ProviderSafeRunTrace> {
+    const run = await options.repository.runIssue({
+      companyId: input.companyId,
+      runId: input.runId,
+    });
+    if (!run) throw new ContextRetrievalDenied();
+    const key = scopeKey([
+      "read_issue_agent_run",
+      input.companyId,
+      input.runId,
+    ]);
+    const after = decodeRetrievalCursor(
+      options.cursorSecret,
+      input.cursor,
+      key,
+    );
+    const limit = boundedLimit(undefined);
+    const trace = await options.repository.readCanonicalRunTrace({
+      companyId: input.companyId,
+      runId: input.runId,
+      after,
+      limit: limit + 1,
+    });
+    if (!trace || trace.issueId !== run.issueId) {
+      throw new ContextRetrievalDenied();
+    }
+    const page = pageCursor(
+      options.cursorSecret,
+      key,
+      trace.turns,
+      limit,
+      tracePosition,
+    );
+    return providerSafeRunTrace({
+      ...trace,
+      turns: page.items,
+      nextCursor: page.nextCursor,
+    });
+  }
+
   return {
+    /**
+     * Internal reuse point for a capability-scoped recovery. It intentionally
+     * bypasses context-dial reach checks; its caller must prove a narrower
+     * runtime authority before naming a run.
+     */
+    readCanonicalAgentRunTrace,
+
     async listCompanyIssues(
       scope: ContextRetrievalScope,
       input: RetrievalPageRequest & { filters?: RetrievalIssueFilters } = {},
@@ -896,24 +948,11 @@ export function createContextRetrievalService(
         descendant: policy.runs.descendant,
         company: policy.runs.company,
       });
-      let trace: CanonicalRunTrace | null;
-      try {
-        trace = await options.repository.readCanonicalRunTrace({
-          companyId: scope.companyId,
-          runId: input.runId,
-          projection: "run-trace",
-          cursor: input.cursor,
-        });
-      } catch (error) {
-        if (error instanceof IssueSessionInvalidCursor) {
-          throw new ContextRetrievalInvalidCursor(error.message);
-        }
-        throw error;
-      }
-      if (!trace || trace.issueId !== run.issueId) {
-        throw new ContextRetrievalDenied();
-      }
-      return providerSafeRunTrace(trace);
+      return readCanonicalAgentRunTrace({
+        companyId: scope.companyId,
+        runId: input.runId,
+        cursor: input.cursor,
+      });
     },
   };
 }

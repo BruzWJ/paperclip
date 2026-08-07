@@ -9,6 +9,7 @@ import {
   buildRuntimeRetrievalAbi,
   RuntimeInterfaceConflict,
   RuntimeToolArgumentsInvalid,
+  type RestoreSessionArguments,
   type CompiledRunToolDescriptor,
   type PaperclipRuntimeToolName,
   type RuntimeMentionArguments,
@@ -25,6 +26,10 @@ import {
   type RuntimeToolCallTransaction,
 } from "./runtime-tool-call-ledger.js";
 import type { PluginWorkerManager } from "./plugin-worker-manager.js";
+
+type RecoverySessionHistoryReader = ReturnType<
+  typeof import("./recovery-session-history.js").createRecoverySessionHistoryReader
+>;
 
 type ContextRetrievalService = ReturnType<
   typeof import("./context-retrieval.js").createContextRetrievalService
@@ -148,6 +153,8 @@ function invocationId(
 export function createRuntimeToolExecutor(options: {
   retrieval: ContextRetrievalService;
   retrievalScope: RuntimeRetrievalScopeResolver;
+  /** Present in production; only the recovery-only descriptor can use it. */
+  restoreSession?: RecoverySessionHistoryReader;
   actions: RuntimeActionPort;
   pluginTools: RuntimePluginToolPort;
   callLedger: RuntimeToolCallLedger;
@@ -198,6 +205,7 @@ export function createRuntimeToolExecutor(options: {
       | "list_sub_issues"
       | "read_issue_comments"
       | "read_issue_agent_run"
+      | "restore_session"
     >,
     (input: RuntimeActionInvocation) => Promise<unknown>
   > = {
@@ -315,7 +323,17 @@ export function createRuntimeToolExecutor(options: {
         );
         let result: unknown;
         let mentionActionCommitted = false;
-        if (
+        if (descriptor.name === "restore_session") {
+          if (!options.restoreSession) {
+            throw new RuntimeInterfaceConflict(
+              "restore_session reader is unavailable",
+            );
+          }
+          result = await options.restoreSession.restore({
+            capability,
+            ...(validatedArguments as RestoreSessionArguments),
+          });
+        } else if (
           descriptor.name === "list_company_issues" ||
           descriptor.name === "list_sub_issues" ||
           descriptor.name === "read_issue_comments" ||

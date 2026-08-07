@@ -34,6 +34,7 @@ type PaperclipRetrievalToolName =
 
 const PAPERCLIP_RUNTIME_TOOL_NAMES = [
   ...PAPERCLIP_RETRIEVAL_TOOL_NAMES,
+  "restore_session",
   // Runtime actions include relationship-derived actions which are not
   // persisted agent grants. Keep the entire runtime namespace reserved.
   ...PAPERCLIP_RUNTIME_ACTION_KEYS,
@@ -50,11 +51,7 @@ export interface CompiledRunToolDescriptor {
   description: string;
   inputSchema: JsonSchema;
   source: RuntimeToolSource;
-  /**
-   * Server-only declaration that this plugin tool may run during the
-   * instruction bootstrap turn. Paperclip-owned built-in tools are never
-   * bootstrap-enabled.
-   */
+  /** Server-only declaration that this tool may run during a bootstrap turn. */
   bootstrapEnabled?: boolean;
   /** Server-only immutable installation identity for a direct plugin tool. */
   pluginInstallationId?: string;
@@ -128,6 +125,12 @@ export interface RuntimeInterfaceCompileInput {
   configureTargets: readonly RuntimeAgentConfigureTarget[];
   /** Ready plugin tools are host-managed and available to every agent. */
   pluginTools: readonly RuntimePluginTool[];
+  /**
+   * A direct target-not-found replacement may expose one recovery-only
+   * reader. It is derived from canonical attempts at compile time, never a
+   * persisted provider/session mode.
+   */
+  restoreSession?: boolean;
 }
 
 interface CompiledRuntimeInterface {
@@ -212,6 +215,11 @@ const runtimeMentionBoardArgumentsSchema = z
 export type RuntimeMentionArguments = z.infer<
   typeof runtimeMentionArgumentsSchema
 >;
+
+export interface RestoreSessionArguments {
+  runId?: string;
+  cursor?: string;
+}
 
 /** Sole static shape parser shared by descriptor and typed action ingress. */
 export function parseRuntimeMentionArguments(
@@ -441,6 +449,21 @@ function parseOptionalString(
   return value;
 }
 
+export function parseRestoreSessionArguments(
+  value: unknown,
+): RestoreSessionArguments {
+  const input = strictRecord(value);
+  assertExactKeys(input, ["runId", "cursor"]);
+  const runId = parseOptionalString(input.runId, "runId");
+  const cursor = parseOptionalString(input.cursor, "cursor");
+  if (cursor && !runId) {
+    throw new RuntimeToolArgumentsInvalid(
+      "runId is required when continuing a restored run trace",
+    );
+  }
+  return { ...(runId ? { runId } : {}), ...(cursor ? { cursor } : {}) };
+}
+
 function parseIssueFilters(
   value: unknown,
 ): RetrievalIssueFilters | undefined {
@@ -576,7 +599,7 @@ export function buildRuntimeRetrievalAbi(
       title: "Read issue agent run",
       description: retrievalReachDescription({
         prefix:
-          "Reads one bounded provider-safe canonical trace page for exactly one run selected by required runId.",
+          "Reads the delivered source message(s) and bounded provider-safe detailed turns for exactly one run selected by required runId.",
         reach: policy.runs,
         issueIdMode: null,
       }),
@@ -1000,6 +1023,22 @@ function pluginDescriptors(
   }));
 }
 
+function recoveryDescriptors(
+  input: RuntimeInterfaceCompileInput,
+): CompiledRunToolDescriptor[] {
+  if (input.restoreSession !== true) return [];
+  return [{
+    name: "restore_session",
+    title: "Restore prior session history",
+    description:
+      "Returns the exact read_issue_agent_run result for each prior run by this agent in the current issue, excluding the current trigger run. To continue one trace, provide its runId and nextCursor. Available only during this recovery bootstrap.",
+    inputSchema: objectSchema({ runId: STRING_ID, cursor: cursorSchema() }),
+    source: "paperclip",
+    bootstrapEnabled: true,
+    validateArguments: parseRestoreSessionArguments,
+  }];
+}
+
 function validateCompileInput(input: RuntimeInterfaceCompileInput): void {
   for (const key of PAPERCLIP_ACTION_KEYS) {
     if (input.actionGrants[key] !== undefined && typeof input.actionGrants[key] !== "boolean") {
@@ -1024,6 +1063,7 @@ export function compileRuntimeInterface(
   validateCompileInput(input);
   const descriptors = [
     ...buildRuntimeRetrievalAbi(input.contextDial).descriptors,
+    ...recoveryDescriptors(input),
     ...actionDescriptors(input),
     ...pluginDescriptors(input.pluginTools),
   ];

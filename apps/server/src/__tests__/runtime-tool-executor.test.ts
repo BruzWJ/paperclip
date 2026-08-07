@@ -59,6 +59,7 @@ function setup(options: {
   agentDial?: Parameters<typeof resolveContextDial>[0]["agent"];
   enableRunTrace?: boolean;
   replayedPluginResult?: { value: unknown };
+  restoreSessionResult?: unknown;
 } = {}) {
   const mentionTransaction = {} as never;
   const issueUpdate = vi.fn(async () => ({ ok: true }));
@@ -88,6 +89,9 @@ function setup(options: {
       data: { opaqueRunContext: await input.mintPluginRunContext() },
     }),
   );
+  const restoreSession = vi.fn(async () => (
+    options.restoreSessionResult ?? { turns: [], nextCursor: null }
+  ));
   const readCanonicalRunTrace = vi.fn(
     async ({ runId }: { runId: string }) => ({
       runId,
@@ -159,6 +163,7 @@ function setup(options: {
         };
       },
     },
+    restoreSession: { restore: restoreSession } as never,
     actions,
     pluginTools: {
       execute: executePlugin,
@@ -189,6 +194,7 @@ function setup(options: {
     classify,
     commitMentionAction,
     executePlugin,
+    restoreSession,
     readCanonicalRunTrace,
     mentionTransaction,
   };
@@ -451,12 +457,47 @@ describe("runtime tool executor", () => {
     });
   });
 
-  it("forwards the opaque run-trace cursor through the compiled retrieval ABI", async () => {
+  it("routes restore_session only through its dedicated recovery reader", async () => {
+    const restored = { runs: [{ runId: "prior-run", turns: [] }] };
+    const { executor, restoreSession } = setup({
+      restoreSessionResult: restored,
+    });
+    const descriptor = compileRuntimeInterface({
+      mode: "owner",
+      contextDial: resolveContextDial({ agent: {} }).effective,
+      actionGrants: {},
+      isCurrentOwner: true,
+      issueCreateDirectChildren: [],
+      issueAssignTargets: [],
+      creatorUpdateTargets: [],
+      mentionTargets: [],
+      configureTargets: [],
+      pluginTools: [],
+      restoreSession: true,
+    }).byName.get("restore_session")!;
+
+    await expect(executor.execute({
+      capability,
+      descriptor,
+      arguments: { runId: "prior-run", cursor: "run-trace-cursor" },
+      callIdentity: { source: "provider", id: "restore-page-2" },
+      ingressOrdinal: 0,
+      mintPluginRunContext,
+    })).resolves.toEqual({ source: "paperclip", value: restored });
+
+    expect(restoreSession).toHaveBeenCalledWith({
+      capability,
+      runId: "prior-run",
+      cursor: "run-trace-cursor",
+    });
+  });
+
+  it("uses a signed run-trace cursor through the compiled retrieval ABI", async () => {
     const { executor, readCanonicalRunTrace } = setup({
       agentDial: { read_issue_agent_run: true },
       enableRunTrace: true,
     });
-    await executor.execute({
+    const first = await executor.execute({
       capability,      descriptor: {
         name: "read_issue_agent_run",
         title: "Read run",
@@ -464,21 +505,18 @@ describe("runtime tool executor", () => {
         inputSchema: { type: "object" },
         source: "paperclip",
       },
-      arguments: {
-        runId: "run-observed",
-        cursor: "opaque-page-2",
-      },
+      arguments: { runId: "run-observed" },
       callIdentity: { source: "provider", id: "call-run-page-2" },
       ingressOrdinal: 0,
       mintPluginRunContext,
     });
 
-    expect(readCanonicalRunTrace).toHaveBeenCalledWith({
+    expect(first).toMatchObject({ source: "paperclip" });
+    expect(readCanonicalRunTrace).toHaveBeenCalledWith(expect.objectContaining({
       companyId: "company",
       runId: "run-observed",
-      projection: "run-trace",
-      cursor: "opaque-page-2",
-    });
+      after: null,
+    }));
   });
 
   it("routes a Paperclip action with a run-bound invocation identity", async () => {

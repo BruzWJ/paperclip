@@ -107,6 +107,7 @@ function resolvedPrompt(input: {
   stored?: StoredAcpSessionCorrelation | null;
   sessionOperation?: ResolvedIssueExecutionPrompt["sessionOperation"];
   bootstrapInstruction?: string | null;
+  restoreSession?: boolean;
   laneKind?: "owner" | "consult";
   leaseRenewalIntervalMs?: number;
 }): ResolvedIssueExecutionPrompt {
@@ -151,6 +152,7 @@ function resolvedPrompt(input: {
     sourceMessageSeq: 7,
     sourceText: "exact source message",
     bootstrapInstruction: input.bootstrapInstruction ?? null,
+    restoreSession: input.restoreSession,
     contextAccess: {
       carry_context: input.carryContext,
       read_issue_comments: true,
@@ -770,6 +772,43 @@ describe("canonical productive/consult ACP attempt executor", () => {
     }));
   });
 
+  it("propagates a missing resumed ACPX session to the fresh-session successor", async () => {
+    const closePrompt = vi.fn(async () => {});
+    const beginPromptTransmission = vi.fn(async () => {});
+    acpxFixture.executeAcpxOneShotPrompt.mockReset();
+    acpxFixture.executeAcpxOneShotPrompt.mockResolvedValue({
+      kind: "target_not_found",
+      cleanup: { stateRemoved: true, errors: [] },
+    });
+
+    const result = await executeAcpxRuntimePrompt({
+      cwd: "/workspace",
+      agentName: acpxFixture.agentName,
+      configSelections: [],
+      mcpServers: [],
+      request: {
+        start: { kind: "resume", sessionId: "missing-provider-session" },
+        message: "continue the issue",
+      },
+      signal: new AbortController().signal,
+      activatePrompt: async () => {},
+      beginPromptTransmission,
+      releasePreparedResources: async () => {},
+      closePrompt,
+      redactStderr: (value) => value,
+      onSessionEvent: async () => {},
+    });
+
+    expect(beginPromptTransmission).not.toHaveBeenCalled();
+    expect(closePrompt).toHaveBeenCalledWith({ kind: "target_not_found" });
+    expect(result).toEqual({
+      kind: "target_not_found",
+      closureError: null,
+      teardown: { kind: "not_started" },
+      stderr: "",
+    });
+  });
+
   it("reports ACPX runtime-close cleanup errors as failed teardown", async () => {
     acpxFixture.executeAcpxOneShotPrompt.mockReset();
     acpxFixture.executeAcpxOneShotPrompt.mockImplementation(async (input: {
@@ -935,6 +974,27 @@ describe("canonical productive/consult ACP attempt executor", () => {
       `Plugin prelude\n\n${prompt.sourceText}`,
     ]);
     expect(launch.mcpServers).toHaveLength(1);
+  });
+
+  it("restores history during recovery bootstrap before sending the unchanged trigger", async () => {
+    const prompt = resolvedPrompt({
+      carryContext: false,
+      bootstrapInstruction: "You are the release engineer.",
+      restoreSession: true,
+    });
+    const harness = createHarness({ prompt });
+
+    await expect(executeAttempt(harness, prompt)).resolves.toMatchObject({
+      kind: "terminal",
+      outcome: "succeeded",
+    });
+
+    const launch = harness.launches[0]!;
+    expect(launch.bootstrapPrompt?.message).toBe(
+      "You are the release engineer.\n\nContinuation. Call restore_session, then end turn.",
+    );
+    expect(launch.bootstrapPrompt?.message).not.toContain(prompt.sourceText);
+    expect(harness.messages).toEqual([prompt.sourceText]);
   });
 
   it("fails closed before target acquisition when a before-prompt hook fails", async () => {
@@ -1112,7 +1172,7 @@ describe("canonical productive/consult ACP attempt executor", () => {
     expect(harness.invocationFileSets).toHaveLength(1);
   });
 
-  it("rejects a target-not-found successor that ACPX cannot emit", async () => {
+  it("returns a target-not-found successor retry from ACPX", async () => {
     const prompt = resolvedPrompt({
       carryContext: true,
       stored: storedCorrelation({ purpose: "carry" }),
@@ -1122,9 +1182,11 @@ describe("canonical productive/consult ACP attempt executor", () => {
       targetNotFoundOnFirstResume: true,
     });
 
-    await expect(executeAttempt(harness, prompt)).rejects.toThrow(
-      "ACPX runtime never emits a target_not_found successor transition",
-    );
+    await expect(executeAttempt(harness, prompt)).resolves.toEqual({
+      kind: "retry",
+      reason: "target_not_found_new_session",
+      retryAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
 
     expect(harness.starts).toEqual([
       { kind: "resume", sessionId: "opaque-resume-session" },

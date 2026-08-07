@@ -152,6 +152,12 @@ function promptCompileScope(prompt: IssueExecutionPromptIdentity) {
     executionMode: prompt.laneKind,
     issueExecutionAuthorityId: prompt.issueExecutionAuthorityId,
     consultExecutionId: prompt.consultExecutionId,
+    sessionId: prompt.sessionId,
+    runId: prompt.runId,
+    attemptId: prompt.attemptId,
+    refId: prompt.refId,
+    refOrdinal: prompt.refOrdinal,
+    segmentOrdinal: prompt.segmentOrdinal,
   } as const;
 }
 
@@ -1275,6 +1281,7 @@ export function createPostgresIssueExecutionPromptCycleRepository(
             attempt.sessionOperation === "new"
               ? bootstrapInstruction(targetAgent.instruction)
               : null,
+          restoreSession: compileInput.restoreSession === true,
           contextAccess: Object.freeze({ ...compileInput.contextDial }),
           carryContext,
           storedCorrelation: selectedCorrelation

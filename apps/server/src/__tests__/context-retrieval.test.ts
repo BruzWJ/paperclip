@@ -9,9 +9,6 @@ import {
   type ContextRetrievalIssueProjection,
   type ContextRetrievalRepository,
 } from "../services/context-retrieval.ts";
-import {
-  IssueSessionInvalidCursor,
-} from "../services/issue-session/store.ts";
 
 function issue(
   id: string,
@@ -75,8 +72,7 @@ function repository(): ContextRetrievalRepository {
     async runIssue({ runId }) {
       return runId === "run-child" ? { issueId: "child" } : null;
     },
-    async readCanonicalRunTrace({ runId, projection }) {
-      expect(projection).toBe("run-trace");
+    async readCanonicalRunTrace({ runId }) {
       return {
         runId,
         runKind: "productive",
@@ -247,6 +243,7 @@ describe("context retrieval", () => {
         },
       ],
       outputComments: [],
+      nextCursor: null,
     });
   });
 
@@ -347,14 +344,9 @@ describe("context retrieval", () => {
     });
   });
 
-  it("maps a forged canonical Session cursor to the retrieval cursor contract", async () => {
-    const repo = repository();
-    repo.readCanonicalRunTrace = async () => {
-      throw new IssueSessionInvalidCursor();
-    };
-
+  it("rejects a forged run-trace cursor before reading canonical rows", async () => {
     await expect(
-      service(repo).readIssueAgentRun(
+      service().readIssueAgentRun(
         scope({ read_sub_issue_agent_run: true }),
         { runId: "run-child", cursor: "forged" },
       ),
@@ -581,6 +573,7 @@ describe("context retrieval", () => {
         { commentId: "comment-update" },
         { commentId: "comment-final" },
       ],
+      nextCursor: null,
     });
     expect(JSON.stringify(trace)).not.toContain("must-not-leak");
     expect(trace).not.toHaveProperty("events");

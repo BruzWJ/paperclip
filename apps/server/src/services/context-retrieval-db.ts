@@ -1,5 +1,8 @@
-import { and, asc, eq, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import { and, asc, eq, gt, or, sql } from "drizzle-orm";
+import {
+  issueSessionMessages,
+  type Db,
+} from "@paperclipai/db";
 import {
   canonicalizeMoneyAmount,
   decodeIssueDisposition,
@@ -9,7 +12,6 @@ import {
   type AcpCostUnavailableReason,
 } from "@paperclipai/shared";
 import {
-  decodeIssueSessionMessage,
   encodeIssueSessionMessage,
   type IssueSessionMessage,
 } from "@paperclipai/shared/issue-session";
@@ -34,6 +36,7 @@ import {
   redactSensitiveText,
 } from "../redaction.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
+import { decodeStoredIssueSessionMessage } from "./issue-session/store.js";
 
 interface IssueProjectionRow {
   id: string;
@@ -633,29 +636,76 @@ export function createContextRetrievalDbRepository(
     async readCanonicalRunTrace({
       companyId,
       runId,
-      projection,
-      cursor,
+      after,
       limit,
     }) {
       const identity = await resolveIssueExecutionRunIdentityById(db, runId);
       if (!identity || identity.companyId !== companyId) return null;
+      const afterSeq = after ? Number(after.sortValue) : -1;
+      if (!Number.isSafeInteger(afterSeq) || afterSeq < -1) {
+        throw new Error("Run trace cursor sequence is invalid");
+      }
+      const messageLimit = limit ?? 100;
+      if (!Number.isSafeInteger(messageLimit) || messageLimit < 1) {
+        throw new Error("Run trace page size is invalid");
+      }
       const detail = await options.runService.readJoinedRunDetail({
         ...identity,
-        limit: limit ?? 100,
-        sessionProjection: projection,
-        sessionMessageCursor: cursor,
+        limit: Math.max(messageLimit, 100),
       });
       if (!detail) return null;
       const run = detail.run;
-      const turns = detail.sessionMessages.items.map((row) =>
-        sanitizeCanonicalMessage(
-          decodeIssueSessionMessage({
-            ...row.data,
-            id: row.id,
-            type: row.type,
-          }),
-          Number(row.seq),
-        ),
+      const messages = await db
+        .select()
+        .from(issueSessionMessages)
+        .where(
+          and(
+            eq(issueSessionMessages.companyId, companyId),
+            eq(issueSessionMessages.issueId, run.issueId),
+            eq(issueSessionMessages.sessionId, run.sessionId),
+            or(
+              eq(issueSessionMessages.runId, runId),
+              sql`exists (
+                select 1
+                from issue_execution_run_refs member
+                join issue_execution_refs source_ref
+                  on source_ref.company_id = member.company_id
+                  and source_ref.issue_id = member.issue_id
+                  and source_ref.session_id = member.session_id
+                  and source_ref.id = member.ref_id
+                where member.company_id = ${companyId}
+                  and member.issue_id = ${run.issueId}
+                  and member.session_id = ${run.sessionId}
+                  and member.run_id = ${runId}
+                  and member.prompt_transmission_phase = 'transmitted'
+                  and source_ref.source_message_id = ${issueSessionMessages.id}
+              )`,
+              sql`exists (
+                select 1
+                from issue_execution_prompt_segments segment
+                where segment.company_id = ${companyId}
+                  and segment.issue_id = ${run.issueId}
+                  and segment.session_id = ${run.sessionId}
+                  and segment.run_id = ${runId}
+                  and segment.prompt_transmission_phase = 'transmitted'
+                  and segment.source_message_id = ${issueSessionMessages.id}
+              )`,
+            ),
+            after
+              ? or(
+                  gt(issueSessionMessages.seq, afterSeq),
+                  and(
+                    eq(issueSessionMessages.seq, afterSeq),
+                    gt(issueSessionMessages.id, after.id),
+                  ),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(asc(issueSessionMessages.seq), asc(issueSessionMessages.id))
+        .limit(messageLimit);
+      const turns = messages.map((row) =>
+        sanitizeCanonicalMessage(decodeStoredIssueSessionMessage(row), row.seq),
       );
       const accountingRow = detail.accounting.items.at(-1) ?? null;
       const costRow = accountingRow
@@ -701,7 +751,7 @@ export function createContextRetrievalDbRepository(
               ? "failed"
               : null,
         comments: [...detail.outputComments.items],
-        nextCursor: detail.sessionMessages.nextCursor ?? null,
+        nextCursor: null,
       } satisfies CanonicalRunTrace;
     },
   };

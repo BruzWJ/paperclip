@@ -31,6 +31,16 @@ export interface PromptCapabilityCompileScope {
   readonly executionMode: IssueExecutionRefMode;
   readonly issueExecutionAuthorityId: string | null;
   readonly consultExecutionId: string | null;
+  /**
+   * Exact prompt identity used only to derive recovery availability. Generic
+   * compilation callers omit it; it is never persisted as a separate mode.
+   */
+  readonly sessionId?: string;
+  readonly runId?: string;
+  readonly attemptId?: string;
+  readonly refId?: string;
+  readonly refOrdinal?: number;
+  readonly segmentOrdinal?: number;
 }
 
 export interface PromptCapabilityBinding
@@ -363,9 +373,24 @@ export function createPromptCapabilityGateway(options: {
       }
       const current = await requireStillAuthoritative(capability);
       if (
-        current.bootstrapToolGate &&
-        (descriptor.source !== "plugin" || descriptor.bootstrapEnabled !== true)
+        descriptor.name === "restore_session" &&
+        !current.bootstrapToolGate
       ) {
+        const unavailable = new RuntimeToolUnavailable(
+          input.toolName,
+          `Tool is unavailable outside recovery bootstrap: ${input.toolName}`,
+        );
+        await options.executor.registerTerminalInvalid({
+          capability: current,
+          descriptor,
+          arguments: input.arguments,
+          callIdentity: input.callIdentity,
+          ingressOrdinal: input.ingressOrdinal,
+          error: unavailable,
+        });
+        throw unavailable;
+      }
+      if (current.bootstrapToolGate && descriptor.bootstrapEnabled !== true) {
         const unavailable = new RuntimeToolUnavailable(
           input.toolName,
           `Tool is unavailable during instruction bootstrap: ${input.toolName}`,

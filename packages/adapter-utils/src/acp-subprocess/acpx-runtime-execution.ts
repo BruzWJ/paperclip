@@ -25,6 +25,7 @@ import type {
   AcpPromptSettlement,
   AcpTerminalOccupancy,
 } from "./contract.js";
+import { isAcpTargetNotFoundError } from "./client.js";
 import type { NormalizedAcpSessionEvent } from "./events.js";
 
 const TEMPORARY_STATE_DIRECTORY_PREFIX = "paperclip-acpx-one-shot-";
@@ -177,6 +178,11 @@ export type AcpxOneShotPromptResult =
       readonly cleanup: AcpxOneShotCleanup;
     }
   | {
+      /** A resumed provider-native session no longer exists. */
+      readonly kind: "target_not_found";
+      readonly cleanup: AcpxOneShotCleanup;
+    }
+  | {
       readonly kind: "error";
       readonly phase: AcpxOneShotExecutionPhase;
       readonly sessionId: string | null;
@@ -204,6 +210,7 @@ type AcpxOneShotPromptResultWithoutCleanup =
       readonly sessionId: string;
       readonly turnResult: Extract<AcpRuntimeTurnResult, { status: "failed" }>;
     }
+  | { readonly kind: "target_not_found" }
   | {
       readonly kind: "error";
       readonly phase: AcpxOneShotExecutionPhase;
@@ -698,13 +705,21 @@ export async function executeAcpxOneShotPrompt(
       }
     }
   } catch (cause) {
-    result = {
-      kind: "error",
-      phase,
-      sessionId: handle ? durableBackendSessionId(handle) : null,
-      promptTransmitted,
-      cause,
-    };
+    if (
+      phase === "session_setup" &&
+      start.kind === "resume" &&
+      isAcpTargetNotFoundError(cause)
+    ) {
+      result = { kind: "target_not_found" };
+    } else {
+      result = {
+        kind: "error",
+        phase,
+        sessionId: handle ? durableBackendSessionId(handle) : null,
+        promptTransmitted,
+        cause,
+      };
+    }
   } finally {
     input.signal?.removeEventListener("abort", onAbort);
     await abortCancellation;

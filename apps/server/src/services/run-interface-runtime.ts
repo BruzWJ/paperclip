@@ -33,6 +33,10 @@ import type {
 import type { IssueExecutionRunService } from "./issue-execution-run-service.js";
 import type { IssueSessionStore } from "./issue-session/store.js";
 import { createPluginCanonicalSessionReader } from "./plugin-canonical-session-reader.js";
+import {
+  createPostgresRecoverySessionHistoryRepository,
+  createRecoverySessionHistoryReader,
+} from "./recovery-session-history.js";
 
 export interface PostgresPromptCapabilityRuntimeOptions {
   /**
@@ -77,9 +81,14 @@ export function createPostgresPromptCapabilityRuntime(
     cursorSecret: options.cursorSecret,
     repository: retrievalRepository,
   });
+  const restoreSession = createRecoverySessionHistoryReader({
+    repository: createPostgresRecoverySessionHistoryRepository(db),
+    runTrace: retrieval,
+  });
   const executor = createRuntimeToolExecutor({
     retrieval,
     retrievalScope: createRuntimeRetrievalScopeResolver(compiler),
+    restoreSession,
     actions: options.actions,
     pluginTools: options.pluginTools,
     callLedger: createRuntimeToolCallLedger(db),

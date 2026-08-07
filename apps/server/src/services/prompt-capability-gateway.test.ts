@@ -700,6 +700,58 @@ describe("prompt-capability gateway", () => {
     }));
   });
 
+  it("keeps restore_session listed for a recovery handle but permits it only during bootstrap", async () => {
+    const compile = { ...compileInput(), restoreSession: true };
+    const bootstrapCapability: PromptCapabilityBinding = {
+      ...capability,
+      bootstrapToolGate: true,
+    };
+    const bootstrap = setup(compile, bootstrapCapability);
+    const bootstrapBearer = mintPromptCapabilityBearer(
+      new Uint8Array(32).fill(14),
+    );
+
+    expect(
+      (await bootstrap.gateway.listTools(bootstrapBearer)).map((tool) => tool.name),
+    ).toContain("restore_session");
+    await expect(bootstrap.gateway.callTool({
+      bearer: bootstrapBearer,
+      toolName: "restore_session",
+      arguments: {},
+      callIdentity: { source: "jsonrpc", id: "restore-bootstrap" },
+      ingressOrdinal: 0,
+    })).resolves.toEqual({
+      source: "paperclip",
+      value: { accepted: true },
+    });
+    expect(bootstrap.execute).toHaveBeenCalledWith(expect.objectContaining({
+      descriptor: expect.objectContaining({
+        name: "restore_session",
+        bootstrapEnabled: true,
+      }),
+    }));
+
+    const work = setup(compile, {
+      ...capability,
+      bootstrapToolGate: false,
+    });
+    const workBearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(15));
+    expect(
+      (await work.gateway.listTools(workBearer)).map((tool) => tool.name),
+    ).toContain("restore_session");
+    await expect(work.gateway.callTool({
+      bearer: workBearer,
+      toolName: "restore_session",
+      arguments: {},
+      callIdentity: { source: "jsonrpc", id: "restore-work" },
+      ingressOrdinal: 0,
+    })).rejects.toMatchObject({
+      code: "runtime_tool_unavailable",
+      message: "Tool is unavailable outside recovery bootstrap: restore_session",
+    });
+    expect(work.execute).not.toHaveBeenCalled();
+  });
+
   it("rejects every credential class other than a prompt capability", async () => {
     const runtime = setup();
     await expect(runtime.gateway.listTools("pc_plugin_ctx_v1_not-a-run"))
