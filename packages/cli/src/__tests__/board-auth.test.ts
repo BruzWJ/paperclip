@@ -1,13 +1,16 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getStoredBoardCredential,
+  loginBoardCli,
   readBoardAuthStore,
   removeStoredBoardCredential,
   setStoredBoardCredential,
 } from "../client/board-auth.js";
+
+afterEach(() => vi.restoreAllMocks());
 
 function createTempAuthPath(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-cli-auth-"));
@@ -49,5 +52,45 @@ describe("board auth store", () => {
 
     expect(removeStoredBoardCredential("http://localhost:3100", authPath)).toBe(true);
     expect(getStoredBoardCredential("http://localhost:3100", authPath)).toBeNull();
+  });
+
+  it("starts personal board-key approval as a same-origin JSON request", async () => {
+    const authPath = createTempAuthPath();
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: "challenge-1",
+        token: "challenge-secret",
+        boardApiToken: "pcp_board_personal",
+        approvalPath: "/cli-auth/challenge-1",
+        approvalUrl: "http://localhost:3100/cli-auth/challenge-1",
+        pollPath: "/cli-auth/challenges/challenge-1",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        suggestedPollIntervalMs: 500,
+      }), { status: 201, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "approved" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ userId: "user-1" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+
+    await loginBoardCli({
+      apiBase: "http://localhost:3100",
+      requestedAccess: "board",
+      storePath: authPath,
+      print: false,
+      openBrowser: false,
+    });
+
+    const challengeRequest = fetchMock.mock.calls[0];
+    expect(challengeRequest?.[0]).toBe("http://localhost:3100/api/cli-auth/challenges");
+    expect(new Headers(challengeRequest?.[1]?.headers).get("origin"))
+      .toBe("http://localhost:3100");
+    expect(getStoredBoardCredential("http://localhost:3100", authPath)).toMatchObject({
+      token: "pcp_board_personal",
+      userId: "user-1",
+    });
   });
 });

@@ -82,37 +82,25 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function postJson(url, body) {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      ...(body ? { 'content-type': 'application/json' } : {}),
-    },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  })
+async function requestJson(url, init) {
+  const headers = new Headers(init?.headers)
+  if (init?.body !== undefined && !headers.has('content-type')) {
+    headers.set('content-type', 'application/json')
+  }
+  if (!headers.has('accept')) headers.set('accept', 'application/json')
+  const response = await fetch(url, { ...(init || {}), headers })
 
   if (!response.ok) {
-    throw new Error(url + ' failed with HTTP ' + response.status)
+    const body = await response.json().catch(() => null)
+    const detail = body && typeof body === 'object' && typeof body.error === 'string'
+      ? body.error
+      : 'HTTP ' + response.status
+    throw new Error(url + ': ' + detail)
   }
 
   return response.headers.get('content-type')?.includes('application/json')
     ? response.json()
     : null
-}
-
-async function getJson(url, headers) {
-  const response = await fetch(url, {
-    headers: {
-      accept: 'application/json',
-      ...(headers || {}),
-    },
-  })
-
-  if (!response.ok) {
-    throw new Error(url + ' failed with HTTP ' + response.status)
-  }
-
-  return response.json()
 }
 
 function runConfigWriter(args) {
@@ -311,11 +299,18 @@ async function authenticate() {
   }
   const asMessage = (error) => (error instanceof Error ? error.message : String(error))
 
-  const start = await postJson(baseUrl + '/api/cli-auth/challenges', {
-    command: 'Paperclip MCP setup',
-    clientName: 'Paperclip MCP',
-    requestedAccess: 'board',
-    requestedCompanyId: null,
+  const start = await requestJson(baseUrl + '/api/cli-auth/challenges', {
+    method: 'POST',
+    // This is the same-origin device entrypoint used by the Paperclip CLI.
+    // Naming the origin also keeps an ambient browser session, if one is
+    // supplied by a host fetch implementation, inside the mutation fence.
+    headers: { origin: baseUrl },
+    body: JSON.stringify({
+      command: 'Paperclip MCP setup',
+      clientName: 'Paperclip MCP',
+      requestedAccess: 'board',
+      requestedCompanyId: null,
+    }),
   }).catch((error) => abort(asMessage(error)))
 
   const challengeId = String(start?.id || '')
@@ -351,14 +346,14 @@ async function authenticate() {
   const parsedExpiry = Date.parse(expiresAt)
   const deadline = Number.isFinite(parsedExpiry) ? parsedExpiry : Date.now() + 600000
   while (Date.now() < deadline) {
-    const poll = await getJson(
+    const poll = await requestJson(
       baseUrl + '/api' + pollPath + '?token=' + encodeURIComponent(challengeToken),
     ).catch((error) => abort(asMessage(error)))
     const status = String(poll?.status || 'pending')
 
     if (status === 'approved') {
-      const me = await getJson(baseUrl + '/api/cli-auth/me', {
-        authorization: 'Bearer ' + pendingBoardApiKey,
+      const me = await requestJson(baseUrl + '/api/cli-auth/me', {
+        headers: { authorization: 'Bearer ' + pendingBoardApiKey },
       }).catch((error) => abort(asMessage(error)))
       spin.succeed(pc.brand('Authorized'))
       return {

@@ -216,6 +216,7 @@ export async function loginBoardCli(params: {
 
   const challenge = await requestJson<CreateChallengeResponse>(createUrl, {
     method: "POST",
+    headers: { origin: apiBase },
     body: JSON.stringify({
       command,
       clientName: params.clientName?.trim() || "paperclipai cli",

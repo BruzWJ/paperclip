@@ -16,6 +16,8 @@ describe("Board MCP installer", () => {
     expect(script).toContain("/api/mcp");
     expect(script).toContain("/api/cli-auth/challenges");
     expect(script).toContain("/api/cli-auth/me");
+    expect(script).toContain("headers: { origin: baseUrl }");
+    expect(script).toContain("typeof body.error === 'string'");
     expect(script).toContain("PAPERCLIP_AUTH_STORE");
     expect(script).toContain("PAPERCLIP_HOME");
     expect(script).toContain("auth.json");
