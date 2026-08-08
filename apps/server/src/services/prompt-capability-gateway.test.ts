@@ -474,6 +474,8 @@ function composedPluginToolRuntime() {
       mentionBoard: unused,
       agentHire: unused,
       agentConfigure: unused,
+      listAgents: unused,
+      agentRead: unused,
     } as never,
     pluginTools: createRuntimePluginToolPort({ getWorker } as never),
     callLedger: {

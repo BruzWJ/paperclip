@@ -98,7 +98,9 @@ describe("useAdapterCapabilities", () => {
         source: "acpx",
         modelsCount: 2,
         loaded: true,
+        drivers: ["local"],
         registryName: "codex",
+        configSchema: { fields: [] },
         capabilities: {
           contractVersion: "acpx-runtime/v1",
           runtimeControls: ["session/status", "session/set_config_option"],

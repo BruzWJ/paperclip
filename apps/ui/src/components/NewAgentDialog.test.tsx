@@ -8,14 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NewAgentDialog } from "./NewAgentDialog";
 
 const createCompanyInviteMock = vi.hoisted(() => vi.fn());
-const listAgentsMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
 const closeNewAgentMock = vi.hoisted(() => vi.fn());
 const openNewIssueMock = vi.hoisted(() => vi.fn());
 const pushToastMock = vi.hoisted(() => vi.fn());
 const clipboardWriteTextMock = vi.hoisted(() => vi.fn());
-const adapterCatalogStateMock = vi.hoisted(() => vi.fn());
-const refetchAdapterCatalogMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/router", () => ({
   useNavigate: () => navigateMock,
@@ -46,24 +43,6 @@ vi.mock("../api/access", () => ({
   },
 }));
 
-vi.mock("../api/agents", () => ({
-  agentsApi: {
-    list: (companyId: string) => listAgentsMock(companyId),
-  },
-}));
-
-vi.mock("../adapters", () => ({
-  listUIAdapters: () => [{ type: "fixture-agent", label: "Fixture agent" }],
-}));
-
-vi.mock("../adapters/metadata", () => ({
-  isVisualAdapterChoice: () => true,
-}));
-
-vi.mock("../adapters/use-adapter-catalog", () => ({
-  useAdapterCatalogSyncState: () => adapterCatalogStateMock(),
-}));
-
 vi.mock("@/components/ui/dialog", () => ({
   Dialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
     open ? <div>{children}</div> : null,
@@ -92,15 +71,6 @@ describe("NewAgentDialog", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
 
-    listAgentsMock.mockResolvedValue([]);
-    adapterCatalogStateMock.mockReturnValue({
-      adapters: [],
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: refetchAdapterCatalogMock,
-    });
-    refetchAdapterCatalogMock.mockResolvedValue(undefined);
     createCompanyInviteMock.mockResolvedValue({
       id: "invite-1",
       token: "agent-token",
@@ -122,6 +92,38 @@ describe("NewAgentDialog", () => {
     vi.clearAllMocks();
   });
 
+  it("opens manual configuration directly on the new-agent page", async () => {
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <NewAgentDialog />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    const configureButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.startsWith("Configure a runtime manually"),
+    );
+    expect(configureButton).toBeTruthy();
+
+    await act(async () => {
+      configureButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(closeNewAgentMock).toHaveBeenCalledOnce();
+    expect(navigateMock).toHaveBeenCalledWith("/agents/new");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it("generates an external agent onboarding prompt inside the add-agent modal", async () => {
     const root = createRoot(container);
     const queryClient = new QueryClient({
@@ -139,28 +141,6 @@ describe("NewAgentDialog", () => {
 
     expect(container.textContent).toContain("Add a new agent");
     expect(container.textContent).toContain("Invite an external agent");
-
-    const configureButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.startsWith("Configure a runtime manually"),
-    );
-
-    await act(async () => {
-      configureButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-
-    expect(container.textContent).toContain("Fixture agent");
-    expect(container.textContent).toContain("Available from a local agent runtime");
-    expect(container.textContent).not.toContain("ACPX");
-    expect(container.textContent).not.toContain("HTTP Session");
-    expect(container.textContent).not.toContain("Process");
-
-    const runtimeBackButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Back",
-    );
-
-    await act(async () => {
-      runtimeBackButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
 
     const inviteButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.startsWith("Invite an external agent"),
@@ -224,49 +204,4 @@ describe("NewAgentDialog", () => {
     });
   });
 
-  it("shows a recoverable local catalog error instead of an empty runtime picker", async () => {
-    adapterCatalogStateMock.mockReturnValue({
-      adapters: [],
-      isLoading: false,
-      isError: true,
-      error: new Error("Internal server error"),
-      refetch: refetchAdapterCatalogMock,
-    });
-    const root = createRoot(container);
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <NewAgentDialog />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-
-    const configureButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.startsWith("Configure a runtime manually"),
-    );
-    await act(async () => {
-      configureButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-
-    expect(container.textContent).toContain("could not refresh the local agent catalog");
-    expect(container.textContent).not.toContain("ACPX");
-    expect(container.textContent).toContain("Retry catalog refresh");
-
-    const retryButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Retry catalog refresh",
-    );
-    await act(async () => {
-      retryButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    expect(refetchAdapterCatalogMock).toHaveBeenCalledOnce();
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
 });

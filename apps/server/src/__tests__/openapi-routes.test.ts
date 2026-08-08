@@ -166,6 +166,7 @@ describe("openapi routes", () => {
       "title",
       "capabilities",
       "reportsTo",
+      "instruction",
       "contextGrants",
       "actionGrants",
       "mentionReachGrants",
@@ -228,8 +229,13 @@ describe("openapi routes", () => {
         "loaded",
         "capabilities",
         "registryName",
+        "configSchema",
       ]),
       properties: {
+        configSchema: expect.objectContaining({
+          type: "object",
+          required: ["fields"],
+        }),
         capabilities: {
           type: "object",
           additionalProperties: false,

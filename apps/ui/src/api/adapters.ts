@@ -3,6 +3,7 @@
  */
 
 import { api } from "./client";
+import type { AdapterConfigSchema } from "@paperclipai/adapter-utils";
 import type {
   AgentAdapterConfigurationTestInput,
   AgentAdapterConfigurationTestResult,
@@ -26,6 +27,8 @@ export interface ReadyAdapterInfo {
   /** Exact execution transports admitted for this agent by the server. */
   drivers: readonly EnvironmentDriver[];
   registryName: string;
+  /** Exact generic session settings discovered in the same ACPX snapshot. */
+  configSchema: AdapterConfigSchema;
 }
 
 /**

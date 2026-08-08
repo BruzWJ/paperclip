@@ -15,7 +15,10 @@ import {
   refreshAcpxAdapters,
 } from "../adapters/index.js";
 import type { AcpxAdapterProbeDiagnostic } from "../adapters/index.js";
-import type { ServerAdapterModule } from "@paperclipai/adapter-utils";
+import type {
+  AdapterConfigSchema,
+  ServerAdapterModule,
+} from "@paperclipai/adapter-utils";
 import { validateAdapterConfigSchema } from "@paperclipai/adapter-utils";
 import type { EnvironmentDriver } from "@paperclipai/shared";
 import { assertBoardOrgAccess, assertInstanceAdmin } from "./authz.js";
@@ -38,6 +41,12 @@ interface ReadyAdapterInfo {
   drivers: readonly EnvironmentDriver[];
   /** Exact registry name emitted by ACPX; always equal to `type`. */
   registryName: string;
+  /**
+   * Exact generic session-setting schema discovered with this catalog entry.
+   * Keeping it in the catalog makes the picker and its fields one ACPX
+   * snapshot instead of triggering a separate refresh after selection.
+   */
+  configSchema: AdapterConfigSchema;
 }
 
 interface UnavailableAdapterInfo {
@@ -66,6 +75,16 @@ function buildAdapterCapabilities(adapter: ServerAdapterModule): AdapterCapabili
   };
 }
 
+function adapterConfigSchema(adapter: ServerAdapterModule): AdapterConfigSchema {
+  const parsedSchema = validateAdapterConfigSchema(
+    adapter.definition.configSchema,
+  );
+  if (!parsedSchema.success) {
+    throw new Error(`Local agent "${adapter.type}" returned an invalid configuration schema`);
+  }
+  return parsedSchema.data;
+}
+
 function buildAdapterInfo(adapter: ServerAdapterModule): ReadyAdapterInfo {
   return {
     type: adapter.type,
@@ -76,6 +95,7 @@ function buildAdapterInfo(adapter: ServerAdapterModule): ReadyAdapterInfo {
     capabilities: buildAdapterCapabilities(adapter),
     drivers: [...adapter.definition.environment.drivers],
     registryName: adapter.definition.launchProfile.registryName,
+    configSchema: adapterConfigSchema(adapter),
   };
 }
 
@@ -150,13 +170,7 @@ export function adapterRoutes() {
       res.status(404).json({ error: `Local agent "${req.params.type}" is not available.` });
       return;
     }
-    const parsedSchema = validateAdapterConfigSchema(
-      adapter.definition.configSchema,
-    );
-    if (!parsedSchema.success) {
-      throw new Error(`Local agent "${req.params.type}" returned an invalid configuration schema`);
-    }
-    res.json(parsedSchema.data);
+    res.json(adapterConfigSchema(adapter));
   });
 
   // These legacy management operations would make Paperclip a second catalog

@@ -498,6 +498,14 @@ const acpAdapterModelSchema = z.object({
   }).strict().nullable(),
 }).strict();
 
+// Configuration field details are dynamically supplied by ACPX. The server
+// validates the exact declarative contract before serializing it, while this
+// public schema deliberately leaves field-specific metadata open for future
+// ACPX controls.
+const publicAdapterConfigSchema = z.object({
+  fields: z.array(z.unknown()),
+}).passthrough();
+
 const publicReadyAdapterInfoSchema = z.object({
   type: z.string(),
   label: z.string(),
@@ -507,6 +515,7 @@ const publicReadyAdapterInfoSchema = z.object({
   capabilities: publicAdapterCapabilitiesSchema,
   drivers: z.array(environmentDriverSchema),
   registryName: z.string().min(1),
+  configSchema: publicAdapterConfigSchema,
 }).strict();
 
 const publicUnavailableAdapterInfoSchema = z.object({

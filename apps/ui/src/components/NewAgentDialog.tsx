@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@/lib/router";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
@@ -12,22 +12,12 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  ArrowLeft,
-  Bot,
-  Check,
-  MailPlus,
-  Settings2,
-} from "lucide-react";
+import { ArrowLeft, Bot, Check, MailPlus, Settings2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildAgentOnboardingPrompt } from "@/lib/agent-onboarding-prompt";
-import { listUIAdapters } from "../adapters";
-import { isVisualAdapterChoice } from "../adapters/metadata";
-import { getAdapterDisplay } from "../adapters/adapter-display-registry";
-import { useAdapterCatalogSyncState } from "../adapters/use-adapter-catalog";
 import { useToast } from "../context/ToastContext";
 
-type NewAgentDialogMode = "choices" | "runtime" | "invite" | "prompt";
+type NewAgentDialogMode = "choices" | "invite" | "prompt";
 
 export function NewAgentDialog() {
   const { newAgentOpen, closeNewAgent, openNewIssue } = useDialog();
@@ -39,8 +29,6 @@ export function NewAgentDialog() {
   const [agentMessage, setAgentMessage] = useState("");
   const [latestAgentPrompt, setLatestAgentPrompt] = useState<string | null>(null);
   const [latestAgentPromptCopied, setLatestAgentPromptCopied] = useState(false);
-  const adapterCatalog = useAdapterCatalogSyncState();
-  const admittedAdapters = adapterCatalog.adapters;
 
   function resetDialogState() {
     setMode("choices");
@@ -59,23 +47,6 @@ export function NewAgentDialog() {
 
   const inviteHistoryQueryKey = queryKeys.access.invites(selectedCompanyId ?? "", "all", 5);
 
-  // The synchronized UI registry contains only server-admitted local agents.
-  const adapterGrid = useMemo(() => {
-    const registered = listUIAdapters()
-      .filter((a) => isVisualAdapterChoice(a.type));
-
-    return registered
-      .map((a) => {
-        const display = getAdapterDisplay(a.type);
-        return {
-          value: a.type,
-          label: a.label,
-          desc: display.description,
-        };
-      })
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [admittedAdapters]);
-
   function handleAskAgent() {
     closeNewAgent();
     openNewIssue({
@@ -85,17 +56,13 @@ export function NewAgentDialog() {
   }
 
   function handleAdvancedConfig() {
-    setMode("runtime");
+    closeNewAgent();
+    resetDialogState();
+    navigate("/agents/new");
   }
 
   function handleInviteExternalAgent() {
     setMode("invite");
-  }
-
-  function handleAdvancedAdapterPick(adapterType: string) {
-    closeNewAgent();
-    resetDialogState();
-    navigate(`/agents/new?adapterType=${encodeURIComponent(adapterType)}`);
   }
 
   async function copyText(text: string, unavailableBody: string) {
@@ -218,64 +185,6 @@ export function NewAgentDialog() {
                   </p>
                 </div>
               </div>
-            </>
-          ) : mode === "runtime" ? (
-            <>
-              <div className="space-y-2">
-                <button
-                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={() => setMode("choices")}
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Back
-                </button>
-                <p className="text-sm text-muted-foreground">
-                  Choose the local agent runtime Paperclip should use for this agent.
-                </p>
-              </div>
-
-              {adapterCatalog.isLoading ? (
-                <p role="status" className="text-sm text-muted-foreground">
-                  Checking local agent runtimes…
-                </p>
-              ) : adapterCatalog.isError ? (
-                <div
-                  role="alert"
-                  className="space-y-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-3 text-sm text-destructive"
-                >
-                  <p>
-                    Paperclip could not refresh the local agent catalog. Check local agent diagnostics, then retry.
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      void adapterCatalog.refetch();
-                    }}
-                  >
-                    Retry catalog refresh
-                  </Button>
-                </div>
-              ) : adapterGrid.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No compatible local agent is currently available. Install and authenticate a compatible agent CLI on this host, then retry.
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  {adapterGrid.map((opt) => (
-                    <button
-                      key={opt.value}
-                      className="flex flex-col items-center gap-1.5 rounded-md border border-border p-3 text-xs transition-colors hover:bg-accent/50"
-                      onClick={() => handleAdvancedAdapterPick(opt.value)}
-                    >
-                      <span className="font-medium">{opt.label}</span>
-                      <span className="text-muted-foreground text-(length:--text-nano)">
-                        {opt.desc}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </>
           ) : mode === "invite" ? (
             <div className="space-y-5">

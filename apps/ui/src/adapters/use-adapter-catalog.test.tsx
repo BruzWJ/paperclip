@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAdapterCatalogSync } from "./use-adapter-catalog";
 import { listUIAdapters, syncServerAdapters } from "./registry";
+import { queryKeys } from "@/lib/queryKeys";
+import { useAdapterConfigSchema } from "./schema-config-fields";
 
 const mockAdaptersApi = vi.hoisted(() => ({
   list: vi.fn(),
@@ -23,6 +25,22 @@ function Probe({ enabled }: { enabled: boolean }) {
       {catalog.length}:{types.join(",")}
     </div>
   );
+}
+
+function SchemaProbe({ adapterType }: { adapterType: string }) {
+  const { schema, isLoading } = useAdapterConfigSchema(adapterType);
+  return (
+    <div data-testid="adapter-schema">
+      {isLoading ? "loading" : `${adapterType}:${schema?.fields.length ?? "missing"}`}
+    </div>
+  );
+}
+
+function CatalogSchemaProbe({ adapterType }: { adapterType: string }) {
+  const catalog = useAdapterCatalogSync();
+  return catalog.some((adapter) => adapter.type === adapterType)
+    ? <SchemaProbe adapterType={adapterType} />
+    : null;
 }
 
 describe("useAdapterCatalogSync", () => {
@@ -46,6 +64,7 @@ describe("useAdapterCatalogSync", () => {
     queryClient.clear();
     syncServerAdapters([{ type: "codex", label: "Codex" }]);
     container.remove();
+    vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
@@ -71,6 +90,14 @@ describe("useAdapterCatalogSync", () => {
         loaded: true,
         drivers: ["local"],
         registryName: "codex",
+        configSchema: {
+          fields: [{
+            key: "model",
+            label: "Model",
+            type: "select",
+            options: [{ label: "Fast", value: "fast" }],
+          }],
+        },
         capabilities: {
           contractVersion: "acpx-runtime/v1",
           runtimeControls: ["session/status", "session/set_config_option"],
@@ -95,6 +122,16 @@ describe("useAdapterCatalogSync", () => {
     expect(listUIAdapters()).toEqual([
       expect.objectContaining({ type: "codex", drivers: ["local"] }),
     ]);
+    expect(
+      queryClient.getQueryData(queryKeys.adapters.configSchema("codex")),
+    ).toEqual({
+      fields: [{
+        key: "model",
+        label: "Model",
+        type: "select",
+        options: [{ label: "Fast", value: "fast" }],
+      }],
+    });
   });
 
   it("does not synchronize a failed local readiness check into selectable UI adapters", async () => {
@@ -107,6 +144,7 @@ describe("useAdapterCatalogSync", () => {
         loaded: true,
         drivers: ["local"],
         registryName: "visible-agent",
+        configSchema: { fields: [] },
         capabilities: {
           contractVersion: "acpx-runtime/v1",
           runtimeControls: ["session/status", "session/set_config_option"],
@@ -141,5 +179,79 @@ describe("useAdapterCatalogSync", () => {
       ).toBe("1:visible-agent");
       expect(listUIAdapters().map((adapter) => adapter.type)).toEqual(["visible-agent"]);
     });
+    expect(
+      queryClient.getQueryData(
+        queryKeys.adapters.configSchema("failed-agent"),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("primes every schema so switching adapters makes no schema request", async () => {
+    mockAdaptersApi.list.mockResolvedValue([
+      {
+        type: "alpha",
+        label: "Alpha",
+        source: "acpx",
+        modelsCount: 1,
+        loaded: true,
+        drivers: ["local"],
+        registryName: "alpha",
+        configSchema: {
+          fields: [{ key: "model", label: "Model", type: "select" }],
+        },
+        capabilities: {
+          contractVersion: "acpx-runtime/v1",
+          runtimeControls: [],
+          supportsModelProfiles: false,
+        },
+      },
+      {
+        type: "beta",
+        label: "Beta",
+        source: "acpx",
+        modelsCount: 1,
+        loaded: true,
+        drivers: ["local"],
+        registryName: "beta",
+        configSchema: { fields: [] },
+        capabilities: {
+          contractVersion: "acpx-runtime/v1",
+          runtimeControls: [],
+          supportsModelProfiles: false,
+        },
+      },
+    ]);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    flushSync(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <CatalogSchemaProbe adapterType="alpha" />
+        </QueryClientProvider>,
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(
+        container.querySelector('[data-testid="adapter-schema"]')?.textContent,
+      ).toBe("alpha:1");
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    flushSync(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <CatalogSchemaProbe adapterType="beta" />
+        </QueryClientProvider>,
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(
+        container.querySelector('[data-testid="adapter-schema"]')?.textContent,
+      ).toBe("beta:0");
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useId } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   validateAdapterConfigSchema,
@@ -9,6 +9,7 @@ import {
 } from "@paperclipai/adapter-utils";
 
 import type { AdapterConfigFieldsProps } from "./types";
+import type { AdapterInfo, ReadyAdapterInfo } from "../api/adapters";
 import { api } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
 import { publicRuntimeMessage } from "../lib/public-runtime-message";
@@ -245,9 +246,13 @@ function ComboboxField({
 // SchemaConfigFields component
 // ---------------------------------------------------------------------------
 
-async function fetchConfigSchema(adapterType: string): Promise<AdapterConfigSchema> {
+async function fetchConfigSchema(
+  adapterType: string,
+  signal?: AbortSignal,
+): Promise<AdapterConfigSchema> {
   const payload = await api.get<unknown>(
     `/adapters/${encodeURIComponent(adapterType)}/config-schema`,
+    { signal },
   );
   const parsedSchema = validateAdapterConfigSchema(payload);
   if (!parsedSchema.success) {
@@ -257,6 +262,20 @@ async function fetchConfigSchema(adapterType: string): Promise<AdapterConfigSche
     );
   }
   return parsedSchema.data;
+}
+
+function schemaFromCatalog(
+  catalog: readonly AdapterInfo[] | undefined,
+  adapterType: string,
+): AdapterConfigSchema | undefined {
+  const adapter = catalog?.find(
+    (entry): entry is ReadyAdapterInfo =>
+      entry.loaded && entry.type === adapterType,
+  );
+  if (!adapter) return undefined;
+
+  const parsedSchema = validateAdapterConfigSchema(adapter.configSchema);
+  return parsedSchema.success ? parsedSchema.data : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,17 +290,31 @@ export function useAdapterConfigSchema(
   isLoading: boolean;
   error: string | null;
 } {
+  const queryClient = useQueryClient();
   const enabled =
     (options.enabled ?? true)
     && adapterType.trim().length > 0;
+  const catalog = queryClient.getQueryData<AdapterInfo[]>(
+    queryKeys.adapters.all,
+  );
+  const catalogSchema = schemaFromCatalog(catalog, adapterType);
+  const catalogUpdatedAt = queryClient.getQueryState(
+    queryKeys.adapters.all,
+  )?.dataUpdatedAt;
   const query = useQuery({
     queryKey: queryKeys.adapters.configSchema(adapterType),
-    queryFn: () => fetchConfigSchema(adapterType),
+    queryFn: ({ signal }) => fetchConfigSchema(adapterType, signal),
     enabled,
-    staleTime: 0,
-    gcTime: 0,
+    // The complete ready catalog is the authoritative ACPX snapshot. It
+    // primes this query for every selectable adapter and replaces it on each
+    // catalog refresh, so revisiting a picker option never causes a second
+    // request just because its fields temporarily unmounted.
+    initialData: catalogSchema,
+    initialDataUpdatedAt: catalogSchema === undefined ? undefined : catalogUpdatedAt,
+    staleTime: Infinity,
+    gcTime: 5 * 60 * 1000,
     retry: false,
-    refetchOnMount: "always",
+    refetchOnMount: false,
     refetchOnWindowFocus: false,
   });
 

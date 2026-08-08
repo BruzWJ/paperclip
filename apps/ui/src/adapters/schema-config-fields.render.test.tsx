@@ -9,14 +9,19 @@ import {
   SchemaConfigFields,
   useAdapterConfigSchema,
 } from "./schema-config-fields";
+import { queryKeys } from "@/lib/queryKeys";
 
-function renderIntoContainer(children: React.ReactNode) {
+function renderIntoContainer(
+  children: React.ReactNode,
+  seed?: (queryClient: QueryClient) => void,
+) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  seed?.(queryClient);
   flushSync(() => {
     root.render(
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>,
@@ -66,6 +71,47 @@ describe("SchemaConfigFields dynamic schemas", () => {
       expect(rendered.container.textContent).toBe("fields:0");
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the ready catalog schema without a per-adapter request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const schema: AdapterConfigSchema = {
+      fields: [{
+        key: "model",
+        label: "Model",
+        type: "select",
+        options: [{ label: "Fast", value: "fast" }],
+      }],
+    };
+    const rendered = renderIntoContainer(
+      <EmptySchemaProbe />,
+      (queryClient) => {
+        queryClient.setQueryData(queryKeys.adapters.all, [{
+          type: "fixture",
+          label: "Fixture",
+          source: "acpx",
+          modelsCount: 1,
+          loaded: true,
+          drivers: ["local"],
+          registryName: "fixture",
+          configSchema: schema,
+          capabilities: {
+            contractVersion: "acpx-runtime/v1",
+            runtimeControls: [],
+            supportsModelProfiles: false,
+          },
+        }]);
+      },
+    );
+    roots.push(rendered.root);
+    queryClients.push(rendered.queryClient);
+
+    await vi.waitFor(() => {
+      expect(rendered.container.textContent).toBe("fields:1");
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("does not choose the first server option when no explicit default exists", async () => {

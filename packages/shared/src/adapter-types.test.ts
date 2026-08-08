@@ -91,6 +91,7 @@ describe("dynamic adapter type validation schemas", () => {
         title: null,
         capabilities: null,
         reportsTo: null,
+        instruction: null,
         contextGrants: allFalse(AGENT_CONTEXT_GRANT_KEYS),
         actionGrants: allFalse(PAPERCLIP_ACTION_KEYS),
         mentionReachGrants: allFalse(

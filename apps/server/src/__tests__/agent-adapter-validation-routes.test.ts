@@ -112,6 +112,7 @@ function runtimeConfiguration() {
     title: null,
     capabilities: null,
     reportsTo: null,
+    instruction: null,
     contextGrants: fullGrantMap(AGENT_CONTEXT_GRANT_KEYS),
     actionGrants: fullGrantMap(PAPERCLIP_ACTION_KEYS),
     mentionReachGrants: fullGrantMap(

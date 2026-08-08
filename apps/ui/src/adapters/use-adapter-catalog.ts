@@ -1,7 +1,11 @@
-import { useEffect, useRef } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import {
+  validateAdapterConfigSchema,
+  type AdapterConfigSchema,
+} from "@paperclipai/adapter-utils";
 import {
   adaptersApi,
+  type AdapterInfo,
   type ReadyAdapterInfo,
 } from "@/api/adapters";
 import { queryKeys } from "@/lib/queryKeys";
@@ -19,6 +23,67 @@ export interface AdapterCatalogSyncState {
   readonly refetch: () => Promise<unknown>;
 }
 
+function clearAdapterConfigSchemas(queryClient: QueryClient): void {
+  queryClient.removeQueries({
+    queryKey: queryKeys.adapters.configSchemas,
+  });
+}
+
+/**
+ * Treat the ready catalog entries as a complete ACPX snapshot. Validation at
+ * this boundary prevents the UI from ever interpreting malformed dynamic
+ * fields, even though the server has already validated them.
+ */
+function replaceAdapterConfigSchemas(
+  queryClient: QueryClient,
+  adapters: readonly AdapterInfo[],
+): void {
+  const schemasByType = new Map<string, AdapterConfigSchema>();
+  for (const adapter of adapters) {
+    if (!adapter.loaded) continue;
+    const parsedSchema = validateAdapterConfigSchema(adapter.configSchema);
+    if (!parsedSchema.success) {
+      throw new Error(
+        `Local agent "${adapter.type}" returned an invalid configuration schema. ${parsedSchema.errors.join(" ")}`,
+      );
+    }
+    schemasByType.set(adapter.type, parsedSchema.data);
+  }
+
+  // A catalog refresh is authoritative. Keep no schema for an agent that is
+  // no longer admitted, while replacing every schema that remains selectable.
+  for (const query of queryClient.getQueryCache().findAll({
+    queryKey: queryKeys.adapters.configSchemas,
+  })) {
+    const adapterType = query.queryKey[2];
+    if (typeof adapterType === "string" && !schemasByType.has(adapterType)) {
+      queryClient.removeQueries({ queryKey: query.queryKey, exact: true });
+    }
+  }
+  for (const [adapterType, schema] of schemasByType) {
+    queryClient.setQueryData(
+      queryKeys.adapters.configSchema(adapterType),
+      schema,
+    );
+  }
+}
+
+async function fetchAdapterCatalog(queryClient: QueryClient): Promise<AdapterInfo[]> {
+  try {
+    const adapters = await adaptersApi.list();
+    // The catalog request already caused ACPX to discover every admitted
+    // adapter. Prime all option schemas from that one snapshot so selecting a
+    // different adapter never needs a second schema request.
+    replaceAdapterConfigSchemas(queryClient, adapters);
+    return adapters;
+  } catch (error) {
+    // Do not retain options from an older or malformed catalog after its
+    // authoritative refresh failed.
+    clearAdapterConfigSchemas(queryClient);
+    throw error;
+  }
+}
+
 /**
  * Fetch and install the server-admitted local-agent catalog in the UI
  * schema renderer. The browser cannot add, override, hide, or infer an
@@ -29,11 +94,10 @@ export function useAdapterCatalogSyncState(
   options: { enabled?: boolean } = {},
 ): AdapterCatalogSyncState {
   const queryClient = useQueryClient();
-  const previousCatalogUpdateAt = useRef(0);
   const enabled = options.enabled ?? true;
   const query = useQuery({
     queryKey: queryKeys.adapters.all,
-    queryFn: () => adaptersApi.list(),
+    queryFn: () => fetchAdapterCatalog(queryClient),
     enabled,
     staleTime: 0,
     refetchOnMount: "always",
@@ -42,7 +106,7 @@ export function useAdapterCatalogSyncState(
     // sync when a local compatible CLI is installed or authenticated.
     refetchInterval: 30_000,
   });
-  const { data, dataUpdatedAt, isError, isSuccess } = query;
+  const { data, isError, isSuccess } = query;
 
   const selectableAdapters = isSuccess && data
     ? data.filter(
@@ -61,21 +125,8 @@ export function useAdapterCatalogSyncState(
   } else if (enabled && isError) {
     // A failed refresh must not leave a prior catalog masquerading as current.
     syncServerAdapters([]);
+    clearAdapterConfigSchemas(queryClient);
   }
-
-  useEffect(() => {
-    if (!isSuccess || dataUpdatedAt === 0) return;
-    const previousUpdateAt = previousCatalogUpdateAt.current;
-    previousCatalogUpdateAt.current = dataUpdatedAt;
-    if (previousUpdateAt === 0 || previousUpdateAt === dataUpdatedAt) return;
-
-    // Config schema values are adapter-owned and may change independently of
-    // labels. Clear active schemas after every fresh catalog snapshot so an
-    // editor never keeps an older option list.
-    void queryClient.resetQueries({
-      queryKey: queryKeys.adapters.configSchemas,
-    });
-  }, [dataUpdatedAt, isSuccess, queryClient]);
 
   return {
     adapters: selectableAdapters,
