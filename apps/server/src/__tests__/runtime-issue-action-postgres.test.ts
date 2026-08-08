@@ -50,6 +50,7 @@ function serviceSpies(): RuntimeIssueActionService {
     update: vi.fn(async (input) => ({ kind: "update", input })),
     mention: vi.fn(async (input) => ({ kind: "mention", input })),
     mentionBoard: vi.fn(async (input) => ({ kind: "board", input })),
+    listAgents: vi.fn(async (input) => ({ kind: "list_agents", input })),
   };
 }
 

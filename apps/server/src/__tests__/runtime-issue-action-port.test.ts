@@ -55,6 +55,7 @@ function setup() {
     update: vi.fn(async (input) => input),
     mention: vi.fn(async (input) => input),
     mentionBoard: vi.fn(async (input) => input),
+    listAgents: vi.fn(async (input) => input),
   };
   return { service, port: createRuntimeIssueActionPort(service) };
 }

@@ -165,6 +165,7 @@ export const PAPERCLIP_ACTION_KEYS = [
   "mention_board",
   "agent_hire",
   "agent_configure",
+  "list_agents",
 ] as const;
 
 export type PaperclipActionKey = (typeof PAPERCLIP_ACTION_KEYS)[number];
@@ -181,6 +182,7 @@ export const PAPERCLIP_RUNTIME_ACTION_KEYS = [
   "mention_board",
   "agent_hire",
   "agent_configure",
+  "list_agents",
 ] as const;
 
 export type PaperclipRuntimeActionKey =

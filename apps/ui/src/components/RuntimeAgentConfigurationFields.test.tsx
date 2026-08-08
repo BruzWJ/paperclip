@@ -42,7 +42,7 @@ describe("RuntimeAgentConfigurationFields", () => {
     return onChange;
   }
 
-  it("initializes only the five configurable action grants", () => {
+  it("initializes only the configurable action grants", () => {
     expect(
       createEmptyRuntimeAgentConfigurationValues().actionGrants,
     ).toEqual({
@@ -51,6 +51,7 @@ describe("RuntimeAgentConfigurationFields", () => {
       mention_board: false,
       agent_hire: false,
       agent_configure: false,
+      list_agents: false,
     });
   });
 

@@ -534,7 +534,7 @@ describe("runtime interface compiler", () => {
       Object.keys(
         hire.inputSchema.properties?.actionGrants.properties ?? {},
       ),
-    ).toHaveLength(5);
+    ).toHaveLength(6);
     expect(
       Object.keys(
         configure.inputSchema.properties?.mentionReachGrants.properties ?? {},

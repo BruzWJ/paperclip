@@ -47,6 +47,10 @@ const ACTION_LABELS: Record<
     label: "Configure agents",
     description: "Edit an explicitly authorized target's identity, dials, and grants.",
   },
+  list_agents: {
+    label: "List agents",
+    description: "List all non-terminated agents in the company with their identity, capabilities, and reporting hierarchy.",
+  },
 };
 
 const MENTION_LABELS: Record<

@@ -81,6 +81,7 @@ function setup(options: {
     mentionBoard,
     agentHire: no,
     agentConfigure,
+    listAgents: no,
   };
   const executePlugin = vi.fn(
     async (input: { mintPluginRunContext(): Promise<string> }) => ({

@@ -29,6 +29,7 @@ const runtimeConfiguration = {
     mention_board: false,
     agent_hire: false,
     agent_configure: false,
+    list_agents: false,
   },
   mentionReachGrants: {
     mention_any_descendant: false,

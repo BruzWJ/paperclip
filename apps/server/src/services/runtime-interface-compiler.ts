@@ -917,6 +917,31 @@ function mentionBoardDescriptor(): CompiledRunToolDescriptor {
   };
 }
 
+/**
+ * List all agents in the current company with their identity, capabilities,
+ * and reporting hierarchy. The flat list includes each agent's reportsTo id
+ * so the caller can construct the org chart.
+ */
+function listAgentsDescriptor(): CompiledRunToolDescriptor {
+  return {
+    name: "list_agents",
+    title: "List agents",
+    description:
+      "List all agents in this run's company with their name, title, id, capabilities, reporting parent, and active/terminated status. Terminated agents are excluded by default. Returns a flat list keyed by reporting parent so the caller can derive the org tree.",
+    inputSchema: objectSchema({}),
+    source: "paperclip",
+    validateArguments(value) {
+      const parsed = z.object({}).strict().safeParse(value);
+      if (!parsed.success) {
+        throw new RuntimeToolArgumentsInvalid(
+          zodValidationMessage(parsed.error),
+        );
+      }
+      return parsed.data;
+    },
+  };
+}
+
 function hireDescriptor(): CompiledRunToolDescriptor {
   return canonicalActionDescriptor({
     name: "agent_hire",
@@ -979,6 +1004,9 @@ function actionDescriptors(
   }
   if (input.actionGrants.mention_board === true) {
     descriptors.push(mentionBoardDescriptor());
+  }
+  if (input.actionGrants.list_agents === true) {
+    descriptors.push(listAgentsDescriptor());
   }
   if (input.actionGrants.agent_hire === true) {
     descriptors.push(hireDescriptor());

@@ -90,7 +90,8 @@ export const agentActionGrants = pgTable(
         'mention_agent',
         'mention_board',
         'agent_hire',
-        'agent_configure'
+        'agent_configure',
+        'list_agents'
       )`,
     ),
     foreignKey({

@@ -31,7 +31,7 @@ import {
   isUuidLike,
   normalizeContextAccess,
 } from "@paperclipai/shared";
-import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, max, or, sql } from "drizzle-orm";
 import {
   evaluateAgentInvokability,
   InvokableIssueOwnerRejected,
@@ -185,6 +185,10 @@ export interface RuntimeIssueActionService {
     ingressOrdinal: number;
     commitMentionAction: RuntimeActionInvocation["commitMentionAction"];
     message: string;
+  }): Promise<unknown>;
+  listAgents(input: {
+    capability: RuntimeActionInvocation["capability"];
+    invocationId: string;
   }): Promise<unknown>;
 }
 
@@ -549,7 +553,8 @@ function runtimeInvocationKey(
     | "owner-update"
     | "creator-update"
     | "mention"
-    | "mention-board",
+    | "mention-board"
+    | "list-agents",
   capabilityIdentity: string,
   invocationId: string,
 ): string {
@@ -806,6 +811,7 @@ const PERSISTENT_GRANT_BY_RUNTIME_ACTION = {
   mention_board: "mention_board",
   agent_hire: "agent_hire",
   agent_configure: "agent_configure",
+  list_agents: "list_agents",
 } as const satisfies Record<PaperclipRuntimeActionKey, PaperclipActionKey | null>;
 
 function actionRemainsAvailableInCatalog(
@@ -3342,6 +3348,14 @@ export function createRuntimeIssueActionPort(
         message: nonBlankString(input.arguments.message, "message"),
       });
     },
+
+    async listAgents(input) {
+      exactKeys(input.arguments, []);
+      return service.listAgents({
+        capability: input.capability,
+        invocationId: input.invocationId,
+      });
+    },
   };
 }
 
@@ -4005,6 +4019,57 @@ export function createPostgresRuntimeIssueActionService(
         });
       });
       return committed;
+    },
+
+    async listAgents(input) {
+      const key = runtimeInvocationKey(
+        "list-agents",
+        promptCapabilityGenerationIdentity(input.capability),
+        input.invocationId,
+      );
+      return db.transaction(async (tx) => {
+        const now = clock();
+        await lockRuntimeActionAuthority(
+          tx,
+          input.capability,
+          "list_agents",
+          now,
+          { requireOwner: false },
+        );
+        const rows = await tx
+          .select({
+            id: agents.id,
+            name: agents.name,
+            title: agents.title,
+            capabilities: agents.capabilities,
+            status: agents.status,
+            reportsTo: agents.reportsTo,
+          })
+          .from(agents)
+          .where(
+            and(
+              eq(agents.companyId, input.capability.companyId),
+              or(
+                eq(agents.status, "active"),
+                eq(agents.status, "idle"),
+                eq(agents.status, "running"),
+                eq(agents.status, "paused"),
+                eq(agents.status, "pending_approval"),
+              ),
+            ),
+          )
+          .orderBy(asc(agents.name));
+        return {
+          agents: rows.map((row) => ({
+            id: row.id,
+            name: row.name,
+            title: row.title,
+            capabilities: row.capabilities,
+            status: row.status,
+            reportsTo: row.reportsTo,
+          })),
+        };
+      });
     },
 
     async mention(input) {
