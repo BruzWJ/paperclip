@@ -19,10 +19,10 @@ import {
   createRuntimeRetrievalScopeResolver,
 } from "./runtime-interface-compiler-db.js";
 import {
-  createRuntimeToolExecutor,
-  type RuntimeActionPort,
+  createRuntimeToolGateway,
   type RuntimePluginToolPort,
-} from "./runtime-tool-executor.js";
+} from "./runtime-tool-gateway.js";
+import type { PaperclipManagedToolRouter } from "./paperclip-managed-tool-router.js";
 import {
   createRuntimeToolCallLedger,
 } from "./runtime-tool-call-ledger.js";
@@ -55,7 +55,7 @@ export interface PostgresPromptCapabilityRuntimeOptions {
   cursorSecret: string;
   /** Canonical redacted Session read authority shared with runtime plugins. */
   issueSessionStore: IssueSessionStore;
-  actions: RuntimeActionPort;
+  managedTools: PaperclipManagedToolRouter;
   pluginTools: RuntimePluginToolPort;
   now?: () => Date;
 }
@@ -85,11 +85,10 @@ export function createPostgresPromptCapabilityRuntime(
     repository: createPostgresRecoverySessionHistoryRepository(db),
     runTrace: retrieval,
   });
-  const executor = createRuntimeToolExecutor({
-    retrieval,
+  const runtimeToolGateway = createRuntimeToolGateway({
     retrievalScope: createRuntimeRetrievalScopeResolver(compiler),
     restoreSession,
-    actions: options.actions,
+    managedTools: options.managedTools,
     pluginTools: options.pluginTools,
     callLedger: createRuntimeToolCallLedger(db),
   });
@@ -100,7 +99,7 @@ export function createPostgresPromptCapabilityRuntime(
   );
   const gateway = createPromptCapabilityGateway({
     repository,
-    executor,
+    executor: runtimeToolGateway,
     now: options.now,
   });
   const retrievalScope = createRuntimeRetrievalScopeResolver(compiler);
@@ -263,7 +262,8 @@ export function createPostgresPromptCapabilityRuntime(
   return {
     compiler,
     retrieval,
-    executor,
+    /** ACPX's prompt gateway still calls this an executor; it is ingress only. */
+    executor: runtimeToolGateway,
     repository,
     gateway,
     pluginRunIssueContextReader,

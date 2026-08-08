@@ -319,19 +319,17 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "apps/server/src/services/runtime-interface-compiler.ts",
+    "apps/server/src/services/paperclip-managed-tool-registry.ts",
     [
-      "function issueFilterSchema() {",
-      "  return objectSchema({",
-      '    status: { type: "string", enum: ["open", "blocked", "done", "cancelled"] },',
-      "  });",
+      "const issueFiltersSchema = z.object({",
+      '  status: z.enum(["open", "blocked", "done", "cancelled"]),',
+      "});",
+      "const page = {};",
+      "function projectRuntimeIssueUpdate() {",
+      '  const nonterminal = { status: z.enum(["open", "blocked"]) };',
+      '  const terminal = { status: z.enum(["done", "cancelled"]) };',
       "}",
-      "function issueUpdateDescriptor() {",
-      "  return [",
-      '    { status: { type: "string", enum: ["open", "blocked"] } },',
-      '    { status: { type: "string", enum: ["done", "cancelled"] } },',
-      "  ];",
-      "}",
+      "function projectRuntimeMentionAgent() {}",
       "",
     ].join("\n"),
   );
@@ -392,9 +390,8 @@ function fixtureRoot(): string {
     root,
     "apps/ui/src/plugins/bridge-init.ts",
     [
-      "type PluginIssuesListFilters = {",
-      '  status?: "open" | "blocked" | "done" | "cancelled";',
-      "};",
+      'import type { IssuesListFilters } from "@paperclipai/plugin-sdk/ui";',
+      "function compactIssueFilters(filters: IssuesListFilters): IssuesListFilters { return filters; }",
       "",
     ].join("\n"),
   );
@@ -463,7 +460,7 @@ function fixtureRoot(): string {
   );
   const producers: Record<string, string> = {
     "apps/server/src/services/canonical-issue-aggregate.ts":
-      "recordIssueLivenessActionInTransaction(tx, `issue:${persistedIssue.id}`);\n",
+      "if (persistedIssue.parentId !== null) { await recordIssueLivenessActionInTransaction(tx, `issue:${persistedIssue.id}`); }\n",
     "apps/server/src/services/ordinary-issue-runtime.ts": [
       "recordIssueLivenessActionInTransaction(tx, `issue_execution_ref:${admission.ref.id}`);",
       "recordIssueLivenessActionInTransaction(tx, `issue_board_reopen_command:${command.id}`);",
@@ -583,23 +580,23 @@ test("rejects extending the canonical company-portability input type", () => {
 
 for (const [owner, expected, replacement, expectedViolation] of [
   [
-    "function issueFilterSchema()",
+    "const issueFiltersSchema =",
     '"cancelled"]',
     '"cancelled", "parked"]',
-    "issueFilterSchema",
+    "managed-tool",
   ],
   [
-    "function issueUpdateDescriptor(",
+    "function projectRuntimeIssueUpdate(",
     '"blocked"]',
     '"blocked", "parked"]',
-    "owner-form runtime schema",
+    "managed-tool",
   ],
 ] as const) {
-  test(`rejects an arbitrary fifth runtime-interface value in ${owner}`, () => {
+  test(`rejects an arbitrary fifth runtime-projection value in ${owner}`, () => {
     const root = fixtureRoot();
     replaceAfter(
       root,
-      "apps/server/src/services/runtime-interface-compiler.ts",
+      "apps/server/src/services/paperclip-managed-tool-registry.ts",
       owner,
       expected,
       replacement,
@@ -666,11 +663,6 @@ for (const [path, owner, expectedViolation] of [
 
 for (const [path, owner, expectedViolation] of [
   [
-    "apps/ui/src/plugins/bridge-init.ts",
-    "type PluginIssuesListFilters =",
-    "host UI plugin bridge filter",
-  ],
-  [
     "apps/ui/src/pages/IssueDetail.tsx",
     "const commitHumanOwnerStatus = useMutation(",
     "human owner status mutation",
@@ -682,6 +674,16 @@ for (const [path, owner, expectedViolation] of [
     assertViolation(root, expectedViolation);
   });
 }
+
+test("rejects a duplicate lifecycle filter in the host UI plugin bridge", () => {
+  const root = fixtureRoot();
+  append(
+    root,
+    "apps/ui/src/plugins/bridge-init.ts",
+    '\ntype PluginIssuesListFilters = { status?: "open" | "blocked" | "done" | "cancelled" | "parked" };\n',
+  );
+  assertViolation(root, "host UI plugin bridge filter");
+});
 
 for (const field of ["state", "outcome", "status"] as const) {
   test(`rejects a liveness reconciliation ${field} enum`, () => {

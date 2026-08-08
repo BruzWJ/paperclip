@@ -7,6 +7,10 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { createRuntimeAgentActionPort } from "../services/runtime-agent-action-port.js";
 import {
+  agentRunManagedActionInvocation,
+  type AgentRunToolAuthority,
+} from "../services/paperclip-managed-tool-router.js";
+import {
   createRuntimeAgentConfigurationService,
   parseRuntimeAgentCreateConfiguration,
   parseRuntimeAgentUpdateConfiguration,
@@ -16,7 +20,7 @@ import {
   runtimeAgentConfigurationDisplayedDiff,
   type RuntimeAgentConfigurationService,
 } from "../services/runtime-agent-configuration.js";
-import { RuntimeToolArgumentsInvalid } from "../services/runtime-interface-compiler.js";
+import { RuntimeToolArgumentsInvalid } from "../services/runtime-tool-errors.js";
 import { createMockDb } from "./helpers/mock-db.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
@@ -40,6 +44,21 @@ function capability() {
     runId: "00000000-0000-4000-8000-000000000011",
     refId: "00000000-0000-4000-8000-000000000012",
   } as never;
+}
+
+function actionAuthority(invocationId: string): AgentRunToolAuthority {
+  return {
+    kind: "agent_run",
+    capability: capability(),
+    invocation: {
+      id: invocationId,
+      runInterfaceToolCallId: `ledger-${invocationId}`,
+      ingressOrdinal: 0,
+      async commitMentionAction(_transaction, result) {
+        return result;
+      },
+    },
+  };
 }
 
 function boardActor() {
@@ -82,7 +101,6 @@ describe("runtime-agent configuration canonical contracts", () => {
       },
       actionGrants: {
         issue_create: true,
-        mention_agent: false,
       },
       mentionReachGrants: { mention_any_ancestor: true },
     });
@@ -97,7 +115,7 @@ describe("runtime-agent configuration canonical contracts", () => {
         read_issue_comments: true,
         list_company_issues: false,
       },
-      actionGrants: { issue_create: true, mention_agent: false },
+      actionGrants: { issue_create: true },
       mentionReachGrants: { mention_any_ancestor: true },
     });
     expect(JSON.stringify(parsed)).not.toMatch(
@@ -178,27 +196,6 @@ describe("runtime-agent action boundary", () => {
     } as unknown as RuntimeAgentConfigurationService;
   }
 
-  it("rejects retired or provider-owned hire fields before calling the service", async () => {
-    const hireFromRun = vi.fn();
-    const actions = createRuntimeAgentActionPort(fakeService({
-      hireFromRun: hireFromRun as never,
-    }));
-
-    for (const argumentsValue of [
-      { name: "Unsafe child", role: "retired" },
-      { name: "Unsafe child", adapterType: "codex" },
-      { name: "Unsafe child", adapterConfig: { model: "forbidden" } },
-      { name: "Unsafe child", reportsTo: agentId },
-    ]) {
-      await expect(actions.agentHire({
-        capability: capability(),
-        invocationId: "hire-invalid",
-        arguments: argumentsValue,
-      })).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
-    }
-    expect(hireFromRun).not.toHaveBeenCalled();
-  });
-
   it("forwards the complete canonical hire contract and injects no reporting edge", async () => {
     const hireFromRun = vi.fn(async () => ({ status: "ok" } as never));
     const actions = createRuntimeAgentActionPort(fakeService({
@@ -218,11 +215,11 @@ describe("runtime-agent action boundary", () => {
       mentionReachGrants: completeBooleanMap(AGENT_MENTION_REACH_GRANT_KEYS),
     };
 
-    await expect(actions.agentHire({
-      capability: capability(),
-      invocationId: "hire-1",
-      arguments: argumentsValue,
-    })).resolves.toEqual({ status: "created" });
+    await expect(actions.agentHire(agentRunManagedActionInvocation({
+      name: "agent_hire",
+      companyId,
+      configuration: { ...argumentsValue, reportsTo: agentId },
+    } as never, actionAuthority("hire-1")))).resolves.toEqual({ status: "created" });
     expect(hireFromRun).toHaveBeenCalledExactlyOnceWith({
       capability: capability(),
       invocationId: "hire-1",
@@ -239,10 +236,10 @@ describe("runtime-agent action boundary", () => {
       }) as never,
     }));
 
-    await expect(actions.agentHire({
-      capability: capability(),
-      invocationId: "hire-invalid-service",
-      arguments: {
+    await expect(actions.agentHire(agentRunManagedActionInvocation({
+      name: "agent_hire",
+      companyId,
+      configuration: {
         name: "Direct Child",
         title: null,
         capabilities: null,
@@ -250,8 +247,11 @@ describe("runtime-agent action boundary", () => {
         contextGrants: completeBooleanMap(AGENT_CONTEXT_GRANT_KEYS),
         actionGrants: completeBooleanMap(PAPERCLIP_ACTION_KEYS),
         mentionReachGrants: completeBooleanMap(AGENT_MENTION_REACH_GRANT_KEYS),
+        reportsTo: agentId,
       },
-    })).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
+    } as never, actionAuthority("hire-invalid-service")))).rejects.toBeInstanceOf(
+      RuntimeToolArgumentsInvalid,
+    );
   });
 
   it("turns explicit consent-required configuration into one consent request", async () => {
@@ -272,11 +272,14 @@ describe("runtime-agent action boundary", () => {
       configureFromRun: configureFromRun as never,
     }), { requestChangeConsent });
 
-    await expect(actions.agentConfigure({
-      capability: capability(),
-      invocationId: "configure-consent",
-      arguments: { agentId, title: "Board consented" },
-    })).resolves.toEqual({ status: "change_consent_requested" });
+    await expect(actions.agentConfigure(agentRunManagedActionInvocation({
+      name: "agent_configure",
+      companyId,
+      agentId,
+      configuration: { title: "Board consented" },
+    } as never, actionAuthority("configure-consent")))).resolves.toEqual({
+      status: "change_consent_requested",
+    });
     expect(requestChangeConsent).toHaveBeenCalledExactlyOnceWith({
       capability: capability(),
       targetAgentId: agentId,
@@ -296,29 +299,14 @@ describe("runtime-agent action boundary", () => {
       requestChangeConsent: vi.fn(async () => undefined),
     });
 
-    await expect(actions.agentConfigure({
-      capability: capability(),
-      invocationId: "configure-denied",
-      arguments: { agentId, title: "Denied" },
-    })).rejects.toMatchObject({ reason: "action_grant_missing" });
-  });
-
-  it("rejects changed stable action identity arguments at the canonical schema edge", async () => {
-    const configureFromRun = vi.fn(async () => ({ status: "ok" } as never));
-    const actions = createRuntimeAgentActionPort(fakeService({
-      configureFromRun: configureFromRun as never,
-    }));
-
-    await expect(actions.agentConfigure({
-      capability: capability(),
-      invocationId: "configure-invalid",
-      arguments: {
-        agentId,
-        title: "Allowed",
-        provider: "forbidden",
-      },
-    })).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
-    expect(configureFromRun).not.toHaveBeenCalled();
+    await expect(actions.agentConfigure(agentRunManagedActionInvocation({
+      name: "agent_configure",
+      companyId,
+      agentId,
+      configuration: { title: "Denied" },
+    } as never, actionAuthority("configure-denied")))).rejects.toMatchObject({
+      reason: "action_grant_missing",
+    });
   });
 
   it("rejects invalid board/plugin source pairing before opening a transaction", async () => {

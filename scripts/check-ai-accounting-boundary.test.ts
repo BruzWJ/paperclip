@@ -34,7 +34,7 @@ function fixtureRoot(): string {
     '}); check("acp_prompt_accounting_context_occupancy_check", sql`${table.contextUsedTokens} >= 0 and ${table.contextWindowTokens} > 0 and ${table.contextUsedTokens} <= ${table.contextWindowTokens} and ${table.contextWindowTokens} = ${table.contextTokenLimit}`);',
   ].join("\n"));
   write(root, "packages/db/schema/issue_sessions.ts", [
-    "tokensInput: bigint(), tokensOutput: bigint(), tokensReasoning: bigint(), tokensCacheRead: bigint(), tokensCacheWrite: bigint(), sourceTotalTokens: bigint(),",
+    "tokensInput: bigint(), tokensOutput: bigint(), tokensReasoning: bigint(), tokensCacheRead: bigint(), tokensCacheWrite: bigint(),",
     'check("issue_sessions_cost_and_tokens_check", sql`${table.tokensInput} is null and ${table.tokensOutput} is null and ${table.tokensReasoning} is null and ${table.tokensCacheRead} is null and ${table.tokensCacheWrite} is null or ${table.tokensInput} >= 0 and ${table.tokensOutput} >= 0 and ${table.tokensReasoning} >= 0 and ${table.tokensCacheRead} >= 0 and ${table.tokensCacheWrite} >= 0`);',
   ].join("\n"));
   const tokenShape = [
@@ -61,7 +61,6 @@ function fixtureRoot(): string {
     "lastContextUsedTokens: input.contextUsedTokens,",
     "lastContextWindowTokens: input.contextWindowTokens,",
     "const peakContextUsedTokens = Math.max(existing.peakContextUsedTokens, input.contextUsedTokens);",
-    "sourceTotalTokens: settlement.occupancy.used,",
     "const stepEndedData = { finish: settlement.stopReason };",
   ].join("\n"));
   return root;
@@ -72,7 +71,7 @@ afterEach(() => {
   roots.clear();
 });
 
-test("accepts occupancy-only ACP plus complete optional donor accounting", () => {
+test("accepts occupancy-only ACP with nullable Session token columns", () => {
   assert.deepEqual(aiAccountingBoundaryViolations(fixtureRoot()), []);
 });
 
@@ -130,4 +129,19 @@ test("rejects mapping stable ACP usage into Session events", () => {
   const path = "apps/server/src/services/issue-execution-acp-events-postgres.ts";
   write(root, path, readFileSync(join(root, path), "utf8").replace('input.event.kind === "usage"', 'input.event.kind === "never"'));
   assert.ok(aiAccountingBoundaryViolations(root).some((entry) => entry.includes("usage")));
+});
+
+test("rejects retired ACP token provenance fields", () => {
+  const root = fixtureRoot();
+  const path = "apps/server/src/services/acp-prompt-settlement.ts";
+  write(
+    root,
+    path,
+    `${readFileSync(join(root, path), "utf8")}\nconst retired = { sourceTotalTokens: settlement.occupancy.used };\n`,
+  );
+  assert.ok(
+    aiAccountingBoundaryViolations(root).some((entry) =>
+      entry.includes("sourceTotalTokens"),
+    ),
+  );
 });

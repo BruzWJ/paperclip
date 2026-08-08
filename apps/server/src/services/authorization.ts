@@ -26,7 +26,13 @@ export type AuthorizationActor =
   | {
       type: "board";
       userId: string;
-      source?: "session" | "board_key";
+      /**
+       * `board_mcp` is constructed only by the dedicated Board MCP ingress
+       * after a board API key has been resolved to a persisted user. It is a
+       * trusted board-operator surface, not a value accepted by generic REST
+       * request parsing.
+       */
+      source?: "session" | "board_key" | "board_mcp";
     }
   | {
       type: "agent";
@@ -80,6 +86,7 @@ export type AuthorizationDecision = {
   code?: "RESPONSIBLE_USER_UNAUTHORIZED" | "RESPONSIBLE_USER_UNAVAILABLE";
   reason:
     | "allow_instance_admin"
+    | "allow_board_mcp"
     | "allow_explicit_grant"
     | "allow_direct_change"
     | "allow_consented_change"
@@ -628,6 +635,33 @@ export function authorizationService(db: Db) {
           action: input.action,
           reason: "deny_unauthenticated",
           explanation: "Board authorization requires an existing Better Auth user.",
+        });
+      }
+      // A Board MCP bearer is a deliberate full-control board surface. Its
+      // authentication and company membership boundary were already resolved
+      // at ingress, and this branch ensures the canonical control-plane
+      // services do not reintroduce per-action grants or viewer restrictions.
+      // Keep the persisted active-membership check: it is tenant isolation,
+      // rather than a grant or action-level access dial.
+      if (input.actor.source === "board_mcp") {
+        const membership = await getActiveMembership(
+          companyId,
+          "user",
+          boardUserId,
+        );
+        if (!membership) {
+          return deny({
+            action: input.action,
+            reason: "deny_missing_membership",
+            explanation:
+              `user principal ${boardUserId} is not an active member of company ${companyId}.`,
+          });
+        }
+        return allow({
+          action: input.action,
+          reason: "allow_board_mcp",
+          explanation:
+            "Allowed by the authenticated full-control Board MCP operator.",
         });
       }
       if (

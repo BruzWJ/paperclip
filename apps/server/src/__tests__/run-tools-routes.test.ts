@@ -3,7 +3,7 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import { runToolsRoutes } from "../routes/run-tools.js";
 import type { PromptCapabilityGateway } from "../services/prompt-capability-gateway.js";
-import { RuntimeToolUnavailable } from "../services/runtime-interface-compiler.js";
+import { RuntimeToolUnavailable } from "../services/runtime-tool-errors.js";
 import { RUN_TOOLS_INGRESS_ORDINAL_HEADER } from "@paperclipai/adapter-utils/run-tools-stdio-proxy";
 
 function app(service: PromptCapabilityGateway) {

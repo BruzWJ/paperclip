@@ -7,7 +7,7 @@ import {
   type PromptCapabilityGateway,
   type PromptCapabilityToolExecutionResult,
 } from "../services/prompt-capability-gateway.js";
-import { RuntimeToolUnavailable } from "../services/runtime-interface-compiler.js";
+import { RuntimeToolUnavailable } from "../services/runtime-tool-errors.js";
 
 type JsonRpcId = string | number | null;
 

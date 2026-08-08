@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import {
   REMOVAL_PROOF_MARKER,
@@ -232,6 +234,40 @@ describe("canonical public auth origin", () => {
       [],
     );
   });
+
+  it("allows only the direct MCP installer's generated local BASE_URL constant", () => {
+    const installerPath =
+      "apps/server/src/services/board-mcp-install-script.ts";
+    const generatedInstaller =
+      "BASE_URL=${shellSingleQuote(normalizedBaseUrl)}\n";
+    assert.deepEqual(
+      scanRetiredHumanIdentityTokens(
+        files({ [installerPath]: generatedInstaller }),
+      ),
+      [],
+    );
+    assert.ok(
+      scanRetiredHumanIdentityTokens(
+        files({ "apps/server/src/auth/origin.ts": generatedInstaller }),
+      ).some((entry) => entry.kind === "retired_identity"),
+      "ordinary source must not acquire a BASE_URL exception",
+    );
+  });
+
+  it("accepts the exact generated installer source", () => {
+    const installerPath =
+      "apps/server/src/services/board-mcp-install-script.ts";
+    const installerSource = readFileSync(
+      resolve(import.meta.dirname, "..", installerPath),
+      "utf8",
+    );
+    assert.deepEqual(
+      scanRetiredHumanIdentityTokens(
+        files({ [installerPath]: installerSource }),
+      ),
+      [],
+    );
+  });
 });
 
 describe("canonical HTTP actor boundary", () => {
@@ -420,6 +456,10 @@ describe("canonical HTTP actor boundary", () => {
   it("requires the isolated run-tools and generic REST denial ordering", () => {
     const canonical = `
       app.use("/api", runToolsRoutes(opts.runInterfaceSessionService));
+      app.use("/api/mcp", actorMiddleware(db, {
+        resolveSession: opts.resolveSession,
+      }));
+      app.use("/api", boardMcpRoutes({}));
       app.use("/api", rejectRunInterfaceBearerFromGenericApi());
       actorMiddleware(db, {
         resolveSession: opts.resolveSession,

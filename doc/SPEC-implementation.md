@@ -118,15 +118,15 @@ mutate historical runs.
 
 ### Compiled interface
 
-- `runtime-interface-compiler.ts` defines exact descriptor schemas and dynamic
-  catalogs.
+- `runtime-interface-compiler.ts` selects exact registry descriptor projections
+  from dynamic catalogs and adds host-owned recovery/plugin descriptors.
 - `runtime-interface-compiler-db.ts` resolves current grants and targets from
   PostgreSQL.
 - `run-interface-session.ts` mints/revokes lease-bound compiled-interface
   bearers.
 - `run-interface-session-db.ts` persists those bearer sessions.
 - `run-tools.ts` is the sole provider-facing Paperclip route.
-- `runtime-tool-executor.ts` dispatches validated compiled calls.
+- `runtime-tool-gateway.ts` is the ACPX ingress for validated compiled calls.
 - `runtime-issue-action-port.ts` implements issue actions.
 - `paperclip-agent-message.ts` defines the closed managed-tool prompt contract
   and the per-tool renderers used at agent-mention admission. Tool producers
@@ -137,6 +137,30 @@ mutate historical runs.
 
 General REST authentication never accepts a compiled bearer. The compiler never
 exposes false-grant surfaces.
+
+### Canonical managed-tool surface
+
+Paperclip-managed tools are one first-class control-plane surface, not a Board
+MCP feature layered beside a provider-runtime feature:
+
+- `paperclip-managed-tool-registry.ts` is the sole schema/compiler contract.
+  It owns the closed vocabulary, metadata, Board Zod schemas, dynamic provider
+  projections, normalization into one canonical command, and ledger metadata.
+- `paperclip-managed-tool-router.ts` is the sole authority-aware executor and
+  `routeExecution` entrypoint. Board MCP supplies a board-user authority and
+  raw Board input; ACPX supplies the descriptor-normalized command and run
+  authority. Both invoke the same command executor. Its lower issue and agent
+  ports enforce domain transactions; they are not alternate tool surfaces.
+
+The runtime compiler only selects the registry's provider projections for a
+leased execution, then adds host-owned recovery and plugin descriptors. The
+ACPX gateway only validates the selected descriptor, maintains the call ledger,
+and passes the canonical command to the shared router. Board MCP only
+authenticates the existing board key, lists the visible registry tools, and
+passes raw calls to that same router. A Board authority is full-control inside
+its active company memberships: it bypasses agent grants, context dials, and
+mention reach, while tenancy and canonical issue-integrity rules remain in
+force.
 
 ### Run directories
 

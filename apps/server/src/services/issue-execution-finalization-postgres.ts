@@ -1,20 +1,24 @@
 import { randomUUID } from "node:crypto";
 import {
   activityLog,
+  agentActionGrants,
+  agentMentionReachGrants,
+  agents,
   documentRevisions,
   issueCommentProjectionSources,
   issueComments,
+  issueConsultExecutions,
   issueDocuments,
   issueExecutionFinalizationPromptDependencies,
   issueExecutionFinalizations,
   issueExecutionFinalizationUpdateDependencies,
-  issueExecutionRefs,
-  issueConsultExecutions,
   issueExecutionPromptCapabilities,
   issueExecutionPromptSegments,
+  issueExecutionRefs,
   issueExecutionRunControls,
   issueExecutionRunLivenessFacts,
   issueExecutionRunRefs,
+  issueExecutionRuns,
   issueSessionEvents,
   issueSessionMessages,
   issueUpdates,
@@ -39,6 +43,9 @@ import {
 } from "./issue-session/projector.js";
 import { publishIssueSessionFinalCommentInTx } from "./issue-session/publication.js";
 import { classifyRunLiveness } from "./run-liveness.js";
+import { createIssueSessionAdmissionService } from "./issue-session/admission.js";
+import { mentionAgentInTransaction } from "./runtime-issue-action-port.js";
+import { resolveMentionReach } from "./mention-reach-resolver.js";
 
 type IssueExecutionDbTransaction =
   Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -56,6 +63,7 @@ export interface FinalizedPostgresIssueExecutionRun {
   readonly finalizationId: string;
   readonly status: IssueExecutionRunTerminalClassification;
   readonly retried: boolean;
+  readonly autoCaptureRefId: string | null;
 }
 
 export class PostgresIssueExecutionFinalizationRejected extends Error {
@@ -233,12 +241,16 @@ async function lockPromptFrontier(
 async function lockRunUpdates(
   transaction: IssueExecutionDbTransaction,
   input: { companyId: string; runId: string },
-): Promise<Array<{ issueUpdateId: string }>> {
+): Promise<Array<{ issueUpdateId: string; updateTargetIssueId: string }>> {
   // Creator-form updates are persisted under the child issue even though the
-  // producing run belongs to its parent. Run identity is therefore the only
-  // canonical dedupe scope for suppressing a second final-output comment.
+  // producing run belongs to its parent. Same-issue updates signal that the
+  // agent already directed output there; cross-issue updates still need the
+  // current issue's final response published.
   const updates = await transaction
-    .select()
+    .select({
+      id: issueUpdates.id,
+      issueId: issueUpdates.issueId,
+    })
     .from(issueUpdates)
     .where(
       and(
@@ -248,7 +260,10 @@ async function lockRunUpdates(
     )
     .orderBy(asc(issueUpdates.runSequence))
     .for("update");
-  return updates.map((update) => ({ issueUpdateId: update.id }));
+  return updates.map((update) => ({
+    issueUpdateId: update.id,
+    updateTargetIssueId: update.issueId,
+  }));
 }
 
 async function insertProductiveLivenessFact(
@@ -523,6 +538,221 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
     }
   }
 
+  async function maybeAutoCaptureMentionResponse(
+    transaction: IssueExecutionDbTransaction,
+    input: FinalizePostgresIssueExecutionRunInput,
+    run: Awaited<ReturnType<typeof options.runService.lockRun>>,
+    finalText: string,
+  ): Promise<string | null> {
+    if (
+      run.kind !== "consult" ||
+      !run.consultExecutionId ||
+      input.status !== "succeeded" ||
+      finalText.length === 0
+    ) {
+      return null;
+    }
+
+    const consult = await transaction
+      .select({ sourceRunId: issueConsultExecutions.sourceRunId })
+      .from(issueConsultExecutions)
+      .where(eq(issueConsultExecutions.id, run.consultExecutionId))
+      .limit(1)
+      .for("update")
+      .then((rows) => rows[0] ?? null);
+    if (!consult) return null;
+
+    const sourceRun = await transaction
+      .select({
+        targetAgentId: issueExecutionRuns.targetAgentId,
+        adapterConfigRevisionId: issueExecutionRuns.adapterConfigRevisionId,
+      })
+      .from(issueExecutionRuns)
+      .where(
+        and(
+          eq(issueExecutionRuns.id, consult.sourceRunId),
+          eq(issueExecutionRuns.companyId, input.companyId),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    if (!sourceRun) return null;
+
+    const finishingRef = await transaction
+      .select({
+        id: issueExecutionRefs.id,
+        executionLineageId: issueExecutionRefs.executionLineageId,
+        executionScopeId: issueExecutionRefs.executionScopeId,
+      })
+      .from(issueExecutionRefs)
+      .innerJoin(
+        issueExecutionRunRefs,
+        and(
+          eq(issueExecutionRunRefs.refId, issueExecutionRefs.id),
+          eq(issueExecutionRunRefs.runId, input.runId),
+          eq(issueExecutionRunRefs.companyId, input.companyId),
+        ),
+      )
+      .where(
+        and(
+          eq(issueExecutionRefs.companyId, input.companyId),
+          eq(issueExecutionRefs.issueId, input.issueId),
+          eq(issueExecutionRefs.sessionId, run.sessionId),
+          eq(issueExecutionRefs.mode, "consult"),
+        ),
+      )
+      .orderBy(asc(issueExecutionRefs.id))
+      .limit(1)
+      .for("update")
+      .then((rows) => rows[0] ?? null);
+    if (!finishingRef) return null;
+
+    const companyAgents = await transaction
+      .select()
+      .from(agents)
+      .where(eq(agents.companyId, input.companyId));
+
+    const issueTree = await transaction
+      .select({
+        id: issues.id,
+        parentId: issues.parentId,
+        ownerKind: issues.ownerKind,
+        ownerAgentId: issues.ownerAgentId,
+      })
+      .from(issues)
+      .where(
+        and(
+          eq(issues.companyId, input.companyId),
+          eq(issues.id, input.issueId),
+        ),
+      );
+
+    const mentionReachRows = await transaction
+      .select({ key: agentMentionReachGrants.key })
+      .from(agentMentionReachGrants)
+      .where(
+        and(
+          eq(agentMentionReachGrants.companyId, input.companyId),
+          eq(agentMentionReachGrants.agentId, run.targetAgentId),
+        ),
+      );
+
+    const mentionReach = Object.fromEntries(
+      mentionReachRows.map((r) => [r.key, true]),
+    );
+
+    const resolution = resolveMentionReach({
+      sourceAgentId: run.targetAgentId,
+      companyAgents,
+      issueTree,
+      mentionReach,
+    });
+
+    if (resolution.targetAgentIds.size > 0) return null;
+
+    const mentionBoardRow = await transaction
+      .select({ id: agentActionGrants.id })
+      .from(agentActionGrants)
+      .where(
+        and(
+          eq(agentActionGrants.companyId, input.companyId),
+          eq(agentActionGrants.agentId, run.targetAgentId),
+          eq(agentActionGrants.key, "mention_board"),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+
+    if (mentionBoardRow) return null;
+
+    const sourceAgent = companyAgents.find(
+      (a) => a.id === sourceRun.targetAgentId,
+    );
+    if (!sourceAgent) return null;
+
+    const finishingAgent = companyAgents.find(
+      (a) => a.id === run.targetAgentId,
+    );
+
+    const consultId = randomUUID();
+    await transaction.insert(issueConsultExecutions).values({
+      id: consultId,
+      companyId: input.companyId,
+      issueId: input.issueId,
+      sessionId: run.sessionId,
+      ownershipEpoch: run.ownershipEpoch,
+      sourceRunId: input.runId,
+      sourceRefId: finishingRef.id,
+      callerExecutionScopeId: finishingRef.executionScopeId,
+      targetAgentId: sourceAgent.id,
+      adapterConfigRevisionId: sourceRun.adapterConfigRevisionId,
+      chainToken: `consult_chain:auto_capture:${input.runId}`,
+      state: "active",
+      createdAt: input.finishedAt,
+    });
+
+    const sessionAdmission = createIssueSessionAdmissionService(
+      transaction as unknown as Db,
+    );
+
+    const admission = await mentionAgentInTransaction(
+      sessionAdmission,
+      transaction,
+      {
+        companyId: input.companyId,
+        issueId: input.issueId,
+        sessionId: run.sessionId,
+        ownershipEpoch: run.ownershipEpoch,
+        targetAgentId: sourceAgent.id,
+        issueExecutionAuthorityId: null,
+        consultExecutionId: consultId,
+        adapterConfigRevisionId: sourceRun.adapterConfigRevisionId,
+        contextEpoch: 0,
+        mode: "consult",
+        executionLineageId: finishingRef.executionLineageId,
+        consultCallerRefId: finishingRef.id,
+        consultChainToken: `consult_chain:auto_capture:${input.runId}`,
+        sourceKind: "consult_mention",
+        actor: {
+          kind: "agent-execution",
+          agentId: run.targetAgentId,
+          authorityId: run.issueExecutionAuthorityId ?? "",
+        },
+        immutableSourceKey: `auto-capture:${input.runId}`,
+        sourceRecordId: consultId,
+        idempotencyKey: `auto-capture:${input.runId}`,
+        prompt: {
+          toolName: "mention_agent",
+          arguments: {
+            agentId: sourceAgent.id,
+            message: finalText,
+          },
+          context: {
+            issue: { id: input.issueId },
+            from: {
+              id: run.targetAgentId,
+              name: finishingAgent?.name ?? "Agent",
+            },
+            to: {
+              id: sourceAgent.id,
+              name: sourceAgent.name,
+            },
+          },
+        },
+        comment: {
+          author: { kind: "agent", agentId: run.targetAgentId },
+          producingRun: {
+            runId: input.runId,
+            adapterConfigRevisionId: run.adapterConfigRevisionId,
+          },
+        },
+      },
+    );
+
+    if (!admission.ref) return null;
+    return admission.ref.id;
+  }
+
   async function finalizeInTransaction(
     transaction: IssueExecutionDbTransaction,
     input: FinalizePostgresIssueExecutionRunInput,
@@ -568,6 +798,7 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
             finalizationId: finalization.id,
             status: input.status,
             retried: true,
+            autoCaptureRefId: null,
           };
         }
         if (!activeRunStatus(run.status)) {
@@ -653,11 +884,43 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
           .for("update");
         const terminalMessage = terminalMessages[0] ?? null;
         const finalText = terminalAssistantText(terminalMessage);
-        const action = updates.length > 0
+        const mentionToolCallRows = await transaction
+          .select({ toolName: runInterfaceToolCalls.toolName })
+          .from(runInterfaceToolCalls)
+          .innerJoin(
+            issueExecutionPromptCapabilities,
+            and(
+              eq(
+                runInterfaceToolCalls.capabilityConnectionId,
+                issueExecutionPromptCapabilities.capabilityConnectionId,
+              ),
+              eq(
+                runInterfaceToolCalls.capabilityGeneration,
+                issueExecutionPromptCapabilities.capabilityGeneration,
+              ),
+            ),
+          )
+          .where(
+            and(
+              eq(runInterfaceToolCalls.companyId, input.companyId),
+              eq(issueExecutionPromptCapabilities.companyId, input.companyId),
+              eq(issueExecutionPromptCapabilities.runId, input.runId),
+              eq(runInterfaceToolCalls.classification, "validated_mention"),
+            ),
+          )
+          .limit(1)
+          .then((rows) => rows[0] ?? null);
+        const hadMentionComment = mentionToolCallRows !== null;
+        const sameIssueUpdates = updates.filter(
+          (u) => u.updateTargetIssueId === input.issueId,
+        );
+        const action = hadMentionComment || sameIssueUpdates.length > 0
           ? "updates_committed" as const
-          : finalText.length > 0
-            ? "comment_only" as const
-            : "no_conversational_output" as const;
+          : updates.length > 0
+            ? (finalText.length > 0 ? "comment_only" as const : "no_conversational_output" as const)
+            : finalText.length > 0
+              ? "comment_only" as const
+              : "no_conversational_output" as const;
         if (
           (action !== "no_conversational_output" && !terminalEvent) ||
           (action === "comment_only" && !terminalMessage)
@@ -819,10 +1082,17 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
           finishedAt: input.finishedAt,
           at: input.finishedAt,
         });
+        const autoCaptureRefId = await maybeAutoCaptureMentionResponse(
+          transaction,
+          input,
+          run,
+          finalText,
+        );
         return {
           finalizationId,
           status: input.status,
           retried: false,
+          autoCaptureRefId: autoCaptureRefId ?? null,
         };
   }
 

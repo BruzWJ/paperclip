@@ -93,7 +93,7 @@ export interface ResolvedIssueExecutionPrompt {
   readonly sourceMessageSeq: number;
   readonly sourceText: string;
   /**
-   * One short pre-task turn for a newly created ACP session. This remains
+   * One short pre-work turn for a newly created ACP session. This remains
    * null for ordinary work and every ACP resume, so it is never prepended to
    * the canonical issue message.
    */
@@ -547,7 +547,7 @@ function instructionBootstrapMessage(
 ): string {
   return restoreSession
     ? `${instruction}\n\nContinuation. Call restore_session, then end turn.`
-    : `${instruction}\n\nNo task yet. Use enabled tools if needed, then end turn.`;
+    : `${instruction}\n\nNo work yet. Use enabled tools if needed, then end turn.`;
 }
 
 function waitForLeaseRenewalInterval(
@@ -826,7 +826,7 @@ function acpxRuntimePhase(
 
 /**
  * ACPX's phase describes either the optional role bootstrap or normal work.
- * Paperclip's closure phase describes only the canonical source task, which
+ * Paperclip's closure phase describes only the canonical source issue work, which
  * remains in setup until its durable transmission fence has succeeded.
  */
 function canonicalWorkPhase(

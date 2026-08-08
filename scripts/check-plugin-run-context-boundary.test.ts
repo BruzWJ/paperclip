@@ -50,7 +50,11 @@ function fixtureRoot(): string {
     ].join("\n"),
   );
   write(root, COMPILER_PATH, 'pluginDescriptors; source: "plugin"; pluginInstallationId; pluginToolName\n');
-  write(root, EXECUTOR_PATH, "createRuntimePluginToolPort; options.pluginTools.execute({ runInterfaceToolCallId: claim.id, mintPluginRunContext, pluginInstallationId }); workerManager.call(installation, \"executeTool\", { toolName: input.toolName, pluginRunContextHandle: runContextHandle });\n");
+  write(
+    root,
+    RUNTIME_TOOL_GATEWAY_PATH,
+    "createRuntimePluginToolPort; options.pluginTools.execute({ runInterfaceToolCallId: claim.id, mintPluginRunContext, pluginInstallationId }); const worker = workerManager.getWorker(input.pluginInstallationId); if (worker?.status !== \"running\" || worker.manifestIdentity !== input.pluginManifestIdentity) throw new Error(); const runContextHandle = await input.mintPluginRunContext(); await worker.call(\"executeTool\", { toolName: input.toolName, parameters: input.arguments, pluginRunContextHandle: runContextHandle });\n",
+  );
   write(root, GATEWAY_PATH, "randomPluginRunContextHandle(); createPluginRunContext({ handleHash: sha256(handle) }); resolvePluginRunContext();\n");
   write(root, GATEWAY_REPOSITORY_PATH, ".insert(pluginRunContexts); resolvePluginRunContextHash; pluginInstallationId; runInterfaceToolCallId;\n");
   write(root, INDEX_PATH, "createRuntimePluginToolPort( pluginWorkerManager ); pluginTools: promptCapabilityPluginTools;\n");
@@ -138,7 +142,7 @@ function fixtureRoot(): string {
 }
 
 const COMPILER_PATH = "apps/server/src/services/runtime-interface-compiler.ts";
-const EXECUTOR_PATH = "apps/server/src/services/runtime-tool-executor.ts";
+const RUNTIME_TOOL_GATEWAY_PATH = "apps/server/src/services/runtime-tool-gateway.ts";
 const GATEWAY_PATH = "apps/server/src/services/prompt-capability-gateway.ts";
 const GATEWAY_REPOSITORY_PATH = "apps/server/src/services/prompt-capability-gateway-postgres.ts";
 const INDEX_PATH = "apps/server/src/index.ts";
@@ -150,6 +154,34 @@ afterEach(() => {
 
 test("accepts the hash-only exact plugin run-context graph", () => {
   assert.deepEqual(pluginRunContextBoundaryViolations(fixtureRoot()), []);
+});
+
+test("requires execution through the exact compiled worker handle", () => {
+  const root = fixtureRoot();
+  const path = RUNTIME_TOOL_GATEWAY_PATH;
+  const source = readFileSync(join(root, path), "utf8");
+  write(root, path, source.replace("await worker.call(", "await workerManager.call("));
+  assert.ok(
+    pluginRunContextBoundaryViolations(root).some((entry) =>
+      entry.includes("exact resolved worker instead of generic manager dispatch"),
+    ),
+  );
+});
+
+test("requires the compiled worker manifest identity check", () => {
+  const root = fixtureRoot();
+  const path = RUNTIME_TOOL_GATEWAY_PATH;
+  const source = readFileSync(join(root, path), "utf8");
+  write(
+    root,
+    path,
+    source.replace("worker.manifestIdentity !== input.pluginManifestIdentity", "false"),
+  );
+  assert.ok(
+    pluginRunContextBoundaryViolations(root).some((entry) =>
+      entry.includes("worker.manifestIdentity !== input.pluginManifestIdentity"),
+    ),
+  );
 });
 
 for (const field of [

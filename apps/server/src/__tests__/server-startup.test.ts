@@ -143,7 +143,7 @@ vi.mock("../realtime/live-events-ws.js", () => ({
 }));
 
 vi.mock("../services/index.js", () => ({
-  composeRuntimeActionPort: vi.fn(() => ({})),
+  composeAgentRunManagedActionPort: vi.fn(() => ({})),
   createIssueSessionStore: vi.fn(() => ({
     id: "issue-session-store",
   })),
@@ -260,6 +260,10 @@ vi.mock("../services/change-consent-gate.js", () => ({
     request: vi.fn(async () => undefined),
   })),
   consumeAcceptedChangeConsentInTransaction: vi.fn(async () => undefined),
+}));
+
+vi.mock("../services/paperclip-managed-tool-router.js", () => ({
+  createPaperclipManagedToolRouter: vi.fn(() => ({})),
 }));
 
 vi.mock("../adapters/registry.js", () => ({

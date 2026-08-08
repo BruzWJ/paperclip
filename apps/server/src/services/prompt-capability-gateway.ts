@@ -2,11 +2,11 @@ import { createHash, randomBytes } from "node:crypto";
 import type { IssueExecutionRefMode } from "@paperclipai/shared";
 import {
   compileRuntimeInterface,
-  RuntimeToolUnavailable,
   type CompiledRunToolDescriptor,
   type RuntimeInterfaceCompileInput,
   type RuntimeToolSource,
 } from "./runtime-interface-compiler.js";
+import { RuntimeToolUnavailable } from "./runtime-tool-errors.js";
 
 const PROMPT_CAPABILITY_BEARER_PREFIX = "pc_run_v1_";
 const PLUGIN_RUN_CONTEXT_HANDLE_PREFIX = "pc_plugin_ctx_v1_";

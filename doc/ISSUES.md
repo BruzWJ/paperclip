@@ -155,12 +155,13 @@ agent_configure
 ```
 
 Each descriptor contains only targets authorized for the exact active execution
-and is rechecked under lock at commit time. Five configurable action grants
-control `issue_create`, `mention_agent`, `mention_board`, `agent_hire`, and
+and is rechecked under lock at commit time. Four configurable action grants
+control `issue_create`, `mention_board`, `agent_hire`, and
 `agent_configure`. The combined `issue_create` grant also controls eligible
 direct-child `issue_assign`; `issue_update` is derived automatically from the
 current owner or exact creator relationship and canonically mentions the
-counterpart.
+counterpart. `mention_agent` compiles dynamically from reachable targets and
+does not require a persisted grant.
 
 For the full contract, see [SPEC.md](./SPEC.md) and
 [execution-semantics.md](./execution-semantics.md).

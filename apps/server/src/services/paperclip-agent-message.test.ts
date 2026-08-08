@@ -30,25 +30,27 @@ describe("Paperclip canonical agent messages", () => {
       context: {
         issue,
         from: creator,
+        to: owner,
       },
     });
 
     expect(rendered).toBe([
       "[Paperclip agent message]",
+      `To: Owner Agent (${owner.id})`,
       `Issue: PAP-123 (${issue.id})`,
       `From: Creator Agent (${creator.id})`,
       "",
-      message,
+      `@Owner Agent ${message}`,
     ].join("\n"));
     expect(paperclipEnvelopeHasBody(
       rendered,
       "[Paperclip agent message]",
-      message,
+      `@Owner Agent ${message}`,
     )).toBe(true);
     expect(paperclipEnvelopeHasBody(
       rendered,
       "[Paperclip issue assignment]",
-      message,
+      `@Owner Agent ${message}`,
     )).toBe(false);
     expect(paperclipEnvelopeHasBody(
       rendered,

@@ -31,10 +31,6 @@ const ACTION_LABELS: Record<
     description:
       "Create direct child issues and reassign eligible direct children created by this execution.",
   },
-  mention_agent: {
-    label: "Mention agents",
-    description: "Post a canonical same-issue comment to an eligible agent.",
-  },
   mention_board: {
     label: "Can mention Board",
     description: "Post a canonical issue comment to the collective Board.",

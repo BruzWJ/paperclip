@@ -161,7 +161,6 @@ export function decodeIssueCreatorEdgeTerminalReason(
  */
 export const PAPERCLIP_ACTION_KEYS = [
   "issue_create",
-  "mention_agent",
   "mention_board",
   "agent_hire",
   "agent_configure",

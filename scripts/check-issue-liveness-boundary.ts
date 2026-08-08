@@ -14,8 +14,8 @@ const ISSUE_UPDATES_SCHEMA =
   "packages/db/schema/issue_creator_edge.ts";
 const OWNER_FORM_VALIDATOR = "packages/shared/src/validators/issue.ts";
 const COMPANY_PORTABILITY = "apps/server/src/services/company-portability.ts";
-const RUNTIME_INTERFACE_COMPILER =
-  "apps/server/src/services/runtime-interface-compiler.ts";
+const MANAGED_TOOL_RUNTIME_PROJECTION =
+  "apps/server/src/services/paperclip-managed-tool-registry.ts";
 const PLUGIN_TYPES = "packages/plugins/sdk/src/types.ts";
 const PLUGIN_PROTOCOL = "packages/plugins/sdk/src/protocol.ts";
 const PLUGIN_WORKER_HOST = "packages/plugins/sdk/src/worker-rpc-host.ts";
@@ -124,7 +124,7 @@ const RUN_LIVENESS_FACT_FIELDS = [
 const SETTLEMENT_PRODUCERS = new Map<string, readonly string[]>([
   [
     "apps/server/src/services/canonical-issue-aggregate.ts",
-    ["recordIssueLivenessActionInTransaction(", "`issue:${persistedIssue.id}`"],
+    ["recordIssueLivenessActionInTransaction("],
   ],
   [
     "apps/server/src/services/ordinary-issue-runtime.ts",
@@ -346,6 +346,17 @@ function propertyEnumArrays(
     ),
   ];
   return matches.map((match) => quotedValues(match[1]!));
+}
+
+function propertyZodEnumArrays(
+  block: string | null,
+  property: string,
+): string[][] | null {
+  if (!block) return null;
+  return [...block.matchAll(new RegExp(
+    `\\b${property}\\s*:\\s*z\\s*\\.enum\\(\\[([^\\]]*)\\]\\)`,
+    "gs",
+  ))].map((match) => quotedValues(match[1]!));
 }
 
 function sliceBetweenUnique(
@@ -680,21 +691,32 @@ function lifecycleViolations(repositoryRoot: string): string[] {
     );
   }
 
-  const compiler = read(repositoryRoot, RUNTIME_INTERFACE_COMPILER);
-  const filterValues = compiler
-    ? enumArrayAfter(
-        braceBlockAfter(compiler, "function issueFilterSchema()"),
-        "status:",
+  const runtimeProjection = read(
+    repositoryRoot,
+    MANAGED_TOOL_RUNTIME_PROJECTION,
+  );
+  const filterValues = runtimeProjection
+    ? zodEnumAfter(
+        sliceBetweenUnique(
+          runtimeProjection,
+          "const issueFiltersSchema =",
+          "const page =",
+        ),
+        "status",
       )
     : null;
   if (!filterValues || !sameValues(filterValues, AGENT_LIFECYCLE)) {
     violations.push(
-      `${RUNTIME_INTERFACE_COMPILER}: issueFilterSchema must expose exactly the four lifecycle values`,
+      `${MANAGED_TOOL_RUNTIME_PROJECTION}: managed-tool issue filter must expose exactly the four lifecycle values`,
     );
   }
-  const updateStatusEnums = compiler
-    ? propertyEnumArrays(
-        braceBlockAfter(compiler, "function issueUpdateDescriptor("),
+  const updateStatusEnums = runtimeProjection
+    ? propertyZodEnumArrays(
+        sliceBetweenUnique(
+          runtimeProjection,
+          "function projectRuntimeIssueUpdate(",
+          "function projectRuntimeMentionAgent(",
+        ),
         "status",
       )
     : null;
@@ -705,7 +727,7 @@ function lifecycleViolations(repositoryRoot: string): string[] {
     !sameValues(updateStatusEnums[1]!, ["done", "cancelled"])
   ) {
     violations.push(
-      `${RUNTIME_INTERFACE_COMPILER}: owner-form runtime schema must retain exact nonterminal and terminal lifecycle partitions`,
+      `${MANAGED_TOOL_RUNTIME_PROJECTION}: managed-tool owner-form schema must retain exact nonterminal and terminal lifecycle partitions`,
     );
   }
 
@@ -776,14 +798,8 @@ function lifecycleViolations(repositoryRoot: string): string[] {
       false,
       "plugin UI IssuesListFilters",
     ),
-    ...ownerUnionViolation(
-      UI_PLUGIN_BRIDGE,
+    ...uiPluginBridgeLifecycleViolation(
       read(repositoryRoot, UI_PLUGIN_BRIDGE),
-      "type PluginIssuesListFilters =",
-      "status",
-      true,
-      false,
-      "host UI plugin bridge filter",
     ),
     ...ownerUnionViolation(
       UI_ISSUE_DETAIL,
@@ -796,6 +812,26 @@ function lifecycleViolations(repositoryRoot: string): string[] {
     ),
   );
   return violations;
+}
+
+function uiPluginBridgeLifecycleViolation(source: string | null): string[] {
+  const importsCanonicalFilter =
+    source !== null &&
+    /import\s+type\s*\{[\s\S]*?\bIssuesListFilters\b[\s\S]*?\}\s+from\s+["']@paperclipai\/plugin-sdk\/ui["'];/.test(
+      source,
+    );
+  const usesCanonicalFilter =
+    source !== null &&
+    /\bcompactIssueFilters\s*\(\s*filters\s*:\s*IssuesListFilters\s*\)/.test(
+      source,
+    );
+  const redeclaresFilter = source !== null && /\bPluginIssuesListFilters\b/.test(source);
+  if (importsCanonicalFilter && usesCanonicalFilter && !redeclaresFilter) {
+    return [];
+  }
+  return [
+    `${UI_PLUGIN_BRIDGE}: host UI plugin bridge filter must reuse the canonical SDK lifecycle type`,
+  ];
 }
 
 function schemaBoundaryViolations(repositoryRoot: string): string[] {
@@ -1158,6 +1194,17 @@ function settlementProducerViolations(repositoryRoot: string): string[] {
   for (const [path, tokens] of SETTLEMENT_PRODUCERS) {
     violations.push(...requireFileTokens(repositoryRoot, path, tokens));
   }
+  violations.push(
+    ...requiredRegex(
+      "apps/server/src/services/canonical-issue-aggregate.ts",
+      read(
+        repositoryRoot,
+        "apps/server/src/services/canonical-issue-aggregate.ts",
+      ),
+      "child issue liveness source must use the persisted child issue identity",
+      /if\s*\(\s*([A-Za-z_$][\w$]*)\.parentId\s*!==\s*null\s*\)\s*\{\s*await\s+recordIssueLivenessActionInTransaction\s*\(\s*tx\s*,\s*`issue:\$\{\1\.id\}`\s*,?\s*\)\s*;?\s*\}/s,
+    ),
+  );
   violations.push(
     ...requireFileTokens(repositoryRoot, LIVENESS_SERVICE, [
       ...SETTLEMENT_REFERENCE_TOKENS,

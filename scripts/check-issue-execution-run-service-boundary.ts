@@ -60,8 +60,8 @@ const RUN_FINALIZER_PATH =
 const RUN_SCHEMA_PATH =
   "packages/db/schema/issue_execution_runs.ts";
 const RUN_ROUTE_PATH = "apps/server/src/routes/runs.ts";
-const TOOL_EXECUTOR_PATH =
-  "apps/server/src/services/runtime-tool-executor.ts";
+const TOOL_GATEWAY_PATH =
+  "apps/server/src/services/runtime-tool-gateway.ts";
 const TOOL_RETRIEVAL_PATH =
   "apps/server/src/services/context-retrieval-db.ts";
 const TOOL_RETRIEVAL_CONTRACT_PATH =
@@ -514,7 +514,33 @@ function assertCanonicalSchema(repositoryRoot: string): void {
       throw new Error(`${RUN_SCHEMA_PATH} is missing ${required}`);
     }
   }
+}
 
+/**
+ * A provider trace is not the run-detail message page: it also includes the
+ * exact source messages that were transmitted through run refs and prompt
+ * segments. The run service still owns run identity and the joined envelope;
+ * this reader owns the bounded Issue Session transcript projection.
+ */
+export function assertCanonicalContextRunTraceReader(
+  source: string,
+): void {
+  for (const required of [
+    "resolveIssueExecutionRunIdentityById(db, runId)",
+    "options.runService.readJoinedRunDetail",
+    ".from(issueSessionMessages)",
+    "prompt_transmission_phase = 'transmitted'",
+    "source_ref.source_message_id",
+    "segment.source_message_id",
+    "sanitizeCanonicalMessage(decodeStoredIssueSessionMessage(row), row.seq)",
+    "turns,",
+  ]) {
+    if (!source.includes(required)) {
+      throw new Error(
+        `${TOOL_RETRIEVAL_PATH} must resolve the canonical run and project its transmitted Issue Session trace (${required})`,
+      );
+    }
+  }
 }
 
 function assertCanonicalConsumers(repositoryRoot: string): void {
@@ -551,37 +577,20 @@ function assertCanonicalConsumers(repositoryRoot: string): void {
     throw new Error(`${RUN_ROUTE_PATH} must use readJoinedRunDetail`);
   }
 
-  const toolExecutorSource = readFileSync(
-    resolve(repositoryRoot, TOOL_EXECUTOR_PATH),
+  const toolGatewaySource = readFileSync(
+    resolve(repositoryRoot, TOOL_GATEWAY_PATH),
     "utf8",
   );
-  if (
-    !toolExecutorSource.includes("read_issue_agent_run") ||
-    !toolExecutorSource.includes("options.retrieval.readIssueAgentRun")
-  ) {
+  if (!toolGatewaySource.includes("options.managedTools.routeExecution(")) {
     throw new Error(
-      `${TOOL_EXECUTOR_PATH} must route read_issue_agent_run through canonical retrieval`,
+      `${TOOL_GATEWAY_PATH} must route Paperclip calls through the canonical managed-tool router`,
     );
   }
   const toolRetrievalSource = readFileSync(
     resolve(repositoryRoot, TOOL_RETRIEVAL_PATH),
     "utf8",
   );
-  if (!toolRetrievalSource.includes("options.runService.readJoinedRunDetail")) {
-    throw new Error(
-      `${TOOL_RETRIEVAL_PATH} must route read_issue_agent_run through readJoinedRunDetail`,
-    );
-  }
-  for (const required of [
-    "detail.sessionMessages.items.map",
-    "turns,",
-  ]) {
-    if (!toolRetrievalSource.includes(required)) {
-      throw new Error(
-        `${TOOL_RETRIEVAL_PATH} must project canonical Session turns through ${required}`,
-      );
-    }
-  }
+  assertCanonicalContextRunTraceReader(toolRetrievalSource);
   for (const forbidden of [
     "CanonicalRunTraceEvent",
     "sanitizeCanonicalEventRow",

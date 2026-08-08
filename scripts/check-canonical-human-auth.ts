@@ -187,6 +187,33 @@ const CANONICAL_RETIRED_INPUT_REJECTION_BLOCKS = new Map<
   ],
 ]);
 
+/**
+ * The direct TradingGoose MCP installer port emits a shell-local BASE_URL
+ * constant from the server's explicit canonical URL. This is not an ambient
+ * Better Auth origin or environment read; keep the exception exact and local
+ * to the generated installer owner.
+ */
+function isCanonicalGeneratedMcpInstallerBaseUrlAssignment(input: {
+  filePath: string;
+  label: string;
+  matchedText: string;
+  matchIndex: number;
+  source: string;
+}): boolean {
+  return (
+    input.filePath === "apps/server/src/services/board-mcp-install-script.ts"
+    && input.label === "ambient Better Auth BASE_URL"
+    // The ambient-origin matcher ends at `=`, so prove the emitted shell
+    // assignment's exact right-hand side from the original source.
+    && input.matchedText.trim() === "BASE_URL="
+    && input.source.startsWith(
+      "${shellSingleQuote(normalizedBaseUrl)}",
+      input.matchIndex + input.matchedText.length,
+    )
+    && input.source.split("BASE_URL=").length === 2
+  );
+}
+
 export interface CanonicalHumanAuthFile {
   path: string;
   source: string;
@@ -373,7 +400,15 @@ export function scanRetiredHumanIdentityTokens(
         const removalProof =
           isTestSourcePath(filePath)
           && lineText.includes(REMOVAL_PROOF_MARKER);
-        if (canonicalRetiredInputRejection) {
+        const canonicalGeneratedMcpInstallerBaseUrl =
+          isCanonicalGeneratedMcpInstallerBaseUrlAssignment({
+            filePath,
+            label,
+            matchedText: match[0],
+            matchIndex: match.index,
+            source: file.source,
+          });
+        if (canonicalRetiredInputRejection || canonicalGeneratedMcpInstallerBaseUrl) {
           // A retired environment input is named only to reject it before
           // configuration is read. Every other spelling or call site fails.
         } else if (removalProof) {
@@ -1035,12 +1070,18 @@ export function scanHttpActorBoundary(
     const runTools = app.source.indexOf(
       'app.use("/api", runToolsRoutes(',
     );
-    const actorMiddleware = app.source.indexOf(
-      "actorMiddleware(db, {",
-    );
     const runBearerWall = app.source.indexOf(
       'app.use("/api", rejectRunInterfaceBearerFromGenericApi());',
     );
+    const boardMcpActor = app.source.search(
+      /app\.use\(\s*["']\/api\/mcp["']\s*,\s*actorMiddleware\(db,\s*\{/s,
+    );
+    const boardMcpRoute = app.source.search(
+      /app\.use\(\s*["']\/api["']\s*,\s*boardMcpRoutes\(\s*\{/s,
+    );
+    const genericActorMiddleware = runBearerWall < 0
+      ? -1
+      : app.source.indexOf("actorMiddleware(db, {", runBearerWall);
     const authOwner = app.source.indexOf(
       'app.all("/api/auth/{*authPath}", opts.betterAuthHandler);',
     );
@@ -1049,21 +1090,25 @@ export function scanHttpActorBoundary(
     );
     if (
       runTools < 0
-      || actorMiddleware < 0
       || runBearerWall < 0
+      || boardMcpActor < 0
+      || boardMcpRoute < 0
+      || genericActorMiddleware < 0
       || authOwner < 0
       || genericAgentDeny < 0
-      || !(runTools < actorMiddleware)
       || !(runTools < runBearerWall)
-      || !(runBearerWall < actorMiddleware)
-      || !(actorMiddleware < authOwner)
+      || !(runTools < boardMcpActor)
+      || !(boardMcpActor < boardMcpRoute)
+      || !(boardMcpRoute < runBearerWall)
+      || !(runBearerWall < genericActorMiddleware)
+      || !(genericActorMiddleware < authOwner)
       || !(authOwner < genericAgentDeny)
     ) {
       addHttpActorViolation(
         violations,
         app,
         0,
-        "run tools must mount before the generic run-bearer wall and actor middleware, with Better Auth followed by the generic-agent REST denial",
+        "run tools must mount before the generic run-bearer wall; Board MCP must use its isolated board-key actor before its route; generic actor then follows the wall with Better Auth followed by the generic-agent REST denial",
       );
     }
   }

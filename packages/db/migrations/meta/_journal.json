@@ -78,6 +78,13 @@
       "when": 1786154398864,
       "tag": "0010_wet_dracula",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786230619239,
+      "tag": "0011_bitter_the_liberteens",
+      "breakpoints": true
     }
   ]
 }

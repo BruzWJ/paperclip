@@ -53,7 +53,15 @@ const apiPrefixes: Record<string, string> = {
 const ROUTE_LITERAL_PATTERN = /router\.(get|post|put|patch|delete)\(\s*["'`]([^"'`]+)["'`]/g;
 const ROUTER_METHOD_PATTERN = /router\.(get|post|put|patch|delete)\(/;
 const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
-const explicitOpenApiCoverageExclusions = new Set<string>([]);
+/**
+ * These are protocol/document delivery surfaces rather than Paperclip REST
+ * operations. MCP publishes its own tools/list schema and the installer is a
+ * public shell/PowerShell script endpoint, so neither belongs in OpenAPI.
+ */
+const explicitOpenApiCoverageExclusions = new Set<string>([
+  "board-mcp.ts",
+  "board-mcp-setup.ts",
+]);
 const betterAuthOwnedRuntimeRoutes = new Set([
   "GET /api/auth/get-session",
   "POST /api/auth/update-user",

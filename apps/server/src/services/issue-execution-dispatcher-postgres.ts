@@ -16,7 +16,6 @@ import {
   issueExecutionRefs,
   issueExecutionRunControls,
   issueExecutionRunRefs,
-  issueExecutionRuns,
   issueExecutionSessions,
   issueExecutionWorkspaceBindings,
   issueSessions,
@@ -67,10 +66,12 @@ import {
 import type { PostgresIssueExecutionFinalizationWriter } from "./issue-execution-finalization-postgres.js";
 import {
   lockActiveProductiveRunForLaneInTransaction,
+  lockIssueExecutionRunIfPresentInTransaction,
   readActiveIssueExecutionRefRunAvailability,
   readBlockedActiveIssueExecutionRefIds,
   readIssueExecutionLeaseBinding,
   readOccupiedIssueExecutionRefIds,
+  terminalFinalizedIssueExecutionRunExistsSql,
   type IssueExecutionRunEnvelope,
   type IssueExecutionRunService,
 } from "./issue-execution-run-service.js";
@@ -171,6 +172,7 @@ export interface PostgresIssueExecutionDispatcherRepositoryOptions {
     IssueExecutionRunService,
     | "createRun"
     | "lockRun"
+    | "readRun"
     | "transitionRunStatus"
     | "attachAttempt"
     | "detachAttempt"
@@ -185,6 +187,7 @@ export interface PostgresIssueExecutionDispatcherRepositoryOptions {
   readonly now?: () => Date;
   readonly idFactory?: () => string;
   readonly pluginDomainEvents: PluginDomainEventPublisher;
+  readonly dispatchRef?: (refId: string) => Promise<void>;
 }
 
 export type IssueExecutionAuthorityFenceSelector =
@@ -1037,16 +1040,8 @@ async function consultSourceRunIsFinalized(
   if (ref.mode === "owner") return true;
   if (ref.consultExecutionId === null) return false;
   const rows = await transaction
-    .select({ terminalFinalizationId: issueExecutionRuns.terminalFinalizationId })
+    .select({ sourceRunId: issueConsultExecutions.sourceRunId })
     .from(issueConsultExecutions)
-    .innerJoin(
-      issueExecutionRuns,
-      and(
-        eq(issueExecutionRuns.companyId, issueConsultExecutions.companyId),
-        eq(issueExecutionRuns.issueId, issueConsultExecutions.issueId),
-        eq(issueExecutionRuns.id, issueConsultExecutions.sourceRunId),
-      ),
-    )
     .where(
       and(
         eq(issueConsultExecutions.id, ref.consultExecutionId),
@@ -1056,7 +1051,17 @@ async function consultSourceRunIsFinalized(
     )
     .limit(2)
     .for("share");
-  return rows.length === 1 && rows[0]!.terminalFinalizationId !== null;
+  const consult = rows.length === 1 ? rows[0]! : null;
+  if (!consult) return false;
+  const sourceRun = await lockIssueExecutionRunIfPresentInTransaction(
+    transaction,
+    {
+      companyId: ref.companyId,
+      issueId: ref.issueId,
+      runId: consult.sourceRunId,
+    },
+  );
+  return sourceRun?.terminalFinalizationId !== null;
 }
 
 async function createRunningLease(
@@ -1380,48 +1385,42 @@ async function createRunForRef(
       .for("share"),
     "execution ref lost its exact workspace binding",
   );
-  const consultParentRunId = ref.mode === "consult"
-    ? exactlyOne(
-        await transaction
-          .select({ sourceRunId: issueConsultExecutions.sourceRunId })
-          .from(issueConsultExecutions)
-          .where(eq(issueConsultExecutions.id, ref.consultExecutionId!))
-          .limit(2),
-        "consult ref lost its parent run",
-      ).sourceRunId
-    : null;
-  const created = await options.runService.createRun(transaction, ref.mode === "owner"
-    ? {
+  const baseRunInput = {
+    companyId: ref.companyId,
+    issueId: ref.issueId,
+    sessionId: ref.sessionId,
+    executionScopeId: ref.executionScopeId,
+    ownershipEpoch: ref.ownershipEpoch,
+    targetAgentId: ref.targetAgentId,
+    adapterConfigRevisionId: ref.adapterConfigRevisionId,
+    executionWorkspaceBindingId: workspace.id,
+    orderedRefIds: refs.map((candidate) => candidate.id),
+    retryOfRunId: exactRetry?.retryOfRunId ?? null,
+    at,
+  };
+  const created = ref.mode === "owner"
+    ? await options.runService.createRun(transaction, {
         kind: "productive",
-        companyId: ref.companyId,
-        issueId: ref.issueId,
-        sessionId: ref.sessionId,
-        executionScopeId: ref.executionScopeId,
-        ownershipEpoch: ref.ownershipEpoch,
-        targetAgentId: ref.targetAgentId,
+        ...baseRunInput,
         issueExecutionAuthorityId: ref.issueExecutionAuthorityId!,
-        adapterConfigRevisionId: ref.adapterConfigRevisionId,
-        executionWorkspaceBindingId: workspace.id,
-        orderedRefIds: refs.map((candidate) => candidate.id),
-        retryOfRunId: exactRetry?.retryOfRunId ?? null,
-        at,
-      }
-    : {
-        kind: "consult",
-        companyId: ref.companyId,
-        issueId: ref.issueId,
-        sessionId: ref.sessionId,
-        executionScopeId: ref.executionScopeId,
-        ownershipEpoch: ref.ownershipEpoch,
-        targetAgentId: ref.targetAgentId,
-        consultExecutionId: ref.consultExecutionId!,
-        parentRunId: consultParentRunId!,
-        adapterConfigRevisionId: ref.adapterConfigRevisionId,
-        executionWorkspaceBindingId: workspace.id,
-        orderedRefIds: refs.map((candidate) => candidate.id),
-        retryOfRunId: exactRetry?.retryOfRunId ?? null,
-        at,
-      });
+      })
+    : await (async () => {
+        const { sourceRunId } = exactlyOne(
+          await transaction
+            .select({ sourceRunId: issueConsultExecutions.sourceRunId })
+            .from(issueConsultExecutions)
+            .where(eq(issueConsultExecutions.id, ref.consultExecutionId!))
+            .limit(2)
+            .for("share"),
+          "consult ref lost its parent run",
+        );
+        return options.runService.createRun(transaction, {
+          kind: "consult",
+          ...baseRunInput,
+          consultExecutionId: ref.consultExecutionId!,
+          parentRunId: sourceRunId,
+        });
+      })();
   exactlyOne(
     await transaction
       .update(issueExecutionRunControls)
@@ -1700,6 +1699,7 @@ async function completeTerminalPromptInTransaction(
     readonly finishedAt: Date;
   } | null;
   readonly laneReleased: boolean;
+  readonly autoCaptureRefId: string | null;
 }> {
   if (
     input.attempt.refId !== input.lease.ref.id ||
@@ -1784,7 +1784,7 @@ async function completeTerminalPromptInTransaction(
         leaseId: input.lease.leaseId,
         at: input.at,
       });
-      return { finalization: null, laneReleased: true };
+      return { finalization: null, laneReleased: true, autoCaptureRefId: null };
     }
   } else {
     await settleUnsentSuffix(
@@ -1825,7 +1825,7 @@ async function completeTerminalPromptInTransaction(
     terminalReasonCode: (input.reason?.trim() || input.outcome).slice(0, 200),
     finishedAt: input.at,
   } as const;
-  await options.finalizer.finalizeInTransaction(
+  const finalized = await options.finalizer.finalizeInTransaction(
     transaction,
     finalization,
   );
@@ -1839,6 +1839,7 @@ async function completeTerminalPromptInTransaction(
   return {
     finalization,
     laneReleased: true,
+    autoCaptureRefId: finalized.autoCaptureRefId,
   };
 }
 
@@ -3708,15 +3709,15 @@ export function createPostgresIssueExecutionDispatcherRepository(
                 sql`exists (
                   select 1
                   from ${issueConsultExecutions}
-                  join ${issueExecutionRuns}
-                    on ${issueExecutionRuns.companyId} = ${issueConsultExecutions.companyId}
-                   and ${issueExecutionRuns.issueId} = ${issueConsultExecutions.issueId}
-                   and ${issueExecutionRuns.id} = ${issueConsultExecutions.sourceRunId}
                   where ${issueConsultExecutions.id} = ${issueExecutionRefs.consultExecutionId}
                     and ${issueConsultExecutions.companyId} = ${issueExecutionRefs.companyId}
                     and ${issueConsultExecutions.issueId} = ${issueExecutionRefs.issueId}
                     and ${issueConsultExecutions.state} = 'active'
-                    and ${issueExecutionRuns.terminalFinalizationId} is not null
+                    and ${terminalFinalizedIssueExecutionRunExistsSql(
+                      issueConsultExecutions.companyId,
+                      issueConsultExecutions.issueId,
+                      issueConsultExecutions.sourceRunId,
+                    )}
                 )`,
               ),
             ),
@@ -3958,6 +3959,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
           completed = {
             finalization: null,
             laneReleased: false,
+            autoCaptureRefId: null,
           };
         } else {
           const attempt = exactlyOne(
@@ -3999,6 +4001,9 @@ export function createPostgresIssueExecutionDispatcherRepository(
           occurredAt: settlement.finalization.finishedAt,
         });
       }
+      if (settlement.autoCaptureRefId && options.dispatchRef) {
+        void options.dispatchRef(settlement.autoCaptureRefId);
+      }
       return {
         laneReleased: settlement.laneReleased,
       };
@@ -4014,17 +4019,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
       const terminalized = await options.database.transaction((transaction) =>
         terminalizeDetachedCancelledRunInTransaction(transaction, input));
       if (!terminalized) return;
-      const run = await options.database
-        .select({ targetAgentId: issueExecutionRuns.targetAgentId })
-        .from(issueExecutionRuns)
-        .where(
-          and(
-            eq(issueExecutionRuns.companyId, input.companyId),
-            eq(issueExecutionRuns.id, input.runId),
-          ),
-        )
-        .limit(1)
-        .then((rows) => rows[0] ?? null);
+      const run = await options.runService.readRun(input);
       if (!run) {
         reject("terminalized cancellation lost its canonical run");
       }

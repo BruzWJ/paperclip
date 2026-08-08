@@ -47,7 +47,6 @@ describe("RuntimeAgentConfigurationFields", () => {
       createEmptyRuntimeAgentConfigurationValues().actionGrants,
     ).toEqual({
       issue_create: false,
-      mention_agent: false,
       mention_board: false,
       agent_hire: false,
       agent_configure: false,

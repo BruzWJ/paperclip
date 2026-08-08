@@ -170,8 +170,10 @@ function validOwnerGraph() {
        function updateControlState(data: IssueControlStateUpdate) {}`,
     ],
     [
-      "apps/server/src/services/runtime-interface-compiler.ts",
-      `if (input.actionGrants.issue_create === true) descriptors.push(issueCreateDescriptor(input.issueCreateDirectChildren));`,
+      "apps/server/src/services/paperclip-managed-tool-registry.ts",
+      `export const boardMcpInputSchemas = {};
+       function projectRuntimeIssueCreate(input) { if (input.mode !== "owner" || input.actionGrants.issue_create !== true) return null; return { name: "issue_create" }; }
+       switch (name) { case "issue_create": return projectRuntimeIssueCreate(input); }`,
     ],
     [
       "apps/server/src/services/runtime-issue-action-port.ts",
@@ -197,7 +199,8 @@ test("requires compiler, action-port, aggregate, schema, and closed update owner
   for (const [path, marker] of [
     ["apps/server/src/services/canonical-issue-aggregate.ts", "await assertAgentExecutionCreator(tx, issue);"],
     ["apps/server/src/services/issues.ts", '| "request"'],
-    ["apps/server/src/services/runtime-interface-compiler.ts", "input.actionGrants.issue_create === true"],
+    ["apps/server/src/services/paperclip-managed-tool-registry.ts", "input.actionGrants.issue_create !== true"],
+    ["apps/server/src/services/paperclip-managed-tool-registry.ts", 'case "issue_create": return projectRuntimeIssueCreate(input);'],
     ["apps/server/src/services/runtime-issue-action-port.ts", "if (!input.capability.issueExecutionAuthorityId)"],
     ["packages/db/schema/issues.ts", 'request: text("request").notNull()'],
   ]) {

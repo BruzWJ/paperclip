@@ -60,8 +60,11 @@ import {
   inArray,
   isNotNull,
   isNull,
+  ne,
   or,
   sql,
+  type SQL,
+  type SQLWrapper,
 } from "drizzle-orm";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 import { redactIssueSessionPublicationValue } from "./issue-session/publication.js";
@@ -1042,6 +1045,58 @@ export async function lockIssueExecutionRunIfPresentInTransaction(
 ): Promise<IssueExecutionRunEnvelope | null> {
   const row = await selectExactRunRow(transaction, input, true);
   return row ? projectRunEnvelope(row) : null;
+}
+
+/**
+ * Correlated terminal-finalization predicate for a source run whose exact
+ * company, issue, and run columns are already selected by a caller. Dispatch
+ * discovery keeps one atomic SQL selection, while this service remains the
+ * sole owner of the canonical run table and its terminal invariant.
+ */
+export function terminalFinalizedIssueExecutionRunExistsSql(
+  companyId: SQLWrapper,
+  issueId: SQLWrapper,
+  runId: SQLWrapper,
+): SQL<boolean> {
+  return sql<boolean>`exists (
+    select 1
+    from ${issueExecutionRuns}
+    where ${issueExecutionRuns.companyId} = ${companyId}
+      and ${issueExecutionRuns.issueId} = ${issueId}
+      and ${issueExecutionRuns.id} = ${runId}
+      and ${issueExecutionRuns.terminalFinalizationId} is not null
+  )`;
+}
+
+/**
+ * Ordered prior-run enumeration for one exact recovered agent session. The
+ * recovery layer owns eligibility and trace restoration; this service owns
+ * the run-table query and its tenancy/scope fence.
+ */
+export async function listPriorIssueExecutionRunIdsForAgent(
+  database: Db,
+  input: IssueExecutionRunIdentity & {
+    readonly sessionId: string;
+    readonly targetAgentId: string;
+  },
+): Promise<readonly string[]> {
+  assertRunIdentity(input);
+  assertExactRunIdentifier(input.sessionId, "session id");
+  assertExactRunIdentifier(input.targetAgentId, "target agent id");
+  const rows = await database
+    .select({ id: issueExecutionRuns.id })
+    .from(issueExecutionRuns)
+    .where(
+      and(
+        eq(issueExecutionRuns.companyId, input.companyId),
+        eq(issueExecutionRuns.issueId, input.issueId),
+        eq(issueExecutionRuns.sessionId, input.sessionId),
+        eq(issueExecutionRuns.targetAgentId, input.targetAgentId),
+        ne(issueExecutionRuns.id, input.runId),
+      ),
+    )
+    .orderBy(asc(issueExecutionRuns.createdAt), asc(issueExecutionRuns.id));
+  return Object.freeze(rows.map((row) => row.id));
 }
 
 /**

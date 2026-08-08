@@ -57,7 +57,7 @@ function fixtureRoot(): string {
     [
       'const MANAGED_AGENT_ENTITY_TYPE = "managed_agent";',
       "createRuntimeAgentConfigurationService;",
-      "originalDeclarationRef; binding.pluginId; binding.pluginKey; options.pluginKey;",
+      "originalDeclarationRef; binding.pluginId; binding.pluginKey; const pluginKey = options.manifest.id;",
       "eq(pluginEntities.entityType, MANAGED_AGENT_ENTITY_TYPE);",
       "eq(pluginEntities.pluginId, options.pluginId);",
       'eq(pluginManagedResources.resourceKind, "agent");',
@@ -88,9 +88,10 @@ function fixtureRoot(): string {
       "function assertGenericPluginEntityMutationAllowed(entityType: string) {",
       "  if (entityType === HOST_MANAGED_AGENT_ENTITY_TYPE) throw conflict();",
       "}",
-      "assertGenericPluginEntityMutationAllowed(input.entityType);",
-      "assertGenericPluginEntityMutationAllowed(entity.entityType);",
-      "ne(pluginEntities.entityType, HOST_MANAGED_AGENT_ENTITY_TYPE);",
+      "upsertEntity: async (pluginId: string, input: { entityType: string }) => {",
+      "  assertGenericPluginEntityMutationAllowed(input.entityType);",
+      "  return db.insert(pluginEntities).values({ pluginId }).onConflictDoUpdate({});",
+      "},",
       "",
     ].join("\n"),
   );
@@ -170,20 +171,34 @@ test("rejects plugin-key lookup in place of immutable installation id", () => {
   );
 });
 
-test("rejects generic CRUD access to reserved managed-agent rows", () => {
+test("rejects a generic upsert without the reserved managed-agent guard", () => {
   const root = fixtureRoot();
   const path = "apps/server/src/services/plugin-registry.ts";
   write(
     root,
     path,
     readFileSync(join(root, path), "utf8").replace(
-      "assertGenericPluginEntityMutationAllowed(entity.entityType);",
+      "assertGenericPluginEntityMutationAllowed(input.entityType);",
       "",
     ),
   );
   assert.ok(
     pluginManagedAgentBoundaryViolations(root).some((entry) =>
-      entry.includes("generic entity create/update/delete"),
+      entry.includes("generic entity upsert does not guard"),
+    ),
+  );
+});
+
+test("rejects a second generic plugin-entity mutation path", () => {
+  const root = fixtureRoot();
+  write(
+    root,
+    "apps/server/src/services/plugin-registry.ts",
+    `${readFileSync(join(root, "apps/server/src/services/plugin-registry.ts"), "utf8")}\ndb.delete(pluginEntities);\n`,
+  );
+  assert.ok(
+    pluginManagedAgentBoundaryViolations(root).some((entry) =>
+      entry.includes("single guarded upsert"),
     ),
   );
 });

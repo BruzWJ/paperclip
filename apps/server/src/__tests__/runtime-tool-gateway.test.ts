@@ -1,18 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
 import { resolveContextDial } from "../services/context-dial-resolver.js";
 import { createContextRetrievalService } from "../services/context-retrieval.js";
+import type {
+  AgentRunToolAuthority,
+  PaperclipManagedToolRouteContext,
+  PaperclipManagedToolRouter,
+} from "../services/paperclip-managed-tool-router.js";
+import type { PaperclipManagedToolCommand } from "../services/paperclip-managed-tool-registry.js";
 import {
   createRuntimePluginToolPort,
-  createRuntimeToolExecutor,
-  type RuntimeActionInvocation,
-  type RuntimeActionPort,
-} from "../services/runtime-tool-executor.js";
+  createRuntimeToolGateway,
+} from "../services/runtime-tool-gateway.js";
 import {
   compileRuntimeInterface,
-  RuntimeInterfaceConflict,
-  RuntimeToolArgumentsInvalid,
   type CompiledRunToolDescriptor,
 } from "../services/runtime-interface-compiler.js";
+import {
+  RuntimeInterfaceConflict,
+  RuntimeToolArgumentsInvalid,
+} from "../services/runtime-tool-errors.js";
 import type { PromptCapabilityBinding } from "../services/prompt-capability-gateway.js";
 
 const capability: PromptCapabilityBinding = {
@@ -47,13 +53,30 @@ const capability: PromptCapabilityBinding = {
   createdAt: new Date("2026-07-25T00:00:00.000Z"),
 };
 
-const readComments: CompiledRunToolDescriptor = {
-  name: "read_issue_comments",
-  title: "Read comments",
-  description: "",
-  inputSchema: { type: "object" },
-  source: "paperclip",
-};
+function paperclipDescriptor(
+  name: string,
+  overrides: Partial<Parameters<typeof compileRuntimeInterface>[0]> = {},
+): CompiledRunToolDescriptor {
+  const descriptor = compileRuntimeInterface({
+    mode: "owner",
+    contextDial: resolveContextDial({
+      agent: { read_issue_comments: true },
+    }).effective,
+    actionGrants: {},
+    isCurrentOwner: true,
+    issueCreateDirectChildren: [],
+    issueAssignTargets: [],
+    creatorUpdateTargets: [],
+    mentionTargets: [],
+    configureTargets: [],
+    pluginTools: [],
+    ...overrides,
+  }).byName.get(name);
+  if (!descriptor) throw new Error(`Missing compiled Paperclip tool ${name}`);
+  return descriptor;
+}
+
+const readComments = paperclipDescriptor("read_issue_comments");
 
 function setup(options: {
   agentDial?: Parameters<typeof resolveContextDial>[0]["agent"];
@@ -65,25 +88,19 @@ function setup(options: {
   const issueUpdate = vi.fn(async () => ({ ok: true }));
   const agentConfigure = vi.fn(async () => ({ configured: true }));
   const mentionAgent = vi.fn(
-    async (input: RuntimeActionInvocation) =>
-      input.commitMentionAction(mentionTransaction, { consulted: true }),
+    async (input: { authority: AgentRunToolAuthority }) =>
+      input.authority.invocation.commitMentionAction(
+        mentionTransaction,
+        { consulted: true },
+      ),
   );
   const mentionBoard = vi.fn(
-    async (input: RuntimeActionInvocation) =>
-      input.commitMentionAction(mentionTransaction, { requested: true }),
+    async (input: { authority: AgentRunToolAuthority }) =>
+      input.authority.invocation.commitMentionAction(
+        mentionTransaction,
+        { requested: true },
+      ),
   );
-  const no = vi.fn(async () => null);
-  const actions: RuntimeActionPort = {
-    issueCreate: no,
-    issueAssign: no,
-    issueUpdate,
-    mentionAgent,
-    mentionBoard,
-    agentHire: no,
-    agentConfigure,
-    listAgents: no,
-    agentRead: no,
-  };
   const executePlugin = vi.fn(
     async (input: { mintPluginRunContext(): Promise<string> }) => ({
       ok: true as const,
@@ -150,8 +167,45 @@ function setup(options: {
       readCanonicalRunTrace,
     },
   });
-  const executor = createRuntimeToolExecutor({
-    retrieval,
+  const managedTools = {
+    async routeExecution(
+      command: PaperclipManagedToolCommand,
+      context: PaperclipManagedToolRouteContext,
+    ) {
+      if (context.authority.kind !== "agent_run") throw new Error("expected agent authority");
+      const scope = context.resolveRuntimeScope
+        ? await context.resolveRuntimeScope()
+        : null;
+      switch (command.name) {
+        case "read_issue_comments":
+          return retrieval.readIssueComments(scope!, {
+            issueId: command.issueId,
+            cursor: command.cursor,
+          });
+        case "read_issue_agent_run":
+          return retrieval.readIssueAgentRun(scope!, {
+            runId: command.runId,
+            cursor: command.cursor,
+          });
+        case "issue_update":
+          return issueUpdate({
+            command,
+            authority: context.authority,
+          });
+        case "agent_configure":
+          return agentConfigure({
+            command,
+            authority: context.authority,
+          });
+        case "mention_agent":
+          return mentionAgent({ command, authority: context.authority });
+        case "mention_board":
+          return mentionBoard({ command, authority: context.authority });
+        default: return null;
+      }
+    },
+  } as unknown as PaperclipManagedToolRouter;
+  const executor = createRuntimeToolGateway({
     retrievalScope: {
       async resolve() {
         return {
@@ -166,7 +220,7 @@ function setup(options: {
       },
     },
     restoreSession: { restore: restoreSession } as never,
-    actions,
+    managedTools,
     pluginTools: {
       execute: executePlugin,
     },
@@ -399,7 +453,7 @@ describe("runtime plugin tool port", () => {
   });
 });
 
-describe("runtime tool executor", () => {
+describe("runtime tool gateway", () => {
   it.each([
     {
       label: "plugin descriptor without an installation binding",
@@ -422,7 +476,7 @@ describe("runtime tool executor", () => {
         inputSchema: {},
         source: "paperclip" as const,
       },
-      message: "Unknown Paperclip action unknown_paperclip_action",
+      message: "Unknown Paperclip managed tool unknown_paperclip_action",
     },
   ])("rejects a host-invalid $label as an interface conflict", async ({
     descriptor,
@@ -500,13 +554,12 @@ describe("runtime tool executor", () => {
       enableRunTrace: true,
     });
     const first = await executor.execute({
-      capability,      descriptor: {
-        name: "read_issue_agent_run",
-        title: "Read run",
-        description: "",
-        inputSchema: { type: "object" },
-        source: "paperclip",
-      },
+      capability,
+      descriptor: paperclipDescriptor("read_issue_agent_run", {
+        contextDial: resolveContextDial({
+          agent: { read_issue_agent_run: true },
+        }).effective,
+      }),
       arguments: { runId: "run-observed" },
       callIdentity: { source: "provider", id: "call-run-page-2" },
       ingressOrdinal: 0,
@@ -521,16 +574,11 @@ describe("runtime tool executor", () => {
     }));
   });
 
-  it("routes a Paperclip action with a run-bound invocation identity", async () => {
+  it("routes a Paperclip action with a run-bound canonical authority", async () => {
     const { executor, issueUpdate } = setup();
     await executor.execute({
-      capability,      descriptor: {
-        name: "issue_update",
-        title: "",
-        description: "",
-        inputSchema: {},
-        source: "paperclip",
-      },
+      capability,
+      descriptor: paperclipDescriptor("issue_update"),
       arguments: { status: "done", message: "done" },
       callIdentity: { source: "provider", id: "call-1" },
       ingressOrdinal: 0,
@@ -538,11 +586,23 @@ describe("runtime tool executor", () => {
     });
     expect(issueUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        capability,
-        invocationId: expect.stringMatching(/^call_[0-9a-f]{64}$/),
-        runInterfaceToolCallId: "ledger-call-1",
-        ingressOrdinal: 0,
-        commitMentionAction: expect.any(Function),
+        command: expect.objectContaining({
+          name: "issue_update",
+          companyId: capability.companyId,
+          issueId: capability.issueId,
+          issueTarget: "active",
+          status: "done",
+          message: "done",
+        }),
+        authority: expect.objectContaining({
+          capability,
+          invocation: expect.objectContaining({
+            id: expect.stringMatching(/^call_[0-9a-f]{64}$/),
+            runInterfaceToolCallId: "ledger-call-1",
+            ingressOrdinal: 0,
+            commitMentionAction: expect.any(Function),
+          }),
+        }),
       }),
     );
   });
@@ -633,7 +693,7 @@ describe("runtime tool executor", () => {
     const descriptor = compileRuntimeInterface({
       mode: "owner",
       contextDial: resolveContextDial({ agent: {} }).effective,
-      actionGrants: { mention_agent: true },
+      actionGrants: {},
       isCurrentOwner: true,
       issueCreateDirectChildren: [],
       issueAssignTargets: [],
@@ -661,10 +721,18 @@ describe("runtime tool executor", () => {
       classification: "validated_mention",
       targetAgentId: "mentioned-agent",
     });
-    const invocation = mentionAgent.mock.calls[0]![0];
-    expect(invocation).toEqual(expect.objectContaining({
-      runInterfaceToolCallId: "ledger-call-1",
-      ingressOrdinal: 7,
+    const mention = mentionAgent.mock.calls[0]![0];
+    expect(mention).toEqual(expect.objectContaining({
+      command: expect.objectContaining({
+        name: "mention_agent",
+        agentId: "mentioned-agent",
+      }),
+      authority: expect.objectContaining({
+        invocation: expect.objectContaining({
+          runInterfaceToolCallId: "ledger-call-1",
+          ingressOrdinal: 7,
+        }),
+      }),
     }));
     expect(commitMentionAction).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -714,7 +782,13 @@ describe("runtime tool executor", () => {
       classification: "non_mention",
     });
     expect(mentionBoard).toHaveBeenCalledWith(expect.objectContaining({
-      arguments: { message: "Please choose a rollout" },
+      command: expect.objectContaining({ name: "mention_board" }),
+      authority: expect.objectContaining({
+        invocation: expect.objectContaining({
+          runInterfaceToolCallId: "ledger-call-1",
+          ingressOrdinal: 8,
+        }),
+      }),
     }));
     expect(commitMentionAction).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -781,7 +855,12 @@ describe("runtime tool executor", () => {
     });
     expect(agentConfigure).toHaveBeenCalledWith(
       expect.objectContaining({
-        arguments: { agentId: "agent", title: null },
+        command: {
+          name: "agent_configure",
+          companyId: "company",
+          agentId: "agent",
+          configuration: { title: null },
+        },
       }),
     );
   });

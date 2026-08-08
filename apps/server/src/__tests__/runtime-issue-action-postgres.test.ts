@@ -7,7 +7,11 @@ import {
   RuntimeIssueActionDenied,
   type RuntimeIssueActionService,
 } from "../services/runtime-issue-action-port.js";
-import { RuntimeToolArgumentsInvalid } from "../services/runtime-interface-compiler.js";
+import {
+  agentRunManagedActionInvocation,
+  type AgentRunToolAuthority,
+} from "../services/paperclip-managed-tool-router.js";
+import type { PaperclipManagedToolCommandFor } from "../services/paperclip-managed-tool-registry.js";
 import type { PromptCapabilityBinding } from "../services/prompt-capability-gateway.js";
 import { createMockDb } from "./helpers/mock-db.js";
 
@@ -55,23 +59,40 @@ function serviceSpies(): RuntimeIssueActionService {
   };
 }
 
-function invocation(
-  args: Record<string, unknown>,
-  overrides: Record<string, unknown> = {},
-) {
-  const commitMentionAction = vi.fn(async <T>(
-    _transaction: unknown,
-    result: T,
-  ) => result);
+type RuntimeIssueCommandName =
+  | "issue_create"
+  | "issue_assign"
+  | "issue_update"
+  | "mention_agent";
+
+function actionAuthority(
+  capabilityBinding: PromptCapabilityBinding = capability,
+  invocationId = "invocation-1",
+): AgentRunToolAuthority {
   return {
-    capability,
-    invocationId: "invocation-1",
-    runInterfaceToolCallId: "tool-call-1",
-    ingressOrdinal: 4,
-    arguments: args,
-    commitMentionAction,
-    ...overrides,
+    kind: "agent_run",
+    capability: capabilityBinding,
+    invocation: {
+      id: invocationId,
+      runInterfaceToolCallId: "tool-call-1",
+      ingressOrdinal: 4,
+      commitMentionAction: vi.fn(async <T>(
+        _transaction: unknown,
+        result: T,
+      ) => result),
+    },
   };
+}
+
+function runtimeInvocation<Name extends RuntimeIssueCommandName>(
+  command: PaperclipManagedToolCommandFor<Name>,
+  capabilityBinding: PromptCapabilityBinding = capability,
+  invocationId = "invocation-1",
+) {
+  return agentRunManagedActionInvocation(
+    command,
+    actionAuthority(capabilityBinding, invocationId),
+  );
 }
 
 describe("runtime issue action contracts", () => {
@@ -83,13 +104,15 @@ describe("runtime issue action contracts", () => {
 
   it("lowers issue_create into the canonical typed service input", async () => {
     const port = createRuntimeIssueActionPort(service);
-    const call = invocation({
+    const call = runtimeInvocation({
+      name: "issue_create",
+      companyId: capability.companyId,
+      parentId: capability.issueId,
       request: "Build the child task",
       title: "Child task",
       priority: "high",
-      owner: { kind: "self" },
+      ownerAgentId: capability.targetAgentId,
       contextAccessMask: {
-        carry_context: true,
         read_issue_comments: false,
       },
     });
@@ -112,14 +135,24 @@ describe("runtime issue action contracts", () => {
     const issueId = "00000000-0000-4000-8000-00000000070b";
     const nextOwner = "00000000-0000-4000-8000-00000000070c";
 
-    await port.issueAssign(invocation({
+    await port.issueAssign(runtimeInvocation({
+      name: "issue_assign",
+      companyId: capability.companyId,
       issueId,
-      owner: { kind: "agent", agentId: nextOwner },
+      ownerAgentId: nextOwner,
     }));
-    await port.issueUpdate(invocation({
+    await port.issueUpdate(runtimeInvocation({
+      name: "issue_update",
+      companyId: capability.companyId,
+      issueId: capability.issueId,
+      issueTarget: "active",
       message: "Progress note",
     }));
-    await port.issueUpdate(invocation({
+    await port.issueUpdate(runtimeInvocation({
+      name: "issue_update",
+      companyId: capability.companyId,
+      issueId: capability.issueId,
+      issueTarget: "active",
       status: "done",
       message: "Finished exactly",
       structuredResult: { artifact: "report.json" },
@@ -149,8 +182,11 @@ describe("runtime issue action contracts", () => {
     const port = createRuntimeIssueActionPort(service);
     const issueId = "00000000-0000-4000-8000-00000000070d";
 
-    await port.issueUpdate(invocation({
+    await port.issueUpdate(runtimeInvocation({
+      name: "issue_update",
+      companyId: capability.companyId,
       issueId,
+      issueTarget: "explicit",
       status: "blocked",
       message: "Report to the immutable creator edge",
     }));
@@ -167,7 +203,10 @@ describe("runtime issue action contracts", () => {
   it("passes mention admission identity with the canonical message", async () => {
     const port = createRuntimeIssueActionPort(service);
     const targetAgentId = "00000000-0000-4000-8000-00000000070e";
-    const call = invocation({
+    const call = runtimeInvocation({
+      name: "mention_agent",
+      companyId: capability.companyId,
+      issueId: capability.issueId,
       agentId: targetAgentId,
       message: "Send this canonical mention",
     });
@@ -179,7 +218,7 @@ describe("runtime issue action contracts", () => {
       invocationId: "invocation-1",
       runInterfaceToolCallId: "tool-call-1",
       ingressOrdinal: 4,
-      commitMentionAction: call.commitMentionAction,
+      commitMentionAction: call.authority.invocation.commitMentionAction,
       targetAgentId,
       message: "Send this canonical mention",
     });
@@ -195,55 +234,43 @@ describe("runtime issue action contracts", () => {
     };
     const port = createRuntimeIssueActionPort(service);
 
-    await expect(port.issueCreate(invocation({
+    await expect(port.issueCreate(runtimeInvocation({
+      name: "issue_create",
+      companyId: consultCapability.companyId,
+      parentId: consultCapability.issueId,
       request: "No",
-      owner: { kind: "self" },
-    }, { capability: consultCapability }))).rejects.toBeInstanceOf(
-      RuntimeToolArgumentsInvalid,
-    );
-    await expect(port.issueAssign(invocation({
+      ownerAgentId: consultCapability.targetAgentId,
+    }, consultCapability))).rejects.toBeInstanceOf(RuntimeIssueActionDenied);
+    await expect(port.issueAssign(runtimeInvocation({
+      name: "issue_assign",
+      companyId: consultCapability.companyId,
       issueId: capability.issueId,
-      owner: { kind: "self" },
-    }, { capability: consultCapability }))).rejects.toBeInstanceOf(
-      RuntimeToolArgumentsInvalid,
-    );
-    await expect(port.issueUpdate(invocation({
+      ownerAgentId: consultCapability.targetAgentId,
+    }, consultCapability))).rejects.toBeInstanceOf(RuntimeIssueActionDenied);
+    await expect(port.issueUpdate(runtimeInvocation({
+      name: "issue_update",
+      companyId: consultCapability.companyId,
+      issueId: consultCapability.issueId,
+      issueTarget: "active",
       message: "No",
-    }, { capability: consultCapability }))).rejects.toBeInstanceOf(
-      RuntimeToolArgumentsInvalid,
-    );
+    }, consultCapability))).rejects.toBeInstanceOf(RuntimeIssueActionDenied);
     expect(service.create).not.toHaveBeenCalled();
     expect(service.assign).not.toHaveBeenCalled();
     expect(service.update).not.toHaveBeenCalled();
   });
 
-  it("enforces the closed issue-action ABI before persistence", async () => {
+  it("fails closed when a forged command has lost canonical target intent", async () => {
     const port = createRuntimeIssueActionPort(service);
+    const forged = {
+      name: "issue_update",
+      companyId: capability.companyId,
+      issueId: capability.issueId,
+      message: "Unexpected target intent",
+    } as unknown as PaperclipManagedToolCommandFor<"issue_update">;
 
-    await expect(port.issueCreate(invocation({
-      request: "Bad priority",
-      owner: { kind: "self" },
-      priority: "urgent",
-    }))).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
-    await expect(port.issueAssign(invocation({
-      issueId: capability.issueId,
-      owner: { kind: "agent", agentId: "" },
-    }))).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
-    await expect(port.issueUpdate(invocation({
-      status: "done",
-      message: "Invalid undefined result",
-      structuredResult: undefined,
-    }))).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
-    await expect(port.issueUpdate(invocation({
-      issueId: capability.issueId,
-      message: "Unexpected key",
-      form: "creator_message",
-    }))).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
-    await expect(port.mentionAgent(invocation({
-      agentId: capability.targetAgentId,
-      message: "Bad selector",
-      mentionRunId: "00000000-0000-4000-8000-00000000070f",
-    }))).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
+    await expect(port.issueUpdate(runtimeInvocation(forged)))
+      .rejects.toBeInstanceOf(RuntimeIssueActionConflict);
+    expect(service.update).not.toHaveBeenCalled();
   });
 
   it("validates canonical owner and creator forms before opening a transaction", async () => {

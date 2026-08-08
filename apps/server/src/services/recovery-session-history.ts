@@ -1,12 +1,12 @@
 import {
   issueExecutionAttempts,
   issueExecutionPromptCapabilities,
-  issueExecutionRuns,
   type Db,
 } from "@paperclipai/db";
 import type { ProviderSafeRunTrace } from "@paperclipai/shared";
-import { and, asc, desc, eq, lt, ne } from "drizzle-orm";
+import { and, desc, eq, lt } from "drizzle-orm";
 import type { ContextRetrievalService } from "./context-retrieval.js";
+import { listPriorIssueExecutionRunIdsForAgent } from "./issue-execution-run-service.js";
 
 /**
  * Exact durable identity from which recovery eligibility and prior run IDs
@@ -220,20 +220,7 @@ export function createPostgresRecoverySessionHistoryRepository(
     },
 
     async listPriorAgentRunIds(scope) {
-      const rows = await db
-        .select({ id: issueExecutionRuns.id })
-        .from(issueExecutionRuns)
-        .where(
-          and(
-            eq(issueExecutionRuns.companyId, scope.companyId),
-            eq(issueExecutionRuns.issueId, scope.issueId),
-            eq(issueExecutionRuns.sessionId, scope.sessionId),
-            eq(issueExecutionRuns.targetAgentId, scope.targetAgentId),
-            ne(issueExecutionRuns.id, scope.runId),
-          ),
-        )
-        .orderBy(asc(issueExecutionRuns.createdAt), asc(issueExecutionRuns.id));
-      return rows.map((row) => row.id);
+      return listPriorIssueExecutionRunIdsForAgent(db, scope);
     },
   };
 }

@@ -259,15 +259,27 @@ export {
   type ContextRetrievalService,
 } from "./context-retrieval.js";
 export {
-  createRuntimeToolExecutor,
-  type RuntimeActionPort,
+  createRuntimeToolGateway,
   type RuntimeRetrievalScopeResolver,
-} from "./runtime-tool-executor.js";
+} from "./runtime-tool-gateway.js";
 export {
-  composeRuntimeActionPort,
+  agentRunManagedActionInvocation,
+  boardToolAuthority,
+  createPaperclipManagedToolRouter,
+  paperclipManagedToolPublicError,
+  type AgentRunManagedActionInvocation,
+  type AgentRunManagedActionPort,
+  type AgentRunToolAuthority,
+  type BoardUserToolAuthority,
+  type PaperclipManagedToolRouter,
+  type PaperclipManagedToolRouterDependencies,
+  type PaperclipToolAuthority,
+} from "./paperclip-managed-tool-router.js";
+export {
+  composeAgentRunManagedActionPort,
   createRuntimeAgentActionPort,
-  type RuntimeAgentActionPort,
-  type RuntimeNonAgentActionPort,
+  type AgentRunAgentActionPort,
+  type AgentRunNonAgentActionPort,
 } from "./runtime-agent-action-port.js";
 export {
   createPostgresRuntimeIssueActionService,

@@ -21,7 +21,7 @@ const ISSUE_INSERT_FUNCTION = "persistCanonicalIssueAggregateInTx";
 const ISSUE_DELETE_OWNER = "apps/server/src/services/issue-session-lifecycle.ts";
 const ISSUE_DELETE_FUNCTION = "purgeCompanySessionGraphInTx";
 const ISSUE_CONTROL_OWNER = "apps/server/src/services/issues.ts";
-const COMPILER_OWNER = "apps/server/src/services/runtime-interface-compiler.ts";
+const MANAGED_TOOL_REGISTRY_OWNER = "apps/server/src/services/paperclip-managed-tool-registry.ts";
 const ACTION_PORT_OWNER = "apps/server/src/services/runtime-issue-action-port.ts";
 const ISSUE_SCHEMA_OWNER = "packages/db/schema/issues.ts";
 
@@ -519,7 +519,7 @@ export function requiredOwnershipViolations(files) {
   };
   const aggregate = requireFile(ISSUE_INSERT_OWNER);
   const issueService = requireFile(ISSUE_CONTROL_OWNER);
-  const compiler = requireFile(COMPILER_OWNER);
+  const registry = requireFile(MANAGED_TOOL_REGISTRY_OWNER);
   const actionPort = requireFile(ACTION_PORT_OWNER);
   const schema = requireFile(ISSUE_SCHEMA_OWNER);
 
@@ -548,10 +548,13 @@ export function requiredOwnershipViolations(files) {
     '| "creatorAuthorityId"',
     '| "creatorAdapterConfigRevisionId"',
   ], "closed-update-contract");
-  requireMarkers(COMPILER_OWNER, compiler, [
-    'input.actionGrants.issue_create === true',
-    "issueCreateDescriptor(input.issueCreateDirectChildren)",
-  ], "compiler-authority");
+  requireMarkers(MANAGED_TOOL_REGISTRY_OWNER, registry, [
+    "export const boardMcpInputSchemas",
+    "function projectRuntimeIssueCreate(",
+    "input.actionGrants.issue_create !== true",
+    'name: "issue_create"',
+    'case "issue_create": return projectRuntimeIssueCreate(input);',
+  ], "registry-authority");
   requireMarkers(ACTION_PORT_OWNER, actionPort, [
     'lockRuntimeActionAuthority(',
     '"issue_create"',
@@ -592,7 +595,7 @@ export function checkCanonicalIssueWriters(repoRoot = DEFAULT_REPO_ROOT) {
 function main() {
   const violations = checkCanonicalIssueWriters();
   if (violations.length === 0) {
-    console.log("Canonical issue writer check passed: one aggregate insert owner, immutable request/creator fields, and compiler/action-port authority are structurally locked.");
+    console.log("Canonical issue writer check passed: one aggregate insert owner, immutable request/creator fields, and registry-projection/action-port authority are structurally locked.");
     return;
   }
   console.error(`Canonical issue writer check failed with ${violations.length} violation(s):`);

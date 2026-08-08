@@ -1,44 +1,23 @@
 import {
-  runtimeAgentConfigureActionSchema,
-  runtimeAgentHireConfigurationSchema,
-} from "@paperclipai/shared";
-import { z } from "zod";
-import {
   RuntimeAgentConfigurationConsentRequired,
   RuntimeAgentConfigurationInvalid,
   type RuntimeAgentConfigurationService,
 } from "./runtime-agent-configuration.js";
 import {
-  type RuntimeActionInvocation,
-  type RuntimeActionPort,
-} from "./runtime-tool-executor.js";
-import { RuntimeToolArgumentsInvalid } from "./runtime-interface-compiler.js";
+  type AgentRunManagedActionInvocation,
+  type AgentRunManagedActionPort,
+} from "./paperclip-managed-tool-router.js";
+import { RuntimeToolArgumentsInvalid } from "./runtime-tool-errors.js";
 
-export type RuntimeAgentActionPort = Pick<
-  RuntimeActionPort,
+export type AgentRunAgentActionPort = Pick<
+  AgentRunManagedActionPort,
   "agentHire" | "agentConfigure"
 >;
 
-export type RuntimeNonAgentActionPort = Omit<
-  RuntimeActionPort,
+export type AgentRunNonAgentActionPort = Omit<
+  AgentRunManagedActionPort,
   "agentHire" | "agentConfigure"
 >;
-
-function parseCanonicalActionArguments<T>(
-  schema: z.ZodType<T>,
-  value: unknown,
-): T {
-  const parsed = schema.safeParse(value);
-  if (parsed.success) return parsed.data;
-  throw new RuntimeToolArgumentsInvalid(
-    parsed.error.issues
-      .map((issue) => {
-        const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";
-        return `${path}${issue.message}`;
-      })
-      .join("; "),
-  );
-}
 
 async function mapInvalidArguments<T>(action: () => Promise<T>): Promise<T> {
   try {
@@ -61,39 +40,33 @@ export function createRuntimeAgentActionPort(
   service: RuntimeAgentConfigurationService,
   options: {
     requestChangeConsent?: (input: {
-      capability: RuntimeActionInvocation["capability"];
+      capability: AgentRunManagedActionInvocation["authority"]["capability"];
       targetAgentId: string;
       displayedDiff: string;
     }) => Promise<void>;
   } = {},
-): RuntimeAgentActionPort {
+): AgentRunAgentActionPort {
   return {
-    async agentHire(input: RuntimeActionInvocation) {
-      const configuration = parseCanonicalActionArguments(
-        runtimeAgentHireConfigurationSchema,
-        input.arguments,
-      );
+    async agentHire(input) {
+      const { reportsTo: _reportsTo, ...configuration } =
+        input.command.configuration;
       return mapInvalidArguments(async () => {
         await service.hireFromRun({
-          capability: input.capability,
-          invocationId: input.invocationId,
+          capability: input.authority.capability,
+          invocationId: input.authority.invocation.id,
           configuration,
         });
         return { status: "created" as const };
       });
     },
 
-    async agentConfigure(input: RuntimeActionInvocation) {
-      const { agentId: targetAgentId, ...configuration } =
-        parseCanonicalActionArguments(
-          runtimeAgentConfigureActionSchema,
-          input.arguments,
-        );
+    async agentConfigure(input) {
+      const { agentId: targetAgentId, configuration } = input.command;
       return mapInvalidArguments(async () => {
         try {
           await service.configureFromRun({
-            capability: input.capability,
-            invocationId: input.invocationId,
+            capability: input.authority.capability,
+            invocationId: input.authority.invocation.id,
             targetAgentId,
             configuration,
           });
@@ -106,7 +79,7 @@ export function createRuntimeAgentActionPort(
             throw error;
           }
           await options.requestChangeConsent({
-            capability: input.capability,
+            capability: input.authority.capability,
             targetAgentId: error.targetAgentId,
             displayedDiff: error.displayedDiff,
           });
@@ -119,13 +92,13 @@ export function createRuntimeAgentActionPort(
 
 /**
  * Keeps integration explicit while the issue-action implementation remains a
- * separate concern. There is still exactly one RuntimeActionPort at the
- * gateway boundary.
+ * separate concern. The shared action contract lives in
+ * the managed-tool router, never at the ACPX gateway boundary.
  */
-export function composeRuntimeActionPort(
-  otherActions: RuntimeNonAgentActionPort,
-  agentActions: RuntimeAgentActionPort,
-): RuntimeActionPort {
+export function composeAgentRunManagedActionPort(
+  otherActions: AgentRunNonAgentActionPort,
+  agentActions: AgentRunAgentActionPort,
+): AgentRunManagedActionPort {
   return {
     ...otherActions,
     ...agentActions,

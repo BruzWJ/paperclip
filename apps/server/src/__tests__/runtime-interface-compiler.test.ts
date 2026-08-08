@@ -4,11 +4,8 @@ import {
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
 } from "@paperclipai/shared";
-import {
-  RuntimeToolArgumentsInvalid,
-  buildRuntimeRetrievalAbi,
-  compileRuntimeInterface,
-} from "../services/runtime-interface-compiler.ts";
+import { compileRuntimeInterface } from "../services/runtime-interface-compiler.ts";
+import { RuntimeToolArgumentsInvalid } from "../services/runtime-tool-errors.ts";
 import { resolveContextDial } from "../services/context-dial-resolver.ts";
 
 function compileInput(
@@ -27,6 +24,22 @@ function compileInput(
     pluginTools: [],
     ...overrides,
   };
+}
+
+const runtimeScope = {
+  companyId: "company-1",
+  issueId: "issue-1",
+  targetAgentId: "agent-1",
+};
+
+function normalizeRuntimeCommand(
+  descriptor: NonNullable<ReturnType<typeof compileRuntimeInterface>["descriptors"][number]> | undefined,
+  payload: unknown,
+) {
+  if (!descriptor?.normalizeRuntimeCommand) {
+    throw new Error(`Expected a canonical runtime projection for ${descriptor?.name}`);
+  }
+  return descriptor.normalizeRuntimeCommand(payload, runtimeScope);
 }
 
 describe("runtime interface compiler", () => {
@@ -107,18 +120,15 @@ describe("runtime interface compiler", () => {
   it.each(reachCases)(
     "describes and parses the exact comment union current=$current descendant=$descendant company=$company",
     ({ current, descendant, company, commentTiers }) => {
-      const abi = buildRuntimeRetrievalAbi(
-        resolveContextDial({
+      const descriptor = compileRuntimeInterface(compileInput({
+        contextDial: resolveContextDial({
           agent: {
             read_issue_comments: current,
             read_sub_issue_comments: descendant,
             read_company_issue_comments: company,
           },
         }).effective,
-      );
-      const descriptor = abi.descriptors.find(
-        (candidate) => candidate.name === "read_issue_comments",
-      );
+      })).byName.get("read_issue_comments");
       if (!commentTiers) {
         expect(descriptor).toBeUndefined();
         return;
@@ -130,14 +140,18 @@ describe("runtime interface compiler", () => {
         current ? [] : ["issueId"],
       );
       if (current) {
-        expect(abi.parse("read_issue_comments", {})).toEqual({
-          name: "read_issue_comments",
-          issueId: undefined,
-          cursor: undefined,
+        expect(normalizeRuntimeCommand(descriptor, {})).toEqual({
+          command: {
+            name: "read_issue_comments",
+            companyId: "company-1",
+            issueId: "issue-1",
+            cursor: undefined,
+          },
+          ledger: { kind: "non_mention" },
         });
       } else {
         expect(() =>
-          abi.parse("read_issue_comments", {}),
+          normalizeRuntimeCommand(descriptor, {}),
         ).toThrow(RuntimeToolArgumentsInvalid);
       }
     },
@@ -146,18 +160,15 @@ describe("runtime interface compiler", () => {
   it.each(reachCases)(
     "describes the exact run union current=$current descendant=$descendant company=$company",
     ({ current, descendant, company, runTiers }) => {
-      const abi = buildRuntimeRetrievalAbi(
-        resolveContextDial({
+      const descriptor = compileRuntimeInterface(compileInput({
+        contextDial: resolveContextDial({
           agent: {
             read_issue_agent_run: current,
             read_sub_issue_agent_run: descendant,
             read_company_issue_agent_run: company,
           },
         }).effective,
-      );
-      const descriptor = abi.descriptors.find(
-        (candidate) => candidate.name === "read_issue_agent_run",
-      );
+      })).byName.get("read_issue_agent_run");
       if (!runTiers) {
         expect(descriptor).toBeUndefined();
         return;
@@ -165,17 +176,21 @@ describe("runtime interface compiler", () => {
       expect(descriptor?.description).toBe(`${RUN_PREFIX}${runTiers}.`);
       expect(descriptor?.inputSchema.required).toEqual(["runId"]);
       expect(
-        abi.parse("read_issue_agent_run", {
+        normalizeRuntimeCommand(descriptor, {
           runId: "run-1",
           cursor: "opaque-page-2",
         }),
       ).toEqual({
-        name: "read_issue_agent_run",
-        runId: "run-1",
-        cursor: "opaque-page-2",
+        command: {
+          name: "read_issue_agent_run",
+          companyId: "company-1",
+          runId: "run-1",
+          cursor: "opaque-page-2",
+        },
+        ledger: { kind: "non_mention" },
       });
       expect(() =>
-        abi.parse("read_issue_agent_run", {}),
+        normalizeRuntimeCommand(descriptor, {}),
       ).toThrow(RuntimeToolArgumentsInvalid);
     },
   );
@@ -207,27 +222,28 @@ describe("runtime interface compiler", () => {
   ] as const)(
     "describes the exact sub-list union sub=$sub company=$company",
     ({ sub, company, description }) => {
-      const abi = buildRuntimeRetrievalAbi(
-        resolveContextDial({
+      const descriptor = compileRuntimeInterface(compileInput({
+        contextDial: resolveContextDial({
           agent: {
             list_sub_issues: sub,
             list_company_issues: company,
           },
         }).effective,
-      );
-      const descriptor = abi.descriptors.find(
-        (candidate) => candidate.name === "list_sub_issues",
-      );
+      })).byName.get("list_sub_issues");
       if (description === null) {
         expect(descriptor).toBeUndefined();
         return;
       }
       expect(descriptor?.description).toBe(description);
       expect(descriptor?.inputSchema.required).toEqual([]);
-      expect(abi.parse("list_sub_issues", {})).toEqual({
-        name: "list_sub_issues",
-        issueId: undefined,
-        cursor: undefined,
+      expect(normalizeRuntimeCommand(descriptor, {})).toEqual({
+        command: {
+          name: "list_sub_issues",
+          companyId: "company-1",
+          issueId: "issue-1",
+          cursor: undefined,
+        },
+        ledger: { kind: "non_mention" },
       });
     },
   );
@@ -243,7 +259,6 @@ describe("runtime interface compiler", () => {
         }).effective,
         actionGrants: {
           issue_create: true,
-          mention_agent: true,
           mention_board: true,
         },
         creatorUpdateTargets: [{ issueId: "child-1", identifier: "PAP-1" }],
@@ -381,7 +396,6 @@ describe("runtime interface compiler", () => {
         mode: "consult",
         actionGrants: {
           issue_create: true,
-          mention_agent: true,
           mention_board: true,
           agent_hire: true,
           agent_configure: true,
@@ -444,7 +458,6 @@ describe("runtime interface compiler", () => {
       compileInput({
         actionGrants: {
           issue_create: true,
-          mention_agent: true,
         },
         isCurrentOwner: false,
       }),
@@ -457,7 +470,6 @@ describe("runtime interface compiler", () => {
   it("compiles mention_agent as a canonical non-terminal comment", () => {
     const descriptor = compileRuntimeInterface(
       compileInput({
-        actionGrants: { mention_agent: true },
         mentionTargets: [
           { id: "agent-2", name: "Reviewer", capabilities: "Review" },
         ],
@@ -471,14 +483,24 @@ describe("runtime interface compiler", () => {
     expect(descriptor.inputSchema.properties).not.toHaveProperty(
       "mentionRunId",
     );
-    expect(descriptor.validateArguments?.({
+    expect(normalizeRuntimeCommand(descriptor, {
       agentId: "agent-2",
       message: "Please review",
     })).toEqual({
-      agentId: "agent-2",
-      message: "Please review",
+      command: {
+        name: "mention_agent",
+        companyId: "company-1",
+        issueId: "issue-1",
+        agentId: "agent-2",
+        message: "Please review",
+      },
+      ledger: {
+        kind: "mention",
+        toolName: "mention_agent",
+        targetAgentId: "agent-2",
+      },
     });
-    expect(() => descriptor.validateArguments?.({
+    expect(() => normalizeRuntimeCommand(descriptor, {
       agentId: "agent-2",
       message: "Please review",
       mentionRunId: "8710c164-9694-42cf-9538-2f17fd665891",
@@ -506,7 +528,7 @@ describe("runtime interface compiler", () => {
         },
       },
     });
-    expect(() => descriptor?.validateArguments?.({
+    expect(() => normalizeRuntimeCommand(descriptor, {
       message: "Need direction",
       reason: "clarification",
     })).toThrow(RuntimeToolArgumentsInvalid);
@@ -535,7 +557,7 @@ describe("runtime interface compiler", () => {
       Object.keys(
         hire.inputSchema.properties?.actionGrants.properties ?? {},
       ),
-    ).toHaveLength(7);
+    ).toHaveLength(6);
     expect(
       Object.keys(
         configure.inputSchema.properties?.mentionReachGrants.properties ?? {},
@@ -569,7 +591,7 @@ describe("runtime interface compiler", () => {
         AGENT_MENTION_REACH_GRANT_KEYS.map((key) => [key, false]),
       ),
     };
-    expect(() => hire.validateArguments?.(completeHire)).not.toThrow();
+    expect(() => normalizeRuntimeCommand(hire, completeHire)).not.toThrow();
     expect(configure.inputSchema.properties?.agentId).toEqual({
       type: "string",
       enum: ["agent-1"],
@@ -596,14 +618,21 @@ describe("runtime interface compiler", () => {
     ).byName.get("agent_configure")!;
 
     expect(() =>
-      configure.validateArguments?.({ agentId: "agent-2", title: null }),
+      normalizeRuntimeCommand(configure, { agentId: "agent-2", title: null }),
     ).toThrow(/Invalid enum value/);
     expect(() =>
-      configure.validateArguments?.({ agentId: "agent-1" }),
+      normalizeRuntimeCommand(configure, { agentId: "agent-1" }),
     ).toThrow(/At least one runtime-agent configuration field/);
     expect(
-      configure.validateArguments?.({ agentId: "agent-1", title: null }),
-    ).toEqual({ agentId: "agent-1", title: null });
+      normalizeRuntimeCommand(configure, { agentId: "agent-1", title: null }),
+    ).toMatchObject({
+      command: {
+        name: "agent_configure",
+        companyId: "company-1",
+        agentId: "agent-1",
+        configuration: { title: null },
+      },
+    });
   });
 
   it("compiles administrator-installed plugin tools with immutable installation identity", () => {

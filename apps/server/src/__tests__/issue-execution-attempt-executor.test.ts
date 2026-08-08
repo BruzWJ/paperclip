@@ -960,7 +960,7 @@ describe("canonical productive/consult ACP attempt executor", () => {
 
     const launch = harness.launches[0]!;
     expect(launch.bootstrapPrompt?.message).toBe(
-      "You are the release engineer.\n\nNo task yet. Use enabled tools if needed, then end turn.",
+      "You are the release engineer.\n\nNo work yet. Use enabled tools if needed, then end turn.",
     );
     expect(launch.bootstrapPrompt?.message).not.toContain(prompt.sourceText);
     expect(beforePrompt).toHaveBeenCalledOnce();

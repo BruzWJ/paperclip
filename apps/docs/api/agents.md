@@ -52,10 +52,11 @@ Content-Type: application/json
   },
   "actionGrants": {
     "issue_create": false,
-    "mention_agent": false,
     "mention_board": false,
     "agent_hire": false,
-    "agent_configure": false
+    "agent_configure": false,
+    "list_all_agents": false,
+    "list_parent_agents": false
   },
   "mentionReachGrants": {
     "mention_any_descendant": false,

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  assertCanonicalContextRunTraceReader,
   assertCanonicalTargetLaneRunLocking,
   assertMissingCarryStartsFresh,
   scanCanonicalRunBoundaryFiles,
@@ -151,6 +152,30 @@ test("rejects the removed generic canonical run-trace event surface at each form
       `expected ${fixture.path} to reject ${fixture.source}`,
     );
   }
+});
+
+test("requires run traces to combine the canonical run and transmitted Session reads", () => {
+  const source = [
+    "const identity = await resolveIssueExecutionRunIdentityById(db, runId);",
+    "const detail = await options.runService.readJoinedRunDetail(identity);",
+    "const messages = await db.select().from(issueSessionMessages);",
+    "and member.prompt_transmission_phase = 'transmitted'",
+    "and source_ref.source_message_id = issueSessionMessages.id",
+    "and segment.source_message_id = issueSessionMessages.id",
+    "const turns = messages.map((row) =>",
+    "  sanitizeCanonicalMessage(decodeStoredIssueSessionMessage(row), row.seq),",
+    ");",
+    "return { turns, detail };",
+  ].join("\n");
+
+  assert.doesNotThrow(() => assertCanonicalContextRunTraceReader(source));
+  assert.throws(
+    () =>
+      assertCanonicalContextRunTraceReader(
+        source.replace(".from(issueSessionMessages)", ".from(runDetailMessages)"),
+      ),
+    /must resolve the canonical run and project its transmitted Issue Session trace/,
+  );
 });
 
 test("requires a fresh active-run lock after the exact target-lane hierarchy", () => {

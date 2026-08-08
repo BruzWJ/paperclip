@@ -21,7 +21,13 @@ profile update, and sign-out flows. There is no implicit local operator.
 
 Automation acting for a board user may use a board API key where the endpoint
 supports bearer authentication; the key is derivative of an existing Better
-Auth user and retains that user's company membership and permission checks.
+Auth user and retains that user's company membership scope and endpoint-specific
+control semantics.
+
+[Board MCP](/guides/board-operator/mcp) is the intentional full-control local
+coding-agent surface for that key. It remains tenant-scoped to the board
+user's active company memberships, but does not inherit provider-run agent
+grants or context dials.
 
 ## Company Scoping
 

@@ -9,9 +9,19 @@ import {
   type RuntimeAgentConfigurationService,
 } from "../services/runtime-agent-configuration.js";
 import { createRuntimeAgentActionPort } from "../services/runtime-agent-action-port.js";
-import { createRuntimeToolExecutor } from "../services/runtime-tool-executor.js";
+import { createRuntimeToolGateway } from "../services/runtime-tool-gateway.js";
+import {
+  agentRunManagedActionInvocation,
+  type AgentRunToolAuthority,
+} from "../services/paperclip-managed-tool-router.js";
+import type {
+  PaperclipManagedToolRouteContext,
+  PaperclipManagedToolRouter,
+} from "../services/paperclip-managed-tool-router.js";
+import type { PaperclipManagedToolCommand } from "../services/paperclip-managed-tool-registry.js";
 import type { PromptCapabilityBinding } from "../services/prompt-capability-gateway.js";
-import type { CompiledRunToolDescriptor } from "../services/runtime-interface-compiler.js";
+import { compileRuntimeInterface } from "../services/runtime-interface-compiler.js";
+import { resolveContextDial } from "../services/context-dial-resolver.js";
 
 const TARGET_AGENT_ID = "20000000-0000-4000-8000-000000000002";
 const DISPLAYED_DIFF = [
@@ -29,6 +39,21 @@ const capability = {
   runId: "run-1",
   bootstrapToolGate: false,
 } as PromptCapabilityBinding;
+
+function actionAuthority(invocationId: string): AgentRunToolAuthority {
+  return {
+    kind: "agent_run",
+    capability,
+    invocation: {
+      id: invocationId,
+      runInterfaceToolCallId: `ledger-${invocationId}`,
+      ingressOrdinal: 0,
+      async commitMentionAction(_transaction, result) {
+        return result;
+      },
+    },
+  };
+}
 
 function deniedService() {
   return {
@@ -79,23 +104,33 @@ function replayingExecutor(
     }),
     fail: vi.fn(async () => undefined),
   };
-  const executor = createRuntimeToolExecutor({
-    retrieval: {} as never,
+  const managedTools = {
+    async routeExecution(
+      command: PaperclipManagedToolCommand,
+      context: PaperclipManagedToolRouteContext,
+    ) {
+      if (context.authority.kind !== "agent_run") throw new Error("expected agent authority");
+      if (command.name === "agent_hire") {
+        return actions.agentHire(
+          agentRunManagedActionInvocation(command, context.authority),
+        );
+      }
+      if (command.name === "agent_configure") {
+        return actions.agentConfigure(
+          agentRunManagedActionInvocation(command, context.authority),
+        );
+      }
+      throw new Error(`Unexpected managed tool ${command.name}`);
+    },
+  } as unknown as PaperclipManagedToolRouter;
+  const gateway = createRuntimeToolGateway({
     retrievalScope: {
       async resolve() {
         throw new Error("retrieval is not used by agent actions");
       },
     },
-    actions: {
-      issueCreate: vi.fn(),
-      issueAssign: vi.fn(),
-      issueUpdate: vi.fn(),
-      mentionAgent: vi.fn(),
-      mentionBoard: vi.fn(),
-      listAgents: vi.fn(),
-      agentRead: vi.fn(),
-      ...actions,
-    },
+    managedTools,
+    pluginTools: {} as never,
     callLedger: callLedger as never,
   });
 
@@ -103,14 +138,23 @@ function replayingExecutor(
     name: "agent_hire" | "agent_configure",
     arguments_: Record<string, unknown>,
   ) {
-    const descriptor: CompiledRunToolDescriptor = {
-      name,
-      title: name,
-      description: "",
-      inputSchema: { type: "object" },
-      source: "paperclip",
-    };
-    return executor.execute({
+    const descriptor = compileRuntimeInterface({
+      mode: "owner",
+      contextDial: resolveContextDial({ agent: {} }).effective,
+      actionGrants: { agent_hire: true, agent_configure: true },
+      isCurrentOwner: true,
+      issueCreateDirectChildren: [],
+      issueAssignTargets: [],
+      creatorUpdateTargets: [],
+      mentionTargets: [],
+      configureTargets: [
+        { id: capability.targetAgentId },
+        { id: TARGET_AGENT_ID },
+      ],
+      pluginTools: [],
+    }).byName.get(name);
+    if (!descriptor) throw new Error(`Missing compiled tool ${name}`);
+    return gateway.execute({
       capability,
       descriptor,
       arguments: arguments_,
@@ -233,14 +277,12 @@ describe("runtime agent action change-consent ownership", () => {
       requestChangeConsent,
     });
 
-    await expect(actions.agentConfigure({
-      capability,
-      invocationId: "configure-call-1",
-      arguments: {
-        agentId: TARGET_AGENT_ID,
-        title: "After",
-      },
-    })).resolves.toEqual({
+    await expect(actions.agentConfigure(agentRunManagedActionInvocation({
+      name: "agent_configure",
+      companyId: capability.companyId,
+      agentId: TARGET_AGENT_ID,
+      configuration: { title: "After" },
+    }, actionAuthority("configure-call-1")))).resolves.toEqual({
       status: "change_consent_requested",
     });
     expect(requestChangeConsent).toHaveBeenCalledWith({
@@ -252,14 +294,12 @@ describe("runtime agent action change-consent ownership", () => {
 
   it("fails closed when the compiled action has no consent-request owner", async () => {
     const actions = createRuntimeAgentActionPort(deniedService());
-    await expect(actions.agentConfigure({
-      capability,
-      invocationId: "configure-call-2",
-      arguments: {
-        agentId: TARGET_AGENT_ID,
-        title: "After",
-      },
-    })).rejects.toBeInstanceOf(
+    await expect(actions.agentConfigure(agentRunManagedActionInvocation({
+      name: "agent_configure",
+      companyId: capability.companyId,
+      agentId: TARGET_AGENT_ID,
+      configuration: { title: "After" },
+    }, actionAuthority("configure-call-2")))).rejects.toBeInstanceOf(
       RuntimeAgentConfigurationConsentRequired,
     );
   });

@@ -36,10 +36,12 @@ import type {
   IssueAssignOwnerCatalog,
   IssueCreateOwnerCatalogEntry,
   RuntimeAgentConfigureTarget,
+} from "./paperclip-managed-tool-registry.js";
+import type {
   RuntimeInterfaceCompileInput,
   RuntimePluginTool,
 } from "./runtime-interface-compiler.js";
-import type { RuntimeRetrievalScopeResolver } from "./runtime-tool-executor.js";
+import type { RuntimeRetrievalScopeResolver } from "./runtime-tool-gateway.js";
 import {
   createPostgresRecoverySessionHistoryRepository,
   isTargetNotFoundReplacement,

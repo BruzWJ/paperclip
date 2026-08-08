@@ -2,10 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import {
   admitCounterpartIssueUpdate,
   createRuntimeIssueActionPort,
+  RuntimeIssueActionConflict,
+  RuntimeIssueActionDenied,
   type RuntimeIssueActionService,
 } from "../services/runtime-issue-action-port.js";
+import {
+  agentRunManagedActionInvocation,
+  type AgentRunToolAuthority,
+} from "../services/paperclip-managed-tool-router.js";
+import type { PaperclipManagedToolCommandFor } from "../services/paperclip-managed-tool-registry.js";
 import type { IssueSessionAdmissionService } from "../services/issue-session/admission.js";
-import { RuntimeToolArgumentsInvalid } from "../services/runtime-interface-compiler.js";
 import type { PromptCapabilityBinding } from "../services/prompt-capability-gateway.js";
 
 const ownerCapability: PromptCapabilityBinding = {
@@ -40,13 +46,44 @@ const ownerCapability: PromptCapabilityBinding = {
   createdAt: new Date("2026-07-25T00:00:00.000Z"),
 };
 
-const commitMentionAction = <T>(_transaction: unknown, result: T) =>
-  Promise.resolve(result);
-const actionInvocationIdentity = {
-  runInterfaceToolCallId: "00000000-0000-4000-8000-000000000001",
-  ingressOrdinal: 0,
-  commitMentionAction,
-} as const;
+type RuntimeIssueCommandName =
+  | "issue_create"
+  | "issue_assign"
+  | "issue_update"
+  | "mention_agent"
+  | "mention_board"
+  | "list_agents"
+  | "agent_read";
+
+const commitMentionAction: AgentRunToolAuthority["invocation"]["commitMentionAction"] =
+  async (_transaction, result) => result;
+
+function actionAuthority(
+  capability: PromptCapabilityBinding = ownerCapability,
+  invocationId = "invoke",
+): AgentRunToolAuthority {
+  return {
+    kind: "agent_run",
+    capability,
+    invocation: {
+      id: invocationId,
+      runInterfaceToolCallId: "00000000-0000-4000-8000-000000000001",
+      ingressOrdinal: 0,
+      commitMentionAction,
+    },
+  };
+}
+
+function runtimeInvocation<Name extends RuntimeIssueCommandName>(
+  command: PaperclipManagedToolCommandFor<Name>,
+  capability: PromptCapabilityBinding = ownerCapability,
+  invocationId = "invoke",
+) {
+  return agentRunManagedActionInvocation(
+    command,
+    actionAuthority(capability, invocationId),
+  );
+}
 
 function setup() {
   const service: RuntimeIssueActionService = {
@@ -114,7 +151,6 @@ describe("runtime issue action port", () => {
       },
     });
 
-    expect(appendNonDispatchControlNotice).toHaveBeenCalledOnce();
     expect(appendNonDispatchControlNotice).toHaveBeenCalledWith(
       expect.objectContaining({
         exactText: [
@@ -130,21 +166,17 @@ describe("runtime issue action port", () => {
     );
   });
 
-  it("passes only the closed immutable create contract", async () => {
+  it("lowers an already-normalized create command without reparsing it", async () => {
     const { service, port } = setup();
-    await port.issueCreate({
-      ...actionInvocationIdentity,
-      capability: ownerCapability,
-      invocationId: "invoke",
-      arguments: {
-        request: "Do exactly this",
-        owner: { kind: "agent", agentId: "child" },
-        contextAccessMask: {
-          carry_context: false,
-          read_issue_comments: false,
-        },
-      },
-    });
+    await port.issueCreate(runtimeInvocation({
+      name: "issue_create",
+      companyId: ownerCapability.companyId,
+      parentId: ownerCapability.issueId,
+      request: "Do exactly this",
+      ownerAgentId: "child",
+      contextAccessMask: { read_issue_comments: false },
+    }));
+
     expect(service.create).toHaveBeenCalledWith({
       capability: ownerCapability,
       invocationId: "invoke",
@@ -152,309 +184,178 @@ describe("runtime issue action port", () => {
       title: undefined,
       priority: undefined,
       owner: { kind: "agent", agentId: "child" },
-      contextAccessMask: {
-        carry_context: false,
-        read_issue_comments: false,
-      },
+      contextAccessMask: { read_issue_comments: false },
     });
   });
 
-  it("canonicalizes identity mask cells and rejects broad fields and malformed owners", async () => {
+  it("derives self ownership only from the canonical ownerAgentId", async () => {
     const { service, port } = setup();
-    await port.issueCreate({
-      ...actionInvocationIdentity,
-      capability: ownerCapability,
-      invocationId: "identity-mask",
-      arguments: {
-        request: "x",
-        owner: { kind: "self" },
-        contextAccessMask: {
-          carry_context: true,
-          read_issue_comments: false,
-        },
-      },
-    });
-    expect(service.create).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        contextAccessMask: { read_issue_comments: false },
-      }),
-    );
-    for (const argumentsValue of [
-      {
-        request: "x",
-        owner: { kind: "self" },
-        contextAccessMask: { unknown_context: false },
-      },
-      {
-        request: "x",
-        owner: { kind: "self" },
-        assigneeAgentId: "legacy",
-      },
-      {
-        request: "x",
-        owner: { kind: "agent", agentId: "child", name: "leak" },
-      },
-    ]) {
-      await expect(
-        port.issueCreate({
-          ...actionInvocationIdentity,
-          capability: ownerCapability,
-          invocationId: "invoke",
-          arguments: argumentsValue,
-        }),
-      ).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
-    }
+    await port.issueCreate(runtimeInvocation({
+      name: "issue_create",
+      companyId: ownerCapability.companyId,
+      parentId: ownerCapability.issueId,
+      request: "Keep ownership",
+      ownerAgentId: ownerCapability.targetAgentId,
+    }, ownerCapability, "self-owner"));
+
+    expect(service.create).toHaveBeenCalledWith(expect.objectContaining({
+      invocationId: "self-owner",
+      owner: { kind: "self" },
+    }));
   });
 
-  it("routes one canonical issue_update ABI for active owners and exact creators", async () => {
+  it("routes active-owner and explicit-creator update intent from canonical commands", async () => {
     const { service, port } = setup();
-    await port.issueUpdate({
-      ...actionInvocationIdentity,
-      capability: ownerCapability,
-      invocationId: "owner-message",
-      arguments: { message: "Progress update" },
-    });
-    await port.issueUpdate({
-      ...actionInvocationIdentity,
-      capability: ownerCapability,
-      invocationId: "owner-update",
-      arguments: {
-        status: "done",
-        message: "Complete",
-        structuredResult: null,
-      },
-    });
-    await port.issueUpdate({
-      ...actionInvocationIdentity,
-      capability: ownerCapability,
-      invocationId: "creator-update",
-      arguments: {
-        issueId: "child-issue",
-        status: "blocked",
-        message: "Please adjust",
-      },
-    });
+    await port.issueUpdate(runtimeInvocation({
+      name: "issue_update",
+      companyId: ownerCapability.companyId,
+      issueId: ownerCapability.issueId,
+      issueTarget: "active",
+      message: "Progress update",
+    }, ownerCapability, "owner-message"));
+    await port.issueUpdate(runtimeInvocation({
+      name: "issue_update",
+      companyId: ownerCapability.companyId,
+      issueId: ownerCapability.issueId,
+      issueTarget: "active",
+      status: "done",
+      message: "Complete",
+      structuredResult: null,
+    }, ownerCapability, "owner-terminal"));
+    await port.issueUpdate(runtimeInvocation({
+      name: "issue_update",
+      companyId: ownerCapability.companyId,
+      issueId: "child-issue",
+      issueTarget: "explicit",
+      status: "blocked",
+      message: "Please adjust",
+    }, ownerCapability, "creator-update"));
+
     expect(service.update).toHaveBeenNthCalledWith(1, {
       capability: ownerCapability,
       invocationId: "owner-message",
       message: "Progress update",
     });
-    expect(service.update).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        invocationId: "owner-update",
-        status: "done",
-        message: "Complete",
-        structuredResult: null,
-      }),
-    );
-    expect(service.update).toHaveBeenNthCalledWith(
-      3,
-      expect.objectContaining({
-        invocationId: "creator-update",
-        issueId: "child-issue",
-        status: "blocked",
-      }),
-    );
-    await expect(
-      port.issueUpdate({
-        ...actionInvocationIdentity,
-        capability: ownerCapability,
-        invocationId: "legacy",
-        arguments: {
-          message: "Complete",
-          form: "owner",
-        },
-      }),
-    ).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
-  });
-
-  it("rejects malformed canonical update variants at the action boundary", async () => {
-    const { port } = setup();
-    const malformed = [
-      {},
-      { message: "" },
-      { message: "Progress", status: undefined },
-      { message: "Progress", status: null },
-      { message: "Progress", status: "paused" },
-      {
-        message: "Progress",
-        structuredResult: { unexpected: true },
-      },
-      {
-        status: "open",
-        message: "Progress",
-        structuredResult: null,
-      },
-      {
-        status: "done",
-        message: "Complete",
-        structuredResult: undefined,
-      },
-      {
-        status: "done",
-        message: "Complete",
-        creatorTargetIssueId: "legacy-target",
-      },
-      {
-        issueId: "child-issue",
-        status: "done",
-        message: "Only an owner may close an issue",
-      },
-      {
-        issueId: "child-issue",
-        status: "cancelled",
-        message: "Only an owner may cancel an issue",
-        structuredResult: null,
-      },
-      {
-        issueId: undefined,
-        message: "No undefined target",
-      },
-    ] as const;
-
-    for (const [index, argumentsValue] of malformed.entries()) {
-      await expect(
-        port.issueUpdate({
-          ...actionInvocationIdentity,
-          capability: ownerCapability,
-          invocationId: `malformed-owner-${index}`,
-          arguments: argumentsValue,
-        }),
-      ).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
-    }
-  });
-
-  it("denies owner/lifecycle actions to consult bearers", async () => {
-    const { port } = setup();
-    await expect(
-      port.issueAssign({
-        ...actionInvocationIdentity,
-        capability: { ...ownerCapability, executionMode: "consult" },
-        invocationId: "invoke",
-        arguments: { issueId: "child", owner: { kind: "self" } },
-      }),
-    ).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
-    await expect(
-      port.issueUpdate({
-        ...actionInvocationIdentity,
-        capability: { ...ownerCapability, executionMode: "consult" },
-        invocationId: "invoke-update",
-        arguments: { message: "Forged progress" },
-      }),
-    ).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
-  });
-
-  it("lowers only the canonical mention message", async () => {
-    const { service, port } = setup();
-    await port.mentionAgent({
-      ...actionInvocationIdentity,
+    expect(service.update).toHaveBeenNthCalledWith(2, {
       capability: ownerCapability,
-      invocationId: "steer-target",
-      arguments: {
-        agentId: "agent-2",
-        message: "Use this exact added context",
-      },
+      invocationId: "owner-terminal",
+      status: "done",
+      message: "Complete",
+      structuredResult: null,
     });
+    expect(service.update).toHaveBeenNthCalledWith(3, {
+      capability: ownerCapability,
+      invocationId: "creator-update",
+      issueId: "child-issue",
+      status: "blocked",
+      message: "Please adjust",
+    });
+  });
+
+  it("fails closed if a forged command loses normalized update intent", async () => {
+    const { port } = setup();
+    const forged = {
+      name: "issue_update",
+      companyId: ownerCapability.companyId,
+      issueId: ownerCapability.issueId,
+      message: "Forged",
+    } as unknown as PaperclipManagedToolCommandFor<"issue_update">;
+
+    await expect(
+      port.issueUpdate(runtimeInvocation(forged)),
+    ).rejects.toBeInstanceOf(RuntimeIssueActionConflict);
+  });
+
+  it("denies owner and lifecycle commands to a consult authority", async () => {
+    const { service, port } = setup();
+    const consultCapability = {
+      ...ownerCapability,
+      executionMode: "consult" as const,
+      laneKind: "consult" as const,
+      issueExecutionAuthorityId: null,
+      consultExecutionId: "consult-authority",
+    };
+    await expect(port.issueAssign(runtimeInvocation({
+      name: "issue_assign",
+      companyId: consultCapability.companyId,
+      issueId: "child",
+      ownerAgentId: consultCapability.targetAgentId,
+    }, consultCapability))).rejects.toBeInstanceOf(RuntimeIssueActionDenied);
+    await expect(port.issueUpdate(runtimeInvocation({
+      name: "issue_update",
+      companyId: consultCapability.companyId,
+      issueId: consultCapability.issueId,
+      issueTarget: "active",
+      message: "Forged progress",
+    }, consultCapability))).rejects.toBeInstanceOf(RuntimeIssueActionDenied);
+    expect(service.assign).not.toHaveBeenCalled();
+    expect(service.update).not.toHaveBeenCalled();
+  });
+
+  it("passes canonical agent and Board mentions with their immutable invocation identity", async () => {
+    const { service, port } = setup();
+    await port.mentionAgent(runtimeInvocation({
+      name: "mention_agent",
+      companyId: ownerCapability.companyId,
+      issueId: ownerCapability.issueId,
+      agentId: "agent-2",
+      message: "Use this exact added context",
+    }, ownerCapability, "mention-agent"));
     expect(service.mention).toHaveBeenCalledWith({
       capability: ownerCapability,
-      invocationId: "steer-target",
-      runInterfaceToolCallId:
-        actionInvocationIdentity.runInterfaceToolCallId,
-      ingressOrdinal: actionInvocationIdentity.ingressOrdinal,
+      invocationId: "mention-agent",
+      runInterfaceToolCallId: "00000000-0000-4000-8000-000000000001",
+      ingressOrdinal: 0,
       commitMentionAction,
       targetAgentId: "agent-2",
       message: "Use this exact added context",
     });
 
-    for (const argumentsValue of [
-      {
-        agentId: "agent-2",
-        message: "x",
-        mentionSessionId: "8710c164-9694-42cf-9538-2f17fd665891",
-      },
-      {
-        agentId: "agent-2",
-        message: "x",
-        sessionId: "ses_private",
-      },
-      {
-        agentId: "agent-2",
-        message: "x",
-        mentionRunId: "8710c164-9694-42cf-9538-2f17fd665891",
-      },
-      {
-        agentId: "agent-2",
-        message: "x",
-        mentionRunId: undefined,
-      },
-    ]) {
-      await expect(
-        port.mentionAgent({
-          ...actionInvocationIdentity,
-          capability: ownerCapability,
-          invocationId: "invalid-selector",
-          arguments: argumentsValue,
-        }),
-      ).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
-    }
-  });
-
-  it("accepts only the closed Board-request payload from owner or consult execution", async () => {
-    const { service, port } = setup();
-    await port.mentionBoard({
-      ...actionInvocationIdentity,
-      capability: ownerCapability,
-      invocationId: "board-request",
-      arguments: {
-        message: "Which release plan should I follow?",
-      },
-    });
-    expect(service.mentionBoard).toHaveBeenCalledWith({
-      capability: ownerCapability,
-      invocationId: "board-request",
-      runInterfaceToolCallId:
-        actionInvocationIdentity.runInterfaceToolCallId,
-      ingressOrdinal: actionInvocationIdentity.ingressOrdinal,
-      commitMentionAction,
-      message: "Which release plan should I follow?",
-    });
-
-    for (const argumentsValue of [
-      {},
-      { message: "" },
-      { message: "   " },
-      { message: "x", reason: "clarification" },
-      { message: "x", agentId: "forged-target" },
-    ]) {
-      await expect(
-        port.mentionBoard({
-          ...actionInvocationIdentity,
-          capability: ownerCapability,
-          invocationId: "invalid-board-request",
-          arguments: argumentsValue,
-        }),
-      ).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
-    }
-
     const consultCapability = {
       ...ownerCapability,
       executionMode: "consult" as const,
+      laneKind: "consult" as const,
+      issueExecutionAuthorityId: null,
+      consultExecutionId: "consult-authority",
     };
-    await port.mentionBoard({
-      ...actionInvocationIdentity,
+    await port.mentionBoard(runtimeInvocation({
+      name: "mention_board",
+      companyId: consultCapability.companyId,
+      issueId: consultCapability.issueId,
+      message: "Please decide",
+    }, consultCapability, "mention-board"));
+    expect(service.mentionBoard).toHaveBeenCalledWith({
       capability: consultCapability,
-      invocationId: "consult-board-request",
-      arguments: { message: "Please decide" },
-    });
-    expect(service.mentionBoard).toHaveBeenLastCalledWith({
-      capability: consultCapability,
-      invocationId: "consult-board-request",
-      runInterfaceToolCallId:
-        actionInvocationIdentity.runInterfaceToolCallId,
-      ingressOrdinal: actionInvocationIdentity.ingressOrdinal,
+      invocationId: "mention-board",
+      runInterfaceToolCallId: "00000000-0000-4000-8000-000000000001",
+      ingressOrdinal: 0,
       commitMentionAction,
       message: "Please decide",
+    });
+  });
+
+  it("passes canonical agent reader commands directly to the service", async () => {
+    const { service, port } = setup();
+    await port.listAgents(runtimeInvocation({
+      name: "list_agents",
+      companyId: ownerCapability.companyId,
+      agentId: "agent-2",
+    }, ownerCapability, "list-agents"));
+    await port.agentRead(runtimeInvocation({
+      name: "agent_read",
+      companyId: ownerCapability.companyId,
+      agentId: "agent-2",
+    }, ownerCapability, "read-agent"));
+
+    expect(service.listAgents).toHaveBeenCalledWith({
+      capability: ownerCapability,
+      invocationId: "list-agents",
+      agentId: "agent-2",
+    });
+    expect(service.agentRead).toHaveBeenCalledWith({
+      capability: ownerCapability,
+      invocationId: "read-agent",
+      agentId: "agent-2",
     });
   });
 });

@@ -25,9 +25,9 @@ import {
   type PostgresPromptCapabilityRuntime,
 } from "./run-interface-runtime.js";
 import type {
-  RuntimeActionPort,
   RuntimePluginToolPort,
-} from "./runtime-tool-executor.js";
+} from "./runtime-tool-gateway.js";
+import type { PaperclipManagedToolRouter } from "./paperclip-managed-tool-router.js";
 import type { PluginBeforePromptDispatcher } from "./plugin-before-prompt-dispatcher.js";
 import type { PluginDomainEventPublisher } from "./plugin-domain-event-publisher.js";
 
@@ -41,7 +41,7 @@ export interface PostgresIssueExecutionProductionRuntimeOptions {
   >;
   readonly capabilityEndpoint: string;
   readonly capabilityCursorSecret: string;
-  readonly actions: RuntimeActionPort;
+  readonly managedTools: PaperclipManagedToolRouter;
   readonly pluginTools: RuntimePluginToolPort;
   /** App-owned, awaited post-commit plugin event publisher. */
   readonly pluginDomainEvents: PluginDomainEventPublisher;
@@ -51,6 +51,7 @@ export interface PostgresIssueExecutionProductionRuntimeOptions {
   readonly now?: () => Date;
   readonly idFactory?: () => string;
   readonly leaseTtlMs?: number;
+  readonly dispatchRef?: (refId: string) => Promise<void>;
 }
 
 export interface PostgresIssueExecutionProductionRuntime {
@@ -138,7 +139,7 @@ export function createPostgresIssueExecutionProductionRuntime(
     runService,
     cursorSecret: options.capabilityCursorSecret,
     issueSessionStore: options.issueSessionStore,
-    actions: options.actions,
+    managedTools: options.managedTools,
     pluginTools: options.pluginTools,
     now,
   });
@@ -155,6 +156,7 @@ export function createPostgresIssueExecutionProductionRuntime(
     now,
     idFactory,
     pluginDomainEvents: options.pluginDomainEvents,
+    dispatchRef: options.dispatchRef,
   });
   const targetSessionAcquirer = createIssueExecutionTargetAcquirer({
     environmentOrchestrator: options.environmentOrchestrator,

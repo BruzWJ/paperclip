@@ -363,7 +363,6 @@ describe("Postgres runtime-interface compile snapshot", () => {
         ...snapshot().issue,
         ownerAgentId: "grandchild",
       },
-      actionGrantKeys: ["mention_agent"],
       mentionReachGrantKeys: [],
     });
     const withoutDynamicReach =
@@ -396,7 +395,6 @@ describe("Postgres runtime-interface compile snapshot", () => {
         ...snapshot().issue,
         ownerAgentId: "grandchild",
       },
-      actionGrantKeys: ["mention_agent"],
       mentionReachGrantKeys: [],
       issueTree: [
         {

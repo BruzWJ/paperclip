@@ -88,7 +88,7 @@ export function pluginManagedAgentBoundaryViolations(
       "binding.pluginId",
       "binding.pluginKey",
       "options.pluginId",
-      "options.pluginKey",
+      "const pluginKey = options.manifest.id",
       "originalDeclarationRef",
       "cannot be reacquired",
       "createRuntimeAgentConfigurationService",
@@ -119,9 +119,10 @@ export function pluginManagedAgentBoundaryViolations(
       "function assertGenericPluginEntityMutationAllowed",
       "if (entityType === HOST_MANAGED_AGENT_ENTITY_TYPE)",
       "throw conflict(",
+      "upsertEntity: async (",
       "assertGenericPluginEntityMutationAllowed(input.entityType)",
-      "assertGenericPluginEntityMutationAllowed(entity.entityType)",
-      "ne(pluginEntities.entityType, HOST_MANAGED_AGENT_ENTITY_TYPE)",
+      ".insert(pluginEntities)",
+      ".onConflictDoUpdate({",
     ]),
     ...parallelAgentBindingTables(repositoryRoot),
   ];
@@ -180,12 +181,15 @@ export function pluginManagedAgentBoundaryViolations(
 
   const registry = read(repositoryRoot, GENERIC_ENTITY_OWNER);
   if (registry !== null) {
-    const guardCalls = registry.match(
-      /assertGenericPluginEntityMutationAllowed\(/g,
-    )?.length ?? 0;
-    if (guardCalls < 3) {
+    const entityMutations = registry.match(
+      /\.(?:insert|update|delete)\(pluginEntities\)/g,
+    ) ?? [];
+    if (
+      entityMutations.length !== 1 ||
+      entityMutations[0] !== ".insert(pluginEntities)"
+    ) {
       violations.push(
-        `${GENERIC_ENTITY_OWNER}: generic entity create/update/delete does not reject reserved managed-agent rows`,
+        `${GENERIC_ENTITY_OWNER}: generic entity mutation surface is not the single guarded upsert`,
       );
     }
     if (
@@ -195,6 +199,15 @@ export function pluginManagedAgentBoundaryViolations(
     ) {
       violations.push(
         `${GENERIC_ENTITY_OWNER}: reserved managed-agent entity guard is not fail-closed`,
+      );
+    }
+    if (
+      !/upsertEntity:\s*async\s*\([\s\S]{0,500}?assertGenericPluginEntityMutationAllowed\(input\.entityType\);[\s\S]{0,1200}?\.insert\(pluginEntities\)[\s\S]{0,1200}?\.onConflictDoUpdate\(\{/.test(
+        registry,
+      )
+    ) {
+      violations.push(
+        `${GENERIC_ENTITY_OWNER}: generic entity upsert does not guard reserved managed-agent rows before mutation`,
       );
     }
   }

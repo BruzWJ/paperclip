@@ -17,7 +17,7 @@ import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import {
-  composeRuntimeActionPort,
+  composeAgentRunManagedActionPort,
   createOrdinaryIssueRuntime,
   createPostgresSystemEscalationService,
   createPostgresIssueExecutionProductionRuntime,
@@ -50,7 +50,9 @@ import {
   resolvePaperclipInstanceRoot,
 } from "./home-paths.js";
 import { serverVersion } from "./version.js";
-import { createRuntimePluginToolPort } from "./services/runtime-tool-executor.js";
+import { createRuntimePluginToolPort } from "./services/runtime-tool-gateway.js";
+import { createPaperclipManagedToolRouter } from "./services/paperclip-managed-tool-router.js";
+import type { ContextRetrievalService } from "./services/context-retrieval.js";
 import { createIssueExecutionSteeringResultBroker } from "./services/issue-execution-steering-results.js";
 import type { RequestAuthorityBoundary } from "./http/request-authority.js";
 import {
@@ -268,10 +270,34 @@ export async function startServer(): Promise<StartedServer> {
       },
     },
   );
-  const actions = composeRuntimeActionPort(
+  const agentRunActions = composeAgentRunManagedActionPort(
     issueActions,
     agentActions,
   );
+  // One app-owned managed-tool surface is assembled before ACPX and completed
+  // with the runtime-owned readers/producers below. Both ACPX and Board MCP
+  // retain this exact instance; neither constructs a Board-only executor.
+  let ordinaryIssuesForManagedTools: ReturnType<
+    typeof createOrdinaryIssueRuntime
+  > | null = null;
+  let retrievalForManagedTools: ContextRetrievalService | null = null;
+  const paperclipManagedTools = createPaperclipManagedToolRouter({
+    db: db as any,
+    agentRunActions,
+    ordinaryIssues() {
+      if (!ordinaryIssuesForManagedTools) {
+        throw new Error("Paperclip managed actions are not fully assembled");
+      }
+      return ordinaryIssuesForManagedTools;
+    },
+    retrieval() {
+      if (!retrievalForManagedTools) {
+        throw new Error("Paperclip managed actions are not fully assembled");
+      }
+      return retrievalForManagedTools;
+    },
+    pluginDomainEvents,
+  });
   const promptCapabilityPluginTools = createRuntimePluginToolPort(
     pluginWorkerManager,
   );
@@ -300,6 +326,7 @@ export async function startServer(): Promise<StartedServer> {
       environmentRuntime:
         issueExecutionEnvironmentRuntime,
     });
+  const refDispatcher: { dispatch: ((refId: string) => Promise<void>) | null } = { dispatch: null };
   const issueExecution =
     createPostgresIssueExecutionProductionRuntime(
       db as any,
@@ -317,11 +344,12 @@ export async function startServer(): Promise<StartedServer> {
         capabilityCursorSecret: deriveInstancePrivateSecret(
           "prompt-capability-retrieval-cursor",
         ).toString("base64url"),
-        actions,
+        managedTools: paperclipManagedTools,
         pluginTools: promptCapabilityPluginTools,
         pluginDomainEvents,
         beforePrompt: pluginBeforePrompt,
         steeringResults: issueExecutionSteeringResults,
+        dispatchRef: (refId) => refDispatcher.dispatch?.(refId) ?? Promise.resolve(),
       },
     );
   const dispatchPersistedRef = async (refId: string) => {
@@ -330,6 +358,7 @@ export async function startServer(): Promise<StartedServer> {
       issueExecution.dispatcher,
     );
   };
+  refDispatcher.dispatch = dispatchPersistedRef;
   const systemEscalations = createPostgresSystemEscalationService(
     db as any,
     {
@@ -345,6 +374,8 @@ export async function startServer(): Promise<StartedServer> {
     issueExecutionCancellation: issueExecution.cancellation,
     dispatchRef: dispatchPersistedRef,
   });
+  retrievalForManagedTools = issueExecution.promptCapabilities.retrieval;
+  ordinaryIssuesForManagedTools = ordinaryIssues;
   const app = await createApp(db as any, {
     uiMode,
     serverPort: listenPort,
@@ -366,6 +397,7 @@ export async function startServer(): Promise<StartedServer> {
     pluginDomainEvents,
     promptCapabilityGateway:
       issueExecution.promptCapabilities.gateway,
+    paperclipManagedTools,
     pluginRunIssueContextReader:
       issueExecution.promptCapabilities.pluginRunIssueContextReader,
     pluginRuntimeRecordsReader:

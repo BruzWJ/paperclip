@@ -37,7 +37,6 @@ describe("Paperclip issue-action authority vocabulary", () => {
   it("keeps configurable grants separate from relationship-derived runtime actions", () => {
     expect(PAPERCLIP_ACTION_KEYS).toEqual([
       "issue_create",
-      "mention_agent",
       "mention_board",
       "agent_hire",
       "agent_configure",

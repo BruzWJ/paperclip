@@ -35,6 +35,20 @@ const RETIRED_ACCOUNTING_TOKENS = [
   "usage_json",
 ] as const;
 
+/**
+ * The pre-ACPX per-assistant provenance records were retired with session
+ * compaction. Stable ACP accounting has one portable observation: context
+ * occupancy. Do not revive a shadow token/provenance graph beside it.
+ */
+const RETIRED_ACP_PROVENANCE_TOKENS = [
+  "sourceTotalTokens",
+  "source_total_tokens",
+  "sourceAssistantErrorKind",
+  "source_assistant_error_kind",
+  "issueSessionAssistantSources",
+  "issue_session_assistant_sources",
+] as const;
+
 function read(repositoryRoot: string, path: string): string | null {
   const absolute = resolve(repositoryRoot, path);
   return existsSync(absolute) ? readFileSync(absolute, "utf8") : null;
@@ -109,9 +123,31 @@ function throughputAggregationViolations(repositoryRoot: string): string[] {
   return violations;
 }
 
+function retiredAcpProvenanceViolations(repositoryRoot: string): string[] {
+  const violations: string[] = [];
+  for (const absolute of listRepositoryTextFiles(repositoryRoot, [
+    "packages/db/schema",
+    "packages/shared/src",
+    "apps/server/src",
+  ])) {
+    const path = normalizedRelative(repositoryRoot, absolute);
+    if (/\.(?:test|spec)\.[^.]+$/.test(path)) continue;
+    const source = readFileSync(absolute, "utf8");
+    for (const token of RETIRED_ACP_PROVENANCE_TOKENS) {
+      const offset = source.indexOf(token);
+      if (offset >= 0) {
+        violations.push(
+          `${path}: retired ACP token provenance ${token} must remain absent`,
+        );
+      }
+    }
+  }
+  return violations;
+}
+
 /**
- * Keeps stable ACP accounting occupancy-only while retaining the complete
- * optional donor token object as a provenance-locked Session projection.
+ * Keeps stable ACP accounting occupancy-only and the retired per-assistant
+ * provenance graph absent.
  */
 export function aiAccountingBoundaryViolations(
   repositoryRoot: string,
@@ -172,7 +208,6 @@ export function aiAccountingBoundaryViolations(
       "table.tokensReasoning} >= 0",
       "table.tokensCacheRead} >= 0",
       "table.tokensCacheWrite} >= 0",
-      "sourceTotalTokens",
     ]),
     ...requireFileTokens(repositoryRoot, SESSION_INFO, [
       "tokens: Schema.Struct({",
@@ -221,7 +256,6 @@ export function aiAccountingBoundaryViolations(
       "lastContextUsedTokens: input.contextUsedTokens",
       "lastContextWindowTokens: input.contextWindowTokens",
       "peakContextUsedTokens = Math.max(",
-      "sourceTotalTokens: settlement.occupancy.used",
       "const stepEndedData = {",
     ]),
     ...requireFileTokens(repositoryRoot, CODEC_TEST, [
@@ -232,6 +266,7 @@ export function aiAccountingBoundaryViolations(
     ]),
     ...stableAcpTokenFabricationViolations(repositoryRoot),
     ...throughputAggregationViolations(repositoryRoot),
+    ...retiredAcpProvenanceViolations(repositoryRoot),
   ];
 
   const runtime = read(repositoryRoot, RUNTIME_SCHEMA);

@@ -28,30 +28,21 @@ function fixtureRoot(): string {
     root,
     "apps/server/src/services/runtime-interface-compiler.ts",
     [
-      "type IssueExecutionRefMode = 'owner' | 'consult';",
-      "type ContextDial = {}; type PaperclipActionKey = string;",
       "type AgentMentionReachGrantKey = string;",
-      "type IssueCreateOwnerCatalogEntry = {}; type IssueAssignOwnerCatalog = {};",
-      "type CreatorUpdateTargetCatalogEntry = {}; type AgentCatalogEntry = {};",
-      "type RuntimeAgentConfigureTarget = {}; type CompiledRunToolDescriptor = { name: string };",
-      "export interface RuntimeInterfaceCompileInput {",
-      "  mode: IssueExecutionRefMode; contextDial: ContextDial;",
-      "  actionGrants: Readonly<Partial<Record<PaperclipActionKey, boolean>>>;",
+      "type PaperclipManagedToolRuntimeProjectionInput = {};",
+      "type CompiledRunToolDescriptor = { name: string };",
+      "import { projectPaperclipManagedTools, } from './paperclip-managed-tool-registry.js';",
+      "export interface RuntimeInterfaceCompileInput extends PaperclipManagedToolRuntimeProjectionInput {",
       "  mentionReachGrants?: Readonly<Partial<Record<AgentMentionReachGrantKey, boolean>>>;",
-      "  isCurrentOwner: boolean; issueCreateDirectChildren: readonly IssueCreateOwnerCatalogEntry[];",
-      "  issueAssignTargets: readonly IssueAssignOwnerCatalog[]; creatorUpdateTargets: readonly CreatorUpdateTargetCatalogEntry[];",
-      "  mentionTargets: readonly AgentCatalogEntry[]; configureTargets: readonly RuntimeAgentConfigureTarget[];",
       "}",
-      "export interface CompiledRuntimeInterface { descriptors: readonly CompiledRunToolDescriptor[] }",
+      "interface CompiledRuntimeInterface { mode: string; descriptors: readonly CompiledRunToolDescriptor[] }",
       "export function compileRuntimeInterface(input: RuntimeInterfaceCompileInput): CompiledRuntimeInterface {",
-      "  const descriptors: CompiledRunToolDescriptor[] = [];",
-      "  if (input.actionGrants.agent_configure === true && input.configureTargets.length > 0) {",
-      "    descriptors.push(configureDescriptor(input.configureTargets));",
-      "  }",
-      "  return { descriptors };",
+      "  const descriptors = [",
+      "    ...projectPaperclipManagedTools(input),",
+      "  ];",
+      "  return { mode: 'owner', descriptors };",
       "}",
-      "declare function configureDescriptor(value: unknown): CompiledRunToolDescriptor;",
-      "export function compiledRuntimeInterfaceDigest(compiled: CompiledRuntimeInterface): string {",
+      "function compiledRuntimeInterfaceDigest(compiled: CompiledRuntimeInterface): string {",
       "  const contract = { descriptors: compiled.descriptors }; return JSON.stringify(contract);",
       "}",
       "export function runtimeInterfaceDigest(input: RuntimeInterfaceCompileInput): string { return compiledRuntimeInterfaceDigest(compileRuntimeInterface(input)); }",
@@ -60,8 +51,37 @@ function fixtureRoot(): string {
   );
   write(
     root,
+    "apps/server/src/services/paperclip-managed-tool-registry.ts",
+    [
+      "type IssueExecutionRefMode = 'owner' | 'consult';",
+      "type ContextDial = {}; type PaperclipActionKey = string;",
+      "export const PAPERCLIP_MANAGED_TOOL_NAMES = [];",
+      "export const boardMcpInputSchemas = {};",
+      "export const BOARD_MANAGED_TOOLS = [];",
+      "export interface PaperclipManagedToolRuntimeProjectionInput {",
+      "  mode: IssueExecutionRefMode; contextDial: ContextDial;",
+      "  actionGrants: Readonly<Partial<Record<PaperclipActionKey, boolean>>>;",
+      "  isCurrentOwner: boolean; issueCreateDirectChildren: readonly unknown[];",
+      "  issueAssignTargets: readonly unknown[]; creatorUpdateTargets: readonly unknown[];",
+      "  mentionTargets: readonly unknown[]; configureTargets: readonly unknown[];",
+      "}",
+      "function resolveContextRetrievalPolicy(input: unknown) { return input; }",
+      "function projectRuntimeIssueCreate(input: any) { resolveContextRetrievalPolicy(input.contextDial); if (input.actionGrants.issue_create !== true) return null; return input.issueCreateDirectChildren; }",
+      "function projectRuntimeIssueAssign(input: any) { return input.issueAssignTargets; }",
+      "function projectRuntimeIssueUpdate(input: any) { return [input.creatorUpdateTargets, input.isCurrentOwner]; }",
+      "function projectRuntimeMentionAgent(input: any) { return input.mentionTargets; }",
+      "function projectRuntimeAgentConfigure(input: any) { if (input.actionGrants.agent_configure !== true || input.configureTargets.length === 0) return null; return {}; }",
+      "function projectRuntimeTool() {}",
+      "export interface ProjectedPaperclipManagedToolDescriptor { normalizeRuntimeCommand(): unknown }",
+      "export function projectPaperclipManagedTools(input: PaperclipManagedToolRuntimeProjectionInput) { return [{ normalizeRuntimeCommand(payload, scope) {} }]; }",
+      "",
+    ].join("\n"),
+  );
+  write(
+    root,
     "apps/server/src/services/runtime-interface-compiler-db.ts",
     [
+      'import type { PaperclipManagedToolRuntimeProjectionInput } from "./paperclip-managed-tool-registry.js";',
       "type ConfigureGrant = {}; type RuntimeAgentConfigureTarget = {};",
       "interface Snapshot { configureGrants: readonly ConfigureGrant[] }",
       "function explicitConfigureTargets(source: unknown, agents: unknown[], grants: readonly ConfigureGrant[]) { return new Set<string>(); }",
@@ -121,8 +141,8 @@ for (const mutation of [
       root,
       path,
       original.replace(
-        "export interface RuntimeInterfaceCompileInput {",
-        `export interface RuntimeInterfaceCompileInput {\n  ${mutation}`,
+        "extends PaperclipManagedToolRuntimeProjectionInput {",
+        `extends PaperclipManagedToolRuntimeProjectionInput {\n  ${mutation}`,
       ),
     );
     assert.ok(
@@ -164,8 +184,8 @@ test("rejects management rows in compile input and digest", () => {
     path,
     original
       .replace(
-        "export interface RuntimeInterfaceCompileInput {",
-        "export interface RuntimeInterfaceCompileInput {\n  configureGrants: readonly unknown[];",
+        "extends PaperclipManagedToolRuntimeProjectionInput {",
+        "extends PaperclipManagedToolRuntimeProjectionInput {\n  configureGrants: readonly unknown[];",
       )
       .replace(
         "const contract = { descriptors: compiled.descriptors }",
@@ -180,7 +200,7 @@ test("rejects management rows in compile input and digest", () => {
   );
   assert.ok(
     violations.some((violation) =>
-      violation.includes("raw management rows entered the descriptor/audit digest"),
+      violation.includes("raw managed authority entered the assembled runtime-interface digest"),
     ),
   );
 });
@@ -204,21 +224,38 @@ test("rejects configure target derivation without the action grant", () => {
   );
 });
 
-test("rejects an agent_configure descriptor without the action grant", () => {
+test("rejects an agent_configure projection without the action grant", () => {
+  const root = fixtureRoot();
+  const path =
+    "apps/server/src/services/paperclip-managed-tool-registry.ts";
+  const original = readFileSync(join(root, path), "utf8");
+  write(
+    root,
+    path,
+    original.replace(
+      "input.actionGrants.agent_configure !== true || ",
+      "",
+    ),
+  );
+  assert.ok(
+    runtimeInterfaceCompilerBoundaryViolations(root).some((violation) =>
+      violation.includes("input.actionGrants.agent_configure !== true"),
+    ),
+  );
+});
+
+test("rejects a compiler that rebuilds a managed descriptor", () => {
   const root = fixtureRoot();
   const path = "apps/server/src/services/runtime-interface-compiler.ts";
   const original = readFileSync(join(root, path), "utf8");
   write(
     root,
     path,
-    original.replace(
-      "input.actionGrants.agent_configure === true && ",
-      "",
-    ),
+    `${original}\nfunction configureDescriptor() {}\n`,
   );
   assert.ok(
     runtimeInterfaceCompilerBoundaryViolations(root).some((violation) =>
-      violation.includes("not subordinate to its Paperclip action grant"),
+      violation.includes("rebuilds managed descriptor ABI via configureDescriptor"),
     ),
   );
 });

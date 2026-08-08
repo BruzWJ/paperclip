@@ -31,7 +31,6 @@ import {
   type PaperclipActionKey,
   type PaperclipRuntimeActionKey,
   isUuidLike,
-  normalizeContextAccess,
 } from "@paperclipai/shared";
 import { and, asc, desc, eq, inArray, max, or, sql } from "drizzle-orm";
 import {
@@ -48,11 +47,12 @@ import {
 } from "./issue-session/admission.js";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 import { persistCanonicalIssueAggregateInTx } from "./canonical-issue-aggregate.js";
-import { type RuntimeNonAgentActionPort } from "./runtime-agent-action-port.js";
+import { type AgentRunNonAgentActionPort } from "./runtime-agent-action-port.js";
+import type {
+  AgentRunManagedActionInvocation,
+} from "./paperclip-managed-tool-router.js";
 import { createPostgresRuntimeInterfaceCompiler } from "./runtime-interface-compiler-db.js";
 import {
-  parseRuntimeMentionArguments,
-  RuntimeToolArgumentsInvalid,
   type RuntimeInterfaceCompileInput,
 } from "./runtime-interface-compiler.js";
 import {
@@ -60,9 +60,6 @@ import {
   type PromptCapabilityBinding,
 } from "./prompt-capability-gateway.js";
 import { lockActivePromptCapabilityBinding } from "./prompt-capability-gateway-postgres.js";
-import {
-  type RuntimeActionInvocation,
-} from "./runtime-tool-executor.js";
 import { terminalizeCreatorEdgeInTransaction } from "./system-escalation-postgres.js";
 import type {
   IssueExecutionCancellationActor,
@@ -102,23 +99,6 @@ import {
   type PaperclipMessageAgent,
 } from "./paperclip-agent-message.js";
 
-const CREATE_KEYS = [
-  "request",
-  "title",
-  "priority",
-  "owner",
-  "contextAccessMask",
-] as const;
-const ASSIGN_KEYS = ["issueId", "owner"] as const;
-const UPDATE_MESSAGE_KEYS = ["message"] as const;
-const UPDATE_KEYS = ["status", "message"] as const;
-const TERMINAL_UPDATE_KEYS = [
-  "status",
-  "message",
-  "structuredResult",
-] as const;
-const BOARD_MENTION_KEYS = ["message"] as const;
-const PRIORITIES = new Set(["critical", "high", "medium", "low"]);
 const STATUSES = new Set<AgentVisibleIssueStatus>([
   "open",
   "blocked",
@@ -129,8 +109,13 @@ const STATUSES = new Set<AgentVisibleIssueStatus>([
 export type RuntimeIssueOwnerChoice =
   { kind: "self" } | { kind: "agent"; agentId: string };
 
+type AgentRunCapability =
+  AgentRunManagedActionInvocation["authority"]["capability"];
+type AgentRunMentionCommit =
+  AgentRunManagedActionInvocation["authority"]["invocation"]["commitMentionAction"];
+
 type RuntimeIssueOwnerUpdateBase = {
-  capability: RuntimeActionInvocation["capability"];
+  capability: AgentRunCapability;
   invocationId: string;
   message: string;
 };
@@ -156,7 +141,7 @@ export type RuntimeIssueUpdateInput =
 
 export interface RuntimeIssueActionService {
   create(input: {
-    capability: RuntimeActionInvocation["capability"];
+    capability: AgentRunCapability;
     invocationId: string;
     request: string;
     title?: string;
@@ -165,36 +150,36 @@ export interface RuntimeIssueActionService {
     contextAccessMask?: Partial<Record<AgentContextGrantKey, false>>;
   }): Promise<unknown>;
   assign(input: {
-    capability: RuntimeActionInvocation["capability"];
+    capability: AgentRunCapability;
     invocationId: string;
     issueId: string;
     owner: RuntimeIssueOwnerChoice;
   }): Promise<unknown>;
   update(input: RuntimeIssueUpdateInput): Promise<unknown>;
   mention(input: {
-    capability: RuntimeActionInvocation["capability"];
+    capability: AgentRunCapability;
     invocationId: string;
     runInterfaceToolCallId: string;
     ingressOrdinal: number;
-    commitMentionAction: RuntimeActionInvocation["commitMentionAction"];
+    commitMentionAction: AgentRunMentionCommit;
     targetAgentId: string;
     message: string;
   }): Promise<unknown>;
   mentionBoard(input: {
-    capability: RuntimeActionInvocation["capability"];
+    capability: AgentRunCapability;
     invocationId: string;
     runInterfaceToolCallId: string;
     ingressOrdinal: number;
-    commitMentionAction: RuntimeActionInvocation["commitMentionAction"];
+    commitMentionAction: AgentRunMentionCommit;
     message: string;
   }): Promise<unknown>;
   listAgents(input: {
-    capability: RuntimeActionInvocation["capability"];
+    capability: AgentRunCapability;
     invocationId: string;
     agentId?: string;
   }): Promise<unknown>;
   agentRead(input: {
-    capability: RuntimeActionInvocation["capability"];
+    capability: AgentRunCapability;
     invocationId: string;
     agentId: string;
   }): Promise<unknown>;
@@ -299,6 +284,7 @@ function issueUpdateMessageActor(
       );
     case "system-escalation-human":
     case "user-creator-withdrawal":
+    case "board":
       return { id: authority.actorUserId, name: "Paperclip Board user" };
     case "user/board":
       return { id: authority.userId, name: "Paperclip Board user" };
@@ -636,7 +622,7 @@ function assertIssueNonterminal(
 
 async function lockRuntimeActionHierarchy(
   tx: IssueSessionDbTransaction,
-  capability: RuntimeActionInvocation["capability"],
+  capability: AgentRunCapability,
   now: Date,
   options: { readonly additionalLaneTargetAgentId?: string },
 ): Promise<void> {
@@ -785,7 +771,7 @@ async function lockRuntimeActionHierarchy(
 
 async function lockRuntimeActionRun(
   tx: IssueSessionDbTransaction,
-  capability: RuntimeActionInvocation["capability"],
+  capability: AgentRunCapability,
 ): Promise<void> {
   const run = await lockIssueExecutionRunIfPresentInTransaction(tx, {
     companyId: capability.companyId,
@@ -819,7 +805,7 @@ const PERSISTENT_GRANT_BY_RUNTIME_ACTION = {
   issue_create: "issue_create",
   issue_assign: "issue_create",
   issue_update: null,
-  mention_agent: "mention_agent",
+  mention_agent: null,
   mention_board: "mention_board",
   agent_hire: "agent_hire",
   agent_configure: "agent_configure",
@@ -838,15 +824,25 @@ function actionRemainsAvailableInCatalog(
   // issue_update is emitted from relationship-derived authority, never a
   // stored action grant. Form-specific target validation happens at the
   // owner/creator commit boundary below.
-  return (
-    action === "issue_update" &&
-    (catalog.isCurrentOwner || catalog.creatorUpdateTargets.length > 0)
-  );
+  if (action === "issue_update") {
+    return (
+      catalog.isCurrentOwner || catalog.creatorUpdateTargets.length > 0
+    );
+  }
+  // mention_agent is dynamically compiled from reachable targets, not a
+  // persisted action grant. The tool is only compiled when targets exist.
+  if (action === "mention_agent") {
+    return catalog.mentionTargets.length > 0;
+  }
+  // list_agents and any future null-grant actions pass through the
+  // catalog check. Each handler performs its own secondary grant recheck
+  // when needed.
+  return true;
 }
 
 async function lockRuntimeActionAuthority(
   tx: IssueSessionDbTransaction,
-  capability: RuntimeActionInvocation["capability"],
+  capability: AgentRunCapability,
   action: PaperclipRuntimeActionKey,
   now: Date,
   options: {
@@ -1453,11 +1449,22 @@ export type CanonicalCreatorFormUpdate = CanonicalNonterminalFormUpdate;
 export type CanonicalOwnerFormAuthority =
   | {
       kind: "agent-execution";
-      capability: RuntimeActionInvocation["capability"];
+      capability: AgentRunCapability;
       invocationId: string;
     }
   | {
       kind: "system-escalation-human";
+      companyId: string;
+      actorUserId: string;
+      gatewayInvocationId: string;
+    }
+  | {
+      /**
+       * A directly authenticated Board control-plane action. This is full
+       * issue-owner lifecycle authority, distinct from the narrow documented
+       * human escalation and creator-withdrawal forms below.
+       */
+      kind: "board";
       companyId: string;
       actorUserId: string;
       gatewayInvocationId: string;
@@ -1472,7 +1479,7 @@ export type CanonicalOwnerFormAuthority =
 export type CanonicalCreatorFormAuthority =
   | {
       kind: "agent-execution";
-      capability: RuntimeActionInvocation["capability"];
+      capability: AgentRunCapability;
       invocationId: string;
     }
   | {
@@ -1701,7 +1708,7 @@ function creatorSourceIdentity(
 }
 
 function executionActorForCapability(
-  capability: RuntimeActionInvocation["capability"],
+  capability: AgentRunCapability,
 ): Extract<IssueSessionExecutionActor, { kind: "agent-execution" }> {
   const executionAuthorityId =
     capability.issueExecutionAuthorityId ?? capability.consultExecutionId;
@@ -1725,6 +1732,7 @@ function issueUpdateActor(
       return executionActorForCapability(authority.capability);
     case "system-escalation-human":
     case "user-creator-withdrawal":
+    case "board":
       return { kind: "user/board", userId: authority.actorUserId };
     case "user/board":
       return { kind: "user/board", userId: authority.userId };
@@ -2042,7 +2050,7 @@ export async function admitCounterpartIssueUpdate(
       sourceKind,
       immutableSourceKey: input.immutableSourceKey,
       sourceRecordId: input.sourceRecordId,
-      message: exactMessage,
+      message: `@board ${exactMessage}`,
     });
   }
   const target = input.target.target;
@@ -2225,6 +2233,9 @@ export function createIssueFormCommitRuntime(
             "owner_authority_invalid",
           );
         }
+        // A named Board principal is already authenticated at ingress and is
+        // the control-plane owner. It intentionally does not inherit either
+        // narrow human-form relationship check above.
         issue = locked;
       }
 
@@ -3136,247 +3147,170 @@ export async function revokeOutgoingOwnershipEpoch(
   };
 }
 
-function object(value: unknown, label: string): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new RuntimeToolArgumentsInvalid(`${label} must be an object`);
-  }
-  return value as Record<string, unknown>;
+function ownerChoiceFromCanonical(
+  ownerAgentId: string,
+  capability: AgentRunCapability,
+): RuntimeIssueOwnerChoice {
+  return ownerAgentId === capability.targetAgentId
+    ? { kind: "self" }
+    : { kind: "agent", agentId: ownerAgentId };
 }
 
-function exactKeys(
-  value: Readonly<Record<string, unknown>>,
-  allowed: readonly string[],
+function assertOwnerExecution(
+  input: Pick<AgentRunManagedActionInvocation, "authority">,
 ): void {
-  const allowedSet = new Set(allowed);
-  const unknown = Object.keys(value).filter((key) => !allowedSet.has(key));
-  if (unknown.length > 0) {
-    throw new RuntimeToolArgumentsInvalid(
-      `Unsupported tool arguments: ${unknown.sort().join(", ")}`,
-    );
-  }
-}
-
-function requiredString(value: unknown, label: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new RuntimeToolArgumentsInvalid(
-      `${label} must be a non-empty string`,
-    );
-  }
-  return value;
-}
-
-function optionalString(value: unknown, label: string): string | undefined {
-  if (value === undefined) return undefined;
-  return requiredString(value, label);
-}
-
-function nonBlankString(value: unknown, label: string): string {
-  const parsed = requiredString(value, label);
-  if (parsed.trim().length === 0) {
-    throw new RuntimeToolArgumentsInvalid(`${label} must not be blank`);
-  }
-  return parsed;
-}
-
-function ownerChoice(value: unknown): RuntimeIssueOwnerChoice {
-  const owner = object(value, "owner");
-  if (owner.kind === "self") {
-    exactKeys(owner, ["kind"]);
-    return { kind: "self" };
-  }
-  if (owner.kind === "agent") {
-    exactKeys(owner, ["kind", "agentId"]);
-    return {
-      kind: "agent",
-      agentId: requiredString(owner.agentId, "owner.agentId"),
-    };
-  }
-  throw new RuntimeToolArgumentsInvalid("owner.kind must be self or agent");
-}
-
-function contextAccessMask(
-  value: unknown,
-): Partial<Record<AgentContextGrantKey, false>> | undefined {
-  if (value === undefined) return undefined;
-  try {
-    return normalizeContextAccess(value) ?? undefined;
-  } catch (error) {
-    throw new RuntimeToolArgumentsInvalid(
-      error instanceof Error
-        ? error.message
-        : "Issue context access mask is invalid",
-    );
-  }
-}
-
-function assertOwnerExecution(input: RuntimeActionInvocation): void {
-  if (input.capability.executionMode !== "owner") {
-    throw new RuntimeToolArgumentsInvalid(
+  if (input.authority.capability.executionMode !== "owner") {
+    throw new RuntimeIssueActionDenied(
       "Consult executions cannot mutate issue ownership or lifecycle",
+      "owner_execution_required",
     );
   }
+}
+
+function requireRuntimeMessage(command: {
+  message?: string;
+}): string {
+  if (command.message === undefined) {
+    throw new RuntimeIssueActionConflict(
+      "Normalized runtime action is missing its required message",
+    );
+  }
+  return command.message;
+}
+
+function runtimeIssueUpdateTarget(
+  command: AgentRunManagedActionInvocation<"issue_update">["command"],
+): { issueId?: string } {
+  if (command.issueTarget === "active") return {};
+  if (command.issueTarget === "explicit") return { issueId: command.issueId };
+  throw new RuntimeIssueActionConflict(
+    "Runtime issue_update lost its canonical active-versus-explicit target intent",
+  );
 }
 
 /**
  * Closed adapter for the four issue action descriptors. It accepts exactly
- * the compiler-owned ABI and leaves all catalog/authority/epoch revalidation
- * to the canonical transactional service.
+ * one normalized managed-tool command and leaves catalog/authority/epoch
+ * revalidation to the canonical transactional service.
  */
 export function createRuntimeIssueActionPort(
   service: RuntimeIssueActionService,
-): RuntimeNonAgentActionPort {
+): AgentRunNonAgentActionPort {
   return {
     async issueCreate(input) {
       assertOwnerExecution(input);
-      exactKeys(input.arguments, CREATE_KEYS);
-      const priorityValue = input.arguments.priority;
-      if (
-        priorityValue !== undefined &&
-        (typeof priorityValue !== "string" || !PRIORITIES.has(priorityValue))
-      ) {
-        throw new RuntimeToolArgumentsInvalid(
-          "priority must be critical, high, medium, or low",
-        );
-      }
+      const { command, authority } = input;
       return service.create({
-        capability: input.capability,
-        invocationId: input.invocationId,
-        request: requiredString(input.arguments.request, "request"),
-        title: optionalString(input.arguments.title, "title"),
-        priority: priorityValue as
-          "critical" | "high" | "medium" | "low" | undefined,
-        owner: ownerChoice(input.arguments.owner),
-        contextAccessMask: contextAccessMask(input.arguments.contextAccessMask),
+        capability: authority.capability,
+        invocationId: authority.invocation.id,
+        request: command.request,
+        title: command.title ?? undefined,
+        priority: command.priority,
+        owner: ownerChoiceFromCanonical(
+          command.ownerAgentId,
+          authority.capability,
+        ),
+        contextAccessMask: command.contextAccessMask ?? undefined,
       });
     },
 
     async issueAssign(input) {
       assertOwnerExecution(input);
-      exactKeys(input.arguments, ASSIGN_KEYS);
+      const { command, authority } = input;
       return service.assign({
-        capability: input.capability,
-        invocationId: input.invocationId,
-        issueId: requiredString(input.arguments.issueId, "issueId"),
-        owner: ownerChoice(input.arguments.owner),
+        capability: authority.capability,
+        invocationId: authority.invocation.id,
+        issueId: command.issueId,
+        owner: ownerChoiceFromCanonical(
+          command.ownerAgentId,
+          authority.capability,
+        ),
       });
     },
 
     async issueUpdate(input) {
       assertOwnerExecution(input);
-      const hasTargetIssueId = Object.hasOwn(input.arguments, "issueId");
-      const target = hasTargetIssueId
-        ? { issueId: requiredString(input.arguments.issueId, "issueId") }
-        : {};
-      if (!Object.hasOwn(input.arguments, "status")) {
-        exactKeys(input.arguments, [
-          ...UPDATE_MESSAGE_KEYS,
-          ...(hasTargetIssueId ? ["issueId"] : []),
-        ]);
+      const { command, authority } = input;
+      const target = runtimeIssueUpdateTarget(command);
+      const message = requireRuntimeMessage(command);
+      if (command.status === undefined) {
         return service.update({
-          capability: input.capability,
-          invocationId: input.invocationId,
+          capability: authority.capability,
+          invocationId: authority.invocation.id,
           ...target,
-          message: requiredString(input.arguments.message, "message"),
+          message,
         });
       }
-      const status = input.arguments.status;
-      if (
-        typeof status !== "string" ||
-        !STATUSES.has(status as AgentVisibleIssueStatus)
-      ) {
-        throw new RuntimeToolArgumentsInvalid(
-          "status must be open, blocked, done, or cancelled",
-        );
-      }
-      const terminal = status === "done" || status === "cancelled";
-      if (terminal && hasTargetIssueId) {
-        throw new RuntimeToolArgumentsInvalid(
-          "Terminal done or cancelled updates require current-owner authority; omit issueId",
-        );
-      }
-      exactKeys(input.arguments, [
-        ...(terminal ? TERMINAL_UPDATE_KEYS : UPDATE_KEYS),
-        ...(hasTargetIssueId ? ["issueId"] : []),
-      ]);
-      if (
-        terminal &&
-        Object.hasOwn(input.arguments, "structuredResult") &&
-        input.arguments.structuredResult === undefined
-      ) {
-        throw new RuntimeToolArgumentsInvalid(
-          "structuredResult must be omitted rather than undefined",
-        );
-      }
-      if (terminal) {
+      if (command.status === "done" || command.status === "cancelled") {
+        if (command.issueTarget !== "active") {
+          throw new RuntimeIssueActionConflict(
+            "Terminal done or cancelled updates require the active-owner form",
+          );
+        }
         return service.update({
-          capability: input.capability,
-          invocationId: input.invocationId,
-          status: status as "done" | "cancelled",
-          message: requiredString(input.arguments.message, "message"),
-          ...(Object.hasOwn(input.arguments, "structuredResult")
-            ? { structuredResult: input.arguments.structuredResult }
+          capability: authority.capability,
+          invocationId: authority.invocation.id,
+          status: command.status,
+          message,
+          ...(Object.hasOwn(command, "structuredResult")
+            ? { structuredResult: command.structuredResult }
             : {}),
         });
       }
-      return service.update({
-        capability: input.capability,
-        invocationId: input.invocationId,
-        ...target,
-        status: status as "open" | "blocked",
-        message: requiredString(input.arguments.message, "message"),
-      });
+      if (command.status === "open" || command.status === "blocked") {
+        return service.update({
+          capability: authority.capability,
+          invocationId: authority.invocation.id,
+          ...target,
+          status: command.status,
+          message,
+        });
+      }
+      throw new RuntimeIssueActionConflict(
+        "Runtime issue_update has an unsupported canonical status",
+      );
     },
 
     async mentionAgent(input) {
-      const mention = (() => {
-        try {
-          return parseRuntimeMentionArguments(input.arguments);
-        } catch (error) {
-          throw new RuntimeToolArgumentsInvalid(
-            error instanceof Error
-              ? error.message
-              : "Mention arguments are invalid",
-          );
-        }
-      })();
+      const { command, authority } = input;
       return service.mention({
-        capability: input.capability,
-        invocationId: input.invocationId,
-        runInterfaceToolCallId: input.runInterfaceToolCallId,
-        ingressOrdinal: input.ingressOrdinal,
-        commitMentionAction: input.commitMentionAction,
-        targetAgentId: mention.agentId,
-        message: mention.message,
+        capability: authority.capability,
+        invocationId: authority.invocation.id,
+        runInterfaceToolCallId: authority.invocation.runInterfaceToolCallId,
+        ingressOrdinal: authority.invocation.ingressOrdinal,
+        commitMentionAction: authority.invocation.commitMentionAction,
+        targetAgentId: command.agentId,
+        message: command.message,
       });
     },
 
     async mentionBoard(input) {
-      exactKeys(input.arguments, BOARD_MENTION_KEYS);
+      const { command, authority } = input;
       return service.mentionBoard({
-        capability: input.capability,
-        invocationId: input.invocationId,
-        runInterfaceToolCallId: input.runInterfaceToolCallId,
-        ingressOrdinal: input.ingressOrdinal,
-        commitMentionAction: input.commitMentionAction,
-        message: nonBlankString(input.arguments.message, "message"),
+        capability: authority.capability,
+        invocationId: authority.invocation.id,
+        runInterfaceToolCallId: authority.invocation.runInterfaceToolCallId,
+        ingressOrdinal: authority.invocation.ingressOrdinal,
+        commitMentionAction: authority.invocation.commitMentionAction,
+        message: command.message,
       });
     },
 
     async listAgents(input) {
-      exactKeys(input.arguments, ["agentId"]);
+      const { command, authority } = input;
       return service.listAgents({
-        capability: input.capability,
-        invocationId: input.invocationId,
-        agentId: optionalString(input.arguments.agentId, "agentId"),
+        capability: authority.capability,
+        invocationId: authority.invocation.id,
+        agentId: command.agentId,
       });
     },
 
     async agentRead(input) {
-      exactKeys(input.arguments, ["agentId"]);
+      const { command, authority } = input;
       return service.agentRead({
-        capability: input.capability,
-        invocationId: input.invocationId,
-        agentId: nonBlankString(input.arguments.agentId, "agentId"),
+        capability: authority.capability,
+        invocationId: authority.invocation.id,
+        agentId: command.agentId,
       });
     },
   };
@@ -4472,13 +4406,17 @@ export function createPostgresRuntimeIssueActionService(
                 toolName: "mention_agent",
                 arguments: {
                   agentId: input.targetAgentId,
-                  message: input.message,
+            message: `@board ${input.message}`,
                 },
                 context: {
                   issue: authorized.issue,
                   from: messageAgent(
                     authorized.companyAgents,
                     input.capability.targetAgentId,
+                  ),
+                  to: messageAgent(
+                    authorized.companyAgents,
+                    input.targetAgentId,
                   ),
                 },
               },

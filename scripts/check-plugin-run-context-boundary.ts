@@ -9,7 +9,7 @@ import {
 
 const SCHEMA = "packages/db/schema/run_interface_foundation.ts";
 const COMPILER = "apps/server/src/services/runtime-interface-compiler.ts";
-const EXECUTOR = "apps/server/src/services/runtime-tool-executor.ts";
+const RUNTIME_TOOL_GATEWAY = "apps/server/src/services/runtime-tool-gateway.ts";
 const GATEWAY = "apps/server/src/services/prompt-capability-gateway.ts";
 const GATEWAY_REPOSITORY =
   "apps/server/src/services/prompt-capability-gateway-postgres.ts";
@@ -119,15 +119,20 @@ export function pluginRunContextBoundaryViolations(
       "pluginToolName",
       "pluginDescriptors",
     ]),
-    ...requireFileTokens(repositoryRoot, EXECUTOR, [
+    ...requireFileTokens(repositoryRoot, RUNTIME_TOOL_GATEWAY, [
       "options.pluginTools.execute({",
       "runInterfaceToolCallId: claim.id",
       "mintPluginRunContext",
       "pluginInstallationId",
       "createRuntimePluginToolPort",
-      'workerManager.call(',
+      "workerManager.getWorker(input.pluginInstallationId)",
+      'worker?.status !== "running"',
+      "worker.manifestIdentity !== input.pluginManifestIdentity",
+      "const runContextHandle = await input.mintPluginRunContext();",
+      "await worker.call(",
       '"executeTool"',
       "toolName: input.toolName",
+      "parameters: input.arguments",
       "pluginRunContextHandle: runContextHandle",
     ]),
     ...requireFileTokens(repositoryRoot, GATEWAY, [
@@ -299,6 +304,13 @@ export function pluginRunContextBoundaryViolations(
         `${SDK_HOST_CLIENT}: run.issues.* does not validate the exact active opaque handle`,
       );
     }
+  }
+
+  const runtimeToolGateway = read(repositoryRoot, RUNTIME_TOOL_GATEWAY);
+  if (runtimeToolGateway !== null && /\bworkerManager\.call\s*\(/.test(runtimeToolGateway)) {
+    violations.push(
+      `${RUNTIME_TOOL_GATEWAY}: plugin execution must bind the exact resolved worker instead of generic manager dispatch`,
+    );
   }
 
   const gatewaySources = [GATEWAY, GATEWAY_REPOSITORY, RUN_RUNTIME]

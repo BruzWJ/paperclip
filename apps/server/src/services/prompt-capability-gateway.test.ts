@@ -34,8 +34,8 @@ import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 import type { RuntimeInterfaceCompileInput } from "./runtime-interface-compiler.js";
 import {
   createRuntimePluginToolPort,
-  createRuntimeToolExecutor,
-} from "./runtime-tool-executor.js";
+  createRuntimeToolGateway,
+} from "./runtime-tool-gateway.js";
 
 const now = new Date("2026-07-31T12:00:00.000Z");
 const capability: PromptCapabilityBinding = Object.freeze({
@@ -462,21 +462,9 @@ function composedPluginToolRuntime() {
     resolveCompileInput: vi.fn(async () => compile),
     createPluginRunContext,
   } as unknown as PromptCapabilityGatewayRepository;
-  const unused = vi.fn(async () => undefined);
-  const executor = createRuntimeToolExecutor({
-    retrieval: {} as never,
+  const runtimeToolGateway = createRuntimeToolGateway({
     retrievalScope: {} as never,
-    actions: {
-      issueCreate: unused,
-      issueAssign: unused,
-      issueUpdate: unused,
-      mentionAgent: unused,
-      mentionBoard: unused,
-      agentHire: unused,
-      agentConfigure: unused,
-      listAgents: unused,
-      agentRead: unused,
-    } as never,
+    managedTools: {} as never,
     pluginTools: createRuntimePluginToolPort({ getWorker } as never),
     callLedger: {
       claim: vi.fn(async () => ({
@@ -494,7 +482,7 @@ function composedPluginToolRuntime() {
     createPluginRunContext,
     gateway: createPromptCapabilityGateway({
       repository,
-      executor,
+      executor: runtimeToolGateway,
       now: () => now,
     }),
     originalCall,

@@ -52,6 +52,8 @@ import { llmRoutes } from "./routes/llms.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { pluginRoutes } from "./routes/plugins.js";
+import { boardMcpRoutes } from "./routes/board-mcp.js";
+import { boardMcpSetupRoutes } from "./routes/board-mcp-setup.js";
 import { runToolsRoutes } from "./routes/run-tools.js";
 import { adapterRoutes } from "./routes/adapters.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
@@ -75,6 +77,7 @@ import type { PluginDomainEventPublisher } from "./services/plugin-domain-event-
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
 import type { OrdinaryIssueRuntime } from "./services/ordinary-issue-runtime.js";
+import type { PaperclipManagedToolRouter } from "./services/paperclip-managed-tool-router.js";
 import {
   createHostClientHandlers,
   type HostToWorkerMethods,
@@ -158,6 +161,8 @@ export async function createApp(
     betterAuthHandler: express.RequestHandler;
     resolveSession: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
     promptCapabilityGateway: PromptCapabilityGateway;
+    /** One app-owned managed-tool router shared by ACPX and Board MCP. */
+    paperclipManagedTools: PaperclipManagedToolRouter;
     pluginRunIssueContextReader: PluginRunIssueContextReader;
     pluginRuntimeRecordsReader: PluginRuntimeRecordsReader;
     issueSessionStore?: IssueSessionStore;
@@ -228,6 +233,19 @@ export async function createApp(
   // Prompt-capability authentication is intentionally isolated from the
   // generic API actor middleware and from other capability credentials.
   app.use("/api", runToolsRoutes(opts.promptCapabilityGateway));
+  // Board MCP uses the normal board-key actor middleware. Its transport is
+  // separate from run-scoped provider capability ingress, but its tools use
+  // the same app-owned managed-tool router below that boundary.
+  app.use(
+    "/api/mcp",
+    actorMiddleware(db, {
+      resolveSession: opts.resolveSession,
+    }),
+  );
+  app.use("/api", boardMcpRoutes({
+    db,
+    managedTools: opts.paperclipManagedTools,
+  }));
   app.use("/api", rejectRunInterfaceBearerFromGenericApi());
   app.use(
     actorMiddleware(db, {
@@ -393,6 +411,9 @@ export async function createApp(
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });
   });
+  // Direct port of TradingGoose's public /mcp/setup installer surface. Mount
+  // before UI fallbacks so curl/PowerShell receives the executable script.
+  app.use(boardMcpSetupRoutes());
   app.use(pluginUiStaticRoutes(db));
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));

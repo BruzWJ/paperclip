@@ -50,7 +50,6 @@ const AI_MONEY_PRESENTATION_PATHS = [
   "apps/ui/src/components/ApprovalPayload.tsx",
   "apps/ui/src/components/BudgetIncidentCard.tsx",
   "apps/ui/src/components/BudgetPolicyCard.tsx",
-  "apps/ui/src/lib/attention.ts",
   "apps/ui/src/lib/utils.ts",
   "apps/ui/src/pages/AgentDetail.tsx",
   "apps/ui/src/pages/Companies.tsx",
@@ -586,7 +585,7 @@ function canonicalOwnershipViolations(repositoryRoot: string): string[] {
       'budgetCurrency: budgetCurrencyColumn("budget_currency").notNull()',
       'budgetMonthlyAmount: moneyAmountColumn("budget_monthly_amount").notNull()',
       '"companies_budget_currency_check"',
-      'uniqueIndex("companies_id_budget_currency_uq")',
+      'unique("companies_id_budget_currency_uq")',
     ]),
     ...requireFileTokens(repositoryRoot, "packages/db/schema/agents.ts", [
       'budgetMonthlyAmount: moneyAmountColumn("budget_monthly_amount").notNull()',

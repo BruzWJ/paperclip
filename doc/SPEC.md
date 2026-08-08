@@ -142,14 +142,16 @@ The seven possible issue actions are:
 
 The runtime compiler derives the exact interface from the leased issue
 reference, live owner/creator authority, and context/action/mention grants.
-The five configurable action grants govern
-`issue_create`, `mention_agent`, `mention_board`, `agent_hire`, and
+The four configurable action grants govern
+`issue_create`, `mention_board`, `agent_hire`, and
 `agent_configure`; `issue_create` also enables reassignment of eligible direct
 children created by that exact execution. `issue_update` is relationship-derived
 instead: the current owner omits `issueId` to update its active issue, and the
 exact creator execution supplies an eligible direct-child `issueId`. Both paths
 record one canonical comment and automatically mention the owner/creator
-counterpart in that counterpart's issue context. A creator
+counterpart in that counterpart's issue context. `mention_agent` is dynamically
+compiled from reachable mention targets (direct children and granted ancestor/
+descendant reach) and does not require a persisted grant. A creator
 path may send a message or set nonterminal `open`/`blocked`; terminal
 `done`/`cancelled` and `structuredResult` are current-owner-only. Dynamic
 catalogs contain only eligible direct children, valid mention targets, and permitted

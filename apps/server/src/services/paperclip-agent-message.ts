@@ -1,4 +1,5 @@
 import type { AgentVisibleIssueStatus } from "@paperclipai/shared";
+import type { PaperclipManagedToolName } from "./paperclip-managed-tool-registry.js";
 
 export interface PaperclipMessageAgent {
   id: string;
@@ -25,6 +26,7 @@ interface PaperclipManagedToolPromptDefinitions {
     context: {
       issue: PaperclipMessageIssue;
       from: PaperclipMessageAgent;
+      to: PaperclipMessageAgent;
     };
   };
   issue_create: {
@@ -72,8 +74,15 @@ interface PaperclipManagedToolPromptDefinitions {
   };
 }
 
-export type PaperclipManagedToolName =
-  keyof PaperclipManagedToolPromptDefinitions;
+/**
+ * Only delivery-producing tools have a rendered agent-message contract. This
+ * is intentionally a subset of the canonical managed-tool vocabulary, not a
+ * second competing tool-name registry.
+ */
+export type PaperclipDeliveryPromptToolName = Extract<
+  PaperclipManagedToolName,
+  keyof PaperclipManagedToolPromptDefinitions
+>;
 
 /**
  * A managed tool contributes its immutable arguments and locked, resolved
@@ -81,13 +90,13 @@ export type PaperclipManagedToolName =
  * canonical comment/ref/ACPX source message.
  */
 export type PaperclipManagedToolPromptContract = {
-  [ToolName in PaperclipManagedToolName]: {
+  [ToolName in PaperclipDeliveryPromptToolName]: {
     toolName: ToolName;
   } & PaperclipManagedToolPromptDefinitions[ToolName];
-}[PaperclipManagedToolName];
+}[PaperclipDeliveryPromptToolName];
 
 export type PaperclipManagedToolPrompt<
-  ToolName extends PaperclipManagedToolName,
+  ToolName extends PaperclipDeliveryPromptToolName,
 > = Extract<PaperclipManagedToolPromptContract, { toolName: ToolName }>;
 
 function oneLine(value: string, label: string): string {
@@ -141,10 +150,11 @@ function renderMentionAgentPrompt(
   return envelope(
     [
       "[Paperclip agent message]",
+      `To: ${actor(input.context.to)}`,
       ...issueLines(input.context.issue),
       `From: ${actor(input.context.from)}`,
     ],
-    input.arguments.message,
+    `@${input.context.to.name} ${input.arguments.message}`,
   );
 }
 
