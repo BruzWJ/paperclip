@@ -58,6 +58,7 @@ const CONFIGURATION_KEYS = [
   "title",
   "capabilities",
   "reportsTo",
+  "instruction",
   "contextGrants",
   "actionGrants",
   "mentionReachGrants",
@@ -67,6 +68,7 @@ const PROTECTED_SELF_IDENTITY_KEYS = new Set([
   "name",
   "title",
   "capabilities",
+  "instruction",
 ]);
 
 type SparseGrantMap<Key extends string> = Partial<Record<Key, boolean>>;
@@ -76,6 +78,7 @@ export interface RuntimeAgentCreateConfiguration {
   title?: string | null;
   capabilities?: string | null;
   reportsTo?: string | null;
+  instruction?: string | null;
   contextGrants?: SparseGrantMap<AgentContextGrantKey>;
   actionGrants?: SparseGrantMap<PaperclipActionKey>;
   mentionReachGrants?: SparseGrantMap<AgentMentionReachGrantKey>;
@@ -86,6 +89,7 @@ export interface RuntimeAgentUpdateConfiguration {
   title?: string | null;
   capabilities?: string | null;
   reportsTo?: string | null;
+  instruction?: string | null;
   contextGrants?: SparseGrantMap<AgentContextGrantKey>;
   actionGrants?: SparseGrantMap<PaperclipActionKey>;
   mentionReachGrants?: SparseGrantMap<AgentMentionReachGrantKey>;
@@ -174,6 +178,7 @@ interface ParsedCreateConfiguration {
   title: string | null;
   capabilities: string | null;
   reportsTo: string | null;
+  instruction: string | null;
   contextGrants: SparseGrantMap<AgentContextGrantKey>;
   actionGrants: SparseGrantMap<PaperclipActionKey>;
   mentionReachGrants: SparseGrantMap<AgentMentionReachGrantKey>;
@@ -368,6 +373,9 @@ export function parseRuntimeAgentCreateConfiguration(
     reportsTo: present(record, "reportsTo")
       ? parseNullableAgentId(record.reportsTo, "reportsTo")
       : null,
+    instruction: present(record, "instruction")
+      ? parseNullableString(record.instruction, "instruction")
+      : null,
     contextGrants: present(record, "contextGrants")
       ? parseSparseGrantMap(
         record.contextGrants,
@@ -414,6 +422,12 @@ export function parseRuntimeAgentUpdateConfiguration(
   }
   if (present(record, "reportsTo")) {
     parsed.reportsTo = parseNullableAgentId(record.reportsTo, "reportsTo");
+  }
+  if (present(record, "instruction")) {
+    parsed.instruction = parseNullableString(
+      record.instruction,
+      "instruction",
+    );
   }
   if (present(record, "contextGrants")) {
     parsed.contextGrants = parseSparseGrantMap(
@@ -513,6 +527,7 @@ export function runtimeAgentConfigurationDisplayedDiff(
       || key === "title"
       || key === "capabilities"
       || key === "reportsTo"
+      || key === "instruction"
         ? before.identity[key]
         : before[key];
     afterValues[key] = requested[key];
@@ -625,6 +640,7 @@ async function loadSnapshot(
           title: agents.title,
           capabilities: agents.capabilities,
           reportsTo: agents.reportsTo,
+          instruction: agents.instruction,
         })
         .from(agents)
         .where(
@@ -671,6 +687,7 @@ async function loadSnapshot(
       title: agent.title,
       capabilities: agent.capabilities,
       reportsTo: agent.reportsTo,
+      instruction: agent.instruction,
     },
     contextGrants: trueGrantMap(AGENT_CONTEXT_GRANT_KEYS, contextRows),
     actionGrants: trueGrantMap(PAPERCLIP_ACTION_KEYS, actionRows),
@@ -727,7 +744,7 @@ function snapshotsChangedKeys(
   after: RuntimeAgentConfigurationSnapshot,
 ): string[] {
   const changed: string[] = [];
-  for (const key of ["name", "title", "capabilities", "reportsTo"] as const) {
+  for (const key of ["name", "title", "capabilities", "reportsTo", "instruction"] as const) {
     if (!before || before.identity[key] !== after.identity[key]) {
       changed.push(`identity.${key}`);
     }
@@ -1777,6 +1794,9 @@ export function createRuntimeAgentConfigurationService(
       }
       if (input.configuration.reportsTo !== undefined) {
         identityPatch.reportsTo = input.configuration.reportsTo;
+      }
+      if (input.configuration.instruction !== undefined) {
+        identityPatch.instruction = input.configuration.instruction;
       }
       await tx
         .update(agents)

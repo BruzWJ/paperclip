@@ -55,6 +55,14 @@ const runtimeAgentConfigurationFieldsSchema = z
     title: z.string().max(240).nullable(),
     capabilities: z.string().max(8_000).nullable(),
     reportsTo: z.string().uuid().nullable(),
+    instruction: z.string()
+      .min(1)
+      .max(20_000)
+      .refine(
+        (value) => value.trim().length > 0,
+        "Agent instruction must not be blank",
+      )
+      .nullable(),
     contextGrants: agentContextGrantMapSchema,
     actionGrants: paperclipActionGrantMapSchema,
     mentionReachGrants: agentMentionReachGrantMapSchema,
@@ -75,8 +83,7 @@ export const runtimeAgentHireConfigurationSchema =
  * The complete ordinary runtime-agent configuration.
  *
  * Creation is intentionally explicit: callers supply every identity field,
- * every dial cell. No adapter, provider, or
- * board-operational field is accepted at this boundary.
+ * every dial cell. No adapter or provider field is accepted at this boundary.
  */
 export const runtimeAgentCreateConfigurationSchema =
   runtimeAgentConfigurationFieldsSchema;

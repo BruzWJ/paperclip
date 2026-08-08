@@ -149,6 +149,7 @@ export interface RuntimeAgentConfigurationSnapshot {
     title: string | null;
     capabilities: string | null;
     reportsTo: string | null;
+    instruction: string | null;
   };
   contextGrants: Partial<Record<AgentContextGrantKey, true>>;
   actionGrants: Partial<Record<PaperclipActionKey, true>>;

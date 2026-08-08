@@ -161,6 +161,7 @@ export function ApprovalDetail() {
           title: current.identity.title,
           capabilities: current.identity.capabilities,
           reportsTo: current.identity.reportsTo,
+          instruction: current.identity.instruction,
           contextGrants: completeBooleanGrantMap(
             AGENT_CONTEXT_GRANT_KEYS,
             current.contextGrants,

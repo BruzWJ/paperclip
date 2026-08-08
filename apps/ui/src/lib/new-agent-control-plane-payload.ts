@@ -34,6 +34,7 @@ export function buildNewAgentControlPlanePayloads(input: {
       title: input.title?.trim() || null,
       capabilities: input.capabilities?.trim() || null,
       reportsTo: input.reportsTo ?? null,
+      instruction: input.instruction?.trim().length ? input.instruction : null,
       contextGrants: { ...input.runtimeAccess.contextGrants },
       actionGrants: { ...input.runtimeAccess.actionGrants },
       mentionReachGrants: { ...input.runtimeAccess.mentionReachGrants },
@@ -50,9 +51,6 @@ export function buildNewAgentControlPlanePayloads(input: {
     },
     operational: {
       budgetMonthlyAmount: parseMoneyAmount("0"),
-      // Preserve authored Markdown whitespace; only a blank value means no
-      // canonical role instruction.
-      instruction: input.instruction?.trim().length ? input.instruction : null,
     },
   };
 }
