@@ -109,19 +109,11 @@ ALTER TABLE "agent_adapter_config_revisions" DROP CONSTRAINT "agent_adapter_conf
 --> statement-breakpoint
 ALTER TABLE "agents" DROP CONSTRAINT "agents_default_environment_id_environments_id_fk";
 --> statement-breakpoint
-ALTER TABLE "document_annotation_comments" DROP CONSTRAINT "document_annotation_comments_case_id_cases_id_fk";
---> statement-breakpoint
-ALTER TABLE "document_annotation_threads" DROP CONSTRAINT "document_annotation_threads_case_id_cases_id_fk";
---> statement-breakpoint
 ALTER TABLE "instance_settings" DROP CONSTRAINT "instance_settings_default_environment_id_environments_id_fk";
 --> statement-breakpoint
 ALTER TABLE "issues" DROP CONSTRAINT "issues_project_workspace_id_project_workspaces_id_fk";
 --> statement-breakpoint
 ALTER TABLE "join_requests" DROP CONSTRAINT "join_requests_approved_environment_id_environments_id_fk";
---> statement-breakpoint
-ALTER TABLE "run_interface_tool_calls" DROP CONSTRAINT "run_interface_tool_calls_company_tool_selection_id_agent_company_tool_selections_id_fk";
---> statement-breakpoint
-ALTER TABLE "run_interface_tool_calls" DROP CONSTRAINT "run_interface_tool_calls_company_tool_selection_fk";
 --> statement-breakpoint
 DROP INDEX "agents_company_default_environment_idx";--> statement-breakpoint
 DROP INDEX "document_annotation_comments_company_case_created_at_idx";--> statement-breakpoint
