@@ -60,6 +60,7 @@ function snapshot(): RuntimeAgentConfigurationSnapshot {
       title: "Researcher",
       capabilities: "Find primary sources",
       reportsTo: null,
+      instruction: null,
     },
     contextGrants: { read_issue_comments: true },
     actionGrants: { issue_create: true },
@@ -74,6 +75,7 @@ describe("runtime-agent configuration canonical contracts", () => {
       title: "Researcher",
       capabilities: "Find primary sources",
       reportsTo: null,
+      instruction: null,
       contextGrants: {
         read_issue_comments: true,
         list_company_issues: false,
@@ -90,6 +92,7 @@ describe("runtime-agent configuration canonical contracts", () => {
       title: "Researcher",
       capabilities: "Find primary sources",
       reportsTo: null,
+      instruction: null,
       contextGrants: {
         read_issue_comments: true,
         list_company_issues: false,
@@ -205,6 +208,7 @@ describe("runtime-agent action boundary", () => {
       name: "Direct Child",
       title: null,
       capabilities: null,
+      instruction: null,
       contextGrants: completeBooleanMap(AGENT_CONTEXT_GRANT_KEYS, {
         read_issue_comments: true,
       }),
@@ -242,6 +246,7 @@ describe("runtime-agent action boundary", () => {
         name: "Direct Child",
         title: null,
         capabilities: null,
+        instruction: null,
         contextGrants: completeBooleanMap(AGENT_CONTEXT_GRANT_KEYS),
         actionGrants: completeBooleanMap(PAPERCLIP_ACTION_KEYS),
         mentionReachGrants: completeBooleanMap(AGENT_MENTION_REACH_GRANT_KEYS),

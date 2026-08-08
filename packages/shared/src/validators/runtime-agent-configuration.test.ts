@@ -43,6 +43,7 @@ function runtimeAgentConfiguration() {
     title: null,
     capabilities: "Investigates a bounded question.",
     reportsTo: AGENT_ID,
+    instruction: null,
     contextGrants: falseMap(AGENT_CONTEXT_GRANT_KEYS),
     actionGrants: falseMap(PAPERCLIP_ACTION_KEYS),
     mentionReachGrants: falseMap(AGENT_MENTION_REACH_GRANT_KEYS),

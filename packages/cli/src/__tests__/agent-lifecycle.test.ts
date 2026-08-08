@@ -11,6 +11,7 @@ const runtimeConfiguration = {
   title: null,
   capabilities: null,
   reportsTo: null,
+  instruction: null,
   contextGrants: {
     carry_context: false,
     read_issue_comments: false,

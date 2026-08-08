@@ -89,6 +89,7 @@ describe("approval validators", () => {
         title: null,
         capabilities: null,
         reportsTo: null,
+        instruction: null,
         contextGrants: Object.fromEntries(
           AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false]),
         ),

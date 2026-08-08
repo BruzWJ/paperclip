@@ -547,6 +547,7 @@ describe("runtime interface compiler", () => {
       "name",
       "title",
       "capabilities",
+      "instruction",
       "contextGrants",
       "actionGrants",
       "mentionReachGrants",
@@ -556,6 +557,7 @@ describe("runtime interface compiler", () => {
       name: "Child",
       title: null,
       capabilities: null,
+      instruction: null,
       contextGrants: Object.fromEntries(
         AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false]),
       ),

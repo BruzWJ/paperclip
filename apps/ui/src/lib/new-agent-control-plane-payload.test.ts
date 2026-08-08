@@ -27,13 +27,13 @@ function buildPayload(instruction?: string) {
 }
 
 describe("buildNewAgentControlPlanePayloads", () => {
-  it("preserves authored instruction text in the board-owned operational payload", () => {
-    expect(buildPayload("  Review every change before reporting completion.  ").operational)
+  it("preserves authored instruction text in the runtime agent payload", () => {
+    expect(buildPayload("  Review every change before reporting completion.  ").runtimeAgent)
       .toMatchObject({ instruction: "  Review every change before reporting completion.  " });
   });
 
   it("stores a blank or omitted instruction as null", () => {
-    expect(buildPayload("   ").operational).toMatchObject({ instruction: null });
-    expect(buildPayload().operational).toMatchObject({ instruction: null });
+    expect(buildPayload("   ").runtimeAgent).toMatchObject({ instruction: null });
+    expect(buildPayload().runtimeAgent).toMatchObject({ instruction: null });
   });
 });

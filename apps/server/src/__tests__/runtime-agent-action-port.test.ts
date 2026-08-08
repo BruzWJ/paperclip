@@ -133,6 +133,7 @@ describe("runtime agent action provider receipts", () => {
       name: "Direct child",
       title: null,
       capabilities: null,
+      instruction: null,
       contextGrants: Object.fromEntries(
         AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false]),
       ),
