@@ -56,6 +56,7 @@ export interface RuntimeActionPort {
   agentHire(input: RuntimeActionInvocation): Promise<unknown>;
   agentConfigure(input: RuntimeActionInvocation): Promise<unknown>;
   listAgents(input: RuntimeActionInvocation): Promise<unknown>;
+  agentRead(input: RuntimeActionInvocation): Promise<unknown>;
 }
 
 export interface RuntimePluginToolPort {
@@ -218,6 +219,7 @@ export function createRuntimeToolExecutor(options: {
     agent_hire: options.actions.agentHire.bind(options.actions),
     agent_configure: options.actions.agentConfigure.bind(options.actions),
     list_agents: options.actions.listAgents.bind(options.actions),
+    agent_read: options.actions.agentRead.bind(options.actions),
   };
 
   return {

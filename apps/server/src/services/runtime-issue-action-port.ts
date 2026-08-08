@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
   agentActionGrants,
+  agentContextGrants,
+  agentMentionReachGrants,
   agents,
   companies,
   issueComments,
@@ -189,6 +191,12 @@ export interface RuntimeIssueActionService {
   listAgents(input: {
     capability: RuntimeActionInvocation["capability"];
     invocationId: string;
+    agentId?: string;
+  }): Promise<unknown>;
+  agentRead(input: {
+    capability: RuntimeActionInvocation["capability"];
+    invocationId: string;
+    agentId: string;
   }): Promise<unknown>;
 }
 
@@ -561,6 +569,10 @@ function runtimeInvocationKey(
   return `runtime:${kind}:${capabilityIdentity}:${invocationId}`;
 }
 
+function grantMap(rows: readonly { key: string }[]): Record<string, true> {
+  return Object.fromEntries(rows.map((row) => [row.key, true]));
+}
+
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") {
     return JSON.stringify(value);
@@ -811,7 +823,8 @@ const PERSISTENT_GRANT_BY_RUNTIME_ACTION = {
   mention_board: "mention_board",
   agent_hire: "agent_hire",
   agent_configure: "agent_configure",
-  list_agents: "list_agents",
+  list_agents: null,
+  agent_read: "agent_configure",
 } as const satisfies Record<PaperclipRuntimeActionKey, PaperclipActionKey | null>;
 
 function actionRemainsAvailableInCatalog(
@@ -3350,10 +3363,20 @@ export function createRuntimeIssueActionPort(
     },
 
     async listAgents(input) {
-      exactKeys(input.arguments, []);
+      exactKeys(input.arguments, ["agentId"]);
       return service.listAgents({
         capability: input.capability,
         invocationId: input.invocationId,
+        agentId: optionalString(input.arguments.agentId, "agentId"),
+      });
+    },
+
+    async agentRead(input) {
+      exactKeys(input.arguments, ["agentId"]);
+      return service.agentRead({
+        capability: input.capability,
+        invocationId: input.invocationId,
+        agentId: nonBlankString(input.arguments.agentId, "agentId"),
       });
     },
   };
@@ -4036,12 +4059,147 @@ export function createPostgresRuntimeIssueActionService(
           now,
           { requireOwner: false },
         );
-        const rows = await tx
+        const [allRows, grantRows] = await Promise.all([
+          tx
+            .select({
+              id: agents.id,
+              name: agents.name,
+              title: agents.title,
+              capabilities: agents.capabilities,
+              status: agents.status,
+              reportsTo: agents.reportsTo,
+            })
+            .from(agents)
+            .where(
+              and(
+                eq(agents.companyId, input.capability.companyId),
+                or(
+                  eq(agents.status, "active"),
+                  eq(agents.status, "idle"),
+                  eq(agents.status, "running"),
+                  eq(agents.status, "paused"),
+                  eq(agents.status, "pending_approval"),
+                ),
+              ),
+            )
+            .orderBy(asc(agents.name)),
+          tx
+            .select({ key: agentActionGrants.key })
+            .from(agentActionGrants)
+            .where(
+              and(
+                eq(agentActionGrants.companyId, input.capability.companyId),
+                eq(agentActionGrants.agentId, input.capability.targetAgentId),
+              ),
+            ),
+        ]);
+        const grantKeys = new Set(grantRows.map((r) => r.key));
+        const hasListAll = grantKeys.has("list_all_agents");
+        const hasListParent = grantKeys.has("list_parent_agents");
+        if (!hasListAll && !hasListParent) {
+          throw new RuntimeIssueActionDenied(
+            "Agent lacks list_all_agents and list_parent_agents grants",
+            "grant_required",
+          );
+        }
+
+        const mapped = allRows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          title: row.title,
+          capabilities: row.capabilities,
+          status: row.status,
+          reportsTo: row.reportsTo,
+        }));
+
+        const childrenByParent = new Map<string, typeof mapped>();
+        for (const agent of mapped) {
+          if (!agent.reportsTo) continue;
+          const list = childrenByParent.get(agent.reportsTo);
+          if (list) {
+            list.push(agent);
+          } else {
+            childrenByParent.set(agent.reportsTo, [agent]);
+          }
+        }
+
+        function collectDescendants(rootId: string): Set<string> {
+          const ids = new Set<string>([rootId]);
+          const stack = [rootId];
+          while (stack.length > 0) {
+            const parentId = stack.pop()!;
+            for (const child of childrenByParent.get(parentId) ?? []) {
+              if (!ids.has(child.id)) {
+                ids.add(child.id);
+                stack.push(child.id);
+              }
+            }
+          }
+          return ids;
+        }
+
+        if (hasListAll) {
+          if (!input.agentId) {
+            return { agents: mapped };
+          }
+          const root = mapped.find((a) => a.id === input.agentId);
+          if (!root) {
+            throw new RuntimeIssueActionDenied(
+              "Agent not found in this company",
+              "agent_not_found",
+            );
+          }
+          const descendantIds = collectDescendants(root.id);
+          return {
+            agents: mapped.filter((a) => descendantIds.has(a.id)),
+          };
+        }
+
+        const currentAgent = mapped.find(
+          (a) => a.id === input.capability.targetAgentId,
+        );
+        if (!currentAgent?.reportsTo) {
+          throw new RuntimeIssueActionDenied(
+            "Current agent has no parent for team-scoped listing",
+            "no_parent_agent",
+          );
+        }
+        const parentAgentId = currentAgent.reportsTo;
+        const teamIds = collectDescendants(parentAgentId);
+
+        const effectiveAgentId = input.agentId ?? parentAgentId;
+        if (!teamIds.has(effectiveAgentId)) {
+          throw new RuntimeIssueActionDenied(
+            "Agent is not within the current agent's parent team",
+            "outside_team_scope",
+          );
+        }
+        const descendantIds = collectDescendants(effectiveAgentId);
+        return {
+          agents: mapped.filter(
+            (a) => descendantIds.has(a.id) && teamIds.has(a.id),
+          ),
+        };
+      });
+    },
+
+    async agentRead(input) {
+      return db.transaction(async (tx) => {
+        const now = clock();
+        await lockRuntimeActionAuthority(
+          tx,
+          input.capability,
+          "agent_read",
+          now,
+          { requireOwner: false },
+        );
+        const [agentRow] = await tx
           .select({
             id: agents.id,
             name: agents.name,
             title: agents.title,
             capabilities: agents.capabilities,
+            instruction: agents.instruction,
             status: agents.status,
             reportsTo: agents.reportsTo,
           })
@@ -4049,25 +4207,56 @@ export function createPostgresRuntimeIssueActionService(
           .where(
             and(
               eq(agents.companyId, input.capability.companyId),
-              or(
-                eq(agents.status, "active"),
-                eq(agents.status, "idle"),
-                eq(agents.status, "running"),
-                eq(agents.status, "paused"),
-                eq(agents.status, "pending_approval"),
-              ),
+              eq(agents.id, input.agentId),
             ),
           )
-          .orderBy(asc(agents.name));
+          .limit(1);
+        if (!agentRow) {
+          throw new RuntimeIssueActionDenied(
+            "Agent not found in this company",
+            "agent_not_found",
+          );
+        }
+        const [contextRows, actionRows, mentionRows] = await Promise.all([
+          tx
+            .select({ key: agentContextGrants.key })
+            .from(agentContextGrants)
+            .where(
+              and(
+                eq(agentContextGrants.companyId, input.capability.companyId),
+                eq(agentContextGrants.agentId, input.agentId),
+              ),
+            ),
+          tx
+            .select({ key: agentActionGrants.key })
+            .from(agentActionGrants)
+            .where(
+              and(
+                eq(agentActionGrants.companyId, input.capability.companyId),
+                eq(agentActionGrants.agentId, input.agentId),
+              ),
+            ),
+          tx
+            .select({ key: agentMentionReachGrants.key })
+            .from(agentMentionReachGrants)
+            .where(
+              and(
+                eq(agentMentionReachGrants.companyId, input.capability.companyId),
+                eq(agentMentionReachGrants.agentId, input.agentId),
+              ),
+            ),
+        ]);
         return {
-          agents: rows.map((row) => ({
-            id: row.id,
-            name: row.name,
-            title: row.title,
-            capabilities: row.capabilities,
-            status: row.status,
-            reportsTo: row.reportsTo,
-          })),
+          id: agentRow.id,
+          name: agentRow.name,
+          title: agentRow.title,
+          capabilities: agentRow.capabilities,
+          instruction: agentRow.instruction,
+          status: agentRow.status,
+          reportsTo: agentRow.reportsTo,
+          contextGrants: grantMap(contextRows),
+          actionGrants: grantMap(actionRows),
+          mentionReachGrants: grantMap(mentionRows),
         };
       });
     },

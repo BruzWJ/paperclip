@@ -82,6 +82,7 @@ function setup(options: {
     agentHire: no,
     agentConfigure,
     listAgents: no,
+    agentRead: no,
   };
   const executePlugin = vi.fn(
     async (input: { mintPluginRunContext(): Promise<string> }) => ({

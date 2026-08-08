@@ -93,6 +93,7 @@ function replayingExecutor(
       mentionAgent: vi.fn(),
       mentionBoard: vi.fn(),
       listAgents: vi.fn(),
+      agentRead: vi.fn(),
       ...actions,
     },
     callLedger: callLedger as never,

@@ -41,7 +41,8 @@ describe("Paperclip issue-action authority vocabulary", () => {
       "mention_board",
       "agent_hire",
       "agent_configure",
-      "list_agents",
+      "list_all_agents",
+      "list_parent_agents",
     ]);
     expect(PAPERCLIP_RUNTIME_ACTION_KEYS).toEqual([
       "issue_create",
@@ -52,6 +53,7 @@ describe("Paperclip issue-action authority vocabulary", () => {
       "agent_hire",
       "agent_configure",
       "list_agents",
+      "agent_read",
     ]);
   });
 });

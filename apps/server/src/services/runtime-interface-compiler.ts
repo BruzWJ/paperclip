@@ -920,18 +920,57 @@ function mentionBoardDescriptor(): CompiledRunToolDescriptor {
 /**
  * List all agents in the current company with their identity, capabilities,
  * and reporting hierarchy. The flat list includes each agent's reportsTo id
- * so the caller can construct the org chart.
+ * so the caller can construct the org chart. Provide an optional agentId to
+ * list only that agent and its direct and indirect reports (descendants).
  */
 function listAgentsDescriptor(): CompiledRunToolDescriptor {
   return {
     name: "list_agents",
     title: "List agents",
     description:
-      "List all agents in this run's company with their name, title, id, capabilities, reporting parent, and active/terminated status. Terminated agents are excluded by default. Returns a flat list keyed by reporting parent so the caller can derive the org tree.",
-    inputSchema: objectSchema({}),
+      "List agents in this run's company with their name, title, id, capabilities, reporting parent, and status. Terminated agents are excluded. Omit agentId to list all agents. Provide an agentId to list only that agent and its entire reporting subtree (children, grandchildren, etc.).",
+    inputSchema: objectSchema({
+      agentId: STRING_ID,
+    }),
     source: "paperclip",
     validateArguments(value) {
-      const parsed = z.object({}).strict().safeParse(value);
+      const parsed = z
+        .object({ agentId: z.string().min(1).optional() })
+        .strict()
+        .safeParse(value);
+      if (!parsed.success) {
+        throw new RuntimeToolArgumentsInvalid(
+          zodValidationMessage(parsed.error),
+        );
+      }
+      return parsed.data;
+    },
+  };
+}
+
+/**
+ * Read one agent's runtime identity, grants, and status. Requires the
+ * agent_configure grant but performs no mutation. The agentId must name
+ * a non-terminated agent in the current company.
+ */
+function agentReadDescriptor(): CompiledRunToolDescriptor {
+  return {
+    name: "agent_read",
+    title: "Read agent configuration",
+    description:
+      "Read one agent's runtime identity, grants, and status by agentId. Requires the agent_configure action grant but performs no mutation. The target agent must be in the same company and not terminated.",
+    inputSchema: objectSchema(
+      {
+        agentId: STRING_ID,
+      },
+      ["agentId"],
+    ),
+    source: "paperclip",
+    validateArguments(value) {
+      const parsed = z
+        .object({ agentId: z.string().min(1) })
+        .strict()
+        .safeParse(value);
       if (!parsed.success) {
         throw new RuntimeToolArgumentsInvalid(
           zodValidationMessage(parsed.error),
@@ -1005,7 +1044,10 @@ function actionDescriptors(
   if (input.actionGrants.mention_board === true) {
     descriptors.push(mentionBoardDescriptor());
   }
-  if (input.actionGrants.list_agents === true) {
+  if (
+    input.actionGrants.list_all_agents === true ||
+    input.actionGrants.list_parent_agents === true
+  ) {
     descriptors.push(listAgentsDescriptor());
   }
   if (input.actionGrants.agent_hire === true) {
@@ -1016,6 +1058,9 @@ function actionDescriptors(
     input.configureTargets.length > 0
   ) {
     descriptors.push(configureDescriptor(input.configureTargets));
+  }
+  if (input.actionGrants.agent_configure === true) {
+    descriptors.push(agentReadDescriptor());
   }
 
   return descriptors;

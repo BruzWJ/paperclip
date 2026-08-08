@@ -51,6 +51,7 @@ function serviceSpies(): RuntimeIssueActionService {
     mention: vi.fn(async (input) => ({ kind: "mention", input })),
     mentionBoard: vi.fn(async (input) => ({ kind: "board", input })),
     listAgents: vi.fn(async (input) => ({ kind: "list_agents", input })),
+    agentRead: vi.fn(async (input) => ({ kind: "agent_read", input })),
   };
 }
 

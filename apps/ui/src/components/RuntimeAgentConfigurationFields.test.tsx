@@ -51,7 +51,8 @@ describe("RuntimeAgentConfigurationFields", () => {
       mention_board: false,
       agent_hire: false,
       agent_configure: false,
-      list_agents: false,
+      list_all_agents: false,
+      list_parent_agents: false,
     });
   });
 

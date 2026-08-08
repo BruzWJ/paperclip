@@ -47,9 +47,13 @@ const ACTION_LABELS: Record<
     label: "Configure agents",
     description: "Edit an explicitly authorized target's identity, dials, and grants.",
   },
-  list_agents: {
-    label: "List agents",
+  list_all_agents: {
+    label: "List all agents",
     description: "List all non-terminated agents in the company with their identity, capabilities, and reporting hierarchy.",
+  },
+  list_parent_agents: {
+    label: "List team agents",
+    description: "List agents under the current agent's parent, scoped to the reporting team. Can also target a specific agent within the team subtree.",
   },
 };
 

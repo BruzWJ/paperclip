@@ -406,6 +406,7 @@ describe("runtime interface compiler", () => {
       "mention_board",
       "agent_hire",
       "agent_configure",
+      "agent_read",
     ]);
   });
 
@@ -534,7 +535,7 @@ describe("runtime interface compiler", () => {
       Object.keys(
         hire.inputSchema.properties?.actionGrants.properties ?? {},
       ),
-    ).toHaveLength(6);
+    ).toHaveLength(7);
     expect(
       Object.keys(
         configure.inputSchema.properties?.mentionReachGrants.properties ?? {},

@@ -1,5 +1,5 @@
 {
-  "id": "8f965f73-2570-4a42-a3af-fe1e30833b3f",
+  "id": "3edf56d1-5307-474d-9f64-dee2823e9159",
   "prevId": "95b879b9-822e-4d0e-b875-a6128e612d2a",
   "version": "7",
   "dialect": "postgresql",
@@ -822,7 +822,7 @@
       "checkConstraints": {
         "agent_action_grants_key_check": {
           "name": "agent_action_grants_key_check",
-          "value": "\"agent_action_grants\".\"key\" in (\n        'issue_create',\n        'mention_agent',\n        'mention_board',\n        'agent_hire',\n        'agent_configure'\n      )"
+          "value": "\"agent_action_grants\".\"key\" in (\n        'issue_create',\n        'mention_agent',\n        'mention_board',\n        'agent_hire',\n        'agent_configure',\n        'list_all_agents',\n        'list_parent_agents'\n      )"
         }
       },
       "isRLSEnabled": false
