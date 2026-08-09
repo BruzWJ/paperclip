@@ -11,7 +11,14 @@ import { queryKeys } from "../lib/queryKeys";
 import { statusBadge, statusBadgeDefault } from "../lib/status-colors";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { AlertCircle, Archive, ArchiveRestore, Check, Loader2, Plus, X } from "lucide-react";
 import { DraftInput } from "./agent-config-primitives";
 import { InlineEditor } from "./InlineEditor";
@@ -107,12 +114,11 @@ function PropertyRow({
 }
 
 function ProjectStatusPicker({ status, onChange }: { status: string; onChange: (status: string) => void }) {
-  const [open, setOpen] = useState(false);
   const colorClass = statusBadge[status] ?? statusBadgeDefault;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <button
           className={cn(
             "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer hover:opacity-80 transition-opacity",
@@ -121,24 +127,17 @@ function ProjectStatusPicker({ status, onChange }: { status: string; onChange: (
         >
           {status.replace("_", " ")}
         </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-40 p-1" align="start">
-        {PROJECT_STATUSES.map((s) => (
-          <Button
-            key={s.value}
-            variant="ghost"
-            size="sm"
-            className={cn("w-full justify-start gap-2 text-xs", s.value === status && "bg-accent")}
-            onClick={() => {
-              onChange(s.value);
-              setOpen(false);
-            }}
-          >
-            {s.label}
-          </Button>
-        ))}
-      </PopoverContent>
-    </Popover>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuRadioGroup value={status} onValueChange={onChange}>
+          {PROJECT_STATUSES.map((s) => (
+            <DropdownMenuRadioItem key={s.value} value={s.value} className="text-xs">
+              {s.label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -210,7 +209,6 @@ function ArchiveDangerZone({
 export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSaveState, onArchive, archivePending }: ProjectPropertiesProps) {
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
-  const [goalOpen, setGoalOpen] = useState(false);
 
   const commitField = (field: ProjectConfigFieldKey, data: Record<string, unknown>) => {
     if (onFieldUpdate) {
@@ -269,12 +267,6 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
   const removeGoal = (goalId: string) => {
     if (!onUpdate && !onFieldUpdate) return;
     commitField("goals", { goalIds: linkedGoalIds.filter((id) => id !== goalId) });
-  };
-
-  const addGoal = (goalId: string) => {
-    if ((!onUpdate && !onFieldUpdate) || linkedGoalIds.includes(goalId)) return;
-    commitField("goals", { goalIds: [...linkedGoalIds, goalId] });
-    setGoalOpen(false);
   };
 
   return (
@@ -354,8 +346,8 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
             </div>
           )}
           {(onUpdate || onFieldUpdate) && (
-            <Popover open={goalOpen} onOpenChange={setGoalOpen}>
-              <PopoverTrigger asChild>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="xs"
@@ -365,25 +357,28 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                   <Plus data-icon="inline-start" className="h-3 w-3 mr-1" />
                   Goal
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-56 p-1" align="start">
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56" align="start">
                 {availableGoals.length === 0 ? (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  <DropdownMenuItem disabled className="text-xs text-muted-foreground">
                     All goals linked.
-                  </div>
+                  </DropdownMenuItem>
                 ) : (
                   availableGoals.map((goal) => (
-                    <button
+                    <DropdownMenuItem
                       key={goal.id}
-                      className="flex items-center w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
-                      onClick={() => addGoal(goal.id)}
+                      className="text-xs"
+                      onClick={() => {
+                        if (linkedGoalIds.includes(goal.id)) return;
+                        commitField("goals", { goalIds: [...linkedGoalIds, goal.id] });
+                      }}
                     >
                       {goal.title}
-                    </button>
+                    </DropdownMenuItem>
                   ))
                 )}
-              </PopoverContent>
-            </Popover>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </PropertyRow>
         {project.leadAgentId && (

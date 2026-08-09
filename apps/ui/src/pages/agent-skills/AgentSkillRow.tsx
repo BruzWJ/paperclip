@@ -1,7 +1,7 @@
 import { Lock, type LucideIcon } from "lucide-react";
 import { Link } from "@/lib/router";
 import { cn } from "@/lib/utils";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SkillCardIcon, type SkillIconCard } from "../../components/SkillCardIcon";
 import type { AgentSkillSearchFields } from "./agent-skill-filter";
@@ -109,7 +109,7 @@ export function AgentSkillRow({
   ) : (
     (() => {
       const toggle = (
-        <ToggleSwitch
+        <Switch
           checked={checked}
           disabled={disabled}
           onCheckedChange={(next) => onCheckedChange?.(next)}

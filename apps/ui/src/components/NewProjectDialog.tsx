@@ -16,10 +16,13 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Maximize2,
   Minimize2,
@@ -51,8 +54,6 @@ export function NewProjectDialog() {
   const [targetDate, setTargetDate] = useState("");
   const [expanded, setExpanded] = useState(false);
 
-  const [statusOpen, setStatusOpen] = useState(false);
-  const [goalOpen, setGoalOpen] = useState(false);
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
 
   const { data: goals } = useQuery({
@@ -220,8 +221,8 @@ export function NewProjectDialog() {
         {/* Property chips */}
         <div className="flex items-center gap-1.5 px-4 py-2 border-t border-border flex-wrap">
           {/* Status */}
-          <Popover open={statusOpen} onOpenChange={setStatusOpen}>
-            <PopoverTrigger asChild>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button
                 type="button"
                 className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors"
@@ -229,22 +230,17 @@ export function NewProjectDialog() {
               >
                 <StatusBadge status={status} />
               </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-40 p-1" align="start">
-              {projectStatuses.map((s) => (
-                <button
-                  key={s.value}
-                  className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                    s.value === status && "bg-accent"
-                  )}
-                  onClick={() => { setStatus(s.value); setStatusOpen(false); }}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </PopoverContent>
-          </Popover>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuRadioGroup value={status} onValueChange={setStatus}>
+                {projectStatuses.map((s) => (
+                  <DropdownMenuRadioItem key={s.value} value={s.value} className="text-xs">
+                    {s.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {selectedGoals.map((goal) => (
             <span
@@ -264,8 +260,8 @@ export function NewProjectDialog() {
             </span>
           ))}
 
-          <Popover open={goalOpen} onOpenChange={setGoalOpen}>
-            <PopoverTrigger asChild>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button
                 className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors disabled:opacity-60"
                 disabled={selectedGoals.length > 0 && availableGoals.length === 0}
@@ -273,35 +269,29 @@ export function NewProjectDialog() {
                 {selectedGoals.length > 0 ? <Plus className="h-3 w-3 text-muted-foreground" /> : <Target className="h-3 w-3 text-muted-foreground" />}
                 {selectedGoals.length > 0 ? "+ Goal" : "Goal"}
               </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-56 p-1" align="start">
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56" align="start">
               {selectedGoals.length === 0 && (
-                <button
-                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground"
-                  onClick={() => setGoalOpen(false)}
-                >
+                <DropdownMenuItem className="text-xs text-muted-foreground" disabled>
                   No goal
-                </button>
+                </DropdownMenuItem>
               )}
               {availableGoals.map((g) => (
-                <button
+                <DropdownMenuItem
                   key={g.id}
-                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 truncate"
-                  onClick={() => {
-                    setGoalIds((prev) => [...prev, g.id]);
-                    setGoalOpen(false);
-                  }}
+                  className="text-xs"
+                  onClick={() => setGoalIds((prev) => [...prev, g.id])}
                 >
                   {g.title}
-                </button>
+                </DropdownMenuItem>
               ))}
               {selectedGoals.length > 0 && availableGoals.length === 0 && (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                <DropdownMenuItem className="text-xs text-muted-foreground" disabled>
                   All goals already selected.
-                </div>
+                </DropdownMenuItem>
               )}
-            </PopoverContent>
-          </Popover>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Target date */}
           <div className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs">

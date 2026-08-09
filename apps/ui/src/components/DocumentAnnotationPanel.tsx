@@ -417,7 +417,7 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
             {truncate(props.pendingAnchor.selectedText, 160)}
           </blockquote>
           <div className="mb-1.5 flex items-center gap-1.5">
-            <Avatar size="xs" className="shrink-0">
+            <Avatar size="sm" className="shrink-0">
               {currentUser.image ? <AvatarImage src={currentUser.image} alt={currentUser.name} /> : null}
               <AvatarFallback>{deriveInitials(currentUser.name)}</AvatarFallback>
             </Avatar>
@@ -656,7 +656,7 @@ function CommentRow({
     >
       <div className="mb-0.5 flex items-center justify-between gap-2 text-(length:--text-micro)">
         <span className="flex min-w-0 items-center gap-1.5">
-          <Avatar size="xs" className="shrink-0">
+          <Avatar size="sm" className="shrink-0">
             {author.role === "agent" ? (
               <AvatarFallback>
                 <AgentIcon icon={author.agentIcon} className="h-3 w-3" />

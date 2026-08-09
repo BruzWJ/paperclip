@@ -8,6 +8,13 @@ import { accessApi, type CompanyMember } from "@/api/access";
 import { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -342,34 +349,42 @@ export function CompanyAccess() {
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="space-y-2 text-sm">
                   <span className="font-medium">Company role</span>
-                  <select
-                    className="w-full rounded-md border border-border bg-background px-3 py-2"
-                    value={draftRole ?? ""}
-                    onChange={(event) =>
-                      setDraftRole((event.target.value || null) as CompanyMember["membershipRole"])
+                  <Select
+                    value={draftRole ?? "__none__"}
+                    onValueChange={(v) =>
+                      setDraftRole((v === "__none__" || !v ? null : v) as CompanyMember["membershipRole"])
                     }
                   >
-                    <option value="">Unset</option>
-                    {Object.entries(HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Unset</SelectItem>
+                      {Object.entries(HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </label>
                 <label className="space-y-2 text-sm">
                   <span className="font-medium">Membership status</span>
-                  <select
-                    className="w-full rounded-md border border-border bg-background px-3 py-2"
+                  <Select
                     value={draftStatus}
-                    onChange={(event) =>
-                      setDraftStatus(event.target.value as EditableMemberStatus)
+                    onValueChange={(v) =>
+                      setDraftStatus(v as EditableMemberStatus)
                     }
                   >
-                    <option value="active">Active</option>
-                    <option value="pending">Pending</option>
-                    <option value="suspended">Suspended</option>
-                  </select>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="suspended">Suspended</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </label>
               </div>
             </div>

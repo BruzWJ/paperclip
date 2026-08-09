@@ -8,6 +8,13 @@ import { useCompany } from "../context/CompanyContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "../lib/utils";
 
@@ -148,16 +155,10 @@ export function SecretBindingPicker({
       ) : null}
       <div className="flex items-center gap-1.5">
         <div className="relative flex-1">
-          <KeyRound className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <select
-            id={secretSelectId}
-            className={cn(
-              "h-9 w-full rounded-md border border-border bg-background pl-7 pr-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
-              selectedMissing && "border-destructive text-destructive",
-            )}
+          <KeyRound className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground z-10" />
+          <Select
             value={value?.secretId ?? ""}
-            onChange={(event) => {
-              const next = event.target.value;
+            onValueChange={(next) => {
               if (!next) {
                 onChange(null);
                 return;
@@ -166,43 +167,57 @@ export function SecretBindingPicker({
             }}
             disabled={disabled || secretsQuery.isPending}
           >
-            <option value="">{secretsQuery.isPending ? "Loading…" : placeholder}</option>
-            {selectedMissing && value ? (
-              <option value={value.secretId}>Missing secret ({value.secretId.slice(0, 8)}…)</option>
-            ) : null}
-            {filteredSecrets.map((secret) => (
-              <option key={secret.id} value={secret.id}>
-                {secret.name} — {describeSecret(secret)}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger
+              id={secretSelectId}
+              className={cn(
+                "h-9 w-full pl-7",
+                selectedMissing && "border-destructive text-destructive",
+              )}
+            >
+              <SelectValue placeholder={secretsQuery.isPending ? "Loading…" : placeholder} />
+            </SelectTrigger>
+            <SelectContent>
+              {selectedMissing && value ? (
+                <SelectItem value={value.secretId}>
+                  Missing secret ({value.secretId.slice(0, 8)}…)
+                </SelectItem>
+              ) : null}
+              {filteredSecrets.map((secret) => (
+                <SelectItem key={secret.id} value={secret.id}>
+                  {secret.name} — {describeSecret(secret)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         {allowVersionSelector ? (
-          <select
-            className="h-9 rounded-md border border-border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
-            value={value?.version === undefined ? VERSION_LATEST : String(value.version)}
-            onChange={(event) => {
+          <Select
+            value={value?.version === undefined || value?.version === VERSION_LATEST ? "latest" : String(value.version)}
+            onValueChange={(raw) => {
               if (!value) return;
-              const raw = event.target.value;
               const next: SecretVersionSelector = raw === VERSION_LATEST ? VERSION_LATEST : Number.parseInt(raw, 10);
               onChange({ ...value, version: next });
             }}
             disabled={disabled || !value || !selectedSecret}
-            aria-label="Version"
           >
-            <option value={VERSION_LATEST}>latest</option>
-            {selectedSecret
-              ? Array.from({ length: Math.max(0, selectedSecret.latestVersion) }, (_, index) => {
-                  const version = selectedSecret.latestVersion - index;
-                  if (version <= 0) return null;
-                  return (
-                    <option key={version} value={version}>
-                      v{version}
-                    </option>
-                  );
-                })
-              : null}
-          </select>
+            <SelectTrigger className="h-9 w-auto min-w-(--sz-80px) px-2 text-xs" aria-label="Version">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={"latest"}>latest</SelectItem>
+              {selectedSecret
+                ? Array.from({ length: Math.max(0, selectedSecret.latestVersion) }, (_, index) => {
+                    const version = selectedSecret.latestVersion - index;
+                    if (version <= 0) return null;
+                    return (
+                      <SelectItem key={version} value={String(version)}>
+                        v{version}
+                      </SelectItem>
+                    );
+                  })
+                : null}
+            </SelectContent>
+          </Select>
         ) : null}
         <Button
           type="button"

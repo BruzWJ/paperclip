@@ -4,7 +4,7 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -84,7 +84,7 @@ export function ToggleField({
       {/* Gallery feedback r3: was a hand-rolled h-5 w-9 pill with a bg-green-600
           track — the app's second switch implementation. Converged on the one
           canonical ToggleSwitch (status-green on-state), DESIGN.md principle 1. */}
-      <ToggleSwitch
+      <Switch
         data-testid={toggleTestId}
         checked={checked}
         onCheckedChange={onChange}

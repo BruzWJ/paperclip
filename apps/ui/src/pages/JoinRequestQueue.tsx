@@ -5,6 +5,13 @@ import { accessApi } from "@/api/access";
 import { ApiError } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { JoinRequestApprovalControls } from "@/components/JoinRequestApprovalControls";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
@@ -100,31 +107,39 @@ export function JoinRequestQueue() {
       <Card className="flex-row flex-wrap gap-3 p-4">
         <label className="space-y-2 text-sm">
           <span className="font-medium">Status</span>
-          <select
-            className="rounded-md border border-border bg-background px-3 py-2"
+          <Select
             value={status}
-            onChange={(event) =>
-              setStatus(event.target.value as "pending_approval" | "approved" | "rejected")
+            onValueChange={(v) =>
+              setStatus(v as "pending_approval" | "approved" | "rejected")
             }
           >
-            <option value="pending_approval">Pending approval</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pending_approval">Pending approval</SelectItem>
+              <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="rejected">Rejected</SelectItem>
+            </SelectContent>
+          </Select>
         </label>
         <label className="space-y-2 text-sm">
           <span className="font-medium">Request type</span>
-          <select
-            className="rounded-md border border-border bg-background px-3 py-2"
+          <Select
             value={requestType}
-            onChange={(event) =>
-              setRequestType(event.target.value as "all" | "human" | "agent")
+            onValueChange={(v) =>
+              setRequestType(v as "all" | "human" | "agent")
             }
           >
-            <option value="all">All</option>
-            <option value="human">Human</option>
-            <option value="agent">Agent</option>
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="human">Human</SelectItem>
+              <SelectItem value="agent">Agent</SelectItem>
+            </SelectContent>
+          </Select>
         </label>
       </Card>
 

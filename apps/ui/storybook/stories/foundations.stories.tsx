@@ -34,7 +34,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const buttonVariants = ["default", "secondary", "outline", "ghost", "destructive", "link"] as const;
@@ -183,7 +183,7 @@ function FoundationsMatrix() {
                     <div className="text-sm font-medium">Auto mode</div>
                     <div className="text-xs text-muted-foreground">Let agents continue after review approval.</div>
                   </div>
-                  <ToggleSwitch checked={autoMode} onCheckedChange={setAutoMode} />
+                  <Switch checked={autoMode} onCheckedChange={setAutoMode} />
                 </div>
                 <label className="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
                   <Checkbox checked={boardApproval} onCheckedChange={(value) => setBoardApproval(value === true)} />

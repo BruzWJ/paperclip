@@ -72,17 +72,19 @@ import { PageSkeleton } from "./PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@/components/ui/popover";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   CircleDot,
   Plus,
   ArrowUpDown,
   Layers,
-  Check,
   ChevronRight,
   List,
   ListTree,
@@ -1872,8 +1874,8 @@ export function IssuesList({
               >
                 <PanelTopClose className="h-3.5 w-3.5" />
               </Button>
-              <Popover>
-                <PopoverTrigger asChild>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
                     variant="outline"
@@ -1890,32 +1892,26 @@ export function IssuesList({
                       {viewState.boardColumnPageSize}
                     </span>
                   </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-40 p-0">
-                  <div className="p-2 space-y-0.5">
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuRadioGroup
+                    value={String(viewState.boardColumnPageSize)}
+                    onValueChange={(v) =>
+                      updateView({ boardColumnPageSize: Number(v) as 10 | 25 | 50 })
+                    }
+                  >
                     {KANBAN_COLUMN_PAGE_SIZE_OPTIONS.map((pageSize) => (
-                      <button
+                      <DropdownMenuRadioItem
                         key={pageSize}
-                        type="button"
-                        className={cn(
-                          "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm",
-                          viewState.boardColumnPageSize === pageSize
-                            ? "bg-accent/50 text-foreground"
-                            : "text-muted-foreground hover:bg-accent/50",
-                        )}
-                        onClick={() =>
-                          updateView({ boardColumnPageSize: pageSize })
-                        }
+                        value={String(pageSize)}
+                        className="text-sm"
                       >
-                        <span>{pageSize} per column</span>
-                        {viewState.boardColumnPageSize === pageSize && (
-                          <Check className="h-3.5 w-3.5" />
-                        )}
-                      </button>
+                        {pageSize} per column
+                      </DropdownMenuRadioItem>
                     ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button
                 type="button"
                 variant="outline"
@@ -1968,8 +1964,8 @@ export function IssuesList({
 
           {/* Sort (list view only) */}
           {viewState.viewMode === "list" && (
-            <Popover>
-              <PopoverTrigger asChild>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="icon"
@@ -1978,54 +1974,48 @@ export function IssuesList({
                 >
                   <ArrowUpDown className="h-3.5 w-3.5" />
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-48 p-0">
-                <div className="p-2 space-y-0.5">
-                  {(
-                    [
-                      ["workflow", "Workflow"],
-                      ["status", "Status"],
-                      ["priority", "Priority"],
-                      ["title", "Title"],
-                      ["created", "Created"],
-                      ["updated", "Updated"],
-                    ] as const
-                  ).map(([field, label]) => (
-                    <button
-                      key={field}
-                      className={`flex items-center justify-between w-full px-2 py-1.5 text-sm rounded-sm ${
-                        viewState.sortField === field
-                          ? "bg-accent/50 text-foreground"
-                          : "hover:bg-accent/50 text-muted-foreground"
-                      }`}
-                      onClick={() => {
-                        if (viewState.sortField === field) {
-                          updateView({
-                            sortDir:
-                              viewState.sortDir === "asc" ? "desc" : "asc",
-                          });
-                        } else {
-                          updateView({ sortField: field, sortDir: "asc" });
-                        }
-                      }}
-                    >
-                      <span>{label}</span>
-                      {viewState.sortField === field && (
-                        <span className="text-xs text-muted-foreground">
-                          {viewState.sortDir === "asc" ? "\u2191" : "\u2193"}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                {(
+                  [
+                    ["workflow", "Workflow"],
+                    ["status", "Status"],
+                    ["priority", "Priority"],
+                    ["title", "Title"],
+                    ["created", "Created"],
+                    ["updated", "Updated"],
+                  ] as const
+                ).map(([field, label]) => (
+                  <DropdownMenuItem
+                    key={field}
+                    className="text-sm"
+                    onClick={() => {
+                      if (viewState.sortField === field) {
+                        updateView({
+                          sortDir:
+                            viewState.sortDir === "asc" ? "desc" : "asc",
+                        });
+                      } else {
+                        updateView({ sortField: field, sortDir: "asc" });
+                      }
+                    }}
+                  >
+                    <span>{label}</span>
+                    {viewState.sortField === field && (
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        {viewState.sortDir === "asc" ? "\u2191" : "\u2193"}
+                      </span>
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
           {/* Group (list view only) */}
           {viewState.viewMode === "list" && (
-            <Popover>
-              <PopoverTrigger asChild>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="icon"
@@ -2034,9 +2024,12 @@ export function IssuesList({
                 >
                   <Layers className="h-3.5 w-3.5" />
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-44 p-0">
-                <div className="p-2 space-y-0.5">
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuRadioGroup
+                  value={viewState.groupBy ?? "none"}
+                  onValueChange={(v) => updateView({ groupBy: (v === "none" ? undefined : v) as IssueViewState["groupBy"] })}
+                >
                   {(
                     [
                       ["status", "Status"],
@@ -2047,24 +2040,13 @@ export function IssuesList({
                       ["none", "None"],
                     ] as const
                   ).map(([value, label]) => (
-                    <button
-                      key={value}
-                      className={`flex items-center justify-between w-full px-2 py-1.5 text-sm rounded-sm ${
-                        viewState.groupBy === value
-                          ? "bg-accent/50 text-foreground"
-                          : "hover:bg-accent/50 text-muted-foreground"
-                      }`}
-                      onClick={() => updateView({ groupBy: value })}
-                    >
-                      <span>{label}</span>
-                      {viewState.groupBy === value && (
-                        <Check className="h-3.5 w-3.5" />
-                      )}
-                    </button>
+                    <DropdownMenuRadioItem key={value} value={value} className="text-sm">
+                      {label}
+                    </DropdownMenuRadioItem>
                   ))}
-                </div>
-              </PopoverContent>
-            </Popover>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </div>
@@ -2542,7 +2524,6 @@ export function IssuesList({
                                         <Identity
                                           name={agentName(issue.ownerAgentId)!}
                                           size="sm"
-                                          shape="square"
                                           className="min-w-0"
                                         />
                                       ) : issue.ownerUserId ? (

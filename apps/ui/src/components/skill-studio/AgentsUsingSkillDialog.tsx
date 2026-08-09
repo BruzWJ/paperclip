@@ -16,6 +16,13 @@ import { useOptionalToastActions } from "@/context/ToastContext";
 import { AgentIcon } from "@/components/AgentIconPicker";
 import { Button } from "@/components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -356,25 +363,28 @@ function AgentRow({
             —
           </span>
         ) : canManage ? (
-          <select
-            aria-label={`${agent.name} skill version`}
+          <Select
             value={agent.versionId ?? LATEST_VALUE}
-            disabled={busy}
-            onChange={(event) =>
-              onPin(event.target.value === LATEST_VALUE ? null : event.target.value)
+            onValueChange={(v) =>
+              onPin(v === LATEST_VALUE ? null : v)
             }
-            className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground disabled:opacity-60"
+            disabled={busy}
           >
-            <option value={LATEST_VALUE}>
-              Latest{latestRevision !== null ? ` (v${latestRevision})` : ""}
-            </option>
-            {versions.map((version) => (
-              <option key={version.id} value={version.id}>
-                v{version.revisionNumber}
-                {version.label ? ` · ${version.label}` : ""}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="h-8 w-auto min-w-(--sz-100px) px-2 text-xs" aria-label={`${agent.name} skill version`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={LATEST_VALUE}>
+                Latest{latestRevision !== null ? ` (v${latestRevision})` : ""}
+              </SelectItem>
+              {versions.map((version) => (
+                <SelectItem key={version.id} value={version.id}>
+                  v{version.revisionNumber}
+                  {version.label ? ` · ${version.label}` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         ) : (
           <span className="text-xs text-muted-foreground">
             {agent.versionId

@@ -37,15 +37,19 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Maximize2,
   Minimize2,
   MoreHorizontal,
-  Check,
   CircleDot,
   Minus,
   ArrowUp,
@@ -370,7 +374,6 @@ export function NewIssueDialog() {
   const [approverValue, setApproverValue] = useState("");
   const [showReviewerRow, setShowReviewerRow] = useState(false);
   const [showApproverRow, setShowApproverRow] = useState(false);
-  const [participantMenuOpen, setParticipantMenuOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [workMode, setWorkMode] = useState<IssueWorkMode>("standard");
   const [expanded, setExpanded] = useState(false);
@@ -387,12 +390,6 @@ export function NewIssueDialog() {
   const parentIssueLabel = newIssueDefaults.parentIdentifier
     ?? (newIssueDefaults.parentId ? newIssueDefaults.parentId.slice(0, 8) : "");
 
-  // Popover states
-  const [statusOpen, setStatusOpen] = useState(false);
-  const [priorityOpen, setPriorityOpen] = useState(false);
-  const [workModeOpen, setWorkModeOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const [companyOpen, setCompanyOpen] = useState(false);
   const requestEditorRef = useRef<MarkdownEditorRef>(null);
   const stageFileInputRef = useRef<HTMLInputElement | null>(null);
   const ownerSelectorRef = useRef<HTMLButtonElement | null>(null);
@@ -704,7 +701,6 @@ export function NewIssueDialog() {
     setDialogCompanyId(null);
     setStagedFiles([]);
     setIsFileDragOver(false);
-    setCompanyOpen(false);
     initializationKeyRef.current = null;
     createIdempotencyKeyRef.current = null;
   }
@@ -942,7 +938,7 @@ export function NewIssueDialog() {
           }
           // Radix Dialog's modal DismissableLayer calls preventDefault() on
           // pointerdown events that originate outside the Dialog DOM tree.
-          // Popover and editor autocomplete portals render at the body level
+          // Dropdown and editor autocomplete portals render at the body level
           // (outside the Dialog), so touch/click events on their content get
           // their default prevented. Telling Radix "this event is handled" skips
           // that preventDefault, restoring popover scroll and autocomplete taps.
@@ -956,8 +952,8 @@ export function NewIssueDialog() {
         {/* Header bar */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Popover open={companyOpen} onOpenChange={setCompanyOpen}>
-              <PopoverTrigger asChild>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <button
                   className={cn(
                     "px-1.5 py-0.5 rounded text-xs font-semibold cursor-pointer hover:opacity-80 transition-opacity",
@@ -975,19 +971,16 @@ export function NewIssueDialog() {
                 >
                   {(dialogCompany?.name ?? "").slice(0, 3).toUpperCase()}
                 </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-48 p-1" align="start">
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-48" align="start">
                 {companies.filter((c) => c.status !== "archived").map((c) => (
-                  <button
+                  <DropdownMenuItem
                     key={c.id}
                     className={cn(
-                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                      "text-xs",
                       c.id === effectiveCompanyId && "bg-accent",
                     )}
-                    onClick={() => {
-                      handleCompanyChange(c.id);
-                      setCompanyOpen(false);
-                    }}
+                    onClick={() => handleCompanyChange(c.id)}
                   >
                     <span
                       className={cn(
@@ -1006,10 +999,10 @@ export function NewIssueDialog() {
                       {c.name.slice(0, 3).toUpperCase()}
                     </span>
                     <span className="truncate">{c.name}</span>
-                  </button>
+                  </DropdownMenuItem>
                 ))}
-              </PopoverContent>
-            </Popover>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <span className="text-muted-foreground/60">&rsaquo;</span>
             <span>{isSubIssueMode ? "New sub-task" : "New task"}</span>
           </div>
@@ -1072,7 +1065,6 @@ export function NewIssueDialog() {
                 recentOptionIds={recentOwnerOptionIds}
                 placeholder="Owner"
                 noneLabel="Choose owner"
-                disablePortal
                 searchPlaceholder="Search owners..."
                 emptyMessage="No invokable agents found."
                 onChange={(value) => {
@@ -1122,7 +1114,6 @@ export function NewIssueDialog() {
                 options={projectOptions}
                 recentOptionIds={recentProjectIds}
                 placeholder="Project"
-                disablePortal
                 noneLabel="No project"
                 searchPlaceholder="Search projects..."
                 emptyMessage="No projects found."
@@ -1159,8 +1150,8 @@ export function NewIssueDialog() {
               />
 
               {/* Three-dot menu to add Reviewer / Approver rows */}
-              <Popover open={participantMenuOpen} onOpenChange={setParticipantMenuOpen}>
-                <PopoverTrigger asChild>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
                   <button
                     type="button"
                     className="inline-flex items-center justify-center rounded-md p-1 text-muted-foreground hover:bg-accent/50 transition-colors"
@@ -1168,38 +1159,30 @@ export function NewIssueDialog() {
                   >
                     <MoreHorizontal className="h-4 w-4" />
                   </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-44 p-1" align="start">
-                  <button
-                    className={cn(
-                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                      showReviewerRow && "bg-accent",
-                    )}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-44" align="start">
+                  <DropdownMenuItem
+                    className={cn("text-xs", showReviewerRow && "bg-accent")}
                     onClick={() => {
                       setShowReviewerRow((v) => !v);
                       if (showReviewerRow) setReviewerValue("");
-                      setParticipantMenuOpen(false);
                     }}
                   >
                     <Eye className="h-3 w-3" />
                     Reviewer
-                  </button>
-                  <button
-                    className={cn(
-                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                      showApproverRow && "bg-accent",
-                    )}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className={cn("text-xs", showApproverRow && "bg-accent")}
                     onClick={() => {
                       setShowApproverRow((v) => !v);
                       if (showApproverRow) setApproverValue("");
-                      setParticipantMenuOpen(false);
                     }}
                   >
                     <ShieldCheck className="h-3 w-3" />
                     Approver
-                  </button>
-                </PopoverContent>
-              </Popover>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               </div>
             </div>
 
@@ -1212,7 +1195,6 @@ export function NewIssueDialog() {
                 options={participantOptions}
                 recentOptionIds={recentOwnerAgentIds.map((id) => `agent:${id}`)}
                 placeholder="Reviewer"
-                disablePortal
                 noneLabel="No reviewer"
                 searchPlaceholder="Search reviewers..."
                 emptyMessage="No reviewers found."
@@ -1259,7 +1241,6 @@ export function NewIssueDialog() {
                 options={participantOptions}
                 recentOptionIds={recentOwnerAgentIds.map((id) => `agent:${id}`)}
                 placeholder="Approver"
-                disablePortal
                 noneLabel="No approver"
                 searchPlaceholder="Search approvers..."
                 emptyMessage="No approvers found."
@@ -1424,38 +1405,36 @@ export function NewIssueDialog() {
         {/* Property chips bar */}
         <div className="flex items-center gap-1.5 px-4 py-2 border-t border-border flex-wrap shrink-0">
           {/* Status chip */}
-          <Popover open={statusOpen} onOpenChange={setStatusOpen}>
-            <PopoverTrigger asChild>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
                 <CircleDot className={cn("h-3 w-3", currentStatus.color)} />
                 {currentStatus.label}
               </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-56 p-1" align="start">
-              {statuses.map((s) => (
-                <button
-                  key={s.value}
-                  className={cn(
-                    "flex w-full items-start gap-2 px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                    s.value === status && "bg-accent"
-                  )}
-                  onClick={() => { setStatus(s.value); setStatusOpen(false); }}
-                >
-                  <CircleDot className={cn("h-3 w-3 mt-0.5 shrink-0", s.color)} />
-                  <span className="flex flex-col text-left leading-tight">
-                    <span>{s.label}</span>
-                    {s.description ? (
-                      <span className="text-(length:--text-nano) text-muted-foreground">{s.description}</span>
-                    ) : null}
-                  </span>
-                </button>
-              ))}
-            </PopoverContent>
-          </Popover>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56" align="start">
+              <DropdownMenuRadioGroup
+                value={status}
+                onValueChange={(v) => setStatus(v)}
+              >
+                {statuses.map((s) => (
+                  <DropdownMenuRadioItem key={s.value} value={s.value} className="text-xs">
+                    <CircleDot className={cn("h-3 w-3 mt-0.5 shrink-0", s.color)} />
+                    <span className="flex flex-col text-left leading-tight">
+                      <span>{s.label}</span>
+                      {s.description ? (
+                        <span className="text-(length:--text-nano) text-muted-foreground">{s.description}</span>
+                      ) : null}
+                    </span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Priority chip */}
-          <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
-            <PopoverTrigger asChild>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button
                 type="button"
                 data-testid="new-issue-priority-chip"
@@ -1473,23 +1452,21 @@ export function NewIssueDialog() {
                   </>
                 )}
               </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-36 p-1" align="start">
-              {priorities.map((p) => (
-                <button
-                  key={p.value}
-                  className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                    p.value === priority && "bg-accent"
-                  )}
-                  onClick={() => { setPriority(p.value); setPriorityOpen(false); }}
-                >
-                  <p.icon className={cn("h-3 w-3", p.color)} />
-                  {p.label}
-                </button>
-              ))}
-            </PopoverContent>
-          </Popover>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-36" align="start">
+              <DropdownMenuRadioGroup
+                value={priority}
+                onValueChange={(v) => setPriority(v)}
+              >
+                {priorities.map((p) => (
+                  <DropdownMenuRadioItem key={p.value} value={p.value} className="text-xs">
+                    <p.icon className={cn("h-3 w-3", p.color)} />
+                    {p.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Labels chip — disabled, not wired up yet */}
           {/* <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground">
@@ -1516,8 +1493,8 @@ export function NewIssueDialog() {
           </button>
 
           {/* Work mode chip */}
-          <Popover open={workModeOpen} onOpenChange={setWorkModeOpen}>
-            <PopoverTrigger asChild>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button
                 type="button"
                 data-issue-work-mode-chip={workMode}
@@ -1530,36 +1507,33 @@ export function NewIssueDialog() {
                 <CurrentWorkModeIcon className="h-3 w-3" />
                 {currentWorkMode.shortLabel}
               </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-36 p-1" align="start">
-              {workModeOptions.map((option) => {
-                const Icon = option.icon;
-                return (
-                  <button
-                    key={option.value}
-                    data-issue-work-mode={option.value}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/50",
-                      option.value === workMode && "bg-accent",
-                      option.classes.menuItem,
-                    )}
-                    onClick={() => {
-                      setWorkMode(option.value);
-                      setWorkModeOpen(false);
-                    }}
-                  >
-                    <Icon className="h-3 w-3" />
-                    {option.label}
-                    {option.value === workMode ? <Check className="ml-auto h-3 w-3" aria-hidden /> : null}
-                  </button>
-                );
-              })}
-            </PopoverContent>
-          </Popover>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-36" align="start">
+              <DropdownMenuRadioGroup
+                value={workMode}
+                onValueChange={(v) => setWorkMode(v as IssueWorkMode)}
+              >
+                {workModeOptions.map((option) => {
+                  const Icon = option.icon;
+                  return (
+                    <DropdownMenuRadioItem
+                      key={option.value}
+                      value={option.value}
+                      data-issue-work-mode={option.value}
+                      className={cn("text-xs", option.classes.menuItem)}
+                    >
+                      <Icon className="h-3 w-3" />
+                      {option.label}
+                    </DropdownMenuRadioItem>
+                  );
+                })}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* More */}
-          <Popover open={moreOpen} onOpenChange={setMoreOpen}>
-            <PopoverTrigger asChild>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button
                 type="button"
                 data-testid="new-issue-more-menu-trigger"
@@ -1568,42 +1542,36 @@ export function NewIssueDialog() {
               >
                 <MoreHorizontal className="h-3 w-3" />
               </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-44 p-1" align="start" data-testid="new-issue-more-menu">
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-44" align="start" data-testid="new-issue-more-menu">
               <div className="sm:hidden">
-                <div className="px-2 py-1 text-(length:--text-nano) font-medium uppercase text-muted-foreground">
-                  Priority
-                </div>
+                <DropdownMenuLabel className="text-(length:--text-nano)">Priority</DropdownMenuLabel>
                 {priorities.map((p) => (
-                  <button
-                    type="button"
+                  <DropdownMenuItem
                     key={p.value}
                     data-testid={`new-issue-more-priority-${p.value}`}
                     className={cn(
-                      "flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/50",
+                      "text-xs",
                       p.value === priority && "bg-accent",
                     )}
-                    onClick={() => {
-                      setPriority(p.value);
-                      setMoreOpen(false);
-                    }}
+                    onClick={() => setPriority(p.value)}
                   >
                     <p.icon className={cn("h-3 w-3", p.color)} />
                     {p.label}
-                  </button>
+                  </DropdownMenuItem>
                 ))}
-                <div className="my-1 border-t border-border" />
+                <DropdownMenuSeparator />
               </div>
-              <button className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground">
+              <DropdownMenuItem className="text-xs text-muted-foreground">
                 <Calendar className="h-3 w-3" />
                 Start date
-              </button>
-              <button className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground">
+              </DropdownMenuItem>
+              <DropdownMenuItem className="text-xs text-muted-foreground">
                 <Calendar className="h-3 w-3" />
                 Due date
-              </button>
-            </PopoverContent>
-          </Popover>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {ownerAgentId && status === "backlog" ? (

@@ -11,10 +11,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -136,7 +137,6 @@ export function AgentActionButtons({
   const queryClient = useQueryClient();
   const { openNewIssue } = useDialogActions();
   const { pushToast } = useToastActions();
-  const [moreOpen, setMoreOpen] = useState(false);
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
 
   const resolvedCompanyId = companyId ?? agent.companyId;
@@ -248,38 +248,35 @@ export function AgentActionButtons({
           Updating agent…
         </span>
       ) : null}
-      <Popover open={moreOpen} onOpenChange={setMoreOpen}>
-        <PopoverTrigger asChild>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon-xs" aria-label={`Open actions for ${agent.name}`} disabled={disabled}>
             <MoreHorizontal data-icon="inline-start" className="h-4 w-4" />
           </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-44 p-1" align="end">
-          <button
-            className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-44" align="end">
+          <DropdownMenuItem
+            className="text-xs"
             onClick={() => {
               navigator.clipboard.writeText(agent.id);
-              setMoreOpen(false);
             }}
           >
             <Copy data-icon="inline-start" className="h-3 w-3" />
             Copy Agent ID
-          </button>
+          </DropdownMenuItem>
           {!hideTerminate && (
-            <button
-              className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-destructive"
-              onClick={() => {
-                agentAction.mutate("terminate");
-                setMoreOpen(false);
-              }}
+            <DropdownMenuItem
+              className="text-xs"
+              variant="destructive"
+              onClick={() => agentAction.mutate("terminate")}
               disabled={disabled}
             >
               <Trash2 data-icon="inline-start" className="h-3 w-3" />
               Terminate
-            </button>
+            </DropdownMenuItem>
           )}
-        </PopoverContent>
-      </Popover>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

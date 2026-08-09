@@ -11,7 +11,7 @@ import type {
 } from "@paperclipai/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { Switch } from "@/components/ui/switch";
 import { RoutineSubSidebar, RoutineSectionPicker } from "@/components/RoutineSubSidebar";
 import { RoutineSaveBar } from "@/components/RoutineSaveBar";
 import {
@@ -399,7 +399,7 @@ function RoutineCShell({
               <span className="hidden sm:inline">Run routine</span>
             </Button>
             <div className="flex items-center gap-2">
-              <ToggleSwitch size="default" checked onCheckedChange={() => {}} aria-label="Toggle automation" />
+              <Switch checked onCheckedChange={() => {}} aria-label="Toggle automation" />
               <span className="text-sm font-medium text-emerald-400">Active</span>
             </div>
           </div>

@@ -158,7 +158,6 @@ export function RoutineRunVariablesDialog({
                 noneLabel="Select an agent"
                 searchPlaceholder="Search agents..."
                 emptyMessage="No agents found."
-                disablePortal
                 openOnFocus={false}
                 onChange={(assigneeAgentId) => {
                   if (assigneeAgentId) trackRecentAssignee(assigneeAgentId);
@@ -200,7 +199,6 @@ export function RoutineRunVariablesDialog({
                 noneLabel="No project"
                 searchPlaceholder="Search projects..."
                 emptyMessage="No projects found."
-                disablePortal
                 openOnFocus={false}
                 onChange={(projectId) => {
                   if (projectId) trackRecentProject(projectId);

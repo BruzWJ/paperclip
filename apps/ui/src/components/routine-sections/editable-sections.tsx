@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RadioCardGroup } from "@/components/ui/radio-card";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 import { nextCronFires, previewFirePolicies } from "../../lib/cron-fires";
 import { timeAgo } from "../../lib/timeAgo";
@@ -703,27 +703,67 @@ export function DeliverySection() {
         <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">
           Concurrency
         </p>
-        <RadioCardGroup
-          ariaLabel="Concurrency policy"
+        <RadioGroup
+          aria-label="Concurrency policy"
           value={editDraft.concurrencyPolicy}
           onValueChange={(concurrencyPolicy) =>
             setEditDraft((current) => ({ ...current, concurrencyPolicy }))
           }
-          options={concurrencyPolicyOptions}
-        />
+          className="gap-2"
+        >
+          {concurrencyPolicyOptions.map((option) => (
+            <label
+              key={option.value}
+              className={cn(
+                "flex cursor-pointer flex-col items-start gap-1 rounded-md border px-4 py-3 transition-colors",
+                editDraft.concurrencyPolicy === option.value
+                  ? "border-primary bg-primary/5 ring-1 ring-primary"
+                  : "border-border hover:border-border hover:bg-accent/40",
+              )}
+            >
+              <div className="flex w-full items-center justify-between gap-2">
+                <span className="text-sm font-medium">{option.title}</span>
+                <RadioGroupItem value={option.value} id={option.value} />
+              </div>
+              {option.description ? (
+                <span className="text-xs text-muted-foreground">{option.description}</span>
+              ) : null}
+            </label>
+          ))}
+        </RadioGroup>
       </div>
       <div className="space-y-3">
         <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">
           Catch-up
         </p>
-        <RadioCardGroup
-          ariaLabel="Catch-up policy"
+        <RadioGroup
+          aria-label="Catch-up policy"
           value={editDraft.catchUpPolicy}
           onValueChange={(catchUpPolicy) =>
             setEditDraft((current) => ({ ...current, catchUpPolicy }))
           }
-          options={catchUpPolicyOptions}
-        />
+          className="gap-2"
+        >
+          {catchUpPolicyOptions.map((option) => (
+            <label
+              key={option.value}
+              className={cn(
+                "flex cursor-pointer flex-col items-start gap-1 rounded-md border px-4 py-3 transition-colors",
+                editDraft.catchUpPolicy === option.value
+                  ? "border-primary bg-primary/5 ring-1 ring-primary"
+                  : "border-border hover:border-border hover:bg-accent/40",
+              )}
+            >
+              <div className="flex w-full items-center justify-between gap-2">
+                <span className="text-sm font-medium">{option.title}</span>
+                <RadioGroupItem value={option.value} id={option.value} />
+              </div>
+              {option.description ? (
+                <span className="text-xs text-muted-foreground">{option.description}</span>
+              ) : null}
+            </label>
+          ))}
+        </RadioGroup>
       </div>
       <div className="space-y-3">
         <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">

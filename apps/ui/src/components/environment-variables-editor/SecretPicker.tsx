@@ -134,8 +134,6 @@ export interface SecretPickerProps {
   /** Open the create-secret popover, seeded with the current query. */
   onCreateNew: (query: string) => void;
   triggerClassName?: string;
-  /** SearchableSelect auto-opens on focus; suppress for programmatic control. */
-  disablePortal?: boolean;
 }
 
 /**
@@ -152,7 +150,6 @@ export function SecretPicker({
   onSelect,
   onCreateNew,
   triggerClassName,
-  disablePortal,
 }: SecretPickerProps) {
   const [currentPathKey, setCurrentPathKey] = useState("");
   const boundSecret = useMemo(
@@ -252,7 +249,6 @@ export function SecretPicker({
       }}
       deriveGroups={deriveGroups}
       disabled={disabled}
-      disablePortal={disablePortal}
       placeholder="Select secret…"
       searchPlaceholder="Search secrets…"
       emptyMessage="No matching secrets"

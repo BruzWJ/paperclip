@@ -875,7 +875,6 @@ describe("EnvironmentVariablesEditor", () => {
         ]}
         onSelect={onSelect}
         onCreateNew={() => {}}
-        disablePortal
       />,
     );
 
@@ -927,7 +926,6 @@ describe("EnvironmentVariablesEditor", () => {
         ]}
         onSelect={() => {}}
         onCreateNew={() => {}}
-        disablePortal
       />,
     );
 

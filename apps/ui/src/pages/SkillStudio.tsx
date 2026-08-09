@@ -72,7 +72,7 @@ import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from "@/components/ui/resizable-panels";
+} from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -870,7 +870,7 @@ function StudioLandingRow({
       {editor ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <Avatar size="xs">
+            <Avatar size="sm">
               {editor.imageUrl ? <AvatarImage src={editor.imageUrl} alt="" /> : null}
               <AvatarFallback>{editor.initials}</AvatarFallback>
             </Avatar>

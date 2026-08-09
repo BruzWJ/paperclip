@@ -558,7 +558,7 @@ export function IssueProperties({
   );
 
   const ownerTrigger = ownerAgent ? (
-    <Identity name={ownerAgent.name} size="sm" shape="square" />
+    <Identity name={ownerAgent.name} size="sm" />
   ) : ownerUserLabel ? (
     <>
       <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -1307,7 +1307,6 @@ export function IssueProperties({
                 <Identity
                   name={agentName(originatingActor.id) ?? originatingActor.id.slice(0, 8)}
                   size="sm"
-                  shape="square"
                 />
               </Link>
             ) : (

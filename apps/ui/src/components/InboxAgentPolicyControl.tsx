@@ -8,10 +8,12 @@ import { queryKeys } from "@/lib/queryKeys";
 import { isAgentTaskTarget } from "@/lib/company-members";
 import { AgentIcon } from "./AgentIconPicker";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { RadioCardGroup, type RadioCardOption } from "@/components/ui/radio-card";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { cn } from "@/lib/utils";
 
-const MODE_OPTIONS: RadioCardOption[] = [
+const MODE_OPTIONS: { value: string; title: string; description?: string }[] = [
   {
     value: "open",
     title: "Any of my agents",
@@ -132,13 +134,32 @@ export function InboxAgentPolicyControl({ companyId }: { companyId: string | nul
         </p>
       </div>
 
-      <RadioCardGroup
-        ariaLabel="Inbox agent archiving policy"
+      <RadioGroup
+        aria-label="Inbox agent archiving policy"
         value={draft.mode}
         onValueChange={(value) => setDraft((current) => (current ? { ...current, mode: value as InboxAgentPolicyMode } : current))}
-        options={MODE_OPTIONS}
-        className="max-w-2xl"
-      />
+        className="max-w-2xl gap-2"
+      >
+        {MODE_OPTIONS.map((option) => (
+          <label
+            key={option.value}
+            className={cn(
+              "flex cursor-pointer flex-col items-start gap-1 rounded-md border px-4 py-3 transition-colors",
+              draft.mode === option.value
+                ? "border-primary bg-primary/5 ring-1 ring-primary"
+                : "border-border hover:border-border hover:bg-accent/40",
+            )}
+          >
+            <div className="flex w-full items-center justify-between gap-2">
+              <span className="text-sm font-medium">{option.title}</span>
+              <RadioGroupItem value={option.value} id={option.value} />
+            </div>
+            {option.description ? (
+              <span className="text-xs text-muted-foreground">{option.description}</span>
+            ) : null}
+          </label>
+        ))}
+      </RadioGroup>
 
       {draft.mode === "allowlist" ? (
         <div className="max-w-2xl space-y-2 rounded-md border border-border p-3">

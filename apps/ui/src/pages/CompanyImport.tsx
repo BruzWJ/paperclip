@@ -48,6 +48,7 @@ import {
 import { readZipArchive } from "../lib/zip";
 import { getPortableFileDataUrl, getPortableFileText, isPortableImageFile } from "../lib/portable-files";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // ── Import-specific helpers ───────────────────────────────────────────
 
@@ -578,21 +579,19 @@ function AdapterPickerList({
                     {agent.name}
                   </span>
                   <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-                  <select
-                    aria-label="Target adapter"
-                    className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs outline-none focus:border-foreground"
-                    value={selectedType}
-                    onChange={(e) => onChangeAdapter(agent.slug, e.target.value)}
-                  >
-                    <option value="" disabled>
-                      Select target adapter
-                    </option>
-                    {adapterOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                  <Select value={selectedType || "__placeholder__"} onValueChange={(v) => onChangeAdapter(agent.slug, v)}>
+                    <SelectTrigger aria-label="Target adapter" className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs outline-none focus:border-foreground">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__placeholder__" disabled>Select target adapter</SelectItem>
+                      {adapterOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <span className="min-w-0 flex-1 rounded-md border border-border bg-muted px-2 py-1 text-xs text-muted-foreground">
                     {selectedType ? "Operator-managed native" : "Select an adapter first"}
                   </span>
@@ -1204,20 +1203,15 @@ export function CompanyImport() {
         )}
 
         <Field label="Target" hint="Import into this company or create a new one.">
-          <select
-            aria-label="Import target"
-            className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            value={targetMode}
-            onChange={(e) => {
-              setTargetMode(e.target.value as "existing" | "new");
-              setImportPreview(null);
-            }}
-          >
-            <option value="new">Create new company</option>
-            <option value="existing">
-              Existing company: {selectedCompany?.name}
-            </option>
-          </select>
+          <Select value={targetMode} onValueChange={(v) => { setTargetMode(v as "existing" | "new"); setImportPreview(null); }}>
+            <SelectTrigger aria-label="Import target" className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="new">Create new company</SelectItem>
+              <SelectItem value="existing">Existing company: {selectedCompany?.name}</SelectItem>
+            </SelectContent>
+          </Select>
         </Field>
 
         {targetMode === "new" && (
@@ -1240,19 +1234,16 @@ export function CompanyImport() {
           label="Collision strategy"
           hint="Board imports can rename, skip, or replace matching company content."
         >
-          <select
-            aria-label="Collision strategy"
-            className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            value={collisionStrategy}
-            onChange={(e) => {
-              setCollisionStrategy(e.target.value as CompanyPortabilityCollisionStrategy);
-              setImportPreview(null);
-            }}
-          >
-            <option value="rename">Rename on conflict</option>
-            <option value="skip">Skip on conflict</option>
-            <option value="replace">Replace existing</option>
-          </select>
+          <Select value={collisionStrategy} onValueChange={(v) => { setCollisionStrategy(v as CompanyPortabilityCollisionStrategy); setImportPreview(null); }}>
+            <SelectTrigger aria-label="Collision strategy" className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="rename">Rename on conflict</SelectItem>
+              <SelectItem value="skip">Skip on conflict</SelectItem>
+              <SelectItem value="replace">Replace existing</SelectItem>
+            </SelectContent>
+          </Select>
         </Field>
 
         <div className="flex flex-wrap items-center gap-2">

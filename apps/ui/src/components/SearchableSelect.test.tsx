@@ -87,7 +87,6 @@ describe("SearchableSelect", () => {
         groups={groups}
         onValueChange={onValueChange}
         placeholder="Pick one"
-        disablePortal
         renderOption={(option) => <span data-option-key={option.key}>{option.label}</span>}
       />,
       container,
@@ -126,7 +125,6 @@ describe("SearchableSelect", () => {
         onValueChange={onValueChange}
         placeholder="Pick one"
         searchPlaceholder="Search options..."
-        disablePortal
       />,
       container,
     );
@@ -184,7 +182,6 @@ describe("SearchableSelect", () => {
         onValueChange={onValueChange}
         placeholder="Pick one"
         searchPlaceholder="Search options..."
-        disablePortal
         renderOption={(option) => <span data-option-key={option.key}>{option.label}</span>}
       />,
       container,
@@ -229,7 +226,6 @@ describe("SearchableSelect", () => {
         onValueChange={vi.fn()}
         placeholder="Pick one"
         searchPlaceholder="Search options..."
-        disablePortal
         filterOption={(option, query) => option.value !== "hidden" && option.searchText === query}
         scoreOption={() => 0}
         renderOption={(option) => <span data-option-key={option.key}>{option.label}</span>}
@@ -265,7 +261,6 @@ describe("SearchableSelect", () => {
         placeholder="Pick one"
         loading
         loadingMessage="Loading choices..."
-        disablePortal
       />,
       container,
     );
@@ -286,7 +281,6 @@ describe("SearchableSelect", () => {
           placeholder="Pick one"
           searchPlaceholder="Search options..."
           emptyMessage="Nothing matched."
-          disablePortal
         />,
       );
     });
@@ -304,7 +298,6 @@ describe("SearchableSelect", () => {
           onValueChange={onValueChange}
           placeholder="Pick one"
           disabled
-          disablePortal
         />,
       );
     });
@@ -319,7 +312,6 @@ describe("SearchableSelect", () => {
         onValueChange={vi.fn()}
         placeholder="Pick one"
         searchPlaceholder="Search options..."
-        disablePortal
       />,
       container,
     );

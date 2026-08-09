@@ -23,7 +23,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useToastActions } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { buildMarkdownMentionOptions } from "../lib/company-members";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { type InlineEntityOption } from "../components/InlineEntitySelector";
@@ -833,7 +833,7 @@ export function RoutineDetail() {
               </span>
             </Button>
             <div className="flex items-center gap-2">
-              <ToggleSwitch
+              <Switch
                 size="default"
                 checked={automationEnabled}
                 onCheckedChange={contextValue.onToggleAutomation}

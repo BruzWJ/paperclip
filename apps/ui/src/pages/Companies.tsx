@@ -146,7 +146,6 @@ export function Companies() {
                   setSelectedCompanyId(company.id);
                 }
               }}
-              interactive
               className={`block group text-left p-5 ${
                 selected ? "border-primary ring-1 ring-primary hover:border-primary" : ""
               }`}

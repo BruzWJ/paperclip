@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { Switch } from "@/components/ui/switch";
 
 export function InstanceGeneralSettings() {
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -160,7 +160,7 @@ export function InstanceGeneralSettings() {
               off by default.
             </p>
           </div>
-          <ToggleSwitch
+          <Switch
             checked={censorUsernameInLogs}
             onCheckedChange={() =>
               updateGeneralMutation.mutate({
@@ -186,7 +186,7 @@ export function InstanceGeneralSettings() {
               instances are unaffected.
             </p>
           </div>
-          <ToggleSwitch
+          <Switch
             checked={worktreeRunExecution}
             onCheckedChange={() =>
               updateGeneralMutation.mutate({
@@ -208,7 +208,7 @@ export function InstanceGeneralSettings() {
               the account menu. This is off by default.
             </p>
           </div>
-          <ToggleSwitch
+          <Switch
             checked={serverInfoDebugView}
             onCheckedChange={() =>
               updateGeneralMutation.mutate({
@@ -232,7 +232,7 @@ export function InstanceGeneralSettings() {
               once no issue executions are active. This is off by default.
             </p>
           </div>
-          <ToggleSwitch
+          <Switch
             checked={autoRestartDevServerWhenIdle}
             onCheckedChange={() =>
               updateGeneralMutation.mutate({
@@ -254,7 +254,7 @@ export function InstanceGeneralSettings() {
               them with their configured source. This safeguard is on by default.
             </p>
           </div>
-          <ToggleSwitch
+          <Switch
             checked={reconcileWorkspaceBranches}
             onCheckedChange={() =>
               updateGeneralMutation.mutate({
@@ -277,7 +277,7 @@ export function InstanceGeneralSettings() {
               state before they are reused. This safeguard is on by default.
             </p>
           </div>
-          <ToggleSwitch
+          <Switch
             checked={repairDirtyWorkspaces}
             onCheckedChange={() =>
               updateGeneralMutation.mutate({
@@ -300,7 +300,7 @@ export function InstanceGeneralSettings() {
               off by default.
             </p>
           </div>
-          <ToggleSwitch
+          <Switch
             checked={keyboardShortcuts}
             onCheckedChange={() =>
               updateGeneralMutation.mutate({

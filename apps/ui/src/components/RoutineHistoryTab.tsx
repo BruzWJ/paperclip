@@ -42,6 +42,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "./EmptyState";
@@ -965,18 +972,22 @@ function RevisionPicker({
       >
         {label}
       </Badge>
-      <select
+      <Select
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-8 min-w-(--sz-12rem) rounded-md border border-border/60 bg-background px-2 text-xs"
+        onValueChange={onChange}
       >
-        {revisions.map((revision) => (
-          <option key={revision.id} value={revision.id}>
-            rev {revision.revisionNumber} — {relativeTime(revision.createdAt)}
-            {revision.changeSummary ? ` • ${revision.changeSummary}` : ""}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger className="h-8 min-w-(--sz-12rem) px-2 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {revisions.map((revision) => (
+            <SelectItem key={revision.id} value={revision.id}>
+              rev {revision.revisionNumber} — {relativeTime(revision.createdAt)}
+              {revision.changeSummary ? ` • ${revision.changeSummary}` : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </label>
   );
 }

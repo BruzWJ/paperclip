@@ -338,11 +338,10 @@ function AttributionAvatar({
     <Tooltip>
       <TooltipTrigger asChild>
         <Avatar
-          size="xs"
-          shape={actor.kind === "agent" ? "square" : "circle"}
+          size="sm"
+          className={cn("ring-2 ring-background", actor.kind === "agent" && "rounded-md")}
           aria-label={accessibleLabel}
           data-testid={`issue-${testIdLabel}-avatar`}
-          className="ring-2 ring-background"
         >
           {actor.avatarUrl ? <AvatarImage src={actor.avatarUrl} alt="" /> : null}
           <AvatarFallback>{attributionInitials(actor.name)}</AvatarFallback>
@@ -352,8 +351,7 @@ function AttributionAvatar({
         <div className="flex items-center gap-2" data-testid={`issue-${testIdLabel}-tooltip`}>
           <Avatar
             size="sm"
-            shape={actor.kind === "agent" ? "square" : "circle"}
-            className="ring-1 ring-background/30"
+            className={cn("ring-1 ring-background/30", actor.kind === "agent" && "rounded-md")}
           >
             {actor.avatarUrl ? <AvatarImage src={actor.avatarUrl} alt="" /> : null}
             <AvatarFallback className="bg-background/20 text-background">

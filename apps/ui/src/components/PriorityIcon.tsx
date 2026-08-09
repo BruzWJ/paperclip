@@ -1,9 +1,13 @@
-import { useState } from "react";
 import { ArrowUp, ArrowDown, Minus, AlertTriangle } from "lucide-react";
 import { cn } from "../lib/utils";
 import { priorityColor, priorityColorDefault } from "../lib/status-colors";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const priorityConfig: Record<string, { icon: typeof ArrowUp; color: string; label: string }> = {
   critical: { icon: AlertTriangle, color: priorityColor.critical ?? priorityColorDefault, label: "Critical" },
@@ -22,7 +26,6 @@ interface PriorityIconProps {
 }
 
 export function PriorityIcon({ priority, onChange, className, showLabel }: PriorityIconProps) {
-  const [open, setOpen] = useState(false);
   const config = priorityConfig[priority] ?? priorityConfig.medium!;
   const Icon = config.icon;
 
@@ -49,29 +52,22 @@ export function PriorityIcon({ priority, onChange, className, showLabel }: Prior
   ) : icon;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent className="w-36 p-1" align="start">
-        {allPriorities.map((p) => {
-          const c = priorityConfig[p]!;
-          const PIcon = c.icon;
-          return (
-            <Button
-              key={p}
-              variant="ghost"
-              size="sm"
-              className={cn("w-full justify-start gap-2 text-xs", p === priority && "bg-accent")}
-              onClick={() => {
-                onChange(p);
-                setOpen(false);
-              }}
-            >
-              <PIcon className={cn("h-3.5 w-3.5", c.color)} />
-              {c.label}
-            </Button>
-          );
-        })}
-      </PopoverContent>
-    </Popover>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      <DropdownMenuContent className="w-36" align="start">
+        <DropdownMenuRadioGroup value={priority} onValueChange={onChange}>
+          {allPriorities.map((p) => {
+            const c = priorityConfig[p]!;
+            const PIcon = c.icon;
+            return (
+              <DropdownMenuRadioItem key={p} value={p} className="text-xs">
+                <PIcon className={cn("h-3.5 w-3.5", c.color)} />
+                {c.label}
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

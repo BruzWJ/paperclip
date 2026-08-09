@@ -276,7 +276,6 @@ export function InboxIssueTrailingColumns({
                 <Identity
                   name={ownerName ?? issue.ownerAgentId.slice(0, 8)}
                   size="sm"
-                  shape="square"
                   className="min-w-0"
                 />
               </span>
@@ -313,7 +312,6 @@ export function InboxIssueTrailingColumns({
                     <Identity
                       name={name}
                       size="sm"
-                      shape="square"
                       className="min-w-0"
                     />
                   </span>

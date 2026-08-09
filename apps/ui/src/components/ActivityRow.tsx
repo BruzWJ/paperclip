@@ -55,7 +55,7 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
     <div className="space-y-2">
       <div className="flex items-center gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Avatar size="xs">
+          <Avatar size="sm">
             {actorAvatarUrl && <AvatarImage src={actorAvatarUrl} alt={actorName} />}
             <AvatarFallback>{deriveInitials(actorName)}</AvatarFallback>
           </Avatar>

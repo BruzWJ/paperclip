@@ -1,4 +1,4 @@
-import { useState } from "react";
+
 import { Link } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import type { Goal, GoalLevel, GoalStatus } from "@paperclipai/shared";
@@ -9,8 +9,13 @@ import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "./StatusBadge";
 import { formatDate, cn, agentUrl } from "../lib/utils";
 import { Separator } from "@/components/ui/separator";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const GOAL_STATUSES = ["planned", "active", "achieved", "cancelled"] as const satisfies readonly GoalStatus[];
 const GOAL_LEVELS = ["company", "team", "agent", "issue"] as const satisfies readonly GoalLevel[];
@@ -44,31 +49,23 @@ function PickerButton({
   onChange: (value: string) => void;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <button className="cursor-pointer hover:opacity-80 transition-opacity">
           {children}
         </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-40 p-1" align="end">
-        {options.map((opt) => (
-          <Button
-            key={opt}
-            variant="ghost"
-            size="sm"
-            className={cn("w-full justify-start text-xs", opt === current && "bg-accent")}
-            onClick={() => {
-              onChange(opt);
-              setOpen(false);
-            }}
-          >
-            {label(opt)}
-          </Button>
-        ))}
-      </PopoverContent>
-    </Popover>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-40" align="end">
+        <DropdownMenuRadioGroup value={current} onValueChange={onChange}>
+          {options.map((opt) => (
+            <DropdownMenuRadioItem key={opt} value={opt} className="text-xs">
+              {label(opt)}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

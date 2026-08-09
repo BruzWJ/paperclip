@@ -76,6 +76,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Sheet,
@@ -2692,44 +2699,46 @@ export function Secrets() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="text-xs font-medium" htmlFor="new-secret-provider">Provider</label>
-                  <select
-                    id="new-secret-provider"
-                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  <Select
                     value={createForm.provider}
-                    onChange={(event) =>
-                      setCreateForm((current) => {
-                        const provider = event.target.value as SecretProvider;
-                        return {
-                          ...current,
-                          provider,
-                          providerConfigId: getDefaultProviderConfigId(providerConfigs, provider),
-                        };
-                      })
-                    }
+                    onValueChange={(v) => {
+                      const provider = v as SecretProvider;
+                      setCreateForm((current) => ({
+                        ...current,
+                        provider,
+                        providerConfigId: getDefaultProviderConfigId(providerConfigs, provider),
+                      }));
+                    }}
                   >
-                    {providers.map((provider) => (
-                      <option
-                        key={provider.id}
-                        value={provider.id}
-                        disabled={Boolean(
-                          getCreateProviderBlockReason(
-                            provider,
-                            createMode,
-                            providerHealthQuery.data ?? null,
-                            getSelectableProviderConfig(providerConfigs, provider.id),
-                          ),
-                        )}
-                      >
-                        {provider.label}
-                        {provider.configured === false &&
-                        !getSelectableProviderConfig(providerConfigs, provider.id)
-                          ? " (deployment default missing)"
-                          : provider.requiresExternalRef
-                            ? " (external only)"
-                            : ""}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger id="new-secret-provider" className="h-9 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {providers.map((provider) => {
+                        const blockReason = getCreateProviderBlockReason(
+                          provider,
+                          createMode,
+                          providerHealthQuery.data ?? null,
+                          getSelectableProviderConfig(providerConfigs, provider.id),
+                        );
+                        return (
+                          <SelectItem
+                            key={provider.id}
+                            value={provider.id}
+                            disabled={Boolean(blockReason)}
+                          >
+                            {provider.label}
+                            {provider.configured === false &&
+                            !getSelectableProviderConfig(providerConfigs, provider.id)
+                              ? " (deployment default missing)"
+                              : provider.requiresExternalRef
+                                ? " (external only)"
+                                : ""}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
                   {createProviderBlockReason ? (
                     <p className="mt-1 flex items-center gap-1 text-(length:--text-micro) text-destructive">
                       <AlertCircle className="h-3 w-3" />
@@ -2741,26 +2750,29 @@ export function Secrets() {
                 </div>
                 <div>
                   <label className="text-xs font-medium" htmlFor="new-secret-vault">Provider vault</label>
-                  <select
-                    id="new-secret-vault"
-                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    value={createForm.providerConfigId}
-                    onChange={(event) =>
-                      setCreateForm((current) => ({ ...current, providerConfigId: event.target.value }))
+                  <Select
+                    value={createForm.providerConfigId || "__default__"}
+                    onValueChange={(v) =>
+                      setCreateForm((current) => ({ ...current, providerConfigId: v === "__default__" ? "" : v }))
                     }
                   >
-                    <option value="">Deployment default</option>
-                    {createProviderConfigs.map((config) => {
-                      const blockReason = getProviderConfigBlockReason(config);
-                      return (
-                        <option key={config.id} value={config.id} disabled={Boolean(blockReason)}>
-                          {config.displayName}
-                          {config.isDefault ? " (default)" : ""}
-                          {blockReason ? ` (${blockReason})` : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
+                    <SelectTrigger id="new-secret-vault" className="h-9 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__default__">Deployment default</SelectItem>
+                      {createProviderConfigs.map((config) => {
+                        const blockReason = getProviderConfigBlockReason(config);
+                        return (
+                          <SelectItem key={config.id} value={config.id} disabled={Boolean(blockReason)}>
+                            {config.displayName}
+                            {config.isDefault ? " (default)" : ""}
+                            {blockReason ? ` (${blockReason})` : ""}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
                   {selectedCreateProviderConfig ? (
                     <ProviderVaultInlineWarning config={selectedCreateProviderConfig} />
                   ) : null}
@@ -2833,24 +2845,27 @@ export function Secrets() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="text-xs font-medium" htmlFor="vault-provider">Provider</label>
-                <select
-                  id="vault-provider"
-                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                <Select
                   value={vaultForm.provider}
-                  disabled={Boolean(editingVault)}
-                  onChange={(event) => {
-                    const provider = event.target.value as SecretProvider;
+                  onValueChange={(v) => {
+                    const provider = v as SecretProvider;
                     setVaultForm(emptyProviderVaultForm(provider));
                     setVaultDiscovery(null);
                     setVaultDiscoveryError(null);
                   }}
+                  disabled={Boolean(editingVault)}
                 >
-                  {PROVIDER_ORDER.map((provider) => (
-                    <option key={provider} value={provider}>
-                      {providerLabel(providers, provider)}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="vault-provider" className="h-9 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PROVIDER_ORDER.map((provider) => (
+                      <SelectItem key={provider} value={provider}>
+                        {providerLabel(providers, provider)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="text-xs font-medium" htmlFor="vault-name">Display name</label>
@@ -2865,12 +2880,10 @@ export function Secrets() {
               </div>
               <div>
                 <label className="text-xs font-medium" htmlFor="vault-status">Status</label>
-                <select
-                  id="vault-status"
-                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                <Select
                   value={vaultForm.status}
-                  onChange={(event) => {
-                    const status = event.target.value as SecretProviderConfigStatus;
+                  onValueChange={(v) => {
+                    const status = v as SecretProviderConfigStatus;
                     setVaultForm((current) => ({
                       ...current,
                       status,
@@ -2879,15 +2892,26 @@ export function Secrets() {
                     }));
                   }}
                 >
-                  <option value="ready" disabled={vaultForm.provider === "gcp_secret_manager" || vaultForm.provider === "vault"}>
-                    Ready
-                  </option>
-                  <option value="warning" disabled={vaultForm.provider === "gcp_secret_manager" || vaultForm.provider === "vault"}>
-                    Warning
-                  </option>
-                  <option value="coming_soon">Coming soon</option>
-                  <option value="disabled">Disabled</option>
-                </select>
+                  <SelectTrigger id="vault-status" className="h-9 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem
+                      value="ready"
+                      disabled={vaultForm.provider === "gcp_secret_manager" || vaultForm.provider === "vault"}
+                    >
+                      Ready
+                    </SelectItem>
+                    <SelectItem
+                      value="warning"
+                      disabled={vaultForm.provider === "gcp_secret_manager" || vaultForm.provider === "vault"}
+                    >
+                      Warning
+                    </SelectItem>
+                    <SelectItem value="coming_soon">Coming soon</SelectItem>
+                    <SelectItem value="disabled">Disabled</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <label className="flex items-center gap-2 pt-6 text-sm">
                 <input
@@ -2964,24 +2988,27 @@ export function Secrets() {
           </DialogHeader>
           <div>
             <label className="text-xs font-medium" htmlFor="rotate-secret-vault">Provider vault</label>
-            <select
-              id="rotate-secret-vault"
-              className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              value={rotateProviderConfigId}
-              onChange={(event) => setRotateProviderConfigId(event.target.value)}
+            <Select
+              value={rotateProviderConfigId || "__default__"}
+              onValueChange={(v) => setRotateProviderConfigId(v === "__default__" ? "" : v)}
             >
-              <option value="">Deployment default</option>
-              {selectedRotateProviderConfigs.map((config) => {
-                const blockReason = getProviderConfigBlockReason(config);
-                return (
-                  <option key={config.id} value={config.id} disabled={Boolean(blockReason)}>
-                    {config.displayName}
-                    {config.isDefault ? " (default)" : ""}
-                    {blockReason ? ` (${blockReason})` : ""}
-                  </option>
-                );
-              })}
-            </select>
+              <SelectTrigger id="rotate-secret-vault" className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__default__">Deployment default</SelectItem>
+                {selectedRotateProviderConfigs.map((config) => {
+                  const blockReason = getProviderConfigBlockReason(config);
+                  return (
+                    <SelectItem key={config.id} value={config.id} disabled={Boolean(blockReason)}>
+                      {config.displayName}
+                      {config.isDefault ? " (default)" : ""}
+                      {blockReason ? ` (${blockReason})` : ""}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
             {selectedRotateProviderConfig ? (
               <ProviderVaultInlineWarning config={selectedRotateProviderConfig} />
             ) : (

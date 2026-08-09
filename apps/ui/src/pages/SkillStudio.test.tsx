@@ -113,7 +113,7 @@ vi.mock("@/components/MarkdownBody", () => ({
   MarkdownBody: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock("@/components/ui/resizable-panels", () => ({
+vi.mock("@/components/ui/resizable", () => ({
   ResizablePanelGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ResizablePanel: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ResizableHandle: () => <div />,

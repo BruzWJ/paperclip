@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { Switch } from "@/components/ui/switch";
 
 export type RoutineListProjectSummary = {
   name: string;
@@ -168,8 +168,8 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
         ) : null}
 
         <div className="flex items-center gap-3">
-          <ToggleSwitch
-            size="lg"
+          <Switch
+            size="default"
             checked={enabled}
             onCheckedChange={() => onToggleEnabled(routine, enabled)}
             disabled={isStatusPending || isArchived || disableToggle}

@@ -26,8 +26,6 @@ interface InlineEntitySelectorProps {
   renderTriggerValue?: (option: InlineEntityOption | null) => ReactNode;
   renderOption?: (option: InlineEntityOption, isSelected: boolean) => ReactNode;
   recentOptionIds?: string[];
-  /** Skip the Portal so the popover stays in the DOM tree (fixes scroll inside Dialogs). */
-  disablePortal?: boolean;
   /** Open the popover when the trigger receives keyboard/programmatic focus. */
   openOnFocus?: boolean;
 }
@@ -51,7 +49,6 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
       renderTriggerValue,
       renderOption,
       recentOptionIds = EMPTY_RECENT_OPTION_IDS,
-      disablePortal,
       openOnFocus = true,
     },
     ref,
@@ -140,7 +137,6 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
           side="bottom"
           collisionPadding={16}
           className="w-(--sz-calc-6) p-1"
-          disablePortal={disablePortal}
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             inputRef.current?.focus();

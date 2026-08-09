@@ -6,7 +6,14 @@ import {
   type AgentMentionReachGrantKey,
   type PaperclipActionKey,
 } from "@paperclipai/shared";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ContextAccessMatrix } from "./ContextAccessMatrix";
 
 export type RuntimeAgentConfigurationValues = {
@@ -159,7 +166,7 @@ function ConfigurationRow({
         <div className="text-sm">{label}</div>
         <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
       </div>
-      <ToggleSwitch
+      <Switch
         checked={checked}
         disabled={disabled}
         onCheckedChange={onCheckedChange}
@@ -199,29 +206,32 @@ export function RuntimeAgentConfigurationFields({
               Presets stamp concrete cells once; later edits do not stay linked.
             </p>
           </div>
-          <select
-            aria-label="Context access preset"
-            className="rounded-md border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          <Select
             value={activePreset}
-            disabled={disabled}
-            onChange={(event) => {
-              if (event.target.value === "custom") return;
-              const preset = event.target.value as ContextAccessPreset;
+            onValueChange={(v) => {
+              if (v === "custom") return;
+              const preset = v as ContextAccessPreset;
               onChange({
                 ...value,
                 contextGrants: { ...CONTEXT_ACCESS_PRESETS[preset] },
               });
             }}
+            disabled={disabled}
           >
-            {activePreset === "custom" ? (
-              <option value="custom">Custom</option>
-            ) : null}
-            {(Object.keys(PRESET_LABELS) as ContextAccessPreset[]).map((preset) => (
-              <option key={preset} value={preset}>
-                {PRESET_LABELS[preset]}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="h-auto px-2 py-1.5 text-xs" aria-label="Context access preset">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {activePreset === "custom" ? (
+                <SelectItem value="custom">Custom</SelectItem>
+              ) : null}
+              {(Object.keys(PRESET_LABELS) as ContextAccessPreset[]).map((preset) => (
+                <SelectItem key={preset} value={preset}>
+                  {PRESET_LABELS[preset]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <ContextAccessMatrix
           value={value.contextGrants}

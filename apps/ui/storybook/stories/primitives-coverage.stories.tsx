@@ -50,7 +50,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { RadioCard, RadioCardGroup } from "@/components/ui/radio-card";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
@@ -207,11 +207,13 @@ export const RadioCards: Story = {
   render: () => (
     <StoryFrame>
       <div className="max-w-md space-y-6">
-        <RadioCardGroup
-          ariaLabel="Delivery mode"
+        <RadioGroup
+          aria-label="Delivery mode"
           value="draft"
           onValueChange={() => {}}
-          options={[
+          className="gap-2"
+        >
+          {[
             {
               value: "draft",
               title: "Draft for review",
@@ -222,9 +224,32 @@ export const RadioCards: Story = {
               title: "Deliver automatically",
               description: "Finished work is delivered without a review gate.",
             },
-          ]}
-        />
-        <RadioCard selected={false} title="Standalone card" description="Unselected state." />
+          ].map((option) => (
+            <label
+              key={option.value}
+              className={`flex cursor-pointer flex-col items-start gap-1 rounded-md border px-4 py-3 transition-colors ${
+                option.value === "draft"
+                  ? "border-primary bg-primary/5 ring-1 ring-primary"
+                  : "border-border hover:border-border hover:bg-accent/40"
+              }`}
+            >
+              <div className="flex w-full items-center justify-between gap-2">
+                <span className="text-sm font-medium">{option.title}</span>
+                <RadioGroupItem value={option.value} id={option.value} />
+              </div>
+              {option.description && (
+                <span className="text-xs text-muted-foreground">{option.description}</span>
+              )}
+            </label>
+          ))}
+        </RadioGroup>
+        <label className="flex cursor-pointer flex-col items-start gap-1 rounded-md border border-border px-4 py-3 transition-colors hover:border-border hover:bg-accent/40">
+          <div className="flex w-full items-center justify-between gap-2">
+            <span className="text-sm font-medium">Standalone card</span>
+            <RadioGroupItem value="standalone" id="standalone" />
+          </div>
+          <span className="text-xs text-muted-foreground">Unselected state.</span>
+        </label>
       </div>
     </StoryFrame>
   ),

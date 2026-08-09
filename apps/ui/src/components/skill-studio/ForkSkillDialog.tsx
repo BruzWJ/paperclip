@@ -24,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 /**
@@ -215,7 +215,7 @@ export function ForkSkillDialog({
                       : "These agents keep running the original — your copy won't change what they do."}
                   </span>
                 </span>
-                <ToggleSwitch
+                <Switch
                   checked={reassign}
                   onCheckedChange={setReassign}
                   disabled={isPending}

@@ -1,9 +1,13 @@
-import { useState } from "react";
 import type { IssueBlockerAttention } from "@paperclipai/shared";
 import { cn } from "../lib/utils";
 import { StatusGlyph, type StatusGlyphSize } from "./StatusGlyph";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const allStatuses = ["backlog", "todo", "in_progress", "in_review", "done", "cancelled", "blocked"];
 
@@ -76,7 +80,6 @@ function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | null | 
  * still rides on the accessible label.
  */
 export function StatusIcon({ status, blockerAttention, onChange, className, showLabel, size = "md" }: StatusIconProps) {
-  const [open, setOpen] = useState(false);
   const isCoveredBlocked = status === "blocked" && blockerAttention?.state === "covered";
   const ariaLabel = status === "blocked" ? blockedAttentionLabel(blockerAttention) : statusLabel(status);
   const glyphStatus = isCoveredBlocked ? "in_queue" : status;
@@ -111,25 +114,18 @@ export function StatusIcon({ status, blockerAttention, onChange, className, show
   );
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent className="w-40 p-1" align="start">
-        {allStatuses.map((s) => (
-          <Button
-            key={s}
-            variant="ghost"
-            size="sm"
-            className={cn("w-full justify-start gap-2 text-xs", s === status && "bg-accent")}
-            onClick={() => {
-              onChange(s);
-              setOpen(false);
-            }}
-          >
-            <StatusIcon status={s} size="lg" />
-            {statusLabel(s)}
-          </Button>
-        ))}
-      </PopoverContent>
-    </Popover>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      <DropdownMenuContent className="w-40" align="start">
+        <DropdownMenuRadioGroup value={status} onValueChange={onChange}>
+          {allStatuses.map((s) => (
+            <DropdownMenuRadioItem key={s} value={s} className="text-xs">
+              <StatusIcon status={s} size="lg" />
+              {statusLabel(s)}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

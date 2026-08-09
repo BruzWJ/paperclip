@@ -21,6 +21,13 @@ import {
   ToggleField,
 } from "../components/agent-config-primitives";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 import { ChevronDown } from "lucide-react";
 
 // ── Select field (extracted to keep hooks at component top level) ──────
@@ -41,42 +48,25 @@ function SelectField({
   invalid?: boolean;
   errorId?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const selectedOpt = options.find((o) => o.value === value);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          id={id}
-          type="button"
-          aria-label={label}
-          aria-invalid={invalid || undefined}
-          aria-describedby={errorId}
-          className="inline-flex w-full items-center justify-between gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 aria-invalid:border-destructive"
-        >
-          <span className={!value ? "text-muted-foreground" : ""}>
-            {selectedOpt?.label ?? (value || "Select...")}
-          </span>
-          <ChevronDown className="h-3 w-3 text-muted-foreground" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1" align="start">
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger
+        id={id}
+        aria-label={label}
+        aria-invalid={invalid || undefined}
+        aria-describedby={errorId}
+        className="w-full"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
         {options.map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            className={`flex items-center w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50 ${opt.value === value ? "bg-accent" : ""}`}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              onChange(opt.value);
-              setOpen(false);
-            }}
-          >
-            <span>{opt.label}</span>
-          </button>
+          <SelectItem key={opt.value} value={opt.value}>
+            {opt.label}
+          </SelectItem>
         ))}
-      </PopoverContent>
-    </Popover>
+      </SelectContent>
+    </Select>
   );
 }
 const inputClass =

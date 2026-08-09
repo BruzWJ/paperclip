@@ -93,6 +93,7 @@ const inputClass =
 export function AgentConfigForm(props: AgentConfigFormProps) {
   const { mode } = props;
   const isCreate = mode === "create";
+  const editProps = mode === "edit" ? props : null;
   const cards = props.sectionLayout === "cards";
   const showAdapterTypeField = props.showAdapterTypeField ?? true;
   const { selectedCompanyId } = useCompany();
@@ -203,14 +204,14 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     enabled: Boolean(!isCreate && selectedCompanyId),
   });
   const runtimeAccessQuery = useQuery({
-    queryKey: !isCreate
+    queryKey: editProps
       ? queryKeys.agents.runtimeConfiguration(
-          props.agent.id,
-          props.agent.companyId,
+          editProps.agent.id,
+          editProps.agent.companyId,
         )
       : ["agents", "none", "runtime-configuration"],
     queryFn: () =>
-      agentsApi.getRuntimeConfiguration(props.agent.id, props.agent.companyId),
+      agentsApi.getRuntimeConfiguration(editProps!.agent.id, editProps!.agent.companyId),
     enabled: !isCreate,
     select: (snapshot): RuntimeAgentConfigurationValues => {
       const defaults = createEmptyRuntimeAgentConfigurationValues();

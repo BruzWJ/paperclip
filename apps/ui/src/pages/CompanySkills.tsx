@@ -59,6 +59,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { buildLineDiff, type DiffRow } from "../lib/line-diff";
 import { cn, relativeTime } from "../lib/utils";
@@ -2186,19 +2187,19 @@ function AttachAgentsPopover({
         headerContent={sortedVersions.length > 0 ? (
           <div className="mt-2 flex items-center gap-2 text-xs">
             <span className="shrink-0 text-muted-foreground">Version</span>
-            <select
-              aria-label="Skill version to assign"
-              value={draftVersionId ?? "__latest__"}
-              onChange={(event) => setDraftVersionId(event.target.value === "__latest__" ? null : event.target.value)}
-              className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-            >
-              <option value="__latest__">Latest</option>
-              {sortedVersions.map((version) => (
-                <option key={version.id} value={version.id}>
-                  v{version.revisionNumber}{version.label ? ` · ${version.label}` : ""}
-                </option>
-              ))}
-            </select>
+            <Select value={draftVersionId ?? "__latest__"} onValueChange={(v) => setDraftVersionId(v === "__latest__" ? null : v)}>
+              <SelectTrigger aria-label="Skill version to assign" className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs text-foreground">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__latest__">Latest</SelectItem>
+                {sortedVersions.map((version) => (
+                  <SelectItem key={version.id} value={version.id}>
+                    v{version.revisionNumber}{version.label ? ` · ${version.label}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         ) : null}
         emptyMessage="No agents yet."
@@ -2535,28 +2536,30 @@ function SkillVersionDiffDialog({
           <div className="flex flex-wrap items-center gap-3 text-xs">
             <label className="flex items-center gap-2">
               <Badge variant="outline" className="border-red-500/30 bg-red-500/10 uppercase tracking-wider text-red-400">Old</Badge>
-              <select
-                value={leftVersionId ?? ""}
-                onChange={(event) => onLeftVersionChange(event.target.value || null)}
-                className="h-8 w-44 rounded-md border border-border bg-background px-2 text-xs"
-              >
-                <option value="">Initial</option>
-                {sorted.map((version) => (
-                  <option key={version.id} value={version.id}>{versionLabel(version)}</option>
-                ))}
-              </select>
+              <Select value={leftVersionId ?? "__initial__"} onValueChange={(v) => onLeftVersionChange(v === "__initial__" ? null : v)}>
+                <SelectTrigger className="h-8 w-44 rounded-md border border-border bg-background px-2 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__initial__">Initial</SelectItem>
+                  {sorted.map((version) => (
+                    <SelectItem key={version.id} value={version.id}>{versionLabel(version)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </label>
             <label className="flex items-center gap-2">
               <Badge variant="outline" className="border-green-500/30 bg-green-500/10 uppercase tracking-wider text-green-400">New</Badge>
-              <select
-                value={right?.id ?? ""}
-                onChange={(event) => onRightVersionChange(event.target.value || null)}
-                className="h-8 w-44 rounded-md border border-border bg-background px-2 text-xs"
-              >
-                {sorted.map((version) => (
-                  <option key={version.id} value={version.id}>{versionLabel(version)}</option>
-                ))}
-              </select>
+              <Select value={right?.id ?? ""} onValueChange={(v) => onRightVersionChange(v || null)}>
+                <SelectTrigger className="h-8 w-44 rounded-md border border-border bg-background px-2 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {sorted.map((version) => (
+                    <SelectItem key={version.id} value={version.id}>{versionLabel(version)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </label>
           </div>
         </div>
@@ -3508,16 +3511,15 @@ export function SkillDetailPage({
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sharing</label>
-              <select
-                aria-label="Skill sharing scope"
-                value={settingsSharingScope}
-                onChange={(event) => setSettingsSharingScope(event.target.value as Exclude<CompanySkillSharingScope, "public_link">)}
-                disabled={updateSettingsPending}
-                className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground"
-              >
-                <option value="company">Company — visible inside this company</option>
-                <option value="private">Private — only visible in your library</option>
-              </select>
+              <Select value={settingsSharingScope} onValueChange={(v) => setSettingsSharingScope(v as Exclude<CompanySkillSharingScope, "public_link">)} disabled={updateSettingsPending}>
+                <SelectTrigger aria-label="Skill sharing scope" className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="company">Company — visible inside this company</SelectItem>
+                  <SelectItem value="private">Private — only visible in your library</SelectItem>
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">Public link sharing is coming later.</p>
             </div>
             <div className="flex justify-end gap-2 border-t border-border pt-4">

@@ -58,7 +58,6 @@ export interface SearchableSelectProps<
   ) => readonly SearchableSelectGroup<TValue, TOption>[];
   filterOption?: (option: TOption, query: string) => boolean;
   scoreOption?: (option: TOption, query: string) => number | null;
-  disablePortal?: boolean;
   /**
    * Optional pinned "creatable" item rendered at the bottom of the list,
    * regardless of the query (used e.g. by the secret picker's
@@ -106,7 +105,6 @@ export function SearchableSelect<
   deriveGroups,
   filterOption = defaultFilterOption,
   scoreOption,
-  disablePortal,
   createItem,
 }: SearchableSelectProps<TValue, TOption>) {
   const [open, setOpen] = useState(false);
@@ -227,7 +225,6 @@ export function SearchableSelect<
       <PopoverContent
         align={align}
         collisionPadding={16}
-        disablePortal={disablePortal}
         className={cn(
           "p-0",
           contentWidth === "trigger"

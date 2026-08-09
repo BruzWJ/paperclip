@@ -16,6 +16,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SecretPicker } from "./SecretPicker";
@@ -429,31 +436,32 @@ export function EnvironmentVariableRow({
               ) : (
                 <div className="grid min-w-0 flex-1 grid-cols-(--gtc-13)">
                   {userSecretsEnabled ? (
-                    <select
-                      aria-label="User secret"
+                    <Select
                       value={row.userSecretKey}
-                      disabled={disabled || isPending}
-                      onChange={(event) => {
-                        const key = event.target.value;
+                      onValueChange={(key) => {
                         const definition = userSecretDefinitions?.find((candidate) => candidate.key === key);
                         onPatch({
                           userSecretKey: key,
                           ...(definition && !row.name.trim() ? { name: definition.key.toUpperCase() } : {}),
                         });
                       }}
-                      className="min-w-0 bg-transparent px-2 py-1.5 text-sm font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
+                      disabled={disabled || isPending}
                     >
-                      <option value="">Select user secret...</option>
-                      {row.userSecretKey && !userSecretDefinitions?.some((definition) => definition.key === row.userSecretKey) ? (
-                        <option value={row.userSecretKey}>Unknown ({row.userSecretKey})</option>
-                      ) : null}
-                      {(userSecretDefinitions ?? []).map((definition) => (
-                        <option key={definition.id} value={definition.key}>
-                          {definition.name}
-                          {definition.status !== "active" ? ` (${definition.status})` : ""}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="min-w-0 bg-transparent border-0 px-2 py-1.5 text-sm font-mono outline-none h-auto" aria-label="User secret">
+                        <SelectValue placeholder="Select user secret..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {row.userSecretKey && !userSecretDefinitions?.some((definition) => definition.key === row.userSecretKey) ? (
+                          <SelectItem value={row.userSecretKey}>Unknown ({row.userSecretKey})</SelectItem>
+                        ) : null}
+                        {(userSecretDefinitions ?? []).map((definition) => (
+                          <SelectItem key={definition.id} value={definition.key}>
+                            {definition.name}
+                            {definition.status !== "active" ? ` (${definition.status})` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   ) : (
                     <input
                       className={valueTextInputClass}
@@ -465,16 +473,19 @@ export function EnvironmentVariableRow({
                       onChange={(event) => onPatch({ userSecretKey: event.target.value })}
                     />
                   )}
-                  <select
-                    aria-label="Requirement"
+                  <Select
                     value={row.required ? "required" : "optional"}
+                    onValueChange={(v) => onPatch({ required: v === "required" })}
                     disabled={disabled || isPending}
-                    onChange={(event) => onPatch({ required: event.target.value === "required" })}
-                    className="border-l border-border bg-transparent px-2 py-1.5 text-xs font-medium text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
                   >
-                    <option value="required">Required</option>
-                    <option value="optional">Optional</option>
-                  </select>
+                    <SelectTrigger className="border-l border-border bg-transparent px-2 py-1.5 text-xs font-medium text-muted-foreground border-0 rounded-none h-auto" aria-label="Requirement">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="required">Required</SelectItem>
+                      <SelectItem value="optional">Optional</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
             </div>
