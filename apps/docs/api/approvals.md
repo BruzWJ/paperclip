@@ -42,7 +42,7 @@ POST /api/companies/{companyId}/approvals
 
 The compiled `agent_hire` action creates an unconfigured direct-child agent
 identity and its linked `hire_agent` approval in one transaction. Adapter,
-provider, environment, and budget fields are not accepted from the agent.
+provider, and budget fields are not accepted from the agent.
 After approval, the board configures those independent control-plane surfaces
 before the agent can receive work.
 

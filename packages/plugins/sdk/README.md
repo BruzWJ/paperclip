@@ -187,7 +187,7 @@ persist, replay, or retry an event. Plugins must use canonical host reads (and,
 for pre-message synchronization, the blocking `onBeforePrompt` hook) as their
 correctness boundary.
 
-**Company context:** Events still carry `companyId` for company-scoped data, but plugin installation and activation are instance-wide in the current runtime. Access and authorization host services require an active company-scoped invocation such as an event, API route, tool run, environment call, or UI bridge call; the requested `companyId` must match that active scope.
+**Company context:** Events still carry `companyId` for company-scoped data, but plugin installation and activation are instance-wide in the current runtime. Access and authorization host services require an active company-scoped invocation such as an event, API route, tool run, or UI bridge call; the requested `companyId` must match that active scope.
 
 ## Scheduled (recurring) jobs
 
@@ -403,7 +403,6 @@ Declare in `manifest.capabilities`. Grouped by scope:
 | | `api.routes.register` |
 | | `http.outbound` |
 | | `http.private-network` |
-| | `environment.drivers.register` |
 | | `local.folders` |
 | | `runtime.context.read` |
 | | `runtime.prompt.observe` |

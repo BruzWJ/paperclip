@@ -120,8 +120,8 @@ set terminal `done`/`cancelled` or `structuredResult`.
 
 - The server supplies the validated ACPX session `cwd`. ACPX registry
   configuration is resolved at the Paperclip service scope.
-- The current ACPX public runtime owns local process mechanics only; Paperclip
-  does not advertise SSH, sandbox, or plugin targets for ACPX agents.
+- ACPX owns the local provider process mechanics and launches it in the exact
+  project or issue working directory selected by Paperclip.
 - Runtime timeout and cancellation policy remain control-plane limits.
 - Provider-native CLI configuration stays operator-owned and opaque.
 

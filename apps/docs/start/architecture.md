@@ -105,8 +105,8 @@ owns the one request/control/event path to the provider CLI and its native
 prompt/model/tool/history harness.
 Paperclip owns durable authority, request MCP, redacted projection, and
 accounting.
-The current public ACPX runtime is local-only; SSH, sandbox, and plugin target
-drivers are not alternate ACPX paths. Generic process, HTTP, gateway,
+The current public ACPX runtime launches the provider CLI locally in the exact
+working directory authorized for the issue. Generic process, HTTP, gateway,
 raw-provider, or provider-specific execution adapters do not exist.
 
 ## Key Invariants

@@ -71,9 +71,18 @@ POST /api/companies/{companyId}/projects
   "name": "Auth System",
   "description": "End-to-end authentication",
   "goalIds": ["{goalId}"],
-  "status": "planned"
+  "status": "planned",
+  "codebase": {
+    "repoUrl": "https://github.com/acme/auth-system",
+    "localFolder": "/srv/acme/auth-system"
+  }
 }
 ```
+
+`repoUrl` records source provenance. It does not clone the repository.
+`localFolder` must be absolute on the Paperclip server and becomes the working
+directory for agents running issues in this project. If it is omitted, runs use
+an instance-managed issue directory.
 
 ### Update Project
 
@@ -83,3 +92,25 @@ PATCH /api/projects/{projectId}
   "status": "in_progress"
 }
 ```
+
+### Get Project Codebase
+
+Board users can read the project execution location without exposing host paths
+through ordinary project or plugin responses.
+
+```
+GET /api/projects/{projectId}/codebase
+```
+
+### Update Project Codebase
+
+```
+PATCH /api/projects/{projectId}/codebase
+{
+  "repoUrl": "https://github.com/acme/auth-system",
+  "localFolder": "/srv/acme/auth-system"
+}
+```
+
+Send `null` for either field to clear it. Clearing both removes the project
+codebase; future runs then use instance-managed issue directories.

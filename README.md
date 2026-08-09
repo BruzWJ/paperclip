@@ -89,7 +89,7 @@ Four things have to work for an organization of AI agents to actually produce: t
 | **Agentic Issue Manager** — Declare intent. Agents work. You verify the output. | Everyone, daily | Issues, approvals & review gates · proactive agent coworkers · auditable routines & workflows · verify from diffs, screenshots & tests |
 | **Org Chart for Agents** — Reporting structure, permissions & boundaries for humans and agents. | Managers | Mixed human + agent org chart · responsibilities, delegation, specialization · independent grants: who can do what · scoped secrets & company boundaries |
 | **Agent Employee Training** — Design, train & evaluate your AI employees. | Enablers | Skill Studio & shared org-wide skills · evals & saved test runs · active learning loops & quality metrics · performance reviews for agents |
-| **Agentic OS** — The infrastructure that makes the work run. | IT & platform | Cross-provider runtime: any model, any agent · sandboxing, integrations & MCP servers · SSO, GRC, RBAC & cost controls · data privacy, internal trace collection, compounding data value |
+| **Agentic OS** — The infrastructure that makes the work run. | IT & platform | Cross-provider runtime: any model, any local ACPX agent · integrations & MCP servers · SSO, GRC, RBAC & cost controls · data privacy, internal trace collection, compounding data value |
 
 <br/>
 
@@ -430,7 +430,6 @@ See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
 - ✅ Better Budgeting
 - ✅ Agent Reviews and Approvals
 - ✅ Multiple Human Users
-- ✅ Cloud / Sandbox agents (e2b, Cloudflare, Daytona, Modal, Novita, self-hosted Kubernetes)
 - ✅ Artifacts & Work Products
 - ✅ Deep Planning (planning mode, revisioned plans, plan approvals)
 - ✅ Enforced Outcomes (issue safeguards, system nudges, review gates)

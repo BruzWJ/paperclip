@@ -14,24 +14,24 @@ workload:
 
 - Storage: values are encrypted at rest by the active provider. The local
   provider keeps them encrypted with a key that never leaves the host.
-- Transport: values are decrypted server-side and injected into the run
-  process environment, SSH command env, sandbox driver, or HTTP request
+- Transport: values are decrypted server-side and injected into the local run
+  process environment or an authorized HTTP request
   immediately before the call. Paperclip does not return decrypted values to
   the board UI.
 - Audit: each resolution records a non-sensitive event (secret id, version,
   provider id, consumer, outcome) without the value or provider credentials.
 
 Once a value reaches the consuming process, Paperclip can no longer guarantee
-secrecy. The sandbox or remote host can read the value, write it to logs, or
-pass it to downstream tools. Limit blast radius with project-scoped bindings,
+secrecy. The process can read the value, write it to logs, or pass it to
+downstream tools. Limit blast radius with project-scoped bindings,
 short-lived credentials where the provider supports them, and rotation when a
 run or downstream system might have captured a value.
 
 ## Using Secrets In Runs
 
 Creating a company secret does not automatically create an environment variable.
-You use a secret by binding it into a project or environment configuration
-field that supports secret references.
+You use a secret by binding it into a project configuration field that supports
+secret references.
 
 For project environment variables:
 
@@ -464,7 +464,7 @@ store.
 
 ## Portable Declarations
 
-Company exports include only environment declarations. They do not include
+Company exports include only environment-variable declarations. They do not include
 secret IDs, provider references, encrypted material, or plaintext values.
 
 ```sh

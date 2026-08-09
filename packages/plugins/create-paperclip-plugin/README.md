@@ -16,15 +16,10 @@ npx @paperclipai/create-paperclip-plugin @acme/my-plugin \
   --author "Acme Inc"
 ```
 
-Supported templates: `standard` (default) and `environment`. The environment
-template is separate because it generates the environment-driver lifecycle;
-all other categories use the same standard structure.
+The generator produces one standard plugin structure for every category.
 
 `--category` is required and accepts `connector`, `workspace`, `automation`,
 or `ui`. These values come from the canonical plugin manifest contract.
-
-For an environment driver, select the distinct structure and an appropriate
-manifest category explicitly, for example `--template environment --category workspace`.
 
 Generates:
 - typed manifest + worker entrypoint
