@@ -57,7 +57,7 @@ function SelectField({
         aria-describedby={errorId}
         className="w-full"
       >
-        <SelectValue />
+        <SelectValue placeholder="Select..." />
       </SelectTrigger>
       <SelectContent>
         {options.map((opt) => (
@@ -584,6 +584,20 @@ export function SchemaConfigFields({
         },
       });
     } else {
+      if (!defaultsApplied && applySchemaDefaults) {
+        for (const candidate of schema.fields) {
+          const defaultValue = getDefaultValue(candidate);
+          if (
+            defaultValue !== undefined
+            && defaultValue !== ""
+            && config[candidate.key] === undefined
+            && eff("adapterConfig", candidate.key, undefined) === undefined
+          ) {
+            mark("adapterConfig", candidate.key, defaultValue);
+          }
+        }
+        setDefaultsApplied(true);
+      }
       mark("adapterConfig", field.key, value);
     }
   }

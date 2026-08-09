@@ -18,7 +18,7 @@ export interface AdapterConfigFieldsProps {
   eff: <T>(group: "adapterConfig", field: string, original: T) => T;
   /** Edit mode: mark field dirty */
   mark: (group: "adapterConfig", field: string, value: unknown) => void;
-  /** Create mode may suppress schema defaults when every value must be explicit. */
+  /** Whether ACPX-provided schema defaults are copied into the draft. */
   applySchemaDefaults?: boolean;
 }
 

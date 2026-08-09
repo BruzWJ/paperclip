@@ -276,7 +276,6 @@ export function NewAgent() {
           mode="create"
           values={configValues}
           onChange={(patch) => setConfigValues((prev) => ({ ...prev, ...patch }))}
-          applyAdapterSchemaDefaults={false}
         />
 
         <div className="border-t border-border px-4 py-4">
