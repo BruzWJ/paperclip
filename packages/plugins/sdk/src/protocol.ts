@@ -33,7 +33,6 @@ import type {
   PrincipalPermissionGrant,
   ProviderSafeRunTrace,
   PluginWorkerLogLevel,
-  ContextAccess,
 } from "@paperclipai/shared";
 export type { PluginLauncherRenderContextSnapshot } from "@paperclipai/shared";
 
@@ -1329,7 +1328,6 @@ export interface WorkerToHostMethods {
       goalId?: string;
       parentId?: string;
       priority?: string;
-      contextAccessMask?: ContextAccess | null;
     },
     result: Issue,
   ];

@@ -34,7 +34,6 @@ import { ScheduleEditor, getScheduleCronValidation } from "../ScheduleEditor";
 import { RoutineVariablesEditor, RoutineVariablesHint } from "../RoutineVariablesEditor";
 import { RoutineTriggerCard } from "../RoutineTriggerCard";
 import { EnvironmentVariablesEditor } from "../environment-variables-editor";
-import { IssueContextAccessMaskMatrix } from "../IssueContextAccessMaskMatrix";
 import { createDefaultNewTrigger, useRoutineDetail } from "./context";
 import type { EnvBinding, RoutineDetail as RoutineDetailType } from "@paperclipai/shared";
 
@@ -764,17 +763,6 @@ export function DeliverySection() {
             </label>
           ))}
         </RadioGroup>
-      </div>
-      <div className="space-y-3">
-        <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">
-          Created issue context access
-        </p>
-        <IssueContextAccessMaskMatrix
-          value={editDraft.contextAccessMask}
-          onChange={(contextAccessMask) =>
-            setEditDraft((current) => ({ ...current, contextAccessMask }))
-          }
-        />
       </div>
       <NextFiresPreview
         triggers={routine.triggers}

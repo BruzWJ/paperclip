@@ -2,15 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { History as HistoryIcon, RotateCcw, Search } from "lucide-react";
 import {
-  normalizeContextAccess,
   type
   CompanySecret,
   type
   EnvBinding,
   type
   EnvSecretRefBinding,
-  type
-  ContextAccess,
   type
   Routine,
   type
@@ -54,7 +51,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "./EmptyState";
 import { MarkdownBody } from "./MarkdownBody";
 import { Badge } from "@/components/ui/badge";
-import { IssueContextAccessMaskMatrix } from "./IssueContextAccessMaskMatrix";
 
 type AgentLookup = Map<string, { id: string; name: string }>;
 type ProjectLookup = Map<string, { id: string; name: string }>;
@@ -553,12 +549,6 @@ function RevisionPreview({
   const envDiffers = !!currentSnapshot
     && JSON.stringify(normalizeEnv(currentSnapshot.env ?? null))
       !== JSON.stringify(normalizeEnv(snapshot.env ?? null));
-  const contextAccessMaskDiffers = !!currentSnapshot
-    && JSON.stringify(
-      normalizeContextAccess(currentSnapshot.contextAccessMask),
-    ) !== JSON.stringify(
-      normalizeContextAccess(snapshot.contextAccessMask),
-    );
   const fieldRows: Array<{ key: string; label: string; value: string; differs: boolean }> = [
     {
       key: "title",
@@ -607,12 +597,6 @@ function RevisionPreview({
       label: "Env",
       value: envSummary,
       differs: envDiffers,
-    },
-    {
-      key: "contextAccessMask",
-      label: "Created issue context access",
-      value: summarizeContextAccessMask(snapshot.contextAccessMask),
-      differs: contextAccessMaskDiffers,
     },
   ];
 
@@ -665,16 +649,6 @@ function RevisionPreview({
             </div>
           ))}
         </div>
-      </div>
-
-      <div className={`${cardWrapper} p-3 space-y-2`}>
-        <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">
-          Created issue context access
-        </p>
-        <IssueContextAccessMaskMatrix
-          value={snapshot.contextAccessMask ?? null}
-          readOnly
-        />
       </div>
 
       <div className={`${cardWrapper} p-3 space-y-2`}>
@@ -1132,13 +1106,6 @@ function computeFieldChanges(
   );
   compareScalar("concurrencyPolicy", "Concurrency", oldRoutine.concurrencyPolicy, newRoutine.concurrencyPolicy);
   compareScalar("catchUpPolicy", "Catch-up", oldRoutine.catchUpPolicy, newRoutine.catchUpPolicy);
-  compareScalar(
-    "contextAccessMask",
-    "Created issue context access",
-    normalizeContextAccess(oldRoutine.contextAccessMask),
-    normalizeContextAccess(newRoutine.contextAccessMask),
-    (value) => summarizeContextAccessMask(value as ContextAccess | null),
-  );
   compareScalar("status", "Status", oldRoutine.status, newRoutine.status);
   if (JSON.stringify(oldRoutine.variables) !== JSON.stringify(newRoutine.variables)) {
     changes.push({
@@ -1155,17 +1122,6 @@ function computeFieldChanges(
 function normalizeEnv(env: RoutineEnvConfig | null): Record<string, EnvBinding> {
   if (!env) return {};
   return env;
-}
-
-function summarizeContextAccessMask(mask: ContextAccess | null): string {
-  const narrowed = Object.entries(
-    normalizeContextAccess(mask) ?? {},
-  )
-    .filter(([, value]) => value === false)
-    .map(([key]) => key);
-  return narrowed.length > 0
-    ? `Narrowed: ${narrowed.join(", ")}`
-    : "No assignment narrowing";
 }
 
 function envBindingKind(binding: EnvBinding): "plain" | "secret_ref" {

@@ -8,9 +8,6 @@ import {
   ROUTINE_TRIGGER_SIGNING_MODES,
   ROUTINE_VARIABLE_TYPES,
 } from "../constants.js";
-import {
-  issueCreationContextAccessSchema,
-} from "./issue.js";
 import { envConfigSchema } from "./secret.js";
 import { isValidRoutineDateString } from "../routine-variables.js";
 
@@ -67,7 +64,6 @@ export const createRoutineSchema = z.object({
   description: z.string().optional().nullable(),
   assigneeAgentId: z.string().uuid().optional().nullable(),
   priority: z.enum(ISSUE_PRIORITIES).optional().default("medium"),
-  contextAccessMask: issueCreationContextAccessSchema.nullable().optional(),
   status: z.enum(ROUTINE_STATUSES).optional().default("active"),
   concurrencyPolicy: z.enum(ROUTINE_CONCURRENCY_POLICIES).optional().default("coalesce_if_active"),
   catchUpPolicy: z.enum(ROUTINE_CATCH_UP_POLICIES).optional().default("skip_missed"),
@@ -93,7 +89,6 @@ export const routineRevisionSnapshotRoutineV1Schema = z.object({
   description: z.string().nullable(),
   assigneeAgentId: z.string().uuid().nullable(),
   priority: z.enum(ISSUE_PRIORITIES),
-  contextAccessMask: issueCreationContextAccessSchema.nullable(),
   status: z.enum(ROUTINE_STATUSES),
   concurrencyPolicy: z.enum(ROUTINE_CONCURRENCY_POLICIES),
   catchUpPolicy: z.enum(ROUTINE_CATCH_UP_POLICIES),

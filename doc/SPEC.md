@@ -89,9 +89,11 @@ Every agent has nine false-by-default context keys:
 | sub-issues | `list_sub_issues` | `read_sub_issue_comments` | `read_sub_issue_agent_run` |
 | company | `list_company_issues` | `read_company_issue_comments` | `read_company_issue_agent_run` |
 
-The same keys govern retrieval and fresh-execution composition. A per-issue
-context-access mask may only narrow true grants to false. False surfaces are absent
-and undiscoverable.
+The same keys govern retrieval and fresh-execution composition. During an active
+owner execution, Paperclip automatically grants all current-issue and sub-issue
+cells. The three company cells remain exactly the agent's configured grants.
+Consults, non-owners, and restricted execution modes receive no owner baseline;
+false surfaces are absent and undiscoverable.
 
 `carry_context` controls same-issue provider continuity; it never controls what
 Paperclip records. A false-carry execution is always fresh and receives only

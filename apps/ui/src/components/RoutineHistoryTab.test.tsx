@@ -94,7 +94,6 @@ function snapshotV1(overrides?: Partial<RoutineRevisionSnapshotV1["routine"]>): 
       description: "Summarize standup notes",
       assigneeAgentId: null,
       priority: "medium",
-      contextAccessMask: null,
       status: "active",
       concurrencyPolicy: "coalesce_if_active",
       catchUpPolicy: "skip_missed",
@@ -137,7 +136,6 @@ function createRoutine(overrides: Partial<Routine> = {}): Routine {
     description: "Summarize standup notes",
     assigneeAgentId: null,
     priority: "medium",
-      contextAccessMask: null,
     status: "active",
     concurrencyPolicy: "coalesce_if_active",
     catchUpPolicy: "skip_missed",
@@ -228,48 +226,6 @@ describe("RoutineHistoryTab", () => {
     expect(container.textContent).toContain("rev 2");
     expect(container.textContent).toContain("rev 1");
     expect(container.textContent).toContain("Current");
-  });
-
-  it("renders historical context access masks read-only without order-only diffs", async () => {
-    const current = createRevision({
-      id: "revision-2",
-      revisionNumber: 2,
-      snapshot: snapshotV1({
-        contextAccessMask: {
-          carry_context: false,
-          read_issue_comments: false,
-        },
-      }),
-    });
-    const old = createRevision({
-      id: "revision-1",
-      revisionNumber: 1,
-      snapshot: snapshotV1({
-        contextAccessMask: {
-          read_issue_comments: false,
-          carry_context: false,
-        },
-      }),
-    });
-    mockRoutinesApi.listRevisions.mockResolvedValue([current, old]);
-    await render();
-    const oldRow = container.querySelector(
-      "[data-testid='revision-row-1']",
-    ) as HTMLButtonElement | null;
-    await act(async () => {
-      oldRow?.click();
-    });
-    await flush();
-
-    const contentCell = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Current issue Content: narrowed"]',
-    );
-    const commentsCell = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Current issue Comments: narrowed"]',
-    );
-    expect(contentCell?.disabled).toBe(true);
-    expect(commentsCell?.disabled).toBe(true);
-    expect(container.textContent).not.toContain("differs from current");
   });
 
   it("shows the historical-preview banner with append-only copy when previewing an old revision", async () => {

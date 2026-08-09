@@ -174,7 +174,6 @@ describe("runtime issue action port", () => {
       parentId: ownerCapability.issueId,
       request: "Do exactly this",
       ownerAgentId: "child",
-      contextAccessMask: { read_issue_comments: false },
     }));
 
     expect(service.create).toHaveBeenCalledWith({
@@ -184,7 +183,6 @@ describe("runtime issue action port", () => {
       title: undefined,
       priority: undefined,
       owner: { kind: "agent", agentId: "child" },
-      contextAccessMask: { read_issue_comments: false },
     });
   });
 

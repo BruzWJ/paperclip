@@ -25,7 +25,6 @@ function ordinaryIssue(overrides: Record<string, unknown> = {}) {
     routine: null,
     lifecycleStatus: "open",
     disposition: null,
-    contextAccessMask: null,
     boardPresentationStatus: "todo",
     priority: "medium",
     labelIds: [],
@@ -37,53 +36,26 @@ function ordinaryIssue(overrides: Record<string, unknown> = {}) {
 }
 
 describe("company portability issue manifests", () => {
-  it("normalizes raw true away and retains only false mask cells", () => {
-    const parsed = portabilityIssueManifestEntrySchema.parse(
-      ordinaryIssue({
-        contextAccessMask: {
-          carry_context: true,
-          read_issue_comments: false,
-        },
-      }),
-    );
-
-    expect(parsed.contextAccessMask).toEqual({
-      read_issue_comments: false,
-    });
-
-    const recurring = portabilityIssueManifestEntrySchema.parse(
-      ordinaryIssue({
-        recurring: true,
-        boardPresentationStatus: "active",
-        routine: {
-          concurrencyPolicy: null,
-          catchUpPolicy: null,
-          contextAccessMask: {
-            list_sub_issues: true,
-            read_sub_issue_comments: false,
-          },
-          variables: null,
-          triggers: [],
-        },
-      }),
-    );
-    expect(recurring.routine?.contextAccessMask).toEqual({
-      read_sub_issue_comments: false,
-    });
-  });
-
-  it("rejects unknown and non-boolean mask cells", () => {
+  it("rejects retired context-access masks", () => {
     expect(() =>
       portabilityIssueManifestEntrySchema.parse(
         ordinaryIssue({
-          contextAccessMask: { unknown_context: false },
+          contextAccessMask: { read_issue_comments: false },
         }),
       ),
     ).toThrow();
     expect(() =>
       portabilityIssueManifestEntrySchema.parse(
         ordinaryIssue({
-          contextAccessMask: { carry_context: "false" },
+          recurring: true,
+          boardPresentationStatus: "active",
+          routine: {
+            concurrencyPolicy: null,
+            catchUpPolicy: null,
+            contextAccessMask: { read_sub_issue_comments: false },
+            variables: null,
+            triggers: [],
+          },
         }),
       ),
     ).toThrow();

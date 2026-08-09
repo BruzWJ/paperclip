@@ -109,9 +109,6 @@ export interface RuntimeInterfaceCompilerSnapshot {
     ownerKind: string | null;
     ownerAgentId: string | null;
     ownershipEpoch: number | null;
-    contextAccessMask:
-      | Partial<Record<AgentContextGrantKey, false>>
-      | null;
     workMode: string;
     harnessKind: string | null;
     originKind: string;
@@ -278,9 +275,13 @@ export function buildRuntimeInterfaceCompileInput(
     AGENT_MENTION_REACH_GRANT_KEYS,
     snapshot.mentionReachGrantKeys,
   );
+  const isCurrentOwner =
+    capability.executionMode === "owner" &&
+    issue.ownerKind === "agent" &&
+    issue.ownerAgentId === sourceAgent.id;
   const contextDial = resolveContextDial({
     agent: contextGrants,
-    assignment: issue.contextAccessMask,
+    issueOwner: isCurrentOwner,
     executionMode: resolveExecutionModeContextMask({
       workMode: issue.workMode,
       harnessKind: issue.harnessKind,
@@ -381,10 +382,7 @@ export function buildRuntimeInterfaceCompileInput(
     contextDial,
     actionGrants,
     mentionReachGrants,
-    isCurrentOwner:
-      capability.executionMode === "owner" &&
-      issue.ownerKind === "agent" &&
-      issue.ownerAgentId === sourceAgent.id,
+    isCurrentOwner,
     issueCreateDirectChildren,
     issueAssignTargets,
     creatorUpdateTargets,
@@ -420,7 +418,6 @@ async function loadSnapshot(
         ownerKind: issues.ownerKind,
         ownerAgentId: issues.ownerAgentId,
         ownershipEpoch: issues.ownershipEpoch,
-        contextAccessMask: issues.contextAccessMask,
         workMode: issues.workMode,
         harnessKind: issues.harnessKind,
         originKind: issues.originKind,

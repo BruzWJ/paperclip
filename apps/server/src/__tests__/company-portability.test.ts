@@ -1715,9 +1715,6 @@ describe("company portability", () => {
         status: "paused",
         concurrencyPolicy: "always_enqueue",
         catchUpPolicy: "enqueue_missed_with_cap",
-        contextAccessMask: {
-          read_issue_comments: false,
-        },
         createdByAgentId: null,
         createdByUserId: null,
         updatedByAgentId: null,
@@ -1797,7 +1794,7 @@ describe("company portability", () => {
     expect(extension).toContain("monday-review:");
     expect(extension).toContain('cronExpression: "0 9 * * 1"');
     expect(extension).toContain('signingMode: "hmac_sha256"');
-    expect(extension).toContain("read_issue_comments: false");
+    expect(extension).not.toContain("contextAccessMask");
     expect(extension).not.toContain("secretId");
     expect(extension).not.toContain("publicId");
     expect(exported.manifest.issues).toEqual([
@@ -1809,9 +1806,6 @@ describe("company portability", () => {
         routine: expect.objectContaining({
           concurrencyPolicy: "always_enqueue",
           catchUpPolicy: "enqueue_missed_with_cap",
-          contextAccessMask: {
-            read_issue_comments: false,
-          },
           triggers: expect.arrayContaining([
             expect.objectContaining({ kind: "schedule", cronExpression: "0 9 * * 1", timezone: "America/Chicago" }),
             expect.objectContaining({ kind: "webhook", enabled: false, signingMode: "hmac_sha256", replayWindowSec: 120 }),
@@ -2012,9 +2006,6 @@ describe("company portability", () => {
         "  monday-review:",
         '    concurrencyPolicy: "always_enqueue"',
         '    catchUpPolicy: "enqueue_missed_with_cap"',
-        "    contextAccessMask:",
-        "      carry_context: true",
-        "      read_issue_comments: false",
         "    triggers:",
         "      - kind: schedule",
         '        cronExpression: "0 9 * * 1"',
@@ -2065,9 +2056,6 @@ describe("company portability", () => {
       status: "paused",
       concurrencyPolicy: "always_enqueue",
       catchUpPolicy: "enqueue_missed_with_cap",
-      contextAccessMask: {
-        read_issue_comments: false,
-      },
     }), expect.any(Object));
     expect(result.warnings).not.toContain(
       "Issue monday-review assignee claudecoder is pending_approval; imported work was left unassigned.",
@@ -2881,10 +2869,6 @@ describe("company portability", () => {
         boardPresentationStatus: "todo",
         lifecycleStatus: "open",
         disposition: null,
-        contextAccessMask: {
-          carry_context: false,
-          read_issue_comments: false,
-        },
         priority: "high",
         labelIds: ["label-a", "label-b"],
         billingCode: null,
@@ -2900,8 +2884,7 @@ describe("company portability", () => {
     expect(extension).toContain("labelIds:");
     expect(extension).toContain("label-a");
     expect(extension).toContain("label-b");
-    expect(extension).toContain("carry_context: false");
-    expect(extension).toContain("read_issue_comments: false");
+    expect(extension).not.toContain("contextAccessMask");
 
     companySvc.create.mockResolvedValue({ id: "company-imported", name: "Imported" });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
@@ -2921,14 +2904,13 @@ describe("company portability", () => {
     expect(ordinaryIssueRuntime.create).toHaveBeenCalledWith(expect.objectContaining({
       companyId: "company-imported",
       labelIds: ["label-a", "label-b"],
-      contextAccessMask: {
-        carry_context: false,
-        read_issue_comments: false,
-      },
     }));
+    expect(ordinaryIssueRuntime.create.mock.calls[0]?.[0]).not.toHaveProperty(
+      "contextAccessMask",
+    );
   });
 
-  it("round-trips terminal lifecycle, strict disposition, and context access in preview", async () => {
+  it("round-trips terminal lifecycle and strict disposition in preview", async () => {
     const portability = companyPortabilityService({} as any);
     projectSvc.list.mockResolvedValue([]);
     issueSvc.list.mockResolvedValue([
@@ -2944,9 +2926,6 @@ describe("company portability", () => {
         disposition: {
           message: "Completed exactly.",
           structuredResult: null,
-        },
-        contextAccessMask: {
-          read_company_issue_agent_run: false,
         },
         priority: "medium",
         labelIds: [],
@@ -2966,17 +2945,12 @@ describe("company portability", () => {
     expect(extension).toContain('lifecycleStatus: "done"');
     expect(extension).toContain('message: "Completed exactly."');
     expect(extension).toContain("structuredResult: null");
-    expect(extension).toContain(
-      "read_company_issue_agent_run: false",
-    );
+    expect(extension).not.toContain("contextAccessMask");
     expect(exported.manifest.issues[0]).toMatchObject({
       lifecycleStatus: "done",
       disposition: {
         message: "Completed exactly.",
         structuredResult: null,
-      },
-      contextAccessMask: {
-        read_company_issue_agent_run: false,
       },
     });
 
@@ -3006,13 +2980,10 @@ describe("company portability", () => {
         message: "Completed exactly.",
         structuredResult: null,
       },
-      contextAccessMask: {
-        read_company_issue_agent_run: false,
-      },
     });
   });
 
-  it("normalizes raw ordinary import masks and rejects malformed mask cells", async () => {
+  it("rejects retired context access masks in portable issue and routine manifests", async () => {
     const portability = companyPortabilityService({} as any);
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -3051,31 +3022,28 @@ describe("company portability", () => {
       ].join("\n"),
     };
 
-    await portability.importBundle({
-      source: {
-        type: "inline",
-        rootPath: "imported",
-        files,
-      },
-      include: {
-        company: true,
-        agents: false,
-        projects: false,
-        issues: true,
-      },
-      target: {
-        mode: "new_company",
-        newCompanyName: "Imported",
-      },
-      agents: "all",
-      collisionStrategy: "rename",
-    }, "user-1");
-    expect(ordinaryIssueRuntime.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        contextAccessMask: {
-          read_issue_comments: false,
+    await expect(
+      portability.previewImport({
+        source: {
+          type: "inline",
+          rootPath: "imported",
+          files,
         },
+        include: {
+          company: true,
+          agents: false,
+          projects: false,
+          issues: true,
+        },
+        target: {
+          mode: "new_company",
+          newCompanyName: "Imported",
+        },
+        agents: "all",
+        collisionStrategy: "rename",
       }),
+    ).rejects.toThrow(
+      "Issue narrowed manifest contains unsupported fields: contextAccessMask",
     );
 
     await expect(
@@ -3085,12 +3053,18 @@ describe("company portability", () => {
           rootPath: "imported",
           files: {
             ...files,
-            ".paperclip.yaml": asTextFile(
-              files[".paperclip.yaml"],
-            ).replace(
-              "      carry_context: true",
-              "      carry_context: invalid",
-            ),
+            ".paperclip.yaml": asTextFile(files[".paperclip.yaml"])
+              .replace(
+                "    contextAccessMask:\n      carry_context: true\n      read_issue_comments: false\n",
+                "",
+              )
+              .concat([
+                "routines:",
+                "  narrowed:",
+                "    contextAccessMask:",
+                "      read_issue_comments: false",
+                "",
+              ].join("\n")),
           },
         },
         include: {
@@ -3107,7 +3081,7 @@ describe("company portability", () => {
         collisionStrategy: "rename",
       }),
     ).rejects.toThrow(
-      "Issue narrowed contextAccessMask accepts only known boolean context-grant keys",
+      "Routine manifest contains unsupported fields: contextAccessMask",
     );
   });
 

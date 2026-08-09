@@ -23,7 +23,6 @@ import type {
 } from "../trust-policy.js";
 import type {
   AgentVisibleIssueStatus,
-  ContextAccess,
   IssueDisposition,
   SystemCreatorSourceKind,
 } from "../issue-runtime.js";
@@ -391,7 +390,6 @@ interface IssueBase {
   workMode: IssueWorkMode;
   priority: IssuePriority;
   ownershipEpoch: number;
-  contextAccessMask?: ContextAccess | null;
   escalatedFromAffectedIssueId?: string | null;
   escalatedFromTriggeringRunId?: string | null;
   escalatedFromReason?: string | null;

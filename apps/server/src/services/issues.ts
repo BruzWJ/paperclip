@@ -1828,7 +1828,6 @@ const issueListSelect = {
   creatorRoutineDispatchId: issues.creatorRoutineDispatchId,
   creatorSystemSourceKind: issues.creatorSystemSourceKind,
   creatorSystemSourceId: issues.creatorSystemSourceId,
-  contextAccessMask: issues.contextAccessMask,
   escalatedFromAffectedIssueId: issues.escalatedFromAffectedIssueId,
   escalatedFromTriggeringRunId: issues.escalatedFromTriggeringRunId,
   escalatedFromReason: issues.escalatedFromReason,

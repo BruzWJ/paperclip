@@ -47,7 +47,6 @@ import {
   interpolateRoutineTemplate,
   isValidRoutineDateString,
   pluginOperationIssueOriginKind,
-  normalizeContextAccess,
   stringifyRoutineVariableValue,
   syncRoutineVariablesWithTemplate,
 } from "@paperclipai/shared";
@@ -564,15 +563,8 @@ function createRoutineDispatchFingerprint(input: {
   routineEnvFingerprint: string | null;
   title: string;
   description: string | null;
-  contextAccessMask: Routine["contextAccessMask"];
 }) {
-  const { contextAccessMask, ...rest } = input;
-  // Keep the pre-rename wire key inside the persisted hash contract so active
-  // routine work retains the same fingerprint across this terminology change.
-  const canonical = JSON.stringify(normalizeRoutineDispatchFingerprintValue({
-    ...rest,
-    attentionMask: contextAccessMask,
-  }));
+  const canonical = JSON.stringify(normalizeRoutineDispatchFingerprintValue(input));
   return crypto.createHash("sha256").update(canonical).digest("hex");
 }
 
@@ -602,7 +594,6 @@ function routineRevisionSnapshotRoutine(routine: RoutineRow): RoutineRevisionSna
     description: routine.description,
     assigneeAgentId: routine.assigneeAgentId,
     priority: routine.priority as RoutineRevisionSnapshotV1["routine"]["priority"],
-    contextAccessMask: routine.contextAccessMask ?? null,
     status: routine.status as RoutineRevisionSnapshotV1["routine"]["status"],
     concurrencyPolicy: routine.concurrencyPolicy as RoutineRevisionSnapshotV1["routine"]["concurrencyPolicy"],
     catchUpPolicy: routine.catchUpPolicy as RoutineRevisionSnapshotV1["routine"]["catchUpPolicy"],
@@ -1620,7 +1611,7 @@ export function routineService(
       throw conflict("Routine has no current revision");
     }
     const boundRevision = await db
-      .select({ snapshot: routineRevisions.snapshot })
+      .select({ id: routineRevisions.id })
       .from(routineRevisions)
       .where(
         and(
@@ -1633,10 +1624,6 @@ export function routineService(
     if (!boundRevision) {
       throw conflict("Routine current revision is unavailable");
     }
-    const boundRoutineSnapshot = boundRevision.snapshot as RoutineRevisionSnapshotV1;
-    const boundContextAccessMask = normalizeContextAccess(
-      boundRoutineSnapshot.routine.contextAccessMask,
-    );
     const allVariables = { ...getBuiltinRoutineVariableValues(), ...automaticVariables, ...resolvedVariables };
     const title = interpolateRoutineTemplate(input.routine.title, allVariables) ?? input.routine.title;
     const description =
@@ -1656,7 +1643,6 @@ export function routineService(
       routineEnvFingerprint: createRoutineEnvFingerprint(input.routine.env),
       title,
       description,
-      contextAccessMask: boundContextAccessMask,
     });
     const manualRunnerUserId =
       input.source === "manual" ? input.actor?.userId ?? null : null;
@@ -1921,7 +1907,6 @@ export function routineService(
           originRunId: run.id,
           originFingerprint: dispatchFingerprint,
           billingCode: managedIssueTemplate?.billingCode ?? null,
-          contextAccessMask: boundContextAccessMask,
           correlate: async (tx, persisted) => {
             const txDb = tx as unknown as Db;
             if (manualRunnerUserId) {
@@ -2248,8 +2233,6 @@ export function routineService(
             description: input.description ?? null,
             assigneeAgentId: input.assigneeAgentId ?? null,
             priority: input.priority,
-            contextAccessMask:
-              normalizeContextAccess(input.contextAccessMask),
             status,
             concurrencyPolicy: input.concurrencyPolicy,
             catchUpPolicy: input.catchUpPolicy,
@@ -2371,10 +2354,6 @@ export function routineService(
           description: nextDescription,
           assigneeAgentId: nextAssigneeAgentId,
           priority: patch.priority ?? locked.priority,
-          contextAccessMask:
-            patch.contextAccessMask === undefined
-              ? locked.contextAccessMask
-              : normalizeContextAccess(patch.contextAccessMask),
           status: nextStatus,
           concurrencyPolicy: patch.concurrencyPolicy ?? locked.concurrencyPolicy,
           catchUpPolicy: patch.catchUpPolicy ?? locked.catchUpPolicy,
@@ -2460,7 +2439,6 @@ export function routineService(
             description: candidate.description,
             assigneeAgentId: candidate.assigneeAgentId,
             priority: candidate.priority,
-            contextAccessMask: candidate.contextAccessMask,
             status: candidate.status,
             concurrencyPolicy: candidate.concurrencyPolicy,
             catchUpPolicy: candidate.catchUpPolicy,
@@ -2895,7 +2873,6 @@ export function routineService(
             description: routineSnapshot.description,
             assigneeAgentId: routineSnapshot.assigneeAgentId,
             priority: routineSnapshot.priority,
-            contextAccessMask: routineSnapshot.contextAccessMask,
             status: routineSnapshot.status,
             concurrencyPolicy: routineSnapshot.concurrencyPolicy,
             catchUpPolicy: routineSnapshot.catchUpPolicy,

@@ -681,7 +681,7 @@ Trusted orchestration plugins create ordinary Paperclip issues through
 `ctx.issues` instead of importing server internals. Creation requires an
 immutable non-empty request, explicit invokable agent owner, and registered
 versioned creator callback. Optional metadata is limited to title,
-parent/project/goal, priority, and the false-only write-once context-access mask.
+parent/project/goal, and priority.
 
 Plugins that perform durable work should declare managed Paperclip resources rather than using private plugin state:
 

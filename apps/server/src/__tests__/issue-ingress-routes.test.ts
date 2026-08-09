@@ -113,7 +113,6 @@ describe("canonical board issue ingress", () => {
         idempotencyKey: "board-create-1",
         title: "Canonical issue",
         priority: "high",
-        contextAccessMask: { carry_context: false },
       })
       .expect(201);
 
@@ -129,7 +128,6 @@ describe("canonical board issue ingress", () => {
       goalId: null,
       parentId: null,
       priority: "high",
-      contextAccessMask: { carry_context: false },
     });
     expect(dispatchPersistedRef).toHaveBeenCalledOnce();
     expect(dispatchPersistedRef).toHaveBeenCalledWith(
@@ -158,6 +156,15 @@ describe("canonical board issue ingress", () => {
       .send({
         request: "Owner is missing",
         idempotencyKey: "board-create-2",
+      })
+      .expect(400);
+    await request(app)
+      .post(`/api/companies/${companyId}/issues`)
+      .send({
+        request: "Per-issue context override is forbidden",
+        ownerAgentId,
+        idempotencyKey: "board-create-4",
+        contextAccessMask: { carry_context: false },
       })
       .expect(400);
     await request(app)

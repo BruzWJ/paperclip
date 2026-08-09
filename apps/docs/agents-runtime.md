@@ -99,15 +99,18 @@ configuration only, not a claim that a future execution can start.
 Configure eligibility and limits as control-plane policy:
 
 - lifecycle status and budgets;
-- all nine context-dial cells, including `carry_context`;
+- all nine context-dial cells, with active owners receiving the six
+  current-issue and sub-issue cells automatically;
 - five configurable action grants and explicit mention reach; `issue_create`
   combines direct-child creation and reassignment;
 - explicitly selected company skills through the `operator_native` channel.
 
-Context grants are explicit. The compiled prompt-capability interface is the
-model-visible context-access boundary; the server still reauthorizes every
-call. Lifecycle reporting is not a grant: the current owner receives
-`issue_update` for its active issue, and an exact creator execution receives it
+The compiled prompt-capability interface is the model-visible context-access
+boundary; the server still reauthorizes every call. An active owner receives
+the current-issue and sub-issue context cells automatically; company cells stay
+at the agent's configured grants. Lifecycle reporting is not a grant: the
+current owner receives `issue_update` for its active issue, and an exact
+creator execution receives it
 for eligible direct children. The canonical update automatically mentions the
 owner/creator counterpart in that counterpart's issue context. Creator child
 updates may send a message or set `open`/`blocked`; only the current owner may
@@ -318,8 +321,9 @@ attempt and any later retry re-evaluates the current immutable request.
    when the CLI needs a custom name or launch override.
 4. Select the exact discovered adapter and complete its required stable ACPX
    configuration.
-5. Set explicit context dials, the five configurable action grants, and
-   selected company skills. Lifecycle reporting needs no separate grant.
+5. Set agent context dials, the five configurable action grants, and selected
+   company skills. Active owners receive current-issue and sub-issue context
+   automatically; lifecycle reporting needs no separate grant.
 6. Create an issue with an immutable request and eligible owner.
 7. Confirm the Session projection, progress comment, terminal state, and any
    valid accounting were recorded.

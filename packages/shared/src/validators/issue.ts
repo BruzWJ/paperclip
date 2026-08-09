@@ -17,11 +17,7 @@ import {
   trustAuthorizationPolicySchema,
 } from "./trust-policy.js";
 import { multilineTextSchema } from "./text.js";
-import {
-  decodeIssueDisposition,
-  normalizeContextAccess,
-  type ContextAccess,
-} from "../issue-runtime.js";
+import { decodeIssueDisposition } from "../issue-runtime.js";
 
 export const issueBlockedInboxStateSchema = z.enum([
   "needs_attention",
@@ -174,25 +170,6 @@ export const issueExecutionStateSchema = z.object({
   lastDecisionOutcome: z.enum(ISSUE_EXECUTION_DECISION_OUTCOMES).nullable(),
 });
 
-const rawIssueCreationContextAccessSchema = z
-  .object({
-    carry_context: z.boolean().optional(),
-    read_issue_comments: z.boolean().optional(),
-    read_issue_agent_run: z.boolean().optional(),
-    list_sub_issues: z.boolean().optional(),
-    read_sub_issue_comments: z.boolean().optional(),
-    read_sub_issue_agent_run: z.boolean().optional(),
-    list_company_issues: z.boolean().optional(),
-    read_company_issue_comments: z.boolean().optional(),
-    read_company_issue_agent_run: z.boolean().optional(),
-  })
-  .strict();
-
-export const issueCreationContextAccessSchema =
-  rawIssueCreationContextAccessSchema.transform(
-    (value): ContextAccess | null => normalizeContextAccess(value),
-  );
-
 export const issueDispositionSchema = z
   .object({
     message: z.string().refine((value) => value.trim().length > 0, {
@@ -220,7 +197,6 @@ const canonicalIssueCreateBaseSchema = z
     goalId: z.string().uuid().nullable().optional(),
     parentId: z.string().uuid().nullable().optional(),
     priority: z.enum(ISSUE_PRIORITIES).optional(),
-    contextAccessMask: issueCreationContextAccessSchema.nullable().optional(),
   })
   .strict();
 

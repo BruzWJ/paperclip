@@ -25,8 +25,6 @@ import {
   type Db,
 } from "@paperclipai/db";
 import {
-  AGENT_CONTEXT_GRANT_KEYS,
-  type AgentContextGrantKey,
   type AgentVisibleIssueStatus,
   type PaperclipActionKey,
   type PaperclipRuntimeActionKey,
@@ -147,7 +145,6 @@ export interface RuntimeIssueActionService {
     title?: string;
     priority?: "critical" | "high" | "medium" | "low";
     owner: RuntimeIssueOwnerChoice;
-    contextAccessMask?: Partial<Record<AgentContextGrantKey, false>>;
   }): Promise<unknown>;
   assign(input: {
     capability: AgentRunCapability;
@@ -3210,7 +3207,6 @@ export function createRuntimeIssueActionPort(
           command.ownerAgentId,
           authority.capability,
         ),
-        contextAccessMask: command.contextAccessMask ?? undefined,
       });
     },
 
@@ -3370,7 +3366,6 @@ export function createPostgresRuntimeIssueActionService(
           .limit(1)
           .then((rows) => rows[0] ?? null);
         if (prior) {
-          const expectedMask = input.contextAccessMask ?? null;
           if (
             prior.issue.parentId !== input.capability.issueId ||
             prior.issue.request !== input.request ||
@@ -3380,9 +3375,7 @@ export function createPostgresRuntimeIssueActionService(
             prior.issue.ownerAgentId !== requestedOwnerId ||
             prior.issue.creatorKind !== "agent-execution" ||
             prior.issue.creatorAuthorityId !==
-              input.capability.issueExecutionAuthorityId ||
-            canonicalJson(prior.issue.contextAccessMask) !==
-              canonicalJson(expectedMask)
+              input.capability.issueExecutionAuthorityId
           ) {
             throw new RuntimeIssueActionConflict(
               "issue_create invocation was retried with different immutable arguments",
@@ -3454,7 +3447,6 @@ export function createPostgresRuntimeIssueActionService(
               creatorAuthorityId: input.capability.issueExecutionAuthorityId,
               creatorAdapterConfigRevisionId:
                 input.capability.adapterConfigIdentity,
-              contextAccessMask: input.contextAccessMask ?? null,
               issueNumber: issueCounter,
               identifier: `${authorized.company.issuePrefix}-${issueCounter}`,
               originKind: "agent_issue_create",

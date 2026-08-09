@@ -42,7 +42,6 @@ import type {
   PermissionKey,
   RoutineVariable,
   AgentVisibleIssueStatus,
-  ContextAccess,
   IssueDisposition,
   IssueStatus,
 } from "@paperclipai/shared";
@@ -68,7 +67,6 @@ import {
   issueCommentMetadataSchema,
   issueCommentPresentationSchema,
   isUuidLike,
-  normalizeContextAccess,
   normalizeAgentUrlKey,
   parseBudgetCurrency,
   parseMoneyAmount,
@@ -621,7 +619,6 @@ const PORTABLE_ISSUE_EXTENSION_KEYS = [
   "identifier",
   "lifecycleStatus",
   "disposition",
-  "contextAccessMask",
   "boardPresentationStatus",
   "priority",
   "labelIds",
@@ -757,19 +754,6 @@ function asBoolean(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
 
-function normalizePortableContextAccessMask(
-  value: unknown,
-  subjectLabel: string,
-) {
-  try {
-    return normalizeContextAccess(value);
-  } catch {
-    throw unprocessable(
-      `${subjectLabel} contextAccessMask accepts only known boolean context-grant keys`,
-    );
-  }
-}
-
 function normalizePortableDisposition(
   value: unknown,
   lifecycleStatus: CompanyPortabilityIssueManifestEntry["lifecycleStatus"],
@@ -860,7 +844,6 @@ interface PortableCanonicalIssueCreateInput {
   lifecycleStatus: AgentVisibleIssueStatus;
   boardPresentationStatus: IssueStatus;
   disposition: IssueDisposition | null;
-  contextAccessMask: ContextAccess | null;
   priority: "critical" | "high" | "medium" | "low";
   labelIds: string[];
   billingCode: string | null;
@@ -924,8 +907,6 @@ async function createPortableCanonicalIssue(
           input.boardPresentationStatus ||
         canonicalPortableJson(existing.disposition) !==
           canonicalPortableJson(input.disposition) ||
-        canonicalPortableJson(existing.contextAccessMask) !==
-        canonicalPortableJson(input.contextAccessMask) ||
         existing.priority !== input.priority ||
         existing.billingCode !== input.billingCode ||
         canonicalPortableJson(persistedLabels) !==
@@ -1043,7 +1024,6 @@ async function createPortableCanonicalIssue(
         ownershipEpoch: 1,
         creatorKind: "user/board",
         creatorUserId: input.creatorUserId,
-        contextAccessMask: input.contextAccessMask,
         responsibleUserId: null,
         issueNumber,
         identifier,
@@ -1306,6 +1286,11 @@ function normalizeRoutineVariableExtension(value: unknown): RoutineVariable | nu
 
 function normalizeRoutineExtension(value: unknown): CompanyPortabilityIssueRoutineManifestEntry | null {
   if (!isPlainRecord(value)) return null;
+  if (hasOwn(value, "contextAccessMask")) {
+    throw unprocessable(
+      "Routine manifest contains unsupported fields: contextAccessMask",
+    );
+  }
   const triggers = Array.isArray(value.triggers)
     ? value.triggers
       .map((entry) => normalizeRoutineTriggerExtension(entry))
@@ -1319,10 +1304,6 @@ function normalizeRoutineExtension(value: unknown): CompanyPortabilityIssueRouti
   const routine = {
     concurrencyPolicy: asString(value.concurrencyPolicy),
     catchUpPolicy: asString(value.catchUpPolicy),
-    contextAccessMask: normalizePortableContextAccessMask(
-      value.contextAccessMask,
-      "Routine issue template",
-    ),
     variables,
     triggers,
   };
@@ -1333,10 +1314,6 @@ function buildRoutineManifestFromLiveRoutine(routine: RoutineLike): CompanyPorta
   return {
     concurrencyPolicy: routine.concurrencyPolicy,
     catchUpPolicy: routine.catchUpPolicy,
-    contextAccessMask: normalizePortableContextAccessMask(
-      routine.contextAccessMask,
-      `Routine ${routine.id}`,
-    ),
     variables: routine.variables,
     triggers: routine.triggers.map((trigger) => ({
       kind: trigger.kind,
@@ -1375,14 +1352,12 @@ function resolvePortableRoutineDefinition(
     ? {
       concurrencyPolicy: issue.routine.concurrencyPolicy,
       catchUpPolicy: issue.routine.catchUpPolicy,
-      contextAccessMask: issue.routine.contextAccessMask,
       variables: issue.routine.variables ?? null,
       triggers: [...issue.routine.triggers],
     }
     : {
       concurrencyPolicy: null,
       catchUpPolicy: null,
-      contextAccessMask: null,
       variables: null,
       triggers: [] as CompanyPortabilityIssueRoutineTriggerManifestEntry[],
     };
@@ -2959,10 +2934,6 @@ function buildManifestFromPackageFiles(
         lifecycleStatus as CompanyPortabilityIssueManifestEntry["lifecycleStatus"],
         `Issue ${slug}`,
       ),
-      contextAccessMask: normalizePortableContextAccessMask(
-        extension.contextAccessMask,
-        `Issue ${slug}`,
-      ),
       boardPresentationStatus,
       priority: asString(extension.priority),
       labelIds: Array.isArray(extension.labelIds)
@@ -3822,10 +3793,6 @@ export function companyPortabilityService(
       const extension = stripEmptyValues({
         identifier: issue.identifier,
         lifecycleStatus: issue.lifecycleStatus,
-        contextAccessMask: normalizePortableContextAccessMask(
-          issue.contextAccessMask,
-          `Issue ${issue.identifier ?? issue.id}`,
-        ) ?? undefined,
         boardPresentationStatus: issue.boardPresentationStatus,
         priority: issue.priority,
         labelIds: issue.labelIds ?? undefined,
@@ -3878,10 +3845,6 @@ export function companyPortabilityService(
       const routineExtension = stripEmptyValues({
         concurrencyPolicy: routine.concurrencyPolicy !== "coalesce_if_active" ? routine.concurrencyPolicy : undefined,
         catchUpPolicy: routine.catchUpPolicy !== "skip_missed" ? routine.catchUpPolicy : undefined,
-        contextAccessMask: normalizePortableContextAccessMask(
-          routine.contextAccessMask,
-          `Routine ${routine.id}`,
-        ) ?? undefined,
         variables: (routine.variables ?? []).length > 0 ? routine.variables : undefined,
         triggers: routine.triggers.map((trigger) => stripEmptyValues({
           kind: trigger.kind,
@@ -5090,7 +5053,6 @@ export function companyPortabilityService(
             const routineDefinition = resolvedRoutine.routine ?? {
               concurrencyPolicy: null,
               catchUpPolicy: null,
-              contextAccessMask: null,
               variables: null,
               triggers: [],
             };
@@ -5114,7 +5076,6 @@ export function companyPortabilityService(
                 routineDefinition.catchUpPolicy && ROUTINE_CATCH_UP_POLICIES.includes(routineDefinition.catchUpPolicy as any)
                   ? routineDefinition.catchUpPolicy as typeof ROUTINE_CATCH_UP_POLICIES[number]
                   : "skip_missed",
-              contextAccessMask: routineDefinition.contextAccessMask,
               variables: routineDefinition.variables ?? [],
             }, secretMutationActor);
             for (const trigger of routineDefinition.triggers) {
@@ -5194,7 +5155,6 @@ export function companyPortabilityService(
                   priority,
                   labelIds: manifestIssue.labelIds ?? [],
                   billingCode: manifestIssue.billingCode,
-                  contextAccessMask: manifestIssue.contextAccessMask,
                 })
               : await createPortableCanonicalIssue(db, {
                   companyId: targetCompany.id,
@@ -5207,7 +5167,6 @@ export function companyPortabilityService(
                   lifecycleStatus: manifestIssue.lifecycleStatus,
                   boardPresentationStatus,
                   disposition: manifestIssue.disposition,
-                  contextAccessMask: manifestIssue.contextAccessMask,
                   priority,
                   labelIds: manifestIssue.labelIds ?? [],
                   billingCode: manifestIssue.billingCode,

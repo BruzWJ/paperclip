@@ -32,9 +32,7 @@ import type {
   IssueBoardReopenDispatch,
   IssueCreatorEdgeTerminalReason,
   IssueExecutionRefSourceKind,
-  RawContextAccess,
 } from "@paperclipai/shared";
-import { normalizeContextAccess } from "@paperclipai/shared";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   InvokableIssueOwnerRejected,
@@ -240,7 +238,6 @@ export interface OrdinaryIssueCreateInput {
   originRunId?: string | null;
   originFingerprint?: string | null;
   billingCode?: string | null;
-  contextAccessMask?: RawContextAccess | null;
   workMode?: string;
   harnessKind?: string | null;
   /**
@@ -467,19 +464,6 @@ function nonBlankPreservingBytes(value: string, label: string): string {
     );
   }
   return value;
-}
-
-function canonicalContextAccessMask(
-  value: OrdinaryIssueCreateInput["contextAccessMask"],
-): ReturnType<typeof normalizeContextAccess> {
-  try {
-    return normalizeContextAccess(value);
-  } catch {
-    throw new OrdinaryIssueRuntimeRejected(
-      "Context access mask accepts only known boolean context-grant keys",
-      "context_access_mask_invalid",
-    );
-  }
 }
 
 function creatorColumns(creator: OrdinaryIssueCreator) {
@@ -1510,7 +1494,6 @@ export function createOrdinaryIssueRuntime(
           "priority_invalid",
         );
       }
-      const contextAccessMask = canonicalContextAccessMask(input.contextAccessMask);
       const key = `ordinary-issue-create:${input.companyId}:${input.idempotencyKey}`;
       const issueId = input.issueId?.trim() || deterministicUuid("ordinary-issue", key);
       const sessionId = stableSessionId(key);
@@ -1563,8 +1546,6 @@ export function createOrdinaryIssueRuntime(
             existing.originFingerprint !==
               (input.originFingerprint ?? key) ||
             existing.billingCode !== (input.billingCode ?? null) ||
-            canonicalJson(existing.contextAccessMask) !==
-              canonicalJson(contextAccessMask) ||
             !sameCreator(existing, input.creator)
           ) {
             throw new OrdinaryIssueRuntimeRejected(
@@ -1693,7 +1674,6 @@ export function createOrdinaryIssueRuntime(
             ownerAssignmentSource: null,
             ownershipEpoch: 1,
             ...creatorColumns(input.creator),
-            contextAccessMask,
             responsibleUserId: input.responsibleUserId ?? null,
             issueNumber,
             identifier,

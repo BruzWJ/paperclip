@@ -34,7 +34,6 @@ function issueListRow(overrides: Record<string, unknown> = {}) {
     ownershipEpoch: 1,
     creatorKind: "user/board",
     creatorUserId: "board-user",
-    contextAccessMask: null,
     responsibleUserId: null,
     issueNumber: 1,
     identifier: "BLK-1",

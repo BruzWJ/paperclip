@@ -10,7 +10,7 @@ import {
 } from "../services/context-dial-resolver.ts";
 
 describe("context dial resolver", () => {
-  it("treats missing agent grants as false and missing masks as identity", () => {
+  it("treats missing agent grants as false", () => {
     const result = resolveContextDial({
       agent: {
         carry_context: true,
@@ -26,27 +26,65 @@ describe("context dial resolver", () => {
     }
   });
 
-  it("allows assignment and execution mode only to attenuate", () => {
+  it("gives an active issue owner only the current and sub-issue baseline", () => {
     const result = resolveContextDial({
-      agent: {
-        carry_context: true,
-        read_issue_comments: true,
-        read_issue_agent_run: false,
-      },
-      assignment: {
-        carry_context: false,
-        read_issue_agent_run: true,
-      },
-      executionMode: {
-        read_issue_comments: false,
-        read_issue_agent_run: true,
-      },
+      agent: {},
+      issueOwner: true,
     });
 
-    expect(result.effective.carry_context).toBe(false);
-    expect(result.effective.read_issue_comments).toBe(false);
-    expect(result.effective.read_issue_agent_run).toBe(false);
+    expect(result.effective).toEqual({
+      carry_context: true,
+      read_issue_comments: true,
+      read_issue_agent_run: true,
+      list_sub_issues: true,
+      read_sub_issue_comments: true,
+      read_sub_issue_agent_run: true,
+      list_company_issues: false,
+      read_company_issue_comments: false,
+      read_company_issue_agent_run: false,
+    });
+  });
+
+  it("keeps company cells at the agent's configured grants", () => {
+    const result = resolveContextDial({
+      agent: {
+        list_company_issues: true,
+        read_company_issue_agent_run: true,
+      },
+      issueOwner: true,
+    });
+
+    expect(result.effective).toEqual({
+      carry_context: true,
+      read_issue_comments: true,
+      read_issue_agent_run: true,
+      list_sub_issues: true,
+      read_sub_issue_comments: true,
+      read_sub_issue_agent_run: true,
+      list_company_issues: true,
+      read_company_issue_comments: false,
+      read_company_issue_agent_run: true,
+    });
+  });
+
+  it("does not grant the owner baseline to another execution mode", () => {
+    const result = resolveContextDial({
+      agent: {},
+      issueOwner: false,
+    });
+
     expect(allContextCellsFalse(result.effective)).toBe(true);
+  });
+
+  it("allows execution mode only to attenuate the owner baseline", () => {
+    const result = resolveContextDial({
+      agent: {},
+      issueOwner: true,
+      executionMode: { read_issue_comments: false },
+    });
+
+    expect(result.effective.read_issue_comments).toBe(false);
+    expect(result.effective.read_sub_issue_comments).toBe(true);
   });
 
   it("stamps the exact five presets without persisting preset authority", () => {

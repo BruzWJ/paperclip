@@ -104,29 +104,15 @@ describe("issue validators", () => {
     }
   });
 
-  it("accepts raw booleans and canonicalizes context-access masks to sparse false-only cells", () => {
+  it("rejects retired per-issue context-access masks", () => {
     const canonical = {
       request: "Work with narrowed context",
       ownerAgentId,
       idempotencyKey: "board-create-3",
     };
-    expect(createIssueSchema.parse({
-      ...canonical,
-      contextAccessMask: {
-        carry_context: false,
-        read_company_issue_agent_run: false,
-      },
-    }).contextAccessMask).toEqual({
-      carry_context: false,
-      read_company_issue_agent_run: false,
-    });
-    expect(createIssueSchema.parse({
-      ...canonical,
-      contextAccessMask: { carry_context: true },
-    }).contextAccessMask).toBeNull();
     expect(createIssueSchema.safeParse({
       ...canonical,
-      contextAccessMask: { arbitrary_context: false },
+      contextAccessMask: { carry_context: false },
     }).success).toBe(false);
     expect(createIssueSchema.safeParse({
       ...canonical,

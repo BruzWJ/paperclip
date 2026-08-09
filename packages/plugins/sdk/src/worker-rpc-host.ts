@@ -719,7 +719,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
             goalId: input.goalId,
             parentId: input.parentId,
             priority: input.priority,
-            contextAccessMask: input.contextAccessMask,
           }, {
             retryTransportTimeout: true,
           });

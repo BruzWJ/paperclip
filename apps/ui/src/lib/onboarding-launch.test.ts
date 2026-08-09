@@ -185,15 +185,4 @@ describe("onboarding launch payloads", () => {
     expect(retry.title).toBe("Changed display title");
   });
 
-  it("lets the first issue inherit the configured agent context access unchanged", () => {
-    const payload = buildOnboardingIssuePayload({
-      title: "Start",
-      request: "Begin the first assignment",
-      ownerAgentId: "agent-1",
-      projectId: "project-1",
-      goalId: null,
-    });
-
-    expect(payload).not.toHaveProperty("contextAccessMask");
-  });
 });

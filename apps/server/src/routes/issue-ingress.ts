@@ -95,7 +95,6 @@ export function issueIngressRoutes(input: {
           goalId: req.body.goalId ?? null,
           parentId: req.body.parentId ?? null,
           priority: req.body.priority,
-          contextAccessMask: req.body.contextAccessMask ?? null,
         });
         res.status(created.retried ? 200 : 201).json({
           ...created.issue,
@@ -135,7 +134,6 @@ export function issueIngressRoutes(input: {
           goalId: req.body.goalId ?? null,
           parentId: parent.id,
           priority: req.body.priority,
-          contextAccessMask: req.body.contextAccessMask ?? null,
         });
         res.status(created.retried ? 200 : 201).json({
           ...created.issue,

@@ -34,7 +34,6 @@ import {
   type RoutineRunDialogSubmitData,
 } from "../components/RoutineRunVariablesDialog";
 import { RoutineVariablesEditor, RoutineVariablesHint } from "../components/RoutineVariablesEditor";
-import { IssueContextAccessMaskMatrix } from "../components/IssueContextAccessMaskMatrix";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -49,7 +48,6 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import type {
-  ContextAccess,
   RoutineListItem,
   RoutineVariable,
 } from "@paperclipai/shared";
@@ -147,7 +145,6 @@ function buildRoutineMutationPayload(input: {
   priority: string;
   concurrencyPolicy: string;
   catchUpPolicy: string;
-  contextAccessMask: ContextAccess | null;
   variables: RoutineVariable[];
 }) {
   return {
@@ -298,7 +295,6 @@ export function Routines() {
     priority: string;
     concurrencyPolicy: string;
     catchUpPolicy: string;
-    contextAccessMask: ContextAccess | null;
     variables: RoutineVariable[];
   }>({
     title: "",
@@ -309,7 +305,6 @@ export function Routines() {
     priority: "medium",
     concurrencyPolicy: "coalesce_if_active",
     catchUpPolicy: "skip_missed",
-    contextAccessMask: null,
     variables: [],
   });
   const routineViewStateKey = selectedCompanyId
@@ -399,7 +394,6 @@ export function Routines() {
         priority: "medium",
         concurrencyPolicy: "coalesce_if_active",
         catchUpPolicy: "skip_missed",
-        contextAccessMask: null,
         variables: [],
       });
       setComposerOpen(false);
@@ -1125,20 +1119,6 @@ export function Routines() {
                       </Select>
                       <p className="text-xs text-muted-foreground">{catchUpPolicyDescriptions[draft.catchUpPolicy]}</p>
                     </div>
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">
-                      Created issue context access
-                    </p>
-                    <IssueContextAccessMaskMatrix
-                      value={draft.contextAccessMask}
-                      onChange={(contextAccessMask) =>
-                        setDraft((current) => ({
-                          ...current,
-                          contextAccessMask,
-                        }))
-                      }
-                    />
                   </div>
                 </CollapsibleContent>
               </Collapsible>

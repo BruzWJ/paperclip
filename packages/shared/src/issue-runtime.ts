@@ -20,44 +20,6 @@ export const AGENT_CONTEXT_GRANT_KEYS = [
 
 export type AgentContextGrantKey = (typeof AGENT_CONTEXT_GRANT_KEYS)[number];
 
-export type ContextAccess = Partial<
-  Record<AgentContextGrantKey, false>
->;
-
-export type RawContextAccess = Partial<
-  Record<AgentContextGrantKey, boolean>
->;
-
-/**
- * Canonicalize a creation-time context-access mask exactly once.
- *
- * Raw `true` means "leave the grant unchanged" and therefore disappears;
- * raw `false` is the only durable value. Empty canonical identity is stored
- * as null rather than as a second equivalent representation.
- */
-export function normalizeContextAccess(
-  value: unknown,
-): ContextAccess | null {
-  if (value == null) return null;
-  if (typeof value !== "object" || Array.isArray(value)) {
-    throw new TypeError("Context access mask must be an object");
-  }
-  const input = value as Record<string, unknown>;
-  const allowed = new Set<string>(AGENT_CONTEXT_GRANT_KEYS);
-  for (const [key, enabled] of Object.entries(input)) {
-    if (!allowed.has(key) || typeof enabled !== "boolean") {
-      throw new TypeError(
-        "Context access mask accepts only known boolean context-grant keys",
-      );
-    }
-  }
-  const canonical: ContextAccess = {};
-  for (const key of AGENT_CONTEXT_GRANT_KEYS) {
-    if (input[key] === false) canonical[key] = false;
-  }
-  return Object.keys(canonical).length > 0 ? canonical : null;
-}
-
 export interface IssueDisposition {
   message: string;
   structuredResult?: unknown;

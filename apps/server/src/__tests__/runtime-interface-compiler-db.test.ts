@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+import {
+  AGENT_CONTEXT_GRANT_KEYS,
+  type PaperclipPluginManifestV1,
+} from "@paperclipai/shared";
 import type { PromptCapabilityCompileScope } from "../services/prompt-capability-gateway.ts";
 import {
   buildRuntimeInterfaceCompileInput,
@@ -53,7 +56,6 @@ function snapshot(
       ownerKind: "agent",
       ownerAgentId: "owner",
       ownershipEpoch: 4,
-      contextAccessMask: { list_company_issues: false },
       workMode: "standard",
       harnessKind: null,
       originKind: "manual",
@@ -250,12 +252,22 @@ describe("Postgres runtime-interface compile snapshot", () => {
     }])).toThrow("declares agent tools without agent.tools.register");
   });
 
-  it("derives exact attenuated catalogs without identity or legacy defaults", () => {
-    const compiled = buildRuntimeInterfaceCompileInput(snapshot());
+  it("gives the current owner current and sub-issue context while preserving company grants", () => {
+    const compiled = buildRuntimeInterfaceCompileInput(snapshot({
+      contextGrantKeys: ["list_company_issues", "read_company_issue_agent_run"],
+    }));
 
-    expect(compiled.contextDial.read_issue_comments).toBe(true);
-    expect(compiled.contextDial.list_company_issues).toBe(false);
-    expect(compiled.contextDial.carry_context).toBe(false);
+    expect(compiled.contextDial).toEqual({
+      carry_context: true,
+      read_issue_comments: true,
+      read_issue_agent_run: true,
+      list_sub_issues: true,
+      read_sub_issue_comments: true,
+      read_sub_issue_agent_run: true,
+      list_company_issues: true,
+      read_company_issue_comments: false,
+      read_company_issue_agent_run: true,
+    });
     expect(compiled.issueCreateDirectChildren).toEqual([
       {
         kind: "agent",
@@ -318,9 +330,15 @@ describe("Postgres runtime-interface compile snapshot", () => {
           issueExecutionAuthorityId: null,
           consultExecutionId: "consult",
         }),
+        contextGrantKeys: [],
       }),
     );
     expect(compiled.isCurrentOwner).toBe(false);
+    expect(compiled.contextDial).toEqual(
+      Object.fromEntries(
+        AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false]),
+      ),
+    );
     expect(compiled.issueAssignTargets).toEqual([]);
     expect(compiled.creatorUpdateTargets).toEqual([]);
   });
@@ -505,7 +523,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
     expect(crossAgent.issueCreateDirectChildren).toEqual([]);
   });
 
-  it("applies execution-mode attenuation on every dynamic compilation", () => {
+  it("allows execution-mode policy to deny an otherwise eligible issue owner", () => {
     const compiled = buildRuntimeInterfaceCompileInput(
       snapshot({
         issue: {
@@ -517,6 +535,20 @@ describe("Postgres runtime-interface compile snapshot", () => {
 
     expect(Object.values(compiled.contextDial).every((value) => !value)).toBe(
       true,
+    );
+  });
+
+  it("does not give an owner-mode non-owner the issue baseline", () => {
+    const compiled = buildRuntimeInterfaceCompileInput(snapshot({
+      capability: capability({ targetAgentId: "child" }),
+      contextGrantKeys: [],
+    }));
+
+    expect(compiled.isCurrentOwner).toBe(false);
+    expect(compiled.contextDial).toEqual(
+      Object.fromEntries(
+        AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false]),
+      ),
     );
   });
 });

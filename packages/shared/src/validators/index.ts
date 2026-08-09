@@ -283,7 +283,6 @@ export {
   createIssueSchema,
   createIssueInputSchema,
   createChildIssueSchema,
-  issueCreationContextAccessSchema,
   issueDispositionSchema,
   createIssueLabelSchema,
   issueBlockedInboxAttentionSchema,

@@ -16,9 +16,10 @@ export interface ResolveContextDialInput {
    */
   agent: ContextAttenuationMask;
   /**
-   * Assignment context access is false-only. Missing keys preserve the agent cell.
+   * The active owner of an issue always receives the current-issue and
+   * sub-issue retrieval cells. Company-level cells remain the agent's grants.
    */
-  assignment?: ContextAttenuationMask | null;
+  issueOwner?: boolean;
   /**
    * Execution-mode policy is false-only. Missing keys preserve the prior tier.
    */
@@ -27,7 +28,6 @@ export interface ResolveContextDialInput {
 
 export interface ResolvedContextDial {
   agent: ContextDial;
-  assignment: ContextDial;
   executionMode: ContextDial;
   effective: ContextDial;
   digest: string;
@@ -71,6 +71,15 @@ const ALL_FALSE = Object.freeze(
 const ALL_TRUE = Object.freeze(
   Object.fromEntries(AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, true])),
 ) as ContextDial;
+
+const ISSUE_OWNER_CONTEXT_GRANT_KEYS = new Set<AgentContextGrantKey>([
+  "carry_context",
+  "read_issue_comments",
+  "read_issue_agent_run",
+  "list_sub_issues",
+  "read_sub_issue_comments",
+  "read_sub_issue_agent_run",
+]);
 
 const PRESET_STAMPS: Readonly<Record<ContextAccessPreset, ContextDial>> =
   Object.freeze({
@@ -127,6 +136,17 @@ function normalizeFalseOnlyMask(
   ) as ContextDial;
 }
 
+function withIssueOwnerBaseline(agent: ContextDial): ContextDial {
+  return Object.freeze(
+    Object.fromEntries(
+      AGENT_CONTEXT_GRANT_KEYS.map((key) => [
+        key,
+        ISSUE_OWNER_CONTEXT_GRANT_KEYS.has(key) ? true : agent[key],
+      ]),
+    ),
+  ) as ContextDial;
+}
+
 function andDials(...dials: readonly ContextDial[]): ContextDial {
   return Object.freeze(
     Object.fromEntries(
@@ -149,19 +169,20 @@ export function contextDialDigest(dial: ContextDial): string {
  * Resolves the only model-context authorization matrix.
  *
  * Each cell is independent:
- *   effective = agent ∧ assignment ∧ executionMode
+ *   effective = (agent ∪ issue-owner current/sub-issue baseline) ∧ executionMode
  */
 export function resolveContextDial(
   input: ResolveContextDialInput,
 ): ResolvedContextDial {
   const agent = normalizeAgentGrants(input.agent);
-  const assignment = normalizeFalseOnlyMask(input.assignment);
+  const ownerBaseline = input.issueOwner === true
+    ? withIssueOwnerBaseline(agent)
+    : agent;
   const executionMode = normalizeFalseOnlyMask(input.executionMode);
-  const effective = andDials(agent, assignment, executionMode);
+  const effective = andDials(ownerBaseline, executionMode);
 
   return {
     agent,
-    assignment,
     executionMode,
     effective,
     digest: contextDialDigest(effective),

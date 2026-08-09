@@ -184,7 +184,6 @@ describe("ordinary issue runtime ingress", () => {
     const result = await runtime.create(createInput({
       priority: "high",
       originKind: "manual",
-      contextAccessMask: { read_issue_comments: false },
       correlate,
     }));
 
@@ -264,7 +263,6 @@ describe("ordinary issue runtime ingress", () => {
       originRunId: null,
       originFingerprint: `ordinary-issue-create:${companyId}:ordinary-create-1`,
       billingCode: null,
-      contextAccessMask: null,
       creatorKind: "user/board",
       creatorUserId: "board-user",
     };
@@ -313,7 +311,6 @@ describe("ordinary issue runtime ingress", () => {
       originRunId: null,
       originFingerprint: `ordinary-issue-create:${companyId}:ordinary-create-1`,
       billingCode: null,
-      contextAccessMask: null,
       creatorKind: "user/board",
       creatorUserId: "board-user",
     };

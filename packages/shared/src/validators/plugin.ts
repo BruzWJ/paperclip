@@ -37,7 +37,6 @@ import type {
   PluginUiSlotDeclaration,
 } from "../types/plugin.js";
 import { routineVariableSchema } from "./routine.js";
-import { issueCreationContextAccessSchema } from "./issue.js";
 
 /** Exact npm package-name contract used by plugin installation and scaffolding. */
 export const pluginPackageNameSchema = z.string()
@@ -418,7 +417,6 @@ export const pluginManagedRoutineDeclarationSchema = z.object({
     surfaceVisibility: z.enum(ISSUE_SURFACE_VISIBILITIES).optional(),
     originId: z.string().trim().max(255).nullable().optional(),
     billingCode: z.string().trim().max(200).nullable().optional(),
-    contextAccessMask: issueCreationContextAccessSchema.nullable().optional(),
   }).strict().optional(),
 }).strict();
 

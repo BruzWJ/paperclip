@@ -826,7 +826,6 @@ export async function ensureSystemEscalationInTransaction(
       creatorKind: "system",
       creatorSystemSourceKind: input.systemSource,
       creatorSystemSourceId: `system-escalation:${identityId}`,
-      contextAccessMask: null,
       escalatedFromAffectedIssueId: affected.id,
       escalatedFromTriggeringRunId: input.triggeringRunId,
       escalatedFromReason: edge.terminalReason,

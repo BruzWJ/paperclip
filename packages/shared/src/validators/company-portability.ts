@@ -11,7 +11,6 @@ import {
   issueCommentAuthorTypeSchema,
   issueCommentMetadataSchema,
   issueCommentPresentationSchema,
-  issueCreationContextAccessSchema,
   issueDispositionSchema,
 } from "./issue.js";
 import { routineVariableSchema } from "./routine.js";
@@ -239,7 +238,6 @@ export const portabilityIssueRoutineTriggerManifestEntrySchema = z.object({
 export const portabilityIssueRoutineManifestEntrySchema = z.object({
   concurrencyPolicy: z.string().nullable(),
   catchUpPolicy: z.string().nullable(),
-  contextAccessMask: issueCreationContextAccessSchema.nullable(),
   variables: z.array(routineVariableSchema).nullable().optional(),
   triggers: z.array(portabilityIssueRoutineTriggerManifestEntrySchema),
 }).strict();
@@ -266,7 +264,6 @@ export const portabilityIssueManifestEntrySchema = z.object({
   routine: portabilityIssueRoutineManifestEntrySchema.nullable(),
   lifecycleStatus: z.enum(AGENT_VISIBLE_ISSUE_STATUSES),
   disposition: issueDispositionSchema.nullable(),
-  contextAccessMask: issueCreationContextAccessSchema.nullable(),
   boardPresentationStatus: z.string().min(1),
   priority: z.string().nullable(),
   labelIds: z.array(z.string().min(1)),

@@ -3,7 +3,6 @@ import {
   AGENT_CONTEXT_GRANT_KEYS,
   canonicalizeMoneyAmount,
   grantsForHumanRole,
-  normalizeContextAccess,
 } from "@paperclipai/shared";
 import type {
   PaperclipPluginManifestV1,
@@ -1322,8 +1321,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
             responsibleUserId: null,
             assigneeAgentId,
             priority: declaration.priority ?? "medium",
-            contextAccessMask:
-              declaration.issueTemplate?.contextAccessMask ?? null,
             status: declaration.status ?? (assigneeAgentId ? "active" : "paused"),
             concurrencyPolicy: declaration.concurrencyPolicy ?? "coalesce_if_active",
             catchUpPolicy: declaration.catchUpPolicy ?? "skip_missed",
@@ -1694,9 +1691,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           ownerUserId: null,
           ownerAssignmentSource: null,
           ownershipEpoch: 1,
-          contextAccessMask: normalizeContextAccess(
-            input.contextAccessMask,
-          ),
           creatorKind: "plugin",
           creatorAuthorityId: null,
           creatorAdapterConfigRevisionId: null,

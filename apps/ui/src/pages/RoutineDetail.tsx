@@ -69,7 +69,6 @@ import type {
   RoutineEnvConfig,
   RoutineVariable,
 } from "@paperclipai/shared";
-import { normalizeContextAccess } from "@paperclipai/shared";
 
 const LAST_SECTION_STORAGE_KEY = "paperclip.routineLastSection";
 
@@ -159,7 +158,6 @@ export function RoutineDetail() {
     priority: "medium",
     concurrencyPolicy: "coalesce_if_active",
     catchUpPolicy: "skip_missed",
-    contextAccessMask: null,
     variables: [],
     env: null,
   });
@@ -258,7 +256,6 @@ export function RoutineDetail() {
             priority: routine.priority,
             concurrencyPolicy: routine.concurrencyPolicy,
             catchUpPolicy: routine.catchUpPolicy,
-            contextAccessMask: routine.contextAccessMask ?? null,
             variables: routine.variables,
             env: routine.env ?? null,
           }
@@ -286,16 +283,6 @@ export function RoutineDetail() {
     }
     if (editDraft.catchUpPolicy !== routineDefaults.catchUpPolicy) {
       result.push({ key: "catchUpPolicy", label: "the catch-up policy" });
-    }
-    if (
-      JSON.stringify(
-        normalizeContextAccess(editDraft.contextAccessMask),
-      ) !==
-      JSON.stringify(
-        normalizeContextAccess(routineDefaults.contextAccessMask),
-      )
-    ) {
-      result.push({ key: "contextAccessMask", label: "the issue context access mask" });
     }
     if (JSON.stringify(editDraft.variables) !== JSON.stringify(routineDefaults.variables)) {
       result.push({ key: "variables", label: "the variables" });
@@ -647,7 +634,6 @@ export function RoutineDetail() {
         priority: response.routine.priority,
         concurrencyPolicy: response.routine.concurrencyPolicy,
         catchUpPolicy: response.routine.catchUpPolicy,
-        contextAccessMask: response.routine.contextAccessMask ?? null,
         variables: response.routine.variables as RoutineVariable[],
         env: (response.routine.env ?? null) as RoutineEnvConfig | null,
       });

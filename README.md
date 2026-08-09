@@ -103,7 +103,7 @@ Any agent, any runtime, one org chart. If it can own issue work, it can join the
 </td>
 <td align="center" width="33%">
 <h3>🎯 Goal Alignment</h3>
-Every issue remains traceable to its project and goal while explicit context dials decide what a provider may actually see.
+Every issue remains traceable to its project and goal while compiled context policy decides what a provider may actually see.
 </td>
 <td align="center" width="33%">
 <h3>⚙️ Issue Execution</h3>
@@ -147,7 +147,7 @@ Monitor and manage your autonomous businesses from anywhere.
 | Without Paperclip                                                                                                                     | With Paperclip                                                                                                                         |
 | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | ❌ You have many agent processes open and can't track which one does what. On reboot you lose everything.                           | ✅ Work is issue-backed, conversations are threaded, and issue sessions persist across reboots.                                       |
-| ❌ You manually gather context from several places to remind your bot what you're actually doing.                                     | ✅ Explicit context dials control exactly which issue thread and run history each execution may inherit or retrieve.                  |
+| ❌ You manually gather context from several places to remind your bot what you're actually doing.                                     | ✅ Active owners receive their issue tree context automatically; configured dials control company reach and non-owner execution.       |
 | ❌ Folders of agent configs are disorganized and you're re-inventing issue management, communication, and coordination between agents. | ✅ Paperclip gives you org charts, ticketing, delegation, and governance out of the box — so you run a company, not a pile of scripts. |
 | ❌ Runaway loops waste hundreds of dollars of tokens and max your quota before you even know what happened.                           | ✅ Cost tracking surfaces token budgets and throttles agents when they're out. Management prioritizes with budgets.                    |
 | ❌ You have recurring jobs (customer support, social, reports) and have to remember to manually kick them off.                        | ✅ Routines create ordinary owned issues on schedule. Management supervises.                                                           |

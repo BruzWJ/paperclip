@@ -39,7 +39,6 @@ import type {
   PluginLocalFolderStatus,
   IssueExecutionSessionOperation,
   AgentContextGrantKey,
-  ContextAccess,
 } from "@paperclipai/shared";
 import type { PluginPerformActionContext } from "./protocol.js";
 
@@ -1128,7 +1127,6 @@ export interface PluginIssueCreateInput {
   goalId?: string;
   parentId?: string;
   priority?: Issue["priority"];
-  contextAccessMask?: ContextAccess | null;
 }
 
 export type PluginIssueUpdateInput =

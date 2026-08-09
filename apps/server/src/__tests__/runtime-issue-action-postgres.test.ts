@@ -112,9 +112,6 @@ describe("runtime issue action contracts", () => {
       title: "Child task",
       priority: "high",
       ownerAgentId: capability.targetAgentId,
-      contextAccessMask: {
-        read_issue_comments: false,
-      },
     });
 
     await port.issueCreate(call);
@@ -126,7 +123,6 @@ describe("runtime issue action contracts", () => {
       title: "Child task",
       priority: "high",
       owner: { kind: "self" },
-      contextAccessMask: { read_issue_comments: false },
     });
   });
 

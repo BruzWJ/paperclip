@@ -105,7 +105,6 @@ import { ScrollToBottom } from "../components/ScrollToBottom";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
 import { Identity } from "../components/Identity";
-import { IssueContextAccessMaskMatrix } from "../components/IssueContextAccessMaskMatrix";
 import { PluginSlotMount, PluginSlotOutlet, usePluginSlots } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { Separator } from "@/components/ui/separator";
@@ -3233,15 +3232,6 @@ export function IssueDetail() {
               Canonical request unavailable for this historical task.
             </p>
           )}
-        </section>
-        <section className="space-y-2">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Issue context access
-          </h3>
-          <IssueContextAccessMaskMatrix
-            value={issue.contextAccessMask ?? null}
-            readOnly
-          />
         </section>
       </div>
 

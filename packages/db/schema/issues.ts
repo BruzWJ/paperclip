@@ -21,7 +21,6 @@ import { companies } from "./companies.js";
 import { issueExecutionRuns } from "./issue_execution_runs.js";
 import type {
   AgentVisibleIssueStatus,
-  ContextAccess,
   IssueCreatorKind,
   IssueDisposition,
   IssueOwnerKind,
@@ -76,7 +75,6 @@ export const issues = pgTable(
     creatorSystemSourceKind: text("creator_system_source_kind")
       .$type<SystemCreatorSourceKind>(),
     creatorSystemSourceId: text("creator_system_source_id"),
-    contextAccessMask: jsonb("context_access_mask").$type<ContextAccess | null>(),
     escalatedFromAffectedIssueId: uuid("escalated_from_affected_issue_id").references(
       (): AnyPgColumn => issues.id,
       { onDelete: "restrict" },
@@ -300,25 +298,6 @@ export const issues = pgTable(
         and ${table.creatorSystemSourceKind} in ('recovery', 'liveness')
         and ${table.creatorSystemSourceId} is not null
       )`,
-    ),
-    contextAccessMaskCheck: check(
-      "issues_context_access_mask_check",
-      sql`${table.contextAccessMask} is null
-        or (
-          jsonb_typeof(${table.contextAccessMask}) = 'object'
-          and ${table.contextAccessMask} - array[
-            'carry_context',
-            'read_issue_comments',
-            'read_issue_agent_run',
-            'list_sub_issues',
-            'read_sub_issue_comments',
-            'read_sub_issue_agent_run',
-            'list_company_issues',
-            'read_company_issue_comments',
-            'read_company_issue_agent_run'
-          ]::text[] = '{}'::jsonb
-          and not jsonb_path_exists(${table.contextAccessMask}, '$.* ? (@ != false)')
-        )`,
     ),
     escalationShapeCheck: check(
       "issues_escalation_shape_check",

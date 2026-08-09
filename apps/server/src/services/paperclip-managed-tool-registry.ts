@@ -1,8 +1,6 @@
 import {
-  AGENT_CONTEXT_GRANT_KEYS,
   PAPERCLIP_RUNTIME_ACTION_KEYS,
   createIssueSchema,
-  normalizeContextAccess,
   runtimeAgentConfigureActionSchemaForTargets,
   runtimeAgentCreateConfigurationSchema,
   runtimeAgentHireConfigurationSchema,
@@ -610,32 +608,16 @@ function projectRuntimeIssueCreate(
   if (input.mode !== "owner" || input.actionGrants.issue_create !== true) {
     return null;
   }
-  const contextAccessMask = z.object(Object.fromEntries(
-    AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, z.boolean().optional()]),
-  ) as Record<(typeof AGENT_CONTEXT_GRANT_KEYS)[number], z.ZodOptional<z.ZodBoolean>>).strict().optional();
   return projection({
     schema: z.object({
       request: z.string().min(1),
       title: z.string().min(1).optional(),
       priority: z.enum(["critical", "high", "medium", "low"]).optional(),
       owner: ownerSchema(input.issueCreateDirectChildren),
-      contextAccessMask,
     }).strict(),
     description:
       "Create one direct child of the active issue and canonically mention its explicit invokable owner with the immutable request.",
     normalize(payload, scope) {
-      let normalizedMask;
-      try {
-        normalizedMask = payload.contextAccessMask === undefined
-          ? undefined
-          : normalizeContextAccess(payload.contextAccessMask);
-      } catch (error) {
-        throw new RuntimeToolArgumentsInvalid(
-          error instanceof Error
-            ? error.message
-            : "Issue context access mask is invalid",
-        );
-      }
       return {
         name: "issue_create",
         companyId: scope.companyId,
@@ -646,7 +628,6 @@ function projectRuntimeIssueCreate(
           : payload.owner.agentId,
         ...(payload.title === undefined ? {} : { title: payload.title }),
         ...(payload.priority === undefined ? {} : { priority: payload.priority }),
-        ...(normalizedMask === undefined ? {} : { contextAccessMask: normalizedMask }),
       };
     },
   });
