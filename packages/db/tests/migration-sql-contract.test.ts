@@ -187,15 +187,23 @@ describe("generated PostgreSQL migration contract", () => {
     expect(source).toContain(`'{issueTemplate,contextAccessMask}'`);
   });
 
-  it("removes retired per-issue context-access configuration everywhere it was stored", () => {
+  it("drops retired per-issue context-access columns without compatibility rewrites", () => {
     const file = migrationFiles().find((entry) => entry.startsWith("0012_"));
     expect(file).toBeDefined();
     const source = migrationSql(file!);
 
-    expect(source).toContain(`DROP COLUMN "context_access_mask"`);
-    expect(source).toContain(`"snapshot" #- '{routine,contextAccessMask}'`);
-    expect(source).toContain(`"manifest_json"`);
-    expect(source).toContain(`"defaults_json" #- '{issueTemplate,contextAccessMask}'`);
+    expect(source).toContain(
+      `ALTER TABLE "issues" DROP COLUMN "context_access_mask"`,
+    );
+    expect(source).toContain(
+      `ALTER TABLE "routines" DROP COLUMN "context_access_mask"`,
+    );
+    expect(source).not.toContain(
+      `"snapshot" #- '{routine,contextAccessMask}'`,
+    );
+    expect(source).not.toContain(
+      `"defaults_json" #- '{issueTemplate,contextAccessMask}'`,
+    );
   });
 
   it("makes plugin uninstall one terminal cascade without live audit FKs", () => {

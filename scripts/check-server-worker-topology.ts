@@ -24,13 +24,13 @@ const SOURCE_ROOTS = [
 const REQUIRED_OWNERS = [
   "apps/server/src/adapters/acpx-catalog.ts",
   "apps/server/src/adapters/registry.ts",
-  "apps/server/src/services/environment-run-orchestrator.ts",
-  "apps/server/src/services/environment-execution-target.ts",
+  "apps/server/src/services/local-execution-orchestrator.ts",
   "apps/server/src/services/issue-execution-attempt-executor.ts",
   "apps/server/src/services/issue-execution-postgres.ts",
   "apps/server/src/services/issue-execution-provider-configuration.ts",
   "apps/server/src/index.ts",
   "packages/adapter-utils/package.json",
+  "packages/adapter-utils/src/execution-target.ts",
   "packages/adapter-utils/src/types.ts",
   "packages/adapter-utils/src/server-adapter-contract.ts",
   "packages/adapter-utils/src/acp-subprocess/agent-registry.ts",
@@ -465,7 +465,7 @@ export function scanServerWorkerTopology(
     markers: [
       "IssueExecutionTargetAcquirer",
       "acquireExecutionTargetForRun",
-      "executionTargetSelector",
+      "localExecutionOrchestrator",
       "releaseExecutionTarget",
     ],
     add,
@@ -480,7 +480,7 @@ export function scanServerWorkerTopology(
     markers: [
       "export function createPostgresIssueExecutionProductionRuntime",
       "createIssueExecutionCancellationService",
-      "environmentOrchestrator: options.environmentOrchestrator",
+      "localExecutionOrchestrator: options.localExecutionOrchestrator",
       "cancellation = createIssueExecutionCancellationService({",
     ],
     add,
@@ -488,22 +488,26 @@ export function scanServerWorkerTopology(
   });
 
   const orchestratorPath =
-    "apps/server/src/services/environment-run-orchestrator.ts";
+    "apps/server/src/services/local-execution-orchestrator.ts";
   requireMarkers({
     path: orchestratorPath,
     source: required(orchestratorPath),
-    markers: ["acquireExecutionTargetForRun", "environmentRuntime"],
+    markers: [
+      "localExecutionOrchestrator",
+      "acquireExecutionTargetForRun",
+      "localRunLeaseService",
+    ],
     add,
-    contract: "existing environment orchestrator",
+    contract: "invariant local execution orchestrator",
   });
   const targetPath =
-    "apps/server/src/services/environment-execution-target.ts";
+    "packages/adapter-utils/src/execution-target.ts";
   requireMarkers({
     path: targetPath,
     source: required(targetPath),
-    markers: ["AdapterExecutionTarget", "EnvironmentDriver"],
+    markers: ["AdapterExecutionTarget", 'readonly kind: "local"'],
     add,
-    contract: "existing environment execution target",
+    contract: "local-only adapter execution target",
   });
 
   const assemblyPath = "apps/server/src/index.ts";
@@ -511,8 +515,7 @@ export function scanServerWorkerTopology(
     path: assemblyPath,
     source: required(assemblyPath),
     markers: [
-      "environmentRuntimeService",
-      "environmentRunOrchestrator",
+      "localExecutionOrchestrator",
       "createPostgresIssueExecutionProductionRuntime",
     ],
     add,

@@ -18,14 +18,13 @@ import {
 import {
   CompanySkillMaterializationLifecycleRejected,
 } from "./company-skill-materialization-lifecycle.js";
-import { EnvironmentRunError } from "./environment-run-orchestrator.js";
+import { LocalExecutionTargetError } from "./local-execution-orchestrator.js";
 
 const COMPANY_ID = "00000000-0000-4000-8000-000000000001";
 const ISSUE_ID = "00000000-0000-4000-8000-000000000002";
 const RUN_ID = "00000000-0000-4000-8000-000000000003";
 const AGENT_ID = "00000000-0000-4000-8000-000000000004";
 const REVISION_ID = "00000000-0000-4000-8000-000000000005";
-const ENVIRONMENT_ID = "00000000-0000-4000-8000-000000000006";
 const BINDING_ID = "00000000-0000-4000-8000-000000000007";
 const WORKSPACE = "/workspace/exact";
 const TARGET_WORKSPACE = "/target/workspace/exact";
@@ -49,11 +48,6 @@ const ACP_CONFIGURATION: AgentAdapterAcpConfiguration = {
       outputTokenLimit: 16_000,
     },
   },
-  executionTargetSelector: {
-    environmentId: ENVIRONMENT_ID,
-    executionTargetDriver: "local",
-    executionTargetDigest: "a".repeat(64),
-  },
   workspaceSelector: {
     kind: "issue_execution_workspace",
   },
@@ -63,7 +57,6 @@ const ACP_CONFIGURATION: AgentAdapterAcpConfiguration = {
 
 const TARGET: AdapterExecutionTarget = Object.freeze({
   kind: "local",
-  environmentId: ENVIRONMENT_ID,
   leaseId: "readiness-lease",
 });
 
@@ -81,7 +74,6 @@ function persistedBinding(overrides: Record<string, unknown> = {}) {
     agentId: AGENT_ID,
     currentAdapterConfigRevisionId: REVISION_ID,
     adapterConfigRevisionId: REVISION_ID,
-    environmentId: ENVIRONMENT_ID,
     executionWorkspaceBindingId: BINDING_ID,
     absoluteCwd: WORKSPACE,
     acpConfiguration: ACP_CONFIGURATION,
@@ -94,7 +86,6 @@ interface HarnessOptions {
   readonly companySkills?: SelectedCompanySkillLaunchChannel;
   readonly companySkillsError?: unknown;
   readonly acquisitionError?: unknown;
-  readonly acquiredTarget?: AdapterExecutionTarget;
   readonly probeError?: unknown;
   readonly releaseError?: unknown;
 }
@@ -123,7 +114,7 @@ function createHarness(options: HarnessOptions = {}) {
         return {
           adapterConfigRevisionId: input.adapterConfigRevisionId,
           acpConfiguration: input.acpConfiguration,
-          executionTarget: options.acquiredTarget ?? TARGET,
+          executionTarget: TARGET,
           hostCwd: WORKSPACE,
           targetCwd: TARGET_WORKSPACE,
           targetAdditionalDirectories: Object.freeze([]),
@@ -194,7 +185,6 @@ describe("adapter runtime readiness", () => {
         runId: RUN_ID,
         agentId: AGENT_ID,
         adapterConfigRevisionId: REVISION_ID,
-        environmentId: ENVIRONMENT_ID,
       },
       runtimeControls: ["session/status"],
     });
@@ -232,7 +222,6 @@ describe("adapter runtime readiness", () => {
         runId: RUN_ID,
         agentId: AGENT_ID,
         adapterConfigRevisionId: REVISION_ID,
-        environmentId: ENVIRONMENT_ID,
       },
       reason: "adapter_revision_invalid",
       remediationCommand: null,
@@ -283,12 +272,12 @@ describe("adapter runtime readiness", () => {
 
   it.each([
     [
-      new EnvironmentRunError("environment_inactive", "inactive"),
-      "environment_unavailable",
+      new LocalExecutionTargetError("lease_acquire_failed", "missing"),
+      "execution_target_unavailable",
     ],
     [
-      new EnvironmentRunError(
-        "workspace_realization_failed",
+      new LocalExecutionTargetError(
+        "workspace_binding_unavailable",
         "workspace unavailable",
       ),
       "workspace_unavailable",
@@ -300,33 +289,6 @@ describe("adapter runtime readiness", () => {
       reason,
     });
     expect(harness.probeInputs).toEqual([]);
-  });
-
-  it("rejects a non-local acquired target without attempting an ACPX process", async () => {
-    const harness = createHarness({
-      acquiredTarget: {
-        kind: "remote",
-        transport: "ssh",
-        remoteCwd: "/remote/workspace",
-        spec: {
-          host: "example.test",
-          port: 22,
-          username: "agent",
-          remoteWorkspacePath: "/remote/workspace",
-          privateKey: null,
-          knownHosts: null,
-          strictHostKeyChecking: true,
-          remoteCwd: "/remote/workspace",
-        },
-      },
-    });
-
-    await expect(harness.service.inspect(IDENTITY)).resolves.toMatchObject({
-      status: "incomplete",
-      reason: "execution_target_unavailable",
-    });
-    expect(harness.probeInputs).toEqual([]);
-    expect(harness.releases).toEqual([true]);
   });
 
   it("lets target lease cleanup failure override a successful ACPX probe", async () => {

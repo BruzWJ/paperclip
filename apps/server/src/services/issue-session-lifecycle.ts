@@ -14,7 +14,7 @@ import {
   costEvents,
   documentRevisions,
   documents,
-  environmentLeases,
+  localExecutionLeases,
   financeEvents,
   goals,
   invites,
@@ -1466,7 +1466,7 @@ export async function purgeCompanySessionGraphInTx(
     activeConsult,
     scheduledRetry,
     activeLane,
-    activeRemoteExecution,
+    activeLocalRunLease,
   ] = await Promise.all([
     tx
       .select({ id: issueExecutionAttempts.id })
@@ -1563,13 +1563,12 @@ export async function purgeCompanySessionGraphInTx(
       )
       .limit(1),
     tx
-      .select({ id: environmentLeases.id })
-      .from(environmentLeases)
+      .select({ id: localExecutionLeases.id })
+      .from(localExecutionLeases)
       .where(
         and(
-          eq(environmentLeases.companyId, input.companyId),
-          eq(environmentLeases.status, "active"),
-          isNotNull(environmentLeases.runId),
+          eq(localExecutionLeases.companyId, input.companyId),
+          eq(localExecutionLeases.status, "active"),
         ),
       )
       .limit(1),
@@ -1585,7 +1584,7 @@ export async function purgeCompanySessionGraphInTx(
     activeConsult[0] ||
     scheduledRetry[0] ||
     activeLane[0] ||
-    activeRemoteExecution[0]
+    activeLocalRunLease[0]
   ) {
     throw new IssueSessionLifecycleConflict(
       "Company Session graph purge is not cancellation-safe",
@@ -1602,7 +1601,7 @@ export async function purgeCompanySessionGraphInTx(
         activeConsultId: activeConsult[0]?.id ?? null,
         scheduledRetryId: scheduledRetry[0]?.id ?? null,
         activeLaneLeaseId: activeLane[0]?.leaseId ?? null,
-        activeRemoteExecutionId: activeRemoteExecution[0]?.id ?? null,
+        activeLocalRunLeaseId: activeLocalRunLease[0]?.id ?? null,
       },
     );
   }

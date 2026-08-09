@@ -71,6 +71,26 @@ describe("issue validators", () => {
     expect(parsed.request).toBe(request);
   });
 
+  it("keeps the project codebase selector without restoring isolated-workspace controls", () => {
+    const canonical = {
+      request: "Run in the project's configured directory",
+      ownerAgentId,
+      idempotencyKey: "board-codebase-1",
+      projectId: "11111111-1111-4111-8111-111111111111",
+      projectWorkspaceId: "33333333-3333-4333-8333-333333333333",
+    };
+
+    expect(createIssueSchema.safeParse(canonical).success).toBe(true);
+    expect(createIssueSchema.safeParse({
+      ...canonical,
+      executionWorkspacePreference: "isolated_workspace",
+    }).success).toBe(false);
+    expect(createIssueSchema.safeParse({
+      ...canonical,
+      executionWorkspaceSettings: { mode: "isolated_workspace" },
+    }).success).toBe(false);
+  });
+
   it("requires request, owner, and idempotency and rejects every retired create field", () => {
     const canonical = {
       request: "Ship the canonical ingress",

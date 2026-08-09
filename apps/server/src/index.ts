@@ -28,7 +28,6 @@ import {
   createRuntimeAgentActionPort,
   createRuntimeAgentConfigurationService,
   createRuntimeIssueActionPort,
-  reconcilePersistedRuntimeServicesOnStartup,
   routineService,
 } from "./services/index.js";
 import { choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
@@ -37,8 +36,7 @@ import { createPluginEventBus } from "./services/plugin-event-bus.js";
 import { createPluginDomainEventPublisher } from "./services/plugin-domain-event-publisher.js";
 import { createPostgresPluginBeforePromptDispatcher } from "./services/plugin-before-prompt-dispatcher.js";
 import { createDevServerRestartCoordinator } from "./services/dev-server-restart-coordinator.js";
-import { environmentRuntimeService } from "./services/environment-runtime.js";
-import { environmentRunOrchestrator } from "./services/environment-run-orchestrator.js";
+import { localExecutionOrchestrator } from "./services/local-execution-orchestrator.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { maybePersistWorktreeServerPort } from "./worktree-config.js";
@@ -317,15 +315,8 @@ export async function startServer(): Promise<StartedServer> {
     createPostgresIssueSessionCompositionRuntime(db as any, {
       workerId,
     });
-  const issueExecutionEnvironmentRuntime =
-    environmentRuntimeService(db as any, {
-      pluginWorkerManager,
-    });
-  const issueExecutionEnvironmentOrchestrator =
-    environmentRunOrchestrator(db as any, {
-      environmentRuntime:
-        issueExecutionEnvironmentRuntime,
-    });
+  const issueExecutionLocalOrchestrator =
+    localExecutionOrchestrator(db as any);
   const refDispatcher: { dispatch: ((refId: string) => Promise<void>) | null } = { dispatch: null };
   const issueExecution =
     createPostgresIssueExecutionProductionRuntime(
@@ -337,8 +328,8 @@ export async function startServer(): Promise<StartedServer> {
             "issue-execution-target-session",
           ),
         issueSessionStore,
-        environmentOrchestrator:
-          issueExecutionEnvironmentOrchestrator,
+        localExecutionOrchestrator:
+          issueExecutionLocalOrchestrator,
         capabilityEndpoint:
           `${runtimeApiUrl.replace(/\/+$/, "")}/api/run-tools`,
         capabilityCursorSecret: deriveInstancePrivateSecret(
@@ -406,8 +397,8 @@ export async function startServer(): Promise<StartedServer> {
     ordinaryIssueRuntime: ordinaryIssues,
     issueExecutionRunService: issueExecution.runService,
     issueExecutionCancellation: issueExecution.cancellation,
-    adapterReadinessEnvironmentOrchestrator:
-      issueExecutionEnvironmentOrchestrator,
+    adapterReadinessLocalExecutionOrchestrator:
+      issueExecutionLocalOrchestrator,
   });
   const requestAuthorityBoundary = (
     app.locals as { paperclipRequestAuthorityBoundary?: RequestAuthorityBoundary }
@@ -431,19 +422,6 @@ export async function startServer(): Promise<StartedServer> {
     resolveSessionFromHeaders,
     requestAuthorityBoundary,
   });
-
-  void reconcilePersistedRuntimeServicesOnStartup(db as any)
-    .then((result) => {
-      if (result.reconciled > 0) {
-        logger.warn(
-          { reconciled: result.reconciled },
-          "reconciled persisted runtime services from a previous server process",
-        );
-      }
-    })
-    .catch((err) => {
-      logger.error({ err }, "startup reconciliation of persisted runtime services failed");
-    });
 
   let issueExecutionSchedulerStopped = false;
   let issueExecutionSchedulerInterval: ReturnType<typeof setInterval> | null = null;

@@ -1,13 +1,11 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { AcpAgentRegistry } from "acpx/runtime";
 import {
-  adapterExecutionTargetIsCommandManaged,
   resolveAdapterExecutionTargetNativeIdentityEnvironment,
   resolveAdapterExecutionTargetExecutable,
   runAdapterExecutionTargetProcess,
   runAdapterExecutionTargetShellCommand,
-  startAdapterExecutionTargetProcessSessionBridge,
   type AdapterExecutionTarget,
 } from "../execution-target.js";
 import {
@@ -25,7 +23,6 @@ import {
   type PreparedSelectedCompanySkillTargetHome,
   type SelectedCompanySkillLaunchChannel,
 } from "../selected-company-skills.js";
-import { buildSshSpawnTarget, shellQuote } from "../ssh.js";
 import {
   loadAcpxAgentRegistry,
   resolveAcpRegistryLaunch,
@@ -64,15 +61,10 @@ export interface PrepareAcpExecutionTargetSubprocessInput {
   readonly targetAdditionalDirectories: readonly string[];
   /** Exact immutable revision selection; operator_native performs zero I/O. */
   readonly companySkills: SelectedCompanySkillLaunchChannel;
-  readonly runtimeRootDir?: string | null;
   readonly timeoutSec?: number | null;
   readonly cleanupTimeoutMs?: number;
   readonly localProcessSandbox?: LocalProcessSandboxOptions | null;
   readonly invocationFiles?: readonly AdapterExecutionTargetTextFile[];
-  readonly onTargetLog?: (
-    stream: "stdout" | "stderr",
-    chunk: string,
-  ) => Promise<void>;
 }
 
 export interface PreparedAcpExecutionTargetSubprocess {
@@ -112,10 +104,9 @@ function requireExactNonempty(value: string, label: string): string {
 function requireAbsolutePath(
   value: string,
   label: string,
-  remote: boolean,
 ): string {
   requireExactNonempty(value, label);
-  if (!(remote ? path.posix.isAbsolute(value) : path.isAbsolute(value))) {
+  if (!path.isAbsolute(value)) {
     throw new Error(`${label} must be an absolute path`);
   }
   return value;
@@ -129,17 +120,6 @@ function sameStrings(
     left.length === right.length &&
     left.every((value, index) => value === right[index])
   );
-}
-
-/**
- * ACPX registry names are opaque protocol identifiers, not filesystem names.
- * Derive the target runtime directory key instead of imposing a Paperclip
- * character allowlist on a dynamically supplied agent name.
- */
-function acpxRuntimeKey(registryName: string): string {
-  return `acpx-${createHash("sha256")
-    .update(registryName, "utf8")
-    .digest("hex")}`;
 }
 
 function probeTimeoutSec(value: number | null | undefined): number {
@@ -172,64 +152,28 @@ async function resolveTargetNodeExecutable(input: {
   readonly targetCwd: string;
   readonly timeoutSec: number;
 }): Promise<string> {
-  const remote = input.target.kind === "remote";
-  let candidate = process.execPath;
-  if (remote) {
-    const probe = await runAdapterExecutionTargetShellCommand(
+  const candidate = requireAbsolutePath(
+    process.execPath,
+    "ACP local Node executable",
+  );
+
+  const identity = requireSuccessfulProbe(
+    await runAdapterExecutionTargetProcess(
       randomUUID(),
       input.target,
-      "command -v node",
+      candidate,
+      ["-e", "process.stdout.write(process.execPath)"],
       {
         cwd: input.targetCwd,
         env: {},
         timeoutSec: input.timeoutSec,
+        graceSec: 2,
+        onLog: async () => {},
       },
-    );
-    if (probe.timedOut || probe.exitCode !== 0) {
-      throw new Error(
-        "The execution target does not expose its pinned Node runtime",
-      );
-    }
-    const candidateMatch = /^([^\r\n]+)\r?\n?$/.exec(probe.stdout);
-    candidate = candidateMatch?.[1] ?? "";
-    if (candidate.length === 0 || candidate !== candidate.trim()) {
-      throw new Error(
-        "The execution target returned an ambiguous Node runtime path",
-      );
-    }
-    requireAbsolutePath(candidate, "ACP target Node probe", true);
-  } else {
-    requireAbsolutePath(candidate, "ACP local Node executable", false);
-  }
-
-  const identity = requireSuccessfulProbe(
-    remote
-      ? await runAdapterExecutionTargetShellCommand(
-          randomUUID(),
-          input.target,
-          `${shellQuote(candidate)} -e ${shellQuote("process.stdout.write(process.execPath)")}`,
-          {
-            cwd: input.targetCwd,
-            env: {},
-            timeoutSec: input.timeoutSec,
-          },
-        )
-      : await runAdapterExecutionTargetProcess(
-          randomUUID(),
-          input.target,
-          candidate,
-          ["-e", "process.stdout.write(process.execPath)"],
-          {
-            cwd: input.targetCwd,
-            env: {},
-            timeoutSec: input.timeoutSec,
-            graceSec: 2,
-            onLog: async () => {},
-          },
-        ),
+    ),
     "ACP target Node identity probe",
   );
-  return requireAbsolutePath(identity, "ACP target Node executable", remote);
+  return requireAbsolutePath(identity, "ACP target Node executable");
 }
 
 async function resolveTargetReadOnlyBinder(input: {
@@ -265,7 +209,6 @@ async function resolveTargetReadOnlyBinder(input: {
   return requireAbsolutePath(
     executable,
     "ACP target read-only binder",
-    input.target.kind === "remote",
   );
 }
 
@@ -435,29 +378,18 @@ function validateLaunchAgainstTarget(
 }
 
 async function prepareHostLaunch(input: {
-  readonly launch: AcpSubprocessLaunch;
-  readonly target: AdapterExecutionTarget;
-  readonly hostCwd: string;
   readonly targetCwd: string;
-  readonly runId: string;
-  readonly runtimeRootDir: string | null | undefined;
-  readonly timeoutSec: number | null | undefined;
   readonly localProcessSandbox: LocalProcessSandboxOptions | null | undefined;
   readonly materialized: AdapterExecutionTargetMaterializedTextFiles | null;
-  readonly adapterKey: string;
   readonly targetCommand: string;
   readonly targetArgs: readonly string[];
   readonly targetNativeExecutable: string;
   readonly targetNativeIdentityEnvironment: Readonly<Record<string, string>>;
   readonly selectedCompanySkillBinding: TargetReadOnlySkillBinding | null;
-  readonly onTargetLog:
-    | ((stream: "stdout" | "stderr", chunk: string) => Promise<void>)
-    | undefined;
 }): Promise<{
   readonly hostLaunch: AcpSubprocessHostLaunch;
   readonly cleanup: CleanupStep | null;
 }> {
-  const target = input.target;
   const targetEnvironment = input.targetNativeIdentityEnvironment;
   let targetCommand = input.targetCommand;
   let targetArgs = [...input.targetArgs];
@@ -512,105 +444,41 @@ async function prepareHostLaunch(input: {
       ...input.targetArgs,
     ];
   }
-  if (target.kind === "local") {
-    if (!input.localProcessSandbox) {
-      return {
-        hostLaunch: {
-          command: targetCommand,
-          args: targetArgs,
-          cwd: input.targetCwd,
-          environment: targetEnvironment,
-        },
-        cleanup: null,
-      };
-    }
-    const sandbox = await buildLocalProcessSandboxSpawnTarget({
-      executable: targetCommand,
-      args: targetArgs,
-      cwd: input.targetCwd,
-      options: localSandboxOptions(
-        input.localProcessSandbox,
-        input.materialized,
-      ),
-      requiredExecutables: [input.targetNativeExecutable],
-      requiredIdentityEnvironment: input.targetNativeIdentityEnvironment,
-    });
+  if (!input.localProcessSandbox) {
     return {
       hostLaunch: {
-        command: sandbox.command,
-        args: sandbox.args,
-        cwd: sandbox.cwd,
-        environment: {
-          ...targetEnvironment,
-          ...sandbox.env,
-        },
+        command: targetCommand,
+        args: targetArgs,
+        cwd: input.targetCwd,
+        environment: targetEnvironment,
       },
-      cleanup: sandbox.cleanup
-        ? { label: "local sandbox cleanup", run: sandbox.cleanup }
-        : null,
+      cleanup: null,
     };
   }
-
-  if (target.transport === "ssh") {
-    if (input.localProcessSandbox) {
-      throw new Error(
-        "Local process confinement cannot wrap a remote ACP execution target",
-      );
-    }
-    const ssh = await buildSshSpawnTarget({
-      spec: target.spec,
-      command: targetCommand,
-      args: targetArgs,
-      env: { ...targetEnvironment },
-      cwd: input.targetCwd,
-    });
-    return {
-      hostLaunch: {
-      command: ssh.command,
-        args: ssh.args,
-        cwd: input.hostCwd,
-        environment: {},
-      },
-      cleanup: { label: "SSH authentication cleanup", run: ssh.cleanup },
-    };
-  }
-
-  if (!adapterExecutionTargetIsCommandManaged(target)) {
-    throw new Error("Unsupported ACP execution target");
-  }
-  if (input.localProcessSandbox) {
-    throw new Error(
-      "Local process confinement cannot wrap a remote ACP execution target",
-    );
-  }
-  const bridge = await startAdapterExecutionTargetProcessSessionBridge({
-    runId: input.runId,
-    target,
-    runtimeRootDir: input.runtimeRootDir,
-    adapterKey: input.adapterKey,
-    command: targetCommand,
+  const sandbox = await buildLocalProcessSandboxSpawnTarget({
+    executable: targetCommand,
     args: targetArgs,
     cwd: input.targetCwd,
-    env: { ...targetEnvironment },
-    timeoutSec: input.timeoutSec,
-    onLog: input.onTargetLog,
+    options: localSandboxOptions(
+      input.localProcessSandbox,
+      input.materialized,
+    ),
+    requiredExecutables: [input.targetNativeExecutable],
+    requiredIdentityEnvironment: input.targetNativeIdentityEnvironment,
   });
-  if (!bridge) {
-    throw new Error(
-      "Command-managed ACP execution target did not create its process bridge",
-    );
-  }
   return {
     hostLaunch: {
-      command: bridge.agentCommand,
-      args: [],
-      cwd: input.hostCwd,
-      environment: {},
+      command: sandbox.command,
+      args: sandbox.args,
+      cwd: sandbox.cwd,
+      environment: {
+        ...targetEnvironment,
+        ...sandbox.env,
+      },
     },
-    cleanup: {
-      label: `${target.transport} process bridge cleanup`,
-      run: bridge.stop,
-    },
+    cleanup: sandbox.cleanup
+      ? { label: "local sandbox cleanup", run: sandbox.cleanup }
+      : null,
   };
 }
 
@@ -622,39 +490,23 @@ async function prepareHostLaunch(input: {
 export async function prepareAcpExecutionTargetSubprocess(
   input: PrepareAcpExecutionTargetSubprocessInput,
 ): Promise<PreparedAcpExecutionTargetSubprocess> {
-  const runId = requireExactNonempty(input.runId, "ACP execution run id");
-  const remote = input.target.kind === "remote";
+  requireExactNonempty(input.runId, "ACP execution run id");
   const hostCwd = requireAbsolutePath(
     input.hostCwd,
     "ACP host wrapper cwd",
-    false,
   );
   const targetCwd = requireAbsolutePath(
     input.targetCwd,
     "ACP target cwd",
-    remote,
   );
   const baseTargetAdditionalDirectories = Object.freeze(
     input.targetAdditionalDirectories.map((directory, index) =>
       requireAbsolutePath(
         directory,
         `ACP target additionalDirectories[${index}]`,
-        remote,
       ),
     ),
   );
-  if (input.runtimeRootDir !== null && input.runtimeRootDir !== undefined) {
-    requireAbsolutePath(
-      input.runtimeRootDir,
-      "ACP target runtime root",
-      remote,
-    );
-  }
-  if (input.localProcessSandbox && remote) {
-    throw new Error(
-      "Local process confinement cannot wrap a remote ACP execution target",
-    );
-  }
   if (
     input.companySkills.channel === "isolated_skills_home" &&
     input.localProcessSandbox
@@ -732,7 +584,6 @@ export async function prepareAcpExecutionTargetSubprocess(
       materialized = await materializeAdapterExecutionTargetTextFiles({
         target: input.target,
         files: invocationFiles,
-        timeoutSec: targetOperationTimeoutSec,
       });
     }
   } catch (preparationError) {
@@ -821,22 +672,14 @@ export async function prepareAcpExecutionTargetSubprocess(
         targetAdditionalDirectories,
       );
       const prepared = await prepareHostLaunch({
-        launch,
-        target: input.target,
-        hostCwd,
         targetCwd,
-        runId,
-        runtimeRootDir: input.runtimeRootDir,
-        timeoutSec: input.timeoutSec,
         localProcessSandbox: input.localProcessSandbox,
         materialized,
-        adapterKey: acpxRuntimeKey(acpxLaunch.registryName),
         targetCommand: targetNativeExecutable,
         targetArgs: acpxLaunch.args,
         targetNativeExecutable,
         targetNativeIdentityEnvironment,
         selectedCompanySkillBinding,
-        onTargetLog: input.onTargetLog,
       });
       targetCleanup = prepared.cleanup;
       const postReapSkillVerification: CleanupStep | null =

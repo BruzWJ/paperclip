@@ -57,7 +57,6 @@ describe("AdapterManager", () => {
         source: "acpx",
         modelsCount: 2,
         loaded: true,
-        drivers: ["local"],
         registryName: "ready-agent",
         configSchema: { fields: [] },
         capabilities: {

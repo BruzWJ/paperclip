@@ -74,21 +74,6 @@ import type {
   PluginPerformActionActorContext,
   PluginPerformActionContext,
   ExecuteToolParams,
-  PluginEnvironmentAcquireLeaseParams,
-  PluginEnvironmentDestroyLeaseParams,
-  PluginEnvironmentExecuteParams,
-  PluginEnvironmentCancelExecutionParams,
-  PluginEnvironmentSyncParams,
-  PluginEnvironmentRealizeWorkspaceParams,
-  PluginEnvironmentReleaseLeaseParams,
-  PluginEnvironmentResumeLeaseParams,
-  PluginEnvironmentValidateConfigParams,
-  PluginEnvironmentProbeParams,
-  PluginEnvironmentStartInteractiveSetupParams,
-  PluginEnvironmentGetInteractiveSetupParams,
-  PluginEnvironmentCaptureTemplateParams,
-  PluginEnvironmentCancelInteractiveSetupParams,
-  PluginEnvironmentDeleteTemplateParams,
   PluginInvocationContext,
   HostToWorkerMethods,
   HostToWorkerOptionalMethodName,
@@ -1063,54 +1048,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         }
         return acknowledgement;
       }
-      case "environmentValidateConfig":
-        return handleEnvironmentValidateConfig(params as PluginEnvironmentValidateConfigParams);
-
-      case "environmentProbe":
-        return handleEnvironmentProbe(params as PluginEnvironmentProbeParams);
-
-      case "environmentAcquireLease":
-        return handleEnvironmentAcquireLease(params as PluginEnvironmentAcquireLeaseParams);
-
-      case "environmentResumeLease":
-        return handleEnvironmentResumeLease(params as PluginEnvironmentResumeLeaseParams);
-
-      case "environmentReleaseLease":
-        return handleEnvironmentReleaseLease(params as PluginEnvironmentReleaseLeaseParams);
-
-      case "environmentDestroyLease":
-        return handleEnvironmentDestroyLease(params as PluginEnvironmentDestroyLeaseParams);
-
-      case "environmentRealizeWorkspace":
-        return handleEnvironmentRealizeWorkspace(params as PluginEnvironmentRealizeWorkspaceParams);
-
-      case "environmentExecute":
-        return handleEnvironmentExecute(params as PluginEnvironmentExecuteParams);
-
-      case "environmentCancelExecution":
-        return handleEnvironmentCancelExecution(params as PluginEnvironmentCancelExecutionParams);
-
-      case "environmentSyncIn":
-        return handleEnvironmentSyncIn(params as PluginEnvironmentSyncParams);
-
-      case "environmentSyncOut":
-        return handleEnvironmentSyncOut(params as PluginEnvironmentSyncParams);
-
-      case "environmentStartInteractiveSetup":
-        return handleEnvironmentStartInteractiveSetup(params as PluginEnvironmentStartInteractiveSetupParams);
-
-      case "environmentGetInteractiveSetup":
-        return handleEnvironmentGetInteractiveSetup(params as PluginEnvironmentGetInteractiveSetupParams);
-
-      case "environmentCaptureTemplate":
-        return handleEnvironmentCaptureTemplate(params as PluginEnvironmentCaptureTemplateParams);
-
-      case "environmentCancelInteractiveSetup":
-        return handleEnvironmentCancelInteractiveSetup(params as PluginEnvironmentCancelInteractiveSetupParams);
-
-      case "environmentDeleteTemplate":
-        return handleEnvironmentDeleteTemplate(params as PluginEnvironmentDeleteTemplateParams);
-
       default:
         throw Object.assign(
           new Error(`Unknown method: ${method}`),
@@ -1209,23 +1146,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     if (creatorCallbackHandlers.size > 0) {
       supportedMethods.push("issues.creatorCallback.deliver");
     }
-    if (plugin.definition.onEnvironmentValidateConfig) supportedMethods.push("environmentValidateConfig");
-    if (plugin.definition.onEnvironmentProbe) supportedMethods.push("environmentProbe");
-    if (plugin.definition.onEnvironmentAcquireLease) supportedMethods.push("environmentAcquireLease");
-    if (plugin.definition.onEnvironmentResumeLease) supportedMethods.push("environmentResumeLease");
-    if (plugin.definition.onEnvironmentReleaseLease) supportedMethods.push("environmentReleaseLease");
-    if (plugin.definition.onEnvironmentDestroyLease) supportedMethods.push("environmentDestroyLease");
-    if (plugin.definition.onEnvironmentRealizeWorkspace) supportedMethods.push("environmentRealizeWorkspace");
-    if (plugin.definition.onEnvironmentExecute) supportedMethods.push("environmentExecute");
-    if (plugin.definition.onEnvironmentCancelExecution) supportedMethods.push("environmentCancelExecution");
-    if (plugin.definition.onEnvironmentSyncIn) supportedMethods.push("environmentSyncIn");
-    if (plugin.definition.onEnvironmentSyncOut) supportedMethods.push("environmentSyncOut");
-    if (plugin.definition.onEnvironmentStartInteractiveSetup) supportedMethods.push("environmentStartInteractiveSetup");
-    if (plugin.definition.onEnvironmentGetInteractiveSetup) supportedMethods.push("environmentGetInteractiveSetup");
-    if (plugin.definition.onEnvironmentCaptureTemplate) supportedMethods.push("environmentCaptureTemplate");
-    if (plugin.definition.onEnvironmentCancelInteractiveSetup) supportedMethods.push("environmentCancelInteractiveSetup");
-    if (plugin.definition.onEnvironmentDeleteTemplate) supportedMethods.push("environmentDeleteTemplate");
-
     return { supportedMethods };
   }
 
@@ -1443,120 +1363,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       new Error(`${method} is not implemented by this plugin`),
       { code: PLUGIN_RPC_ERROR_CODES.METHOD_NOT_IMPLEMENTED },
     );
-  }
-
-  async function handleEnvironmentValidateConfig(
-    params: PluginEnvironmentValidateConfigParams,
-  ) {
-    if (!plugin.definition.onEnvironmentValidateConfig) {
-      throw methodNotImplemented("environmentValidateConfig");
-    }
-    return plugin.definition.onEnvironmentValidateConfig(params);
-  }
-
-  async function handleEnvironmentProbe(params: PluginEnvironmentProbeParams) {
-    if (!plugin.definition.onEnvironmentProbe) {
-      throw methodNotImplemented("environmentProbe");
-    }
-    return plugin.definition.onEnvironmentProbe(params);
-  }
-
-  async function handleEnvironmentAcquireLease(params: PluginEnvironmentAcquireLeaseParams) {
-    if (!plugin.definition.onEnvironmentAcquireLease) {
-      throw methodNotImplemented("environmentAcquireLease");
-    }
-    return plugin.definition.onEnvironmentAcquireLease(params);
-  }
-
-  async function handleEnvironmentResumeLease(params: PluginEnvironmentResumeLeaseParams) {
-    if (!plugin.definition.onEnvironmentResumeLease) {
-      throw methodNotImplemented("environmentResumeLease");
-    }
-    return plugin.definition.onEnvironmentResumeLease(params);
-  }
-
-  async function handleEnvironmentReleaseLease(params: PluginEnvironmentReleaseLeaseParams) {
-    if (!plugin.definition.onEnvironmentReleaseLease) {
-      throw methodNotImplemented("environmentReleaseLease");
-    }
-    return plugin.definition.onEnvironmentReleaseLease(params);
-  }
-
-  async function handleEnvironmentDestroyLease(params: PluginEnvironmentDestroyLeaseParams) {
-    if (!plugin.definition.onEnvironmentDestroyLease) {
-      throw methodNotImplemented("environmentDestroyLease");
-    }
-    return plugin.definition.onEnvironmentDestroyLease(params);
-  }
-
-  async function handleEnvironmentRealizeWorkspace(params: PluginEnvironmentRealizeWorkspaceParams) {
-    if (!plugin.definition.onEnvironmentRealizeWorkspace) {
-      throw methodNotImplemented("environmentRealizeWorkspace");
-    }
-    return plugin.definition.onEnvironmentRealizeWorkspace(params);
-  }
-
-  async function handleEnvironmentExecute(params: PluginEnvironmentExecuteParams) {
-    if (!plugin.definition.onEnvironmentExecute) {
-      throw methodNotImplemented("environmentExecute");
-    }
-    return plugin.definition.onEnvironmentExecute(params);
-  }
-
-  async function handleEnvironmentCancelExecution(params: PluginEnvironmentCancelExecutionParams) {
-    if (!plugin.definition.onEnvironmentCancelExecution) {
-      throw methodNotImplemented("environmentCancelExecution");
-    }
-    return plugin.definition.onEnvironmentCancelExecution(params);
-  }
-
-  async function handleEnvironmentSyncIn(params: PluginEnvironmentSyncParams) {
-    if (!plugin.definition.onEnvironmentSyncIn) {
-      throw methodNotImplemented("environmentSyncIn");
-    }
-    return plugin.definition.onEnvironmentSyncIn(params);
-  }
-
-  async function handleEnvironmentSyncOut(params: PluginEnvironmentSyncParams) {
-    if (!plugin.definition.onEnvironmentSyncOut) {
-      throw methodNotImplemented("environmentSyncOut");
-    }
-    return plugin.definition.onEnvironmentSyncOut(params);
-  }
-
-  async function handleEnvironmentStartInteractiveSetup(params: PluginEnvironmentStartInteractiveSetupParams) {
-    if (!plugin.definition.onEnvironmentStartInteractiveSetup) {
-      throw methodNotImplemented("environmentStartInteractiveSetup");
-    }
-    return plugin.definition.onEnvironmentStartInteractiveSetup(params);
-  }
-
-  async function handleEnvironmentGetInteractiveSetup(params: PluginEnvironmentGetInteractiveSetupParams) {
-    if (!plugin.definition.onEnvironmentGetInteractiveSetup) {
-      throw methodNotImplemented("environmentGetInteractiveSetup");
-    }
-    return plugin.definition.onEnvironmentGetInteractiveSetup(params);
-  }
-
-  async function handleEnvironmentCaptureTemplate(params: PluginEnvironmentCaptureTemplateParams) {
-    if (!plugin.definition.onEnvironmentCaptureTemplate) {
-      throw methodNotImplemented("environmentCaptureTemplate");
-    }
-    return plugin.definition.onEnvironmentCaptureTemplate(params);
-  }
-
-  async function handleEnvironmentCancelInteractiveSetup(params: PluginEnvironmentCancelInteractiveSetupParams) {
-    if (!plugin.definition.onEnvironmentCancelInteractiveSetup) {
-      throw methodNotImplemented("environmentCancelInteractiveSetup");
-    }
-    return plugin.definition.onEnvironmentCancelInteractiveSetup(params);
-  }
-
-  async function handleEnvironmentDeleteTemplate(params: PluginEnvironmentDeleteTemplateParams) {
-    if (!plugin.definition.onEnvironmentDeleteTemplate) {
-      throw methodNotImplemented("environmentDeleteTemplate");
-    }
-    return plugin.definition.onEnvironmentDeleteTemplate(params);
   }
 
   // -----------------------------------------------------------------------

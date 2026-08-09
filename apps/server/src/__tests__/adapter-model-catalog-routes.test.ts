@@ -19,9 +19,6 @@ const mockSecretService = vi.hoisted(() => ({
     async (_companyId: string, config: Record<string, unknown>) => ({ config }),
   ),
 }));
-const mockEnvironmentService = vi.hoisted(() => ({
-  getById: vi.fn(),
-}));
 const acpxCatalog = vi.hoisted(() => ({
   adapter: null as ServerAdapterModule | null,
   refreshAcpxAdapters: vi.fn(async () => undefined),
@@ -39,15 +36,11 @@ function registerModuleMocks() {
     issueService: () => ({}),
     logActivity: vi.fn(),
     secretService: () => mockSecretService,
-    workspaceOperationService: () => ({}),
   }));
   vi.doMock("../services/instance-settings.js", () => ({
     instanceSettingsService: () => ({
       getGeneral: vi.fn(async () => ({ censorUsernameInLogs: false })),
     }),
-  }));
-  vi.doMock("../services/environments.js", () => ({
-    environmentService: () => mockEnvironmentService,
   }));
   vi.doMock("../adapters/index.js", () => ({
     findServerAdapter: (type: string) =>
@@ -124,13 +117,12 @@ describe("ACPX adapter model catalog route", () => {
   it("returns the latest ACPX-discovered model values without provider probe flags", async () => {
     const app = await createApp();
     const res = await request(app).get(
-      "/api/companies/company-1/adapters/fixture-agent-alpha/models?refresh=1&environmentId=env-1",
+      "/api/companies/company-1/adapters/fixture-agent-alpha/models",
     );
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(res.body).toEqual(acpxCatalog.adapter!.definition.models);
     expect(acpxCatalog.refreshAcpxAdapters).toHaveBeenCalledOnce();
-    expect(mockEnvironmentService.getById).not.toHaveBeenCalled();
   }, 15_000);
 
   it("rejects a whitespace-normalized ACPX agent identity", async () => {

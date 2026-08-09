@@ -16,6 +16,7 @@ import {
 import { agents } from "./agents.js";
 import { authUsers } from "./auth.js";
 import { projects } from "./projects.js";
+import { projectWorkspaces } from "./project_workspaces.js";
 import { goals } from "./goals.js";
 import { companies } from "./companies.js";
 import { issueExecutionRuns } from "./issue_execution_runs.js";
@@ -35,6 +36,10 @@ export const issues = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id),
     projectId: uuid("project_id").references(() => projects.id),
+    projectWorkspaceId: uuid("project_workspace_id").references(
+      () => projectWorkspaces.id,
+      { onDelete: "set null" },
+    ),
     goalId: uuid("goal_id").references(() => goals.id),
     parentId: uuid("parent_id"),
     /** Immutable parent epoch captured when this direct child is created. */
@@ -98,6 +103,11 @@ export const issues = pgTable(
     billingCode: text("billing_code"),
     executionPolicy: jsonb("execution_policy").$type<Record<string, unknown>>(),
     executionState: jsonb("execution_state").$type<Record<string, unknown>>(),
+    monitorNextCheckAt: timestamp("monitor_next_check_at", { withTimezone: true }),
+    monitorLastTriggeredAt: timestamp("monitor_last_triggered_at", { withTimezone: true }),
+    monitorAttemptCount: integer("monitor_attempt_count").notNull().default(0),
+    monitorNotes: text("monitor_notes"),
+    monitorScheduledBy: text("monitor_scheduled_by"),
     sourceTrust: jsonb("source_trust").$type<SourceTrustMetadata | null>(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -125,7 +135,12 @@ export const issues = pgTable(
     responsibleUserIdx: index("issues_company_responsible_user_idx").on(table.companyId, table.responsibleUserId),
     parentIdx: index("issues_company_parent_idx").on(table.companyId, table.parentId),
     projectIdx: index("issues_company_project_idx").on(table.companyId, table.projectId),
+    projectWorkspaceIdx: index("issues_company_project_workspace_idx").on(
+      table.companyId,
+      table.projectWorkspaceId,
+    ),
     originIdx: index("issues_company_origin_idx").on(table.companyId, table.originKind, table.originId),
+    dueMonitorIdx: index("issues_company_monitor_due_idx").on(table.companyId, table.monitorNextCheckAt),
     companyUpdatedIdx: index("issues_company_updated_idx").on(table.companyId, table.updatedAt),
     companyCreatedIdx: index("issues_company_created_idx").on(table.companyId, table.createdAt),
     openNormalizedTitleCreatedIdx: index("issues_open_normalized_title_created_idx")

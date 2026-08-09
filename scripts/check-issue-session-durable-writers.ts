@@ -361,14 +361,9 @@ export function scanIssueSessionDurableWriterSource(
     ].join(""),
     "i",
   ).test(mirrorContext);
-  const workspaceOperationLogFiles = new Set([
-    "apps/server/src/services/workspace-operation-log-store.ts",
-    "apps/server/src/services/workspace-operations.ts",
-  ]);
   if (
     /(?:RUN_LOG_S3_|RUN_LOG_BASE_PATH)/.test(text) ||
-    (!workspaceOperationLogFiles.has(relativeFile) &&
-      nearbyRunMirrorPersistence)
+    nearbyRunMirrorPersistence
   ) {
     violations.push({
       file: relativeFile,

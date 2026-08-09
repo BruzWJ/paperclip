@@ -1551,6 +1551,21 @@ function RunDetail({ run: initialRun }: { run: IssueExecutionRunEnvelopeRecord }
         )}
       />
 
+      <BoundedRecordSection
+        title="Watchdog decisions"
+        items={detail?.watchdogDecisions.items ?? []}
+        truncated={detail?.watchdogDecisions.truncated ?? false}
+        render={(decision) => (
+          <div key={decision.id} className="space-y-1 p-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="capitalize">{decision.decision.replace(/_/g, " ")}</Badge>
+              <span className="ml-auto">{relativeTime(decision.createdAt)}</span>
+            </div>
+            {decision.reason ? <p className="text-muted-foreground">{decision.reason}</p> : null}
+          </div>
+        )}
+      />
+
     </div>
   );
 }

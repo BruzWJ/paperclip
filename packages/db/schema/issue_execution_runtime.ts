@@ -743,11 +743,7 @@ export const issueExecutionWorkspaceBindings = pgTable(
     sessionId: text("session_id").notNull(),
     ownershipEpoch: integer("ownership_epoch").notNull(),
     executionWorkspaceId: uuid("execution_workspace_id").notNull(),
-    bindingMode: text("binding_mode").notNull(),
     absoluteCwd: text("absolute_cwd").notNull(),
-    repositoryLocator: text("repository_locator"),
-    repositoryRef: text("repository_ref"),
-    pullRequestSelector: text("pull_request_selector"),
     boundByAgentId: uuid("bound_by_agent_id").references(() => agents.id, {
       onDelete: "set null",
     }),

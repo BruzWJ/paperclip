@@ -8,7 +8,6 @@ import {
   companySecrets,
   companySecretVersions,
   companyMemberships,
-  environments,
   issues,
   projects,
   routines,
@@ -43,7 +42,7 @@ import {
   secretProviderConfigDiscoveryPreviewSchema,
   updateSecretProviderConfigSchema,
 } from "@paperclipai/shared";
-import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
+import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import {
   checkSecretProviders,
@@ -59,7 +58,6 @@ import type {
   SecretProviderWriteContext,
 } from "../secrets/types.js";
 import { isSecretProviderClientError } from "../secrets/types.js";
-import { authorizationDeniedDetails, authorizationService } from "./authorization.js";
 import { findActiveServerAdapter } from "../adapters/index.js";
 import { logActivity } from "./activity-log.js";
 import {
@@ -760,7 +758,6 @@ function assertSelectableProviderConfig(config: {
 }
 
 export function secretService(db: Db) {
-  const authorization = authorizationService(db);
 
   type NormalizeEnvOptions = {
     strictMode?: boolean;
@@ -1264,49 +1261,6 @@ export function secretService(db: Db) {
     return (await resolveSecretValueInternal(companyId, secretId, version, options)).value;
   }
 
-  async function resolveSecretValueForEphemeralAccess(
-    companyId: string,
-    secretId: string,
-    version: number | "latest",
-    context: SecretConsumerContext,
-  ): Promise<string> {
-    if (context.consumerType !== "system" || context.consumerId !== "environment-probe-config") {
-      throw forbidden("Ephemeral secret resolution is limited to draft environment probes");
-    }
-    if (
-      (context.actorType !== "agent" && context.actorType !== "user") ||
-      !context.actorId?.trim()
-    ) {
-      throw forbidden("Ephemeral secret resolution requires an authenticated actor");
-    }
-    const actor =
-      context.actorType === "agent"
-        ? {
-            type: "agent" as const,
-            agentId: context.actorId,
-            companyId,
-            source: "internal" as const,
-          }
-        : {
-            type: "board" as const,
-            userId: context.actorId,
-            source: context.actorSource === "board_key"
-              ? "board_key" as const
-              : "session" as const,
-          };
-    const decision = await authorization.decide({
-      actor,
-      action: "secrets:read",
-      resource: { type: "company", companyId },
-    });
-    if (!decision.allowed) {
-      throw forbidden(decision.explanation, authorizationDeniedDetails(decision));
-    }
-    return (await resolveSecretValueInternal(companyId, secretId, version, {
-      accessContext: context,
-    })).value;
-  }
-
   async function resolveSecretVersion(
     companyId: string,
     secretId: string,
@@ -1663,27 +1617,6 @@ export function secretService(db: Db) {
           id: row.id,
           label: row.name,
           href: `/projects/${deriveProjectUrlKey(row.name, row.id)}`,
-          status: row.status,
-        });
-      }
-    }
-
-    const environmentIds = collectTargetIds(bindings, "environment", { uuidOnly: true });
-    if (environmentIds.length > 0) {
-      const rows = await db
-        .select({
-          id: environments.id,
-          name: environments.name,
-          status: environments.status,
-        })
-        .from(environments)
-        .where(inArray(environments.id, environmentIds));
-      for (const row of rows) {
-        setTarget({
-          type: "environment",
-          id: row.id,
-          label: row.name,
-          href: null,
           status: row.status,
         });
       }
@@ -3702,7 +3635,6 @@ export function secretService(db: Db) {
     getByKey,
     resolveSecretValue,
     resolveSecretVersion,
-    resolveSecretValueForEphemeralAccess,
 
     create: async (
       companyId: string,

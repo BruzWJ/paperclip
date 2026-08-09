@@ -424,6 +424,28 @@ export async function persistCanonicalIssueAggregateInTx(
       session: input.session,
       ...input.workspaceReservation,
     });
+  const persistedIssue =
+    created.projectWorkspaceId === workspaceReservation.projectWorkspaceId
+      ? created
+      : await tx
+          .update(issues)
+          .set({
+            projectWorkspaceId: workspaceReservation.projectWorkspaceId,
+          })
+          .where(
+            and(
+              eq(issues.companyId, created.companyId),
+              eq(issues.id, created.id),
+            ),
+          )
+          .returning()
+          .then((rows) => rows[0] ?? null);
+  if (!persistedIssue) {
+    throw new CanonicalIssueAggregateRejected(
+      "Reserved project workspace was not projected onto the issue",
+      "project_workspace_projection_failed",
+    );
+  }
   const sessionRoot = {
     session: workspaceReservation.session,
     contextEpoch: {
@@ -504,7 +526,7 @@ export async function persistCanonicalIssueAggregateInTx(
   }
 
   return {
-    issue: created,
+    issue: persistedIssue,
     sessionRoot,
     workspaceBinding: binding,
     authority,

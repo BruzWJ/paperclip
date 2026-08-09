@@ -25,6 +25,8 @@ import { NewAgentDialog } from "./NewAgentDialog";
 import { KeyboardShortcutsCheatsheet } from "./KeyboardShortcutsCheatsheet";
 import { ToastViewport } from "./ToastViewport";
 import { MobileBottomNav } from "./MobileBottomNav";
+import { DevRestartBanner } from "./DevRestartBanner";
+import { WorktreeBanner } from "./WorktreeBanner";
 import { StandaloneBrowserControls } from "./StandaloneBrowserControls";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { SidebarShell } from "./SidebarShell";
@@ -37,6 +39,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
+import { healthApi } from "../api/health";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
 import {
@@ -203,6 +206,13 @@ export function Layout() {
     />
   ) : null;
   const hasSecondarySidebar = secondarySidebar != null;
+  const { data: health } = useQuery({
+    queryKey: queryKeys.health,
+    queryFn: () => healthApi.get(),
+    retry: false,
+    refetchInterval: (query) =>
+      query.state.data?.devServer?.enabled ? 2000 : false,
+  });
   const keyboardShortcutsEnabled =
     useQuery({
       queryKey: queryKeys.instance.generalSettings,
@@ -584,6 +594,8 @@ export function Layout() {
         >
           Skip to Main Content
         </a>
+        <WorktreeBanner />
+        <DevRestartBanner devServer={health?.devServer} />
         <div
           className={cn(
             "min-h-0 flex-1",

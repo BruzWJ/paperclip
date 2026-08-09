@@ -18,6 +18,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   hasActiveIssueExecutionAttemptForMaterializationInTransaction,
 } from "./issue-execution-run-service.js";
+import { localExecutionCorrelationFingerprint } from "./local-execution-correlation.js";
 
 type CompanySkillMaterializationTransaction =
   Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -129,12 +130,6 @@ export async function resolveCompanySkillMaterializationRevisionInTransaction(
   const acpConfiguration = agentAdapterAcpConfigurationSchema.parse(
     revision.acpConfiguration,
   );
-  if (
-    acpConfiguration.executionTargetSelector.executionTargetDigest !==
-      revision.executionTargetDigest
-  ) {
-    reject("immutable adapter revision crossed its execution-target identity");
-  }
   if (acpConfiguration.skillChannel === "operator_native") {
     return Object.freeze({
       channel: "operator_native",
@@ -205,7 +200,7 @@ export async function resolveCompanySkillMaterializationRevisionInTransaction(
     companyId,
     agentId,
     executionTargetIdentity:
-      acpConfiguration.executionTargetSelector.executionTargetDigest,
+      localExecutionCorrelationFingerprint(adapterConfigRevisionId),
     adapterConfigRevisionId,
   });
   const key = selectedCompanySkillMaterializationKey({ identity, entries });

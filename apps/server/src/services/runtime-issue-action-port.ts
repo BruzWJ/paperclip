@@ -3430,6 +3430,7 @@ export function createPostgresRuntimeIssueActionService(
               id: issueId,
               companyId: input.capability.companyId,
               projectId: authorized.issue.projectId,
+              projectWorkspaceId: authorized.issue.projectWorkspaceId,
               goalId: authorized.issue.goalId,
               parentId: input.capability.issueId,
               title: input.title ?? null,

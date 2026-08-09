@@ -25,7 +25,6 @@ export const CANONICAL_TEST_ADAPTER_DEFINITION: AcpSubprocessAdapterDefinition =
     environment: Object.freeze({
       cwd: "execution-workspace",
       additionalDirectories: "authorized-workspace-only",
-      drivers: Object.freeze(["local"] as const),
       environmentKeys: Object.freeze([]),
     }),
     runtime: Object.freeze({

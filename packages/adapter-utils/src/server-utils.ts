@@ -2,12 +2,10 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { constants as fsConstants, promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { sanitizeRemoteExecutionEnv } from "./remote-execution-env.js";
 import {
   buildLocalProcessSandboxSpawnTarget,
   type LocalProcessSandboxOptions,
 } from "./local-process-sandbox.js";
-import { buildSshSpawnTarget, type SshRemoteExecutionSpec } from "./ssh.js";
 
 export interface RunProcessResult {
   exitCode: number | null;
@@ -31,8 +29,6 @@ interface SpawnTarget {
   env?: Record<string, string | undefined>;
   cleanup?: () => Promise<void>;
 }
-
-type RemoteExecutionSpec = SshRemoteExecutionSpec;
 
 type ChildProcessWithEvents = ChildProcess & {
   on(event: "error", listener: (err: Error) => void): ChildProcess;
@@ -225,14 +221,7 @@ export async function resolveCommandForLogs(
   command: string,
   cwd: string,
   env: NodeJS.ProcessEnv,
-  options: {
-    remoteExecution?: RemoteExecutionSpec | null;
-  } = {},
 ): Promise<string> {
-  const remote = options.remoteExecution ?? null;
-  if (remote) {
-    return `ssh://${remote.username}@${remote.host}:${remote.port}/${remote.remoteCwd} :: ${command}`;
-  }
   return (await resolveCommandPath(command, cwd, env)) ?? command;
 }
 
@@ -240,13 +229,6 @@ function quoteForCmd(arg: string) {
   if (!arg.length) return '""';
   const escaped = arg.replace(/"/g, '""');
   return /[\s"&<>|^()]/.test(escaped) ? `"${escaped}"` : escaped;
-}
-
-export function sanitizeSshRemoteEnv(
-  env: Record<string, string>,
-  inheritedEnv: NodeJS.ProcessEnv = process.env,
-): Record<string, string> {
-  return sanitizeRemoteExecutionEnv(env, inheritedEnv);
 }
 
 function resolveWindowsCmdShell(env: NodeJS.ProcessEnv): string {
@@ -260,33 +242,9 @@ async function resolveSpawnTarget(
   cwd: string,
   env: NodeJS.ProcessEnv,
   options: {
-    remoteExecution?: RemoteExecutionSpec | null;
-    remoteEnv?: Record<string, string> | null;
     localProcessSandbox?: LocalProcessSandboxOptions | null;
   } = {},
 ): Promise<SpawnTarget> {
-  const remote = options.remoteExecution ?? null;
-  if (remote) {
-    const sshResolved = await resolveCommandPath("ssh", process.cwd(), env);
-    if (!sshResolved) {
-      throw new Error('Command not found in PATH: "ssh"');
-    }
-    const spawnTarget = await buildSshSpawnTarget({
-      spec: remote,
-      command,
-      args,
-      env: Object.fromEntries(
-        Object.entries(options.remoteEnv ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-      ),
-    });
-    return {
-      command: sshResolved,
-      args: spawnTarget.args,
-      cwd: process.cwd(),
-      cleanup: spawnTarget.cleanup,
-    };
-  }
-
   const resolved = await resolveCommandPath(command, cwd, env);
   const executable = resolved ?? command;
 
@@ -376,15 +334,7 @@ export async function ensureCommandResolvable(
   command: string,
   cwd: string,
   env: NodeJS.ProcessEnv,
-  options: {
-    remoteExecution?: RemoteExecutionSpec | null;
-  } = {},
 ) {
-  if (options.remoteExecution) {
-    const resolvedSsh = await resolveCommandPath("ssh", process.cwd(), env);
-    if (resolvedSsh) return;
-    throw new Error('Command not found in PATH: "ssh"');
-  }
   const resolved = await resolveCommandPath(command, cwd, env);
   if (resolved) return;
   if (command.includes("/") || command.includes("\\")) {
@@ -408,7 +358,6 @@ export async function runChildProcess(
     onSpawn?: (meta: { pid: number; processGroupId: number | null; startedAt: string }) => Promise<void>;
     abortSignal?: AbortSignal;
     stdin?: string;
-    remoteExecution?: RemoteExecutionSpec | null;
     localProcessSandbox?: LocalProcessSandboxOptions | null;
   },
 ): Promise<RunProcessResult> {
@@ -437,8 +386,6 @@ export async function runChildProcess(
       mergedEnv.HOME ??= invocationHome;
       mergedEnv.USERPROFILE ??= invocationHome;
       void resolveSpawnTarget(command, args, opts.cwd, mergedEnv, {
-        remoteExecution: opts.remoteExecution ?? null,
-        remoteEnv: opts.remoteExecution ? opts.env : null,
         localProcessSandbox: opts.localProcessSandbox ?? null,
       })
       .then((target) => {

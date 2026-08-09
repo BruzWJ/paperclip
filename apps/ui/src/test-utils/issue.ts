@@ -179,6 +179,7 @@ export function createTestIssue(overrides: TestIssueOverrides = {}): Issue {
     id: "issue-1",
     companyId: "company-1",
     projectId: null,
+    projectWorkspaceId: null,
     goalId: null,
     parentId: null,
     title: "Test issue",

@@ -7,10 +7,14 @@ import {
 } from "@paperclipai/db";
 import type {
   IssueExecutionDecision,
+  IssueExecutionMonitorClearReason,
+  IssueExecutionMonitorPolicy,
+  IssueExecutionMonitorState,
   IssueExecutionPolicy,
   IssueExecutionStage,
   IssueExecutionStagePrincipal,
   IssueExecutionState,
+  IssueMonitorScheduledBy,
   IssueOwnerKind,
 } from "@paperclipai/shared";
 import { issueExecutionPolicySchema, issueExecutionStateSchema } from "@paperclipai/shared";
@@ -28,6 +32,11 @@ type IssueLike = OwnerLike & {
   boardPresentationStatus: string;
   executionPolicy?: IssueExecutionPolicy | Record<string, unknown> | null;
   executionState?: IssueExecutionState | Record<string, unknown> | null;
+  monitorNextCheckAt?: Date | null;
+  monitorLastTriggeredAt?: Date | null;
+  monitorAttemptCount?: number | null;
+  monitorNotes?: string | null;
+  monitorScheduledBy?: string | null;
 };
 
 type ActorLike = {
@@ -44,11 +53,13 @@ type RequestedOwnerPatch = {
 type TransitionInput = {
   issue: IssueLike;
   policy: IssueExecutionPolicy | null;
+  previousPolicy?: IssueExecutionPolicy | null;
   requestedStatus?: string;
   requestedOwnerPatch: RequestedOwnerPatch;
   actor: ActorLike;
   commentBody?: string | null;
   reviewRequest?: IssueExecutionState["reviewRequest"] | null;
+  monitorExplicitlyUpdated?: boolean;
 };
 
 type TransitionResult = {
@@ -59,6 +70,272 @@ type TransitionResult = {
 const COMPLETED_STATUS: IssueExecutionState["status"] = "completed";
 const PENDING_STATUS: IssueExecutionState["status"] = "pending";
 const CHANGES_REQUESTED_STATUS: IssueExecutionState["status"] = "changes_requested";
+const MONITOR_INVALID_MESSAGE = "Monitor can only be scheduled on issues owned by an agent in in_progress or in_review";
+const MONITOR_BOUNDS_EXHAUSTED_MESSAGE = "Monitor bounds are already exhausted";
+export const REDACTED_ISSUE_MONITOR_EXTERNAL_REF = "[redacted]";
+
+function normalizeMonitorNotes(notes: string | null | undefined) {
+  if (typeof notes !== "string") return null;
+  const trimmed = notes.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeMonitorText(value: string | null | undefined) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export function redactIssueMonitorExternalRef(value: string | null | undefined) {
+  return normalizeMonitorText(value) ? REDACTED_ISSUE_MONITOR_EXTERNAL_REF : null;
+}
+
+function monitorMetadataFromPolicy(monitor: IssueExecutionMonitorPolicy) {
+  return {
+    kind: monitor.kind ?? null,
+    serviceName: normalizeMonitorText(monitor.serviceName),
+    externalRef: redactIssueMonitorExternalRef(monitor.externalRef),
+    timeoutAt: monitor.timeoutAt ?? null,
+    maxAttempts: monitor.maxAttempts ?? null,
+    recoveryPolicy: monitor.recoveryPolicy ?? null,
+  };
+}
+
+function monitorMetadataFromState(state: IssueExecutionMonitorState | null | undefined) {
+  return {
+    kind: state?.kind ?? null,
+    serviceName: normalizeMonitorText(state?.serviceName),
+    externalRef: redactIssueMonitorExternalRef(state?.externalRef),
+    timeoutAt: state?.timeoutAt ?? null,
+    maxAttempts: state?.maxAttempts ?? null,
+    recoveryPolicy: state?.recoveryPolicy ?? null,
+  };
+}
+
+function blankExecutionState(): IssueExecutionState {
+  return {
+    status: "idle",
+    currentStageId: null,
+    currentStageIndex: null,
+    currentStageType: null,
+    currentParticipant: null,
+    returnOwner: null,
+    reviewRequest: null,
+    completedStageIds: [],
+    lastDecisionId: null,
+    lastDecisionOutcome: null,
+    monitor: null,
+  };
+}
+
+function isoString(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  return value;
+}
+
+function monitorStatesEqual(left: IssueExecutionMonitorState | null, right: IssueExecutionMonitorState | null): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function executionStateWithMonitor(
+  stageState: IssueExecutionState | null,
+  monitorState: IssueExecutionMonitorState | null,
+): IssueExecutionState | null {
+  if (!stageState && !monitorState) return null;
+  const base = stageState ? { ...stageState } : blankExecutionState();
+  return {
+    ...base,
+    monitor: monitorState,
+  };
+}
+
+function derivePersistedMonitorState(input: {
+  issue: IssueLike;
+  state: IssueExecutionState | null;
+  policy: IssueExecutionPolicy | null;
+}): IssueExecutionMonitorState | null {
+  const fromState = input.state?.monitor ?? null;
+  const scheduledMonitor = input.policy?.monitor ?? null;
+  const nextCheckAt = isoString(input.issue.monitorNextCheckAt) ?? scheduledMonitor?.nextCheckAt ?? fromState?.nextCheckAt ?? null;
+  const lastTriggeredAt = isoString(input.issue.monitorLastTriggeredAt) ?? fromState?.lastTriggeredAt ?? null;
+  const attemptCount = input.issue.monitorAttemptCount ?? fromState?.attemptCount ?? 0;
+  const notes = scheduledMonitor?.notes ?? normalizeMonitorNotes(input.issue.monitorNotes) ?? fromState?.notes ?? null;
+  const scheduledByRaw = input.issue.monitorScheduledBy ?? scheduledMonitor?.scheduledBy ?? fromState?.scheduledBy ?? null;
+  const scheduledBy =
+    scheduledByRaw === "owner" || scheduledByRaw === "board" ? scheduledByRaw : null;
+  const metadata = scheduledMonitor ? monitorMetadataFromPolicy(scheduledMonitor) : monitorMetadataFromState(fromState);
+
+  if (nextCheckAt) {
+    return {
+      status: "scheduled",
+      nextCheckAt,
+      lastTriggeredAt,
+      attemptCount,
+      notes,
+      scheduledBy,
+      ...metadata,
+      clearedAt: null,
+      clearReason: null,
+    };
+  }
+
+  if (fromState?.status === "cleared") {
+    return {
+      ...fromState,
+      notes,
+      scheduledBy,
+      attemptCount,
+      lastTriggeredAt,
+      ...metadata,
+    };
+  }
+
+  if (fromState?.status === "triggered" || lastTriggeredAt || attemptCount > 0) {
+    return {
+      status: "triggered",
+      nextCheckAt: null,
+      lastTriggeredAt,
+      attemptCount,
+      notes,
+      scheduledBy,
+      ...metadata,
+      clearedAt: null,
+      clearReason: null,
+    };
+  }
+
+  return null;
+}
+
+function buildScheduledMonitorState(
+  previous: IssueExecutionMonitorState | null,
+  monitor: IssueExecutionMonitorPolicy,
+): IssueExecutionMonitorState {
+  return {
+    status: "scheduled",
+    nextCheckAt: monitor.nextCheckAt,
+    lastTriggeredAt: previous?.lastTriggeredAt ?? null,
+    attemptCount: previous?.attemptCount ?? 0,
+    notes: monitor.notes ?? null,
+    scheduledBy: monitor.scheduledBy,
+    ...monitorMetadataFromPolicy(monitor),
+    clearedAt: null,
+    clearReason: null,
+  };
+}
+
+function buildClearedMonitorState(input: {
+  previous: IssueExecutionMonitorState | null;
+  clearReason: IssueExecutionMonitorClearReason;
+  clearedAt: Date;
+}): IssueExecutionMonitorState {
+  return {
+    status: "cleared",
+    nextCheckAt: null,
+    lastTriggeredAt: input.previous?.lastTriggeredAt ?? null,
+    attemptCount: input.previous?.attemptCount ?? 0,
+    notes: input.previous?.notes ?? null,
+    scheduledBy: input.previous?.scheduledBy ?? null,
+    ...monitorMetadataFromState(input.previous),
+    clearedAt: input.clearedAt.toISOString(),
+    clearReason: input.clearReason,
+  };
+}
+
+function issueAllowsMonitor(
+  status: string,
+  ownerKind: IssueOwnerKind | null,
+  ownerAgentId: string | null,
+  ownerUserId: string | null,
+) {
+  return (
+    ownerKind === "agent" &&
+    Boolean(ownerAgentId) &&
+    !ownerUserId &&
+    (status === "in_progress" || status === "in_review")
+  );
+}
+
+function monitorClearReasonForIssue(
+  status: string,
+  ownerKind: IssueOwnerKind | null,
+  ownerAgentId: string | null,
+  ownerUserId: string | null,
+): IssueExecutionMonitorClearReason | null {
+  if (status === "done") return "done";
+  if (status === "cancelled") return "cancelled";
+  if (!issueAllowsMonitor(status, ownerKind, ownerAgentId, ownerUserId)) {
+    if (ownerKind !== "agent" || ownerUserId || !ownerAgentId) return "invalid_owner";
+    return "invalid_status";
+  }
+  return null;
+}
+
+function parseMonitorDate(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function exhaustedMonitorClearReason(input: {
+  monitor: IssueExecutionMonitorPolicy;
+  attemptCount: number;
+  now: Date;
+}): IssueExecutionMonitorClearReason | null {
+  const timeoutAt = parseMonitorDate(input.monitor.timeoutAt ?? null);
+  if (timeoutAt && input.now.getTime() >= timeoutAt.getTime()) {
+    return "timeout_exceeded";
+  }
+  const maxAttempts = input.monitor.maxAttempts ?? null;
+  if (maxAttempts !== null && input.attemptCount >= maxAttempts) {
+    return "max_attempts_exhausted";
+  }
+  return null;
+}
+
+function nextOwner(input: {
+  issue: IssueLike;
+  requestedOwnerPatch: RequestedOwnerPatch;
+}) {
+  const ownerKind = input.requestedOwnerPatch.ownerKind !== undefined
+    ? input.requestedOwnerPatch.ownerKind
+    : input.issue.ownerKind ?? null;
+  const ownerAgentId =
+    input.requestedOwnerPatch.ownerAgentId !== undefined
+      ? input.requestedOwnerPatch.ownerAgentId ?? null
+      : input.issue.ownerAgentId ?? null;
+  const ownerUserId =
+    input.requestedOwnerPatch.ownerUserId !== undefined
+      ? input.requestedOwnerPatch.ownerUserId ?? null
+      : input.issue.ownerUserId ?? null;
+  return { ownerKind, ownerAgentId, ownerUserId };
+}
+
+export function stripMonitorFromExecutionPolicy(policy: IssueExecutionPolicy | null): IssueExecutionPolicy | null {
+  if (!policy) return null;
+  if (!policy.monitor) return policy;
+  if (policy.stages.length === 0) return null;
+  return {
+    mode: policy.mode,
+    commentRequired: policy.commentRequired,
+    stages: policy.stages,
+  };
+}
+
+export function setIssueExecutionPolicyMonitorScheduledBy(
+  policy: IssueExecutionPolicy | null,
+  scheduledBy: IssueMonitorScheduledBy,
+): IssueExecutionPolicy | null {
+  if (!policy?.monitor) return policy;
+  return {
+    ...policy,
+    monitor: {
+      ...policy.monitor,
+      scheduledBy,
+    },
+  };
+}
 
 export function normalizeIssueExecutionPolicy(input: unknown): IssueExecutionPolicy | null {
   if (input == null) return null;
@@ -97,15 +374,30 @@ export function normalizeIssueExecutionPolicy(input: unknown): IssueExecutionPol
     })
     .filter((stage): stage is NonNullable<typeof stage> => stage !== null);
 
+  const monitor = parsed.data.monitor
+    ? {
+      nextCheckAt: parsed.data.monitor.nextCheckAt,
+      notes: normalizeMonitorNotes(parsed.data.monitor.notes),
+      scheduledBy: parsed.data.monitor.scheduledBy,
+      kind: parsed.data.monitor.kind ?? null,
+      serviceName: normalizeMonitorText(parsed.data.monitor.serviceName),
+      externalRef: redactIssueMonitorExternalRef(parsed.data.monitor.externalRef),
+      timeoutAt: parsed.data.monitor.timeoutAt ?? null,
+      maxAttempts: parsed.data.monitor.maxAttempts ?? null,
+      recoveryPolicy: parsed.data.monitor.recoveryPolicy ?? null,
+    }
+    : null;
+
   const reviewPreset = parsed.data.reviewPreset;
   const authorizationPolicy = parsed.data.authorizationPolicy;
 
-  if (stages.length === 0 && !reviewPreset && !authorizationPolicy) return null;
+  if (stages.length === 0 && !monitor && !reviewPreset && !authorizationPolicy) return null;
 
   return {
     mode: parsed.data.mode ?? "normal",
     commentRequired: true,
     stages,
+    ...(monitor ? { monitor } : {}),
     ...(reviewPreset ? { reviewPreset } : {}),
     ...(authorizationPolicy ? { authorizationPolicy } : {}),
   };
@@ -195,6 +487,7 @@ function buildCompletedState(previous: IssueExecutionState | null, currentStage:
     completedStageIds,
     lastDecisionId: previous?.lastDecisionId ?? null,
     lastDecisionOutcome: "approved",
+    monitor: previous?.monitor ?? null,
   };
 }
 
@@ -214,6 +507,7 @@ function buildStateWithCompletedStages(input: {
     completedStageIds: input.completedStageIds,
     lastDecisionId: input.previous?.lastDecisionId ?? null,
     lastDecisionOutcome: input.previous?.lastDecisionOutcome ?? null,
+    monitor: input.previous?.monitor ?? null,
   };
 }
 
@@ -233,6 +527,7 @@ function buildSkippedStageCompletedState(input: {
     completedStageIds: input.completedStageIds,
     lastDecisionId: input.previous?.lastDecisionId ?? null,
     lastDecisionOutcome: input.previous?.lastDecisionOutcome ?? null,
+    monitor: input.previous?.monitor ?? null,
   };
 }
 
@@ -255,6 +550,7 @@ function buildPendingState(input: {
     completedStageIds: input.previous?.completedStageIds ?? [],
     lastDecisionId: input.previous?.lastDecisionId ?? null,
     lastDecisionOutcome: input.previous?.lastDecisionOutcome ?? null,
+    monitor: input.previous?.monitor ?? null,
   };
 }
 
@@ -574,8 +870,127 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
   return { patch };
 }
 
+function applyMonitorTransition(input: TransitionInput, stagePatch: Record<string, unknown>) {
+  const patch: Record<string, unknown> = {};
+  const previousPolicy = input.previousPolicy ?? normalizeIssueExecutionPolicy(input.issue.executionPolicy ?? null);
+  const existingState = parseIssueExecutionState(input.issue.executionState);
+  const currentMonitorState = derivePersistedMonitorState({
+    issue: input.issue,
+    state: existingState,
+    policy: previousPolicy,
+  });
+  const nextStatus =
+    typeof stagePatch.status === "string"
+      ? (stagePatch.status as string)
+      : input.requestedStatus ?? input.issue.boardPresentationStatus;
+  const { ownerKind, ownerAgentId, ownerUserId } = nextOwner({
+    issue: input.issue,
+    requestedOwnerPatch: input.requestedOwnerPatch,
+  });
+  const stageState =
+    stagePatch.executionState !== undefined
+      ? parseIssueExecutionState(stagePatch.executionState)
+      : existingState;
+  const invalidReason = input.policy?.monitor
+    ? monitorClearReasonForIssue(nextStatus, ownerKind, ownerAgentId, ownerUserId)
+    : null;
+
+  let targetMonitorState = currentMonitorState;
+
+  if (input.policy?.monitor) {
+    if (invalidReason) {
+      if (input.monitorExplicitlyUpdated) {
+        throw unprocessable(MONITOR_INVALID_MESSAGE);
+      }
+      patch.executionPolicy = stripMonitorFromExecutionPolicy(input.policy);
+      patch.monitorNextCheckAt = null;
+      targetMonitorState = buildClearedMonitorState({
+        previous: currentMonitorState,
+        clearReason: invalidReason,
+        clearedAt: new Date(),
+      });
+    } else {
+      const exhaustedReason = exhaustedMonitorClearReason({
+        monitor: input.policy.monitor,
+        attemptCount: currentMonitorState?.attemptCount ?? 0,
+        now: new Date(),
+      });
+      if (exhaustedReason) {
+        if (input.monitorExplicitlyUpdated) {
+          throw unprocessable(MONITOR_BOUNDS_EXHAUSTED_MESSAGE, { clearReason: exhaustedReason });
+        }
+        patch.executionPolicy = stripMonitorFromExecutionPolicy(input.policy);
+        patch.monitorNextCheckAt = null;
+        targetMonitorState = buildClearedMonitorState({
+          previous: currentMonitorState,
+          clearReason: exhaustedReason,
+          clearedAt: new Date(),
+        });
+      } else {
+        patch.monitorNextCheckAt = new Date(input.policy.monitor.nextCheckAt);
+        patch.monitorNotes = input.policy.monitor.notes ?? null;
+        patch.monitorScheduledBy = input.policy.monitor.scheduledBy;
+        targetMonitorState = buildScheduledMonitorState(currentMonitorState, input.policy.monitor);
+      }
+    }
+  } else if (previousPolicy?.monitor) {
+    patch.monitorNextCheckAt = null;
+    targetMonitorState = buildClearedMonitorState({
+      previous: currentMonitorState,
+      clearReason:
+        input.monitorExplicitlyUpdated
+          ? "manual"
+          : monitorClearReasonForIssue(nextStatus, ownerKind, ownerAgentId, ownerUserId) ?? "manual",
+      clearedAt: new Date(),
+    });
+  }
+
+  if (stagePatch.executionState !== undefined || !monitorStatesEqual(currentMonitorState, targetMonitorState)) {
+    patch.executionState = executionStateWithMonitor(stageState, targetMonitorState);
+  }
+
+  return patch;
+}
+
+export function buildInitialIssueMonitorFields(input: {
+  policy: IssueExecutionPolicy | null;
+  status: string;
+  ownerKind: IssueOwnerKind;
+  ownerAgentId?: string | null;
+  ownerUserId?: string | null;
+}) {
+  if (!input.policy?.monitor) return {};
+  if (!issueAllowsMonitor(
+    input.status,
+    input.ownerKind,
+    input.ownerAgentId ?? null,
+    input.ownerUserId ?? null,
+  )) {
+    throw unprocessable(MONITOR_INVALID_MESSAGE);
+  }
+  const exhaustedReason = exhaustedMonitorClearReason({
+    monitor: input.policy.monitor,
+    attemptCount: 0,
+    now: new Date(),
+  });
+  if (exhaustedReason) {
+    throw unprocessable(MONITOR_BOUNDS_EXHAUSTED_MESSAGE, { clearReason: exhaustedReason });
+  }
+
+  const monitorState = buildScheduledMonitorState(null, input.policy.monitor);
+  return {
+    monitorNextCheckAt: new Date(input.policy.monitor.nextCheckAt),
+    monitorNotes: input.policy.monitor.notes ?? null,
+    monitorScheduledBy: input.policy.monitor.scheduledBy,
+    executionState: executionStateWithMonitor(null, monitorState) as Record<string, unknown> | null,
+  };
+}
+
 export function applyIssueExecutionPolicyTransition(input: TransitionInput): TransitionResult {
-  return applyIssueExecutionStageTransition(input);
+  const stageResult = applyIssueExecutionStageTransition(input);
+  const monitorPatch = applyMonitorTransition(input, stageResult.patch);
+  Object.assign(stageResult.patch, monitorPatch);
+  return stageResult;
 }
 
 type IssueExecutionPolicyActor = {
@@ -652,6 +1067,21 @@ export function issueExecutionPolicyPersistencePatch(patch: Record<string, unkno
               ? null
               : patch.executionState as Record<string, unknown>,
         }
+      : {}),
+    ...(patch.monitorNextCheckAt !== undefined
+      ? { monitorNextCheckAt: patch.monitorNextCheckAt as Date | null }
+      : {}),
+    ...(patch.monitorLastTriggeredAt !== undefined
+      ? { monitorLastTriggeredAt: patch.monitorLastTriggeredAt as Date | null }
+      : {}),
+    ...(patch.monitorAttemptCount !== undefined
+      ? { monitorAttemptCount: patch.monitorAttemptCount as number }
+      : {}),
+    ...(patch.monitorNotes !== undefined
+      ? { monitorNotes: patch.monitorNotes as string | null }
+      : {}),
+    ...(patch.monitorScheduledBy !== undefined
+      ? { monitorScheduledBy: patch.monitorScheduledBy as string | null }
       : {}),
   };
 }
@@ -739,14 +1169,23 @@ export function issueExecutionPolicyControlService(
           input.companyId,
           input.issueId,
         );
-        const normalizedPolicy = normalizeIssueExecutionPolicy(
-          input.executionPolicy,
+        const previousPolicy = normalizeIssueExecutionPolicy(
+          issue.executionPolicy,
         );
+        const normalizedPolicy = setIssueExecutionPolicyMonitorScheduledBy(
+          normalizeIssueExecutionPolicy(input.executionPolicy),
+          "board",
+        );
+        const monitorChanged =
+          JSON.stringify(previousPolicy?.monitor ?? null) !==
+          JSON.stringify(normalizedPolicy?.monitor ?? null);
         const transition = applyIssueExecutionPolicyTransition({
           issue,
           policy: normalizedPolicy,
+          previousPolicy,
           requestedOwnerPatch: {},
           actor: { userId: input.actorUserId },
+          monitorExplicitlyUpdated: monitorChanged,
         });
         const transitionPatch = issueExecutionPolicyPersistencePatch(
           transition.patch,

@@ -23,12 +23,11 @@ function canonicalFiles(): ServerWorkerTopologyFile[] {
       export function registerServerAdapter() { throw new Error("supplied exclusively by ACPX"); }
       assertAcpRegistryAgentName("from-acpx");
     `,
-    "apps/server/src/services/environment-run-orchestrator.ts": `
-      export function acquireExecutionTargetForRun(environmentRuntime) {}
-    `,
-    "apps/server/src/services/environment-execution-target.ts": `
-      type Target = AdapterExecutionTarget;
-      type Driver = EnvironmentDriver;
+    "apps/server/src/services/local-execution-orchestrator.ts": `
+      export function localExecutionOrchestrator() {
+        localRunLeaseService();
+        return { acquireExecutionTargetForRun() {} };
+      }
     `,
     "apps/server/src/services/issue-execution-attempt-executor.ts": `
       import { executeAcpxOneShotPrompt } from "acpx";
@@ -45,21 +44,20 @@ function canonicalFiles(): ServerWorkerTopologyFile[] {
     `,
     "apps/server/src/services/issue-execution-provider-configuration.ts": `
       interface IssueExecutionTargetAcquirer {}
-      const selector = executionTargetSelector;
+      const target = localExecutionOrchestrator;
       acquireExecutionTargetForRun();
       releaseExecutionTarget();
     `,
     "apps/server/src/services/issue-execution-postgres.ts": `
       export function createPostgresIssueExecutionProductionRuntime(options) {
-        const target = { environmentOrchestrator: options.environmentOrchestrator };
+        const target = { localExecutionOrchestrator: options.localExecutionOrchestrator };
         let cancellation = createIssueExecutionCancellationService({});
         cancellation = createIssueExecutionCancellationService({});
         return { target, cancellation };
       }
     `,
     "apps/server/src/index.ts": `
-      environmentRuntimeService();
-      environmentRunOrchestrator();
+      localExecutionOrchestrator();
       createPostgresIssueExecutionProductionRuntime();
     `,
     "packages/adapter-utils/package.json": JSON.stringify({
@@ -69,6 +67,9 @@ function canonicalFiles(): ServerWorkerTopologyFile[] {
       },
       bundleDependencies: ["@agentclientprotocol/sdk", "acpx"],
     }),
+    "packages/adapter-utils/src/execution-target.ts": `
+      export interface AdapterExecutionTarget { readonly kind: "local"; }
+    `,
     "packages/adapter-utils/src/types.ts": `
       export interface ServerAdapterModule {
         readonly type: string;

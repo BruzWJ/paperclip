@@ -139,7 +139,6 @@ function createTransaction(input: {
               id: "revision-1",
               companyId: "company-1",
               agentId: "agent-1",
-              executionTargetDigest: "a".repeat(64),
               acpConfiguration: {
                 contractVersion: "acpx-runtime/v1",
                 launchProfile: {
@@ -156,11 +155,6 @@ function createTransaction(input: {
                     contextTokenLimit: 128_000,
                     outputTokenLimit: 32_000,
                   },
-                },
-                executionTargetSelector: {
-                  environmentId: "00000000-0000-4000-8000-000000000001",
-                  executionTargetDriver: "local",
-                  executionTargetDigest: "a".repeat(64),
                 },
                 workspaceSelector: { kind: "issue_execution_workspace" },
                 companySkillPins: [],

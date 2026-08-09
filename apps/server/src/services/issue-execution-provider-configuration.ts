@@ -5,7 +5,7 @@ import type {
 import type { AgentAdapterAcpConfiguration } from "@paperclipai/shared";
 import { agentAdapterAcpConfigurationSchema } from "@paperclipai/shared";
 import { redactSensitiveText } from "../redaction.js";
-import type { EnvironmentRunOrchestrator } from "./environment-run-orchestrator.js";
+import type { LocalExecutionOrchestrator } from "./local-execution-orchestrator.js";
 
 /**
  * Immutable non-provider facts needed to acquire the physical target for one
@@ -21,7 +21,7 @@ export interface IssueExecutionTargetAcquisitionInput {
   readonly adapterConfigRevisionId: string;
   readonly executionWorkspaceBindingId: string;
   readonly acpConfiguration: AgentAdapterAcpConfiguration;
-  /** Local cwd used only by transport wrappers such as ssh. */
+  /** Exact host cwd recorded for the local provider process. */
   readonly hostCwd: string;
   /** Exact local workspace cwd when the selected target is local. */
   readonly localWorkspaceCwd: string;
@@ -85,14 +85,12 @@ export function createIssueExecutionRuntimeRedactor(): IssueExecutionRuntimeReda
 }
 
 /**
- * Acquires the existing environment/workspace execution target without
+ * Acquires the invariant local workspace execution target without
  * resolving provider credentials, invocation payloads, or adapter callbacks.
- * The legacy `runId` parameter name is confined to the pre-existing
- * environment topology; its value is the canonical issue-execution run id.
  */
 export function createIssueExecutionTargetAcquirer(options: {
-  readonly environmentOrchestrator: Pick<
-    EnvironmentRunOrchestrator,
+  readonly localExecutionOrchestrator: Pick<
+    LocalExecutionOrchestrator,
     "acquireExecutionTargetForRun"
   >;
 }): IssueExecutionTargetAcquirer {
@@ -100,7 +98,6 @@ export function createIssueExecutionTargetAcquirer(options: {
     async acquire(input) {
       const acpConfiguration =
         agentAdapterAcpConfigurationSchema.parse(input.acpConfiguration);
-      const selector = acpConfiguration.executionTargetSelector;
       const hostCwd = exactHostPath(input.hostCwd, "ACP host cwd");
       const localWorkspaceCwd = exactHostPath(
         input.localWorkspaceCwd,
@@ -116,29 +113,21 @@ export function createIssueExecutionTargetAcquirer(options: {
       );
 
       const acquired =
-        await options.environmentOrchestrator.acquireExecutionTargetForRun({
+        await options.localExecutionOrchestrator.acquireExecutionTargetForRun({
           companyId: input.companyId,
-          environmentId: selector.environmentId,
-          executionTargetDriver: selector.executionTargetDriver,
-          executionTargetDigest: selector.executionTargetDigest,
           issueId: input.issueId,
           agentId: input.targetAgentId,
           runId: input.runId,
           executionWorkspaceBindingId: input.executionWorkspaceBindingId,
-          adapterType: acpConfiguration.launchProfile.registryName,
-          // This selector was derived from the exact ACPX definition when the
-          // revision was persisted; issue-session admission pins the same
-          // implementation identity before this acquisition begins.
-          allowedDrivers: [selector.executionTargetDriver],
         });
       const target = acquired.executionTarget;
       if (
-        target.environmentId !== selector.environmentId ||
+        target.kind !== "local" ||
         target.leaseId !== acquired.lease.id
       ) {
         await acquired.releaseExecutionTarget(true).catch(() => undefined);
         throw new IssueExecutionTargetAcquisitionRejected(
-          "Environment acquisition returned a different execution target",
+          "Local execution acquisition returned a different run lease",
         );
       }
 
@@ -147,8 +136,7 @@ export function createIssueExecutionTargetAcquirer(options: {
         acpConfiguration,
         executionTarget: target,
         hostCwd,
-        targetCwd:
-          target.kind === "remote" ? target.remoteCwd : localWorkspaceCwd,
+        targetCwd: localWorkspaceCwd,
         targetAdditionalDirectories: Object.freeze([
           ...input.targetAdditionalDirectories,
         ]),

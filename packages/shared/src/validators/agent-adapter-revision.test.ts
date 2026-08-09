@@ -5,7 +5,6 @@ import {
   publicAgentAdapterAcpConfigurationSchema,
 } from "./agent-adapter-revision.js";
 
-const ENVIRONMENT_ID = "00000000-0000-4000-8000-000000000001";
 const SKILL_VERSION_A = "00000000-0000-4000-8000-000000000002";
 const SKILL_VERSION_B = "00000000-0000-4000-8000-000000000003";
 
@@ -28,11 +27,6 @@ function configuration() {
         inputTokenLimit: 922_000,
         outputTokenLimit: 128_000,
       },
-    },
-    executionTargetSelector: {
-      environmentId: ENVIRONMENT_ID,
-      executionTargetDriver: "local" as const,
-      executionTargetDigest: "a".repeat(64),
     },
     workspaceSelector: {
       kind: "issue_execution_workspace" as const,
@@ -57,7 +51,6 @@ describe("agent adapter ACP revision configuration", () => {
     expect(publicAgentAdapterAcpConfigurationSchema.parse(projected)).toEqual(
       projected,
     );
-    expect(projected).not.toHaveProperty("executionTargetSelector");
     expect(projected).not.toHaveProperty("workspaceSelector");
   });
 
@@ -164,7 +157,7 @@ describe("agent adapter ACP revision configuration", () => {
     ).toBe(false);
   });
 
-  it("rejects invalid model limits and target selectors", () => {
+  it("rejects invalid model limits", () => {
     const base = configuration();
     expect(
       agentAdapterAcpConfigurationSchema.safeParse({
@@ -175,15 +168,6 @@ describe("agent adapter ACP revision configuration", () => {
             ...base.model.limits,
             outputTokenLimit: base.model.limits.contextTokenLimit + 1,
           },
-        },
-      }).success,
-    ).toBe(false);
-    expect(
-      agentAdapterAcpConfigurationSchema.safeParse({
-        ...base,
-        executionTargetSelector: {
-          ...base.executionTargetSelector,
-          executionTargetDigest: "not-a-digest",
         },
       }).success,
     ).toBe(false);

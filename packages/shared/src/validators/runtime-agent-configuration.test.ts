@@ -377,8 +377,6 @@ describe("agent operational control-plane validator", () => {
   it("rejects empty, malformed, system-owned, and cross-owner updates", () => {
     for (const invalid of [
       {},
-      { environmentId: AGENT_ID },
-      { environmentId: "not-a-uuid" },
       { budgetMonthlyAmount: -1 },
       { knownSpendAmount: "10" },
       { status: "paused" },
@@ -401,7 +399,6 @@ describe("control-plane ownership walls", () => {
       { adapterConfig: {} },
       { runtimeConfig: {} },
       { icon: "bot" },
-      { environmentId: AGENT_ID },
       { budgetMonthlyAmount: "1000" },
       { status: "idle" },
       { knownSpendAmount: "0" },
@@ -445,7 +442,7 @@ describe("unsaved adapter configuration test contract", () => {
     expect(
       agentAdapterConfigurationTestInputSchema.safeParse({
         adapterConfig: {},
-        environmentId: AGENT_ID,
+        executionTarget: "remote",
       }).success,
     ).toBe(false);
     expect(

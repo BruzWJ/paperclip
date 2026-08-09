@@ -119,7 +119,6 @@ export function useAdapterCatalogSyncState(
       selectableAdapters.map((adapter) => ({
         type: adapter.type,
         label: adapter.label,
-        drivers: adapter.drivers,
       })),
     );
   } else if (enabled && isError) {

@@ -253,10 +253,6 @@ export function acpxDiscoveryToServerAdapter(
       environment: Object.freeze({
         cwd: "execution-workspace",
         additionalDirectories: "authorized-workspace-only",
-        // ACPX's public runtime owns the local provider-CLI lifecycle. It has
-        // no Paperclip-managed remote transport contract, so advertise only
-        // the execution target ACPX can actually launch from this host.
-        drivers: Object.freeze(["local"] as const),
         environmentKeys: Object.freeze([]),
       }),
       runtime: Object.freeze({

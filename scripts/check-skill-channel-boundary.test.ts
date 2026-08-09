@@ -48,7 +48,6 @@ function fixtureRoot(): string {
     [
       "declare function prepareSelectedCompanySkillTargetHome(value: unknown): Promise<unknown>;",
       "declare function resolveTargetReadOnlyBinder(value: unknown): Promise<unknown>;",
-      "declare function adapterExecutionTargetIsCommandManaged(value: unknown): boolean;",
       "async function prepare(input: any, target: any, home: any) {",
       "  if (input.companySkills.channel === \"isolated_skills_home\") {",
       "    await resolveTargetReadOnlyBinder({ target });",
@@ -56,8 +55,6 @@ function fixtureRoot(): string {
       "    const onFirstStdoutChunk = () => home.releasePreparationLock();",
       "    const args = [\"--ro-bind\", home.skillsDir, \"--remount-ro\", \"--cap-drop\", \"--disable-userns\"];",
       "  }",
-      "  if (target.transport === \"ssh\") return;",
-      "  adapterExecutionTargetIsCommandManaged(target);",
       "}",
       "",
     ].join("\n"),

@@ -307,61 +307,6 @@ export const pluginToolDeclarationSchema = z.object({
   bootstrapEnabled: z.boolean().optional(),
 }).strict();
 
-const pluginEnvironmentTemplateConfigFieldSchema = z.string()
-  .min(1)
-  .max(100)
-  .regex(
-    /^[A-Za-z_][A-Za-z0-9_-]*$/,
-    "Template config binding fields must be top-level config keys using letters, digits, underscores, or hyphens",
-  )
-  .refine((value) => value !== "provider", {
-    message: "Template config binding must not replace the sandbox provider key",
-  });
-
-export const pluginEnvironmentTemplateConfigBindingSchema = z.object({
-  field: pluginEnvironmentTemplateConfigFieldSchema,
-  unsetFields: z.array(pluginEnvironmentTemplateConfigFieldSchema).min(1).max(20).optional(),
-}).strict().superRefine((value, ctx) => {
-  const unsetFields = value.unsetFields ?? [];
-  const seen = new Set<string>();
-  for (const [index, field] of unsetFields.entries()) {
-    if (field === value.field) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Template config binding cannot unset the same field it sets",
-        path: ["unsetFields", index],
-      });
-    }
-    if (seen.has(field)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Template config binding unsetFields must be unique",
-        path: ["unsetFields", index],
-      });
-    }
-    seen.add(field);
-  }
-});
-
-export const pluginEnvironmentDriverDeclarationSchema = z.object({
-  driverKey: z.string().min(1).regex(
-    /^[a-z0-9][a-z0-9._-]*$/,
-    "Environment driver key must start with a lowercase alphanumeric and contain only lowercase letters, digits, dots, hyphens, or underscores",
-  ),
-  kind: z.enum(["environment_driver", "sandbox_provider"]).optional(),
-  displayName: z.string().min(1).max(100),
-  description: z.string().max(500).optional(),
-  supportsReusableLeases: z.boolean().optional(),
-  supportsInteractiveSetup: z.boolean().optional(),
-  interactiveSetupConnectionTypes: z.array(z.string().min(1).max(100)).min(1).max(10).optional(),
-  supportsTemplateCapture: z.boolean().optional(),
-  templateRefKind: z.string().min(1).max(100).optional(),
-  templateConfigBinding: pluginEnvironmentTemplateConfigBindingSchema.optional(),
-  templateIdentityPaths: z.array(z.string().min(1).max(200)).min(1).max(20).optional(),
-  supportsTemplateDelete: z.boolean().optional(),
-  configSchema: jsonSchemaSchema,
-}).strict();
-
 export const pluginManagedAgentDeclarationSchema = z.object({
   agentKey: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9._:-]*$/, {
     message: "agentKey must start with a lowercase alphanumeric and contain only lowercase letters, digits, dots, colons, underscores, or hyphens",
@@ -787,13 +732,11 @@ const pluginPackageEntrypointSchema = z.string().min(1).refine(
  * Cross-field rules enforced via `superRefine`:
  * - `entrypoints.ui` and a non-empty `ui` declaration require each other
  * - `agent.tools.register` capability required when `tools` declared
- * - `environment.drivers.register` capability required when `environmentDrivers` declared
  * - `jobs.schedule` capability required when `jobs` declared
  * - `webhooks.receive` capability required when `webhooks` declared
  * - duplicate `jobs[].jobKey` values are rejected
  * - duplicate `webhooks[].endpointKey` values are rejected
  * - duplicate `tools[].name` values are rejected
- * - duplicate `environmentDrivers[].driverKey` values are rejected
  * - duplicate `ui.slots[].id` values are rejected
  *
  * @see PLUGIN_SPEC.md §10.1 — Manifest shape
@@ -830,7 +773,6 @@ export const pluginManifestV1Schema = z.object({
   tools: z.array(pluginToolDeclarationSchema).min(1).optional(),
   database: pluginDatabaseDeclarationSchema.optional(),
   apiRoutes: z.array(pluginApiRouteDeclarationSchema).min(1).optional(),
-  environmentDrivers: z.array(pluginEnvironmentDriverDeclarationSchema).min(1).optional(),
   agents: z.array(pluginManagedAgentDeclarationSchema).min(1).optional(),
   projects: z.array(pluginManagedProjectDeclarationSchema).min(1).optional(),
   routines: z.array(pluginManagedRoutineDeclarationSchema).min(1).optional(),
@@ -922,17 +864,6 @@ export const pluginManifestV1Schema = z.object({
       message: "Capability 'http.outbound' is required when 'http.private-network' is declared",
       path: ["capabilities"],
     });
-  }
-
-  // environment drivers require environment.drivers.register
-  if (manifest.environmentDrivers && manifest.environmentDrivers.length > 0) {
-    if (!manifest.capabilities.includes("environment.drivers.register")) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Capability 'environment.drivers.register' is required when environmentDrivers are declared",
-        path: ["capabilities"],
-      });
-    }
   }
 
   if (manifest.agents && manifest.agents.length > 0) {
@@ -1132,19 +1063,6 @@ export const pluginManifestV1Schema = z.object({
           path: ["tools", index, "name"],
         });
       }
-    }
-  }
-
-  // environment driver keys must be unique within the plugin
-  if (manifest.environmentDrivers) {
-    const driverKeys = manifest.environmentDrivers.map((d) => d.driverKey);
-    const duplicates = driverKeys.filter((key, i) => driverKeys.indexOf(key) !== i);
-    if (duplicates.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Duplicate environment driver keys: ${[...new Set(duplicates)].join(", ")}`,
-        path: ["environmentDrivers"],
-      });
     }
   }
 

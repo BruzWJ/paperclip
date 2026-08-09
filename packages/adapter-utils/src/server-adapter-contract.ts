@@ -154,7 +154,7 @@ function assertServerAdapterModule(
   const environment = definition.environment;
   exactKeys(
     environment,
-    ["cwd", "additionalDirectories", "drivers", "environmentKeys"],
+    ["cwd", "additionalDirectories", "environmentKeys"],
     `Server adapter "${type}" environment`,
   );
   if (
@@ -164,17 +164,6 @@ function assertServerAdapterModule(
     throw new Error(
       `Server adapter "${type}" must use the execution workspace boundary`,
     );
-  }
-  const allowedDrivers = new Set(["local", "ssh", "sandbox", "plugin"]);
-  if (
-    !Array.isArray(environment.drivers) ||
-    environment.drivers.length === 0 ||
-    environment.drivers.some(
-      (driver) => typeof driver !== "string" || !allowedDrivers.has(driver),
-    ) ||
-    new Set(environment.drivers).size !== environment.drivers.length
-  ) {
-    throw new Error(`Server adapter "${type}" declares invalid environment drivers`);
   }
   if (
     !Array.isArray(environment.environmentKeys) ||

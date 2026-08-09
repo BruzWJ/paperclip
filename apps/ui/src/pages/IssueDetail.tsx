@@ -95,6 +95,11 @@ import { IssuesList } from "../components/IssuesList";
 import { AgentIcon } from "../components/AgentIconPicker";
 import { IssueReferenceActivitySummary } from "../components/IssueReferenceActivitySummary";
 import { IssueRelatedWorkPanel } from "../components/IssueRelatedWorkPanel";
+import {
+  IssueMonitorBanner,
+  IssueMonitorComposerStrip,
+  hasVisibleMonitorSurface,
+} from "../components/IssueMonitorBanner";
 import { IssueProperties } from "../components/IssueProperties";
 import { PauseAffectsSummaryView } from "../components/owner-transition/OwnerTransitionViews";
 import { computePauseAffectsSummary } from "../lib/owner-transition";
@@ -927,6 +932,7 @@ function IssueDetailActivityTab({
       <div className="mb-3">
         <IssueRunLedger
           issueId={issueId}
+          companyId={companyId}
           issueStatus={issueStatus}
           childIssues={childIssues}
           agentMap={agentMap}
@@ -1893,6 +1899,26 @@ export function IssueDetail() {
     });
   }, [pushToast, updateIssueExecutionPolicy, updateIssueTitle]);
 
+  const checkIssueMonitorNow = useMutation({
+    mutationFn: () => issuesApi.checkMonitorNow(issueId!),
+    onSuccess: () => {
+      invalidateIssueDetail();
+      invalidateIssueRunState();
+      invalidateIssueCollections();
+      pushToast({
+        title: "Monitor check queued",
+        tone: "success",
+      });
+    },
+    onError: (err) => {
+      pushToast({
+        title: "Monitor check failed",
+        body: err instanceof Error ? err.message : "Unable to queue the monitor check",
+        tone: "error",
+      });
+    },
+  });
+
   const approvalDecision = useMutation({
     mutationFn: async ({ approvalId, action }: { approvalId: string; action: "approve" | "reject" }) => {
       if (action === "approve") {
@@ -2154,6 +2180,8 @@ export function IssueDetail() {
         onAddSubIssue={openNewSubIssue}
         onUpdate={handleIssuePropertiesUpdate}
         hasActiveRun={resolvedHasActiveRun}
+        onCheckMonitorNow={() => checkIssueMonitorNow.mutate()}
+        checkingMonitorNow={checkIssueMonitorNow.isPending}
       />
     );
     return () => closePanel();
@@ -2166,6 +2194,8 @@ export function IssueDetail() {
     panelChildIssues,
     panelIssue,
     resolvedHasActiveRun,
+    checkIssueMonitorNow.isPending,
+    checkIssueMonitorNow.mutate,
   ]);
 
   const goToInboxShortcutArmedRef = useRef(false);
@@ -3219,6 +3249,12 @@ export function IssueDetail() {
           nullable
         />
 
+        <IssueMonitorBanner
+          issue={issue}
+          onCheckNow={() => checkIssueMonitorNow.mutate()}
+          checkingNow={checkIssueMonitorNow.isPending}
+        />
+
         <section className="space-y-2">
           <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Immutable request
@@ -3418,7 +3454,20 @@ export function IssueDetail() {
               onRefreshLatestComments={refetchLatestComments}
               onLoadMoreCommentGroup={loadMoreCommentGroup}
               composerRef={commentComposerRef}
-              composerAccessory={humanLifecycleFormControls}
+              composerAccessory={
+                hasVisibleMonitorSurface(issue) || humanLifecycleFormControls ? (
+                  <div className="flex flex-col gap-2">
+                    {hasVisibleMonitorSurface(issue) ? (
+                      <IssueMonitorComposerStrip
+                        issue={issue}
+                        onCheckNow={() => checkIssueMonitorNow.mutate()}
+                        checkingNow={checkIssueMonitorNow.isPending}
+                      />
+                    ) : null}
+                    {humanLifecycleFormControls}
+                  </div>
+                ) : null
+              }
               footer={
                 siblingNavigation ? (
                   <IssueSiblingNavigation
@@ -3670,6 +3719,8 @@ export function IssueDetail() {
                 onUpdate={handleIssuePropertiesUpdate}
                 inline
                 hasActiveRun={resolvedHasActiveRun}
+                onCheckMonitorNow={() => checkIssueMonitorNow.mutate()}
+                checkingMonitorNow={checkIssueMonitorNow.isPending}
               />
             </div>
           </ScrollArea>

@@ -5,7 +5,6 @@ import { createMockDb } from "./helpers/mock-db.js";
 const mocks = vi.hoisted(() => ({
   getCompanyMonthlyKnownSpend: vi.fn(),
   createCompany: vi.fn(),
-  ensureLocalEnvironment: vi.fn(),
   logActivity: vi.fn(),
   archiveCompanySessionGraphInTx: vi.fn(),
   reactivateCompanySessionGraphInTx: vi.fn(),
@@ -20,16 +19,6 @@ vi.mock("../services/budgets.js", async (importOriginal) => {
     budgetService: vi.fn(() => ({
       getCompanyMonthlyKnownSpend: mocks.getCompanyMonthlyKnownSpend,
       createCompany: mocks.createCompany,
-    })),
-  };
-});
-
-vi.mock("../services/environments.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../services/environments.js")>();
-  return {
-    ...actual,
-    environmentService: vi.fn(() => ({
-      ensureLocalEnvironment: mocks.ensureLocalEnvironment,
     })),
   };
 });
@@ -74,7 +63,6 @@ describe("companyService", () => {
     mocks.getCompanyMonthlyKnownSpend.mockImplementation(async (ids: string[]) =>
       new Map(ids.map((id) => [id, "0"])),
     );
-    mocks.ensureLocalEnvironment.mockResolvedValue({ id: "environment-1" });
     mocks.logActivity.mockResolvedValue(undefined);
   });
 
@@ -107,7 +95,7 @@ describe("companyService", () => {
     expect(mocks.getCompanyMonthlyKnownSpend).toHaveBeenCalledWith(["company-1", "company-2"]);
   });
 
-  it("creates through the budget owner and provisions the canonical local environment", async () => {
+  it("creates through the budget owner", async () => {
     const created = companyRow();
     const mock = createMockDb({ select: [[created]] });
     mocks.createCompany.mockResolvedValue({ id: "company-1" });
@@ -121,7 +109,6 @@ describe("companyService", () => {
     expect(mocks.createCompany).toHaveBeenCalledWith(expect.objectContaining({
       name: "Paperclip",
     }), "board-user");
-    expect(mocks.ensureLocalEnvironment).toHaveBeenCalledWith("company-1");
     expect(result).toMatchObject({ id: "company-1", knownSpendAmount: "0", logoUrl: null });
   });
 

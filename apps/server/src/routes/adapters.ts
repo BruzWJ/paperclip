@@ -20,7 +20,6 @@ import type {
   ServerAdapterModule,
 } from "@paperclipai/adapter-utils";
 import { validateAdapterConfigSchema } from "@paperclipai/adapter-utils";
-import type { EnvironmentDriver } from "@paperclipai/shared";
 import { assertBoardOrgAccess, assertInstanceAdmin } from "./authz.js";
 
 interface AdapterCapabilities {
@@ -37,8 +36,6 @@ interface ReadyAdapterInfo {
   modelsCount: number;
   loaded: true;
   capabilities: AdapterCapabilities;
-  /** Exact ACPX-admitted execution transports for this agent. */
-  drivers: readonly EnvironmentDriver[];
   /** Exact registry name emitted by ACPX; always equal to `type`. */
   registryName: string;
   /**
@@ -93,7 +90,6 @@ function buildAdapterInfo(adapter: ServerAdapterModule): ReadyAdapterInfo {
     modelsCount: adapter.definition.models.length,
     loaded: true,
     capabilities: buildAdapterCapabilities(adapter),
-    drivers: [...adapter.definition.environment.drivers],
     registryName: adapter.definition.launchProfile.registryName,
     configSchema: adapterConfigSchema(adapter),
   };

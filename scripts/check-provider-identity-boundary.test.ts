@@ -29,11 +29,6 @@ function fixtureRoot(): string {
     'if (typeof value === "string") return;',
     "if (isEnvironmentEntry && isProviderChildReservedEnvironmentKey(key)) reject();",
   ].join("\n"));
-  write(root, "packages/adapter-utils/src/remote-execution-env.ts", [
-    'import { isProviderChildReservedEnvironmentKey } from "@paperclipai/shared/provider-child-boundary";',
-    "if (isProviderChildReservedEnvironmentKey(normalizedKey)) continue;",
-    "sanitized[key] = value;",
-  ].join("\n"));
   write(root, "packages/adapter-utils/src/server-utils.ts", [
     "export function sanitizeInheritedProviderChildEnv() {",
     'if (normalizedKey.startsWith("PAPERCLIP_")) delete env[key];',
@@ -84,7 +79,12 @@ function fixtureRoot(): string {
     "text: JSON.stringify({ status })",
     "",
   ].join("\n"));
-  write(root, "packages/adapter-utils/src/server-utils.test.ts", 'PAPERCLIP_CLOUD_PROD_PROVIDER_TOKEN "operator-selected" sanitizeSshRemoteEnv\n');
+  write(root, "packages/adapter-utils/src/server-utils.test.ts", [
+    "uses explicit adapter provider configuration without inheriting host provider state",
+    'OPENAI_API_KEY: "operator-openai-key"',
+    "sanitizeInheritedProviderChildEnv",
+    "",
+  ].join("\n"));
   write(root, "packages/shared/src/validators/runtime-agent-configuration.test.ts", "keeps explicit provider-native configuration opaque without a prefix ban\nPAPERCLIP_CLOUD_PROD_PROVIDER_TOKEN\nexpect(adapterConfigSchema.parse(adapterConfig)).toEqual(adapterConfig)\n");
   return root;
 }
@@ -113,7 +113,7 @@ test("rejects a retired instruction materializer", () => {
 
 test("rejects an explicit-environment prefix ban", () => {
   const root = fixtureRoot();
-  write(root, "packages/adapter-utils/src/remote-execution-env.ts", 'if (normalizedKey.startsWith("PAPERCLIP_")) continue;\n');
+  write(root, "packages/shared/src/validators/agent.ts", 'if (key.startsWith("PAPERCLIP_")) reject();\n');
   assert.ok(providerIdentityBoundaryViolations(root).some((entry) => entry.includes("prefix-banned")));
 });
 

@@ -1,6 +1,5 @@
 export type IssueWorkProductType =
   | "preview_url"
-  | "runtime_service"
   | "pull_request"
   | "branch"
   | "commit"
@@ -36,7 +35,6 @@ export interface IssueWorkProduct {
   companyId: string;
   projectId: string | null;
   issueId: string;
-  runtimeServiceId: string | null;
   type: IssueWorkProductType;
   provider: IssueWorkProductProvider | string;
   externalId: string | null;

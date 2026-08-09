@@ -121,31 +121,6 @@ function manifestWorkerMethodRules(
   const declaresJobs = (manifest.jobs?.length ?? 0) > 0;
   const declaresWebhooks = (manifest.webhooks?.length ?? 0) > 0;
   const declaresApiRoutes = (manifest.apiRoutes?.length ?? 0) > 0;
-  const environmentDrivers = manifest.environmentDrivers ?? [];
-  const declaresEnvironmentDrivers = environmentDrivers.length > 0;
-  const supportsReusableLeases = environmentDrivers.some(
-    (driver) => driver.supportsReusableLeases === true,
-  );
-  const supportsInteractiveSetup = environmentDrivers.some(
-    (driver) => driver.supportsInteractiveSetup === true,
-  );
-  const supportsTemplateCapture = environmentDrivers.some(
-    (driver) => driver.supportsTemplateCapture === true,
-  );
-  const supportsTemplateDelete = environmentDrivers.some(
-    (driver) => driver.supportsTemplateDelete === true,
-  );
-
-  const environmentRule = (
-    method: HostToWorkerOptionalMethodName,
-    declared: boolean,
-    declaration: string,
-  ): ManifestWorkerMethodRule => ({
-    method,
-    declared,
-    requiredMessage: `${declaration} require the worker to advertise "${method}"`,
-    undeclaredMessage: `Worker advertised "${method}" without ${declaration.toLowerCase()}`,
-  });
 
   return [
     {
@@ -178,44 +153,6 @@ function manifestWorkerMethodRules(
       requiredMessage: 'Manifest API route declarations require the worker to advertise "handleApiRequest"',
       undeclaredMessage: 'Worker advertised "handleApiRequest" without manifest API route declarations',
     },
-    ...([
-      "environmentValidateConfig",
-      "environmentProbe",
-      "environmentAcquireLease",
-      "environmentReleaseLease",
-      "environmentDestroyLease",
-      "environmentRealizeWorkspace",
-      "environmentExecute",
-      "environmentCancelExecution",
-    ] as const).map((method) => environmentRule(
-      method,
-      declaresEnvironmentDrivers,
-      "Manifest environment-driver declarations",
-    )),
-    environmentRule(
-      "environmentResumeLease",
-      supportsReusableLeases,
-      "Manifest environment-driver reusable-lease declarations",
-    ),
-    ...([
-      "environmentStartInteractiveSetup",
-      "environmentGetInteractiveSetup",
-      "environmentCancelInteractiveSetup",
-    ] as const).map((method) => environmentRule(
-      method,
-      supportsInteractiveSetup,
-      "Manifest environment-driver interactive-setup declarations",
-    )),
-    environmentRule(
-      "environmentCaptureTemplate",
-      supportsTemplateCapture,
-      "Manifest environment-driver template-capture declarations",
-    ),
-    environmentRule(
-      "environmentDeleteTemplate",
-      supportsTemplateDelete,
-      "Manifest environment-driver template-delete declarations",
-    ),
   ];
 }
 
@@ -229,23 +166,6 @@ function assertManifestWorkerMethodAgreement(
       throw new Error(rule.declared ? rule.requiredMessage : rule.undeclaredMessage);
     }
   }
-
-  const advertisesSyncIn = supportedMethods.includes("environmentSyncIn");
-  const advertisesSyncOut = supportedMethods.includes("environmentSyncOut");
-  if (advertisesSyncIn !== advertisesSyncOut) {
-    throw new Error(
-      'Worker environment sync hooks must advertise both "environmentSyncIn" and "environmentSyncOut", or neither',
-    );
-  }
-  if (
-    advertisesSyncIn
-    && (manifest.environmentDrivers?.length ?? 0) === 0
-  ) {
-    throw new Error(
-      "Worker advertised environment sync hooks without manifest environment-driver declarations",
-    );
-  }
-
   for (const [method, capability] of [
     ["onEvent", "events.subscribe"],
     ["issues.creatorCallback.deliver", "issues.create"],

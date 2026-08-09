@@ -76,6 +76,14 @@ describe("InstanceGeneralSettings", () => {
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
+    const enabledMeta = document.createElement("meta");
+    enabledMeta.name = "paperclip-worktree-enabled";
+    enabledMeta.content = "true";
+    document.head.appendChild(enabledMeta);
+    const instanceMeta = document.createElement("meta");
+    instanceMeta.name = "paperclip-instance-id";
+    instanceMeta.content = "worktree-instance-1";
+    document.head.appendChild(instanceMeta);
 
     mockAuthApi.signOut.mockReset();
     mockHealthApi.get.mockReset();
@@ -118,6 +126,9 @@ describe("InstanceGeneralSettings", () => {
     root = null;
     container.remove();
     document.body.replaceChildren();
+    document.head
+      .querySelectorAll('meta[name^="paperclip-worktree-"], meta[name="paperclip-instance-id"]')
+      .forEach((node) => node.remove());
     vi.clearAllMocks();
   });
 
@@ -128,7 +139,7 @@ describe("InstanceGeneralSettings", () => {
     expect(container.textContent).toContain("Repair dirty workspaces");
     expect(container.textContent).toContain("Server Info debug view");
     expect(container.textContent).toContain("Auto-restart dev server when idle");
-    expect(container.textContent).toContain("Run scheduled tasks in worktrees");
+    expect(container.textContent).toContain("Run scheduled tasks in this worktree");
 
     expect(toggle("Toggle workspace branch reconciliation").getAttribute("aria-checked")).toBe("true");
     expect(toggle("Toggle dirty workspace repair").getAttribute("aria-checked")).toBe("true");
@@ -155,5 +166,18 @@ describe("InstanceGeneralSettings", () => {
       { autoRestartDevServerWhenIdle: true },
       { enableWorktreeRunExecution: true },
     ]);
+  });
+
+  it("does not offer the worktree-only control in a normal instance", async () => {
+    document.head
+      .querySelectorAll('meta[name^="paperclip-worktree-"], meta[name="paperclip-instance-id"]')
+      .forEach((node) => node.remove());
+
+    await render();
+
+    expect(container.textContent).not.toContain("Run scheduled tasks in this worktree");
+    expect(
+      container.querySelector('[aria-label="Toggle worktree scheduled task execution"]'),
+    ).toBeNull();
   });
 });

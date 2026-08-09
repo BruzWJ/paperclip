@@ -10,6 +10,7 @@ export {
   ISSUE_EXECUTION_RUN_STATUSES,
   ISSUE_EXECUTION_RUN_TERMINAL_CLASSIFICATIONS,
   ISSUE_EXECUTION_STEERING_STATES,
+  ISSUE_EXECUTION_WATCHDOG_DECISIONS,
   type IssueExecutionActivePromptSettlement,
   type IssueExecutionFinalizationAction,
   type IssueExecutionIncompletePromptSettlement,
@@ -28,6 +29,9 @@ export {
   type IssueExecutionRunTerminalClassification,
   type IssueExecutionSettledPromptSettlement,
   type IssueExecutionSteeringState,
+  type IssueExecutionWatchdogDecision,
+  type IssueExecutionWatchdogDecisionInput,
+  type IssueExecutionWatchdogDecisionRecord,
 } from "./issue-execution-run.js";
 export type {
   AttentionDecisionVerb,
@@ -44,17 +48,14 @@ export type {
   AttentionWorkspaceRef,
 } from "./attention.js";
 export type {
-  Environment,
-  EnvironmentLease,
-  EnvironmentProbeResult,
-  FakeSandboxEnvironmentConfig,
-  LocalEnvironmentConfig,
-  PluginSandboxEnvironmentConfig,
-  PluginEnvironmentConfig,
-  SandboxEnvironmentConfig,
-  SandboxEnvironmentProvider,
-  SshEnvironmentConfig,
-} from "./environment.js";
+  DecisionTrainingExample,
+  DecisionTrainingNotesHistoryEntry,
+  DecisionTrainingPreview,
+  DecisionTrainingRetentionPolicy,
+  DecisionTrainingSnapshotV1,
+  DecisionTrainingSourceKind,
+} from "./decision-training.js";
+export { DECISION_TRAINING_RETENTION_POLICY } from "./decision-training.js";
 export type {
   InstanceGeneralSettings,
   InstanceSettings,
@@ -227,7 +228,13 @@ export type {
   DocumentTextRange,
   UpdateDocumentAnnotationThreadRequest,
 } from "./document-annotation.js";
-export type { Project, ProjectBudgetSummary, ProjectGoalRef, ProjectManagedByPlugin } from "./project.js";
+export type {
+  Project,
+  ProjectBudgetSummary,
+  ProjectCodebase,
+  ProjectGoalRef,
+  ProjectManagedByPlugin,
+} from "./project.js";
 export type {
   CompanySearchCountType,
   CompanySearchExtractIssueResult,
@@ -260,29 +267,7 @@ export {
 } from "./search.js";
 export type {
   ExecutionWorkspace,
-  ExecutionWorkspaceSummary,
-  ExecutionWorkspaceConfig,
-  ProjectWorkspaceRuntimeConfig,
-  WorkspaceCommandDefinition,
-  WorkspaceCommandKind,
-  WorkspaceRuntimeControlTarget,
-  WorkspaceRuntimeService,
-  WorkspaceRuntimeServiceStateMap,
-  WorkspaceRuntimeDesiredState,
-  WorkspaceRealizationRecord,
-  WorkspaceRealizationRequest,
-  WorkspaceRealizationSyncStrategy,
-  WorkspaceRealizationTransport,
-  ExecutionWorkspaceStrategyType,
-  ExecutionWorkspaceMode,
-  ExecutionWorkspaceProviderType,
-  ExecutionWorkspaceStatus,
 } from "./workspace-runtime.js";
-export type {
-  WorkspaceOperation,
-  WorkspaceOperationPhase,
-  WorkspaceOperationStatus,
-} from "./workspace-operation.js";
 export type {
   IssueWorkProduct,
   IssueWorkProductType,
@@ -333,6 +318,8 @@ export type {
   IssueRelatedWorkSummary,
   IssueRelation,
   IssueRelationIssueSummary,
+  IssueExecutionMonitorPolicy,
+  IssueExecutionMonitorState,
   IssueExecutionPolicy,
   IssueExecutionState,
   IssueExecutionStage,
@@ -576,8 +563,6 @@ export type {
   PluginJobDeclaration,
   PluginWebhookDeclaration,
   PluginToolDeclaration,
-  PluginEnvironmentDriverDeclaration,
-  PluginEnvironmentTemplateConfigBinding,
   PluginManagedAgentDeclaration,
   PluginManagedProjectDeclaration,
   PluginManagedRoutineDeclaration,

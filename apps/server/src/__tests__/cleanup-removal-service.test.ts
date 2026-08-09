@@ -27,10 +27,6 @@ vi.mock("../services/budgets.js", () => ({
   }),
 }));
 
-vi.mock("../services/environments.js", () => ({
-  environmentService: () => ({ ensureLocalEnvironment: vi.fn() }),
-}));
-
 vi.mock("../services/activity-log.js", () => ({ logActivity: vi.fn() }));
 
 const companyId = "00000000-0000-4000-8000-000000000001";

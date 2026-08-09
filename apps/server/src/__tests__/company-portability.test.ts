@@ -173,9 +173,7 @@ const testBoardAuthorization = testBoardSessionActor({
 
 const SOURCE_ADAPTER_REVISION_ID =
   "11111111-1111-4111-8111-111111111111";
-const SOURCE_ENVIRONMENT_ID =
-  "21111111-1111-4111-8111-111111111111";
-const TARGET_ENVIRONMENT_ID =
+const FALLBACK_SELECTED_ID =
   "31111111-1111-4111-8111-111111111111";
 
 const sourceCompanySkillSelectionByAgentId = new Map<string, {
@@ -211,11 +209,6 @@ function sourceAcpConfiguration(agent: Record<string, any>) {
         outputTokenLimit: 32_000,
       },
     },
-    executionTargetSelector: {
-      environmentId: SOURCE_ENVIRONMENT_ID,
-      executionTargetDriver: "local" as const,
-      executionTargetDigest: "b".repeat(64),
-    },
     workspaceSelector: { kind: "issue_execution_workspace" as const },
     companySkillPins: [...selection.entries],
     skillChannel: selection.skillChannel,
@@ -235,7 +228,6 @@ async function sourceAdapterRevisionRows() {
       adapterType: agent.adapterType ?? "codex",
       normalizedConfig: agent.adapterConfig ?? {},
       runtimeConfig: agent.runtimeConfig ?? {},
-      executionEnvironmentId: SOURCE_ENVIRONMENT_ID,
       acpConfiguration: sourceAcpConfiguration(agent),
     }));
 }
@@ -291,7 +283,7 @@ function companyPortabilityService(
                 if (selection === undefined) {
                   return sourceAdapterRevisionRows();
                 }
-                return [{ id: TARGET_ENVIRONMENT_ID }];
+                return [{ id: FALLBACK_SELECTED_ID }];
               },
             }),
           }),

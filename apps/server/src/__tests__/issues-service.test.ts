@@ -13,7 +13,6 @@ import {
   ISSUE_LIST_MAX_LIMIT,
   issueService,
   parseStatusFilter,
-  runWorkspaceIsFinalized,
 } from "../services/issues.js";
 import { createMockDb } from "./helpers/mock-db.js";
 
@@ -151,26 +150,6 @@ describe("issue service pure contracts", () => {
     });
   });
 
-  it.each([
-    [[], true],
-    [[
-      { phase: "workspace_prepare", status: "succeeded", startedAt: new Date("2026-07-30T10:00:00.000Z") },
-      { phase: "workspace_finalize", status: "succeeded", startedAt: new Date("2026-07-30T11:00:00.000Z") },
-    ], true],
-    [[
-      { phase: "workspace_finalize", status: "succeeded", startedAt: new Date("2026-07-30T10:00:00.000Z") },
-      { phase: "workspace_sync", status: "failed", startedAt: new Date("2026-07-30T11:00:00.000Z") },
-    ], false],
-  ] as const)("derives workspace-finalize readiness from the latest operation", async (rows, expected) => {
-    const harness = createMockDb({ select: [[...rows]] });
-    await expect(runWorkspaceIsFinalized(
-      harness.db,
-      companyId,
-      "00000000-0000-4000-8000-000000000010",
-      "00000000-0000-4000-8000-000000000011",
-    )).resolves.toBe(expected);
-    expect(harness.remaining("select")).toBe(0);
-  });
 });
 
 describe("issue ownership and lifecycle mutation", () => {

@@ -59,7 +59,6 @@ describe("run liveness classifier", () => {
       ...baseInput,
       assistantTextParts: ["I will inspect the repo next."],
       evidence: {
-        workspaceOperationsCreated: 1,
         latestEvidenceAt: new Date("2026-04-18T12:00:00Z"),
       },
     });

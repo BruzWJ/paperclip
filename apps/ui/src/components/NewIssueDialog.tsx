@@ -25,6 +25,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
+import { projectWorkspaceIdAfterProjectChange } from "../lib/subIssueDefaults";
 import { isIssueWorkMode, nextWorkMode, workModeMetaFor, workModeMetaList } from "../lib/work-mode-meta";
 import { useToastActions } from "../context/ToastContext";
 import {
@@ -365,6 +366,7 @@ export function NewIssueDialog() {
   const [showReviewerRow, setShowReviewerRow] = useState(false);
   const [showApproverRow, setShowApproverRow] = useState(false);
   const [projectId, setProjectId] = useState("");
+  const [projectWorkspaceId, setProjectWorkspaceId] = useState("");
   const [workMode, setWorkMode] = useState<IssueWorkMode>("standard");
   const [expanded, setExpanded] = useState(false);
   const [dialogCompanyId, setDialogCompanyId] = useState<string | null>(null);
@@ -598,6 +600,7 @@ export function NewIssueDialog() {
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
       setProjectId(defaultProjectId);
+      setProjectWorkspaceId(newIssueDefaults.projectWorkspaceId ?? "");
       setOwnerAgentId(newIssueDefaults.ownerAgentId ?? "");
       setWorkMode(nextWorkMode);
     } else if (newIssueDefaults.title || newIssueDefaults.request) {
@@ -607,6 +610,7 @@ export function NewIssueDialog() {
       setPriority(newIssueDefaults.priority ?? "");
       const defaultProjectId = newIssueDefaults.projectId ?? "";
       setProjectId(defaultProjectId);
+      setProjectWorkspaceId(newIssueDefaults.projectWorkspaceId ?? "");
       setOwnerAgentId(newIssueDefaults.ownerAgentId ?? "");
       setReviewerValue("");
       setApproverValue("");
@@ -625,6 +629,7 @@ export function NewIssueDialog() {
       setShowReviewerRow(!!(draft.reviewerValue));
       setShowApproverRow(!!(draft.approverValue));
       setProjectId(restoredProjectId);
+      setProjectWorkspaceId(newIssueDefaults.projectWorkspaceId ?? "");
       setWorkMode(nextWorkMode);
     } else {
       setWorkMode("standard");
@@ -633,6 +638,7 @@ export function NewIssueDialog() {
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
       setProjectId(defaultProjectId);
+      setProjectWorkspaceId(newIssueDefaults.projectWorkspaceId ?? "");
       setOwnerAgentId(newIssueDefaults.ownerAgentId ?? "");
       setReviewerValue("");
       setApproverValue("");
@@ -678,6 +684,7 @@ export function NewIssueDialog() {
     setShowReviewerRow(false);
     setShowApproverRow(false);
     setProjectId("");
+    setProjectWorkspaceId("");
     setWorkMode("standard");
     setExpanded(false);
     setDialogCompanyId(null);
@@ -697,6 +704,7 @@ export function NewIssueDialog() {
     setShowReviewerRow(false);
     setShowApproverRow(false);
     setProjectId("");
+    setProjectWorkspaceId("");
     setWorkMode("standard");
     createIdempotencyKeyRef.current = null;
   }
@@ -728,6 +736,9 @@ export function NewIssueDialog() {
       ...(newIssueDefaults.parentId ? { parentId: newIssueDefaults.parentId } : {}),
       ...(newIssueDefaults.goalId ? { goalId: newIssueDefaults.goalId } : {}),
       ...(projectId ? { projectId } : {}),
+      ...(projectWorkspaceId
+        ? { projectWorkspaceId }
+        : {}),
     });
   }
 
@@ -870,8 +881,11 @@ export function NewIssueDialog() {
 
   const handleProjectChange = useCallback((nextProjectId: string) => {
     if (nextProjectId) trackRecentProject(nextProjectId);
+    setProjectWorkspaceId((current) =>
+      projectWorkspaceIdAfterProjectChange(projectId, nextProjectId, current),
+    );
     setProjectId(nextProjectId);
-  }, []);
+  }, [projectId]);
   const currentWorkMode = workModeMetaFor(workMode);
   const CurrentWorkModeIcon = currentWorkMode.icon;
 

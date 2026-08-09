@@ -6,7 +6,6 @@ function attachmentContentPath(attachmentId: string): string {
 
 export const issueWorkProductTypeSchema = z.enum([
   "preview_url",
-  "runtime_service",
   "pull_request",
   "branch",
   "commit",
@@ -76,7 +75,6 @@ export type IssueWorkProductMetadata = z.infer<typeof issueWorkProductMetadataSc
 
 export const createIssueWorkProductSchema = z.object({
   projectId: z.string().uuid().optional().nullable(),
-  runtimeServiceId: z.string().uuid().optional().nullable(),
   type: issueWorkProductTypeSchema,
   provider: z.string().min(1),
   externalId: z.string().optional().nullable(),

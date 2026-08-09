@@ -48,7 +48,6 @@ function ready() {
     allBlockersDone: true,
     isDependencyReady: true,
     unresolvedBlockerIssueIds: [],
-    pendingFinalizeBlockerIssueIds: [],
   };
 }
 
@@ -105,7 +104,6 @@ describe("issue subtree diagnostics route", () => {
           allBlockersDone: false,
           isDependencyReady: false,
           unresolvedBlockerIssueIds: [childId],
-          pendingFinalizeBlockerIssueIds: [],
         }],
         [childId, ready()],
       ]),

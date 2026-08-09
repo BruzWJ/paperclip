@@ -21,7 +21,6 @@ function fixture(): ServerAdapterModule {
       environment: {
         cwd: "execution-workspace",
         additionalDirectories: "authorized-workspace-only",
-        drivers: ["local"],
         environmentKeys: [],
       },
       runtime: {

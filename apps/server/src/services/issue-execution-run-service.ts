@@ -26,11 +26,11 @@ import {
   issueExecutionRunRefs,
   issueExecutionRuns,
   issueExecutionWorkspaceBindings,
+  issueExecutionWatchdogDecisions,
   issueComments,
   issueCommentProjectionSources,
   issueSessionEvents,
   issues,
-  workspaceOperations,
   type Db,
   type IssueExecutionAttempt,
   type IssueExecutionAttemptRetrySchedule,
@@ -96,7 +96,6 @@ export interface IssueExecutionRuntimeReadinessBinding
   readonly agentId: string;
   readonly currentAdapterConfigRevisionId: string | null;
   readonly adapterConfigRevisionId: string;
-  readonly environmentId: string;
   readonly executionWorkspaceBindingId: string;
   readonly absoluteCwd: string | null;
   readonly acpConfiguration: unknown;
@@ -399,8 +398,8 @@ export interface JoinedIssueExecutionRunDetail {
   >;
   readonly activity:
     BoundedIssueExecutionRunRecords<RedactedIssueExecutionActivity>;
-  readonly workspaceOperations: BoundedIssueExecutionRunRecords<
-    typeof workspaceOperations.$inferSelect
+  readonly watchdogDecisions: BoundedIssueExecutionRunRecords<
+    typeof issueExecutionWatchdogDecisions.$inferSelect
   >;
   readonly outputComments:
     BoundedIssueExecutionRunRecords<IssueExecutionRunOutputCommentLink>;
@@ -897,7 +896,6 @@ export async function readIssueExecutionRuntimeReadinessBinding(
         issueExecutionRuns.executionWorkspaceBindingId,
       currentAdapterConfigRevisionId: agents.currentAdapterConfigRevisionId,
       revisionId: agentAdapterConfigRevisions.id,
-      revisionEnvironmentId: agentAdapterConfigRevisions.executionEnvironmentId,
       acpConfiguration: agentAdapterConfigRevisions.acpConfiguration,
       bindingId: issueExecutionWorkspaceBindings.id,
       bindingAbsoluteCwd: issueExecutionWorkspaceBindings.absoluteCwd,
@@ -969,7 +967,6 @@ export async function readIssueExecutionRuntimeReadinessBinding(
   if (!row) return null;
   if (
     !row.revisionId ||
-    !row.revisionEnvironmentId ||
     !row.executionWorkspaceBindingId
   ) {
     throw new IssueExecutionRunInvariantViolation(
@@ -985,7 +982,6 @@ export async function readIssueExecutionRuntimeReadinessBinding(
     agentId: row.targetAgentId,
     currentAdapterConfigRevisionId: row.currentAdapterConfigRevisionId,
     adapterConfigRevisionId: row.adapterConfigRevisionId,
-    environmentId: row.revisionEnvironmentId,
     executionWorkspaceBindingId: row.executionWorkspaceBindingId,
     absoluteCwd:
       row.bindingId === row.executionWorkspaceBindingId
@@ -2937,7 +2933,7 @@ async function readJoinedIssueExecutionRunDetail(
     accountingRows,
     costRows,
     activityRows,
-    workspaceOperationRows,
+    watchdogDecisionRows,
     outputCommentRows,
     finalizationRows,
   ] = await Promise.all([
@@ -3118,16 +3114,16 @@ async function readJoinedIssueExecutionRunDetail(
       .limit(input.limit + 1),
     database
       .select()
-      .from(workspaceOperations)
+      .from(issueExecutionWatchdogDecisions)
       .where(
         and(
-          eq(workspaceOperations.companyId, input.companyId),
-          eq(workspaceOperations.runId, input.runId),
+          eq(issueExecutionWatchdogDecisions.companyId, input.companyId),
+          eq(issueExecutionWatchdogDecisions.runId, input.runId),
         ),
       )
       .orderBy(
-        asc(workspaceOperations.startedAt),
-        asc(workspaceOperations.id),
+        asc(issueExecutionWatchdogDecisions.createdAt),
+        asc(issueExecutionWatchdogDecisions.id),
       )
       .limit(input.limit + 1),
     database
@@ -3287,9 +3283,6 @@ async function readJoinedIssueExecutionRunDetail(
   const redactedActivity = activityRows.map((row) =>
     redactIssueSessionPublicationValue(row),
   );
-  const redactedWorkspaceOperations = workspaceOperationRows.map((row) =>
-    redactIssueSessionPublicationValue(row),
-  );
   return {
     run,
     control: controlRows[0] ?? null,
@@ -3313,10 +3306,7 @@ async function readJoinedIssueExecutionRunDetail(
     accounting: boundedRecords(accountingRows, input.limit),
     costs: boundedRecords(costRows, input.limit),
     activity: boundedRecords(redactedActivity, input.limit),
-    workspaceOperations: boundedRecords(
-      redactedWorkspaceOperations,
-      input.limit,
-    ),
+    watchdogDecisions: boundedRecords(watchdogDecisionRows, input.limit),
     outputComments: boundedRecords(
       outputCommentRows.map((row) => ({
         commentId: row.commentId,

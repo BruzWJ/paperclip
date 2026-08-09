@@ -1,0 +1,14 @@
+import type { AttentionFeed } from "@paperclipai/shared";
+import { api } from "./client";
+
+export const attentionApi = {
+  /**
+   * Fetch the ranked Decisions attention feed for a company. The server
+   * unions approvals, join requests, reviews, budget alerts, and explicit
+   * agent Board requests into one ranked queue with the §0 contract.
+   */
+  list: (companyId: string, options: { includeDismissed?: boolean } = {}) =>
+    api.get<AttentionFeed>(
+      `/companies/${companyId}/attention${options.includeDismissed ? "?includeDismissed=true" : ""}`,
+    ),
+};

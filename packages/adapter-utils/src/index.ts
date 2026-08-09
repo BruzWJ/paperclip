@@ -1,5 +1,4 @@
 export type {
-  AdapterRuntimeServiceReport,
   AdapterModel,
   AdapterModelLimits,
   AdapterModelProfileKey,
@@ -31,18 +30,6 @@ export {
   REDACTED_COMMAND_TEXT_VALUE,
   redactCommandText,
 } from "./command-redaction.js";
-export { createRuntimeProgressReporter } from "./runtime-progress.js";
-export type {
-  RuntimeProgressSink,
-  RuntimeProgressPhase,
-  RuntimeProgressDirection,
-  RuntimeProgressTarget,
-  RuntimeProgressReporter,
-  RuntimeProgressReporterOptions,
-  RuntimeStatusPhase,
-  RuntimeStatusSink,
-  RuntimeStatusUpdate,
-} from "./runtime-progress.js";
 export { validateServerAdapterModule } from "./server-adapter-contract.js";
 export { validateAdapterConfigSchema } from "./config-schema-validation.js";
 export type {

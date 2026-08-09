@@ -23,9 +23,8 @@ export interface AcpSubprocessStartOptions {
  * Host-side process mechanics prepared by the selected execution target.
  *
  * This is deliberately separate from {@link AcpSubprocessLaunch}: the latter
- * remains the immutable, approved ACP launch plus the target-visible session
- * cwd. SSH, local confinement, and command-managed targets may wrap that
- * command with a host-side transport without changing its approved identity.
+ * remains the immutable, approved ACP launch plus the session cwd. Optional
+ * local confinement may wrap that command without changing its identity.
  */
 export interface AcpSubprocessHostLaunch {
   readonly command: string;

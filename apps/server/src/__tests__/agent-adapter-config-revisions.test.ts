@@ -4,24 +4,15 @@ import {
 } from "../services/agent-adapter-config-revisions.js";
 import { createMockDb, type MockDbHarness } from "./helpers/mock-db.js";
 
-const environments = vi.hoisted(() => ({
-  ensureLocalEnvironment: vi.fn(),
-}));
-
 const adapterRegistry = vi.hoisted(() => ({
   refreshAcpxAdapters: vi.fn(),
   findSelectableServerAdapterImplementation: vi.fn(),
-}));
-
-vi.mock("../services/environments.js", () => ({
-  environmentService: vi.fn(() => environments),
 }));
 
 vi.mock("../adapters/registry.js", () => adapterRegistry);
 
 const companyId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
-const environmentId = "33333333-3333-4333-8333-333333333333";
 const boardUserId = "board-user";
 const now = new Date("2026-08-01T12:00:00.000Z");
 
@@ -38,7 +29,6 @@ const TEST_ADAPTER = Object.freeze({
     environment: Object.freeze({
       cwd: "execution-workspace" as const,
       additionalDirectories: "authorized-workspace-only" as const,
-      drivers: Object.freeze(["local"] as const),
       environmentKeys: Object.freeze([]),
     }),
     runtime: Object.freeze({
@@ -221,12 +211,6 @@ async function createRevision(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  environments.ensureLocalEnvironment.mockResolvedValue({
-    id: environmentId,
-    driver: "local",
-    status: "active",
-    config: {},
-  });
   adapterRegistry.refreshAcpxAdapters.mockResolvedValue(undefined);
   adapterRegistry.findSelectableServerAdapterImplementation.mockReturnValue({
     adapter: TEST_ADAPTER,
@@ -235,41 +219,6 @@ beforeEach(() => {
 });
 
 describe("agent adapter configuration revisions", () => {
-  it("rejects an adapter that cannot run in the required local environment before writing a revision", async () => {
-    adapterRegistry.findSelectableServerAdapterImplementation.mockReturnValue({
-      adapter: {
-        ...TEST_ADAPTER,
-        definition: {
-          ...TEST_ADAPTER.definition,
-          environment: {
-            ...TEST_ADAPTER.definition.environment,
-            drivers: ["ssh"],
-          },
-        },
-      },
-      identity: TEST_IMPLEMENTATION_IDENTITY,
-    });
-    const harness = createMockDb({
-      select: [
-        [agent()],
-        [{
-          id: agentId,
-          companyId,
-          currentAdapterConfigRevisionId: null,
-        }],
-      ],
-    });
-
-    await expect(createRevision(harness)).rejects.toThrow(
-      "does not support the required local execution environment",
-    );
-
-    expect(adapterRegistry.findSelectableServerAdapterImplementation)
-      .toHaveBeenCalledWith("codex");
-    expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
-    expect(harness.remaining("select")).toBe(0);
-  });
-
   it("appends immutable A to B to A lineage instead of reviving history", async () => {
     const first = await createRevision(appendHarness({
       revisionId: "44444444-4444-4444-8444-444444444444",
@@ -390,11 +339,6 @@ describe("agent adapter configuration revisions", () => {
               inputTokenLimit: 922_000,
               outputTokenLimit: 128_000,
             },
-          },
-          executionTargetSelector: {
-            environmentId,
-            executionTargetDriver: "local",
-            executionTargetDigest: "a".repeat(64),
           },
           workspaceSelector: { kind: "issue_execution_workspace" },
           companySkillPins: [{ key: "code-review", versionId }],

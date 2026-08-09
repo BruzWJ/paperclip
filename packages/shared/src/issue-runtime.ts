@@ -419,20 +419,6 @@ export type IssueBoardReopenDispatch =
       kind: "board_only";
     };
 
-export const REMOTE_WORKSPACE_LAUNCH_KIND =
-  "paperclip.remote-workspace-launch/v1" as const;
-
-/**
- * Closed server-to-provider workspace create/resume envelope. It is never a
- * model input, provider-child environment value, or generic adapter context.
- */
-export interface RemoteWorkspaceLaunch {
-  kind: typeof REMOTE_WORKSPACE_LAUNCH_KIND;
-  repositoryLocator: string;
-  repositoryRef: string | null;
-  pullRequestSelector: string | null;
-}
-
 export const PAPERCLIP_RUN_TOOLS_KIND = "paperclip.run-tools/v1" as const;
 
 /**

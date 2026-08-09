@@ -1,4 +1,4 @@
-import type { Project } from "@paperclipai/shared";
+import type { Project, ProjectCodebase, UpdateProjectCodebase } from "@paperclipai/shared";
 import { api } from "./client";
 
 function withCompanyScope(path: string, companyId?: string) {
@@ -18,5 +18,9 @@ export const projectsApi = {
     api.post<Project>(`/companies/${companyId}/projects`, data),
   update: (id: string, data: Record<string, unknown>, companyId?: string) =>
     api.patch<Project>(projectPath(id, companyId), data),
+  getCodebase: (id: string, companyId?: string) =>
+    api.get<ProjectCodebase>(projectPath(id, companyId, "/codebase")),
+  updateCodebase: (id: string, data: UpdateProjectCodebase, companyId?: string) =>
+    api.patch<ProjectCodebase>(projectPath(id, companyId, "/codebase"), data),
   remove: (id: string, companyId?: string) => api.delete<Project>(projectPath(id, companyId)),
 };

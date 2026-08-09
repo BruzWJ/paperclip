@@ -171,7 +171,6 @@ function sampleOutput(
     companyId: "demo-company",
     projectId: null,
     issueId: "demo-issue",
-    runtimeServiceId: null,
     type: "artifact",
     provider: "paperclip",
     externalId: null,
@@ -1777,7 +1776,7 @@ export function DesignGuide() {
 
       <Section title="Environment Variables Editor">
         <p className="text-sm text-muted-foreground">
-          Reusable env-var editor (agents, projects, environments, routines). One shared grid, an
+          Reusable env-var editor (agents, projects, routines). One shared grid, an
           in-field Text/Secret source switch, a fuzzy secret picker with a pinned “Create secret”
           item, automatic sensitive-value detection, and inline secret-health warnings. See the
           Storybook <span className="font-mono">Product/Environment Variables Editor</span> stories

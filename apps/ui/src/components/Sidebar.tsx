@@ -17,6 +17,7 @@ import {
   PanelLeftOpen,
   Pin,
   GanttChartSquare,
+  ListChecks,
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -32,6 +33,8 @@ import {
   ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
   runsApi,
 } from "../api/runs";
+import { attentionApi } from "../api/attention";
+import { attentionBadgeCount } from "../lib/attention";
 import { queryKeys } from "../lib/queryKeys";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
@@ -78,6 +81,15 @@ export function Sidebar() {
   });
   usePublishSharedQueryData(sharedLiveRuns, activeRunPage, activeRunsUpdatedAt);
   const liveRunCount = activeRunPage?.items.length ?? 0;
+  const { data: attentionFeed } = useQuery({
+    queryKey: queryKeys.attention(selectedCompanyId!),
+    queryFn: () => attentionApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+    refetchInterval: 60_000,
+  });
+  const showDecisions =
+    attentionFeed?.items.some((item) => item.sourceKind === "mention_board") === true;
+  const attentionCount = attentionBadgeCount(attentionFeed);
 
   const pluginContext = {
     companyId: selectedCompanyId,
@@ -177,6 +189,15 @@ export function Sidebar() {
             badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
             alert={inboxBadge.failedRuns > 0}
           />
+          {showDecisions ? (
+            <SidebarNavItem
+              to="/decisions"
+              label="Decisions"
+              icon={ListChecks}
+              badge={attentionCount}
+              badgeLabel="decisions"
+            />
+          ) : null}
         </div>
 
         <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>

@@ -30,10 +30,7 @@ export { projects } from "./projects.js";
 export { projectMemberships } from "./project_memberships.js";
 export { projectWorkspaces } from "./project_workspaces.js";
 export { executionWorkspaces } from "./execution_workspaces.js";
-export { environments } from "./environments.js";
-export { environmentLeases } from "./environment_leases.js";
-export { workspaceOperations } from "./workspace_operations.js";
-export { workspaceRuntimeServices } from "./workspace_runtime_services.js";
+export { localExecutionLeases } from "./local_execution_leases.js";
 export { projectGoals } from "./project_goals.js";
 export { goals } from "./goals.js";
 export { folders } from "./folders.js";
@@ -156,6 +153,7 @@ export { issueExecutionDecisions } from "./issue_execution_decisions.js";
 export { issueInboxArchives } from "./issue_inbox_archives.js";
 export { userInboxAgentPolicies } from "./user_inbox_agent_policies.js";
 export { inboxDismissals } from "./inbox_dismissals.js";
+export { decisionTrainingExamples } from "./decision_training_examples.js";
 export { issueReadStates } from "./issue_read_states.js";
 export { assets } from "./assets.js";
 export { issueAttachments } from "./issue_attachments.js";
@@ -166,6 +164,10 @@ export { routineDocuments } from "./routine_documents.js";
 export { documentAnnotationThreads } from "./document_annotation_threads.js";
 export { documentAnnotationComments } from "./document_annotation_comments.js";
 export { documentAnnotationAnchorSnapshots } from "./document_annotation_anchor_snapshots.js";
+export {
+  issueExecutionWatchdogDecisions,
+  type IssueExecutionWatchdogDecision,
+} from "./issue_execution_watchdog_decisions.js";
 export {
   acpPromptAccounting,
   type AcpPromptAccountingKind,

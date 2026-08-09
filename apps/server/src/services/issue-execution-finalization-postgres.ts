@@ -25,7 +25,6 @@ import {
   issueWorkProducts,
   issues,
   runInterfaceToolCalls,
-  workspaceOperations,
   type Db,
 } from "@paperclipai/db";
 import type {
@@ -270,7 +269,7 @@ async function insertProductiveLivenessFact(
   transaction: IssueExecutionDbTransaction,
   input: FinalizePostgresIssueExecutionRunInput,
 ): Promise<string> {
-  const [issueLifecycle, assistantRows, documentStats, workProductStats, workspaceStats, activityStats, toolStats] =
+  const [issueLifecycle, assistantRows, documentStats, workProductStats, activityStats, toolStats] =
     await Promise.all([
       transaction
         .select({
@@ -329,19 +328,6 @@ async function insertProductiveLivenessFact(
             eq(issueWorkProducts.companyId, input.companyId),
             eq(issueWorkProducts.issueId, input.issueId),
             eq(issueWorkProducts.createdByRunId, input.runId),
-          ),
-        )
-        .then((rows) => rows[0]),
-      transaction
-        .select({
-          count: sql<number>`count(*)::int`,
-          latestAt: sql<Date | null>`max(${workspaceOperations.startedAt})`,
-        })
-        .from(workspaceOperations)
-        .where(
-          and(
-            eq(workspaceOperations.companyId, input.companyId),
-            eq(workspaceOperations.runId, input.runId),
           ),
         )
         .then((rows) => rows[0]),
@@ -431,13 +417,11 @@ async function insertProductiveLivenessFact(
       documentRevisionsCreated: countValue(documentStats?.count),
       planDocumentRevisionsCreated: countValue(documentStats?.planCount),
       workProductsCreated: countValue(workProductStats?.count),
-      workspaceOperationsCreated: countValue(workspaceStats?.count),
       activityEventsCreated: countValue(activityStats?.count),
       toolOrActionEventsCreated: countValue(toolStats?.count),
       latestEvidenceAt: latestDate(
         documentStats?.latestAt,
         workProductStats?.latestAt,
-        workspaceStats?.latestAt,
         activityStats?.latestAt,
         toolStats?.latestAt,
       ),

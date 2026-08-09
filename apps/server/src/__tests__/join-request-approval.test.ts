@@ -6,7 +6,6 @@ import { testBoardSessionActor } from "./helpers/request-actor.js";
 const approvalMocks = vi.hoisted(() => ({
   ensureMembership: vi.fn(async () => undefined),
   setPrincipalGrants: vi.fn(async () => undefined),
-  ensureLocalEnvironment: vi.fn(),
   createRuntimeAgent: vi.fn(),
   createAdapterRevision: vi.fn(),
   logActivity: vi.fn(async () => undefined),
@@ -16,12 +15,6 @@ vi.mock("../services/access.js", () => ({
   accessService: () => ({
     ensureMembership: approvalMocks.ensureMembership,
     setPrincipalGrants: approvalMocks.setPrincipalGrants,
-  }),
-}));
-
-vi.mock("../services/environments.js", () => ({
-  environmentService: () => ({
-    ensureLocalEnvironment: approvalMocks.ensureLocalEnvironment,
   }),
 }));
 
@@ -44,16 +37,13 @@ vi.mock("../services/activity-log.js", () => ({
 import { createJoinRequestApprovalService } from "../services/join-request-approval.js";
 
 function createApprovalService(db: ReturnType<typeof createMockDb>["db"]) {
-  return createJoinRequestApprovalService(db, {
-    resolveAdapterEnvironmentDrivers: async () => ["local"],
-  });
+  return createJoinRequestApprovalService(db);
 }
 
 function approvalFixture() {
   const companyId = randomUUID();
   const requestId = randomUUID();
   const inviteId = randomUUID();
-  const environmentId = randomUUID();
   const createdAgentId = randomUUID();
   const revisionId = randomUUID();
   const now = new Date("2026-01-01T00:00:00.000Z");
@@ -80,13 +70,6 @@ function approvalFixture() {
     companyId,
     defaultsPayload: { agent: { grants: [] } },
   };
-  const environment = {
-    id: environmentId,
-    name: "Join environment",
-    driver: "local",
-    status: "active",
-    config: {},
-  };
   const approved = {
     ...joinRequest,
     status: "approved",
@@ -109,12 +92,10 @@ function approvalFixture() {
   return {
     companyId,
     requestId,
-    environmentId,
     createdAgentId,
     revisionId,
     joinRequest,
     invite,
-    environment,
     approved,
     boardActor,
   };
@@ -127,7 +108,6 @@ describe("join request approval", () => {
 
   it("atomically creates the ordinary agent and its first adapter revision", async () => {
     const fixture = approvalFixture();
-    approvalMocks.ensureLocalEnvironment.mockResolvedValue(fixture.environment);
     approvalMocks.createRuntimeAgent.mockResolvedValue({ agentId: fixture.createdAgentId });
     approvalMocks.createAdapterRevision.mockResolvedValue({
       revision: { id: fixture.revisionId },
@@ -202,30 +182,5 @@ describe("join request approval", () => {
     expect(harness.remaining("select")).toBe(0);
     expect(harness.remaining("update")).toBe(0);
     expect((harness.db.transaction as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(2);
-  });
-
-  it("rejects an adapter that cannot run in the required local environment", async () => {
-    const fixture = approvalFixture();
-    approvalMocks.ensureLocalEnvironment.mockResolvedValue(fixture.environment);
-    const harness = createMockDb({
-      select: [[fixture.joinRequest], [fixture.invite]],
-    });
-    const service = createJoinRequestApprovalService(harness.db, {
-      // ACPX admits only a different transport for this exact adapter.
-      resolveAdapterEnvironmentDrivers: async () => ["ssh"],
-    });
-
-    await expect(service.approve({
-      companyId: fixture.companyId,
-      requestId: fixture.requestId,
-      actor: fixture.boardActor,
-      skillChannel: "operator_native",
-    })).rejects.toMatchObject({
-      status: 422,
-      message: expect.stringContaining("does not support the required local execution environment"),
-    });
-
-    expect(approvalMocks.createRuntimeAgent).not.toHaveBeenCalled();
-    expect(approvalMocks.createAdapterRevision).not.toHaveBeenCalled();
   });
 });

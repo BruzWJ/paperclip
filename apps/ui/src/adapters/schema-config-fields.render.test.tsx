@@ -94,7 +94,6 @@ describe("SchemaConfigFields dynamic schemas", () => {
           source: "acpx",
           modelsCount: 1,
           loaded: true,
-          drivers: ["local"],
           registryName: "fixture",
           configSchema: schema,
           capabilities: {

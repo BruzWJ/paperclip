@@ -9,7 +9,6 @@ function createWorkProductRow(overrides: Partial<Record<string, unknown>> = {}) 
     projectId: "project-1",
     issueId: "issue-1",
     executionWorkspaceId: null,
-    runtimeServiceId: null,
     type: "pull_request",
     provider: "github",
     externalId: null,

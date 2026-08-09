@@ -120,7 +120,6 @@ function registerModuleMocks() {
     createOrdinaryIssueRuntime: () => ({}),
     documentAnnotationService: () => mockAnnotationService,
     documentService: () => mockDocumentService,
-    environmentService: () => ({}),
     executionWorkspaceService: () => ({}),
     goalService: () => ({}),
     instanceSettingsService: () => ({

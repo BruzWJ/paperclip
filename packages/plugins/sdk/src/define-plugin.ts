@@ -56,35 +56,6 @@ import type {
   PluginBeforePromptResult,
   PluginContext,
 } from "./types.js";
-import type {
-  PluginEnvironmentAcquireLeaseParams,
-  PluginEnvironmentDestroyLeaseParams,
-  PluginEnvironmentExecuteParams,
-  PluginEnvironmentExecuteResult,
-  PluginEnvironmentCancelExecutionParams,
-  PluginEnvironmentCancelExecutionResult,
-  PluginEnvironmentSyncParams,
-  PluginEnvironmentSyncResult,
-  PluginEnvironmentStartInteractiveSetupParams,
-  PluginEnvironmentInteractiveSetupSession,
-  PluginEnvironmentGetInteractiveSetupParams,
-  PluginEnvironmentCaptureTemplateParams,
-  PluginEnvironmentCaptureTemplateResult,
-  PluginEnvironmentCancelInteractiveSetupParams,
-  PluginEnvironmentCancelInteractiveSetupResult,
-  PluginEnvironmentDeleteTemplateParams,
-  PluginEnvironmentDeleteTemplateResult,
-  PluginEnvironmentLease,
-  PluginEnvironmentProbeParams,
-  PluginEnvironmentProbeResult,
-  PluginEnvironmentRealizeWorkspaceParams,
-  PluginEnvironmentRealizeWorkspaceResult,
-  PluginEnvironmentReleaseLeaseParams,
-  PluginEnvironmentResumeLeaseParams,
-  PluginEnvironmentValidateConfigParams,
-  PluginEnvironmentValidationResult,
-} from "./protocol.js";
-
 // ---------------------------------------------------------------------------
 // Health check result
 // ---------------------------------------------------------------------------
@@ -255,101 +226,6 @@ export interface PluginDefinition {
    */
   onApiRequest?(input: PluginApiRequestInput): Promise<PluginApiResponse>;
 
-  /**
-   * Called to validate provider-specific configuration for a plugin-hosted
-   * environment driver.
-   */
-  onEnvironmentValidateConfig?(
-    params: PluginEnvironmentValidateConfigParams,
-  ): Promise<PluginEnvironmentValidationResult>;
-
-  /** Called to test reachability or readiness of a plugin-hosted environment. */
-  onEnvironmentProbe?(
-    params: PluginEnvironmentProbeParams,
-  ): Promise<PluginEnvironmentProbeResult>;
-
-  /** Called before a run starts to acquire a provider lease. */
-  onEnvironmentAcquireLease?(
-    params: PluginEnvironmentAcquireLeaseParams,
-  ): Promise<PluginEnvironmentLease>;
-
-  /** Called to reconnect to a previously acquired provider lease. */
-  onEnvironmentResumeLease?(
-    params: PluginEnvironmentResumeLeaseParams,
-  ): Promise<PluginEnvironmentLease>;
-
-  /** Called when a run finishes and the provider lease can be released. */
-  onEnvironmentReleaseLease?(
-    params: PluginEnvironmentReleaseLeaseParams,
-  ): Promise<void>;
-
-  /** Called when the host needs to force-destroy provider state. */
-  onEnvironmentDestroyLease?(
-    params: PluginEnvironmentDestroyLeaseParams,
-  ): Promise<void>;
-
-  /** Called to materialize the run workspace inside the provider lease. */
-  onEnvironmentRealizeWorkspace?(
-    params: PluginEnvironmentRealizeWorkspaceParams,
-  ): Promise<PluginEnvironmentRealizeWorkspaceResult>;
-
-  /** Called to execute a command inside the provider lease. */
-  onEnvironmentExecute?(
-    params: PluginEnvironmentExecuteParams,
-  ): Promise<PluginEnvironmentExecuteResult>;
-
-  /**
-   * Called to stop one exact in-flight command without releasing or
-   * destroying its provider lease.
-   */
-  onEnvironmentCancelExecution?(
-    params: PluginEnvironmentCancelExecutionParams,
-  ): Promise<PluginEnvironmentCancelExecutionResult>;
-
-  /**
-   * Optional, opt-in: called before execution to place host files/directories at
-   * target sandbox paths using a provider-native transport instead of the default
-   * base64-over-exec fallback. Defining this hook (together with
-   * `onEnvironmentSyncOut`) advertises `environmentSyncIn`; leaving it undefined
-   * keeps the byte-identical fallback.
-   */
-  onEnvironmentSyncIn?(
-    params: PluginEnvironmentSyncParams,
-  ): Promise<PluginEnvironmentSyncResult>;
-
-  /**
-   * Optional, opt-in: called after execution to copy sandbox files/directories
-   * back to target host paths using a provider-native transport. Defining this
-   * hook (together with `onEnvironmentSyncIn`) advertises `environmentSyncOut`.
-   */
-  onEnvironmentSyncOut?(
-    params: PluginEnvironmentSyncParams,
-  ): Promise<PluginEnvironmentSyncResult>;
-
-  /** Called to start an interactive setup sandbox and return redacted connection metadata. */
-  onEnvironmentStartInteractiveSetup?(
-    params: PluginEnvironmentStartInteractiveSetupParams,
-  ): Promise<PluginEnvironmentInteractiveSetupSession>;
-
-  /** Called to read setup status and, when authorized, a one-time connection payload. */
-  onEnvironmentGetInteractiveSetup?(
-    params: PluginEnvironmentGetInteractiveSetupParams,
-  ): Promise<PluginEnvironmentInteractiveSetupSession>;
-
-  /** Called to capture a reusable provider template from a live setup sandbox. */
-  onEnvironmentCaptureTemplate?(
-    params: PluginEnvironmentCaptureTemplateParams,
-  ): Promise<PluginEnvironmentCaptureTemplateResult>;
-
-  /** Called to cancel and clean up a setup sandbox without promoting a template. */
-  onEnvironmentCancelInteractiveSetup?(
-    params: PluginEnvironmentCancelInteractiveSetupParams,
-  ): Promise<PluginEnvironmentCancelInteractiveSetupResult>;
-
-  /** Called for optional best-effort cleanup of a captured provider template. */
-  onEnvironmentDeleteTemplate?(
-    params: PluginEnvironmentDeleteTemplateParams,
-  ): Promise<PluginEnvironmentDeleteTemplateResult>;
 }
 
 // ---------------------------------------------------------------------------

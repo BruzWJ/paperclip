@@ -7,7 +7,6 @@ import {
   companySecretProviderConfigs,
   companySecrets,
   companySecretVersions,
-  secretAccessEvents,
   userSecretDeclarations,
   userSecretDefinitions,
 } from "@paperclipai/db";
@@ -1249,102 +1248,6 @@ describe("secretService", () => {
     }
   });
 
-  it("authorizes and audits ephemeral board access without requiring a binding", async () => {
-    const harness = createMockDb({
-      select: [[secretRow()], [versionRow()]],
-      update: [[]],
-      insert: [[]],
-    });
-
-    await expect(secretService(harness.db).resolveSecretValueForEphemeralAccess(
-      companyId,
-      secretId,
-      "latest",
-      {
-        consumerType: "system",
-        consumerId: "environment-probe-config",
-        configPath: "apiKey",
-        actorType: "user",
-        actorId: "board-user",
-        actorSource: "session",
-      },
-    )).resolves.toBe("runtime-secret");
-
-    expect(mocks.authorizationDecide).toHaveBeenCalledWith({
-      actor: { type: "board", userId: "board-user", source: "session" },
-      action: "secrets:read",
-      resource: { type: "company", companyId },
-    });
-    expect(valuesCalls(harness, "insert")[0]).toMatchObject({
-      secretId,
-      consumerType: "system",
-      consumerId: "environment-probe-config",
-      configPath: "apiKey",
-      actorType: "user",
-      actorId: "board-user",
-      outcome: "success",
-    });
-  });
-
-  it("denies non-probe consumers, unauthenticated actors, and failed secret-read authorization before access", async () => {
-    const preflightCases = [
-      {
-        context: {
-          consumerType: "agent" as const,
-          consumerId: agentId,
-          actorType: "user" as const,
-          actorId: "board-user",
-        },
-      },
-      {
-        context: {
-          consumerType: "system" as const,
-          consumerId: "environment-probe-config",
-          actorType: "system" as const,
-          actorId: null,
-        },
-      },
-    ];
-    for (const entry of preflightCases) {
-      const harness = createMockDb();
-      await expect(secretService(harness.db).resolveSecretValueForEphemeralAccess(
-        companyId,
-        secretId,
-        "latest",
-        entry.context,
-      )).rejects.toMatchObject({ status: 403 });
-      expect(harness.calls).toEqual([]);
-    }
-
-    mocks.authorizationDecide.mockResolvedValueOnce({
-      allowed: false,
-      reason: "deny_missing_grant",
-      code: "authorization_denied",
-      explanation: "Secret read permission is required.",
-    });
-    const deniedHarness = createMockDb();
-    await expect(secretService(deniedHarness.db).resolveSecretValueForEphemeralAccess(
-      companyId,
-      secretId,
-      "latest",
-      {
-        consumerType: "system",
-        consumerId: "environment-probe-config",
-        actorType: "agent",
-        actorId: agentId,
-        actorSource: "internal",
-      },
-    )).rejects.toMatchObject({
-      status: 403,
-      details: {
-        code: "authorization_denied",
-        reason: "deny_missing_grant",
-      },
-    });
-    expect(deniedHarness.calls).toEqual([]);
-    expect(provider.resolveVersion).not.toHaveBeenCalled();
-  });
-
   it("keeps strict persistence free of plaintext placeholders and sensitive env values", async () => {
     const harness = createMockDb();
     const service = secretService(harness.db);
@@ -1358,37 +1261,4 @@ describe("secretService", () => {
     expect(harness.calls).toEqual([]);
   });
 
-  it("records access through the dedicated audit table only", async () => {
-    const harness = createMockDb({
-      select: [[secretRow()], [versionRow()]],
-      update: [[]],
-      insert: [[]],
-    });
-    mocks.authorizationDecide.mockResolvedValue({
-      allowed: true,
-      reason: "allow_board_member",
-      explanation: "Allowed",
-    });
-
-    await secretService(harness.db).resolveSecretValueForEphemeralAccess(
-      companyId,
-      secretId,
-      1,
-      {
-        consumerType: "system",
-        consumerId: "environment-probe-config",
-        actorType: "user",
-        actorId: "auditor",
-      },
-    );
-
-    const insertedTables = harness.calls
-      .filter((call) => call.operation === "insert" && call.method === "insert")
-      .map((call) => call.args[0]);
-    expect(insertedTables).toEqual([secretAccessEvents]);
-    expect(insertedTables).not.toContain(companySecrets);
-    expect(insertedTables).not.toContain(companySecretVersions);
-    expect(insertedTables).not.toContain(companySecretProviderConfigs);
-    expect(insertedTables).not.toContain(userSecretDefinitions);
-  });
 });

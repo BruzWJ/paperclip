@@ -15,7 +15,6 @@ export interface RunLivenessEvidenceInput {
   documentRevisionsCreated: number;
   planDocumentRevisionsCreated: number;
   workProductsCreated: number;
-  workspaceOperationsCreated: number;
   activityEventsCreated: number;
   toolOrActionEventsCreated: number;
   latestEvidenceAt: Date | null;
@@ -111,7 +110,6 @@ function normalizeEvidence(evidence: Partial<RunLivenessEvidenceInput> | null | 
     documentRevisionsCreated: normalizeCount(evidence?.documentRevisionsCreated),
     planDocumentRevisionsCreated: normalizeCount(evidence?.planDocumentRevisionsCreated),
     workProductsCreated: normalizeCount(evidence?.workProductsCreated),
-    workspaceOperationsCreated: normalizeCount(evidence?.workspaceOperationsCreated),
     activityEventsCreated: normalizeCount(evidence?.activityEventsCreated),
     toolOrActionEventsCreated: normalizeCount(evidence?.toolOrActionEventsCreated),
     latestEvidenceAt: evidence?.latestEvidenceAt instanceof Date ? evidence.latestEvidenceAt : null,
@@ -137,7 +135,6 @@ function evidenceReason(evidence: RunLivenessEvidenceInput) {
   const parts: string[] = [];
   if (evidence.documentRevisionsCreated > 0) parts.push(`${evidence.documentRevisionsCreated} document revision(s)`);
   if (evidence.workProductsCreated > 0) parts.push(`${evidence.workProductsCreated} work product(s)`);
-  if (evidence.workspaceOperationsCreated > 0) parts.push(`${evidence.workspaceOperationsCreated} workspace operation(s)`);
   if (evidence.activityEventsCreated > 0) parts.push(`${evidence.activityEventsCreated} activity event(s)`);
   if (evidence.toolOrActionEventsCreated > 0) parts.push(`${evidence.toolOrActionEventsCreated} tool/action event(s)`);
   return parts.join(", ");

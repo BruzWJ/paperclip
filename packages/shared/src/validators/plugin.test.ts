@@ -16,8 +16,6 @@ import {
   pluginConfigRequestSchema,
   pluginDatabaseDeclarationSchema,
   pluginDisableRequestSchema,
-  pluginEnvironmentDriverDeclarationSchema,
-  pluginEnvironmentTemplateConfigBindingSchema,
   pluginInstallRequestSchema,
   pluginJobRunsQuerySchema,
   pluginListQuerySchema,
@@ -281,7 +279,6 @@ describe("plugin manifest validators", () => {
       "webhooks",
       "tools",
       "apiRoutes",
-      "environmentDrivers",
       "agents",
       "projects",
       "routines",
@@ -539,85 +536,10 @@ describe("plugin manifest validators", () => {
     expect(parsed.capabilities).toEqual(["ui.dashboardWidget.register"]);
   });
 
-  it("accepts sandbox provider template config bindings", () => {
-    const parsed = pluginManifestV1Schema.parse({
-      id: "paperclip.template-provider",
-      apiVersion: 1,
-      version: "0.1.0",
-      displayName: "Template Provider",
-      description: "Sandbox provider with captured template config binding.",
-      author: "Paperclip",
-      categories: ["automation"],
-      capabilities: ["environment.drivers.register"],
-      entrypoints: { worker: "./dist/worker.js" },
-      environmentDrivers: [
-        {
-          driverKey: "template-provider",
-          kind: "sandbox_provider",
-          displayName: "Template Provider",
-          supportsTemplateCapture: true,
-          templateRefKind: "provider_template",
-          templateConfigBinding: {
-            field: "templateId",
-            unsetFields: ["image"],
-          },
-          configSchema: { type: "object" },
-        },
-      ],
-    });
-
-    expect(parsed.environmentDrivers?.[0]?.templateConfigBinding).toEqual({
-      field: "templateId",
-      unsetFields: ["image"],
-    });
-  });
-
-  it("rejects template config bindings that replace provider identity", () => {
-    const parsed = pluginManifestV1Schema.safeParse({
-      id: "paperclip.bad-template-provider",
-      apiVersion: 1,
-      version: "0.1.0",
-      displayName: "Bad Template Provider",
-      categories: ["automation"],
-      capabilities: ["environment.drivers.register"],
-      entrypoints: { worker: "./dist/worker.js" },
-      environmentDrivers: [
-        {
-          driverKey: "bad-template-provider",
-          kind: "sandbox_provider",
-          displayName: "Bad Template Provider",
-          templateConfigBinding: {
-            field: "provider",
-          },
-          configSchema: { type: "object" },
-        },
-      ],
-    });
-
-    expect(parsed.success).toBe(false);
-    if (parsed.success) return;
-    expect(parsed.error.issues.some((issue) => issue.message.includes("provider key"))).toBe(true);
-  });
 });
 
 describe("plugin nested declaration lists", () => {
   it("rejects empty optional lists in nested declarations", () => {
-    expect(pluginEnvironmentTemplateConfigBindingSchema.safeParse({
-      field: "template",
-      unsetFields: [],
-    }).success).toBe(false);
-    expect(pluginEnvironmentDriverDeclarationSchema.safeParse({
-      driverKey: "sandbox",
-      displayName: "Sandbox",
-      configSchema: {},
-      interactiveSetupConnectionTypes: [],
-    }).success).toBe(false);
-    expect(pluginEnvironmentDriverDeclarationSchema.safeParse({
-      driverKey: "sandbox",
-      displayName: "Sandbox",
-      configSchema: {},
-      templateIdentityPaths: [],
-    }).success).toBe(false);
     expect(pluginManagedRoutineDeclarationSchema.safeParse({
       routineKey: "sync",
       title: "Sync",

@@ -7,7 +7,6 @@ import type { AdapterConfigSchema } from "@paperclipai/adapter-utils";
 import type {
   AgentAdapterConfigurationTestInput,
   AgentAdapterConfigurationTestResult,
-  EnvironmentDriver,
 } from "@paperclipai/shared";
 
 export interface AdapterCapabilities {
@@ -24,8 +23,6 @@ export interface ReadyAdapterInfo {
   modelsCount: number;
   loaded: true;
   capabilities: AdapterCapabilities;
-  /** Exact execution transports admitted for this agent by the server. */
-  drivers: readonly EnvironmentDriver[];
   registryName: string;
   /** Exact generic session settings discovered in the same ACPX snapshot. */
   configSchema: AdapterConfigSchema;

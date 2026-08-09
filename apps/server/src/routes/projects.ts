@@ -1,9 +1,13 @@
 import { Router, type Request, type Response } from "express";
+import path from "node:path";
 import type { Db } from "@paperclipai/db";
 import {
   createProjectSchema,
   isUuidLike,
+  updateProjectCodebaseSchema,
   updateProjectSchema,
+  type ProjectCodebaseInput,
+  type UpdateProjectCodebase,
 } from "@paperclipai/shared";
 import { trackProjectCreated } from "@paperclipai/shared/telemetry";
 import { validate } from "../middleware/validate.js";
@@ -94,7 +98,14 @@ export function projectRoutes(db: Db) {
   router.post("/companies/:companyId/projects", validate(createProjectSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const projectData = req.body as Parameters<typeof svc.create>[1];
+    type CreateProjectPayload = Parameters<typeof svc.create>[1] & {
+      codebase?: ProjectCodebaseInput;
+    };
+    const { codebase, ...projectData } = req.body as CreateProjectPayload;
+    if (codebase?.localFolder && !path.isAbsolute(codebase.localFolder)) {
+      res.status(422).json({ error: "Local project folder must be absolute on the server host" });
+      return;
+    }
     if (projectData.env !== undefined) {
       projectData.env = await secretsSvc.normalizeEnvBindingsForPersistence(
         companyId,
@@ -111,6 +122,22 @@ export function projectRoutes(db: Db) {
         { actor: { type: "user", userId: req.actor.userId } },
       );
     }
+    let createdWorkspaceId: string | null = null;
+    if (codebase && (codebase.localFolder || codebase.repoUrl)) {
+      const createdWorkspace = await svc.createWorkspace(project.id, {
+        cwd: codebase.localFolder ?? null,
+        repoUrl: codebase.repoUrl ?? null,
+      });
+      if (!createdWorkspace) {
+        await svc.remove(project.id);
+        res.status(422).json({ error: "Invalid project codebase" });
+        return;
+      }
+      createdWorkspaceId = createdWorkspace.id;
+    }
+    const hydratedProject = createdWorkspaceId
+      ? await svc.getById(project.id)
+      : project;
     await logActivity(db, {
       companyId,
       actorType: "user",
@@ -120,6 +147,7 @@ export function projectRoutes(db: Db) {
       entityId: project.id,
       details: {
         name: project.name,
+        codebaseWorkspaceId: createdWorkspaceId,
         envKeys: project.env ? Object.keys(project.env).sort() : [],
       },
     });
@@ -127,8 +155,92 @@ export function projectRoutes(db: Db) {
     if (telemetryClient) {
       trackProjectCreated(telemetryClient);
     }
-    res.status(201).json(toPublicProject(project));
+    res.status(201).json(toPublicProject(hydratedProject ?? project));
   });
+
+  router.get("/projects/:id/codebase", async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const project = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+    if (!project) return;
+    if (!(await assertProjectReadAllowed(req, res, project))) return;
+    res.json(project.codebase);
+  });
+
+  router.patch(
+    "/projects/:id/codebase",
+    validate(updateProjectCodebaseSchema),
+    async (req, res) => {
+      assertBoard(req);
+      const id = req.params.id as string;
+      const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+      if (!existing) return;
+
+      const body = req.body as UpdateProjectCodebase;
+      if (body.localFolder && !path.isAbsolute(body.localFolder)) {
+        res.status(422).json({ error: "Local project folder must be absolute on the server host" });
+        return;
+      }
+      const nextLocalFolder = body.localFolder !== undefined
+        ? body.localFolder
+        : existing.codebase.localFolder;
+      const nextRepoUrl = body.repoUrl !== undefined
+        ? body.repoUrl
+        : existing.codebase.repoUrl;
+      let workspaceId: string | null = existing.primaryWorkspace?.id ?? null;
+
+      if (!nextLocalFolder && !nextRepoUrl) {
+        if (workspaceId) {
+          const removed = await svc.clearWorkspaces(id);
+          if (removed.length === 0) {
+            res.status(404).json({ error: "Project codebase not found" });
+            return;
+          }
+        }
+        workspaceId = null;
+      } else if (workspaceId) {
+        const updated = await svc.updateWorkspace(id, workspaceId, {
+          ...(body.localFolder !== undefined ? { cwd: nextLocalFolder } : {}),
+          ...(body.repoUrl !== undefined ? { repoUrl: nextRepoUrl } : {}),
+        });
+        if (!updated) {
+          res.status(422).json({ error: "Invalid project codebase" });
+          return;
+        }
+      } else {
+        const created = await svc.createWorkspace(id, {
+          cwd: nextLocalFolder,
+          repoUrl: nextRepoUrl,
+        });
+        if (!created) {
+          res.status(422).json({ error: "Invalid project codebase" });
+          return;
+        }
+        workspaceId = created.id;
+      }
+
+      const project = await svc.getById(id);
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      await logActivity(db, {
+        companyId: project.companyId,
+        actorType: "user",
+        actorId: req.actor.userId,
+        action: "project.codebase_updated",
+        entityType: "project",
+        entityId: project.id,
+        details: {
+          changedKeys: Object.keys(body).sort(),
+          codebaseWorkspaceId: workspaceId,
+        },
+      });
+
+      res.json(project.codebase);
+    },
+  );
 
   router.patch("/projects/:id", validate(updateProjectSchema), async (req, res) => {
     const id = req.params.id as string;

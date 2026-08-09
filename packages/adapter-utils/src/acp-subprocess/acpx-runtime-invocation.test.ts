@@ -56,33 +56,6 @@ describe("ACPX-only runtime invocation preparation", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("rejects a remote target before any invocation materialization", async () => {
-    const targetCwd = await localWorkspace();
-
-    await expect(
-      prepareAcpxRuntimeInvocation({
-        target: {
-          kind: "remote",
-          transport: "ssh",
-          remoteCwd: "/srv/paperclip",
-          spec: {
-            host: "ssh.example.test",
-            port: 22,
-            username: "paperclip",
-            remoteWorkspacePath: "/srv/paperclip",
-            remoteCwd: "/srv/paperclip",
-            privateKey: null,
-            knownHosts: null,
-            strictHostKeyChecking: true,
-          },
-        },
-        targetCwd,
-        companySkills: { channel: "operator_native" },
-        invocationFiles: [{ fileName: "must-not-write", contents: "secret" }],
-      }),
-    ).rejects.toThrow("only a local execution target");
-  });
-
   it("rejects isolated skills explicitly because ACPX has no generic skills-home API", async () => {
     const targetCwd = await localWorkspace();
 

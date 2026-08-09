@@ -88,7 +88,6 @@ describe("useAdapterCatalogSync", () => {
         source: "acpx",
         modelsCount: 2,
         loaded: true,
-        drivers: ["local"],
         registryName: "codex",
         configSchema: {
           fields: [{
@@ -120,7 +119,7 @@ describe("useAdapterCatalogSync", () => {
       ).toBe("1:codex");
     });
     expect(listUIAdapters()).toEqual([
-      expect.objectContaining({ type: "codex", drivers: ["local"] }),
+      expect.objectContaining({ type: "codex" }),
     ]);
     expect(
       queryClient.getQueryData(queryKeys.adapters.configSchema("codex")),
@@ -142,7 +141,6 @@ describe("useAdapterCatalogSync", () => {
         source: "acpx",
         modelsCount: 0,
         loaded: true,
-        drivers: ["local"],
         registryName: "visible-agent",
         configSchema: { fields: [] },
         capabilities: {
@@ -194,7 +192,6 @@ describe("useAdapterCatalogSync", () => {
         source: "acpx",
         modelsCount: 1,
         loaded: true,
-        drivers: ["local"],
         registryName: "alpha",
         configSchema: {
           fields: [{ key: "model", label: "Model", type: "select" }],
@@ -211,7 +208,6 @@ describe("useAdapterCatalogSync", () => {
         source: "acpx",
         modelsCount: 1,
         loaded: true,
-        drivers: ["local"],
         registryName: "beta",
         configSchema: { fields: [] },
         capabilities: {

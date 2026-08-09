@@ -210,10 +210,10 @@ describe("pluginLoader managed installation roots", () => {
     );
   });
 
-  it("rejects every manifest input schema that cannot compile", async () => {
+  it("rejects manifest input schemas that cannot compile", async () => {
     await expectManifestAdmissionFailure({
       ...manifest,
-      capabilities: ["agent.tools.register", "environment.drivers.register"],
+      capabilities: ["agent.tools.register"],
       instanceConfigSchema: { type: "object", required: "token" },
       tools: [{
         name: "lookup",
@@ -221,12 +221,7 @@ describe("pluginLoader managed installation roots", () => {
         description: "Lookup a record.",
         parametersSchema: { type: "object", properties: { query: { type: "invalid" } } },
       }],
-      environmentDrivers: [{
-        driverKey: "sandbox",
-        displayName: "Sandbox",
-        configSchema: { type: "object", additionalProperties: "invalid" },
-      }],
-    }, /instanceConfigSchema:.*tools\.0\.parametersSchema:.*environmentDrivers\.0\.configSchema:/);
+    }, /instanceConfigSchema:.*tools\.0\.parametersSchema:/);
   });
 
   it("rejects a final namespaced tool name beyond the MCP limit", async () => {

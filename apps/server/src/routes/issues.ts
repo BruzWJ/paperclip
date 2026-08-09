@@ -120,6 +120,8 @@ import {
 import {
   issueExecutionPolicyControlService,
   normalizeIssueExecutionPolicy,
+  parseIssueExecutionState,
+  redactIssueMonitorExternalRef,
 } from "../services/issue-execution-policy.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import {
@@ -247,7 +249,6 @@ function buildIssueBlockerDiagnosticsResponse(input: {
     allBlockersDone: boolean;
     isDependencyReady: boolean;
     unresolvedBlockerIssueIds: string[];
-    pendingFinalizeBlockerIssueIds: string[];
   };
   truncated: boolean;
   maxBlockers?: number;
@@ -259,11 +260,9 @@ function buildIssueBlockerDiagnosticsResponse(input: {
   ).length;
   const completeVisibleSet = !input.truncated && omittedUnauthorizedBlockerCount === 0;
   const unresolvedIds = new Set(input.readiness.unresolvedBlockerIssueIds);
-  const pendingFinalizeIds = new Set(input.readiness.pendingFinalizeBlockerIssueIds);
 
   const blockers: IssueBlockerDiagnosticNode[] = input.visibleBlockers.map((blockerRow) => {
     const blocker = toIssueBlockerDiagnosticSummary(blockerRow);
-    const isPendingFinalize = pendingFinalizeIds.has(blocker.id);
     const isUnresolved = unresolvedIds.has(blocker.id);
     const flags: IssueBlockerDiagnosticFlag[] = [];
     if (
@@ -271,13 +270,11 @@ function buildIssueBlockerDiagnosticsResponse(input: {
       blocker.boardPresentationStatus === "done"
     ) flags.push("done_but_blocking");
     if (blocker.boardPresentationStatus === "cancelled") flags.push("cancelled_blocker_in_set");
-    if (isPendingFinalize) flags.push("workspace_finalize_pending");
 
     return {
       ...blocker,
       isUnresolved,
-      isPendingFinalize,
-      isDependencyReady: blocker.boardPresentationStatus === "done" && !isPendingFinalize,
+      isDependencyReady: blocker.boardPresentationStatus === "done",
       flags,
     };
   });
@@ -287,7 +284,6 @@ function buildIssueBlockerDiagnosticsResponse(input: {
         allBlockersDone: input.readiness.allBlockersDone,
         isDependencyReady: input.readiness.isDependencyReady,
         unresolvedBlockerCount: input.readiness.unresolvedBlockerIssueIds.length,
-        pendingFinalizeBlockerCount: input.readiness.pendingFinalizeBlockerIssueIds.length,
       }
     : null;
   const reportedOmittedUnauthorizedBlockerCount = input.truncated
@@ -337,13 +333,6 @@ function buildIssueBlockerDiagnosis(input: {
     return input.issue.boardPresentationStatus === "blocked"
       ? `${blockerDiagnosticLabel(input.issue)} is blocked but has no first-class blocker relations.`
       : null;
-  }
-
-  const pendingFinalize = input.blockers.find((blocker) => blocker.isPendingFinalize);
-  if (pendingFinalize) {
-    return `${blockerDiagnosticLabel(input.issue)} is waiting for ${blockerDiagnosticLabel(
-      pendingFinalize,
-    )} to finish workspace finalization.`;
   }
 
   const cancelled = input.blockers.find(
@@ -447,7 +436,6 @@ function buildIssueSubtreeDiagnosticsResponse(input: {
     allBlockersDone: boolean;
     isDependencyReady: boolean;
     unresolvedBlockerIssueIds: string[];
-    pendingFinalizeBlockerIssueIds: string[];
   }>;
   truncatedNodes: boolean;
   truncatedDepth: boolean;
@@ -474,7 +462,6 @@ function buildIssueSubtreeDiagnosticsResponse(input: {
         allBlockersDone: true,
         isDependencyReady: true,
         unresolvedBlockerIssueIds: [],
-        pendingFinalizeBlockerIssueIds: [],
       },
       truncated: input.truncatedBlockerIssueIds.has(node.id),
       maxBlockers: input.caps.maxBlockersPerNode,
@@ -582,6 +569,35 @@ function summarizeIssueReferenceActivityDetails(input:
   };
 }
 
+function summarizeIssueMonitor(
+  issue: {
+    monitorNextCheckAt?: Date | null;
+    monitorLastTriggeredAt?: Date | null;
+    monitorAttemptCount?: number | null;
+    monitorNotes?: string | null;
+    monitorScheduledBy?: string | null;
+    executionState?: unknown;
+  },
+  policy: NormalizedExecutionPolicy | null,
+) {
+  const state = parseIssueExecutionState(issue.executionState);
+  return {
+    nextCheckAt: issue.monitorNextCheckAt?.toISOString() ?? policy?.monitor?.nextCheckAt ?? null,
+    lastTriggeredAt: issue.monitorLastTriggeredAt?.toISOString() ?? state?.monitor?.lastTriggeredAt ?? null,
+    attemptCount: issue.monitorAttemptCount ?? state?.monitor?.attemptCount ?? 0,
+    notes: policy?.monitor?.notes ?? issue.monitorNotes ?? state?.monitor?.notes ?? null,
+    scheduledBy: issue.monitorScheduledBy ?? policy?.monitor?.scheduledBy ?? state?.monitor?.scheduledBy ?? null,
+    kind: policy?.monitor?.kind ?? state?.monitor?.kind ?? null,
+    serviceName: policy?.monitor?.serviceName ?? state?.monitor?.serviceName ?? null,
+    externalRef: redactIssueMonitorExternalRef(policy?.monitor?.externalRef ?? state?.monitor?.externalRef ?? null),
+    timeoutAt: policy?.monitor?.timeoutAt ?? state?.monitor?.timeoutAt ?? null,
+    maxAttempts: policy?.monitor?.maxAttempts ?? state?.monitor?.maxAttempts ?? null,
+    recoveryPolicy: policy?.monitor?.recoveryPolicy ?? state?.monitor?.recoveryPolicy ?? null,
+    status: state?.monitor?.status ?? (policy?.monitor ? "scheduled" : null),
+    clearReason: state?.monitor?.clearReason ?? null,
+  };
+}
+
 function activityExecutionParticipantKey(participant: ActivityExecutionParticipant): string {
   return participant.type === "agent" ? `agent:${participant.agentId}` : `user:${participant.userId}`;
 }
@@ -653,6 +669,7 @@ function toCompactIssue(
     id: issue.id,
     companyId: issue.companyId,
     projectId: issue.projectId,
+    projectWorkspaceId: issue.projectWorkspaceId,
     goalId: issue.goalId,
     parentId: issue.parentId,
     title: issue.title,
@@ -3137,6 +3154,55 @@ export function issueRoutes(
             participants: changes.participants,
             addedParticipants: changes.addedParticipants,
             removedParticipants: changes.removedParticipants,
+          },
+        });
+      }
+
+      const previousMonitor = summarizeIssueMonitor(
+        existing,
+        previousPolicy,
+      );
+      const nextMonitor = summarizeIssueMonitor(issue, nextPolicy);
+      if (
+        nextMonitor.nextCheckAt &&
+        (previousMonitor.nextCheckAt !== nextMonitor.nextCheckAt ||
+          previousMonitor.notes !== nextMonitor.notes)
+      ) {
+        await logActivity(db, {
+          companyId: issue.companyId,
+          actorType: "user",
+          actorId: actorUserId,
+          action: "issue.monitor_scheduled",
+          entityType: "issue",
+          entityId: issue.id,
+          details: {
+            identifier: issue.identifier,
+            nextCheckAt: nextMonitor.nextCheckAt,
+            previousNextCheckAt: previousMonitor.nextCheckAt,
+            notes: nextMonitor.notes,
+            scheduledBy: nextMonitor.scheduledBy,
+            serviceName: nextMonitor.serviceName,
+            timeoutAt: nextMonitor.timeoutAt,
+            maxAttempts: nextMonitor.maxAttempts,
+            recoveryPolicy: nextMonitor.recoveryPolicy,
+          },
+        });
+      } else if (
+        !nextMonitor.nextCheckAt &&
+        previousMonitor.nextCheckAt
+      ) {
+        await logActivity(db, {
+          companyId: issue.companyId,
+          actorType: "user",
+          actorId: actorUserId,
+          action: "issue.monitor_cleared",
+          entityType: "issue",
+          entityId: issue.id,
+          details: {
+            identifier: issue.identifier,
+            previousNextCheckAt: previousMonitor.nextCheckAt,
+            reason: nextMonitor.clearReason ?? "manual",
+            notes: previousMonitor.notes,
           },
         });
       }

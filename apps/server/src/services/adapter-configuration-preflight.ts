@@ -24,9 +24,9 @@ import {
   type IssueExecutionTargetAcquirer,
 } from "./issue-execution-provider-configuration.js";
 import {
-  EnvironmentRunError,
-  type EnvironmentRunOrchestrator,
-} from "./environment-run-orchestrator.js";
+  LocalExecutionTargetError,
+  type LocalExecutionOrchestrator,
+} from "./local-execution-orchestrator.js";
 import {
   CompanySkillMaterializationLifecycleRejected,
   resolveCompanySkillMaterializationRevisionInTransaction,
@@ -110,7 +110,6 @@ function readinessScope(
     runId: binding.runId,
     agentId: binding.agentId,
     adapterConfigRevisionId: binding.adapterConfigRevisionId,
-    environmentId: binding.environmentId,
   };
 }
 
@@ -141,20 +140,10 @@ function ready(
 function acquisitionFailureReason(
   error: unknown,
 ): AdapterRuntimeReadinessIncompleteReason {
-  if (!(error instanceof EnvironmentRunError)) {
+  if (!(error instanceof LocalExecutionTargetError)) {
     return "execution_target_unavailable";
   }
-  if (
-    error.code === "environment_not_found" ||
-    error.code === "environment_inactive" ||
-    error.code === "unsupported_environment" ||
-    error.code === "unsupported_adapter_environment" ||
-    error.code === "probe_failed" ||
-    error.code === "lease_acquire_failed"
-  ) {
-    return "environment_unavailable";
-  }
-  if (error.code === "workspace_realization_failed") {
+  if (error.code === "workspace_binding_unavailable") {
     return "workspace_unavailable";
   }
   return "execution_target_unavailable";
@@ -238,15 +227,6 @@ export function createAdapterConfigurationPreflightService(options: {
         return incomplete(scope, acquisitionFailureReason(error));
       }
 
-      // ACPX's public runtime executes the locally installed CLI itself. It
-      // cannot acquire an SSH, sandbox, or plugin target on Paperclip's behalf.
-      if (acquired.executionTarget.kind !== "local") {
-        const cleanupFailed = await releaseReadinessTarget(acquired, true);
-        return cleanupFailed
-          ? incomplete(scope, "target_cleanup_failed")
-          : incomplete(scope, "execution_target_unavailable");
-      }
-
       let result: AdapterRuntimeReadiness;
       try {
         const probe = await (options.runtime.probeAcpxRuntimeReadiness ??
@@ -283,8 +263,8 @@ export function createAdapterConfigurationPreflightService(options: {
 export function createPostgresAdapterConfigurationPreflightService(
   db: Db,
   options: {
-    readonly environmentOrchestrator: Pick<
-      EnvironmentRunOrchestrator,
+    readonly localExecutionOrchestrator: Pick<
+      LocalExecutionOrchestrator,
       "acquireExecutionTargetForRun"
     >;
   },
@@ -293,7 +273,7 @@ export function createPostgresAdapterConfigurationPreflightService(
     repository: createPostgresAdapterRuntimeReadinessRepository(db),
     runtime: {
       targetAcquirer: createIssueExecutionTargetAcquirer({
-        environmentOrchestrator: options.environmentOrchestrator,
+        localExecutionOrchestrator: options.localExecutionOrchestrator,
       }),
     },
   });

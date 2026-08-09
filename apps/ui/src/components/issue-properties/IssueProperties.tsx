@@ -23,6 +23,13 @@ import { getRecentProjectIds, trackRecentProject } from "../../lib/recent-projec
 import { orderItemsBySelectedAndRecent } from "../../lib/recent-selections";
 import { formatOwnerUserLabel, formatUserLabel } from "../../lib/issue-owners";
 import { buildExecutionPolicy, stageParticipantValues } from "../../lib/issue-execution-policy";
+import {
+  formatMonitorAbsolute,
+  formatMonitorAbsoluteFull,
+  formatMonitorEta,
+  formatMonitorEtaLabel,
+  useMonitorCountdown,
+} from "../../lib/issue-monitor";
 import { StatusIcon } from "../StatusIcon";
 import { PriorityIcon } from "../PriorityIcon";
 import { Identity } from "../Identity";
@@ -33,7 +40,7 @@ import { invalidateInboxIssueQueries } from "../../lib/inboxArchiveCache";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { User, ArrowUpRight, Plus, Check, ArchiveRestore } from "lucide-react";
+import { User, ArrowUpRight, Plus, Check, ArchiveRestore, Clock } from "lucide-react";
 import { AgentIcon } from "../AgentIconPicker";
 import {
   OwnerRunningBanner,
@@ -55,10 +62,20 @@ interface IssuePropertiesProps {
   /** Whether an agent run is currently in flight on this issue, so the owner
    * picker can warn that reassigning will interrupt it. */
   hasActiveRun?: boolean;
+  onCheckMonitorNow?: () => void;
+  checkingMonitorNow?: boolean;
 }
 
 const ISSUE_BLOCKER_SEARCH_LIMIT = 50;
 const ISSUE_PROPERTY_RELATION_PREVIEW_COUNT = 5;
+
+function toDateTimeLocalValue(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
 
 export function IssueProperties({
   issue,
@@ -67,6 +84,8 @@ export function IssueProperties({
   onUpdate,
   inline,
   hasActiveRun = false,
+  onCheckMonitorNow,
+  checkingMonitorNow = false,
 }: IssuePropertiesProps) {
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
@@ -94,6 +113,11 @@ export function IssueProperties({
   const [reviewerSearch, setReviewerSearch] = useState("");
   const [approversOpen, setApproversOpen] = useState(false);
   const [approverSearch, setApproverSearch] = useState("");
+  const [monitorOpen, setMonitorOpen] = useState(false);
+  const [monitorDetailsOpen, setMonitorDetailsOpen] = useState(false);
+  const [monitorAtInput, setMonitorAtInput] = useState(() => toDateTimeLocalValue(issue.executionPolicy?.monitor?.nextCheckAt));
+  const [monitorNotesInput, setMonitorNotesInput] = useState(issue.executionPolicy?.monitor?.notes ?? "");
+  const [monitorServiceInput, setMonitorServiceInput] = useState(issue.executionPolicy?.monitor?.serviceName ?? "");
   const [labelsOpen, setLabelsOpen] = useState(false);
   const [labelSearch, setLabelSearch] = useState("");
   const [newLabelName, setNewLabelName] = useState("");
@@ -108,6 +132,16 @@ export function IssueProperties({
     setSubTasksExpanded(false);
     setRelatedTasksExpanded(false);
   }, [issue.id]);
+
+  useEffect(() => {
+    setMonitorAtInput(toDateTimeLocalValue(issue.executionPolicy?.monitor?.nextCheckAt));
+    setMonitorNotesInput(issue.executionPolicy?.monitor?.notes ?? "");
+    setMonitorServiceInput(issue.executionPolicy?.monitor?.serviceName ?? "");
+  }, [
+    issue.executionPolicy?.monitor?.nextCheckAt,
+    issue.executionPolicy?.monitor?.notes,
+    issue.executionPolicy?.monitor?.serviceName,
+  ]);
 
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
@@ -440,6 +474,190 @@ export function IssueProperties({
     if (!body) return;
     decideExecutionStage.mutate({ outcome, body });
   };
+  const updateMonitor = (nextMonitor: Issue["executionPolicy"] extends infer T
+    ? T extends { monitor?: infer M | null } | null | undefined
+      ? M | null
+      : never
+    : never) => {
+    const basePolicy = buildExecutionPolicy({
+      existingPolicy: issue.executionPolicy ?? null,
+      reviewerValues,
+      approverValues,
+    });
+    if (!basePolicy && !nextMonitor) {
+      onUpdate({ executionPolicy: null });
+      return;
+    }
+    onUpdate({
+      executionPolicy: {
+        mode: basePolicy?.mode ?? issue.executionPolicy?.mode ?? "normal",
+        commentRequired: true,
+        stages: basePolicy?.stages ?? [],
+        ...(nextMonitor ? { monitor: nextMonitor } : {}),
+      },
+    });
+  };
+  const saveMonitor = () => {
+    if (!monitorAtInput) return;
+    const nextCheckAt = new Date(monitorAtInput);
+    if (Number.isNaN(nextCheckAt.getTime())) return;
+    const serviceName = monitorServiceInput.trim() || null;
+    updateMonitor({
+      nextCheckAt: nextCheckAt.toISOString(),
+      notes: monitorNotesInput.trim() || null,
+      scheduledBy: "board",
+      kind: serviceName ? "external_service" : null,
+      serviceName,
+      externalRef: null,
+    });
+    setMonitorOpen(false);
+  };
+  const clearMonitor = () => {
+    updateMonitor(null);
+    setMonitorOpen(false);
+  };
+  const monitorState = issue.executionState?.monitor ?? null;
+  const monitorNextCheckAt = monitorState?.nextCheckAt ?? issue.monitorNextCheckAt ?? issue.executionPolicy?.monitor?.nextCheckAt ?? null;
+  const monitorAttemptCount = issue.monitorAttemptCount ?? monitorState?.attemptCount ?? 0;
+  const monitorLastTriggeredAt = issue.monitorLastTriggeredAt ?? monitorState?.lastTriggeredAt ?? null;
+  const monitorServiceName = issue.executionPolicy?.monitor?.serviceName ?? monitorState?.serviceName ?? null;
+  const monitorNotes = issue.executionPolicy?.monitor?.notes ?? monitorState?.notes ?? null;
+  const monitorNow = useMonitorCountdown(monitorNextCheckAt);
+  const monitorRelative = monitorNextCheckAt ? formatMonitorEta(monitorNextCheckAt, monitorNow) : null;
+  const monitorIsDueNow = monitorRelative === "due now";
+  const monitorIsOverdue = Boolean(monitorRelative?.startsWith("overdue by "));
+  const monitorPrimary = monitorNextCheckAt
+    ? formatMonitorEtaLabel(monitorNextCheckAt, monitorNow)
+    : monitorState?.status === "cleared"
+      ? "Cleared"
+      : "None";
+  const monitorSecondary = monitorNextCheckAt
+    ? monitorIsDueNow
+      ? "checking momentarily…"
+      : `${formatMonitorAbsolute(monitorNextCheckAt, {}, monitorNow)}${monitorIsOverdue ? " · fires on next tick" : monitorAttemptCount > 0 ? ` · Attempt ${monitorAttemptCount}` : ""}`
+    : monitorState?.status === "cleared"
+      ? [
+          monitorLastTriggeredAt ? `last checked ${timeAgo(monitorLastTriggeredAt)}` : null,
+          monitorAttemptCount > 0 ? `after attempt ${monitorAttemptCount}` : null,
+        ].filter(Boolean).join(" · ")
+      : null;
+  const monitorTrigger = (
+    <TooltipProvider>
+      <Tooltip open={monitorDetailsOpen} onOpenChange={setMonitorDetailsOpen}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex min-w-0 items-start gap-1.5 border-0 bg-transparent p-0 text-left font-inherit text-inherit"
+          data-testid="monitor-row-trigger"
+          onClick={() => setMonitorDetailsOpen(false)}
+        >
+      {monitorNextCheckAt ? (
+            <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      ) : null}
+          <span className="flex min-w-0 flex-col items-start">
+            <span className={cn("text-sm", monitorNextCheckAt ? "font-semibold text-foreground" : "text-muted-foreground")}>{monitorPrimary}</span>
+            {monitorSecondary ? (
+              <span className="text-xs text-muted-foreground">{monitorSecondary}</span>
+            ) : null}
+          </span>
+        </button>
+      </TooltipTrigger>
+      {monitorNextCheckAt ? (
+        <TooltipContent
+          side="left"
+          className="w-80 border border-border bg-popover p-0 text-popover-foreground shadow-md"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <span className="text-sm font-semibold">Monitor</span>
+            {monitorAttemptCount > 0 ? <span className="text-xs text-muted-foreground">Attempt {monitorAttemptCount}</span> : null}
+          </div>
+          <div className="space-y-3 px-4 py-3 text-left">
+            <div>
+              <div className="text-xs text-muted-foreground">Next check</div>
+              <div className="text-sm">{formatMonitorAbsoluteFull(monitorNextCheckAt)}</div>
+              <div className="text-xs text-muted-foreground">{monitorRelative}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Watching</div>
+              <div className="text-sm">{monitorServiceName ?? "—"}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Notes</div>
+              <div className="whitespace-normal text-sm">{monitorNotes ?? "—"}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Last triggered</div>
+              <div className="text-sm">{monitorLastTriggeredAt ? formatMonitorAbsoluteFull(monitorLastTriggeredAt) : "— not yet triggered"}</div>
+            </div>
+          </div>
+          <div className="flex gap-2 border-t border-border px-4 py-3">
+            {onCheckMonitorNow ? (
+              <Button type="button" size="sm" variant="outline" disabled={checkingMonitorNow} onClick={() => { setMonitorDetailsOpen(false); onCheckMonitorNow(); }}>
+                {checkingMonitorNow ? "Checking…" : "Check now"}
+              </Button>
+            ) : null}
+            <Button type="button" size="sm" variant="outline" onClick={() => { setMonitorDetailsOpen(false); setMonitorOpen(true); }}>Edit</Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => { setMonitorDetailsOpen(false); clearMonitor(); }}>Clear</Button>
+          </div>
+        </TooltipContent>
+      ) : null}
+      </Tooltip>
+    </TooltipProvider>
+  );
+
+  const monitorContent = (
+    <div className="flex w-full flex-col gap-2">
+      <div className="flex flex-col gap-2 md:flex-row">
+        <input
+          aria-label="Schedule monitor check"
+          type="datetime-local"
+          className="rounded-md border border-border bg-transparent px-2 py-1 text-xs"
+          value={monitorAtInput}
+          onChange={(e) => setMonitorAtInput(e.target.value)}
+        />
+        <input
+          aria-label="Monitor check instructions"
+          type="text"
+          className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs"
+          placeholder="What should the agent re-check?"
+          value={monitorNotesInput}
+          onChange={(e) => setMonitorNotesInput(e.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-2 md:flex-row">
+        <input
+          aria-label="External service to monitor"
+          type="text"
+          className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs"
+          placeholder="External service"
+          value={monitorServiceInput}
+          onChange={(e) => setMonitorServiceInput(e.target.value)}
+        />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-50"
+            disabled={!monitorAtInput}
+            onClick={saveMonitor}
+          >
+            Schedule
+          </button>
+          {issue.executionPolicy?.monitor ? (
+            <button
+              type="button"
+              className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+              onClick={clearMonitor}
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+
+
   const selectedIssueLabels = useMemo(() => {
     const selectedIds = issue.labelIds ?? [];
     if (selectedIds.length === 0) return issue.labels ?? [];
@@ -1256,6 +1474,17 @@ export function IssueProperties({
             setApproverSearch,
             () => updateExecutionPolicy(reviewerValues, []),
           )}
+        </PropertyPicker>
+        <PropertyPicker
+          inline={inline}
+          label="Monitor"
+          open={monitorOpen}
+          onOpenChange={setMonitorOpen}
+          triggerContent={monitorTrigger}
+          triggerClassName="min-w-0 max-w-full"
+          popoverClassName={cn("max-w-full", inline ? "w-full" : "w-80 sm:w-(--sz-32rem)")}
+        >
+          {monitorContent}
         </PropertyPicker>
         {currentExecutionLabel && (
           <PropertyRow label="Execution">

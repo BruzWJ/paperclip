@@ -60,17 +60,6 @@ const TEST_TOOL = {
   },
 } as const;
 
-const ENVIRONMENT_BASE_METHODS = [
-  "environmentValidateConfig",
-  "environmentProbe",
-  "environmentAcquireLease",
-  "environmentReleaseLease",
-  "environmentDestroyLease",
-  "environmentRealizeWorkspace",
-  "environmentExecute",
-  "environmentCancelExecution",
-] as const;
-
 function completeHostHandlers(
   overrides: Partial<HostClientHandlers> = {},
 ): HostClientHandlers {
@@ -81,22 +70,6 @@ function completeHostHandlers(
       services: {} as HostServices,
     }),
     ...overrides,
-  };
-}
-
-function environmentManifest(
-  driver: Partial<NonNullable<PaperclipPluginManifestV1["environmentDrivers"]>[number]> = {},
-): PaperclipPluginManifestV1 {
-  return {
-    ...TEST_MANIFEST,
-    capabilities: ["environment.drivers.register"],
-    environmentDrivers: [{
-      driverKey: "sandbox",
-      kind: "sandbox_provider",
-      displayName: "Sandbox",
-      configSchema: { type: "object" },
-      ...driver,
-    }],
   };
 }
 
@@ -388,121 +361,6 @@ describe("plugin-worker-manager stderr failure context", () => {
       } finally {
         await handle.stop().catch(() => undefined);
       }
-    }
-  });
-
-  it("requires the complete environment-driver base lifecycle", async () => {
-    for (const testCase of [
-      {
-        methods: ENVIRONMENT_BASE_METHODS.filter(
-          (method) => method !== "environmentDestroyLease",
-        ),
-        expected:
-          'Manifest environment-driver declarations require the worker to advertise "environmentDestroyLease"',
-      },
-      {
-        methods: [...ENVIRONMENT_BASE_METHODS, "environmentResumeLease"],
-        expected:
-          'Worker advertised "environmentResumeLease" without manifest environment-driver reusable-lease declarations',
-      },
-    ]) {
-      const handle = configuredWorker(environmentManifest(), {
-        extraSupportedMethods: testCase.methods,
-      });
-
-      try {
-        await expect(handle.start()).rejects.toThrow(testCase.expected);
-      } finally {
-        await handle.stop().catch(() => undefined);
-      }
-    }
-
-    const complete = configuredWorker(environmentManifest(), {
-      extraSupportedMethods: ENVIRONMENT_BASE_METHODS,
-    });
-    try {
-      await expect(complete.start()).resolves.toBeUndefined();
-      expect(complete.status).toBe("running");
-    } finally {
-      await complete.stop().catch(() => undefined);
-    }
-  });
-
-  it.each([
-    {
-      flag: "supportsReusableLeases" as const,
-      methods: ["environmentResumeLease"] as const,
-      declaration: "reusable-lease",
-    },
-    {
-      flag: "supportsInteractiveSetup" as const,
-      methods: [
-        "environmentStartInteractiveSetup",
-        "environmentGetInteractiveSetup",
-        "environmentCancelInteractiveSetup",
-      ] as const,
-      declaration: "interactive-setup",
-    },
-    {
-      flag: "supportsTemplateCapture" as const,
-      methods: ["environmentCaptureTemplate"] as const,
-      declaration: "template-capture",
-    },
-    {
-      flag: "supportsTemplateDelete" as const,
-      methods: ["environmentDeleteTemplate"] as const,
-      declaration: "template-delete",
-    },
-  ])("enforces the $flag environment-driver method contract", async ({
-    flag,
-    methods,
-    declaration,
-  }) => {
-    const missingMethod = methods.at(-1)!;
-    const handle = configuredWorker(environmentManifest({ [flag]: true }), {
-      extraSupportedMethods: [
-        ...ENVIRONMENT_BASE_METHODS,
-        ...methods.filter((method) => method !== missingMethod),
-      ],
-    });
-
-    try {
-      await expect(handle.start()).rejects.toThrow(
-        `Manifest environment-driver ${declaration} declarations require the worker to advertise "${missingMethod}"`,
-      );
-    } finally {
-      await handle.stop().catch(() => undefined);
-    }
-  });
-
-  it("requires paired environment sync hooks and allows the declared pair", async () => {
-    for (const methods of [
-      [...ENVIRONMENT_BASE_METHODS, "environmentSyncIn"],
-      [...ENVIRONMENT_BASE_METHODS, "environmentSyncOut"],
-    ]) {
-      const handle = configuredWorker(environmentManifest(), {
-        extraSupportedMethods: methods,
-      });
-      try {
-        await expect(handle.start()).rejects.toThrow(
-          "Worker environment sync hooks must advertise both",
-        );
-      } finally {
-        await handle.stop().catch(() => undefined);
-      }
-    }
-
-    const paired = configuredWorker(environmentManifest(), {
-      extraSupportedMethods: [
-        ...ENVIRONMENT_BASE_METHODS,
-        "environmentSyncIn",
-        "environmentSyncOut",
-      ],
-    });
-    try {
-      await expect(paired.start()).resolves.toBeUndefined();
-    } finally {
-      await paired.stop().catch(() => undefined);
     }
   });
 

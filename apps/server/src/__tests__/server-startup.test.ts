@@ -190,8 +190,6 @@ vi.mock("../services/index.js", () => ({
   createRuntimeAgentActionPort: vi.fn((service) => service),
   createRuntimeAgentConfigurationService: vi.fn(() => ({})),
   createRuntimeIssueActionPort: vi.fn((service) => service),
-  environmentRuntimeService: vi.fn(() => ({})),
-  environmentRunOrchestrator: vi.fn(() => ({})),
   runIssueSessionCutoversOnStartup: vi.fn(async () => ({
     applied: [],
     skipped: [],
@@ -219,12 +217,8 @@ vi.mock("../services/dev-server-restart-coordinator.js", () => ({
   createDevServerRestartCoordinator: createDevServerRestartCoordinatorMock,
 }));
 
-vi.mock("../services/environment-runtime.js", () => ({
-  environmentRuntimeService: vi.fn(() => ({})),
-}));
-
-vi.mock("../services/environment-run-orchestrator.js", () => ({
-  environmentRunOrchestrator: vi.fn(() => ({})),
+vi.mock("../services/local-execution-orchestrator.js", () => ({
+  localExecutionOrchestrator: vi.fn(() => ({})),
 }));
 
 vi.mock("../startup-banner.js", () => ({

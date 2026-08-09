@@ -21,7 +21,6 @@ import {
   type AgentAdapterRevisionConfigurationInput,
   type CompanySkillChannel,
   type CompanySkillPin,
-  type EnvironmentDriver,
 } from "@paperclipai/shared";
 import {
   resolveAcpAdapterRevisionConfiguration,
@@ -34,7 +33,6 @@ import {
   type ServerAdapterModule,
 } from "@paperclipai/adapter-utils";
 import { notFound, unprocessable } from "../errors.js";
-import { environmentService } from "./environments.js";
 import {
   requireSecretMutationActor,
   type SecretMutationActor,
@@ -76,9 +74,6 @@ export interface DerivedAgentAdapterConfigRevision {
   adapterType: string;
   implementationIdentity: AdapterImplementationIdentity;
   adapterConfigSchemaVersion: string;
-  executionEnvironmentId: string;
-  executionTargetDriver: EnvironmentDriver;
-  executionTargetDigest: string;
   normalizedConfig: Record<string, unknown>;
   acpConfiguration: AgentAdapterAcpConfiguration;
   digest: string;
@@ -92,11 +87,6 @@ export interface AgentAdapterRuntimeMetadata {
 export interface DeriveRegisteredAgentAdapterConfigRevisionInput {
   adapterType: string;
   adapterConfig: Record<string, unknown>;
-  executionTarget: {
-    environmentId: string;
-    driver: EnvironmentDriver;
-    digest: string;
-  };
   companySkillPins: readonly CompanySkillPin[];
   skillChannel: CompanySkillChannel;
 }
@@ -133,22 +123,6 @@ function canonicalJson(value: unknown): string {
     .filter((key) => value[key] !== undefined)
     .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
     .join(",")}}`;
-}
-
-export function deriveAgentExecutionTargetDigest(input: {
-  environmentId: string;
-  driver: string;
-  config: Record<string, unknown>;
-}): string {
-  return createHash("sha256")
-    .update(
-      canonicalJson({
-        environmentId: input.environmentId,
-        driver: input.driver,
-        config: normalizedJson(input.config),
-      }),
-    )
-    .digest("hex");
 }
 
 function normalizedJson(value: unknown): unknown {
@@ -390,11 +364,6 @@ function parsePersistedAcpConfiguration(
 export function deriveAgentAdapterConfigRevision(input: {
   adapterType: string;
   adapterConfig: Record<string, unknown>;
-  executionTarget: {
-    environmentId: string;
-    driver: EnvironmentDriver;
-    digest: string;
-  };
   companySkillPins: readonly CompanySkillPin[];
   skillChannel: CompanySkillChannel;
   runtimeMetadata: AgentAdapterRuntimeMetadata;
@@ -425,22 +394,6 @@ export function deriveAgentAdapterConfigRevision(input: {
   }
   const normalizedConfig =
     normalizeExplicitAdapterConfig(input.adapterConfig);
-  const executionTarget = input.executionTarget;
-  if (
-    !input.runtimeMetadata.definition.environment.drivers.includes(
-      executionTarget.driver as "local" | "ssh" | "sandbox" | "plugin",
-    )
-  ) {
-    throw unprocessable(
-      `Adapter "${input.adapterType}" does not support execution target driver "${executionTarget.driver}".`,
-      {
-        code: "adapter_execution_target_driver_unsupported",
-        adapterType: input.adapterType,
-        environmentId: executionTarget.environmentId,
-        driver: executionTarget.driver,
-      },
-    );
-  }
   if (input.skillChannel === "isolated_skills_home") {
     throw unprocessable(
       "This local agent runtime does not support isolated skills homes. Select operator_native skills.",
@@ -474,11 +427,6 @@ export function deriveAgentAdapterConfigRevision(input: {
   const parsedAcpConfiguration =
     agentAdapterAcpConfigurationSchema.safeParse({
       ...declarativeAcpConfiguration,
-      executionTargetSelector: {
-        environmentId: executionTarget.environmentId,
-        executionTargetDriver: executionTarget.driver,
-        executionTargetDigest: executionTarget.digest,
-      },
       workspaceSelector: {
         kind: "issue_execution_workspace",
       },
@@ -504,9 +452,6 @@ export function deriveAgentAdapterConfigRevision(input: {
         adapterType: input.adapterType,
         implementationIdentity: input.runtimeMetadata.implementationIdentity,
         adapterConfigSchemaVersion: AGENT_ADAPTER_CONFIG_SCHEMA_VERSION,
-        executionEnvironmentId: executionTarget.environmentId,
-        executionTargetDriver: executionTarget.driver,
-        executionTargetDigest: executionTarget.digest,
         normalizedConfig,
         acpConfiguration,
       }),
@@ -517,9 +462,6 @@ export function deriveAgentAdapterConfigRevision(input: {
     adapterType: input.adapterType,
     implementationIdentity: input.runtimeMetadata.implementationIdentity,
     adapterConfigSchemaVersion: AGENT_ADAPTER_CONFIG_SCHEMA_VERSION,
-    executionEnvironmentId: executionTarget.environmentId,
-    executionTargetDriver: executionTarget.driver,
-    executionTargetDigest: executionTarget.digest,
     normalizedConfig,
     acpConfiguration,
     digest,
@@ -643,7 +585,6 @@ export async function deriveRegisteredAgentAdapterConfigRevision(
   const derived = deriveAgentAdapterConfigRevision({
     adapterType: input.adapterType,
     adapterConfig: resolved.canonicalAdapterConfig,
-    executionTarget: input.executionTarget,
     companySkillPins: input.companySkillPins,
     skillChannel: input.skillChannel,
     runtimeMetadata: resolved.runtimeMetadata,
@@ -754,31 +695,10 @@ export async function selectAgentAdapterConfigRevision(
   }
 
   // Resolve the current ACPX-admitted definition before stamping the
-  // automatic local execution environment into the immutable revision.
+  // immutable adapter revision.
   const resolvedRuntime = await resolveRegisteredAdapterRuntimeConfiguration({
     adapterType: input.adapterType,
     adapterConfig: input.adapterConfig,
-  });
-  const executionEnvironment = await environmentService(db).ensureLocalEnvironment();
-  if (
-    executionEnvironment.status !== "active"
-    || !resolvedRuntime.runtimeMetadata.definition.environment.drivers.includes(
-      executionEnvironment.driver,
-    )
-  ) {
-    throw unprocessable(
-      "Agent runtime does not support the required local execution environment",
-      {
-        code: "agent_execution_environment_unsupported",
-        environmentId: executionEnvironment.id,
-        driver: executionEnvironment.driver,
-      },
-    );
-  }
-  const executionTargetDigest = deriveAgentExecutionTargetDigest({
-    environmentId: executionEnvironment.id,
-    driver: executionEnvironment.driver,
-    config: executionEnvironment.config,
   });
   const runtimeConfig = deepFreezeJson(
     normalizedJson(input.runtimeConfig) as Record<string, unknown>,
@@ -794,11 +714,6 @@ export async function selectAgentAdapterConfigRevision(
   const derived = deriveAgentAdapterConfigRevision({
     adapterType: input.adapterType,
     adapterConfig: resolvedRuntime.canonicalAdapterConfig,
-    executionTarget: {
-      environmentId: executionEnvironment.id,
-      driver: executionEnvironment.driver,
-      digest: executionTargetDigest,
-    },
     companySkillPins,
     skillChannel: input.skillChannel,
     runtimeMetadata: resolvedRuntime.runtimeMetadata,

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import type { EnvironmentRunOrchestrator } from "./environment-run-orchestrator.js";
+import type { LocalExecutionOrchestrator } from "./local-execution-orchestrator.js";
 import { createIssueExecutionAttemptExecutor } from "./issue-execution-attempt-executor.js";
 import { createPostgresIssueExecutionAcpEventSink } from "./issue-execution-acp-events-postgres.js";
 import { createIssueExecutionCancellationService } from "./issue-execution-cancellation.js";
@@ -35,8 +35,8 @@ export interface PostgresIssueExecutionProductionRuntimeOptions {
   readonly workerId: string;
   readonly targetSessionProtectionSecret: string | Uint8Array;
   readonly issueSessionStore: IssueSessionStore;
-  readonly environmentOrchestrator: Pick<
-    EnvironmentRunOrchestrator,
+  readonly localExecutionOrchestrator: Pick<
+    LocalExecutionOrchestrator,
     "acquireExecutionTargetForRun"
   >;
   readonly capabilityEndpoint: string;
@@ -159,7 +159,7 @@ export function createPostgresIssueExecutionProductionRuntime(
     dispatchRef: options.dispatchRef,
   });
   const targetSessionAcquirer = createIssueExecutionTargetAcquirer({
-    environmentOrchestrator: options.environmentOrchestrator,
+    localExecutionOrchestrator: options.localExecutionOrchestrator,
   });
   const targetSessions = createNativeCorrelationService({
     protector: createAuthenticatedNativeCorrelationProtector({

@@ -55,7 +55,6 @@ vi.mock("../adapters/registry.js", () => {
       environment: {
         cwd: "execution-workspace",
         additionalDirectories: "authorized-workspace-only",
-        drivers: ["local", "ssh", "sandbox", "plugin"],
         environmentKeys: [],
       },
       runtime: {

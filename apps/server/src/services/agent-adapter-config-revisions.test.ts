@@ -25,7 +25,6 @@ const fixtureDefinition: AcpSubprocessAdapterDefinition = Object.freeze({
   environment: Object.freeze({
     cwd: "execution-workspace",
     additionalDirectories: "authorized-workspace-only",
-    drivers: Object.freeze(["local"] as const),
     environmentKeys: Object.freeze([]),
   }),
   runtime: Object.freeze({
@@ -109,11 +108,6 @@ function derive(model = "model-1", reasoningEffort = "high") {
   return deriveAgentAdapterConfigRevision({
     adapterType: FIXTURE_AGENT,
     adapterConfig: { model, reasoning_effort: reasoningEffort },
-    executionTarget: {
-      environmentId: "00000000-0000-4000-8000-000000000001",
-      driver: "local",
-      digest: "b".repeat(64),
-    },
     companySkillPins: [
       {
         key: "review",
@@ -145,11 +139,6 @@ describe("canonical ACP adapter configuration revision", () => {
           id: "model-1",
           limits: null,
         },
-        executionTargetSelector: {
-          environmentId: "00000000-0000-4000-8000-000000000001",
-          executionTargetDriver: "local",
-          executionTargetDigest: "b".repeat(64),
-        },
         workspaceSelector: {
           kind: "issue_execution_workspace",
         },
@@ -164,12 +153,12 @@ describe("canonical ACP adapter configuration revision", () => {
     });
   });
 
-  it("derives a stable digest from immutable ACP and execution facts", () => {
+  it("derives a stable digest from immutable ACP facts", () => {
     expect(derive().digest).toBe(derive().digest);
     expect(derive("model-2").digest).not.toBe(derive().digest);
   });
 
-  it("fails closed for undeclared config and unsupported environments", () => {
+  it("fails closed for undeclared config and unsupported skill homes", () => {
     expect(() =>
       deriveAgentAdapterConfigRevision({
         adapterType: FIXTURE_AGENT,
@@ -177,11 +166,6 @@ describe("canonical ACP adapter configuration revision", () => {
           model: "model-1",
           reasoning_effort: "high",
           apiKey: "must-not-exist",
-        },
-        executionTarget: {
-          environmentId: "00000000-0000-4000-8000-000000000001",
-          driver: "local",
-          digest: "b".repeat(64),
         },
         companySkillPins: [],
         skillChannel: "operator_native",
@@ -192,38 +176,10 @@ describe("canonical ACP adapter configuration revision", () => {
       deriveAgentAdapterConfigRevision({
         adapterType: FIXTURE_AGENT,
         adapterConfig: { model: "model-1", reasoning_effort: "high" },
-        executionTarget: {
-          environmentId: "00000000-0000-4000-8000-000000000001",
-          driver: "local",
-          digest: "b".repeat(64),
-        },
         companySkillPins: [],
         skillChannel: "isolated_skills_home",
         runtimeMetadata,
       }),
     ).toThrow(/does not support isolated skills homes/);
-    expect(() =>
-      deriveAgentAdapterConfigRevision({
-        adapterType: FIXTURE_AGENT,
-        adapterConfig: { model: "model-1", reasoning_effort: "high" },
-        executionTarget: {
-          environmentId: "00000000-0000-4000-8000-000000000001",
-          driver: "ssh",
-          digest: "b".repeat(64),
-        },
-        companySkillPins: [],
-        skillChannel: "operator_native",
-        runtimeMetadata: {
-          ...runtimeMetadata,
-          definition: {
-            ...runtimeMetadata.definition,
-            environment: {
-              ...runtimeMetadata.definition.environment,
-              drivers: ["local"],
-            },
-          },
-        },
-      }),
-    ).toThrow(/does not support execution target driver/);
   });
 });

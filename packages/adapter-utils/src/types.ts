@@ -7,27 +7,6 @@ import type {
   AcpSessionConfigValue,
 } from "./acp-subprocess/contract.js";
 
-export interface AdapterRuntimeServiceReport {
-  id?: string | null;
-  projectId?: string | null;
-  projectWorkspaceId?: string | null;
-  issueId?: string | null;
-  scopeType?: "project_workspace" | "execution_workspace" | "run" | "agent";
-  scopeId?: string | null;
-  serviceName: string;
-  status?: "starting" | "running" | "stopped" | "failed";
-  lifecycle?: "shared" | "ephemeral";
-  reuseKey?: string | null;
-  command?: string | null;
-  cwd?: string | null;
-  port?: number | null;
-  url?: string | null;
-  providerRef?: string | null;
-  ownerAgentId?: string | null;
-  stopPolicy?: Record<string, unknown> | null;
-  healthStatus?: "unknown" | "healthy" | "unhealthy";
-}
-
 /** Immutable token limits for one advertised ACP model selection. */
 export interface AdapterModelLimits {
   contextTokenLimit: number;
@@ -123,7 +102,6 @@ export interface AcpAdapterLaunchProfile {
 export interface AcpAdapterEnvironmentRequirements {
   readonly cwd: "execution-workspace";
   readonly additionalDirectories: "authorized-workspace-only";
-  readonly drivers: readonly ("local" | "ssh" | "sandbox" | "plugin")[];
   /** Exact non-secret variables required by the frontend; empty is valid. */
   readonly environmentKeys: readonly string[];
 }

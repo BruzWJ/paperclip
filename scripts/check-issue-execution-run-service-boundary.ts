@@ -59,6 +59,8 @@ const RUN_FINALIZER_PATH =
   "apps/server/src/services/issue-execution-finalization-postgres.ts";
 const RUN_SCHEMA_PATH =
   "packages/db/schema/issue_execution_runs.ts";
+const WATCHDOG_SCHEMA_PATH =
+  "packages/db/schema/issue_execution_watchdog_decisions.ts";
 const RUN_ROUTE_PATH = "apps/server/src/routes/runs.ts";
 const TOOL_GATEWAY_PATH =
   "apps/server/src/services/runtime-tool-gateway.ts";
@@ -71,6 +73,7 @@ const OPENAPI_PATH = "apps/server/src/routes/openapi.ts";
 const LEGACY_TERMS = [
   ["heartbeat", "_runs"].join(""),
   ["heartbeat", "_run_events"].join(""),
+  ["heartbeat", "_run_watchdog_decisions"].join(""),
   ["heart", "beatRuns"].join(""),
   ["heart", "beatRunEvents"].join(""),
   ["Heart", "beatRun"].join(""),
@@ -573,6 +576,9 @@ function assertCanonicalConsumers(repositoryRoot: string): void {
   );
 
   const routeSource = readFileSync(resolve(repositoryRoot, RUN_ROUTE_PATH), "utf8");
+  if (!routeSource.includes("/runs/:runId/watchdog-decisions")) {
+    throw new Error(`${RUN_ROUTE_PATH} is missing the canonical watchdog route`);
+  }
   if (!routeSource.includes("readJoinedRunDetail")) {
     throw new Error(`${RUN_ROUTE_PATH} must use readJoinedRunDetail`);
   }
@@ -600,6 +606,19 @@ function assertCanonicalConsumers(repositoryRoot: string): void {
       throw new Error(
         `${TOOL_RETRIEVAL_PATH} retains generic trace-event surface ${forbidden}`,
       );
+    }
+  }
+
+  const watchdogSource = readFileSync(
+    resolve(repositoryRoot, WATCHDOG_SCHEMA_PATH),
+    "utf8",
+  );
+  for (const required of [
+    "issueExecutionWatchdogDecisions",
+    "issue_execution_watchdog_decisions",
+  ]) {
+    if (!watchdogSource.includes(required)) {
+      throw new Error(`${WATCHDOG_SCHEMA_PATH} is missing ${required}`);
     }
   }
 

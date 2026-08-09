@@ -3,7 +3,12 @@ import type {
   IssueCommentMetadataRowType,
   IssueCommentPresentationKind,
   IssueCommentPresentationTone,
+  IssueExecutionMonitorClearReason,
+  IssueExecutionMonitorKind,
+  IssueExecutionMonitorRecoveryPolicy,
+  IssueExecutionMonitorStateStatus,
   IssueExecutionDecisionOutcome,
+  IssueMonitorScheduledBy,
   IssueExecutionPolicyMode,
   IssueReferenceSourceKind,
   IssueExecutionStageType,
@@ -125,8 +130,7 @@ export interface IssueRelationIssueSummary {
 
 export type IssueBlockerDiagnosticFlag =
   | "done_but_blocking"
-  | "cancelled_blocker_in_set"
-  | "workspace_finalize_pending";
+  | "cancelled_blocker_in_set";
 
 export interface IssueBlockerDiagnosticIssueSummary {
   id: string;
@@ -141,7 +145,6 @@ export interface IssueBlockerDiagnosticIssueSummary {
 export interface IssueBlockerDiagnosticNode extends IssueBlockerDiagnosticIssueSummary {
   isUnresolved: boolean;
   isDependencyReady: boolean;
-  isPendingFinalize: boolean;
   flags: IssueBlockerDiagnosticFlag[];
 }
 
@@ -149,7 +152,6 @@ export interface IssueBlockerDiagnosticsReadiness {
   allBlockersDone: boolean;
   isDependencyReady: boolean;
   unresolvedBlockerCount: number;
-  pendingFinalizeBlockerCount: number;
 }
 
 export interface IssueBlockerDiagnosticsResponse {
@@ -335,16 +337,46 @@ export interface IssueExecutionStage {
   participants: IssueExecutionStageParticipant[];
 }
 
+export interface IssueExecutionMonitorPolicy {
+  nextCheckAt: string;
+  notes: string | null;
+  scheduledBy: IssueMonitorScheduledBy;
+  kind?: IssueExecutionMonitorKind | null;
+  serviceName?: string | null;
+  externalRef?: string | null;
+  timeoutAt?: string | null;
+  maxAttempts?: number | null;
+  recoveryPolicy?: IssueExecutionMonitorRecoveryPolicy | null;
+}
+
 export interface IssueExecutionPolicy {
   mode: IssueExecutionPolicyMode;
   commentRequired: boolean;
   stages: IssueExecutionStage[];
+  monitor?: IssueExecutionMonitorPolicy | null;
   reviewPreset?: LowTrustReviewPresetPolicy;
   authorizationPolicy?: TrustAuthorizationPolicy;
 }
 
 export interface IssueReviewRequest {
   instructions: string;
+}
+
+export interface IssueExecutionMonitorState {
+  status: IssueExecutionMonitorStateStatus;
+  nextCheckAt: string | null;
+  lastTriggeredAt: string | null;
+  attemptCount: number;
+  notes: string | null;
+  scheduledBy: IssueMonitorScheduledBy | null;
+  kind?: IssueExecutionMonitorKind | null;
+  serviceName?: string | null;
+  externalRef?: string | null;
+  timeoutAt?: string | null;
+  maxAttempts?: number | null;
+  recoveryPolicy?: IssueExecutionMonitorRecoveryPolicy | null;
+  clearedAt: string | null;
+  clearReason: IssueExecutionMonitorClearReason | null;
 }
 
 export interface IssueExecutionState {
@@ -358,6 +390,7 @@ export interface IssueExecutionState {
   completedStageIds: string[];
   lastDecisionId: string | null;
   lastDecisionOutcome: IssueExecutionDecisionOutcome | null;
+  monitor?: IssueExecutionMonitorState | null;
 }
 
 export interface IssueExecutionDecision {
@@ -379,6 +412,7 @@ interface IssueBase {
   id: string;
   companyId: string;
   projectId: string | null;
+  projectWorkspaceId: string | null;
   goalId: string | null;
   parentId: string | null;
   ancestors?: IssueAncestor[];
@@ -405,6 +439,11 @@ interface IssueBase {
   billingCode: string | null;
   executionPolicy?: IssueExecutionPolicy | null;
   executionState?: IssueExecutionState | null;
+  monitorNextCheckAt?: Date | null;
+  monitorLastTriggeredAt?: Date | null;
+  monitorAttemptCount?: number;
+  monitorNotes?: string | null;
+  monitorScheduledBy?: IssueMonitorScheduledBy | null;
   startedAt: Date | null;
   completedAt: Date | null;
   cancelledAt: Date | null;
@@ -538,6 +577,7 @@ export type CompactIssue = Pick<
   | "id"
   | "companyId"
   | "projectId"
+  | "projectWorkspaceId"
   | "goalId"
   | "parentId"
   | "title"

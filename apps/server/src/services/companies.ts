@@ -10,7 +10,6 @@ import {
   projects,
 } from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
-import { environmentService } from "./environments.js";
 import { logActivity } from "./activity-log.js";
 import {
   archiveCompanySessionGraphInTx,
@@ -38,7 +37,6 @@ const SYSTEM_COMPANY_ACTOR: CompanyActivityActor = {
 };
 
 export function companyService(db: Db) {
-  const environmentsSvc = environmentService(db);
   const budgets = budgetService(db);
 
   type CompanyTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -185,7 +183,6 @@ export function companyService(db: Db) {
       actorUserId: string | null = null,
     ) => {
       const created = await budgets.createCompany(data, actorUserId);
-      await environmentsSvc.ensureLocalEnvironment(created.id);
       const row = await getCompanyQuery(db)
         .where(eq(companies.id, created.id))
         .then((rows) => rows[0] ?? null);

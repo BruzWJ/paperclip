@@ -11,7 +11,6 @@ function toIssueWorkProduct(row: IssueWorkProductRow): IssueWorkProduct {
     companyId: row.companyId,
     projectId: row.projectId ?? null,
     issueId: row.issueId,
-    runtimeServiceId: row.runtimeServiceId ?? null,
     type: row.type as IssueWorkProduct["type"],
     provider: row.provider,
     externalId: row.externalId ?? null,

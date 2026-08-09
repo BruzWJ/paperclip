@@ -75,6 +75,18 @@ const ApprovalDetail = lazyPage(
 const Costs = lazyPage(() => import("./pages/Costs"), "Costs");
 const Activity = lazyPage(() => import("./pages/Activity"), "Activity");
 const Inbox = lazyPage(() => import("./pages/Inbox"), "Inbox");
+const WhatNeedsMe = lazyPage(
+  () => import("./pages/WhatNeedsMe"),
+  "WhatNeedsMe",
+);
+const TrainingInspector = lazyPage(
+  () => import("./pages/Training"),
+  "TrainingInspector",
+);
+const TrainingLibrary = lazyPage(
+  () => import("./pages/Training"),
+  "TrainingLibrary",
+);
 const CompanySettings = lazyPage(
   () => import("./pages/CompanySettings"),
   "CompanySettings",
@@ -264,6 +276,9 @@ function boardRoutes() {
       <Route path="approvals/:approvalId" element={<ApprovalDetail />} />
       <Route path="costs" element={<Costs />} />
       <Route path="activity" element={<Activity />} />
+      <Route path="decisions" element={<WhatNeedsMe />} />
+      <Route path="training" element={<TrainingLibrary />} />
+      <Route path="training/:id" element={<TrainingInspector />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
       {["mine", "recent", "unread", "blocked", "all"].map((tab) => (
         <Route key={tab} path={`inbox/${tab}`} element={<Inbox />} />
@@ -430,6 +445,7 @@ const UNPREFIXED_BOARD_PATHS = [
   "goals",
   "goals/:goalId",
   "artifacts",
+  "decisions",
   "u/:userSlug",
   "skills/studio",
   "skills/studio/new",

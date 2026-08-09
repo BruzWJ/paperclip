@@ -9,7 +9,6 @@ import {
 
 const SHARED_BOUNDARY = "packages/shared/src/provider-child-boundary.ts";
 const ADAPTER_VALIDATOR = "packages/shared/src/validators/agent.ts";
-const REMOTE_ENV = "packages/adapter-utils/src/remote-execution-env.ts";
 const PROCESS_ENV = "packages/adapter-utils/src/server-utils.ts";
 const ACP_PROCESS = "packages/adapter-utils/src/acp-subprocess/process.ts";
 const ATTEMPT_EXECUTOR =
@@ -129,11 +128,6 @@ export function providerIdentityBoundaryViolations(
       "isEnvironmentEntry && isProviderChildReservedEnvironmentKey(key)",
       "if (typeof value === \"string\") return;",
     ]),
-    ...requireFileTokens(repositoryRoot, REMOTE_ENV, [
-      'from "@paperclipai/shared/provider-child-boundary"',
-      "isProviderChildReservedEnvironmentKey(normalizedKey)",
-      "sanitized[key] = value",
-    ]),
     ...requireFileTokens(repositoryRoot, PROCESS_ENV, [
       "export function sanitizeInheritedProviderChildEnv",
       'normalizedKey.startsWith("PAPERCLIP_")',
@@ -191,9 +185,9 @@ export function providerIdentityBoundaryViolations(
       repositoryRoot,
       "packages/adapter-utils/src/server-utils.test.ts",
       [
-        "PAPERCLIP_CLOUD_PROD_PROVIDER_TOKEN",
-        '"operator-selected"',
-        "sanitizeSshRemoteEnv",
+        "uses explicit adapter provider configuration without inheriting host provider state",
+        'OPENAI_API_KEY: "operator-openai-key"',
+        "sanitizeInheritedProviderChildEnv",
       ],
     ),
     ...requireFileTokens(
@@ -221,16 +215,6 @@ export function providerIdentityBoundaryViolations(
   ) {
     violations.push(
       `${ADAPTER_VALIDATOR}: provider-native configuration is inspected or prefix-banned`,
-    );
-  }
-
-  const remoteEnv = read(repositoryRoot, REMOTE_ENV);
-  if (
-    remoteEnv !== null &&
-    /normalizedKey\.startsWith\(["']PAPERCLIP_/.test(remoteEnv)
-  ) {
-    violations.push(
-      `${REMOTE_ENV}: explicit operator environment is prefix-banned`,
     );
   }
 

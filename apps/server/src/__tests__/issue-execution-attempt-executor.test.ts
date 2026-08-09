@@ -24,6 +24,7 @@ import {
 import type {
   PluginBeforePromptDispatcher,
 } from "../services/plugin-before-prompt-dispatcher.js";
+import { localExecutionCorrelationFingerprint } from "../services/local-execution-correlation.js";
 
 const acpxFixture = vi.hoisted(() =>
   Object.freeze({
@@ -45,7 +46,7 @@ vi.mock("@paperclipai/adapter-utils/acp-subprocess", async (importOriginal) => {
 const launchProfile = Object.freeze({ registryName: acpxFixture.agentName });
 const digest = "a".repeat(64);
 const toolsDigest = "b".repeat(64);
-const targetFingerprint = "c".repeat(64);
+const targetFingerprint = localExecutionCorrelationFingerprint("revision-1");
 
 function correlationScope(input: {
   carryContext: boolean;
@@ -187,11 +188,6 @@ function resolvedPrompt(input: {
           outputTokenLimit: 16_000,
         },
       },
-      executionTargetSelector: {
-        environmentId: "00000000-0000-4000-8000-000000000001",
-        executionTargetDriver: "local",
-        executionTargetDigest: targetFingerprint,
-      },
       workspaceSelector: { kind: "issue_execution_workspace" },
       companySkillPins: [],
       skillChannel: "operator_native",
@@ -216,11 +212,6 @@ function resolvedPrompt(input: {
             contextTokenLimit: 200_000,
             outputTokenLimit: 16_000,
           },
-        },
-        executionTargetSelector: {
-          environmentId: "00000000-0000-4000-8000-000000000001",
-          executionTargetDriver: "local",
-          executionTargetDigest: targetFingerprint,
         },
         workspaceSelector: { kind: "issue_execution_workspace" },
         companySkillPins: [],
@@ -421,9 +412,7 @@ function createHarness(input: {
           acpConfiguration: input.prompt.acpConfiguration,
           executionTarget: {
             kind: "local",
-            environmentId:
-              input.prompt.acpConfiguration.executionTargetSelector.environmentId,
-            leaseId: "environment-lease-1",
+            leaseId: "local-run-lease-1",
           },
           hostCwd: "/workspace",
           targetCwd: "/workspace",

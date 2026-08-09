@@ -82,7 +82,6 @@ describe("issue blocker diagnostics route", () => {
         allBlockersDone: true,
         isDependencyReady: true,
         unresolvedBlockerIssueIds: [],
-        pendingFinalizeBlockerIssueIds: [],
       },
       truncated: false,
     });
@@ -98,7 +97,6 @@ describe("issue blocker diagnostics route", () => {
         allBlockersDone: true,
         isDependencyReady: true,
         unresolvedBlockerCount: 0,
-        pendingFinalizeBlockerCount: 0,
       },
       omittedUnauthorizedBlockerCount: 0,
       truncated: false,
@@ -123,7 +121,6 @@ describe("issue blocker diagnostics route", () => {
         allBlockersDone: true,
         isDependencyReady: true,
         unresolvedBlockerIssueIds: [],
-        pendingFinalizeBlockerIssueIds: [],
       },
       truncated: false,
     });
@@ -138,7 +135,6 @@ describe("issue blocker diagnostics route", () => {
       allBlockersDone: true,
       isDependencyReady: true,
       unresolvedBlockerCount: 0,
-      pendingFinalizeBlockerCount: 0,
     });
   });
 
@@ -157,7 +153,6 @@ describe("issue blocker diagnostics route", () => {
         allBlockersDone: true,
         isDependencyReady: true,
         unresolvedBlockerIssueIds: [],
-        pendingFinalizeBlockerIssueIds: [],
       },
       truncated: true,
     });

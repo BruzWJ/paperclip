@@ -16,6 +16,18 @@ export interface ProjectBudgetSummary {
   windowKind: BudgetWindowKind;
 }
 
+/**
+ * Board-managed source and local execution location for a project.
+ *
+ * Runtime-only workspace records and service controls intentionally stay out
+ * of this projection.
+ */
+export interface ProjectCodebase {
+  workspaceId: string | null;
+  repoUrl: string | null;
+  localFolder: string | null;
+}
+
 export interface ProjectManagedByPlugin {
   id: string;
   pluginId: string;

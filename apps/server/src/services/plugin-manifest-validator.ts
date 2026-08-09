@@ -30,10 +30,6 @@ function declaredInputSchemas(manifest: PaperclipPluginManifestV1): Array<{
       path: ["tools", index, "parametersSchema"],
       schema: tool.parametersSchema,
     })),
-    ...(manifest.environmentDrivers ?? []).map((driver, index) => ({
-      path: ["environmentDrivers", index, "configSchema"],
-      schema: driver.configSchema,
-    })),
   ];
 }
 

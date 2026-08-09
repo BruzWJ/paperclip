@@ -10,7 +10,6 @@ import {
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
   type CompanySkillChannel,
-  type EnvironmentDriver,
 } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { accessService } from "./access.js";
@@ -18,7 +17,6 @@ import { createAgentAdapterConfigurationService } from "./agent-adapter-config-r
 import { deduplicateAgentName } from "./agents.js";
 import { logActivity } from "./activity-log.js";
 import { resolveHumanInviteRole } from "./company-member-roles.js";
-import { environmentService } from "./environments.js";
 import {
   agentJoinGrantsFromDefaults,
   humanJoinGrantsFromDefaults,
@@ -41,37 +39,6 @@ export interface JoinRequestApprovalInput {
   skillChannel?: CompanySkillChannel | null;
 }
 
-export interface JoinRequestApprovalDependencies {
-  /**
-   * Resolves only the current ACPX-admitted transports for an exact adapter.
-   * This seam keeps join approval testable without inventing a local catalog.
-   */
-  resolveAdapterEnvironmentDrivers?: (
-    adapterType: string,
-  ) => Promise<readonly EnvironmentDriver[]>;
-}
-
-async function resolveCurrentAcpxEnvironmentDrivers(
-  adapterType: string,
-): Promise<readonly EnvironmentDriver[]> {
-  const registry = await import("../adapters/registry.js");
-  // A join request can outlive the board catalog page. Refresh before the
-  // local runtime is admitted so this approval cannot revive a removed ACPX
-  // transport from a stale Paperclip snapshot.
-  await registry.refreshAcpxAdapters();
-  const adapter = registry.findServerAdapter(adapterType);
-  if (!adapter) {
-    throw unprocessable(
-      `Agent runtime "${adapterType}" is not currently available in the local catalog.`,
-      {
-        code: "agent_join_adapter_unavailable",
-        adapterType,
-      },
-    );
-  }
-  return adapter.definition.environment.drivers;
-}
-
 /**
  * The sole owner of board approval for an invite-backed join request.
  *
@@ -82,11 +49,7 @@ async function resolveCurrentAcpxEnvironmentDrivers(
  */
 export function createJoinRequestApprovalService(
   db: Db,
-  dependencies: JoinRequestApprovalDependencies = {},
 ) {
-  const resolveAdapterEnvironmentDrivers =
-    dependencies.resolveAdapterEnvironmentDrivers
-    ?? resolveCurrentAcpxEnvironmentDrivers;
   async function approveInTransaction(
     tx: JoinApprovalTransaction,
     input: JoinRequestApprovalInput,
@@ -177,28 +140,6 @@ export function createJoinRequestApprovalService(
         throw unprocessable(
           "Agent join approval requires an explicit company skill channel",
           { code: "agent_join_skill_channel_required" },
-        );
-      }
-
-      const allowedDrivers = await resolveAdapterEnvironmentDrivers(
-        joinRequest.adapterType,
-      );
-      if (!allowedDrivers.includes("local")) {
-        throw unprocessable(
-          `Agent runtime "${joinRequest.adapterType}" does not support the required local execution environment.`,
-          {
-            code: "agent_execution_environment_unsupported",
-            adapterType: joinRequest.adapterType,
-            driver: "local",
-          },
-        );
-      }
-      const internalEnvironment =
-        await environmentService(txDb).ensureLocalEnvironment();
-      if (internalEnvironment.status !== "active") {
-        throw unprocessable(
-          "Agent execution environment must exist and be active",
-          { code: "agent_execution_environment_unavailable" },
         );
       }
 

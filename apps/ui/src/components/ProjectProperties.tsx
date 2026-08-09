@@ -5,12 +5,14 @@ import type { Project } from "@paperclipai/shared";
 import { StatusBadge } from "./StatusBadge";
 import { cn, formatDate } from "../lib/utils";
 import { goalsApi } from "../api/goals";
+import { projectsApi } from "../api/projects";
 import { secretsApi } from "../api/secrets";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { statusBadge, statusBadgeDefault } from "../lib/status-colors";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,10 +21,28 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { AlertCircle, Archive, ArchiveRestore, Check, Loader2, Plus, X } from "lucide-react";
+import {
+  AlertCircle,
+  Archive,
+  ArchiveRestore,
+  Check,
+  ExternalLink,
+  Github,
+  Loader2,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { DraftInput } from "./agent-config-primitives";
 import { InlineEditor } from "./InlineEditor";
 import { EnvironmentVariablesEditor } from "./environment-variables-editor";
+import { ChoosePathButton } from "./PathInstructionsModal";
+import {
+  formatProjectRepositoryUrl,
+  isAbsoluteProjectFolder,
+  isSafeProjectRepositoryUrl,
+  isValidProjectRepositoryUrl,
+} from "../lib/project-codebase";
 
 const PROJECT_STATUSES = [
   { value: "backlog", label: "Backlog" },
@@ -209,6 +229,10 @@ function ArchiveDangerZone({
 export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSaveState, onArchive, archivePending }: ProjectPropertiesProps) {
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
+  const [codebaseEditor, setCodebaseEditor] = useState<"local" | "repo" | null>(null);
+  const [localFolderDraft, setLocalFolderDraft] = useState("");
+  const [repoUrlDraft, setRepoUrlDraft] = useState("");
+  const [codebaseValidationError, setCodebaseValidationError] = useState<string | null>(null);
 
   const commitField = (field: ProjectConfigFieldKey, data: Record<string, unknown>) => {
     if (onFieldUpdate) {
@@ -249,6 +273,34 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     },
   });
 
+  const codebaseQuery = useQuery({
+    queryKey: queryKeys.projects.codebase(project.id),
+    queryFn: () => projectsApi.getCodebase(project.id, project.companyId),
+  });
+
+  const resetCodebaseEditor = () => {
+    setCodebaseEditor(null);
+    setLocalFolderDraft("");
+    setRepoUrlDraft("");
+    setCodebaseValidationError(null);
+  };
+
+  const updateCodebase = useMutation({
+    mutationFn: (data: { localFolder?: string | null; repoUrl?: string | null }) =>
+      projectsApi.updateCodebase(project.id, data, project.companyId),
+    onSuccess: (codebase) => {
+      queryClient.setQueryData(queryKeys.projects.codebase(project.id), codebase);
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(project.id) });
+      if (project.urlKey !== project.id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(project.urlKey) });
+      }
+      if (selectedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(selectedCompanyId) });
+      }
+      resetCodebaseEditor();
+    },
+  });
+
   const linkedGoalIds = project.goalIds.length > 0
     ? project.goalIds
     : project.goalId
@@ -267,6 +319,36 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
   const removeGoal = (goalId: string) => {
     if (!onUpdate && !onFieldUpdate) return;
     commitField("goals", { goalIds: linkedGoalIds.filter((id) => id !== goalId) });
+  };
+
+  const submitLocalFolder = () => {
+    const localFolder = localFolderDraft.trim();
+    if (localFolder && !isAbsoluteProjectFolder(localFolder)) {
+      setCodebaseValidationError("Local folder must be a full absolute path.");
+      return;
+    }
+    setCodebaseValidationError(null);
+    updateCodebase.mutate({ localFolder: localFolder || null });
+  };
+
+  const submitRepoUrl = () => {
+    const repoUrl = repoUrlDraft.trim();
+    if (repoUrl && !isValidProjectRepositoryUrl(repoUrl)) {
+      setCodebaseValidationError("Repo must use a valid HTTPS repository URL.");
+      return;
+    }
+    setCodebaseValidationError(null);
+    updateCodebase.mutate({ repoUrl: repoUrl || null });
+  };
+
+  const clearLocalFolder = () => {
+    if (!window.confirm("Clear this project's local execution folder?")) return;
+    updateCodebase.mutate({ localFolder: null });
+  };
+
+  const clearRepoUrl = () => {
+    if (!window.confirm("Clear this project's repository URL?")) return;
+    updateCodebase.mutate({ repoUrl: null });
   };
 
   return (
@@ -418,6 +500,208 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
             <span className="text-sm">{formatDate(project.targetDate)}</span>
           </PropertyRow>
         )}
+      </div>
+
+      <Separator className="my-4" />
+
+      <div className="space-y-2 py-4">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span>Codebase</span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border text-(length:--text-nano) text-muted-foreground hover:text-foreground"
+                aria-label="Codebase help"
+              >
+                ?
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              The local folder is the working directory for agents on this project. The repo URL records source provenance.
+            </TooltipContent>
+          </Tooltip>
+        </div>
+
+        {codebaseQuery.isLoading ? (
+          <p className="text-xs text-muted-foreground" role="status">Loading codebase…</p>
+        ) : codebaseQuery.isError || !codebaseQuery.data ? (
+          <p className="text-xs text-destructive" role="alert">Failed to load project codebase.</p>
+        ) : (
+          <div className="space-y-3 rounded-md border border-border/70 p-3">
+            <div className="space-y-1">
+              <div className="text-(length:--text-micro) uppercase tracking-wide text-muted-foreground">
+                Repo
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                {codebaseQuery.data.repoUrl ? (
+                  isSafeProjectRepositoryUrl(codebaseQuery.data.repoUrl) ? (
+                    <a
+                      href={codebaseQuery.data.repoUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:underline"
+                    >
+                      <Github className="h-3 w-3 shrink-0" />
+                      <span className="min-w-0 break-all">
+                        {formatProjectRepositoryUrl(codebaseQuery.data.repoUrl)}
+                      </span>
+                      <ExternalLink className="h-3 w-3 shrink-0" />
+                    </a>
+                  ) : (
+                    <span className="min-w-0 break-all text-xs text-muted-foreground">
+                      {codebaseQuery.data.repoUrl}
+                    </span>
+                  )
+                ) : (
+                  <span className="text-xs text-muted-foreground">Not set.</span>
+                )}
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    className="h-6 px-2"
+                    disabled={updateCodebase.isPending}
+                    onClick={() => {
+                      setCodebaseEditor("repo");
+                      setRepoUrlDraft(codebaseQuery.data.repoUrl ?? "");
+                      setCodebaseValidationError(null);
+                    }}
+                  >
+                    {codebaseQuery.data.repoUrl ? "Change repo" : "Set repo"}
+                  </Button>
+                  {codebaseQuery.data.repoUrl ? (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      disabled={updateCodebase.isPending}
+                      onClick={clearRepoUrl}
+                      aria-label="Clear repo"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-(length:--text-micro) uppercase tracking-wide text-muted-foreground">
+                Local folder
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  {codebaseQuery.data.localFolder ? (
+                    <div className="min-w-0 break-all font-mono text-xs text-muted-foreground">
+                      {codebaseQuery.data.localFolder}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground">
+                      Not set. Runs use an instance-managed issue folder.
+                    </div>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    className="h-6 px-2"
+                    disabled={updateCodebase.isPending}
+                    onClick={() => {
+                      setCodebaseEditor("local");
+                      setLocalFolderDraft(codebaseQuery.data.localFolder ?? "");
+                      setCodebaseValidationError(null);
+                    }}
+                  >
+                    {codebaseQuery.data.localFolder ? "Change local folder" : "Set local folder"}
+                  </Button>
+                  {codebaseQuery.data.localFolder ? (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      disabled={updateCodebase.isPending}
+                      onClick={clearLocalFolder}
+                      aria-label="Clear local folder"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {codebaseEditor === "local" ? (
+          <div className="space-y-1.5 rounded-md border border-border p-2">
+            <div className="flex items-center gap-2">
+              <input
+                aria-label="Local project folder"
+                className="w-full rounded border border-border bg-transparent px-2 py-1 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={localFolderDraft}
+                onChange={(event) => {
+                  setLocalFolderDraft(event.target.value);
+                  setCodebaseValidationError(null);
+                }}
+                placeholder="/absolute/path/to/project"
+              />
+              <ChoosePathButton />
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="xs"
+                className="h-6 px-2"
+                disabled={updateCodebase.isPending}
+                onClick={submitLocalFolder}
+              >
+                Save
+              </Button>
+              <Button variant="ghost" size="xs" className="h-6 px-2" onClick={resetCodebaseEditor}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {codebaseEditor === "repo" ? (
+          <div className="space-y-1.5 rounded-md border border-border p-2">
+            <input
+              aria-label="Project repository URL"
+              className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={repoUrlDraft}
+              onChange={(event) => {
+                setRepoUrlDraft(event.target.value);
+                setCodebaseValidationError(null);
+              }}
+              placeholder="https://github.com/org/repo"
+            />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="xs"
+                className="h-6 px-2"
+                disabled={updateCodebase.isPending}
+                onClick={submitRepoUrl}
+              >
+                Save
+              </Button>
+              <Button variant="ghost" size="xs" className="h-6 px-2" onClick={resetCodebaseEditor}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {updateCodebase.isPending ? (
+          <p className="text-xs text-muted-foreground" role="status">Saving codebase…</p>
+        ) : null}
+        {codebaseValidationError ? (
+          <p className="text-xs text-destructive" role="alert">{codebaseValidationError}</p>
+        ) : null}
+        {updateCodebase.isError ? (
+          <p className="text-xs text-destructive" role="alert">Failed to save project codebase.</p>
+        ) : null}
       </div>
 
       {onArchive && (

@@ -101,7 +101,7 @@ describe("create-paperclip-plugin entrypoints", () => {
     expect(stderr).toEqual(["--category is required"]);
   });
 
-  it("uses one standard template for every non-environment category", async () => {
+  it("uses one standard template for every category", async () => {
     const { pluginPackageDirectoryName, scaffoldPluginProject } = await import("./index.js");
     const outputRoot = makeTempDir();
     const outputDir = path.join(outputRoot, "workspace-plugin");
@@ -119,55 +119,10 @@ describe("create-paperclip-plugin entrypoints", () => {
     const manifest = fs.readFileSync(path.join(outputDir, "src", "manifest.ts"), "utf8");
     const worker = fs.readFileSync(path.join(outputDir, "src", "worker.ts"), "utf8");
     expect(manifest).toContain('categories: ["workspace"]');
-    expect(manifest).not.toContain("environmentDrivers");
     expect(manifest).not.toContain("events.subscribe");
     expect(manifest).not.toContain("plugin.state");
     expect(worker).not.toContain("ctx.events");
     expect(worker).not.toContain("ctx.state");
-  });
-
-  it("keeps the environment template for its distinct driver contract", async () => {
-    const { scaffoldPluginProject } = await import("./index.js");
-    const outputRoot = makeTempDir();
-    const outputDir = path.join(outputRoot, "environment-plugin");
-
-    scaffoldPluginProject({
-      pluginName: "@acme/environment-plugin",
-      outputDir,
-      template: "environment",
-      category: "workspace",
-      sdkPath: path.resolve("packages/plugins/sdk"),
-    });
-
-    const manifest = fs.readFileSync(path.join(outputDir, "src", "manifest.ts"), "utf8");
-    const worker = fs.readFileSync(path.join(outputDir, "src", "worker.ts"), "utf8");
-    const test = fs.readFileSync(path.join(outputDir, "tests", "plugin.spec.ts"), "utf8");
-    expect(manifest).toContain("environmentDrivers");
-    expect(manifest).toContain('configSchema: {\n        type: "object"');
-    expect(worker).toContain("onEnvironmentAcquireLease");
-    expect(worker).toContain("onEnvironmentExecute");
-    expect(worker).toContain("Environment provider probe is not implemented");
-    expect(worker).not.toContain("Environment is reachable");
-    expect(worker).not.toContain("exitCode: 0");
-    expect(test).toContain(
-      'import { pluginManifestV1Schema } from "@paperclipai/plugin-sdk"',
-    );
-    expect(test).not.toContain('from "@paperclipai/shared"');
-    for (const hook of [
-      "onEnvironmentValidateConfig",
-      "onEnvironmentProbe",
-      "onEnvironmentAcquireLease",
-      "onEnvironmentResumeLease",
-      "onEnvironmentReleaseLease",
-      "onEnvironmentDestroyLease",
-      "onEnvironmentRealizeWorkspace",
-      "onEnvironmentExecute",
-      "onEnvironmentCancelExecution",
-    ]) {
-      expect(test).toContain(`plugin.definition.${hook}`);
-    }
-    expect(test).toContain("fails closed until the provider placeholders are implemented");
-    expect(test).not.toContain("createFakeEnvironmentDriver");
   });
 
   it("rejects removed template aliases", async () => {
@@ -181,7 +136,7 @@ describe("create-paperclip-plugin entrypoints", () => {
         template: "connector" as never,
         category: "connector",
         sdkPath: path.resolve("packages/plugins/sdk"),
-      })).toThrow("Expected one of: standard, environment");
+      })).toThrow("Expected one of: standard");
   });
 
   it("rejects categories outside the canonical manifest contract", async () => {
@@ -190,10 +145,10 @@ describe("create-paperclip-plugin entrypoints", () => {
 
     expect(() =>
       scaffoldPluginProject({
-        pluginName: "@acme/environment-plugin",
-        outputDir: path.join(outputRoot, "environment-plugin"),
-        template: "environment",
-        category: "environment" as never,
+        pluginName: "@acme/category-plugin",
+        outputDir: path.join(outputRoot, "category-plugin"),
+        template: "standard",
+        category: "invalid" as never,
         sdkPath: path.resolve("packages/plugins/sdk"),
       })).toThrow("Expected one of: connector, workspace, automation, ui");
   });

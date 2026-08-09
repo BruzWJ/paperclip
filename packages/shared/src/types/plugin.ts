@@ -131,65 +131,6 @@ export interface PluginToolDeclaration {
 }
 
 /**
- * Declares an environment runtime driver contributed by the plugin.
- *
- * Requires the `environment.drivers.register` capability.
- */
-export interface PluginEnvironmentTemplateConfigBinding {
-  /** Top-level provider config field that should receive the captured template ref. */
-  field: string;
-  /** Top-level provider config fields to remove when the captured template ref is applied. */
-  unsetFields?: string[];
-}
-
-export interface PluginEnvironmentDriverDeclaration {
-  /** Stable driver key, unique within the plugin. Namespaced by plugin ID at runtime. */
-  driverKey: string;
-  /**
-   * Driver classification.
-   *
-   * `environment_driver` is used by core `driver: "plugin"` environments.
-   * `sandbox_provider` is used by core `driver: "sandbox"` environments whose
-   * provider key is implemented by a plugin.
-   */
-  kind?: "environment_driver" | "sandbox_provider";
-  /** Human-readable name shown in environment configuration UI. */
-  displayName: string;
-  /** Optional description for operator-facing docs or UI affordances. */
-  description?: string;
-  /**
-   * Sandbox providers must opt in before the host retains and resumes provider
-   * leases across runs. Providers without this flag keep per-run acquire/release
-   * behavior even if their config schema exposes a reuse-like setting.
-   */
-  supportsReusableLeases?: boolean;
-  /** Provider can keep a temporary setup sandbox alive for user-driven sandbox customization and capture. */
-  supportsInteractiveSetup?: boolean;
-  /** Connection types the setup sandbox can expose. Initially `ssh`; providers may add custom values. */
-  interactiveSetupConnectionTypes?: string[];
-  /** Provider can capture a reusable template from a live setup sandbox. */
-  supportsTemplateCapture?: boolean;
-  /** Kind of template reference returned by the provider's capture hook. */
-  templateRefKind?: "snapshot" | "image" | "provider_template" | "unknown" | (string & {});
-  /**
-   * How Paperclip should apply a captured template ref back into this provider's
-   * runtime config. Omit to use the standard key for `templateRefKind`.
-   */
-  templateConfigBinding?: PluginEnvironmentTemplateConfigBinding;
-  /**
-   * Config paths (dot notation) that scope where captured templates live for
-   * this provider, such as an API endpoint. When one of these changes on a
-   * saved environment, captured templates cannot be re-linked to the updated
-   * config and a fresh capture is required.
-   */
-  templateIdentityPaths?: string[];
-  /** Provider supports best-effort deletion/cleanup of captured templates. */
-  supportsTemplateDelete?: boolean;
-  /** JSON Schema describing the driver's provider-specific configuration. */
-  configSchema: JsonSchema;
-}
-
-/**
  * Declares a normal Paperclip agent that a plugin can provision and later
  * resolve by stable key within each company.
  */
@@ -648,8 +589,6 @@ export interface PaperclipPluginManifestV1 {
   database?: PluginDatabaseDeclaration;
   /** Scoped JSON API routes mounted under `/api/plugins/:pluginId/api/*`. */
   apiRoutes?: PluginApiRouteDeclaration[];
-  /** Environment drivers this plugin contributes. Requires `environment.drivers.register` capability. */
-  environmentDrivers?: PluginEnvironmentDriverDeclaration[];
   /** Suggested company-scoped agents this plugin can provision and resolve by stable key. */
   agents?: PluginManagedAgentDeclaration[];
   /** Suggested company-scoped projects this plugin can provision and resolve by stable key. */

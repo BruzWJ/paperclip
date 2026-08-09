@@ -151,6 +151,8 @@ type PluginWithdrawalCommitOutcome =
     };
 
 const ISSUE_ROW_DATE_KEYS = [
+  "monitorNextCheckAt",
+  "monitorLastTriggeredAt",
   "startedAt",
   "completedAt",
   "cancelledAt",
@@ -228,6 +230,7 @@ export interface OrdinaryIssueCreateInput {
   >;
   title?: string | null;
   projectId?: string | null;
+  projectWorkspaceId?: string | null;
   goalId?: string | null;
   parentId?: string | null;
   priority?: "critical" | "high" | "medium" | "low";
@@ -1535,6 +1538,8 @@ export function createOrdinaryIssueRuntime(
             existing.ownerAgentId !== input.ownerAgentId ||
             existing.title !== (input.title ?? null) ||
             existing.projectId !== (input.projectId ?? null) ||
+            (input.projectWorkspaceId != null &&
+              existing.projectWorkspaceId !== input.projectWorkspaceId) ||
             existing.goalId !== (input.goalId ?? null) ||
             existing.parentId !== (input.parentId ?? null) ||
             existing.priority !== (input.priority ?? "medium") ||
@@ -1658,6 +1663,7 @@ export function createOrdinaryIssueRuntime(
             id: issueId,
             companyId: input.companyId,
             projectId: input.projectId ?? null,
+            projectWorkspaceId: input.projectWorkspaceId ?? null,
             goalId: input.goalId ?? null,
             parentId: input.parentId ?? null,
             title: input.title?.trim() || null,

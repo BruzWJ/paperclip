@@ -562,7 +562,9 @@ export function SchemaConfigFields({
     );
   }
 
-  if (schema.fields.length === 0) {
+  const schemaFields = schema.fields;
+
+  if (schemaFields.length === 0) {
     return <AdapterConfigEmptyState message="No additional configuration fields are available for this adapter." />;
   }
 
@@ -585,7 +587,7 @@ export function SchemaConfigFields({
       });
     } else {
       if (!defaultsApplied && applySchemaDefaults) {
-        for (const candidate of schema.fields) {
+        for (const candidate of schemaFields) {
           const defaultValue = getDefaultValue(candidate);
           if (
             defaultValue !== undefined
@@ -605,7 +607,7 @@ export function SchemaConfigFields({
   const errorsByFieldKey = new Map(
     adapterConfigSchemaFieldErrors(
       schema,
-      Object.fromEntries(schema.fields.map((field) => [field.key, readValue(field)])),
+      Object.fromEntries(schemaFields.map((field) => [field.key, readValue(field)])),
     ).map(({ field, message }) => [field.key, message]),
   );
 
@@ -614,7 +616,7 @@ export function SchemaConfigFields({
       <p className="sr-only" role="status">
         {errorsByFieldKey.size > 0 ? "Adapter configuration needs attention." : ""}
       </p>
-      {schema.fields
+      {schemaFields
         .filter((field) => fieldMatchesVisibleWhen(field, readValue, schema))
         .map((field) => {
           const fieldId = `${fieldIdPrefix}-${field.key}`;

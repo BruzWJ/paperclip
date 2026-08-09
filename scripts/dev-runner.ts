@@ -272,8 +272,6 @@ async function updateDevServiceRecord(extra?: Record<string, unknown>) {
     pid: process.pid,
     processGroupId: null,
     provider: "local_process",
-    runtimeServiceId: null,
-    reuseKey: null,
     startedAt: lastRestartAt ?? new Date().toISOString(),
     lastSeenAt: new Date().toISOString(),
     metadata: {

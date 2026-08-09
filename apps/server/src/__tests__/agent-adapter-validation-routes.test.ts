@@ -20,12 +20,11 @@ import {
   CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
   CANONICAL_TEST_ADAPTER_TYPE,
 } from "./helpers/adapter-implementation.js";
-import { canonicalTestAgentAdapterRevision } from "./helpers/agent-execution-target.js";
+import { canonicalTestAgentAdapterRevision } from "./helpers/agent-adapter-revision.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const agentId = "11111111-1111-4111-8111-111111111111";
 const revisionId = "22222222-2222-4222-8222-222222222222";
-const environmentId = "44444444-4444-4444-8444-444444444444";
 
 const mockRuntimeAgentConfiguration = vi.hoisted(() => ({
   create: vi.fn(),
@@ -67,7 +66,6 @@ vi.mock("../services/index.js", () => ({
     reject: vi.fn(),
   }),
   issueService: () => ({}),
-  workspaceOperationService: () => ({}),
   createRuntimeAgentConfigurationService: () =>
     mockRuntimeAgentConfiguration,
   logActivity: mockLogActivity,
@@ -148,14 +146,7 @@ function agent(overrides: Record<string, unknown> = {}) {
 }
 
 function revision(overrides: Record<string, unknown> = {}) {
-  const canonicalConfiguration = canonicalTestAgentAdapterRevision({
-    adapterType: CANONICAL_TEST_ADAPTER_TYPE,
-    implementationIdentity:
-      CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
-    executionEnvironmentId: environmentId,
-    executionTargetDriver: "local",
-    executionTargetDigest: "a".repeat(64),
-  });
+  const canonicalConfiguration = canonicalTestAgentAdapterRevision();
   return {
     id: revisionId,
     companyId: "company-1",
@@ -352,7 +343,7 @@ describe("agent control-plane routes", () => {
       .post(
         `/api/companies/company-1/adapters/${CANONICAL_TEST_ADAPTER_TYPE}/test-configuration`,
       )
-      .send({ adapterConfig: {}, environmentId });
+      .send({ adapterConfig: "invalid" });
 
     expect(response.status).toBe(400);
     expect(mockAdapterConfigurationDraftTest.test).not.toHaveBeenCalled();

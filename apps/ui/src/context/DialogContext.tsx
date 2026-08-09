@@ -6,6 +6,7 @@ interface NewIssueDefaults {
   workMode?: IssueWorkMode;
   priority?: string;
   projectId?: string;
+  projectWorkspaceId?: string;
   goalId?: string;
   parentId?: string;
   parentIdentifier?: string;

@@ -36,6 +36,7 @@ import type {
 } from "./company-skill-materialization-lifecycle.js";
 import type { ContextDial } from "./context-dial-resolver.js";
 import type { PluginBeforePromptDispatcher } from "./plugin-before-prompt-dispatcher.js";
+import { localExecutionCorrelationFingerprint } from "./local-execution-correlation.js";
 
 const RUN_TOOLS_PROXY_FILE = "run-tools-proxy.mjs";
 const RUN_TOOLS_SECRET_FILE = "run-tools.json";
@@ -461,7 +462,7 @@ function validatePrompt(prompt: ResolvedIssueExecutionPrompt): void {
     scope.adapterConfigIdentity !== identity.adapterConfigRevisionId ||
     scope.workspaceIdentity !== identity.executionWorkspaceBindingId ||
     scope.targetFingerprint !==
-      prompt.acpConfiguration.executionTargetSelector.executionTargetDigest ||
+      localExecutionCorrelationFingerprint(identity.adapterConfigRevisionId) ||
     (prompt.carryContext
       ? scope.purpose !== "carry" ||
         scope.laneKind !== identity.laneKind ||
@@ -1071,16 +1072,13 @@ function assertTargetMatchesPrompt(
     target.adapterConfigRevisionId !== prompt.identity.adapterConfigRevisionId ||
     canonicalAcpConfiguration(target.acpConfiguration) !==
       canonicalAcpConfiguration(prompt.acpConfiguration) ||
-    target.executionTarget.environmentId !==
-      prompt.acpConfiguration.executionTargetSelector.environmentId ||
+    target.executionTarget.kind !== "local" ||
     target.hostCwd !== prompt.target.hostCwd ||
     !sameStringSequence(
       target.targetAdditionalDirectories,
       prompt.target.targetAdditionalDirectories,
     ) ||
-    (target.executionTarget.kind === "local"
-      ? target.targetCwd !== prompt.target.localWorkspaceCwd
-      : target.targetCwd !== target.executionTarget.remoteCwd)
+    target.targetCwd !== prompt.target.localWorkspaceCwd
   ) {
     throw new IssueExecutionAttemptRejected(
       "acquired execution target differs from the immutable ACP revision",

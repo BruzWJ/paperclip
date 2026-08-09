@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, LogOut, Play, SlidersHorizontal } from "lucide-react";
 import { authApi } from "@/api/auth";
 import { healthApi } from "@/api/health";
 import { instanceSettingsApi } from "@/api/instanceSettings";
@@ -8,7 +8,54 @@ import { Button } from "../components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
+import {
+  getWorktreeInstanceId,
+  isWorktreeRuntime,
+} from "../lib/worktree-branding";
 import { Switch } from "@/components/ui/switch";
+
+type WorktreeRunExecutionDisplayState =
+  | { kind: "off" }
+  | { kind: "armed"; activatedAt: string }
+  | {
+      kind: "fail_closed";
+      reason: "missing_cutoff" | "missing_instance_id" | "instance_mismatch";
+    };
+
+function resolveWorktreeRunExecutionDisplayState(
+  settings:
+    | {
+        enableWorktreeRunExecution: boolean;
+        worktreeRunExecutionActivatedAt: string | null;
+        worktreeRunExecutionActivationInstanceId: string | null;
+      }
+    | undefined,
+  currentInstanceId: string | null,
+): WorktreeRunExecutionDisplayState {
+  if (settings?.enableWorktreeRunExecution !== true) return { kind: "off" };
+  if (!settings.worktreeRunExecutionActivatedAt) {
+    return { kind: "fail_closed", reason: "missing_cutoff" };
+  }
+  if (!currentInstanceId) {
+    return { kind: "fail_closed", reason: "missing_instance_id" };
+  }
+  if (settings.worktreeRunExecutionActivationInstanceId !== currentInstanceId) {
+    return { kind: "fail_closed", reason: "instance_mismatch" };
+  }
+  return {
+    kind: "armed",
+    activatedAt: settings.worktreeRunExecutionActivatedAt,
+  };
+}
+
+function formatActivationTimestamp(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return parsed.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
 
 export function InstanceGeneralSettings() {
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -93,6 +140,11 @@ export function InstanceGeneralSettings() {
     generalQuery.data?.autoRestartDevServerWhenIdle === true;
   const worktreeRunExecution =
     generalQuery.data?.enableWorktreeRunExecution === true;
+  const inWorktree = isWorktreeRuntime();
+  const worktreeRunExecutionState = resolveWorktreeRunExecutionDisplayState(
+    generalQuery.data,
+    getWorktreeInstanceId(),
+  );
   const pendingSettingsStatus = updateGeneralMutation.isPending
     ? "Saving instance settings…"
     : signOutMutation.isPending
@@ -173,31 +225,64 @@ export function InstanceGeneralSettings() {
         </div>
       </Card>
 
-      <Card className="block p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <h2 className="text-sm font-semibold">
-              Run scheduled tasks in worktrees
-            </h2>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Allow automatic schedule and webhook runs in this worktree
-              instance. It is off by default; when enabled in a worktree, only
-              routines created afterward can run automatically. Normal
-              instances are unaffected.
-            </p>
+      {inWorktree ? (
+        <Card className="block p-5">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1.5">
+                <h2 className="text-sm font-semibold">
+                  Run scheduled tasks in this worktree
+                </h2>
+                <p className="max-w-2xl text-sm text-muted-foreground">
+                  Allow automatic schedule and webhook runs in this worktree
+                  instance. Only routines created after enabling can run
+                  automatically; toggling off and on resets the cutoff.
+                </p>
+              </div>
+              <Switch
+                checked={worktreeRunExecution}
+                onCheckedChange={() =>
+                  updateGeneralMutation.mutate({
+                    enableWorktreeRunExecution: !worktreeRunExecution,
+                  })
+                }
+                disabled={updateGeneralMutation.isPending}
+                aria-label="Toggle worktree scheduled task execution"
+              />
+            </div>
+
+            {worktreeRunExecutionState.kind === "armed" ? (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm text-foreground">
+                <Play className="h-4 w-4 shrink-0 text-(--status-task-done)" />
+                <span>
+                  Running routines created after{" "}
+                  <span className="font-medium">
+                    {formatActivationTimestamp(worktreeRunExecutionState.activatedAt)}
+                  </span>
+                  .
+                </span>
+              </div>
+            ) : null}
+
+            {worktreeRunExecutionState.kind === "fail_closed" ? (
+              <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-(--status-task-todo)" />
+                <div className="space-y-0.5">
+                  <p className="font-medium text-foreground">
+                    Automatic execution is suppressed.
+                  </p>
+                  <p className="text-muted-foreground">
+                    {worktreeRunExecutionState.reason === "instance_mismatch"
+                      ? "This setting was armed in a different instance."
+                      : "This setting is missing its activation cutoff for this instance."}{" "}
+                    Toggle it off and back on to arm execution here.
+                  </p>
+                </div>
+              </div>
+            ) : null}
           </div>
-          <Switch
-            checked={worktreeRunExecution}
-            onCheckedChange={() =>
-              updateGeneralMutation.mutate({
-                enableWorktreeRunExecution: !worktreeRunExecution,
-              })
-            }
-            disabled={updateGeneralMutation.isPending}
-            aria-label="Toggle worktree scheduled task execution"
-          />
-        </div>
-      </Card>
+        </Card>
+      ) : null}
 
       <Card className="block p-5">
         <div className="flex items-start justify-between gap-4">

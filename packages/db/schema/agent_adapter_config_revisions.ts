@@ -15,11 +15,9 @@ import { sql } from "drizzle-orm";
 import { agents } from "./agents.js";
 import { authUsers } from "./auth.js";
 import { companies } from "./companies.js";
-import { environments } from "./environments.js";
 import type {
   AdapterImplementationIdentity,
   AgentAdapterAcpConfiguration,
-  EnvironmentDriver,
 } from "@paperclipai/shared";
 
 export const agentAdapterConfigRevisions = pgTable(
@@ -38,13 +36,6 @@ export const agentAdapterConfigRevisions = pgTable(
       .$type<AdapterImplementationIdentity>()
       .notNull(),
     adapterConfigSchemaVersion: text("adapter_config_schema_version").notNull(),
-    executionEnvironmentId: uuid("execution_environment_id")
-      .notNull()
-      .references(() => environments.id, { onDelete: "restrict" }),
-    executionTargetDriver: text("execution_target_driver")
-      .$type<EnvironmentDriver>()
-      .notNull(),
-    executionTargetDigest: text("execution_target_digest").notNull(),
     normalizedConfig: jsonb("normalized_config")
       .$type<Record<string, unknown>>()
       .notNull(),
@@ -89,13 +80,6 @@ export const agentAdapterConfigRevisions = pgTable(
       table.agentId,
       table.createdAt,
     ),
-    index("agent_adapter_config_revisions_environment_idx").on(
-      table.executionEnvironmentId,
-    ),
-    check(
-      "agent_adapter_config_revisions_execution_target_driver_check",
-      sql`${table.executionTargetDriver} in ('local', 'ssh', 'sandbox', 'plugin')`,
-    ),
     check(
       "agent_adapter_config_revisions_acp_configuration_shape_check",
       sql`
@@ -105,7 +89,6 @@ export const agentAdapterConfigRevisions = pgTable(
           'launchProfile',
           'sessionConfigSelections',
           'model',
-          'executionTargetSelector',
           'workspaceSelector',
           'companySkillPins',
           'skillChannel'
@@ -115,7 +98,6 @@ export const agentAdapterConfigRevisions = pgTable(
           'launchProfile',
           'sessionConfigSelections',
           'model',
-          'executionTargetSelector',
           'workspaceSelector',
           'companySkillPins',
           'skillChannel'
@@ -178,17 +160,6 @@ export const agentAdapterConfigRevisions = pgTable(
             )
           )
         )
-        and jsonb_typeof(${table.acpConfiguration} -> 'executionTargetSelector') = 'object'
-        and (${table.acpConfiguration} -> 'executionTargetSelector') ?& array[
-          'environmentId', 'executionTargetDriver', 'executionTargetDigest'
-        ]::text[]
-        and (${table.acpConfiguration} -> 'executionTargetSelector') - array[
-          'environmentId', 'executionTargetDriver', 'executionTargetDigest'
-        ]::text[] = '{}'::jsonb
-        and ${table.acpConfiguration} #>> '{executionTargetSelector,environmentId}' = ${table.executionEnvironmentId}::text
-        and ${table.acpConfiguration} #>> '{executionTargetSelector,executionTargetDriver}' = ${table.executionTargetDriver}
-        and ${table.acpConfiguration} #>> '{executionTargetSelector,executionTargetDigest}' = ${table.executionTargetDigest}
-        and ${table.executionTargetDigest} ~ '^[0-9a-f]{64}$'
         and jsonb_typeof(${table.acpConfiguration} -> 'workspaceSelector') = 'object'
         and (${table.acpConfiguration} -> 'workspaceSelector') - 'kind' = '{}'::jsonb
         and ${table.acpConfiguration} #>> '{workspaceSelector,kind}' = 'issue_execution_workspace'

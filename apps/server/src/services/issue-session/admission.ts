@@ -1481,8 +1481,6 @@ async function assertWorkspaceBinding(
   const row = rows[0];
   if (
     !row ||
-    row.workspace.status !== "active" ||
-    row.workspace.closedAt !== null ||
     !row.binding.absoluteCwd.startsWith("/")
   ) {
     throw new IssueSessionLifecycleConflict(

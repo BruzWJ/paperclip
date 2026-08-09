@@ -28,12 +28,23 @@ import {
   Minimize2,
   Target,
   Calendar,
+  HelpCircle,
   Plus,
   X,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "../lib/utils";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { StatusBadge } from "./StatusBadge";
+import { ChoosePathButton } from "./PathInstructionsModal";
+import {
+  isAbsoluteProjectFolder,
+  isValidProjectRepositoryUrl,
+} from "../lib/project-codebase";
 
 const projectStatuses = [
   { value: "backlog", label: "Backlog" },
@@ -53,6 +64,9 @@ export function NewProjectDialog() {
   const [goalIds, setGoalIds] = useState<string[]>([]);
   const [targetDate, setTargetDate] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [localFolder, setLocalFolder] = useState("");
+  const [repoUrl, setRepoUrl] = useState("");
+  const [codebaseError, setCodebaseError] = useState<string | null>(null);
 
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
 
@@ -100,10 +114,25 @@ export function NewProjectDialog() {
     setGoalIds([]);
     setTargetDate("");
     setExpanded(false);
+    setLocalFolder("");
+    setRepoUrl("");
+    setCodebaseError(null);
   }
 
   async function handleSubmit() {
     if (!selectedCompanyId || !name.trim()) return;
+    const normalizedLocalFolder = localFolder.trim();
+    const normalizedRepoUrl = repoUrl.trim();
+
+    if (normalizedLocalFolder && !isAbsoluteProjectFolder(normalizedLocalFolder)) {
+      setCodebaseError("Local folder must be a full absolute path.");
+      return;
+    }
+    if (normalizedRepoUrl && !isValidProjectRepositoryUrl(normalizedRepoUrl)) {
+      setCodebaseError("Repo must use a valid HTTPS repository URL.");
+      return;
+    }
+    setCodebaseError(null);
 
     try {
       const created = await createProject.mutateAsync({
@@ -113,6 +142,14 @@ export function NewProjectDialog() {
         // No color is sent — new projects persist color = null (neutral gray). See PAP-68.
         ...(goalIds.length > 0 ? { goalIds } : {}),
         ...(targetDate ? { targetDate } : {}),
+        ...(normalizedLocalFolder || normalizedRepoUrl
+          ? {
+              codebase: {
+                ...(normalizedLocalFolder ? { localFolder: normalizedLocalFolder } : {}),
+                ...(normalizedRepoUrl ? { repoUrl: normalizedRepoUrl } : {}),
+              },
+            }
+          : {}),
       });
 
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(selectedCompanyId) });
@@ -216,6 +253,69 @@ export function NewProjectDialog() {
               return asset.contentPath;
             }}
           />
+        </div>
+
+        <div className="space-y-3 border-t border-border px-4 pb-3 pt-3">
+          <div>
+            <div className="mb-1 flex items-center gap-1.5">
+              <label htmlFor="new-project-repo-url" className="block text-xs text-muted-foreground">
+                Repo URL
+              </label>
+              <span className="text-xs text-muted-foreground/50">optional</span>
+              <Tooltip delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <HelpCircle className="h-3 w-3 cursor-help text-muted-foreground/50" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-(--sz-240px) text-xs">
+                  Record the HTTPS repository that owns this project&apos;s source code.
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            <input
+              id="new-project-repo-url"
+              className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={repoUrl}
+              onChange={(event) => {
+                setRepoUrl(event.target.value);
+                setCodebaseError(null);
+              }}
+              placeholder="https://github.com/org/repo"
+            />
+          </div>
+
+          <div>
+            <div className="mb-1 flex items-center gap-1.5">
+              <label htmlFor="new-project-local-folder" className="block text-xs text-muted-foreground">
+                Local folder
+              </label>
+              <span className="text-xs text-muted-foreground/50">optional</span>
+              <Tooltip delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <HelpCircle className="h-3 w-3 cursor-help text-muted-foreground/50" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-(--sz-240px) text-xs">
+                  Set the absolute directory where agents assigned to this project run and write files.
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="new-project-local-folder"
+                className="w-full rounded border border-border bg-transparent px-2 py-1 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={localFolder}
+                onChange={(event) => {
+                  setLocalFolder(event.target.value);
+                  setCodebaseError(null);
+                }}
+                placeholder="/absolute/path/to/project"
+              />
+              <ChoosePathButton />
+            </div>
+          </div>
+
+          {codebaseError ? (
+            <p className="text-xs text-destructive" role="alert">{codebaseError}</p>
+          ) : null}
         </div>
 
         {/* Property chips */}

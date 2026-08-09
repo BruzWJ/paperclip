@@ -381,8 +381,8 @@ export function selectedCompanySkillMaterializationKey(input: {
 
 /**
  * This function is deliberately self-contained. Its emitted source is run by
- * the already-verified Node executable on the selected physical target, so
- * local, SSH, sandbox, and plugin targets use one implementation.
+ * the already-verified local Node executable, keeping preparation and
+ * post-run verification on the same physical host.
  */
 async function selectedCompanySkillTargetMaterializerMain() {
   const crypto = require("node:crypto") as typeof import("node:crypto");
@@ -797,10 +797,8 @@ async function selectedCompanySkillTargetMaterializerMain() {
 const SELECTED_COMPANY_SKILL_TARGET_MATERIALIZER_SOURCE =
   `(${selectedCompanySkillTargetMaterializerMain.toString()})()`;
 
-function targetStoreRoot(target: AdapterExecutionTarget): string {
-  return target.kind === "remote"
-    ? path.posix.join("/tmp", MATERIALIZATION_ROOT_NAME)
-    : path.join(os.tmpdir(), MATERIALIZATION_ROOT_NAME);
+function targetStoreRoot(): string {
+  return path.join(os.tmpdir(), MATERIALIZATION_ROOT_NAME);
 }
 
 function targetDiscoveryRoot(): string {
@@ -892,7 +890,7 @@ export async function prepareSelectedCompanySkillTargetHome(input: {
     identity,
     entries: input.entries,
   });
-  const storeRoot = targetStoreRoot(input.target);
+  const storeRoot = targetStoreRoot();
   const conformanceKey = sha256(JSON.stringify({
     executionTargetIdentity: identity.executionTargetIdentity,
     frontendIdentity,
@@ -940,12 +938,12 @@ export async function prepareSelectedCompanySkillTargetHome(input: {
       "Selected company skill target materializer crossed its immutable input.",
     );
   }
-  const expectedHomeDir = input.target.kind === "remote"
-    ? path.posix.join(storeRoot, "homes", key.materializationKey)
-    : path.join(storeRoot, "homes", key.materializationKey);
-  const expectedSkillsDir = input.target.kind === "remote"
-    ? path.posix.join(expectedHomeDir, "skills")
-    : path.join(expectedHomeDir, "skills");
+  const expectedHomeDir = path.join(
+    storeRoot,
+    "homes",
+    key.materializationKey,
+  );
+  const expectedSkillsDir = path.join(expectedHomeDir, "skills");
   if (
     prepared.homeDir !== expectedHomeDir ||
     prepared.skillsDir !== expectedSkillsDir

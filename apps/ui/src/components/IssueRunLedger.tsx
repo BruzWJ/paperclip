@@ -7,18 +7,23 @@ import type {
   IssueExecutionRunListPageRecord,
   IssueExecutionRunLivenessFact,
 } from "@paperclipai/shared";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@/lib/router";
+import { accessApi, type CurrentBoardAccess } from "../api/access";
+import { ApiError } from "../api/client";
 import {
   runsApi,
   type IssueExecutionRunJoinedDetail,
+  type WatchdogDecisionInput,
 } from "../api/runs";
+import { useToastActions } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data";
 import { cn, relativeTime } from "../lib/utils";
 
 type IssueRunLedgerProps = {
   issueId: string;
+  companyId: string;
   issueStatus: Issue["boardPresentationStatus"];
   childIssues: Issue[];
   agentMap: ReadonlyMap<string, Agent>;
@@ -38,6 +43,11 @@ type IssueRunLedgerContentProps = {
   agentMap: ReadonlyMap<string, Pick<Agent, "name">>;
   activityEvents?: ActivityEvent[];
   renderActivityEvent?: (event: ActivityEvent) => ReactNode;
+  pendingWatchdogDecision?: WatchdogDecisionInput["decision"] | null;
+  isPending?: boolean;
+  canRecordWatchdogDecisions?: boolean;
+  watchdogDecisionError?: string | null;
+  onWatchdogDecision?: (input: WatchdogDecisionInput) => void;
 };
 
 type LedgerFeedItem =
@@ -155,8 +165,33 @@ function childIssueSummary(childIssues: Issue[]) {
   };
 }
 
+function canBoardRecordWatchdogDecision(
+  companyId: string,
+  boardAccess: CurrentBoardAccess | undefined,
+) {
+  if (!boardAccess) return false;
+  if (boardAccess.isInstanceAdmin) return true;
+  const membership = boardAccess.memberships?.find(
+    (item) => item.companyId === companyId && item.status === "active",
+  );
+  if (!membership) {
+    return boardAccess.companyIds.includes(companyId) && !boardAccess.memberships;
+  }
+  return membership.membershipRole !== "viewer" && membership.membershipRole !== null;
+}
+
+function watchdogDecisionErrorMessage(error: unknown) {
+  if (error instanceof ApiError && error.status === 403) {
+    return "Only the board or the assigned recovery owner can record watchdog decisions";
+  }
+  return error instanceof Error && error.message.trim().length > 0
+    ? error.message
+    : "Paperclip could not record the watchdog decision.";
+}
+
 export function IssueRunLedger({
   issueId,
+  companyId,
   issueStatus,
   childIssues,
   agentMap,
@@ -164,7 +199,15 @@ export function IssueRunLedger({
   activityEvents,
   renderActivityEvent,
 }: IssueRunLedgerProps) {
+  const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [watchdogDecisionError, setWatchdogDecisionError] = useState<string | null>(null);
+  const { data: boardAccess } = useQuery({
+    queryKey: queryKeys.access.currentBoardAccess,
+    queryFn: () => accessApi.getCurrentBoardAccess(),
+    retry: false,
+  });
   const { data: runPage } = useQuery({
     queryKey: queryKeys.issues.runs(issueId),
     queryFn: () => runsApi.listForIssue(issueId, { limit: 200 }),
@@ -187,8 +230,34 @@ export function IssueRunLedger({
     enabled: Boolean(effectiveSelectedRunId),
     refetchInterval: selectedRunId && hasLiveRuns ? 3000 : false,
   });
+  const watchdogDecision = useMutation({
+    mutationFn: (input: WatchdogDecisionInput) => runsApi.recordWatchdogDecision(input),
+    onMutate: () => setWatchdogDecisionError(null),
+    onSuccess: (_record, input) => {
+      setWatchdogDecisionError(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.runDetail(input.runId) });
+    },
+    onError: (error) => {
+      const message = watchdogDecisionErrorMessage(error);
+      setWatchdogDecisionError(message);
+      pushToast({
+        title: "Watchdog decision not recorded",
+        body: message,
+        tone: "error",
+        dedupeKey: `watchdog-decision:${issueId}`,
+      });
+    },
+  });
+
   return (
-    <IssueRunLedgerContent
+    <>
+      <fieldset
+        aria-busy={watchdogDecision.isPending}
+        aria-label="Task run ledger controls"
+        className="m-0 min-w-0 border-0 p-0"
+        disabled={watchdogDecision.isPending}
+      >
+        <IssueRunLedgerContent
       runs={runs}
       selectedDetail={selectedDetail}
       selectedRunId={effectiveSelectedRunId}
@@ -198,7 +267,19 @@ export function IssueRunLedger({
       agentMap={agentMap}
       activityEvents={activityEvents}
       renderActivityEvent={renderActivityEvent}
-    />
+      pendingWatchdogDecision={watchdogDecision.variables?.decision ?? null}
+      isPending={watchdogDecision.isPending}
+      canRecordWatchdogDecisions={canBoardRecordWatchdogDecision(companyId, boardAccess)}
+      watchdogDecisionError={watchdogDecisionError}
+      onWatchdogDecision={(input) => watchdogDecision.mutate(input)}
+        />
+      </fieldset>
+      {watchdogDecision.isPending ? (
+        <p aria-live="polite" role="status">
+          Recording watchdog decision…
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -212,6 +293,11 @@ export function IssueRunLedgerContent({
   agentMap,
   activityEvents,
   renderActivityEvent,
+  pendingWatchdogDecision,
+  isPending = false,
+  canRecordWatchdogDecisions = true,
+  watchdogDecisionError,
+  onWatchdogDecision,
 }: IssueRunLedgerContentProps) {
   const orderedRuns = useMemo(
     () => [...runs].sort(compareRunsNewestFirst),
@@ -250,6 +336,7 @@ export function IssueRunLedgerContent({
       ? selectedDetail?.finalization?.liveness ?? null
       : null;
   const selectedRetry = selectedDetail?.retrySchedules.items.at(-1) ?? null;
+  const selectedDecisions = selectedDetail?.watchdogDecisions.items ?? [];
   const renderRunCard = (run: IssueExecutionRunEnvelopeRecord) => {
     const isSelected = run.id === selectedRunId;
     const liveness = isSelected && selectedLiveness
@@ -299,6 +386,63 @@ export function IssueRunLedgerContent({
         {isSelected && selectedRetry ? (
           <p>
             Retry {statusLabel(selectedRetry.state)} for {relativeTime(selectedRetry.retryAt)}: {selectedRetry.reasonCode}
+          </p>
+        ) : null}
+        {isSelected && selectedDecisions.length > 0 ? (
+          <div className="space-y-1 rounded-md border border-border/70 px-2 py-1.5">
+            <p className="font-medium text-foreground">Watchdog decisions</p>
+            {selectedDecisions.map((decision) => (
+              <p key={decision.id}>
+                {statusLabel(decision.decision)}{decision.reason ? ` — ${decision.reason}` : ""}
+              </p>
+            ))}
+          </div>
+        ) : null}
+        {isSelected && onWatchdogDecision && canRecordWatchdogDecisions && run.status === "running" ? (
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              className="rounded-md border border-border bg-background px-2 py-1 text-(length:--text-micro) text-foreground"
+              disabled={isPending || pendingWatchdogDecision != null}
+              onClick={() => onWatchdogDecision({ runId: run.id, decision: "continue" })}
+            >
+              Continue monitoring
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-border bg-background px-2 py-1 text-(length:--text-micro) text-foreground"
+              disabled={isPending || pendingWatchdogDecision != null}
+              onClick={() => onWatchdogDecision({
+                runId: run.id,
+                decision: "snooze",
+                snoozedUntil: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+                reason: "Snoozed from task run ledger",
+              })}
+            >
+              Snooze 1h
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-border bg-background px-2 py-1 text-(length:--text-micro) text-foreground"
+              disabled={isPending || pendingWatchdogDecision != null}
+              onClick={() => onWatchdogDecision({
+                runId: run.id,
+                decision: "dismissed_false_positive",
+                reason: "Dismissed from task run ledger",
+              })}
+            >
+              Mark false positive
+            </button>
+          </div>
+        ) : null}
+        {isSelected && isPending ? (
+          <p aria-live="polite" role="status">
+            Recording watchdog decision…
+          </p>
+        ) : null}
+        {isSelected && watchdogDecisionError ? (
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-destructive">
+            {watchdogDecisionError}
           </p>
         ) : null}
       </article>

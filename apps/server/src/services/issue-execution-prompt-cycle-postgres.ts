@@ -35,6 +35,7 @@ import {
 import {
   IssueExecutionPromptAuthorityLost,
 } from "./issue-execution-attempt-executor.js";
+import { localExecutionCorrelationFingerprint } from "./local-execution-correlation.js";
 import type {
   IssueExecutionAttemptLease,
   IssueExecutionPromptCapabilityIdentity,
@@ -1208,8 +1209,9 @@ export function createPostgresIssueExecutionPromptCycleRepository(
         });
         const effectiveToolsDigest = runtimeInterfaceDigest(compileInput);
         const carryContext = compileInput.contextDial.carry_context;
-        const targetFingerprint =
-          acpConfiguration.executionTargetSelector.executionTargetDigest;
+        const targetFingerprint = localExecutionCorrelationFingerprint(
+          identity.adapterConfigRevisionId,
+        );
         const selectedCorrelation = attempt.sessionOperation === "resume"
           ? await selectCurrentCorrelation(transaction, {
               identity: completeIdentity,

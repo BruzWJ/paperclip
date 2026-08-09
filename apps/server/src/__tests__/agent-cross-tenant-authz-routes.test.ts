@@ -80,7 +80,6 @@ const mockSecretService = vi.hoisted(() => ({
   resolveAdapterConfigForRuntime: vi.fn(),
 }));
 
-const mockWorkspaceOperationService = vi.hoisted(() => ({}));
 const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 const mockResolveInvokableIssueOwnerCatalogFromDb = vi.hoisted(() => vi.fn());
@@ -175,7 +174,6 @@ vi.mock("../services/index.js", () => ({
   issueService: () => mockIssueService,
   logActivity: mockLogActivity,
   secretService: () => mockSecretService,
-  workspaceOperationService: () => mockWorkspaceOperationService,
 }));
 
 vi.mock("../services/instance-settings.js", () => ({

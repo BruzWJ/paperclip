@@ -4,7 +4,6 @@ export const ADAPTER_RUNTIME_READINESS_INCOMPLETE_REASONS = [
   "run_not_preflightable",
   "agent_revision_not_current",
   "adapter_revision_invalid",
-  "environment_unavailable",
   "workspace_unavailable",
   "execution_target_unavailable",
   "target_native_executable_unavailable",
@@ -24,7 +23,6 @@ export const adapterRuntimeReadinessScopeSchema = z
     runId: z.string().uuid(),
     agentId: z.string().uuid(),
     adapterConfigRevisionId: z.string().uuid(),
-    environmentId: z.string().uuid(),
   })
   .strict();
 

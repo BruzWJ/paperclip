@@ -39,6 +39,7 @@ export { issueReferenceService } from "./issue-references.js";
 export { activityService, type ActivityFilters } from "./activity.js";
 export { workTimelineService, normalizeTimelineWindow } from "./work-timeline.js";
 export { attentionService } from "./attention.js";
+export { captureDecisionSnapshot, decisionTrainingService } from "./decision-training.js";
 export type {
   WorkTimelineActor,
   WorkTimelineEdge,
@@ -76,7 +77,6 @@ export { instanceSettingsService } from "./instance-settings.js";
 
 export { companyPortabilityService } from "./company-portability.js";
 export { teamsCatalogService } from "./teams-catalog.js";
-export { environmentService } from "./environments.js";
 export { executionWorkspaceService } from "./execution-workspaces.js";
 export {
   buildRuntimeInterfaceCompileInput,
@@ -153,6 +153,12 @@ export {
   type RequestedIssueExecutionSteering,
   type RequestIssueExecutionSteeringInput,
 } from "./issue-execution-run-service.js";
+export {
+  createIssueExecutionWatchdogDecisionService,
+  type IssueExecutionWatchdogDecisionActor,
+  type IssueExecutionWatchdogDecisionService,
+  type RecordIssueExecutionWatchdogDecisionInput,
+} from "./issue-execution-watchdog-decisions.js";
 export {
   buildIssueExecutionFinalizationPlan,
   IssueExecutionFinalizationRejected,
@@ -344,7 +350,6 @@ export {
   type RuntimeAgentConfigurationResult,
   type RuntimeAgentConfigurationService,
 } from "./runtime-agent-configuration.js";
-export { workspaceOperationService } from "./workspace-operations.js";
 export { workProductService } from "./work-products.js";
 export { logActivity, type LogActivityInput } from "./activity-log.js";
 
@@ -356,5 +361,4 @@ export {
   type IssueExecutionPlanPublicationRedactor,
   type RoutedAcpPromptIdentity,
 } from "./issue-execution-plan-live.js";
-export { reconcilePersistedRuntimeServicesOnStartup, restartDesiredRuntimeServicesOnStartup } from "./workspace-runtime.js";
 export { createStorageServiceFromConfig, getStorageService } from "../storage/index.js";

@@ -11,7 +11,7 @@ const mockProjectService = vi.hoisted(() => ({
   createWorkspace: vi.fn(),
   listWorkspaces: vi.fn(),
   updateWorkspace: vi.fn(),
-  removeWorkspace: vi.fn(),
+  clearWorkspaces: vi.fn(),
   remove: vi.fn(),
   resolveByReference: vi.fn(),
 }));
@@ -19,10 +19,6 @@ const mockSecretService = vi.hoisted(() => ({
   normalizeEnvBindingsForPersistence: vi.fn(),
   syncEnvBindingsForTarget: vi.fn(),
 }));
-const mockEnvironmentService = vi.hoisted(() => ({
-  getById: vi.fn(),
-}));
-const mockWorkspaceOperationService = vi.hoisted(() => ({}));
 const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 const mockAccessService = vi.hoisted(() => ({
@@ -35,25 +31,14 @@ vi.mock("../telemetry.js", () => ({
 
 vi.mock("../services/index.js", () => ({
   accessService: () => mockAccessService,
-  environmentService: () => mockEnvironmentService,
   logActivity: mockLogActivity,
   projectService: () => mockProjectService,
   secretService: () => mockSecretService,
   toPublicProject: <T>(project: T) => project,
-  workspaceOperationService: () => mockWorkspaceOperationService,
-}));
-
-vi.mock("../services/environments.js", () => ({
-  environmentService: () => mockEnvironmentService,
 }));
 
 vi.mock("../services/secrets.js", () => ({
   secretService: () => mockSecretService,
-}));
-
-vi.mock("../services/workspace-runtime.js", () => ({
-  startRuntimeServicesForWorkspaceControl: vi.fn(),
-  stopRuntimeServicesForProjectWorkspace: vi.fn(),
 }));
 
 function registerModuleMocks() {
@@ -63,26 +48,16 @@ function registerModuleMocks() {
 
   vi.doMock("../services/index.js", () => ({
     accessService: () => mockAccessService,
-    environmentService: () => mockEnvironmentService,
     logActivity: mockLogActivity,
     projectService: () => mockProjectService,
     secretService: () => mockSecretService,
     toPublicProject: <T>(project: T) => project,
-    workspaceOperationService: () => mockWorkspaceOperationService,
-  }));
-
-  vi.doMock("../services/environments.js", () => ({
-    environmentService: () => mockEnvironmentService,
   }));
 
   vi.doMock("../services/secrets.js", () => ({
     secretService: () => mockSecretService,
   }));
 
-  vi.doMock("../services/workspace-runtime.js", () => ({
-    startRuntimeServicesForWorkspaceControl: vi.fn(),
-    stopRuntimeServicesForProjectWorkspace: vi.fn(),
-  }));
 }
 
 async function createApp() {
@@ -133,13 +108,7 @@ function buildProject(overrides: Record<string, unknown> = {}) {
     codebase: {
       workspaceId: null,
       repoUrl: null,
-      repoRef: null,
-      defaultRef: null,
-      repoName: null,
       localFolder: null,
-      managedFolder: "/tmp/project",
-      effectiveLocalFolder: "/tmp/project",
-      origin: "managed_checkout",
     },
     workspaces: [],
     primaryWorkspace: null,
@@ -156,7 +125,6 @@ describe("project env routes", () => {
     vi.doUnmock("../routes/projects.js");
     vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
-    vi.doUnmock("../services/environments.js");
     vi.doUnmock("../services/secrets.js");
     registerModuleMocks();
     vi.clearAllMocks();
@@ -169,8 +137,8 @@ describe("project env routes", () => {
     mockGetTelemetryClient.mockReturnValue({ track: vi.fn() });
     mockProjectService.resolveByReference.mockResolvedValue({ ambiguous: false, project: null });
     mockProjectService.createWorkspace.mockResolvedValue(null);
+    mockProjectService.clearWorkspaces.mockResolvedValue([]);
     mockProjectService.listWorkspaces.mockResolvedValue([]);
-    mockEnvironmentService.getById.mockReset();
     mockSecretService.normalizeEnvBindingsForPersistence.mockImplementation(async (_companyId, env) => env);
     mockSecretService.syncEnvBindingsForTarget.mockResolvedValue([]);
   });
@@ -251,5 +219,115 @@ describe("project env routes", () => {
         },
       }),
     );
+  });
+
+  it("creates a project with a board-managed repo and local agent directory", async () => {
+    const created = buildProject();
+    const hydrated = buildProject({
+      codebase: {
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        repoUrl: "https://github.com/acme/project.git",
+        localFolder: "/srv/acme/project",
+      },
+    });
+    mockProjectService.create.mockResolvedValue(created);
+    mockProjectService.createWorkspace.mockResolvedValue({
+      id: "11111111-1111-4111-8111-111111111111",
+    });
+    mockProjectService.getById.mockResolvedValue(hydrated);
+
+    const app = await createApp();
+    const res = await request(app)
+      .post("/api/companies/company-1/projects")
+      .send({
+        name: "Project",
+        codebase: {
+          repoUrl: "https://github.com/acme/project.git",
+          localFolder: "/srv/acme/project",
+        },
+      });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(mockProjectService.create).toHaveBeenCalledWith(
+      "company-1",
+      expect.not.objectContaining({ codebase: expect.anything() }),
+    );
+    expect(mockProjectService.createWorkspace).toHaveBeenCalledWith(
+      "project-1",
+      {
+        cwd: "/srv/acme/project",
+        repoUrl: "https://github.com/acme/project.git",
+      },
+    );
+  });
+
+  it("reads and updates the project's single Codebase projection", async () => {
+    const existing = buildProject({
+      codebase: {
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        repoUrl: "https://github.com/acme/old.git",
+        localFolder: "/srv/acme/project",
+      },
+      primaryWorkspace: { id: "11111111-1111-4111-8111-111111111111" },
+    });
+    const updated = buildProject({
+      codebase: {
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        repoUrl: "https://github.com/acme/new.git",
+        localFolder: "/srv/acme/project",
+      },
+      primaryWorkspace: { id: "11111111-1111-4111-8111-111111111111" },
+    });
+    mockProjectService.getById
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(updated);
+    mockProjectService.updateWorkspace.mockResolvedValue({
+      id: "11111111-1111-4111-8111-111111111111",
+    });
+
+    const app = await createApp();
+    const getResponse = await request(app).get("/api/projects/project-1/codebase");
+    expect(getResponse.status, JSON.stringify(getResponse.body)).toBe(200);
+    expect(getResponse.body).toEqual(existing.codebase);
+
+    const patchResponse = await request(app)
+      .patch("/api/projects/project-1/codebase")
+      .send({ repoUrl: "https://github.com/acme/new.git" });
+    expect(patchResponse.status, JSON.stringify(patchResponse.body)).toBe(200);
+    expect(patchResponse.body).toEqual(updated.codebase);
+    expect(mockProjectService.updateWorkspace).toHaveBeenCalledWith(
+      "project-1",
+      "11111111-1111-4111-8111-111111111111",
+      expect.objectContaining({
+        repoUrl: "https://github.com/acme/new.git",
+      }),
+    );
+  });
+
+  it("removes the project Codebase when both retained fields are cleared", async () => {
+    const existing = buildProject({
+      codebase: {
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        repoUrl: "https://github.com/acme/project.git",
+        localFolder: "/srv/acme/project",
+      },
+      primaryWorkspace: { id: "11111111-1111-4111-8111-111111111111" },
+    });
+    mockProjectService.getById
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(buildProject());
+    mockProjectService.clearWorkspaces.mockResolvedValue([
+      { id: "11111111-1111-4111-8111-111111111111" },
+    ]);
+
+    const app = await createApp();
+    const res = await request(app)
+      .patch("/api/projects/project-1/codebase")
+      .send({ localFolder: null, repoUrl: null });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockProjectService.clearWorkspaces).toHaveBeenCalledWith("project-1");
+    expect(mockProjectService.updateWorkspace).not.toHaveBeenCalled();
   });
 });

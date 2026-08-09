@@ -98,7 +98,6 @@ describe("useAdapterCapabilities", () => {
         source: "acpx",
         modelsCount: 2,
         loaded: true,
-        drivers: ["local"],
         registryName: "codex",
         configSchema: { fields: [] },
         capabilities: {

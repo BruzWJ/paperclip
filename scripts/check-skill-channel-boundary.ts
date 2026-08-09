@@ -78,8 +78,6 @@ const TARGET_REQUIRED = [
   '"--remount-ro"',
   '"--cap-drop"',
   '"--disable-userns"',
-  "target.transport === \"ssh\"",
-  "adapterExecutionTargetIsCommandManaged(target)",
 ] as const;
 
 const PROMPT_REQUIRED = [

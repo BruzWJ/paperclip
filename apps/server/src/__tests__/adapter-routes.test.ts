@@ -96,7 +96,6 @@ describe("ACPX adapter routes", () => {
         source: "acpx",
         registryName: adapter.type,
         loaded: true,
-        drivers: definition.environment.drivers,
         configSchema: definition.configSchema,
       });
       expect(adapter).not.toHaveProperty("disabled");

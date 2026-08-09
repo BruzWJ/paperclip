@@ -13,12 +13,16 @@ import {
   collectCompanySkillMaterializationIfUnreferencedInTransaction,
   type ReapedCompanySkillMaterialization,
 } from "./company-skill-materialization-lifecycle.js";
+import { localExecutionCorrelationFingerprint } from "./local-execution-correlation.js";
+
+const adapterConfigRevisionId = "00000000-0000-4000-8000-000000000003";
 
 const identity = {
   companyId: "00000000-0000-4000-8000-000000000001",
   agentId: "00000000-0000-4000-8000-000000000002",
-  executionTargetIdentity: "c".repeat(64),
-  adapterConfigRevisionId: "00000000-0000-4000-8000-000000000003",
+  executionTargetIdentity:
+    localExecutionCorrelationFingerprint(adapterConfigRevisionId),
+  adapterConfigRevisionId,
 } as const;
 const selected = [{
   key: "company/example/review",
@@ -42,7 +46,6 @@ const revision = {
   id: identity.adapterConfigRevisionId,
   companyId: identity.companyId,
   agentId: identity.agentId,
-  executionTargetDigest: identity.executionTargetIdentity,
   acpConfiguration: {
     contractVersion: "acpx-runtime/v1",
     launchProfile: {
@@ -59,11 +62,6 @@ const revision = {
         contextTokenLimit: 128_000,
         outputTokenLimit: 32_000,
       },
-    },
-    executionTargetSelector: {
-      environmentId: "00000000-0000-4000-8000-000000000005",
-      executionTargetDriver: "local",
-      executionTargetDigest: identity.executionTargetIdentity,
     },
     workspaceSelector: { kind: "issue_execution_workspace" },
     companySkillPins: [{

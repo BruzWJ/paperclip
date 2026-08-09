@@ -11,7 +11,7 @@ import {
 export { PLUGIN_CATEGORIES };
 export type { PluginCategory };
 
-export const PLUGIN_SCAFFOLD_TEMPLATES = ["standard", "environment"] as const;
+export const PLUGIN_SCAFFOLD_TEMPLATES = ["standard"] as const;
 export type PluginScaffoldTemplate = (typeof PLUGIN_SCAFFOLD_TEMPLATES)[number];
 
 export interface ScaffoldPluginOptions {
@@ -260,280 +260,9 @@ export default defineConfig({
 `,
   );
 
-  if (template === "environment") {
-    writeFile(
-      path.join(outputDir, "src", "manifest.ts"),
-      `import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
-
-const manifest: PaperclipPluginManifestV1 = {
-  id: ${quote(manifestId)},
-  apiVersion: 1,
-  version: "0.1.0",
-  displayName: ${quote(displayName)},
-  description: ${quote(description)},
-  author: ${quote(author)},
-  categories: [${quote(category)}],
-  capabilities: [
-    "environment.drivers.register",
-    "ui.dashboardWidget.register"
-  ],
-  entrypoints: {
-    worker: "./dist/worker.js",
-    ui: "./dist/ui"
-  },
-  environmentDrivers: [
-    {
-      driverKey: ${quote(manifestId + "-driver")},
-      displayName: ${quote(displayName + " Driver")},
-      supportsReusableLeases: true,
-      configSchema: {
-        type: "object",
-        additionalProperties: true
-      }
-    }
-  ],
-  ui: {
-    slots: [
-      {
-        type: "dashboardWidget",
-        id: "health-widget",
-        displayName: ${quote(`${displayName} Health`)},
-        exportName: "DashboardWidget"
-      }
-    ]
-  }
-};
-
-export default manifest;
-`,
-    );
-
-    writeFile(
-      path.join(outputDir, "src", "worker.ts"),
-      `import { definePlugin, runWorker } from "@paperclipai/plugin-sdk";
-import type {
-  PluginEnvironmentValidateConfigParams,
-  PluginEnvironmentProbeParams,
-  PluginEnvironmentAcquireLeaseParams,
-  PluginEnvironmentResumeLeaseParams,
-  PluginEnvironmentReleaseLeaseParams,
-  PluginEnvironmentDestroyLeaseParams,
-  PluginEnvironmentRealizeWorkspaceParams,
-  PluginEnvironmentExecuteParams,
-  PluginEnvironmentCancelExecutionParams,
-} from "@paperclipai/plugin-sdk";
-
-function environmentProviderNotImplemented(operation: string): never {
-  throw new Error(
-    "Environment provider " + operation
-      + " is not implemented; replace the scaffold placeholder",
-  );
-}
-
-const plugin = definePlugin({
-  async setup(ctx) {
-    ctx.data.register("health", async () => {
-      return { status: "ok", checkedAt: new Date().toISOString() };
-    });
-  },
-
-  async onHealth() {
-    return { status: "ok", message: "Environment plugin worker is running" };
-  },
-
-  async onEnvironmentValidateConfig(_params: PluginEnvironmentValidateConfigParams) {
-    return {
-      ok: false,
-      errors: ["Environment provider config validation is not implemented"],
-    };
-  },
-
-  async onEnvironmentProbe(_params: PluginEnvironmentProbeParams) {
-    return {
-      ok: false,
-      summary: "Environment provider probe is not implemented",
-      diagnostics: [{
-        severity: "error",
-        message: "Replace the scaffold probe before enabling this plugin",
-      }],
-    };
-  },
-
-  async onEnvironmentAcquireLease(_params: PluginEnvironmentAcquireLeaseParams) {
-    return environmentProviderNotImplemented("acquireLease");
-  },
-
-  async onEnvironmentResumeLease(_params: PluginEnvironmentResumeLeaseParams) {
-    return environmentProviderNotImplemented("resumeLease");
-  },
-
-  async onEnvironmentReleaseLease(_params: PluginEnvironmentReleaseLeaseParams) {
-    return environmentProviderNotImplemented("releaseLease");
-  },
-
-  async onEnvironmentDestroyLease(_params: PluginEnvironmentDestroyLeaseParams) {
-    return environmentProviderNotImplemented("destroyLease");
-  },
-
-  async onEnvironmentRealizeWorkspace(_params: PluginEnvironmentRealizeWorkspaceParams) {
-    return environmentProviderNotImplemented("realizeWorkspace");
-  },
-
-  async onEnvironmentExecute(_params: PluginEnvironmentExecuteParams) {
-    return environmentProviderNotImplemented("execute");
-  },
-
-  async onEnvironmentCancelExecution(_params: PluginEnvironmentCancelExecutionParams) {
-    return environmentProviderNotImplemented("cancelExecution");
-  },
-});
-
-export default plugin;
-runWorker(plugin, import.meta.url);
-`,
-    );
-
-    writeFile(
-      path.join(outputDir, "src", "ui", "index.tsx"),
-      `import { usePluginData, type PluginHostContextProps } from "@paperclipai/plugin-sdk/ui";
-
-type HealthData = {
-  status: "ok" | "degraded" | "error";
-  checkedAt: string;
-};
-
-export function DashboardWidget(_props: PluginHostContextProps) {
-  const { data, loading, error } = usePluginData<HealthData>("health");
-
-  if (loading) return <div>Loading environment health...</div>;
-  if (error) return <div>Plugin error: {error.message}</div>;
-
-  return (
-    <div style={{ display: "grid", gap: "0.5rem" }}>
-      <strong>${displayName}</strong>
-      <div>Health: {data?.status ?? "unknown"}</div>
-      <div>Checked: {data?.checkedAt ?? "never"}</div>
-    </div>
-  );
-}
-`,
-    );
-
-    writeFile(
-      path.join(outputDir, "tests", "plugin.spec.ts"),
-      `import { describe, expect, it } from "vitest";
-import { pluginManifestV1Schema } from "@paperclipai/plugin-sdk";
-import {
-  createEnvironmentTestHarness,
-  assertEnvironmentError,
-} from "@paperclipai/plugin-sdk/testing";
-import manifest from "../src/manifest.js";
-import plugin from "../src/worker.js";
-
-const ENV_ID = "env-test-1";
-const BASE_PARAMS = {
-  driverKey: manifest.environmentDrivers![0].driverKey,
-  companyId: "co-1",
-  environmentId: ENV_ID,
-  config: {},
-};
-
-function scaffoldDriver() {
-  return {
-    driverKey: BASE_PARAMS.driverKey,
-    onValidateConfig: plugin.definition.onEnvironmentValidateConfig,
-    onProbe: plugin.definition.onEnvironmentProbe,
-    onAcquireLease: plugin.definition.onEnvironmentAcquireLease,
-    onResumeLease: plugin.definition.onEnvironmentResumeLease,
-    onReleaseLease: plugin.definition.onEnvironmentReleaseLease,
-    onDestroyLease: plugin.definition.onEnvironmentDestroyLease,
-    onRealizeWorkspace: plugin.definition.onEnvironmentRealizeWorkspace,
-    onExecute: plugin.definition.onEnvironmentExecute,
-    onCancelExecution: plugin.definition.onEnvironmentCancelExecution,
-  };
-}
-
-describe("environment plugin scaffold", () => {
-  it("exports a structurally valid canonical manifest", () => {
-    expect(pluginManifestV1Schema.parse(manifest)).toEqual(manifest);
-  });
-
-  it("fails closed until the provider placeholders are implemented", async () => {
-    const harness = createEnvironmentTestHarness({
-      manifest,
-      environmentDriver: scaffoldDriver(),
-    });
-    await plugin.definition.setup(harness.ctx);
-
-    await expect(harness.validateConfig(BASE_PARAMS)).resolves.toMatchObject({
-      ok: false,
-    });
-    await expect(harness.probe(BASE_PARAMS)).resolves.toMatchObject({
-      ok: false,
-    });
-    await expect(harness.acquireLease({
-      ...BASE_PARAMS,
-      runId: "run-1",
-    })).rejects.toThrow("acquireLease is not implemented");
-    await expect(harness.resumeLease({
-      ...BASE_PARAMS,
-      providerLeaseId: "lease-1",
-    })).rejects.toThrow("resumeLease is not implemented");
-    await expect(harness.releaseLease({
-      ...BASE_PARAMS,
-      providerLeaseId: "lease-1",
-    })).rejects.toThrow("releaseLease is not implemented");
-    await expect(harness.destroyLease({
-      ...BASE_PARAMS,
-      providerLeaseId: "lease-1",
-    })).rejects.toThrow("destroyLease is not implemented");
-
-    const lease = { providerLeaseId: "lease-1" };
-    await expect(harness.realizeWorkspace({
-      ...BASE_PARAMS,
-      lease,
-      workspace: { localPath: "/tmp/environment-plugin-scaffold" },
-    })).rejects.toThrow("realizeWorkspace is not implemented");
-    await expect(harness.execute({
-      ...BASE_PARAMS,
-      lease,
-      executionId: "execution-1",
-      command: "true",
-    })).rejects.toThrow("execute is not implemented");
-    await expect(harness.cancelExecution({
-      ...BASE_PARAMS,
-      lease,
-      executionId: "execution-1",
-      reason: "test",
-    })).rejects.toThrow("cancelExecution is not implemented");
-
-    expect(assertEnvironmentError(
-      harness.environmentEvents,
-      "acquireLease",
-      ENV_ID,
-    ).error).toContain("acquireLease is not implemented");
-    for (const operation of [
-      "resumeLease",
-      "releaseLease",
-      "destroyLease",
-      "realizeWorkspace",
-      "execute",
-      "cancelExecution",
-    ] as const) {
-      expect(assertEnvironmentError(
-        harness.environmentEvents,
-        operation,
-        ENV_ID,
-      ).error).toContain(operation + " is not implemented");
-    }
-  });
-});
-`,
-    );
-  } else {
-    writeFile(
-      path.join(outputDir, "src", "manifest.ts"),
-      `import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
+  writeFile(
+    path.join(outputDir, "src", "manifest.ts"),
+    `import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
 
 const manifest: PaperclipPluginManifestV1 = {
   id: ${quote(manifestId)},
@@ -564,11 +293,11 @@ const manifest: PaperclipPluginManifestV1 = {
 
 export default manifest;
 `,
-    );
+  );
 
-    writeFile(
-      path.join(outputDir, "src", "worker.ts"),
-      `import { definePlugin, runWorker } from "@paperclipai/plugin-sdk";
+  writeFile(
+    path.join(outputDir, "src", "worker.ts"),
+    `import { definePlugin, runWorker } from "@paperclipai/plugin-sdk";
 
 const plugin = definePlugin({
   async setup(ctx) {
@@ -590,11 +319,11 @@ const plugin = definePlugin({
 export default plugin;
 runWorker(plugin, import.meta.url);
 `,
-    );
+  );
 
-    writeFile(
-      path.join(outputDir, "src", "ui", "index.tsx"),
-      `import { usePluginAction, usePluginData, type PluginHostContextProps } from "@paperclipai/plugin-sdk/ui";
+  writeFile(
+    path.join(outputDir, "src", "ui", "index.tsx"),
+    `import { usePluginAction, usePluginData, type PluginHostContextProps } from "@paperclipai/plugin-sdk/ui";
 
 type HealthData = {
   status: "ok" | "degraded" | "error";
@@ -618,11 +347,11 @@ export function DashboardWidget(_props: PluginHostContextProps) {
   );
 }
 `,
-    );
+  );
 
-    writeFile(
-      path.join(outputDir, "tests", "plugin.spec.ts"),
-      `import { describe, expect, it } from "vitest";
+  writeFile(
+    path.join(outputDir, "tests", "plugin.spec.ts"),
+    `import { describe, expect, it } from "vitest";
 import { pluginManifestV1Schema } from "@paperclipai/plugin-sdk";
 import { createTestHarness } from "@paperclipai/plugin-sdk/testing";
 import manifest from "../src/manifest.js";
@@ -649,8 +378,7 @@ describe("plugin scaffold", () => {
   });
 });
 `,
-    );
-  }
+  );
 
   writeFile(
     path.join(outputDir, "README.md"),

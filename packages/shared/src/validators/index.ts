@@ -33,15 +33,12 @@ export {
   issueExecutionRunStatusSchema,
   issueExecutionRunTerminalClassificationSchema,
   issueExecutionSteeringStateSchema,
+  issueExecutionWatchdogDecisionInputSchema,
+  issueExecutionWatchdogDecisionSchema,
   type IssueExecutionPromptSettlementInput,
   type IssueExecutionRunLivenessFactInput,
+  type IssueExecutionWatchdogDecisionRequest,
 } from "./issue-execution-run.js";
-export {
-  environmentDriverSchema,
-  environmentStatusSchema,
-  environmentLeaseStatusSchema,
-  environmentLeaseCleanupStatusSchema,
-} from "./environment.js";
 export {
   sidebarOrderPreferenceSchema,
   upsertSidebarOrderPreferenceSchema,
@@ -259,8 +256,13 @@ export {
 
 export {
   createProjectSchema,
+  projectCodebaseSchema,
+  projectCodebaseInputSchema,
+  updateProjectCodebaseSchema,
   updateProjectSchema,
   type CreateProject,
+  type ProjectCodebaseInput,
+  type UpdateProjectCodebase,
   type UpdateProject,
 } from "./project.js";
 
@@ -296,9 +298,11 @@ export {
   commitIssueOwnerFormSchema,
   selfAssignIssueWithdrawalSchema,
   reopenIssueSchema,
+  issueExecutionMonitorPolicySchema,
   issueExecutionPolicySchema,
   updateIssueExecutionPolicySchema,
   decideIssueExecutionStageSchema,
+  issueExecutionMonitorStateSchema,
   issueExecutionStateSchema,
   issueReviewRequestSchema,
   issueCommentAuthorTypeSchema,
@@ -546,7 +550,6 @@ export {
   pluginJobDeclarationSchema,
   pluginWebhookDeclarationSchema,
   pluginToolDeclarationSchema,
-  pluginEnvironmentDriverDeclarationSchema,
   pluginUiSlotDeclarationSchema,
   pluginLauncherActionDeclarationSchema,
   pluginLauncherRenderDeclarationSchema,

@@ -369,8 +369,6 @@ async function validateActiveExecution(
     !revision ||
     !invokability.invokable ||
     !workspace ||
-    workspace.workspace.status !== "active" ||
-    workspace.workspace.closedAt !== null ||
     !workspace.binding.absoluteCwd.startsWith("/")
   ) {
     throw new IssueSessionLifecycleConflict(

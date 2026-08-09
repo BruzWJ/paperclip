@@ -17,7 +17,6 @@ const acpxFixture = vi.hoisted(() => {
       environment: Object.freeze({
         cwd: "execution-workspace",
         additionalDirectories: "authorized-workspace-only",
-        drivers: Object.freeze(["local"] as const),
         environmentKeys: Object.freeze([]),
       }),
       runtime: Object.freeze({

@@ -1,6 +1,5 @@
 import type { ComponentType } from "react";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
-import type { EnvironmentDriver } from "@paperclipai/shared";
 
 export type { CreateConfigValues } from "@paperclipai/adapter-utils";
 
@@ -25,8 +24,6 @@ export interface AdapterConfigFieldsProps {
 export interface UIAdapterModule {
   type: string;
   label: string;
-  /** Exact driver membership supplied by the current server agent catalog. */
-  drivers: readonly EnvironmentDriver[];
   ConfigFields: ComponentType<AdapterConfigFieldsProps>;
   buildAdapterConfig: (values: CreateConfigValues) => Record<string, unknown>;
 }
