@@ -28,7 +28,6 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentActionButtons } from "../components/AgentActionButtons";
 import { InlineBanner } from "../components/InlineBanner";
 import { BudgetPolicyCard } from "../components/BudgetPolicyCard";
-import { AgentRuntimeGrantsSection } from "../components/AgentRuntimeGrantsSection";
 import { issueDisplayTitle } from "../lib/issue-display";
 import { cn, formatDate, formatMoneyAmount, formatTokens, relativeTime } from "../lib/utils";
 import { Button } from "@/components/ui/button";
@@ -48,7 +47,6 @@ import {
   parseMoneyAmount,
   subtractMoneyAmounts,
   type Agent,
-  type AgentAdapterConfigRevision,
   type AgentDetail as AgentDetailRecord,
   type BudgetCurrency,
   type BudgetPolicySummary,
@@ -993,9 +991,6 @@ function AgentConfigurePage({
     <div className="max-w-3xl space-y-6">
       <ConfigurationTab
         agent={agent}
-        currentAdapterRevision={(adapterRevisions ?? []).find(
-          (revision) => revision.id === agent.currentAdapterConfigRevisionId,
-        )}
         onDirtyChange={onDirtyChange}
         onSaveActionChange={onSaveActionChange}
         onCancelActionChange={onCancelActionChange}
@@ -1054,7 +1049,6 @@ function AgentConfigurePage({
 
 function ConfigurationTab({
   agent,
-  currentAdapterRevision,
   companyId,
   onDirtyChange,
   onSaveActionChange,
@@ -1062,7 +1056,6 @@ function ConfigurationTab({
   onSavingChange,
 }: {
   agent: AgentDetailRecord;
-  currentAdapterRevision?: AgentAdapterConfigRevision;
   companyId?: string;
   onDirtyChange: (dirty: boolean) => void;
   onSaveActionChange: (save: (() => void) | null) => void;
@@ -1094,12 +1087,27 @@ function ConfigurationTab({
       const operationalPatch = partitioned.operational;
       const hasAdapterRevisionChange =
         partitioned.hasAdapterRevisionChange;
+      const currentAdapterRevision =
+        hasAdapterRevisionChange && agent.currentAdapterConfigRevisionId
+          ? await agentsApi.getCurrentAdapterConfigRevision(agent.id, companyId)
+          : null;
+      const adapterRevisionConfiguration = hasAdapterRevisionChange
+        ? buildAdapterRevisionConfiguration({
+            agent,
+            currentRevision: currentAdapterRevision,
+            patch: data,
+          })
+        : null;
 
       if (Object.keys(runtimeAgentPatch).length > 0) {
-        await agentsApi.updateRuntimeConfiguration(
+        const runtimeConfiguration = await agentsApi.updateRuntimeConfiguration(
           agent.id,
           runtimeAgentPatch,
           companyId,
+        );
+        queryClient.setQueryData(
+          queryKeys.agents.runtimeConfiguration(agent.id, agent.companyId),
+          runtimeConfiguration,
         );
       }
 
@@ -1112,18 +1120,9 @@ function ConfigurationTab({
       }
 
       if (hasAdapterRevisionChange) {
-        if (!currentAdapterRevision) {
-          throw new Error(
-            "Load the agent's exact current adapter revision before saving.",
-          );
-        }
         await agentsApi.createAdapterConfigRevision(
           agent.id,
-          buildAdapterRevisionConfiguration({
-            agent,
-            currentRevision: currentAdapterRevision,
-            patch: data,
-          }),
+          adapterRevisionConfiguration!,
           companyId,
         );
       }
@@ -1138,9 +1137,6 @@ function ConfigurationTab({
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
       queryClient.invalidateQueries({
         queryKey: queryKeys.agents.adapterConfigRevisions(agent.id),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.agents.currentAdapterConfigRevisionRoot(agent.id),
       });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(agent.companyId) });
       if (!syncAgentRouteAfterRename(queryClient, navigate, agent, updated, urlTab ?? "configuration")) {
@@ -1232,7 +1228,6 @@ function ConfigurationTab({
         Saved adapter config affects the next run. Active runs keep the config they started with, and config changes may start a fresh adapter session.
       </p>
 
-      <AgentRuntimeGrantsSection agentId={agent.id} companyId={companyId} />
     </div>
   );
 }

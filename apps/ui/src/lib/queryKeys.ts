@@ -44,6 +44,13 @@ export const queryKeys = {
       ["agents", companyId, "issue-owner-catalog"] as const,
     detail: (id: string) => ["agents", "detail", id] as const,
     runtimeState: (id: string) => ["agents", "runtime-state", id] as const,
+    runtimeConfiguration: (agentId: string, companyId?: string) =>
+      [
+        "agents",
+        agentId,
+        "runtime-configuration",
+        companyId ?? null,
+      ] as const,
     companySkillPins: (id: string) =>
       ["agents", "company-skill-pins", id] as const,
     adapterConfigRevisions: (agentId: string) =>

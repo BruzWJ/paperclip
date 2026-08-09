@@ -7,12 +7,15 @@ import type {
 } from "@paperclipai/shared";
 import { publicAgentAdapterAcpConfigurationSchema } from "@paperclipai/shared";
 
-const RUNTIME_AGENT_IDENTITY_KEYS = [
+const RUNTIME_AGENT_CONFIGURATION_KEYS = [
   "name",
   "title",
   "reportsTo",
   "capabilities",
   "instruction",
+  "contextGrants",
+  "actionGrants",
+  "mentionReachGrants",
 ] as const;
 const OPERATIONAL_KEYS = [] as const;
 const ADAPTER_REVISION_KEYS = [
@@ -39,7 +42,7 @@ export function partitionAgentConfigurationPatch(
     runtimeAgent:
       selectOwnKeys(
         patch,
-        RUNTIME_AGENT_IDENTITY_KEYS,
+        RUNTIME_AGENT_CONFIGURATION_KEYS,
       ) as RuntimeAgentConfigurationUpdate,
     operational:
       selectOwnKeys(
@@ -54,22 +57,24 @@ export function partitionAgentConfigurationPatch(
 
 export function buildAdapterRevisionConfiguration(input: {
   agent: Agent;
-  currentRevision: AgentAdapterConfigRevision;
+  currentRevision: AgentAdapterConfigRevision | null;
   patch: Record<string, unknown>;
 }): AgentAdapterRevisionConfigurationInput {
   if (
-    !input.agent.currentAdapterConfigRevisionId
-    || input.currentRevision.id !== input.agent.currentAdapterConfigRevisionId
-    || input.currentRevision.agentId !== input.agent.id
-    || input.currentRevision.companyId !== input.agent.companyId
+    input.agent.currentAdapterConfigRevisionId !== null
+    && (!input.currentRevision
+      || input.currentRevision.id !== input.agent.currentAdapterConfigRevisionId
+      || input.currentRevision.agentId !== input.agent.id
+      || input.currentRevision.companyId !== input.agent.companyId)
   ) {
-    throw new Error(
-      "Load the agent's exact current adapter revision before saving.",
-    );
+    throw new Error("Load the agent's exact current adapter revision before saving.");
   }
-  const acpConfiguration = publicAgentAdapterAcpConfigurationSchema.parse(
-    input.currentRevision.acpConfiguration,
-  );
+  const acpConfiguration = input.currentRevision
+    ? publicAgentAdapterAcpConfigurationSchema.parse(
+        input.currentRevision.acpConfiguration,
+      )
+    : null;
+
   const adapterType =
     (input.patch.adapterType as Agent["adapterType"] | undefined) ??
     input.agent.adapterType;
@@ -87,7 +92,7 @@ export function buildAdapterRevisionConfiguration(input: {
     runtimeConfig:
       (input.patch.runtimeConfig as Record<string, unknown> | undefined) ??
       input.agent.runtimeConfig,
-    companySkillPins: [...acpConfiguration.companySkillPins],
-    skillChannel: acpConfiguration.skillChannel,
+    companySkillPins: acpConfiguration?.companySkillPins ?? [],
+    skillChannel: acpConfiguration?.skillChannel ?? "operator_native",
   };
 }

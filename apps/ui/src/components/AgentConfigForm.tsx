@@ -31,6 +31,11 @@ import { listAdapterOptions, listVisibleAdapterTypes } from "../adapters/metadat
 import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
 import { buildAgentUpdatePatch, omitUndefinedEntries, type AgentConfigOverlay } from "../lib/agent-config-patch";
 import { publicRuntimeMessage } from "../lib/public-runtime-message";
+import {
+  RuntimeAgentConfigurationFields,
+  createEmptyRuntimeAgentConfigurationValues,
+  type RuntimeAgentConfigurationValues,
+} from "./RuntimeAgentConfigurationFields";
 
 /* ---- Create mode values ---- */
 
@@ -197,6 +202,36 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: Boolean(!isCreate && selectedCompanyId),
   });
+  const runtimeAccessQuery = useQuery({
+    queryKey: !isCreate
+      ? queryKeys.agents.runtimeConfiguration(
+          props.agent.id,
+          props.agent.companyId,
+        )
+      : ["agents", "none", "runtime-configuration"],
+    queryFn: () =>
+      agentsApi.getRuntimeConfiguration(props.agent.id, props.agent.companyId),
+    enabled: !isCreate,
+    select: (snapshot): RuntimeAgentConfigurationValues => {
+      const defaults = createEmptyRuntimeAgentConfigurationValues();
+      return {
+        contextGrants: { ...defaults.contextGrants, ...snapshot.contextGrants },
+        actionGrants: { ...defaults.actionGrants, ...snapshot.actionGrants },
+        mentionReachGrants: {
+          ...defaults.mentionReachGrants,
+          ...snapshot.mentionReachGrants,
+        },
+      };
+    },
+  });
+  const runtimeAccess = runtimeAccessQuery.data ?? null;
+  const effectiveRuntimeAccess = Object.keys(overlay.runtime).length > 0
+    ? overlay.runtime as RuntimeAgentConfigurationValues
+    : runtimeAccess;
+
+  const markRuntimeAccess = useCallback((runtime: RuntimeAgentConfigurationValues) => {
+    setOverlay((prev) => ({ ...prev, runtime }));
+  }, []);
 
   /** Props passed to adapter-specific config field components */
   const adapterFieldProps = {
@@ -427,6 +462,34 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         </div>
       )}
 
+      {/* ---- Runtime access (edit only) ---- */}
+      {!isCreate && (
+        <div className={cn(!cards && "border-b border-border")}>
+          <div className={cn(cards ? "border border-border rounded-lg p-4 space-y-3" : "px-4 pb-3 space-y-3")}>
+            {runtimeAccessQuery.isError ? (
+              <p role="alert" className="text-xs text-destructive">
+                Runtime access could not be loaded. Refresh the page and try
+                again.
+              </p>
+            ) : effectiveRuntimeAccess ? (
+              <RuntimeAgentConfigurationFields
+                value={effectiveRuntimeAccess}
+                onChange={markRuntimeAccess}
+                disabled={isSavePending}
+              />
+            ) : runtimeAccessQuery.isLoading ? (
+              <p role="status" className="text-xs text-muted-foreground">
+                Loading runtime access…
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Runtime access is unavailable for this agent.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ---- Adapter ---- */}
       <div className={cn(!cards && (isCreate ? "border-t border-border" : "border-b border-border"))}>
         <div className={cn(cards ? "flex items-center justify-between mb-3" : "px-4 py-2 flex items-center justify-between gap-2")}>
@@ -549,7 +612,10 @@ export function AdapterTypeDropdown({
           <ChevronDown className="h-3 w-3 text-muted-foreground" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-(--radix-popover-trigger-width) p-1" align="start">
+      <PopoverContent
+        className="max-h-(--radix-popover-content-available-height) w-(--radix-popover-trigger-width) overflow-y-auto p-1"
+        align="start"
+      >
         {adapterList.map((item) => (
           <button
             key={item.value}
