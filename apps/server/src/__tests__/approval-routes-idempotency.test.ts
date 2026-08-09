@@ -134,6 +134,27 @@ describe("approval routes idempotent retries", () => {
     mockLogActivity.mockResolvedValue(undefined);
   });
 
+  it("does not apply the approval board guard to later unrelated API routes", async () => {
+    const { errorHandler } = middlewareModule;
+    const { approvalRoutes } = approvalRoutesModule;
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      (req as any).actor = { type: "none", source: "none" };
+      next();
+    });
+    app.use("/api", approvalRoutes(createRouteDb(), {
+      ordinaryIssues: {} as never,
+    }));
+    app.post("/api/cli-auth/challenges", (_req, res) => res.status(204).end());
+    app.use(errorHandler);
+
+    await request(app).post("/api/cli-auth/challenges").expect(204);
+    const guarded = await request(app).get("/api/approvals/approval-1");
+    expect(guarded.status).toBe(403);
+    expect(guarded.body).toEqual({ error: "Board access required" });
+  });
+
   it("does not emit duplicate approval side effects when approve is already resolved", async () => {
     mockApprovalService.getById.mockResolvedValue({
       id: "approval-1",

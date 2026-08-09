@@ -1,4 +1,4 @@
-import { Router, type Request } from "express";
+import { Router, type Request, type RequestHandler } from "express";
 import type { Db } from "@paperclipai/db";
 import {
   addApprovalCommentSchema,
@@ -46,10 +46,12 @@ export function approvalRoutes(
   },
 ) {
   const router = Router();
-  router.use((req, _res, next) => {
+  const requireBoard: RequestHandler = (req, _res, next) => {
     assertBoard(req);
     next();
-  });
+  };
+  router.use("/approvals", requireBoard);
+  router.use("/companies/:companyId/approvals", requireBoard);
   const svc = approvalService(db, {
     issueExecutionCancellation: options.issueExecutionCancellation,
     terminateHireRejectionAgentInTransaction:

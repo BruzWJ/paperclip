@@ -310,6 +310,11 @@ export async function createApp(
   ));
   api.use(routineRoutes(db, { ordinaryIssues }));
   api.use(goalRoutes(db));
+  api.use(
+    accessRoutes(db, {
+      deploymentExposure: opts.deploymentExposure,
+    }),
+  );
   api.use(approvalRoutes(db, {
     pluginWorkerManager: workerManager,
     ordinaryIssues,
@@ -402,11 +407,6 @@ export async function createApp(
     ),
   );
   api.use(adapterRoutes());
-  api.use(
-    accessRoutes(db, {
-      deploymentExposure: opts.deploymentExposure,
-    }),
-  );
   app.use("/api", api);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });
