@@ -1076,6 +1076,15 @@ function ConfigurationTab({
   const [formDirty, setFormDirty] = useState(false);
   const [formSaveAction, setFormSaveAction] = useState<(() => void) | null>(null);
   const [formCancelAction, setFormCancelAction] = useState<(() => void) | null>(null);
+  // Stable callback identities: AgentConfigForm re-registers its save/cancel
+  // actions whenever these props change, and storing them in state triggers a
+  // re-render — fresh inline arrows here would cause an infinite update loop.
+  const handleFormSaveActionChange = useCallback((action: (() => void) | null) => {
+    setFormSaveAction(() => action);
+  }, []);
+  const handleFormCancelActionChange = useCallback((action: (() => void) | null) => {
+    setFormCancelAction(() => action);
+  }, []);
   const [awaitingRefreshAfterSave, setAwaitingRefreshAfterSave] = useState(false);
   const lastAgentRef = useRef(agent);
   const updateConfiguration = useMutation({
@@ -1213,12 +1222,8 @@ function ConfigurationTab({
           onSave={(patch) => updateConfiguration.mutateAsync(patch)}
           isSaving={isConfigSaving}
           onDirtyChange={setFormDirty}
-          onSaveActionChange={(action) =>
-            setFormSaveAction(() => action)
-          }
-          onCancelActionChange={(action) =>
-            setFormCancelAction(() => action)
-          }
+          onSaveActionChange={handleFormSaveActionChange}
+          onCancelActionChange={handleFormCancelActionChange}
           hideInlineSave
           sectionLayout="cards"
         />

@@ -145,13 +145,25 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     await props.onSave(buildAgentUpdatePatch(props.agent, overlay));
   }, [isCreate, isDirty, overlay, props]);
 
+  // Register referentially-stable actions that always delegate to the latest
+  // handlers. Registering handleSave/handleCancel directly would re-run the
+  // effect below on every render (their identities change per render), and
+  // parents that store the action in state would re-render in turn — an
+  // infinite "maximum update depth" loop.
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+  const handleCancelRef = useRef(handleCancel);
+  handleCancelRef.current = handleCancel;
+  const stableSaveAction = useCallback(() => handleSaveRef.current(), []);
+  const stableCancelAction = useCallback(() => handleCancelRef.current(), []);
+
   useEffect(() => {
     if (!isCreate) {
       props.onDirtyChange?.(isDirty);
-      props.onSaveActionChange?.(handleSave);
-      props.onCancelActionChange?.(handleCancel);
+      props.onSaveActionChange?.(stableSaveAction);
+      props.onCancelActionChange?.(stableCancelAction);
     }
-  }, [isCreate, isDirty, props.onDirtyChange, props.onSaveActionChange, props.onCancelActionChange, handleSave, handleCancel]);
+  }, [isCreate, isDirty, props.onDirtyChange, props.onSaveActionChange, props.onCancelActionChange, stableSaveAction, stableCancelAction]);
 
   useEffect(() => {
     if (isCreate) return;
