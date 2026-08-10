@@ -132,7 +132,8 @@ pnpm --filter @paperclipai/plugin-agentmemory build
 pnpm paperclipai plugin install --local ./packages/plugins/agentmemory-plugin
 ```
 
-A workspace package is source code, not an installed plugin. The Plugin Manager
-lists only administrator-created installation records. The CLI command above
-is a client for Paperclip's generic plugin-install API; runtime memory traffic
-always uses the AgentMemory REST API.
+A workspace package is source code, not an installed plugin. On a Paperclip
+source checkout, an instance admin can build and install AgentMemory directly
+from the Plugin Manager's available-plugin list; the CLI commands above remain
+the explicit development and verification path. Runtime memory traffic always
+uses the AgentMemory REST API.

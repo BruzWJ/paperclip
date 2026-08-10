@@ -19,7 +19,12 @@ Current limitations to keep in mind:
 - Runtime installs assume a writable local filesystem for the plugin package directory and plugin data directory.
 - Runtime npm installs assume `npm` is available in the running environment and that the host can reach the configured package registry.
 - Published npm packages are the intended install artifact for deployed plugins.
-- The repo example plugins under `packages/plugins/examples/` are development conveniences. They work from a source checkout and should not be assumed to exist in a generic published build unless they are explicitly shipped with that build.
+- Plugin packages in a source checkout under `packages/plugins/` are exposed to
+  instance admins through the checkout-local Plugin Manager catalog. Catalog
+  installation runs the selected trusted workspace package's build and then
+  installs its canonical local path. The examples under
+  `packages/plugins/examples/` remain development conveniences and should not
+  be assumed to exist in a generic published build unless explicitly shipped.
 - Dynamic plugin install is not yet cloud-ready for horizontally scaled or ephemeral deployments. There is no shared artifact store, install coordination, or cross-node distribution layer yet.
 - The current runtime ships a small host-provided plugin UI component kit through `@paperclipai/plugin-sdk/ui`.
 - Scoped plugin API routes are JSON-only and must be declared in `apiRoutes`.

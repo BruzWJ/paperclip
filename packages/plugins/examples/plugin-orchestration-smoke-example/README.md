@@ -35,6 +35,10 @@ curl -X POST http://127.0.0.1:3100/api/plugins/install \
   -d '{"source":"local","path":"/absolute/path/to/paperclip/packages/plugins/examples/plugin-orchestration-smoke-example"}'
 ```
 
+Alternatively, on a Paperclip source checkout, an instance admin can install
+this example from **Instance settings → Plugins → Available Plugins**. The
+board builds the workspace package before installing its canonical local path.
+
 ## Scoped Route Smoke
 
 After the plugin is ready, run the scoped route against an existing issue:

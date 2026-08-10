@@ -207,9 +207,12 @@ What that means in practice:
 - **Plugin UI:** save a `.tsx` file → esbuild rewrites `dist/ui/` → hard-reload the Paperclip page to load the rebuilt bundle.
 - **Without `pnpm dev`:** source edits do not reach the worker or UI artifacts. Restart `pnpm dev` (or run `pnpm build` once) before expecting changes.
 
-The package's own build scripts own compilation. Paperclip never compiles a
-local-path plugin during installation. Run the package's `dev` watcher or
-`build` command before installing it.
+The package's own build scripts own compilation. Paperclip never compiles an
+arbitrary local-path plugin during installation. Run the package's `dev`
+watcher or `build` command before installing it. The narrow exception is the
+source-checkout catalog in **Instance settings → Plugins**: an instance admin
+can select a package already present under `packages/plugins/`, and Paperclip
+runs that trusted workspace package's declared build before installing it.
 
 ## Local path plugins vs npm packages
 
@@ -223,6 +226,7 @@ When you are done iterating locally, publish the package and reinstall the npm-p
 ## Common things to do next
 
 - **Restart cleanly:** `paperclipai plugin disable <plugin-installation-id>` pauses the plugin without uninstalling it. `paperclipai plugin enable <plugin-installation-id>` brings that installation back. `paperclipai plugin uninstall <plugin-installation-id>` deletes the installation, its managed package tree, operational state, settings, jobs, webhooks, and custom database objects.
+- **Install an in-repo plugin from the board:** On a source checkout, open **Instance settings → Plugins** as an instance admin. The available list includes plugin packages under `packages/plugins/`; selecting **Install** builds that exact workspace package and installs its canonical local path. SDK and scaffolding packages are excluded because they do not declare `paperclipPlugin.manifest`.
 - **Inspect installed plugins:** `paperclipai plugin list` and `paperclipai plugin inspect <plugin-installation-id>` report the packages this instance actually installed.
 - **Go deeper:** [`PLUGIN_AUTHORING_GUIDE.md`](./PLUGIN_AUTHORING_GUIDE.md) covers worker capabilities, managed agents/projects/routines/skills, plugin database namespaces, scoped API routes, and the shared UI components in `@paperclipai/plugin-sdk/ui`. [`PLUGIN_SPEC.md`](./PLUGIN_SPEC.md) is the longer-form specification, including future ideas that are not yet implemented.
 - **Routine-first automation:** If your plugin should produce periodic issue work, prefer managed routines and `ctx.routines.managed` reconciliation over custom process loops or unobserved cron code.

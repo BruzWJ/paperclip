@@ -716,8 +716,11 @@ pnpm paperclipai budget incident:resolve <incident-id> --company-id <company-id>
 ## Plugin Commands
 
 Plugin lifecycle commands include `plugin init`, `list`, `install`, `uninstall`,
-`enable`, `disable`, and `inspect`. Paperclip does not bundle a plugin catalog;
-administrators install an explicit local path or npm package.
+`enable`, `disable`, and `inspect`. From a Paperclip source checkout, instance
+admins can also build and install the trusted plugin packages under
+`packages/plugins/` from **Instance settings → Plugins**. The CLI continues to
+install an explicit local path or npm package and does not expose that
+checkout-local catalog.
 
 ```sh
 pnpm paperclipai plugin init <package-name> --category <connector|workspace|automation|ui>
