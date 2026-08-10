@@ -74,6 +74,11 @@ export type {
 } from "./authorization.js";
 export { boardAuthService } from "./board-auth.js";
 export { instanceSettingsService } from "./instance-settings.js";
+export {
+  pluginCatalogService,
+  PluginCatalogOperationError,
+  type PluginCatalogService,
+} from "./plugin-catalog.js";
 
 export { companyPortabilityService } from "./company-portability.js";
 export { teamsCatalogService } from "./teams-catalog.js";

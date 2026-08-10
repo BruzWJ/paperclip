@@ -14,6 +14,7 @@
 
 import type {
   PluginLauncherRenderContextSnapshot,
+  PluginCatalogEntryDto,
   PluginLocalFolderProblem,
   PluginLocalFolderStatus,
   PluginRecordDto,
@@ -61,6 +62,24 @@ export const pluginsApi = {
    */
   list: (status?: PluginStatus) =>
     api.get<PluginRecordDto[]>(`/plugins${status ? `?status=${status}` : ""}`),
+
+  /**
+   * List repository-local plugins that this Paperclip instance can install.
+   *
+   * The server owns catalog discovery and returns only recognized packages;
+   * the browser never supplies or resolves a filesystem path.
+   */
+  listCatalog: () =>
+    api.get<PluginCatalogEntryDto[]>("/plugins/catalog"),
+
+  /**
+   * Install one recognized repository-local plugin by its exact package name.
+   *
+   * The server resolves the catalog entry, builds it when necessary, and then
+   * passes the trusted local package to the ordinary plugin lifecycle.
+   */
+  installCatalog: (packageName: string) =>
+    api.post<PluginRecordDto>("/plugins/catalog/install", { packageName }),
 
   /**
    * Fetch a single plugin record by its installation UUID.

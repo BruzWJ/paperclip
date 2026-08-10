@@ -6,6 +6,17 @@ import type {
   PluginRecord,
 } from "./types/plugin.js";
 
+/** A plugin package available from this Paperclip source checkout. */
+export interface PluginCatalogEntryDto {
+  packageName: string;
+  version: string;
+  displayName: string;
+  description: string;
+  relativePath: string;
+  kind: "first_party" | "example";
+  built: boolean;
+}
+
 /** JSON representation of an installed plugin returned by the board API. */
 export type PluginRecordDto = Omit<PluginRecord, "installedAt" | "updatedAt"> & {
   installedAt: string;

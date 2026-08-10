@@ -249,6 +249,7 @@ export const queryKeys = {
   },
   plugins: {
     all: ["plugins"] as const,
+    catalog: ["plugins", "catalog"] as const,
     detail: (pluginId: string) => ["plugins", pluginId] as const,
     uiContributions: ["plugins", "ui-contributions"] as const,
     config: (pluginId: string) => ["plugins", pluginId, "config"] as const,

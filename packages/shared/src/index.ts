@@ -961,6 +961,7 @@ export {
   serializePluginJob,
   serializePluginJobRun,
   type PluginRecordDto,
+  type PluginCatalogEntryDto,
   type PluginDetailDto,
   type PluginConfigDto,
   type PluginLogDto,
@@ -1439,6 +1440,7 @@ export {
   pluginDatabaseDeclarationSchema,
   pluginApiRouteDeclarationSchema,
   pluginBridgeRequestSchema,
+  pluginCatalogInstallRequestSchema,
   pluginConfigRequestSchema,
   pluginDisableRequestSchema,
   pluginInstallRequestSchema,
@@ -1450,6 +1452,7 @@ export {
   pluginLauncherRenderContextSnapshotSchema,
   pluginUpgradeRequestSchema,
   pluginManifestV1Schema,
+  type PluginCatalogInstallRequest,
   type PluginInstallRequest,
   type PluginLocalFolderPathRequest,
 } from "./validators/index.js";

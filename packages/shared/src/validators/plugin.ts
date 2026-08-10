@@ -86,6 +86,15 @@ export const pluginInstallRequestSchema = z.discriminatedUnion("source", [
 
 export type PluginInstallRequest = z.infer<typeof pluginInstallRequestSchema>;
 
+/** Exact instance-admin request accepted by repo catalog installation. */
+export const pluginCatalogInstallRequestSchema = z.object({
+  packageName: pluginPackageNameSchema,
+}).strict();
+
+export type PluginCatalogInstallRequest = z.infer<
+  typeof pluginCatalogInstallRequestSchema
+>;
+
 export const pluginUpgradeRequestSchema = z.object({
   version: npmPluginVersionSchema.optional(),
 }).strict();

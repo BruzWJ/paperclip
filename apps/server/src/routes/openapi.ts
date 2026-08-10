@@ -140,6 +140,7 @@ import {
   remoteSecretImportPreviewSchema,
   remoteSecretImportSchema,
   pluginBridgeRequestSchema,
+  pluginCatalogInstallRequestSchema,
   pluginConfigRequestSchema,
   pluginDisableRequestSchema,
   pluginInstallRequestSchema,
@@ -870,6 +871,8 @@ const BOARD_ONLY_OPERATIONS = new Set([
 
 const INSTANCE_ADMIN_OPERATIONS = new Set([
   "POST /api/companies",
+  "GET /api/plugins/catalog",
+  "POST /api/plugins/catalog/install",
   "POST /api/plugins/install",
   "DELETE /api/plugins/{pluginId}",
   "POST /api/plugins/{pluginId}/enable",
@@ -924,6 +927,7 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/skills",
   "POST /api/companies/{companyId}/skills/import",
   "POST /api/admin/users/{userId}/promote-instance-admin",
+  "POST /api/plugins/catalog/install",
   "POST /api/plugins/install",
   "POST /api/companies/{companyId}/goals",
 ]);
@@ -4130,6 +4134,34 @@ registry.registerPath({
   tags: ["plugins"],
   summary: "List plugin UI contributions",
   responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/plugins/catalog",
+  tags: ["plugins"],
+  summary: "List plugins available from this source checkout",
+  responses: {
+    200: r.ok(),
+    401: r.unauthorized,
+    403: r.forbidden,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/plugins/catalog/install",
+  tags: ["plugins"],
+  summary: "Build and install a plugin from this source checkout",
+  request: {
+    body: jsonBody(pluginCatalogInstallRequestSchema),
+  },
+  responses: {
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+  },
 });
 
 registry.registerPath({

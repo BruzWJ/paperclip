@@ -559,6 +559,7 @@ export {
   pluginManagedSkillDeclarationSchema,
   pluginApiRouteDeclarationSchema,
   pluginBridgeRequestSchema,
+  pluginCatalogInstallRequestSchema,
   pluginConfigRequestSchema,
   pluginDisableRequestSchema,
   pluginInstallRequestSchema,
@@ -570,6 +571,7 @@ export {
   pluginLauncherRenderContextSnapshotSchema,
   pluginUpgradeRequestSchema,
   pluginManifestV1Schema,
+  type PluginCatalogInstallRequest,
   type PluginInstallRequest,
   type PluginLocalFolderPathRequest,
 } from "./plugin.js";

@@ -3,6 +3,7 @@
  *
  * This module provides Express routes for managing the complete plugin lifecycle:
  * - Listing and filtering plugins by status
+ * - Listing and installing trusted plugins from a source checkout
  * - Installing plugins from npm or local paths
  * - Uninstalling plugins and their installation-owned operational data
  * - Enabling/disabling plugins
@@ -42,6 +43,7 @@ import type {
 import {
   isUuidLike,
   pluginBridgeRequestSchema,
+  pluginCatalogInstallRequestSchema,
   pluginConfigRequestSchema,
   pluginDisableRequestSchema,
   pluginInstallRequestSchema,
@@ -58,6 +60,10 @@ import {
   serializePluginRecord,
 } from "@paperclipai/shared";
 import { pluginRegistryService } from "../services/plugin-registry.js";
+import {
+  PluginCatalogOperationError,
+  pluginCatalogService,
+} from "../services/plugin-catalog.js";
 import type { PluginLifecycleManager } from "../services/plugin-lifecycle.js";
 import { logActivity } from "../services/activity-log.js";
 import { issueService } from "../services/issues.js";
@@ -88,6 +94,7 @@ import {
 } from "../services/plugin-local-folders.js";
 import { badRequest } from "../errors.js";
 import { attachErrorContext } from "../middleware/error-handler.js";
+import { logger } from "../middleware/logger.js";
 import { DEFAULT_JSON_BODY_LIMIT } from "../http/body-limits.js";
 
 const PLUGIN_API_BODY_LIMIT_BYTES = 1_000_000;
@@ -140,6 +147,13 @@ function parsePluginInstallRequest(body: unknown) {
   return parsePluginRequest(
     pluginInstallRequestSchema.safeParse(body),
     "Invalid plugin install request",
+  );
+}
+
+function parsePluginCatalogInstallRequest(body: unknown) {
+  return parsePluginRequest(
+    pluginCatalogInstallRequestSchema.safeParse(body),
+    "Invalid plugin catalog install request",
   );
 }
 
@@ -251,6 +265,8 @@ interface PluginRouteDeps {
  * | Method | Path | Description |
  * |--------|------|-------------|
  * | GET | /plugins | List all plugins (optional ?status= filter) |
+ * | GET | /plugins/catalog | List checkout-local plugin packages |
+ * | POST | /plugins/catalog/install | Build and install a catalog package |
  * | GET | /plugins/ui-contributions | Get UI slots from ready plugins |
  * | GET | /plugins/:pluginId | Get one installation by UUID |
  * | POST | /plugins/install | Install from npm or local path |
@@ -285,6 +301,7 @@ export function pluginRoutes(
 ) {
   const router = Router();
   const registry = pluginRegistryService(db);
+  const catalog = pluginCatalogService();
   const issuesSvc = issueService(db);
 
   function matchScopedApiRoute(route: PluginApiRouteDeclaration, method: string, requestPath: string) {
@@ -459,6 +476,54 @@ export function pluginRoutes(
       ? await registry.listByStatus(status)
       : await registry.list();
     res.json(plugins.map(serializePluginRecord));
+  });
+
+  /** List installable plugin packages from this source checkout. */
+  router.get("/plugins/catalog", async (req, res) => {
+    assertInstanceAdmin(req);
+    res.json(await catalog.list());
+  });
+
+  /** Build and install one exact package selected from the repo plugin catalog. */
+  router.post("/plugins/catalog/install", async (req, res) => {
+    assertInstanceAdmin(req);
+    const { packageName } = parsePluginCatalogInstallRequest(req.body);
+
+    let installed;
+    try {
+      installed = await catalog.install(packageName, {
+        isInstalled: async () =>
+          (await registry.list()).some((plugin) => plugin.packageName === packageName),
+        install: (packageRoot) => lifecycle.install({
+          source: "local",
+          path: packageRoot,
+        }),
+      });
+    } catch (error) {
+      const message = error instanceof PluginCatalogOperationError
+        ? error.message
+        : `Failed to install catalog plugin: ${packageName}`;
+      res.status(400).json({ error: message });
+      return;
+    }
+
+    try {
+      await logPluginMutationActivity(req, "plugin.installed", installed.id, {
+        pluginId: installed.id,
+        pluginKey: installed.pluginKey,
+        packageName: installed.packageName,
+        version: installed.manifestJson.version,
+        source: "local",
+      });
+    } catch (error) {
+      logger.error({
+        err: error,
+        pluginId: installed.id,
+        packageName,
+      }, "failed to log catalog plugin installation activity");
+    }
+
+    res.status(201).json(serializePluginRecord(installed));
   });
 
   // IMPORTANT: Static routes must come before parameterized routes
