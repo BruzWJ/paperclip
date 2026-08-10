@@ -188,6 +188,7 @@ ALTER TABLE "project_workspaces" DROP COLUMN "shared_workspace_key";--> statemen
 ALTER TABLE "project_workspaces" DROP COLUMN "metadata";--> statement-breakpoint
 ALTER TABLE "project_workspaces" DROP COLUMN "is_primary";--> statement-breakpoint
 ALTER TABLE "routines" DROP COLUMN "context_access_mask";--> statement-breakpoint
+UPDATE "agent_adapter_config_revisions" SET "acp_configuration" = "acp_configuration" - 'executionTargetSelector';--> statement-breakpoint
 ALTER TABLE "agent_adapter_config_revisions" ADD CONSTRAINT "agent_adapter_config_revisions_acp_configuration_shape_check" CHECK (
         jsonb_typeof("agent_adapter_config_revisions"."acp_configuration") = 'object'
         and "agent_adapter_config_revisions"."acp_configuration" ?& array[
