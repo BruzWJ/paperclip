@@ -1899,26 +1899,6 @@ export function IssueDetail() {
     });
   }, [pushToast, updateIssueExecutionPolicy, updateIssueTitle]);
 
-  const checkIssueMonitorNow = useMutation({
-    mutationFn: () => issuesApi.checkMonitorNow(issueId!),
-    onSuccess: () => {
-      invalidateIssueDetail();
-      invalidateIssueRunState();
-      invalidateIssueCollections();
-      pushToast({
-        title: "Monitor check queued",
-        tone: "success",
-      });
-    },
-    onError: (err) => {
-      pushToast({
-        title: "Monitor check failed",
-        body: err instanceof Error ? err.message : "Unable to queue the monitor check",
-        tone: "error",
-      });
-    },
-  });
-
   const approvalDecision = useMutation({
     mutationFn: async ({ approvalId, action }: { approvalId: string; action: "approve" | "reject" }) => {
       if (action === "approve") {
@@ -2180,8 +2160,6 @@ export function IssueDetail() {
         onAddSubIssue={openNewSubIssue}
         onUpdate={handleIssuePropertiesUpdate}
         hasActiveRun={resolvedHasActiveRun}
-        onCheckMonitorNow={() => checkIssueMonitorNow.mutate()}
-        checkingMonitorNow={checkIssueMonitorNow.isPending}
       />
     );
     return () => closePanel();
@@ -2194,8 +2172,6 @@ export function IssueDetail() {
     panelChildIssues,
     panelIssue,
     resolvedHasActiveRun,
-    checkIssueMonitorNow.isPending,
-    checkIssueMonitorNow.mutate,
   ]);
 
   const goToInboxShortcutArmedRef = useRef(false);
@@ -3249,11 +3225,7 @@ export function IssueDetail() {
           nullable
         />
 
-        <IssueMonitorBanner
-          issue={issue}
-          onCheckNow={() => checkIssueMonitorNow.mutate()}
-          checkingNow={checkIssueMonitorNow.isPending}
-        />
+        <IssueMonitorBanner issue={issue} />
 
         <section className="space-y-2">
           <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -3458,11 +3430,7 @@ export function IssueDetail() {
                 hasVisibleMonitorSurface(issue) || humanLifecycleFormControls ? (
                   <div className="flex flex-col gap-2">
                     {hasVisibleMonitorSurface(issue) ? (
-                      <IssueMonitorComposerStrip
-                        issue={issue}
-                        onCheckNow={() => checkIssueMonitorNow.mutate()}
-                        checkingNow={checkIssueMonitorNow.isPending}
-                      />
+                      <IssueMonitorComposerStrip issue={issue} />
                     ) : null}
                     {humanLifecycleFormControls}
                   </div>
@@ -3719,8 +3687,6 @@ export function IssueDetail() {
                 onUpdate={handleIssuePropertiesUpdate}
                 inline
                 hasActiveRun={resolvedHasActiveRun}
-                onCheckMonitorNow={() => checkIssueMonitorNow.mutate()}
-                checkingMonitorNow={checkIssueMonitorNow.isPending}
               />
             </div>
           </ScrollArea>

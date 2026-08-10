@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { Clock } from "lucide-react";
 import type { Issue } from "@paperclipai/shared";
 
-import { Button } from "@/components/ui/button";
 import { InlineBanner } from "@/components/InlineBanner";
 import { cn } from "@/lib/utils";
 import {
@@ -39,7 +38,7 @@ export function hasVisibleMonitorSurface(issue: Issue): boolean {
 }
 
 export interface MonitorSurfaceCopy {
-  /** Prominent lead for the top banner, e.g. "Waiting on monitor — resumes in 2h 12m". */
+  /** Prominent lead for the top banner, e.g. "Monitor reminder — due in 2h 12m". */
   bannerTitle: string;
   /** Prominent lead for the composer strip, e.g. "Resumes in 2h 12m". */
   stripTitle: string;
@@ -75,19 +74,17 @@ export function buildMonitorSurfaceCopy(
   switch (derived.state) {
     case "scheduled":
     case "retrying":
-      bannerTitle = `Waiting on monitor — resumes ${eta}`;
-      stripTitle = `Resumes ${eta}`;
+      bannerTitle = `Monitor reminder — due ${eta}`;
+      stripTitle = `Due ${eta}`;
       break;
     case "due-now":
-      bannerTitle = "Waiting on monitor — due now";
+      bannerTitle = "Monitor reminder — due now";
       stripTitle = "Due now";
-      statusHint = "Checking momentarily…";
       break;
     case "overdue":
     default:
-      bannerTitle = `Waiting on monitor — ${eta}`;
+      bannerTitle = `Monitor reminder — ${eta}`;
       stripTitle = capitalize(eta);
-      statusHint = "Fires on next tick";
       break;
   }
 
@@ -119,43 +116,16 @@ function useMonitorSurfaceCopy(issue: Issue): MonitorSurfaceCopy | null {
   return useMemo(() => buildMonitorSurfaceCopy(deriveMonitorState(issue, now), now), [issue, now]);
 }
 
-function CheckNowButton({
-  onCheckNow,
-  checkingNow,
-}: {
-  onCheckNow: () => void;
-  checkingNow: boolean;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      className="shrink-0 shadow-none"
-      onClick={onCheckNow}
-      disabled={checkingNow}
-    >
-      {checkingNow ? "Checking…" : "Check now"}
-    </Button>
-  );
-}
-
 export interface IssueMonitorSurfaceProps {
   issue: Issue;
-  onCheckNow?: (() => void) | null;
-  checkingNow?: boolean;
 }
 
 /**
  * Pinned banner rendered between the issue title and description while a
- * monitor is waiting. Replaces the description-area "Monitor scheduled" card
+ * monitor reminder is active. Replaces the description-area "Monitor scheduled" card
  * for the waiting state (PAP-14557 decision 1) — the two never render at once.
  */
-export function IssueMonitorBanner({
-  issue,
-  onCheckNow = null,
-  checkingNow = false,
-}: IssueMonitorSurfaceProps) {
+export function IssueMonitorBanner({ issue }: IssueMonitorSurfaceProps) {
   const copy = useMonitorSurfaceCopy(issue);
   if (!copy) return null;
 
@@ -165,7 +135,6 @@ export function IssueMonitorBanner({
       icon={Clock}
       title={copy.bannerTitle}
       className="my-3"
-      actions={onCheckNow ? <CheckNowButton onCheckNow={onCheckNow} checkingNow={checkingNow} /> : null}
     >
       <span>{copy.bannerMeta.join("  ·  ")}</span>
     </InlineBanner>
@@ -174,14 +143,12 @@ export function IssueMonitorBanner({
 
 /**
  * Slim, inline (not sticky) strip anchored directly above the reply composer.
- * Mirrors the banner's monitor state and reminds the reader that only an
- * explicit agent mention queues early execution (PAP-14557 decisions 2 +
+ * Mirrors the banner's monitor state and makes clear that only an explicit
+ * agent mention queues execution (PAP-14557 decisions 2 +
  * wireframe 02).
  */
 export function IssueMonitorComposerStrip({
   issue,
-  onCheckNow = null,
-  checkingNow = false,
   className,
 }: IssueMonitorSurfaceProps & { className?: string }) {
   const copy = useMonitorSurfaceCopy(issue);
@@ -201,10 +168,9 @@ export function IssueMonitorComposerStrip({
             <div className="text-xs text-muted-foreground">{copy.stripMeta.join(" · ")}</div>
           </div>
         </div>
-        {onCheckNow ? <CheckNowButton onCheckNow={onCheckNow} checkingNow={checkingNow} /> : null}
       </div>
       <p className="mt-1.5 text-xs text-muted-foreground">
-        Use an explicit @mention to queue the agent before the scheduled check.
+        Use an explicit @mention to queue the agent; this reminder does not trigger a run.
       </p>
     </div>
   );

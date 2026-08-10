@@ -62,8 +62,6 @@ interface IssuePropertiesProps {
   /** Whether an agent run is currently in flight on this issue, so the owner
    * picker can warn that reassigning will interrupt it. */
   hasActiveRun?: boolean;
-  onCheckMonitorNow?: () => void;
-  checkingMonitorNow?: boolean;
 }
 
 const ISSUE_BLOCKER_SEARCH_LIMIT = 50;
@@ -84,8 +82,6 @@ export function IssueProperties({
   onUpdate,
   inline,
   hasActiveRun = false,
-  onCheckMonitorNow,
-  checkingMonitorNow = false,
 }: IssuePropertiesProps) {
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
@@ -533,8 +529,8 @@ export function IssueProperties({
       : "None";
   const monitorSecondary = monitorNextCheckAt
     ? monitorIsDueNow
-      ? "checking momentarily…"
-      : `${formatMonitorAbsolute(monitorNextCheckAt, {}, monitorNow)}${monitorIsOverdue ? " · fires on next tick" : monitorAttemptCount > 0 ? ` · Attempt ${monitorAttemptCount}` : ""}`
+      ? "review reminder"
+      : `${formatMonitorAbsolute(monitorNextCheckAt, {}, monitorNow)}${monitorIsOverdue ? " · reminder overdue" : monitorAttemptCount > 0 ? ` · Attempt ${monitorAttemptCount}` : ""}`
     : monitorState?.status === "cleared"
       ? [
           monitorLastTriggeredAt ? `last checked ${timeAgo(monitorLastTriggeredAt)}` : null,
@@ -574,7 +570,7 @@ export function IssueProperties({
           </div>
           <div className="space-y-3 px-4 py-3 text-left">
             <div>
-              <div className="text-xs text-muted-foreground">Next check</div>
+              <div className="text-xs text-muted-foreground">Reminder time</div>
               <div className="text-sm">{formatMonitorAbsoluteFull(monitorNextCheckAt)}</div>
               <div className="text-xs text-muted-foreground">{monitorRelative}</div>
             </div>
@@ -587,16 +583,11 @@ export function IssueProperties({
               <div className="whitespace-normal text-sm">{monitorNotes ?? "—"}</div>
             </div>
             <div>
-              <div className="text-xs text-muted-foreground">Last triggered</div>
+              <div className="text-xs text-muted-foreground">Last recorded trigger</div>
               <div className="text-sm">{monitorLastTriggeredAt ? formatMonitorAbsoluteFull(monitorLastTriggeredAt) : "— not yet triggered"}</div>
             </div>
           </div>
           <div className="flex gap-2 border-t border-border px-4 py-3">
-            {onCheckMonitorNow ? (
-              <Button type="button" size="sm" variant="outline" disabled={checkingMonitorNow} onClick={() => { setMonitorDetailsOpen(false); onCheckMonitorNow(); }}>
-                {checkingMonitorNow ? "Checking…" : "Check now"}
-              </Button>
-            ) : null}
             <Button type="button" size="sm" variant="outline" onClick={() => { setMonitorDetailsOpen(false); setMonitorOpen(true); }}>Edit</Button>
             <Button type="button" size="sm" variant="outline" onClick={() => { setMonitorDetailsOpen(false); clearMonitor(); }}>Clear</Button>
           </div>
@@ -610,17 +601,17 @@ export function IssueProperties({
     <div className="flex w-full flex-col gap-2">
       <div className="flex flex-col gap-2 md:flex-row">
         <input
-          aria-label="Schedule monitor check"
+          aria-label="Schedule monitor reminder"
           type="datetime-local"
           className="rounded-md border border-border bg-transparent px-2 py-1 text-xs"
           value={monitorAtInput}
           onChange={(e) => setMonitorAtInput(e.target.value)}
         />
         <input
-          aria-label="Monitor check instructions"
+          aria-label="Monitor reminder notes"
           type="text"
           className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs"
-          placeholder="What should the agent re-check?"
+          placeholder="What should be reviewed?"
           value={monitorNotesInput}
           onChange={(e) => setMonitorNotesInput(e.target.value)}
         />

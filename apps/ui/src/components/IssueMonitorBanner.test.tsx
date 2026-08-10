@@ -40,8 +40,8 @@ describe("buildMonitorSurfaceCopy", () => {
     );
 
     expect(copy).not.toBeNull();
-    expect(copy!.bannerTitle).toBe("Waiting on monitor — resumes in 2h 12m");
-    expect(copy!.stripTitle).toBe("Resumes in 2h 12m");
+    expect(copy!.bannerTitle).toBe("Monitor reminder — due in 2h 12m");
+    expect(copy!.stripTitle).toBe("Due in 2h 12m");
     expect(copy!.tone).toBe("info");
     expect(copy!.bannerMeta).toContain("Attempt 1");
     expect(copy!.bannerMeta).toContain("Watching: vercel-deploy");
@@ -59,7 +59,7 @@ describe("buildMonitorSurfaceCopy", () => {
       }),
       NOW,
     );
-    expect(copy!.stripTitle).toBe("Resumes in 1h 30m");
+    expect(copy!.stripTitle).toBe("Due in 1h 30m");
     expect(copy!.stripMeta).toContain("Attempt 3");
   });
 
@@ -68,9 +68,9 @@ describe("buildMonitorSurfaceCopy", () => {
       derived({ state: "due-now", nextCheckAt: NOW.toISOString(), attemptCount: 1 }),
       NOW,
     );
-    expect(dueNow!.bannerTitle).toBe("Waiting on monitor — due now");
+    expect(dueNow!.bannerTitle).toBe("Monitor reminder — due now");
     expect(dueNow!.stripTitle).toBe("Due now");
-    expect(dueNow!.bannerMeta).toContain("Checking momentarily…");
+    expect(dueNow!.bannerMeta).not.toContain("Checking momentarily…");
     expect(dueNow!.tone).toBe("info");
 
     const overdue = buildMonitorSurfaceCopy(
@@ -81,9 +81,9 @@ describe("buildMonitorSurfaceCopy", () => {
       }),
       NOW,
     );
-    expect(overdue!.bannerTitle).toBe("Waiting on monitor — overdue by 18m");
+    expect(overdue!.bannerTitle).toBe("Monitor reminder — overdue by 18m");
     expect(overdue!.stripTitle).toBe("Overdue by 18m");
-    expect(overdue!.bannerMeta).toContain("Fires on next tick");
+    expect(overdue!.bannerMeta).not.toContain("Fires on next tick");
     expect(overdue!.tone).toBe("warning");
   });
 
@@ -118,28 +118,21 @@ describe("IssueMonitorBanner / IssueMonitorComposerStrip rendering", () => {
     } as unknown as Issue;
   }
 
-  it("renders the banner with a working Check now button while waiting", () => {
-    const onCheckNow = vi.fn();
+  it("renders the waiting banner without an unsupported immediate-check action", () => {
     expect(hasVisibleMonitorSurface(issueWithMonitor(new Date(NOW.getTime() + 2 * 60 * 60_000).toISOString()))).toBe(true);
     const root = createRoot(container);
     flushSync(() => {
       root.render(
         <IssueMonitorBanner
           issue={issueWithMonitor(new Date(NOW.getTime() + 2 * 60 * 60_000).toISOString())}
-          onCheckNow={onCheckNow}
         />,
       );
     });
 
-    expect(container.textContent).toContain("Waiting on monitor — resumes in 2h");
+    expect(container.textContent).toContain("Monitor reminder — due in 2h");
     expect(container.textContent).toContain("Watching: vercel-deploy");
 
-    const button = Array.from(container.querySelectorAll("button")).find((b) =>
-      b.textContent?.includes("Check now"),
-    );
-    expect(button).toBeTruthy();
-    flushSync(() => button?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    expect(onCheckNow).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain("Check now");
 
     flushSync(() => root.unmount());
   });
@@ -150,8 +143,8 @@ describe("IssueMonitorBanner / IssueMonitorComposerStrip rendering", () => {
     flushSync(() => {
       root.render(
         <>
-          <IssueMonitorBanner issue={issueWithMonitor(null)} onCheckNow={vi.fn()} />
-          <IssueMonitorComposerStrip issue={issueWithMonitor(null)} onCheckNow={vi.fn()} />
+          <IssueMonitorBanner issue={issueWithMonitor(null)} />
+          <IssueMonitorComposerStrip issue={issueWithMonitor(null)} />
         </>,
       );
     });
@@ -165,14 +158,13 @@ describe("IssueMonitorBanner / IssueMonitorComposerStrip rendering", () => {
       root.render(
         <IssueMonitorComposerStrip
           issue={issueWithMonitor(new Date(NOW.getTime() + 2 * 60 * 60_000).toISOString())}
-          onCheckNow={vi.fn()}
         />,
       );
     });
 
     expect(container.querySelector("[data-testid='issue-monitor-composer-strip']")).toBeTruthy();
-    expect(container.textContent).toContain("Resumes in 2h");
-    expect(container.textContent).toContain("Use an explicit @mention to queue the agent");
+    expect(container.textContent).toContain("Due in 2h");
+    expect(container.textContent).toContain("this reminder does not trigger a run");
 
     flushSync(() => root.unmount());
   });
