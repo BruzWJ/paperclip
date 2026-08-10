@@ -396,6 +396,16 @@ describe("openapi routes", () => {
       actor: "board",
       instanceAdmin: true,
     });
+    expect(spec.paths["/api/plugins/catalog"].get["x-paperclip-authorization"]).toEqual({
+      actor: "board",
+      instanceAdmin: true,
+    });
+    expect(spec.paths["/api/plugins/catalog/install"].post["x-paperclip-authorization"]).toEqual({
+      actor: "board",
+      instanceAdmin: true,
+    });
+    expect(spec.paths["/api/plugins/catalog/install"].post.responses).toHaveProperty("201");
+    expect(spec.paths["/api/plugins/catalog/install"].post.responses).not.toHaveProperty("200");
     const instanceAdminPluginOperations = [
       ["delete", "/api/plugins/{pluginId}"],
       ["post", "/api/plugins/{pluginId}/enable"],

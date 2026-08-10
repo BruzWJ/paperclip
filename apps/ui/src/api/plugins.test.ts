@@ -1,4 +1,5 @@
 import type {
+  PluginCatalogEntryDto,
   PluginConfigDto,
   PluginDetailDto,
   PluginLogDto,
@@ -23,7 +24,10 @@ const PLUGIN_ID = "11111111-1111-4111-8111-111111111111";
 
 describe("pluginsApi installation", () => {
   beforeEach(() => {
+    mockApi.get.mockReset();
     mockApi.post.mockReset();
+    mockApi.delete.mockReset();
+    mockApi.get.mockResolvedValue([]);
     mockApi.post.mockResolvedValue({});
   });
 
@@ -58,8 +62,23 @@ describe("pluginsApi installation", () => {
     });
   });
 
+  it("lists the repository-local plugin catalog", async () => {
+    await pluginsApi.listCatalog();
+
+    expect(mockApi.get).toHaveBeenCalledWith("/plugins/catalog");
+  });
+
+  it("installs a catalog plugin by exact package name", async () => {
+    await pluginsApi.installCatalog("@paperclipai/plugin-agentmemory");
+
+    expect(mockApi.post).toHaveBeenCalledWith("/plugins/catalog/install", {
+      packageName: "@paperclipai/plugin-agentmemory",
+    });
+  });
+
   it("exposes serialized installation, detail, and log response contracts", () => {
     expectTypeOf(pluginsApi.list()).toEqualTypeOf<Promise<PluginRecordDto[]>>();
+    expectTypeOf(pluginsApi.listCatalog()).toEqualTypeOf<Promise<PluginCatalogEntryDto[]>>();
     expectTypeOf(pluginsApi.get(PLUGIN_ID)).toEqualTypeOf<Promise<PluginDetailDto>>();
     expectTypeOf(pluginsApi.logs(PLUGIN_ID)).toEqualTypeOf<Promise<PluginLogDto[]>>();
   });

@@ -13,6 +13,7 @@ import {
 import {
   pluginApiRouteDeclarationSchema,
   pluginBridgeRequestSchema,
+  pluginCatalogInstallRequestSchema,
   pluginConfigRequestSchema,
   pluginDatabaseDeclarationSchema,
   pluginDisableRequestSchema,
@@ -83,6 +84,23 @@ describe("plugin install request validator", () => {
     expect(pluginPackageNameSchema.safeParse("Plugin-Memory").success).toBe(false);
     expect(pluginPackageNameSchema.safeParse(`p${"a".repeat(213)}`).success).toBe(true);
     expect(pluginPackageNameSchema.safeParse(`p${"a".repeat(214)}`).success).toBe(false);
+  });
+});
+
+describe("plugin catalog install request validator", () => {
+  it("accepts only one exact package name", () => {
+    expect(pluginCatalogInstallRequestSchema.parse({
+      packageName: "@paperclipai/plugin-agentmemory",
+    })).toEqual({
+      packageName: "@paperclipai/plugin-agentmemory",
+    });
+    expect(pluginCatalogInstallRequestSchema.safeParse({
+      packageName: " @paperclipai/plugin-agentmemory ",
+    }).success).toBe(false);
+    expect(pluginCatalogInstallRequestSchema.safeParse({
+      packageName: "@paperclipai/plugin-agentmemory",
+      path: "/tmp/plugin-agentmemory",
+    }).success).toBe(false);
   });
 });
 

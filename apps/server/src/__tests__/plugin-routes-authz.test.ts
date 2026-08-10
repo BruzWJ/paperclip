@@ -9,12 +9,21 @@ import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockRegistry = vi.hoisted(() => ({
+  list: vi.fn(),
+  listByStatus: vi.fn(),
   getById: vi.fn(),
   getByKey: vi.fn(),
   getConfig: vi.fn(),
   getCompanySettings: vi.fn(),
   upsertCompanySettings: vi.fn(),
 }));
+
+const mockCatalog = vi.hoisted(() => ({
+  list: vi.fn(),
+  install: vi.fn(),
+}));
+
+const mockLogActivity = vi.hoisted(() => vi.fn());
 
 const mockLifecycle = vi.hoisted(() => ({
   install: vi.fn(),
@@ -30,8 +39,13 @@ vi.mock("../services/plugin-registry.js", () => ({
   pluginRegistryService: () => mockRegistry,
 }));
 
+vi.mock("../services/plugin-catalog.js", () => ({
+  PluginCatalogOperationError: class PluginCatalogOperationError extends Error {},
+  pluginCatalogService: () => mockCatalog,
+}));
+
 vi.mock("../services/activity-log.js", () => ({
-  logActivity: vi.fn(),
+  logActivity: mockLogActivity,
 }));
 
 function createAuditDb() {
@@ -477,6 +491,153 @@ describe.sequential("plugin install and upgrade authz", () => {
     expect(res.status).toBe(200);
     expect(mockLifecycle.upgrade).toHaveBeenCalledWith(pluginId, "1.1.0");
   }, 20_000);
+});
+
+describe.sequential("repo plugin catalog authz and installation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRegistry.list.mockResolvedValue([]);
+  });
+
+  it("rejects catalog listing and installation for non-admin board users", async () => {
+    const { app } = await createApp(boardActor());
+
+    const listResponse = await request(app).get("/api/plugins/catalog");
+    const installResponse = await request(app)
+      .post("/api/plugins/catalog/install")
+      .send({ packageName: "@paperclipai/plugin-agentmemory" });
+
+    expect(listResponse.status).toBe(403);
+    expect(installResponse.status).toBe(403);
+    expect(mockCatalog.list).not.toHaveBeenCalled();
+    expect(mockCatalog.install).not.toHaveBeenCalled();
+    expect(mockLifecycle.install).not.toHaveBeenCalled();
+  });
+
+  it("allows instance admins to list repo-relative catalog entries", async () => {
+    mockCatalog.list.mockResolvedValue([{
+      packageName: "@paperclipai/plugin-agentmemory",
+      version: "0.1.0",
+      displayName: "AgentMemory",
+      description: "Memory plugin",
+      relativePath: "packages/plugins/agentmemory-plugin",
+      kind: "first_party",
+      built: false,
+    }]);
+    const { app } = await createApp(boardActor({ isInstanceAdmin: true }));
+
+    const response = await request(app).get("/api/plugins/catalog");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([expect.objectContaining({
+      packageName: "@paperclipai/plugin-agentmemory",
+      relativePath: "packages/plugins/agentmemory-plugin",
+      built: false,
+    })]);
+    expect(mockCatalog.list).toHaveBeenCalledOnce();
+  });
+
+  it("rejects undeclared catalog install fields before invoking the catalog", async () => {
+    const { app } = await createApp(boardActor({ isInstanceAdmin: true }));
+
+    const response = await request(app)
+      .post("/api/plugins/catalog/install")
+      .send({
+        packageName: "@paperclipai/plugin-agentmemory",
+        path: "/tmp/plugin-agentmemory",
+      });
+
+    expect(response.status).toBe(400);
+    expect(mockCatalog.install).not.toHaveBeenCalled();
+  });
+
+  it("resolves, checks, installs, and audits a catalog package for an instance admin", async () => {
+    const packageName = "@paperclipai/plugin-agentmemory";
+    const packageRoot = "/trusted/repo/packages/plugins/agentmemory-plugin";
+    const installedPlugin = pluginRecord({
+      packageName,
+      source: "local",
+      packagePath: packageRoot,
+    });
+    mockLifecycle.install.mockResolvedValue(installedPlugin);
+    mockCatalog.install.mockImplementation(async (_packageName, dependencies) => {
+      expect(await dependencies.isInstalled()).toBe(false);
+      return dependencies.install(packageRoot);
+    });
+    const auditDb = {
+      select: vi.fn(() => ({
+        from: vi.fn().mockResolvedValue([{ id: companyA }]),
+      })),
+    };
+    const { app } = await createApp(boardActor({
+      userId: "admin-1",
+      isInstanceAdmin: true,
+    }), { db: auditDb });
+
+    const response = await request(app)
+      .post("/api/plugins/catalog/install")
+      .send({ packageName });
+
+    expect(response.status).toBe(201);
+    expect(mockCatalog.install).toHaveBeenCalledWith(
+      packageName,
+      expect.objectContaining({
+        isInstalled: expect.any(Function),
+        install: expect.any(Function),
+      }),
+    );
+    expect(mockLifecycle.install).toHaveBeenCalledWith({
+      source: "local",
+      path: packageRoot,
+    });
+    expect(mockLogActivity).toHaveBeenCalledWith(auditDb, {
+      companyId: companyA,
+      actorType: "user",
+      actorId: "admin-1",
+      action: "plugin.installed",
+      entityType: "plugin",
+      entityId: pluginId,
+      details: {
+        pluginId,
+        pluginKey: installedPlugin.pluginKey,
+        packageName,
+        version: installedPlugin.manifestJson.version,
+        source: "local",
+      },
+    });
+  });
+
+  it("does not report a completed install as failed when activity logging fails", async () => {
+    const packageName = "@paperclipai/plugin-agentmemory";
+    const packageRoot = "/trusted/repo/packages/plugins/agentmemory-plugin";
+    const installedPlugin = pluginRecord({
+      packageName,
+      source: "local",
+      packagePath: packageRoot,
+    });
+    mockLifecycle.install.mockResolvedValue(installedPlugin);
+    mockCatalog.install.mockImplementation(async (_packageName, dependencies) =>
+      dependencies.install(packageRoot));
+    mockLogActivity.mockRejectedValueOnce(new Error("activity store unavailable"));
+    const auditDb = {
+      select: vi.fn(() => ({
+        from: vi.fn().mockResolvedValue([{ id: companyA }]),
+      })),
+    };
+    const { app } = await createApp(boardActor({
+      userId: "admin-1",
+      isInstanceAdmin: true,
+    }), { db: auditDb });
+
+    const response = await request(app)
+      .post("/api/plugins/catalog/install")
+      .send({ packageName });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({ id: pluginId, packageName });
+    expect(mockLifecycle.install).toHaveBeenCalledOnce();
+    expect(mockLogActivity).toHaveBeenCalledOnce();
+  });
 });
 
 describe.sequential("scoped plugin API routes", () => {
