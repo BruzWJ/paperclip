@@ -92,7 +92,7 @@ describe("SearchableSelect", () => {
       container,
     );
 
-    const trigger = container.querySelector("button[role='combobox']") as HTMLButtonElement | null;
+    const trigger = document.querySelector("button[role='combobox']") as HTMLButtonElement | null;
     expect(trigger?.textContent).toContain("Alpha");
 
     act(() => {
@@ -100,8 +100,8 @@ describe("SearchableSelect", () => {
     });
     await flush();
 
-    expect(container.querySelector("[data-option-key='recent:alpha']")).not.toBeNull();
-    expect(container.querySelector("[data-option-key='all:alpha']")).not.toBeNull();
+    expect(document.querySelector("[data-option-key='recent:alpha']")).not.toBeNull();
+    expect(document.querySelector("[data-option-key='all:alpha']")).not.toBeNull();
   });
 
   it("filters options and returns the selected option object", async () => {
@@ -129,21 +129,21 @@ describe("SearchableSelect", () => {
       container,
     );
 
-    const trigger = container.querySelector("button[role='combobox']") as HTMLButtonElement | null;
+    const trigger = document.querySelector("button[role='combobox']") as HTMLButtonElement | null;
     act(() => {
       trigger?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
     await flush();
 
-    const input = container.querySelector("input[placeholder='Search options...']") as HTMLInputElement | null;
+    const input = document.querySelector("input[placeholder='Search options...']") as HTMLInputElement | null;
     expect(input).not.toBeNull();
     setInputValue(input!, "sec br");
     await flush();
 
-    expect(container.textContent).not.toContain("Alpha");
-    expect(container.textContent).toContain("Bravo");
+    expect(document.body.textContent).not.toContain("Alpha");
+    expect(document.body.textContent).toContain("Bravo");
 
-    const bravoItem = Array.from(container.querySelectorAll("[cmdk-item]")).find((item) => item.textContent?.includes("Bravo"));
+    const bravoItem = Array.from(document.querySelectorAll("[cmdk-item]")).find((item) => item.textContent?.includes("Bravo"));
     expect(bravoItem).not.toBeUndefined();
     act(() => {
       bravoItem?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
@@ -187,23 +187,23 @@ describe("SearchableSelect", () => {
       container,
     );
 
-    const trigger = container.querySelector("button[role='combobox']") as HTMLButtonElement | null;
+    const trigger = document.querySelector("button[role='combobox']") as HTMLButtonElement | null;
     act(() => {
       trigger?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
     await flush();
 
-    const input = container.querySelector("input[placeholder='Search options...']") as HTMLInputElement | null;
+    const input = document.querySelector("input[placeholder='Search options...']") as HTMLInputElement | null;
     expect(input).not.toBeNull();
     setInputValue(input!, "mobile");
     await flush();
 
-    const renderedKeys = Array.from(container.querySelectorAll("[data-option-key]")).map((item) =>
+    const renderedKeys = Array.from(document.querySelectorAll("[data-option-key]")).map((item) =>
       item.getAttribute("data-option-key"),
     );
     expect(renderedKeys).toEqual(["all:mobile", "all:path-only"]);
 
-    const commandList = container.querySelector("[data-slot='command-list']");
+    const commandList = document.querySelector("[data-slot='command-list']");
     expect(commandList?.className).toContain("overscroll-contain");
     expect(commandList?.className).toContain("touch-pan-y");
   });
@@ -233,18 +233,18 @@ describe("SearchableSelect", () => {
       container,
     );
 
-    const trigger = container.querySelector("button[role='combobox']") as HTMLButtonElement | null;
+    const trigger = document.querySelector("button[role='combobox']") as HTMLButtonElement | null;
     act(() => {
       trigger?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
     await flush();
 
-    const input = container.querySelector("input[placeholder='Search options...']") as HTMLInputElement | null;
+    const input = document.querySelector("input[placeholder='Search options...']") as HTMLInputElement | null;
     expect(input).not.toBeNull();
     setInputValue(input!, "visible");
     await flush();
 
-    const renderedKeys = Array.from(container.querySelectorAll("[data-option-key]")).map((item) =>
+    const renderedKeys = Array.from(document.querySelectorAll("[data-option-key]")).map((item) =>
       item.getAttribute("data-option-key"),
     );
     expect(renderedKeys).toEqual(["all:alpha"]);
@@ -265,12 +265,12 @@ describe("SearchableSelect", () => {
       container,
     );
 
-    const trigger = container.querySelector("button[role='combobox']") as HTMLButtonElement | null;
+    const trigger = document.querySelector("button[role='combobox']") as HTMLButtonElement | null;
     act(() => {
       trigger?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
     await flush();
-    expect(container.textContent).toContain("Loading choices...");
+    expect(document.body.textContent).toContain("Loading choices...");
 
     act(() => {
       root?.render(
@@ -284,11 +284,11 @@ describe("SearchableSelect", () => {
         />,
       );
     });
-    const input = container.querySelector("input[placeholder='Search options...']") as HTMLInputElement | null;
+    const input = document.querySelector("input[placeholder='Search options...']") as HTMLInputElement | null;
     expect(input).not.toBeNull();
     setInputValue(input!, "zzz");
     await flush();
-    expect(container.textContent).toContain("Nothing matched.");
+    expect(document.body.textContent).toContain("Nothing matched.");
 
     act(() => {
       root?.render(
@@ -301,7 +301,7 @@ describe("SearchableSelect", () => {
         />,
       );
     });
-    expect(container.querySelector("button[role='combobox']")?.hasAttribute("disabled")).toBe(true);
+    expect(document.querySelector("button[role='combobox']")?.hasAttribute("disabled")).toBe(true);
   });
 
   it("opens on focus and closes with Escape", async () => {
@@ -316,21 +316,21 @@ describe("SearchableSelect", () => {
       container,
     );
 
-    const trigger = container.querySelector("button[role='combobox']") as HTMLButtonElement | null;
+    const trigger = document.querySelector("button[role='combobox']") as HTMLButtonElement | null;
     expect(trigger).not.toBeNull();
     act(() => {
       trigger?.focus();
     });
     await flush();
 
-    const input = container.querySelector("input[placeholder='Search options...']") as HTMLInputElement | null;
+    const input = document.querySelector("input[placeholder='Search options...']") as HTMLInputElement | null;
     expect(input).not.toBeNull();
     expect(trigger?.getAttribute("aria-expanded")).toBe("true");
 
     keyDown(input!, "Escape");
     await flush();
 
-    expect(container.querySelector("input[placeholder='Search options...']")).toBeNull();
+    expect(document.querySelector("input[placeholder='Search options...']")).toBeNull();
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
 
     act(() => {
@@ -340,10 +340,10 @@ describe("SearchableSelect", () => {
     });
     await flush();
 
-    expect(container.querySelector("input[placeholder='Search options...']")).not.toBeNull();
+    expect(document.querySelector("input[placeholder='Search options...']")).not.toBeNull();
     expect(trigger?.getAttribute("aria-expanded")).toBe("true");
 
-    const reopenedInput = container.querySelector("input[placeholder='Search options...']") as HTMLInputElement | null;
+    const reopenedInput = document.querySelector("input[placeholder='Search options...']") as HTMLInputElement | null;
     expect(reopenedInput).not.toBeNull();
     setInputValue(reopenedInput!, "alp");
     await flush();
@@ -351,7 +351,7 @@ describe("SearchableSelect", () => {
     keyDown(reopenedInput!, "Escape");
     await flush();
 
-    expect(container.querySelector("input[placeholder='Search options...']")).toBeNull();
+    expect(document.querySelector("input[placeholder='Search options...']")).toBeNull();
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
   });
 

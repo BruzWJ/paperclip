@@ -55,6 +55,20 @@ async function flush() {
   await new Promise((resolve) => window.setTimeout(resolve, 0));
 }
 
+async function selectRadixOption(trigger: Element, optionText: string) {
+  await act(async () => {
+    (trigger as HTMLElement).click();
+  });
+  await flush();
+  const option = Array.from(document.querySelectorAll('[role="option"]'))
+    .find((el) => el.textContent?.trim() === optionText);
+  expect(option, `option "${optionText}" not found`).toBeTruthy();
+  await act(async () => {
+    (option as HTMLElement).click();
+  });
+  await flush();
+}
+
 function teardown() {
   if (root) flushSync(() => root?.unmount());
   container?.remove();
@@ -217,10 +231,17 @@ describe("AgentsUsingSkillDialog", () => {
     await renderNode(
       <AgentsUsingSkillDialog open onOpenChange={() => {}} companyId="company-1" skill={skill} />,
     );
-    const select = document.body.querySelector("select");
+    const select = document.body.querySelector('[data-slot="select-trigger"]');
     expect(select).not.toBeNull();
     expect(select?.textContent).toContain("Latest (v3)");
-    expect(select?.textContent).toContain("v2");
+
+    // Open the select to check available options
+    await act(async () => {
+      (select as HTMLElement).click();
+    });
+    await flush();
+    const options = document.body.textContent!;
+    expect(options).toContain("v2");
 
     // No version history → "—" and no select.
     await renderNode(
@@ -294,12 +315,8 @@ describe("AgentsUsingSkillDialog", () => {
     await renderNode(
       <AgentsUsingSkillDialog open onOpenChange={() => {}} companyId="company-1" skill={skill} />,
     );
-    const select = document.body.querySelector<HTMLSelectElement>("select");
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
-      setter?.call(select, "ver-2");
-      select?.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    const select = document.body.querySelector('[data-slot="select-trigger"]');
+    await selectRadixOption(select!, "v2");
     await flush();
 
     expect(mockAgentsApi.replaceCompanySkillPins).toHaveBeenCalledTimes(1);

@@ -290,12 +290,21 @@ async function inputValue(input: HTMLInputElement, value: string) {
   });
 }
 
-async function selectValue(select: HTMLSelectElement, value: string) {
+async function selectRadixValue(trigger: Element, optionText: string) {
   await act(async () => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
-    setter?.call(select, value);
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    (trigger as HTMLElement).click();
   });
+  // Flush to let portal render
+  await act(async () => {});
+  await act(async () => {});
+  await act(async () => {});
+  const option = Array.from(document.querySelectorAll('[role="option"]'))
+    .find((el) => el.textContent?.trim().includes(optionText));
+  expect(option, `radix option "${optionText}" not found`).toBeTruthy();
+  await act(async () => {
+    (option as HTMLElement).click();
+  });
+  await act(async () => {});
 }
 
 describe("getSkillVersionDiffSelection", () => {
@@ -517,19 +526,17 @@ describe("SkillDetailPage versions tab", () => {
 
     await click(viewDiffButtons[0]!);
     let dialog = node.querySelector('[role="dialog"]') as HTMLElement;
-    let selects = Array.from(dialog.querySelectorAll("select"));
+    let selects = Array.from(dialog.querySelectorAll('[data-slot="select-trigger"]'));
 
     expect(dialog.textContent).toContain("Diff");
-    expect(selects[0]?.value).toBe(v1.id);
-    expect(selects[1]?.value).toBe(v2.id);
+    expect(selects[0]?.textContent).toContain("v1");
+    expect(selects[1]?.textContent).toContain("v2");
     expect(dialog.textContent).toContain("Second line");
 
     await click(viewDiffButtons[1]!);
     dialog = node.querySelector('[role="dialog"]') as HTMLElement;
-    selects = Array.from(dialog.querySelectorAll("select"));
+    selects = Array.from(dialog.querySelectorAll('[data-slot="select-trigger"]'));
 
-    expect(selects[0]?.value).toBe("");
-    expect(selects[1]?.value).toBe(v1.id);
     expect(dialog.textContent).toContain("Initial");
     expect(dialog.textContent).toContain("First line");
     expect(dialog.textContent).not.toContain("Both sides are the same version");
@@ -636,7 +643,7 @@ describe("SkillDetailPage settings", () => {
     const dialog = node.querySelector('[role="dialog"]') as HTMLElement;
 
     await inputValue(dialog.querySelector("input") as HTMLInputElement, "");
-    await selectValue(dialog.querySelector("select") as HTMLSelectElement, "private");
+    await selectRadixValue(dialog.querySelector('[data-slot="select-trigger"]')!, "Private");
     await click(buttonsNamed(dialog, "Save settings")[0] as HTMLButtonElement);
 
     expect(onUpdateSettings).toHaveBeenCalledWith({

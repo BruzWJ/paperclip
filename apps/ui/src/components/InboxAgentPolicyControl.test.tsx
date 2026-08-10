@@ -72,8 +72,9 @@ function render(container: HTMLDivElement) {
 }
 
 function optionByTitle(container: HTMLElement, title: string) {
-  return Array.from(container.querySelectorAll('[role="radio"]'))
-    .find((node) => node.textContent?.includes(title)) as HTMLButtonElement | undefined;
+  const label = Array.from(container.querySelectorAll("label"))
+    .find((el) => el.textContent?.includes(title));
+  return label?.querySelector('[role="radio"]') as HTMLButtonElement | undefined;
 }
 
 describe("InboxAgentPolicyControl", () => {

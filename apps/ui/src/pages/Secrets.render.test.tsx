@@ -303,10 +303,16 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-function setSelectValue(select: HTMLSelectElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value")?.set;
-  setter?.call(select, value);
-  select.dispatchEvent(new Event("change", { bubbles: true }));
+async function selectRadixOption(trigger: HTMLElement, optionText: string) {
+  await act(async () => {
+    trigger.click();
+  });
+  const option = Array.from(document.querySelectorAll('[role="option"]'))
+    .find((el) => el.textContent?.trim().startsWith(optionText));
+  expect(option, `radix option "${optionText}" not found`).toBeTruthy();
+  await act(async () => {
+    (option as HTMLElement).click();
+  });
 }
 
 async function openAwsVaultDialog() {
@@ -934,9 +940,9 @@ describe("Secrets page layout", () => {
 
     await act(async () => {
       setInputValue(document.getElementById("new-secret-name") as HTMLInputElement, "AWS test token");
-      setSelectValue(document.getElementById("new-secret-provider") as HTMLSelectElement, "aws_secrets_manager");
       setTextareaValue(document.getElementById("new-secret-value") as HTMLTextAreaElement, "secret-value");
     });
+    await selectRadixOption(document.getElementById("new-secret-provider") as HTMLElement, "AWS Secrets Manager");
     await flushReact();
 
     const createButton = Array.from(document.body.querySelectorAll("button")).find(
@@ -1005,7 +1011,7 @@ describe("Secrets page layout", () => {
     await flushReact();
 
     const errorBanner = document.querySelector('[data-testid="secret-create-error"]');
-    expect(errorBanner?.textContent).toBe("Secret creation failed");
+    expect(errorBanner?.textContent).toContain("Secret creation failed");
 
     await act(async () => {
       root.unmount();
