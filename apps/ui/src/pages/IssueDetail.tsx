@@ -932,7 +932,6 @@ function IssueDetailActivityTab({
       <div className="mb-3">
         <IssueRunLedger
           issueId={issueId}
-          companyId={companyId}
           issueStatus={issueStatus}
           childIssues={childIssues}
           agentMap={agentMap}

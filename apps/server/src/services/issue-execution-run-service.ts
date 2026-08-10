@@ -26,7 +26,6 @@ import {
   issueExecutionRunRefs,
   issueExecutionRuns,
   issueExecutionWorkspaceBindings,
-  issueExecutionWatchdogDecisions,
   issueComments,
   issueCommentProjectionSources,
   issueSessionEvents,
@@ -398,9 +397,6 @@ export interface JoinedIssueExecutionRunDetail {
   >;
   readonly activity:
     BoundedIssueExecutionRunRecords<RedactedIssueExecutionActivity>;
-  readonly watchdogDecisions: BoundedIssueExecutionRunRecords<
-    typeof issueExecutionWatchdogDecisions.$inferSelect
-  >;
   readonly outputComments:
     BoundedIssueExecutionRunRecords<IssueExecutionRunOutputCommentLink>;
   readonly finalization: IssueExecutionJoinedFinalization | null;
@@ -2933,7 +2929,6 @@ async function readJoinedIssueExecutionRunDetail(
     accountingRows,
     costRows,
     activityRows,
-    watchdogDecisionRows,
     outputCommentRows,
     finalizationRows,
   ] = await Promise.all([
@@ -3111,20 +3106,6 @@ async function readJoinedIssueExecutionRunDetail(
         ),
       )
       .orderBy(asc(activityLog.createdAt), asc(activityLog.id))
-      .limit(input.limit + 1),
-    database
-      .select()
-      .from(issueExecutionWatchdogDecisions)
-      .where(
-        and(
-          eq(issueExecutionWatchdogDecisions.companyId, input.companyId),
-          eq(issueExecutionWatchdogDecisions.runId, input.runId),
-        ),
-      )
-      .orderBy(
-        asc(issueExecutionWatchdogDecisions.createdAt),
-        asc(issueExecutionWatchdogDecisions.id),
-      )
       .limit(input.limit + 1),
     database
       .select({
@@ -3306,7 +3287,6 @@ async function readJoinedIssueExecutionRunDetail(
     accounting: boundedRecords(accountingRows, input.limit),
     costs: boundedRecords(costRows, input.limit),
     activity: boundedRecords(redactedActivity, input.limit),
-    watchdogDecisions: boundedRecords(watchdogDecisionRows, input.limit),
     outputComments: boundedRecords(
       outputCommentRows.map((row) => ({
         commentId: row.commentId,

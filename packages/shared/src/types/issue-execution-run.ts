@@ -90,36 +90,6 @@ export interface IssueExecutionRunListPageRecord {
   nextCursor: string | null;
 }
 
-export const ISSUE_EXECUTION_WATCHDOG_DECISIONS = [
-  "snooze",
-  "continue",
-  "dismissed_false_positive",
-] as const;
-
-export type IssueExecutionWatchdogDecision =
-  (typeof ISSUE_EXECUTION_WATCHDOG_DECISIONS)[number];
-
-export interface IssueExecutionWatchdogDecisionInput {
-  decision: IssueExecutionWatchdogDecision;
-  evaluationIssueId?: string | null;
-  reason?: string | null;
-  snoozedUntil?: string | null;
-}
-
-export interface IssueExecutionWatchdogDecisionRecord {
-  id: string;
-  companyId: string;
-  runId: string;
-  evaluationIssueId: string | null;
-  decision: IssueExecutionWatchdogDecision;
-  snoozedUntil: string | null;
-  reason: string | null;
-  createdByAgentId: string | null;
-  createdByUserId: string | null;
-  createdByRunId: string | null;
-  createdAt: string;
-}
-
 export const ISSUE_EXECUTION_PROMPT_TRANSMISSION_PHASES = [
   "not_transmitted",
   "transmitted",

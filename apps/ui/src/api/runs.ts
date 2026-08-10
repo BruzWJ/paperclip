@@ -9,8 +9,6 @@ import type {
   IssueExecutionRunLivenessFact,
   IssueExecutionRunStatus,
   IssueExecutionSessionOperation,
-  IssueExecutionWatchdogDecisionInput,
-  IssueExecutionWatchdogDecisionRecord,
 } from "@paperclipai/shared";
 import { api } from "./client";
 
@@ -287,13 +285,7 @@ export interface IssueExecutionRunJoinedDetail {
   accounting: BoundedRunRecords<AcpPromptAccountingRecord>;
   costs: BoundedRunRecords<CostEvent>;
   activity: BoundedRunRecords<IssueExecutionActivityRecord>;
-  watchdogDecisions: BoundedRunRecords<IssueExecutionWatchdogDecisionRecord>;
   finalization: IssueExecutionJoinedFinalization | null;
-}
-
-export interface WatchdogDecisionInput
-  extends IssueExecutionWatchdogDecisionInput {
-  runId: string;
 }
 
 function runListQuery(filters: IssueExecutionRunListFilters = {}): string {
@@ -324,15 +316,5 @@ export const runsApi = {
   get: (runId: string, limit = 200) =>
     api.get<IssueExecutionRunJoinedDetail>(
       `/runs/${runId}?limit=${encodeURIComponent(String(limit))}`,
-    ),
-  recordWatchdogDecision: (input: WatchdogDecisionInput) =>
-    api.post<IssueExecutionWatchdogDecisionRecord>(
-      `/runs/${input.runId}/watchdog-decisions`,
-      {
-        decision: input.decision,
-        evaluationIssueId: input.evaluationIssueId ?? null,
-        reason: input.reason ?? null,
-        snoozedUntil: input.snoozedUntil ?? null,
-      },
     ),
 };

@@ -79,7 +79,6 @@ import {
   updateCompanyBudgetSchema,
   upsertBudgetPolicySchema,
   resolveBudgetIncidentSchema,
-  issueExecutionWatchdogDecisionInputSchema,
   moneyAmountSchema,
   budgetCurrencySchema,
   ACP_COST_UNAVAILABLE_REASONS,
@@ -586,26 +585,6 @@ const issueExecutionRunKindSchema = z.enum([
   "productive",
   "consult",
 ]);
-
-const issueExecutionWatchdogDecisionRecordSchema = z
-  .object({
-    id: z.string().uuid(),
-    companyId: z.string().uuid(),
-    runId: z.string().uuid(),
-    evaluationIssueId: z.string().uuid().nullable(),
-    decision: z.enum([
-      "snooze",
-      "continue",
-      "dismissed_false_positive",
-    ]),
-    snoozedUntil: z.string().datetime().nullable(),
-    reason: z.string().min(1).max(4000).nullable(),
-    createdByAgentId: z.string().uuid().nullable(),
-    createdByUserId: z.string().nullable(),
-    createdByRunId: z.string().uuid().nullable(),
-    createdAt: z.string().datetime(),
-  })
-  .strict();
 
 const issueExecutionRunEnvelopeRecordSchema = z
   .object({
@@ -3000,81 +2979,6 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
-// ─── Decision training ──────────────────────────────────────────────────────
-
-const decisionTrainingSourceKindSchema = z.enum(["interaction", "approval", "execution_decision"]);
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/decision-training",
-  tags: ["decision-training"],
-  summary: "Capture a decision training example",
-  body: z.object({
-    sourceKind: decisionTrainingSourceKindSchema,
-    sourceId: z.string().uuid(),
-    issueId: z.string().uuid(),
-    notes: z.string().max(100_000).default(""),
-  }).strict(),
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/companies/{companyId}/decision-training/preview",
-  tags: ["decision-training"],
-  summary: "Preview a decision training snapshot",
-  body: z.object({
-    sourceKind: decisionTrainingSourceKindSchema,
-    sourceId: z.string().uuid(),
-    issueId: z.string().uuid(),
-  }).strict(),
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/decision-training",
-  tags: ["decision-training"],
-  summary: "List decision training examples",
-  query: z.object({
-    project: z.string().uuid().optional(),
-    kind: decisionTrainingSourceKindSchema.optional(),
-    author: z.string().optional(),
-    q: z.string().max(500).optional(),
-  }),
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/decision-training/export.jsonl",
-  tags: ["decision-training"],
-  summary: "Export decision training examples as JSONL",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/decision-training/{id}",
-  tags: ["decision-training"],
-  summary: "Get a decision training example",
-});
-
-registerCurrentRoute({
-  method: "patch",
-  path: "/api/decision-training/{id}",
-  tags: ["decision-training"],
-  summary: "Update decision training notes",
-  body: z.object({ notes: z.string().max(100_000) }).strict(),
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registerCurrentRoute({
-  method: "delete",
-  path: "/api/decision-training/{id}",
-  tags: ["decision-training"],
-  summary: "Delete a decision training example",
-  responses: { 204: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
 registry.registerPath({
   method: "get",
   path: "/api/sidebar-preferences/me",
@@ -3535,32 +3439,6 @@ registry.registerPath({
     422: r.unprocessable,
   },
 });
-
-registry.registerPath({
-  method: "post",
-  path: "/api/runs/{runId}/watchdog-decisions",
-  tags: ["runs"],
-  summary: "Record an audited watchdog decision for an issue execution run",
-  request: {
-    params: z.object({ runId: z.string().uuid() }),
-    body: jsonBody(issueExecutionWatchdogDecisionInputSchema),
-  },
-  responses: {
-    201: {
-      description: "Created",
-      content: {
-        "application/json": {
-          schema: issueExecutionWatchdogDecisionRecordSchema,
-        },
-      },
-    },
-    400: r.badRequest,
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-  },
-});
-
 
 // ─── Issue tree ──────────────────────────────────────────────────────────────
 

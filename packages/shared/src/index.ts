@@ -127,7 +127,6 @@ export {
   ISSUE_EXECUTION_RUN_STATUSES,
   ISSUE_EXECUTION_RUN_TERMINAL_CLASSIFICATIONS,
   ISSUE_EXECUTION_STEERING_STATES,
-  ISSUE_EXECUTION_WATCHDOG_DECISIONS,
   type AcpCostCursorState,
   type IssueExecutionActivePromptSettlement,
   type IssueExecutionFinalizationAction,
@@ -151,9 +150,6 @@ export {
   type IssueExecutionRunTerminalClassification,
   type IssueExecutionSettledPromptSettlement,
   type IssueExecutionSteeringState,
-  type IssueExecutionWatchdogDecision,
-  type IssueExecutionWatchdogDecisionInput,
-  type IssueExecutionWatchdogDecisionRecord,
 } from "./types/issue-execution-run.js";
 export {
   acpCostCursorStateSchema,
@@ -171,11 +167,8 @@ export {
   issueExecutionRunStatusSchema,
   issueExecutionRunTerminalClassificationSchema,
   issueExecutionSteeringStateSchema,
-  issueExecutionWatchdogDecisionInputSchema,
-  issueExecutionWatchdogDecisionSchema,
   type IssueExecutionPromptSettlementInput,
   type IssueExecutionRunLivenessFactInput,
-  type IssueExecutionWatchdogDecisionRequest,
 } from "./validators/issue-execution-run.js";
 export type {
   ProviderSafeTraceValue,
@@ -231,15 +224,6 @@ export type {
   AttentionSubjectKind,
   AttentionWorkspaceRef,
 } from "./types/attention.js";
-export type {
-  DecisionTrainingExample,
-  DecisionTrainingNotesHistoryEntry,
-  DecisionTrainingPreview,
-  DecisionTrainingRetentionPolicy,
-  DecisionTrainingSnapshotV1,
-  DecisionTrainingSourceKind,
-} from "./types/decision-training.js";
-export { DECISION_TRAINING_RETENTION_POLICY } from "./types/decision-training.js";
 export {
   analyzeFrontmatterBlock,
   asBoolean,

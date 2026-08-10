@@ -25,7 +25,6 @@ const apiPrefixes: Record<string, string> = {
   "change-consents.ts": "/api",
   "costs.ts": "/api",
   "dashboard.ts": "/api",
-  "decision-training.ts": "/api",
   "folders.ts": "/api",
   "goals.ts": "/api",
   "health.ts": "/api/health",
@@ -67,11 +66,12 @@ const betterAuthOwnedRuntimeRoutes = new Set([
   "GET /api/auth/get-session",
   "POST /api/auth/update-user",
 ]);
-const retiredExperimentalRoutePrefixes = [
+const retiredRoutePrefixes = [
   "/api/board/chat",
   "/api/cases/",
   "/api/cloud-upstreams",
   "/api/companies/{companyId}/cases",
+  "/api/companies/{companyId}/decision-training",
   "/api/companies/{companyId}/environments",
   "/api/companies/{companyId}/execution-workspaces",
   "/api/companies/{companyId}/pipelines",
@@ -79,9 +79,11 @@ const retiredExperimentalRoutePrefixes = [
   "/api/companies/{companyId}/summary-slots",
   "/api/companies/{companyId}/tools",
   "/api/environments/",
+  "/api/decision-training/",
   "/api/execution-workspaces/",
   "/api/issues/{issueId}/external-object",
   "/api/mcp/gateways",
+  "/api/runs/{runId}/watchdog-decisions",
   "/api/tool-gateway/",
 ] as const;
 
@@ -361,7 +363,7 @@ describe("openapi routes", () => {
     });
     expect(JSON.stringify(res.body.paths["/api/companies"].post.responses)).not.toContain("candidates");
     expect(res.body.paths["/api/companies/{companyId}/skills/scan-projects"]).toBeUndefined();
-    for (const prefix of retiredExperimentalRoutePrefixes) {
+    for (const prefix of retiredRoutePrefixes) {
       expect(Object.keys(res.body.paths).some((routePath) => routePath.startsWith(prefix))).toBe(false);
     }
     expect(res.body.paths["/api/companies/{companyId}/folders"].post.responses["201"]).toBeDefined();

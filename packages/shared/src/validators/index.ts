@@ -33,11 +33,8 @@ export {
   issueExecutionRunStatusSchema,
   issueExecutionRunTerminalClassificationSchema,
   issueExecutionSteeringStateSchema,
-  issueExecutionWatchdogDecisionInputSchema,
-  issueExecutionWatchdogDecisionSchema,
   type IssueExecutionPromptSettlementInput,
   type IssueExecutionRunLivenessFactInput,
-  type IssueExecutionWatchdogDecisionRequest,
 } from "./issue-execution-run.js";
 export {
   sidebarOrderPreferenceSchema,

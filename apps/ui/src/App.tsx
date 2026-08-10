@@ -25,8 +25,7 @@ import {
 
 // Route-level code splitting: every page loads its own chunk on first visit
 // instead of riding in the entry bundle (PAP entry chunk was 5.7 MB with all
-// pages eager). Named exports from the same module (e.g. ./pages/Training)
-// share a single chunk. Chunk-load failures after a redeploy
+// pages eager). Chunk-load failures after a redeploy
 // go through the stale-chunk reload guard in lib/lazy-page.
 const Dashboard = lazyPage(() => import("./pages/Dashboard"), "Dashboard");
 const DashboardLive = lazyPage(
@@ -78,14 +77,6 @@ const Inbox = lazyPage(() => import("./pages/Inbox"), "Inbox");
 const WhatNeedsMe = lazyPage(
   () => import("./pages/WhatNeedsMe"),
   "WhatNeedsMe",
-);
-const TrainingInspector = lazyPage(
-  () => import("./pages/Training"),
-  "TrainingInspector",
-);
-const TrainingLibrary = lazyPage(
-  () => import("./pages/Training"),
-  "TrainingLibrary",
 );
 const CompanySettings = lazyPage(
   () => import("./pages/CompanySettings"),
@@ -277,8 +268,6 @@ function boardRoutes() {
       <Route path="costs" element={<Costs />} />
       <Route path="activity" element={<Activity />} />
       <Route path="decisions" element={<WhatNeedsMe />} />
-      <Route path="training" element={<TrainingLibrary />} />
-      <Route path="training/:id" element={<TrainingInspector />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
       {["mine", "recent", "unread", "blocked", "all"].map((tab) => (
         <Route key={tab} path={`inbox/${tab}`} element={<Inbox />} />

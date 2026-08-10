@@ -179,7 +179,6 @@ describe("attention service", () => {
           updatedAt: new Date("2026-07-09T12:04:00.000Z"),
         }],
         [],
-        [],
       ],
     });
 

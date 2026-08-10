@@ -10,7 +10,6 @@ export {
   ISSUE_EXECUTION_RUN_STATUSES,
   ISSUE_EXECUTION_RUN_TERMINAL_CLASSIFICATIONS,
   ISSUE_EXECUTION_STEERING_STATES,
-  ISSUE_EXECUTION_WATCHDOG_DECISIONS,
   type IssueExecutionActivePromptSettlement,
   type IssueExecutionFinalizationAction,
   type IssueExecutionIncompletePromptSettlement,
@@ -29,9 +28,6 @@ export {
   type IssueExecutionRunTerminalClassification,
   type IssueExecutionSettledPromptSettlement,
   type IssueExecutionSteeringState,
-  type IssueExecutionWatchdogDecision,
-  type IssueExecutionWatchdogDecisionInput,
-  type IssueExecutionWatchdogDecisionRecord,
 } from "./issue-execution-run.js";
 export type {
   AttentionDecisionVerb,
@@ -47,15 +43,6 @@ export type {
   AttentionSubjectKind,
   AttentionWorkspaceRef,
 } from "./attention.js";
-export type {
-  DecisionTrainingExample,
-  DecisionTrainingNotesHistoryEntry,
-  DecisionTrainingPreview,
-  DecisionTrainingRetentionPolicy,
-  DecisionTrainingSnapshotV1,
-  DecisionTrainingSourceKind,
-} from "./decision-training.js";
-export { DECISION_TRAINING_RETENTION_POLICY } from "./decision-training.js";
 export type {
   InstanceGeneralSettings,
   InstanceSettings,

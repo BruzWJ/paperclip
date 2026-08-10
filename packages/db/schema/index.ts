@@ -153,7 +153,6 @@ export { issueExecutionDecisions } from "./issue_execution_decisions.js";
 export { issueInboxArchives } from "./issue_inbox_archives.js";
 export { userInboxAgentPolicies } from "./user_inbox_agent_policies.js";
 export { inboxDismissals } from "./inbox_dismissals.js";
-export { decisionTrainingExamples } from "./decision_training_examples.js";
 export { issueReadStates } from "./issue_read_states.js";
 export { assets } from "./assets.js";
 export { issueAttachments } from "./issue_attachments.js";
@@ -164,10 +163,6 @@ export { routineDocuments } from "./routine_documents.js";
 export { documentAnnotationThreads } from "./document_annotation_threads.js";
 export { documentAnnotationComments } from "./document_annotation_comments.js";
 export { documentAnnotationAnchorSnapshots } from "./document_annotation_anchor_snapshots.js";
-export {
-  issueExecutionWatchdogDecisions,
-  type IssueExecutionWatchdogDecision,
-} from "./issue_execution_watchdog_decisions.js";
 export {
   acpPromptAccounting,
   type AcpPromptAccountingKind,

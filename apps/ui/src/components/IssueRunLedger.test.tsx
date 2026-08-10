@@ -88,31 +88,6 @@ describe("IssueRunLedgerContent", () => {
     );
   });
 
-  it("records watchdog decisions against the selected canonical run", () => {
-    const onWatchdogDecision = vi.fn();
-    act(() => {
-      root.render(
-        <IssueRunLedgerContent
-          runs={[run()]}
-          selectedRunId="run-12345678"
-          issueStatus="in_progress"
-          childIssues={[]}
-          agentMap={new Map([["agent-1", { name: "Builder" }]])}
-          onWatchdogDecision={onWatchdogDecision}
-        />,
-      );
-    });
-
-    const button = [...container.querySelectorAll("button")].find(
-      (candidate) => candidate.textContent === "Continue monitoring",
-    );
-    act(() => button?.click());
-    expect(onWatchdogDecision).toHaveBeenCalledWith({
-      runId: "run-12345678",
-      decision: "continue",
-    });
-  });
-
   it("selects the newest ordinary run by run timestamp", () => {
     const older = run({
       id: "older-run-12345678",

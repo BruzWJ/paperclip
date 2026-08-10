@@ -14,7 +14,6 @@ import {
   ISSUE_EXECUTION_RUN_STATUSES,
   ISSUE_EXECUTION_RUN_TERMINAL_CLASSIFICATIONS,
   ISSUE_EXECUTION_STEERING_STATES,
-  ISSUE_EXECUTION_WATCHDOG_DECISIONS,
 } from "../types/issue-execution-run.js";
 
 const uuidSchema = z.string().uuid();
@@ -68,38 +67,6 @@ export const issueExecutionPromptCapabilityStateSchema = z.enum(
 export const issueExecutionFinalizationActionSchema = z.enum(
   ISSUE_EXECUTION_FINALIZATION_ACTIONS,
 );
-
-export const issueExecutionWatchdogDecisionSchema = z.enum(
-  ISSUE_EXECUTION_WATCHDOG_DECISIONS,
-);
-
-export const issueExecutionWatchdogDecisionInputSchema = z
-  .object({
-    decision: issueExecutionWatchdogDecisionSchema,
-    evaluationIssueId: uuidSchema.nullable().optional(),
-    reason: z.string().trim().min(1).max(4000).nullable().optional(),
-    snoozedUntil: z.string().datetime({ offset: true }).nullable().optional(),
-  })
-  .strict()
-  .superRefine((input, context) => {
-    if (input.decision === "snooze") {
-      if (input.snoozedUntil == null) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["snoozedUntil"],
-          message: "snoozedUntil is required for snooze",
-        });
-      }
-      return;
-    }
-    if (input.snoozedUntil != null) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["snoozedUntil"],
-        message: "snoozedUntil is allowed only for snooze",
-      });
-    }
-  });
 
 const activePromptSettlementSchema = z
   .object({
@@ -172,8 +139,4 @@ export type IssueExecutionPromptSettlementInput = z.infer<
 
 export type IssueExecutionRunLivenessFactInput = z.infer<
   typeof issueExecutionRunLivenessFactSchema
->;
-
-export type IssueExecutionWatchdogDecisionRequest = z.infer<
-  typeof issueExecutionWatchdogDecisionInputSchema
 >;

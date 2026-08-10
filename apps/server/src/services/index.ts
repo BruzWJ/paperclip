@@ -39,7 +39,6 @@ export { issueReferenceService } from "./issue-references.js";
 export { activityService, type ActivityFilters } from "./activity.js";
 export { workTimelineService, normalizeTimelineWindow } from "./work-timeline.js";
 export { attentionService } from "./attention.js";
-export { captureDecisionSnapshot, decisionTrainingService } from "./decision-training.js";
 export type {
   WorkTimelineActor,
   WorkTimelineEdge,
@@ -158,12 +157,6 @@ export {
   type RequestedIssueExecutionSteering,
   type RequestIssueExecutionSteeringInput,
 } from "./issue-execution-run-service.js";
-export {
-  createIssueExecutionWatchdogDecisionService,
-  type IssueExecutionWatchdogDecisionActor,
-  type IssueExecutionWatchdogDecisionService,
-  type RecordIssueExecutionWatchdogDecisionInput,
-} from "./issue-execution-watchdog-decisions.js";
 export {
   buildIssueExecutionFinalizationPlan,
   IssueExecutionFinalizationRejected,

@@ -8,7 +8,6 @@ import {
   issueExecutionPromptSettlementSchema,
   issueExecutionRunKindSchema,
   issueExecutionRunLivenessFactSchema,
-  issueExecutionWatchdogDecisionInputSchema,
 } from "./issue-execution-run.js";
 import {
   ISSUE_EXECUTION_RUN_KINDS,
@@ -195,47 +194,6 @@ describe("issue execution run liveness fact codec", () => {
       issueExecutionRunLivenessFactSchema.safeParse({
         ...fact,
         livenessReason: " ",
-      }).success,
-    ).toBe(false);
-  });
-});
-
-describe("issue execution watchdog decision codec", () => {
-  it("accepts only the closed decision/deadline branches", () => {
-    expect(
-      issueExecutionWatchdogDecisionInputSchema.parse({
-        decision: "snooze",
-        snoozedUntil: "2026-08-01T12:00:00.000Z",
-        reason: "Operator is waiting for external evidence.",
-      }),
-    ).toMatchObject({ decision: "snooze" });
-    expect(
-      issueExecutionWatchdogDecisionInputSchema.parse({
-        decision: "continue",
-        snoozedUntil: null,
-      }),
-    ).toEqual({ decision: "continue", snoozedUntil: null });
-    expect(
-      issueExecutionWatchdogDecisionInputSchema.safeParse({
-        decision: "snooze",
-        snoozedUntil: null,
-      }).success,
-    ).toBe(false);
-    expect(
-      issueExecutionWatchdogDecisionInputSchema.safeParse({
-        decision: "dismissed_false_positive",
-        snoozedUntil: "2026-08-01T12:00:00.000Z",
-      }).success,
-    ).toBe(false);
-    expect(
-      issueExecutionWatchdogDecisionInputSchema.safeParse({
-        decision: "dismissed",
-      }).success,
-    ).toBe(false);
-    expect(
-      issueExecutionWatchdogDecisionInputSchema.safeParse({
-        decision: "continue",
-        output: "copied evaluation",
       }).success,
     ).toBe(false);
   });
