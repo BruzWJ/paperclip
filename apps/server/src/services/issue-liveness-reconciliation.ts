@@ -38,7 +38,6 @@ import {
   isNull,
   or,
 } from "drizzle-orm";
-import { isServerAdapterImplementationAvailable } from "../adapters/registry.js";
 import { evaluateAgentInvokability } from "./agent-invokability.js";
 import { createIssueSessionAdmissionService } from "./issue-session/admission.js";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
@@ -2148,7 +2147,7 @@ export function createIssueLivenessReconciliationService(
     const invokability = evaluateAgentInvokability(target, companyAgents);
     const revision = target?.currentAdapterConfigRevisionId
       ? await transaction
-          .select()
+          .select({ id: agentAdapterConfigRevisions.id })
           .from(agentAdapterConfigRevisions)
           .where(
             and(
@@ -2175,14 +2174,6 @@ export function createIssueLivenessReconciliationService(
       )
       .limit(2)
       .then((rows) => rows[0] ?? null);
-    const implementationAvailable = Boolean(
-      revision &&
-        isServerAdapterImplementationAvailable(
-          revision.adapterType,
-          revision.implementationIdentity,
-        ),
-    );
-
     let authorityId: string | null = null;
     let consult: ConsultRow | null = null;
     let sourceRef: RefRow | null = null;
@@ -2218,7 +2209,6 @@ export function createIssueLivenessReconciliationService(
     const baseUnavailable =
       !invokability.invokable ||
       !revision ||
-      !implementationAvailable ||
       (run.executionMode === "owner" && authorityId === null) ||
       (run.executionMode === "consult" && !sourceRef);
     if (!context) {

@@ -53,9 +53,6 @@ import {
   publishIssueSessionEventInTx,
   type PublishIssueSessionEventInput,
 } from "./publication.js";
-import {
-  isServerAdapterImplementationAvailable,
-} from "../../adapters/registry.js";
 
 export interface DispatchExecutionScope {
   companyId: string;
@@ -1578,7 +1575,7 @@ async function assertDispatchScope(
       .from(agents)
       .where(eq(agents.companyId, input.companyId)),
     transaction
-      .select()
+      .select({ id: agentAdapterConfigRevisions.id })
       .from(agentAdapterConfigRevisions)
       .where(
         and(
@@ -1618,23 +1615,6 @@ async function assertDispatchScope(
       {
         targetAgentId: input.targetAgentId,
         adapterConfigRevisionId: input.adapterConfigRevisionId,
-      },
-    );
-  }
-  const pinnedRevision = revisionRows[0];
-  if (
-    !isServerAdapterImplementationAvailable(
-      pinnedRevision.adapterType,
-      pinnedRevision.implementationIdentity,
-    )
-  ) {
-    throw new IssueSessionLifecycleConflict(
-      "Target adapter implementation is unavailable",
-      {
-        targetAgentId: input.targetAgentId,
-        adapterConfigRevisionId: input.adapterConfigRevisionId,
-        adapterType: pinnedRevision.adapterType,
-        implementationIdentity: pinnedRevision.implementationIdentity,
       },
     );
   }

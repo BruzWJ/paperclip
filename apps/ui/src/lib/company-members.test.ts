@@ -6,6 +6,8 @@ import {
   buildCompanyUserProfileMap,
   buildIssueMentionOptions,
   buildMarkdownMentionOptions,
+  isAgentIssueOwnerTarget,
+  isAgentTaskTarget,
 } from "./company-members";
 
 const activeMember = (overrides: Partial<CompanyMember>): CompanyMember => ({
@@ -30,6 +32,32 @@ const activeMember = (overrides: Partial<CompanyMember>): CompanyMember => ({
 });
 
 describe("company-members helpers", () => {
+  it("keeps issue-owner eligibility narrower than task assignment", () => {
+    expect(
+      isAgentIssueOwnerTarget({
+        status: "active",
+        currentAdapterConfigRevisionId: "revision-1",
+      }),
+    ).toBe(true);
+    expect(
+      isAgentTaskTarget({
+        status: "paused",
+      }),
+    ).toBe(true);
+    expect(
+      isAgentIssueOwnerTarget({
+        status: "paused",
+        currentAdapterConfigRevisionId: "revision-1",
+      }),
+    ).toBe(false);
+    expect(
+      isAgentIssueOwnerTarget({
+        status: "active",
+        currentAdapterConfigRevisionId: null,
+      }),
+    ).toBe(false);
+  });
+
   it("builds labels from company member profiles", () => {
     const labels = buildCompanyUserLabelMap([
       activeMember({

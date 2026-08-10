@@ -3,9 +3,6 @@ import { agentAdapterConfigRevisions, agents } from "@paperclipai/db";
 import { getAgentWorkEligibility, type AgentEligibilityAgent, type AgentOrgChainHealth } from "@paperclipai/shared";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
-import {
-  isServerAdapterImplementationAvailable,
-} from "../adapters/registry.js";
 
 type AgentStatus = (typeof agents.$inferSelect)["status"];
 
@@ -51,16 +48,11 @@ export type InvokableIssueOwnerRevision = Pick<
   | "id"
   | "companyId"
   | "agentId"
-  | "adapterType"
-  | "implementationIdentity"
-> & {
-  implementationAvailable: boolean;
-};
+>;
 
 export type InvokableIssueOwnerRejectionReason =
   | `owner_not_invokable:${AgentInvokabilityBlockReason}`
-  | "owner_revision_missing"
-  | "owner_implementation_unavailable";
+  | "owner_revision_missing";
 
 export class InvokableIssueOwnerRejected extends Error {
   readonly code = "invokable_issue_owner_rejected";
@@ -241,20 +233,6 @@ export function resolveInvokableIssueOwner<
       },
     );
   }
-  if (!revision.implementationAvailable) {
-    throw new InvokableIssueOwnerRejected(
-      "Owner adapter implementation is unavailable",
-      "owner_implementation_unavailable",
-      {
-        companyId: input.companyId,
-        ownerAgentId: owner.id,
-        adapterConfigRevisionId: revision.id,
-        adapterType: revision.adapterType,
-        implementationIdentity: revision.implementationIdentity,
-      },
-    );
-  }
-
   return { owner, revision, revisionId: revision.id };
 }
 
@@ -312,9 +290,6 @@ async function listCurrentAdapterRevisions(
       id: agentAdapterConfigRevisions.id,
       companyId: agentAdapterConfigRevisions.companyId,
       agentId: agentAdapterConfigRevisions.agentId,
-      adapterType: agentAdapterConfigRevisions.adapterType,
-      implementationIdentity:
-        agentAdapterConfigRevisions.implementationIdentity,
     })
     .from(agentAdapterConfigRevisions)
     .where(
@@ -323,17 +298,7 @@ async function listCurrentAdapterRevisions(
         inArray(agentAdapterConfigRevisions.id, revisionIds),
       ),
     )
-    .orderBy(asc(agentAdapterConfigRevisions.id))
-    .then((rows) =>
-      rows.map((revision) => ({
-        ...revision,
-        implementationAvailable:
-          isServerAdapterImplementationAvailable(
-            revision.adapterType,
-            revision.implementationIdentity,
-          ),
-      })),
-    );
+    .orderBy(asc(agentAdapterConfigRevisions.id));
 }
 
 async function listCurrentAdapterRevisionsForUpdate(
@@ -348,9 +313,6 @@ async function listCurrentAdapterRevisionsForUpdate(
       id: agentAdapterConfigRevisions.id,
       companyId: agentAdapterConfigRevisions.companyId,
       agentId: agentAdapterConfigRevisions.agentId,
-      adapterType: agentAdapterConfigRevisions.adapterType,
-      implementationIdentity:
-        agentAdapterConfigRevisions.implementationIdentity,
     })
     .from(agentAdapterConfigRevisions)
     .where(
@@ -360,17 +322,7 @@ async function listCurrentAdapterRevisionsForUpdate(
       ),
     )
     .orderBy(asc(agentAdapterConfigRevisions.id))
-    .for("update")
-    .then((rows) =>
-      rows.map((revision) => ({
-        ...revision,
-        implementationAvailable:
-          isServerAdapterImplementationAvailable(
-            revision.adapterType,
-            revision.implementationIdentity,
-          ),
-      })),
-    );
+    .for("update");
 }
 
 /** Resolves a configuration-time owner without acquiring write locks. */

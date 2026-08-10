@@ -7,28 +7,6 @@ import {
   type Db,
 } from "@paperclipai/db";
 import { describe, expect, it, vi } from "vitest";
-import type { AdapterImplementationIdentity } from "@paperclipai/shared";
-
-const ACP_ADAPTER_TYPE = "fixture-agent";
-const ACP_IMPLEMENTATION_IDENTITY: AdapterImplementationIdentity = Object.freeze({
-  adapterType: ACP_ADAPTER_TYPE,
-  definitionVersion: "acpx-runtime/v1",
-  protocolVersion: 1,
-  origin: "builtin",
-  packageName: "acpx",
-  packageVersion: "test-runtime",
-  buildIdentity: "acpx-test-runtime:fixture-agent",
-  artifactDigest: "a".repeat(64),
-});
-
-vi.mock("../adapters/registry.js", () => ({
-  isServerAdapterImplementationAvailable: (
-    adapterType: string,
-    identity: AdapterImplementationIdentity,
-  ) =>
-    adapterType === ACP_ADAPTER_TYPE &&
-    identity.artifactDigest === ACP_IMPLEMENTATION_IDENTITY.artifactDigest,
-}));
 import {
   resolveInvokableIssueOwnerCatalog,
   type InvokableIssueOwnerAgent,
@@ -118,17 +96,11 @@ function canonicalInvokableCatalog() {
       id: "00000000-0000-4000-8000-000000000020",
       companyId: COMPANY_ID,
       agentId: agents[0]!.id,
-      adapterType: ACP_ADAPTER_TYPE,
-      implementationIdentity: ACP_IMPLEMENTATION_IDENTITY,
-      implementationAvailable: true,
     },
     {
       id: "00000000-0000-4000-8000-000000000021",
       companyId: COMPANY_ID,
       agentId: agents[1]!.id,
-      adapterType: ACP_ADAPTER_TYPE,
-      implementationIdentity: ACP_IMPLEMENTATION_IDENTITY,
-      implementationAvailable: true,
     },
   ];
   return resolveInvokableIssueOwnerCatalog({
@@ -156,7 +128,7 @@ function resolve(
 }
 
 describe("plugin issue owner authorization", () => {
-  it("intersects approved create permission with canonical company-wide invokability and exact revision availability", () => {
+  it("intersects approved create permission with canonical company-wide invokability and current revisions", () => {
     const catalog = resolve();
 
     expect([...catalog.keys()]).toEqual([
@@ -399,8 +371,6 @@ describe("plugin issue owner authorization", () => {
       id: owner.currentAdapterConfigRevisionId,
       companyId: COMPANY_ID,
       agentId: owner.id,
-      adapterType: ACP_ADAPTER_TYPE,
-      implementationIdentity: ACP_IMPLEMENTATION_IDENTITY,
     } as typeof agentAdapterConfigRevisions.$inferSelect;
     const lockOrder: unknown[] = [];
     const rows = new Map<unknown, unknown[]>([

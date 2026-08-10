@@ -54,9 +54,6 @@ import {
   resolveMentionReach,
   type MentionReachIssue,
 } from "./mention-reach-resolver.js";
-import {
-  isServerAdapterImplementationAvailable,
-} from "../adapters/registry.js";
 
 type AgentRow = AgentOrgRow & {
   title: string | null;
@@ -446,9 +443,6 @@ async function loadSnapshot(
         id: agentAdapterConfigRevisions.id,
         companyId: agentAdapterConfigRevisions.companyId,
         agentId: agentAdapterConfigRevisions.agentId,
-        adapterType: agentAdapterConfigRevisions.adapterType,
-        implementationIdentity:
-          agentAdapterConfigRevisions.implementationIdentity,
       })
       .from(agentAdapterConfigRevisions)
       .innerJoin(
@@ -580,14 +574,7 @@ async function loadSnapshot(
     capability,
     issue,
     agents: agentRows,
-    adapterRevisions: adapterRevisionRows.map((revision) => ({
-      ...revision,
-      implementationAvailable:
-        isServerAdapterImplementationAvailable(
-          revision.adapterType,
-          revision.implementationIdentity,
-        ),
-    })),
+    adapterRevisions: adapterRevisionRows,
     contextGrantKeys: contextRows.map((row) => row.key),
     actionGrantKeys: actionRows.map((row) => row.key),
     mentionReachGrantKeys: mentionRows.map((row) => row.key),

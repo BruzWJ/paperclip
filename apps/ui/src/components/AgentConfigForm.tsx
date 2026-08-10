@@ -188,7 +188,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     : overlay.adapterType ?? props.agent.adapterType ?? "";
   const hasAdapterType = adapterType.trim().length > 0;
 
-  const uiAdapter = useMemo(() => findUIAdapter(adapterType), [adapterType]);
+  const uiAdapter = findUIAdapter(adapterType);
   const catalogAdapter = useMemo(
     () => admittedAdapters.find((adapter) => adapter.type === adapterType) ?? null,
     [adapterType, admittedAdapters],

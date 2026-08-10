@@ -11,10 +11,6 @@ import {
 import {
   listCompanyAgentGraphDescendants,
 } from "../services/agent-org-graph-lock.ts";
-import {
-  CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
-  CANONICAL_TEST_ADAPTER_TYPE,
-} from "./helpers/adapter-implementation.js";
 
 function agent(partial: Partial<AgentOrgRow> & Pick<AgentOrgRow, "id">): AgentOrgRow {
   return {
@@ -39,16 +35,11 @@ function ownerAgent(
 function ownerRevision(
   id: string,
   agentId: string,
-  implementationAvailable = true,
 ): InvokableIssueOwnerRevision {
   return {
     id,
     companyId: "company-1",
     agentId,
-    adapterType: CANONICAL_TEST_ADAPTER_TYPE,
-    implementationIdentity:
-      CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
-    implementationAvailable,
   };
 }
 
@@ -195,28 +186,6 @@ describe("agent invokability", () => {
     }
   });
 
-  it("rejects a new owner reference when its pinned implementation is unavailable", () => {
-    const active = ownerAgent({ id: "active" });
-    expect(() =>
-      resolveInvokableIssueOwner({
-        companyId: "company-1",
-        ownerAgentId: active.id,
-        companyAgents: [active],
-        adapterRevisions: [
-          ownerRevision(
-            active.currentAdapterConfigRevisionId!,
-            active.id,
-            false,
-          ),
-        ],
-      }),
-    ).toThrow(
-      expect.objectContaining({
-        reason: "owner_implementation_unavailable",
-      }),
-    );
-  });
-
   it("omits every non-invokable or unresolved owner from the presentation catalog", () => {
     const valid = ownerAgent({ id: "valid" });
     const paused = ownerAgent({ id: "paused", status: "paused" });
@@ -230,7 +199,7 @@ describe("agent invokability", () => {
       id: "revisionless",
       currentAdapterConfigRevisionId: null,
     });
-    const unavailable = ownerAgent({ id: "unavailable" });
+    const secondValid = ownerAgent({ id: "second-valid" });
 
     const catalog = resolveInvokableIssueOwnerCatalog({
       companyId: "company-1",
@@ -241,7 +210,7 @@ describe("agent invokability", () => {
         terminatedManager,
         invalidChain,
         revisionless,
-        unavailable,
+        secondValid,
       ],
       adapterRevisions: [
         ownerRevision(valid.currentAdapterConfigRevisionId!, valid.id),
@@ -256,13 +225,12 @@ describe("agent invokability", () => {
           invalidChain.id,
         ),
         ownerRevision(
-          unavailable.currentAdapterConfigRevisionId!,
-          unavailable.id,
-          false,
+          secondValid.currentAdapterConfigRevisionId!,
+          secondValid.id,
         ),
       ],
     });
 
-    expect([...catalog.keys()]).toEqual(["valid"]);
+    expect([...catalog.keys()]).toEqual(["valid", "second-valid"]);
   });
 });

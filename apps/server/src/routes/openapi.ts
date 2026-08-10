@@ -1237,7 +1237,8 @@ registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/issue-owner-catalog",
   tags: ["agents"],
-  summary: "List agents eligible to own or be mentioned in an issue",
+  summary:
+    "List control-plane-eligible agents with current revisions for issue ownership",
   request: { params: z.object({ companyId: z.string() }) },
   responses: {
     200: r.ok(z.array(z.object({

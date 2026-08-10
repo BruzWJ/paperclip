@@ -142,25 +142,6 @@ vi.mock("../adapters/registry.js", () => {
     refreshAcpxAdapters: vi.fn(async () => undefined),
     findActiveServerAdapter: findAdapter,
     findSelectableServerAdapterImplementation: findImplementation,
-    listAdapterModelsForImplementation: vi.fn(
-      async (
-        type: string,
-        identity: {
-          adapterType?: string;
-          artifactDigest?: string;
-        },
-      ) => {
-        const implementation = findImplementation(type);
-        if (
-          !implementation ||
-          identity.adapterType !== implementation.identity.adapterType ||
-          identity.artifactDigest !== implementation.identity.artifactDigest
-        ) {
-          return [];
-        }
-        return implementation.adapter.definition.models;
-      },
-    ),
   };
 });
 

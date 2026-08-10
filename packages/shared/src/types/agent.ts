@@ -111,9 +111,10 @@ export interface Agent {
 }
 
 /**
- * Safe board-facing projection of an agent that is currently eligible to own
- * newly dispatched issue work. Runtime configuration and revision identity
- * deliberately stay server-side.
+ * Safe board-facing projection of an agent that is control-plane eligible to
+ * own newly dispatched issue work and has a current configuration revision.
+ * Runtime configuration and revision identity deliberately stay server-side;
+ * executable readiness is evaluated when a run launches.
  */
 export interface InvokableIssueOwnerCatalogEntry {
   id: string;

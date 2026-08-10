@@ -11,10 +11,6 @@ import {
 } from "../services/runtime-interface-compiler-db.ts";
 import { compileRuntimeInterface } from "../services/runtime-interface-compiler.ts";
 import type { InvokableIssueOwnerRevision } from "../services/agent-invokability.ts";
-import {
-  CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
-  CANONICAL_TEST_ADAPTER_TYPE,
-} from "./helpers/adapter-implementation.js";
 
 function revision(
   id: string,
@@ -24,10 +20,6 @@ function revision(
     id,
     companyId: "company",
     agentId,
-    adapterType: CANONICAL_TEST_ADAPTER_TYPE,
-    implementationIdentity:
-      CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
-    implementationAvailable: true,
   };
 }
 

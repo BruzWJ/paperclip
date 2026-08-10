@@ -66,9 +66,6 @@ const revision = {
   id: revisionId,
   companyId,
   agentId: ownerAgentId,
-  adapterType: "codex",
-  implementationIdentity: "codex/default",
-  implementationAvailable: true,
 };
 
 const ref = {

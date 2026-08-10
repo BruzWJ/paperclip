@@ -20,7 +20,11 @@ import { agentsApi } from "../api/agents";
 import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
-import { buildMarkdownMentionOptions, isAgentTaskTarget } from "../lib/company-members";
+import {
+  buildMarkdownMentionOptions,
+  isAgentIssueOwnerTarget,
+  isAgentTaskTarget,
+} from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
@@ -392,11 +396,6 @@ export function NewIssueDialog() {
     queryFn: () => agentsApi.list(effectiveCompanyId!),
     enabled: !!effectiveCompanyId && newIssueOpen,
   });
-  const issueOwnerCatalogQuery = useQuery({
-    queryKey: queryKeys.agents.issueOwnerCatalog(effectiveCompanyId!),
-    queryFn: () => agentsApi.listInvokableIssueOwners(effectiveCompanyId!),
-    enabled: !!effectiveCompanyId && newIssueOpen,
-  });
 
   const { data: projects } = useQuery({
     queryKey: queryKeys.projects.list(effectiveCompanyId!),
@@ -648,24 +647,18 @@ export function NewIssueDialog() {
   }, [newIssueOpen, newIssueDefaults, orderedProjects, selectedCompanyId, setIssueText]);
 
   useEffect(() => {
-    if (
-      !ownerAgentId ||
-      !issueOwnerCatalogQuery.isSuccess
-    ) {
+    if (!ownerAgentId || !agents) {
       return;
     }
     if (
-      !(issueOwnerCatalogQuery.data ?? []).some(
-        (owner) => owner.id === ownerAgentId,
+      !(agents ?? []).some(
+        (agent) =>
+          agent.id === ownerAgentId && isAgentIssueOwnerTarget(agent),
       )
     ) {
       setOwnerAgentId("");
     }
-  }, [
-    issueOwnerCatalogQuery.data,
-    issueOwnerCatalogQuery.isSuccess,
-    ownerAgentId,
-  ]);
+  }, [agents, ownerAgentId]);
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -840,7 +833,7 @@ export function NewIssueDialog() {
   const ownerOptions = useMemo<InlineEntityOption[]>(
     () => [
       ...sortAgentsByRecency(
-        issueOwnerCatalogQuery.data ?? [],
+        (agents ?? []).filter(isAgentIssueOwnerTarget),
         recentOwnerAgentIds,
       ).map((agent) => ({
         id: agent.id,
@@ -848,7 +841,7 @@ export function NewIssueDialog() {
         searchText: `${agent.name} ${agent.title ?? ""}`,
       })),
     ],
-    [issueOwnerCatalogQuery.data, recentOwnerAgentIds],
+    [agents, recentOwnerAgentIds],
   );
   const participantOptions = useMemo<InlineEntityOption[]>(
     () =>
@@ -1056,7 +1049,7 @@ export function NewIssueDialog() {
                 placeholder="Owner"
                 noneLabel="Choose owner"
                 searchPlaceholder="Search owners..."
-                emptyMessage="No invokable agents found."
+                emptyMessage="No available agents found."
                 onChange={(value) => {
                   if (value) trackRecentAssignee(value);
                   setOwnerAgentId(value);
@@ -1087,7 +1080,7 @@ export function NewIssueDialog() {
                 }
                 renderOption={(option) => {
                   if (!option.id) return <span className="truncate">{option.label}</span>;
-                  const owner = (issueOwnerCatalogQuery.data ?? [])
+                  const owner = (agents ?? [])
                     .find((agent) => agent.id === option.id) ?? null;
                   return (
                     <>

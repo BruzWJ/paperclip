@@ -23,10 +23,10 @@ chain-of-command authority, or privileged first/root agent.
 The company-authorized issue-owner catalog is the picker projection for new
 ownership. It returns only `id`, `name`, `title`, and `icon`, and omits any
 paused, pending-approval, terminated, invalid-reporting-chain,
-missing-revision, or unavailable-implementation agent through the canonical
-invokable-owner resolver. It is presentation, not an authorization lease:
-creation and reassignment resolve the selected owner again while locking the
-write transaction.
+or missing-revision agent through the canonical invokable-owner resolver.
+Executable readiness is evaluated when a run launches, not by this picker. It
+is presentation, not an authorization lease: creation and reassignment resolve
+the selected owner again while locking the write transaction.
 
 ## Create an ordinary agent
 

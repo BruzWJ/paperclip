@@ -6,7 +6,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "@paperclipai/shared";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { syncServerAdapters } from "@/adapters/registry";
 import { AgentConfigForm } from "./AgentConfigForm";
+
+const mockAdaptersApi = vi.hoisted(() => ({
+  list: vi.fn(),
+  testConfiguration: vi.fn(),
+}));
 
 vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompanyId: null }),
@@ -15,10 +21,7 @@ vi.mock("../api/agents", () => ({
   agentsApi: { list: vi.fn(async () => []) },
 }));
 vi.mock("../api/adapters", () => ({
-  adaptersApi: {
-    list: vi.fn(async () => []),
-    testConfiguration: vi.fn(),
-  },
+  adaptersApi: mockAdaptersApi,
 }));
 vi.mock("../api/assets", () => ({
   assetsApi: { uploadImage: vi.fn() },
@@ -103,6 +106,8 @@ describe("AgentConfigForm (edit mode)", () => {
   let root: ReturnType<typeof createRoot>;
 
   beforeEach(() => {
+    syncServerAdapters([]);
+    mockAdaptersApi.list.mockResolvedValue([]);
     queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -115,6 +120,8 @@ describe("AgentConfigForm (edit mode)", () => {
     act(() => root.unmount());
     container.remove();
     queryClient.clear();
+    syncServerAdapters([]);
+    vi.clearAllMocks();
   });
 
   function render(onSave: (patch: Record<string, unknown>) => void = () => undefined) {
@@ -185,5 +192,39 @@ describe("AgentConfigForm (edit mode)", () => {
     act(() => setInputValue(nameInput, "Renamed Agent"));
 
     expect(harnessState!.saveAction).toBe(mountedSaveAction);
+  });
+
+  it("uses an adapter that arrives after the form's first render", async () => {
+    mockAdaptersApi.list.mockResolvedValue([
+      {
+        type: "missing-local-agent",
+        label: "Available local agent",
+        source: "acpx",
+        modelsCount: 0,
+        loaded: true,
+        registryName: "missing-local-agent",
+        configSchema: { fields: [] },
+        capabilities: {
+          contractVersion: "acpx-runtime/v1",
+          runtimeControls: [],
+          supportsModelProfiles: false,
+        },
+      },
+    ]);
+
+    render();
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(container.textContent).not.toContain(
+          "This adapter is not available from the local agent catalog.",
+        );
+      });
+    });
+    expect(
+      [...container.querySelectorAll("button")].some(
+        (button) => button.textContent === "Test Agent",
+      ),
+    ).toBe(true);
   });
 });

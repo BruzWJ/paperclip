@@ -11,10 +11,10 @@ export type AdapterImplementationOrigin =
   (typeof ADAPTER_IMPLEMENTATION_ORIGINS)[number];
 
 /**
- * Immutable executable identity pinned by every adapter configuration
+ * Immutable ACPX discovery provenance pinned by every adapter configuration
  * revision. A package version is descriptive; artifactDigest is the
- * host-computed content identity that prevents same-version replacement from
- * redirecting historical work.
+ * host-computed content identity included in the canonical configuration
+ * digest. Executable and local-runtime readiness are enforced at launch.
  */
 export interface AdapterImplementationIdentity {
   adapterType: string;

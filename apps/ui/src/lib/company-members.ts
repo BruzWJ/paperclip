@@ -1,7 +1,12 @@
 import type { CompanyMember, CompanyUserDirectoryEntry } from "@/api/access";
 import type { InlineEntityOption } from "@/components/InlineEntitySelector";
 import type { MentionOption } from "@/components/MarkdownEditor";
-import type { Agent, Issue, Project } from "@paperclipai/shared";
+import {
+  isAgentStatusInvokable,
+  type Agent,
+  type Issue,
+  type Project,
+} from "@paperclipai/shared";
 
 export interface CompanyUserProfile {
   label: string;
@@ -101,6 +106,17 @@ export function isAgentTaskTarget(
     agent.status !== "terminated" &&
     agent.status !== "pending_approval" &&
     agent.orgChainHealth?.status !== "invalid_org_chain"
+  );
+}
+
+export function isAgentIssueOwnerTarget(
+  agent: Pick<Agent, "status" | "currentAdapterConfigRevisionId"> &
+    Partial<Pick<Agent, "orgChainHealth">>,
+): boolean {
+  return (
+    isAgentTaskTarget(agent) &&
+    isAgentStatusInvokable(agent.status) &&
+    Boolean(agent.currentAdapterConfigRevisionId)
   );
 }
 

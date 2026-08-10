@@ -14,8 +14,6 @@ import {
 } from "@paperclipai/adapter-utils/acp-subprocess";
 import {
   adapterImplementationIdentityKey,
-  isAdapterImplementationIdentity,
-  sameAdapterImplementationIdentity,
   type AdapterImplementationIdentity,
 } from "@paperclipai/shared";
 import {
@@ -246,63 +244,6 @@ function currentImplementation(
   return currentByType.get(type) ?? null;
 }
 
-function dynamicIdentityMatches(
-  type: string,
-  identity: AdapterImplementationIdentity,
-): boolean {
-  const current = currentImplementation(type);
-  return (
-    current !== null &&
-    sameAdapterImplementationIdentity(current.identity, identity)
-  );
-}
-
-export function findServerAdapterImplementation(
-  adapterType: string,
-  identity: AdapterImplementationIdentity,
-): RegisteredServerAdapterImplementation | null {
-  if (
-    !isAdapterImplementationIdentity(identity) ||
-    !dynamicIdentityMatches(adapterType, identity)
-  ) {
-    return null;
-  }
-  return currentImplementation(adapterType);
-}
-
-export function requireServerAdapterImplementation(
-  adapterType: string,
-  identity: AdapterImplementationIdentity,
-): ServerAdapterModule {
-  const implementation = findServerAdapterImplementation(adapterType, identity);
-  if (!implementation) {
-    const digest = isAdapterImplementationIdentity(identity)
-      ? identity.artifactDigest
-      : "invalid-identity";
-    throw new Error(
-      `Unavailable local agent implementation: ${adapterType} (${digest})`,
-    );
-  }
-  return implementation.adapter;
-}
-
-/**
- * A historical revision remains executable only when the exact current
- * ACPX-supplied launch-and-settings identity still matches. ACPX decides
- * whether the CLI is available and what it executes; the immutable identity
- * prevents a stale or tampered revision from silently
- * becoming executable merely because its registry name reappeared.
- */
-export function isServerAdapterImplementationAvailable(
-  adapterType: string,
-  identity: AdapterImplementationIdentity,
-): boolean {
-  return (
-    isAdapterImplementationIdentity(identity) &&
-    dynamicIdentityMatches(adapterType, identity)
-  );
-}
-
 export function findSelectableServerAdapterImplementation(
   type: string,
 ): RegisteredServerAdapterImplementation | null {
@@ -325,17 +266,6 @@ export function listAcpxAdapterProbeDiagnostics(): readonly AcpxAdapterProbeDiag
 
 export async function listAdapterModels(type: string): Promise<AdapterModel[]> {
   const implementation = currentImplementation(type);
-  if (!implementation) return [];
-  return implementation.adapter.definition.models.map((model) =>
-    validateAdapterModel(model),
-  );
-}
-
-export async function listAdapterModelsForImplementation(
-  type: string,
-  identity: AdapterImplementationIdentity,
-): Promise<AdapterModel[]> {
-  const implementation = findServerAdapterImplementation(type, identity);
   if (!implementation) return [];
   return implementation.adapter.definition.models.map((model) =>
     validateAdapterModel(model),
