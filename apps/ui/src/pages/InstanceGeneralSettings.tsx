@@ -336,7 +336,8 @@ export function InstanceGeneralSettings() {
             <h2 className="text-sm font-semibold">Reconcile workspace branches</h2>
             <p className="max-w-2xl text-sm text-muted-foreground">
               Advance managed workspace branches when it is safe to reconcile
-              them with their configured source. This safeguard is on by default.
+              them with their configured source. Direct project folders are
+              never changed. This safeguard is on by default.
             </p>
           </div>
           <Switch
@@ -359,7 +360,8 @@ export function InstanceGeneralSettings() {
             <h2 className="text-sm font-semibold">Repair dirty workspaces</h2>
             <p className="max-w-2xl text-sm text-muted-foreground">
               Quarantine and repair managed workspaces that are left in a dirty
-              state before they are reused. This safeguard is on by default.
+              state before they are reused. Direct project folders are never
+              changed. This safeguard is on by default.
             </p>
           </div>
           <Switch

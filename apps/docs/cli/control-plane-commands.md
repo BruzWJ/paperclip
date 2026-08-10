@@ -195,8 +195,8 @@ settings are:
 
 | Key | Default | Behavior |
 | --- | --- | --- |
-| `enableWorkspaceBranchReconcileForward` | On | Allows a clean worktree to advance only when its checked-out branch is a proven descendant of the recorded branch. |
-| `enableWorkspaceDirtyQuarantineRepair` | On | Preserves dirty foreign-branch work on a rescue branch before restoring the recorded branch. |
+| `enableWorkspaceBranchReconcileForward` | On | Allows a retained managed worktree to advance only when its checked-out branch is a proven descendant of the recorded branch. Direct project folders are never changed. |
+| `enableWorkspaceDirtyQuarantineRepair` | On | Preserves dirty retained managed-worktree changes on a rescue branch before restoring the recorded branch. Direct project folders are never changed. |
 | `enableServerInfoDebugView` | Off | Shows server restart, running commit, and checkout-state details in the account-menu **Server Info** debug view. It changes only that view. |
 | `autoRestartDevServerWhenIdle` | Off | Lets the managed dev runner request a restart for backend changes after there are no queued or running issue executions. Migrations remain explicit. |
 | `enableWorktreeRunExecution` | Off | In a worktree instance, permits automatic schedule and webhook dispatch only for routines created after the server-recorded activation cutoff. Normal instances are unaffected. |
