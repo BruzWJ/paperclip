@@ -11,6 +11,7 @@ import {
   type IssueExecutionLease,
   type IssueExecutionRunControl,
 } from "@paperclipai/db";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import {
   IssueExecutionPromptAuthorityLost,
@@ -598,6 +599,12 @@ describe("Postgres issue-execution prompt authority renewal", () => {
       },
     });
     expect(runtime.updates[1]!.where).toBeDefined();
+    const dialect = new PgDialect();
+    for (const update of runtime.updates) {
+      const params = dialect.sqlToQuery(update.where as never).params;
+      expect(params.some((param) => param instanceof Date)).toBe(false);
+      expect(params).toContain(timestamp.toISOString());
+    }
   });
 
   it("fails closed when the exact lease CAS loses its active unexpired generation", async () => {

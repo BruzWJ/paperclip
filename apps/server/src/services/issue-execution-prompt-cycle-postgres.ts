@@ -24,7 +24,7 @@ import {
   agentAdapterAcpConfigurationSchema,
   IssueSession,
 } from "@paperclipai/shared";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { settleAcpPromptInTransaction } from "./acp-prompt-settlement.js";
 import type { BudgetEnforcementScope } from "./budgets.js";
 import { contextDialDigest } from "./context-dial-resolver.js";
@@ -1395,7 +1395,7 @@ export function createPostgresIssueExecutionPromptCycleRepository(
                 prompt.identity.leaseGeneration,
               ),
               eq(issueExecutionLeases.state, "active"),
-              sql`${issueExecutionLeases.expiresAt} > ${timestamp}`,
+              gt(issueExecutionLeases.expiresAt, timestamp),
             ),
           )
           .returning({ id: issueExecutionLeases.id });
@@ -1429,7 +1429,7 @@ export function createPostgresIssueExecutionPromptCycleRepository(
                   "pending_setup",
                   "active",
                 ]),
-                sql`${issueExecutionPromptCapabilities.expiresAt} > ${timestamp}`,
+                gt(issueExecutionPromptCapabilities.expiresAt, timestamp),
               ),
             )
             .returning({
@@ -1770,7 +1770,7 @@ export function createPostgresIssueExecutionPromptCycleRepository(
               resumedAt: sql`coalesce(
                 ${issueExecutionPromptSegments.resumedAt},
                 greatest(
-                  ${timestamp},
+                  ${sql.param(timestamp, issueExecutionPromptSegments.resumedAt)},
                   ${issueExecutionPromptSegments.createdAt} + interval '1 millisecond'
                 )
               )`,

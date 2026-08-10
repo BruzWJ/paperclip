@@ -2054,10 +2054,10 @@ export async function transitionIssueExecutionRunStatusInTransaction(
   if (input.status === "running") {
     predicates.push(
       input.startedAt.getTime() === input.at.getTime()
-        ? sql`(
-            ${issueExecutionRuns.startedAt} is null
-            or ${issueExecutionRuns.startedAt} = ${input.startedAt}
-          )`
+        ? or(
+            isNull(issueExecutionRuns.startedAt),
+            eq(issueExecutionRuns.startedAt, input.startedAt),
+          )!
         : eq(issueExecutionRuns.startedAt, input.startedAt),
     );
   }

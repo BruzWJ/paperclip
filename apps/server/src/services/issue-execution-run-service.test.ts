@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 import {
   computeIssueExecutionRunBatchDigest,
   createIssueExecutionRunInTransaction,
   createIssueExecutionRunService,
   IssueExecutionRunInvariantViolation,
   IssueExecutionSteeringRejected,
+  transitionIssueExecutionRunStatusInTransaction,
   type IssueExecutionSteeringCancellationSettlement,
   type PendingIssueExecutionSteeringForSource,
   type RequestedIssueExecutionSteering,
 } from "./issue-execution-run-service.js";
+import { createMockDb } from "../__tests__/helpers/mock-db.js";
 
 const runTime = new Date("2026-08-01T12:00:00.000Z");
 
@@ -65,6 +68,38 @@ function runSelectionTransaction(rows: readonly Record<string, unknown>[]) {
   }));
   return { transaction: { select } as never, select };
 }
+
+describe("canonical issue-execution run transitions", () => {
+  it("encodes a same-time start predicate through the timestamp column", async () => {
+    const harness = createMockDb({
+      update: [[persistedRunRow({
+        id: "run",
+        status: "running",
+        terminalFinalizationId: null,
+        finishedAt: null,
+        terminalClassification: null,
+        terminalReasonCode: null,
+      })]],
+    });
+
+    await transitionIssueExecutionRunStatusInTransaction(harness.db as never, {
+      companyId: "company",
+      issueId: "issue",
+      runId: "run",
+      expectedStatus: "queued",
+      status: "running",
+      startedAt: runTime,
+      at: runTime,
+    });
+
+    const where = harness.calls.find(
+      (call) => call.operation === "update" && call.method === "where",
+    );
+    const query = new PgDialect().sqlToQuery(where!.args[0] as never);
+    expect(query.params.some((param) => param instanceof Date)).toBe(false);
+    expect(query.params).toContain(runTime.toISOString());
+  });
+});
 
 const requested: RequestedIssueExecutionSteering = Object.freeze({
   companyId: "company",
