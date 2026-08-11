@@ -7,10 +7,7 @@ import {
   ndJsonStream,
 } from "@agentclientprotocol/sdk";
 
-const fixtureMode = process.env.PAPERCLIP_ACP_FIXTURE_MODE ?? "normal";
 const fixtureSessionId = "fixture-new-session";
-const cancelledSessions = new Set();
-const pendingCancellation = new Map();
 
 function record(method, params) {
   process.stderr.write(`${JSON.stringify({ method, params })}\n`);
@@ -92,45 +89,12 @@ app.onRequest(methods.agent.initialize, ({ params }) => {
   };
 });
 
-app.onRequest(methods.agent.session.new, async ({ params, client }) => {
+app.onRequest(methods.agent.session.new, ({ params }) => {
   record(methods.agent.session.new, params);
   sessionConfig(fixtureSessionId);
-  if (fixtureMode === "early-setup-controls") {
-    await notify(client, fixtureSessionId, {
-      sessionUpdate: "current_mode_update",
-      currentModeId: "normal",
-    });
-    await notify(client, fixtureSessionId, {
-      sessionUpdate: "available_commands_update",
-      availableCommands: [],
-    });
-  }
   return {
     sessionId: fixtureSessionId,
     configOptions: configOptions(sessionConfig(fixtureSessionId)),
-  };
-});
-
-app.onRequest(methods.agent.session.resume, async ({ params, client }) => {
-  record(methods.agent.session.resume, params);
-  if (fixtureMode === "target-not-found") {
-    throw RequestError.resourceNotFound(params.sessionId);
-  }
-  if (fixtureMode === "resume-error") {
-    throw RequestError.internalError(
-      { sessionId: params.sessionId },
-      "fixture resume failed",
-    );
-  }
-  sessionConfig(params.sessionId);
-  if (fixtureMode === "early-setup-controls") {
-    await notify(client, params.sessionId, {
-      sessionUpdate: "session_info_update",
-      title: "resumed-before-response",
-    });
-  }
-  return {
-    configOptions: configOptions(sessionConfig(params.sessionId)),
   };
 });
 
@@ -140,57 +104,7 @@ app.onRequest(
     record(methods.agent.session.setConfigOption, params);
     const values = sessionConfig(params.sessionId);
     values[params.configId] = params.value;
-    const responseOptions = configOptions(values);
-    if (fixtureMode === "config-option-removed") {
-      return {
-        configOptions: responseOptions.filter(
-          (option) => option.id !== "omega-observer",
-        ),
-      };
-    }
-    if (fixtureMode === "config-type-drift") {
-      return {
-        configOptions: responseOptions.map((option) =>
-          option.id === "zeta-enabled"
-            ? {
-                type: "select",
-                id: option.id,
-                name: option.name,
-                currentValue: "enabled",
-                options: [
-                  { value: "disabled", name: "Disabled" },
-                  { value: "enabled", name: "Enabled" },
-                ],
-              }
-            : option,
-        ),
-      };
-    }
-    if (fixtureMode === "config-legal-values-drift") {
-      return {
-        configOptions: responseOptions.map((option) =>
-          option.id === "alpha-model" && option.type === "select"
-            ? {
-                ...option,
-                options: option.options.filter(
-                  (candidate) =>
-                    "group" in candidate || candidate.value !== "model-a",
-                ),
-              }
-            : option,
-        ),
-      };
-    }
-    if (fixtureMode === "config-unrequested-current-drift") {
-      return {
-        configOptions: responseOptions.map((option) =>
-          option.id === "omega-observer"
-            ? { ...option, currentValue: true }
-            : option,
-        ),
-      };
-    }
-    return { configOptions: responseOptions };
+    return { configOptions: configOptions(values) };
   },
 );
 
@@ -213,24 +127,6 @@ app.onRequest(
       sessionUpdate: "agent_thought_chunk",
       content: { type: "text", text: "fixture thinking" },
     });
-
-    if (text === "wait-for-cancel") {
-      if (!cancelledSessions.has(params.sessionId)) {
-        await new Promise((resolve) => {
-          pendingCancellation.set(params.sessionId, resolve);
-        });
-      }
-      await notify(client, params.sessionId, {
-        sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text: "fixture cancelled" },
-      });
-      await notify(client, params.sessionId, {
-        sessionUpdate: "usage_update",
-        used: 3,
-        size: 128,
-      });
-      return { stopReason: "cancelled" };
-    }
 
     await notify(client, params.sessionId, {
       sessionUpdate: "plan",
@@ -260,9 +156,6 @@ app.onRequest(
       sessionUpdate: "agent_message_chunk",
       content: { type: "text", text: `fixture:${text}` },
     });
-    if (fixtureMode === "missing-usage") {
-      return { stopReason: "end_turn" };
-    }
     await notify(client, params.sessionId, {
       sessionUpdate: "usage_update",
       used: 9,
@@ -271,14 +164,6 @@ app.onRequest(
     return { stopReason: "end_turn" };
   },
 );
-
-app.onNotification(methods.agent.session.cancel, ({ params }) => {
-  record(methods.agent.session.cancel, params);
-  cancelledSessions.add(params.sessionId);
-  if (fixtureMode === "ignore-cancel") return;
-  pendingCancellation.get(params.sessionId)?.();
-  pendingCancellation.delete(params.sessionId);
-});
 
 const output = Writable.toWeb(process.stdout);
 const input = Readable.toWeb(process.stdin);

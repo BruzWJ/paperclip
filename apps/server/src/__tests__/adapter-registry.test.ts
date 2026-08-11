@@ -58,28 +58,12 @@ const acpxFixture = vi.hoisted(() => {
   });
   return Object.freeze({
     agentName,
-    registryResolve: vi.fn(() => {
-      throw new Error("Paperclip must not inspect ACPX launch argv");
-    }),
     adapter,
     state: {
       snapshot: [adapter] as ServerAdapterModule[],
       failDiscovery: false,
     },
   });
-});
-
-vi.mock("@paperclipai/adapter-utils/acp-subprocess", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("@paperclipai/adapter-utils/acp-subprocess")
-  >();
-  return {
-    ...actual,
-    loadAcpxAgentRegistry: vi.fn(async () => ({
-      list: () => acpxFixture.state.snapshot.map((adapter) => adapter.type),
-      resolve: acpxFixture.registryResolve,
-    })),
-  };
 });
 
 vi.mock("../adapters/acpx-catalog.js", () => ({
@@ -95,37 +79,30 @@ vi.mock("../adapters/acpx-catalog.js", () => ({
 }));
 
 const {
-  findSelectableServerAdapterImplementation,
+  findServerAdapterImplementation,
   findServerAdapter,
-  listAcpxAdapterProbeDiagnostics,
   listAdapterModels,
   listServerAdapters,
   refreshAcpxAdapters,
-  registerServerAdapter,
-  requireServerAdapter,
   resolveAvailableAdapterModel,
-  setOverridePaused,
-  unregisterServerAdapter,
 } = await import("../adapters/registry.js");
 
 describe("ACPX-supplied server adapter registry", () => {
   beforeEach(async () => {
     acpxFixture.state.snapshot = [acpxFixture.adapter];
     acpxFixture.state.failDiscovery = false;
-    acpxFixture.registryResolve.mockClear();
     await refreshAcpxAdapters({ force: true });
   });
 
   it("surfaces only the currently discovered ACPX adapter and its opaque registry name", () => {
     expect(listServerAdapters()).toEqual([acpxFixture.adapter]);
-    expect(requireServerAdapter(acpxFixture.agentName).definition.launchProfile).toEqual({
+    expect(findServerAdapter(acpxFixture.agentName)?.definition.launchProfile).toEqual({
       registryName: acpxFixture.agentName,
     });
     expect(
-      findSelectableServerAdapterImplementation(acpxFixture.agentName)?.identity,
+      findServerAdapterImplementation(acpxFixture.agentName)?.identity,
     ).toMatchObject({
       adapterType: acpxFixture.agentName,
-      origin: "builtin",
       packageName: "acpx",
       packageVersion: "runtime",
       buildIdentity: expect.stringMatching(
@@ -133,7 +110,6 @@ describe("ACPX-supplied server adapter registry", () => {
       ),
       artifactDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
-    expect(acpxFixture.registryResolve).not.toHaveBeenCalled();
   });
 
   it("uses the discovered model catalog without assigning Paperclip token limits", async () => {
@@ -149,9 +125,6 @@ describe("ACPX-supplied server adapter registry", () => {
     await refreshAcpxAdapters({ force: true });
 
     expect(findServerAdapter(acpxFixture.agentName)).toBeNull();
-    expect(() => requireServerAdapter(acpxFixture.agentName)).toThrow(
-      /Unknown local agent type/,
-    );
   });
 
   it("fails closed instead of retaining a stale catalog when ACPX reload fails", async () => {
@@ -161,47 +134,6 @@ describe("ACPX-supplied server adapter registry", () => {
       "ACPX registry reload failed",
     );
     expect(findServerAdapter(acpxFixture.agentName)).toBeNull();
-    expect(findSelectableServerAdapterImplementation(acpxFixture.agentName)).toBeNull();
-  });
-
-  it("quarantines one invalid ACPX candidate without hiding healthy agents", async () => {
-    const invalidAgentName = "invalid-agent";
-    const invalidAdapter: ServerAdapterModule = {
-      ...acpxFixture.adapter,
-      type: invalidAgentName,
-      definition: {
-        ...acpxFixture.adapter.definition,
-        launchProfile: { registryName: invalidAgentName },
-        configOptions: [{
-          ...acpxFixture.adapter.definition.configOptions[0]!,
-          values: [{
-            ...acpxFixture.adapter.definition.configOptions[0]!.values[0]!,
-            label: "Malformed label ",
-          }],
-        }],
-      },
-    };
-    acpxFixture.state.snapshot = [acpxFixture.adapter, invalidAdapter];
-
-    await expect(refreshAcpxAdapters({ force: true })).resolves.toBeUndefined();
-
-    expect(findServerAdapter(acpxFixture.agentName)).toBe(acpxFixture.adapter);
-    expect(findServerAdapter(invalidAgentName)).toBeNull();
-    expect(listAcpxAdapterProbeDiagnostics()).toEqual([
-      expect.objectContaining({
-        type: invalidAgentName,
-        code: "acpx_catalog_invalid",
-        message: expect.stringContaining("exact non-empty string"),
-      }),
-    ]);
-  });
-
-  it("does not accept Paperclip-owned adapter registrations or override state", () => {
-    expect(() => registerServerAdapter(acpxFixture.adapter)).toThrow(
-      /discovers compatible local agents/,
-    );
-    expect(setOverridePaused(acpxFixture.agentName, true)).toBe(false);
-    unregisterServerAdapter(acpxFixture.agentName);
-    expect(findServerAdapter(acpxFixture.agentName)).toBe(acpxFixture.adapter);
+    expect(findServerAdapterImplementation(acpxFixture.agentName)).toBeNull();
   });
 });

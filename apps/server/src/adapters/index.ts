@@ -2,7 +2,6 @@ export {
   listServerAdapters,
   listAcpxAdapterProbeDiagnostics,
   findServerAdapter,
-  findActiveServerAdapter,
   listAdapterModelProfiles,
   refreshAcpxAdapters,
 } from "./registry.js";

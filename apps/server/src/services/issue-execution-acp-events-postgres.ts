@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import {
   normalizeAcpToolOutput,
   type NormalizedAcpSessionEvent,
-} from "@paperclipai/adapter-utils/acp-subprocess";
+} from "@paperclipai/adapter-utils/acpx-runtime";
 import {
   agentAdapterConfigRevisions,
   issueExecutionAttempts,
@@ -26,9 +26,9 @@ import type {
   IssueExecutionPromptCapabilityIdentity,
   IssueExecutionPromptIdentity,
 } from "./issue-execution-attempt-executor.js";
-import { publishIssueExecutionLivePlan } from "./issue-execution-plan-live.js";
 import type { IssueExecutionRunService } from "./issue-execution-run-service.js";
 import {
+  lockIssueSessionProjectionRoot,
   reserveIssueSessionEventSequence,
   reserveIssueSessionMessageId,
   type IssueSessionDbTransaction,
@@ -769,9 +769,7 @@ async function publishToolEvent(
 
 /**
  * Sole provider-neutral productive/consult ACP update projector. Every durable
- * write re-locks the exact run/ref/segment, attempt, lease, and capability;
- * plans remain disposable live state and control observations remain typed
- * non-conversational observations rather than invented assistant prose.
+ * write re-locks the exact run/ref/segment, attempt, lease, and capability.
  */
 export function createPostgresIssueExecutionAcpEventSink(options: {
   readonly database: Db;
@@ -781,50 +779,16 @@ export function createPostgresIssueExecutionAcpEventSink(options: {
   const now = options.now ?? (() => new Date());
   return {
     async publish(input) {
-      if (input.event.kind === "plan") {
-        await options.database.transaction(async (transaction) => {
-          await lockCurrentPrompt(
-            transaction,
-            options.runService,
-            input.prompt,
-            input.capability,
-            now(),
-          );
-        });
-        publishIssueExecutionLivePlan({
-          routedPrompt: {
-            companyId: input.prompt.companyId,
-            issueId: input.prompt.issueId,
-            runId: input.prompt.runId,
-            refId: input.prompt.refId,
-            runOrdinal: input.prompt.refOrdinal,
-            segmentOrdinal: input.prompt.segmentOrdinal,
-            attemptId: input.prompt.attemptId,
-            capabilityGenerationId:
-              `${input.capability.capabilityConnectionId}:${input.capability.capabilityGeneration}`,
-          },
-          currentPrompt: {
-            companyId: input.prompt.companyId,
-            issueId: input.prompt.issueId,
-            runId: input.prompt.runId,
-            refId: input.prompt.refId,
-            runOrdinal: input.prompt.refOrdinal,
-            segmentOrdinal: input.prompt.segmentOrdinal,
-            attemptId: input.prompt.attemptId,
-            capabilityGenerationId:
-              `${input.capability.capabilityConnectionId}:${input.capability.capabilityGeneration}`,
-            promptState: "prompt_active",
-          },
-          event: input.event,
-          redactor: input.redactor,
-        });
-        return;
-      }
       await options.database.transaction(async (transaction) => {
         const timestamp = now();
         if (!Number.isFinite(timestamp.getTime())) {
           reject("ACP event timestamp is invalid");
         }
+        await lockIssueSessionProjectionRoot(transaction, {
+          companyId: input.prompt.companyId,
+          issueId: input.prompt.issueId,
+          sessionId: input.prompt.sessionId,
+        });
         await lockCurrentPrompt(
           transaction,
           options.runService,
@@ -832,15 +796,6 @@ export function createPostgresIssueExecutionAcpEventSink(options: {
           input.capability,
           timestamp,
         );
-        if (
-          input.event.kind === "usage" ||
-          input.event.kind === "mode" ||
-          input.event.kind === "config_options" ||
-          input.event.kind === "session_info" ||
-          input.event.kind === "available_commands"
-        ) {
-          return;
-        }
         const redactor = publicationRedactor(input.redactor.redactText);
         const publication = await beginPromptPublication(transaction, {
           prompt: input.prompt,

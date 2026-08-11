@@ -135,14 +135,3 @@ export function useAdapterCatalogSyncState(
     refetch: async () => await query.refetch(),
   };
 }
-
-/**
- * Compatibility shorthand for consumers that only need the current dynamic
- * local-agent selection set. New picker surfaces should prefer the stateful variant
- * so they can distinguish a failed refresh from an empty successful catalog.
- */
-export function useAdapterCatalogSync(
-  options: { enabled?: boolean } = {},
-): readonly ReadyAdapterInfo[] {
-  return useAdapterCatalogSyncState(options).adapters;
-}

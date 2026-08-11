@@ -19,7 +19,6 @@ import {
   type AgentCompanySkillPinsResponse,
   type AgentCompanySkillPinsUpdate,
   type AgentAdapterRevisionConfigurationInput,
-  type CompanySkillChannel,
   type CompanySkillPin,
 } from "@paperclipai/shared";
 import {
@@ -28,7 +27,7 @@ import {
   validateServerAdapterModule,
   type AdapterConfigSchema,
   type AcpAdapterRevisionConfiguration,
-  type AcpSubprocessAdapterDefinition,
+  type AcpxAdapterDefinition,
   type ConfigFieldSchema,
   type ServerAdapterModule,
 } from "@paperclipai/adapter-utils";
@@ -65,7 +64,6 @@ export interface SelectAgentAdapterConfigRevisionInput {
   adapterConfig: Record<string, unknown>;
   runtimeConfig: Record<string, unknown>;
   companySkillPins: readonly CompanySkillPin[];
-  skillChannel: CompanySkillChannel;
   createdByAgentId?: string | null;
   createdByUserId?: string | null;
 }
@@ -81,14 +79,13 @@ export interface DerivedAgentAdapterConfigRevision {
 
 export interface AgentAdapterRuntimeMetadata {
   implementationIdentity: AdapterImplementationIdentity;
-  definition: AcpSubprocessAdapterDefinition;
+  definition: AcpxAdapterDefinition;
 }
 
 export interface DeriveRegisteredAgentAdapterConfigRevisionInput {
   adapterType: string;
   adapterConfig: Record<string, unknown>;
   companySkillPins: readonly CompanySkillPin[];
-  skillChannel: CompanySkillChannel;
 }
 
 export interface ResolvedRegisteredAdapterRuntimeConfiguration {
@@ -365,7 +362,6 @@ export function deriveAgentAdapterConfigRevision(input: {
   adapterType: string;
   adapterConfig: Record<string, unknown>;
   companySkillPins: readonly CompanySkillPin[];
-  skillChannel: CompanySkillChannel;
   runtimeMetadata: AgentAdapterRuntimeMetadata;
 }): DerivedAgentAdapterConfigRevision {
   if (!input.runtimeMetadata) {
@@ -394,15 +390,6 @@ export function deriveAgentAdapterConfigRevision(input: {
   }
   const normalizedConfig =
     normalizeExplicitAdapterConfig(input.adapterConfig);
-  if (input.skillChannel === "isolated_skills_home") {
-    throw unprocessable(
-      "This local agent runtime does not support isolated skills homes. Select operator_native skills.",
-      {
-        code: "acpx_isolated_skills_home_unsupported",
-        adapterType: input.adapterType,
-      },
-    );
-  }
   let declarativeAcpConfiguration: AcpAdapterRevisionConfiguration;
   try {
     declarativeAcpConfiguration = resolveAcpAdapterRevisionConfiguration({
@@ -431,7 +418,6 @@ export function deriveAgentAdapterConfigRevision(input: {
         kind: "issue_execution_workspace",
       },
       companySkillPins,
-      skillChannel: input.skillChannel,
     });
   if (!parsedAcpConfiguration.success) {
     throw unprocessable(
@@ -483,7 +469,7 @@ export async function resolveRegisteredAdapterRuntimeConfiguration(input: {
     // Paperclip-maintained agent list.
     await registry.refreshAcpxAdapters();
     const implementation =
-      registry.findSelectableServerAdapterImplementation(input.adapterType);
+      registry.findServerAdapterImplementation(input.adapterType);
     adapter = implementation?.adapter ?? null;
     implementationIdentity = implementation?.identity ?? null;
   } catch (error) {
@@ -586,7 +572,6 @@ export async function deriveRegisteredAgentAdapterConfigRevision(
     adapterType: input.adapterType,
     adapterConfig: resolved.canonicalAdapterConfig,
     companySkillPins: input.companySkillPins,
-    skillChannel: input.skillChannel,
     runtimeMetadata: resolved.runtimeMetadata,
   });
   return derived;
@@ -715,7 +700,6 @@ export async function selectAgentAdapterConfigRevision(
     adapterType: input.adapterType,
     adapterConfig: resolvedRuntime.canonicalAdapterConfig,
     companySkillPins,
-    skillChannel: input.skillChannel,
     runtimeMetadata: resolvedRuntime.runtimeMetadata,
   });
   const digest = createHash("sha256")
@@ -928,7 +912,6 @@ export function createAgentAdapterConfigurationService(
       );
       return {
         entries: [...acpConfiguration.companySkillPins],
-        skillChannel: acpConfiguration.skillChannel,
       };
     },
 
@@ -949,7 +932,6 @@ export function createAgentAdapterConfigurationService(
         });
       }
       const requestedPins = parseCompanySkillPins(parsed.data.entries);
-      const requestedSkillChannel = parsed.data.skillChannel;
 
       return db.transaction(async (tx) => {
         const txDb = tx as unknown as Db;
@@ -1027,13 +1009,9 @@ export function createAgentAdapterConfigurationService(
           input.companyId,
           requestedPins,
         );
-        if (
-          companySkillPinsEqual(currentPins, requestedPins) &&
-          currentAcpConfiguration.skillChannel === requestedSkillChannel
-        ) {
+        if (companySkillPinsEqual(currentPins, requestedPins)) {
           return {
             entries: [...currentPins],
-            skillChannel: currentAcpConfiguration.skillChannel,
             revision: currentRevision,
             current: locked,
             appended: false,
@@ -1047,7 +1025,6 @@ export function createAgentAdapterConfigurationService(
           adapterConfig: locked.adapterConfig,
           runtimeConfig: locked.runtimeConfig,
           companySkillPins: requestedPins,
-          skillChannel: requestedSkillChannel,
           createdByAgentId: attribution.agentId,
           createdByUserId: attribution.userId,
         });
@@ -1073,7 +1050,6 @@ export function createAgentAdapterConfigurationService(
 
         return {
           entries: requestedPins,
-          skillChannel: requestedSkillChannel,
           revision,
           current,
           appended:
@@ -1135,7 +1111,6 @@ export function createAgentAdapterConfigurationService(
           adapterConfig: normalizedAdapterConfig,
           runtimeConfig: normalizedRuntimeConfig,
           companySkillPins: parsed.data.companySkillPins,
-          skillChannel: parsed.data.skillChannel,
           createdByAgentId: attribution.agentId,
           createdByUserId: attribution.userId,
         });

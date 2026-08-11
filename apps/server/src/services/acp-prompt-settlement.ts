@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { AcpPromptSettlement } from "@paperclipai/adapter-utils/acp-subprocess";
+import type { AcpPromptSettlement } from "@paperclipai/adapter-utils/acpx-runtime";
 import {
   acpPromptAccounting,
   agentAdapterConfigRevisions,

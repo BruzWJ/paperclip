@@ -87,6 +87,11 @@ vi.mock("../services/agent-operational-configuration.js", () => ({
     mockOperationalConfigurations,
 }));
 
+vi.mock("../services/adapter-configuration-draft-test.js", () => ({
+  createAdapterConfigurationDraftTestService: () =>
+    mockAdapterConfigurationDraftTest,
+}));
+
 vi.mock("../services/plugin-managed-agents.js", () => ({
   getPluginManagedAgentBinding: vi.fn(async () => null),
   adoptPluginManagedAgentFromBoard: vi.fn(),
@@ -184,8 +189,6 @@ function createApp(actorType: "board" | "agent" = "board") {
   app.use("/api", denyGenericAgentRest("control-plane"));
   app.use("/api", agentRoutes({} as never, {
     ordinaryIssues: {} as never,
-    adapterConfigurationDraftTest:
-      mockAdapterConfigurationDraftTest,
   }));
   app.use(errorHandler);
   return app;
@@ -245,7 +248,6 @@ describe("agent control-plane routes", () => {
             "55555555-5555-4555-8555-555555555555",
         },
       ],
-      skillChannel: "operator_native",
     });
     mockAdapterConfigurations.replaceCompanySkillPins.mockResolvedValue({
       entries: [
@@ -255,7 +257,6 @@ describe("agent control-plane routes", () => {
             "66666666-6666-4666-8666-666666666666",
         },
       ],
-      skillChannel: "isolated_skills_home",
       revision: revision({ revisionNumber: 2 }),
       current: agent(),
       appended: true,
@@ -383,7 +384,6 @@ describe("agent control-plane routes", () => {
       adapterConfig: { model: "fixture-model" },
       runtimeConfig: {},
       companySkillPins: [],
-      skillChannel: "operator_native",
     };
     const app = createApp();
     const created = await request(app)
@@ -431,7 +431,6 @@ describe("agent control-plane routes", () => {
       "launchProfile",
       "model",
       "sessionConfigSelections",
-      "skillChannel",
     ]);
     expect(history.status).toBe(200);
     expect(history.body.map((row: { revisionNumber: number }) =>
@@ -467,7 +466,6 @@ describe("agent control-plane routes", () => {
             "66666666-6666-4666-8666-666666666666",
         },
       ],
-      skillChannel: "isolated_skills_home",
     };
     const replaced = await request(app)
       .put(`/api/agents/${agentId}/company-skill-pins`)
@@ -481,7 +479,6 @@ describe("agent control-plane routes", () => {
           "55555555-5555-4555-8555-555555555555",
       },
     ]);
-    expect(read.body.skillChannel).toBe("operator_native");
     expect(replaced.status).toBe(200);
     expect(replaced.body).toEqual(update);
     expect(

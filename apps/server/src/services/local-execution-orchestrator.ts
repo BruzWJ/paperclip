@@ -5,7 +5,7 @@ import {
   issueExecutionWorkspaceBindings,
   type Db,
 } from "@paperclipai/db";
-import type { AdapterExecutionTarget } from "@paperclipai/adapter-utils/execution-target";
+import type { AcpxLocalWorkspaceTarget } from "@paperclipai/adapter-utils/acpx-runtime";
 import { logActivity } from "./activity-log.js";
 import {
   localRunLeaseService,
@@ -38,7 +38,7 @@ export class LocalExecutionTargetError extends Error {
 
 export interface LocalExecutionTargetAcquisitionResult {
   readonly lease: LocalRunLease;
-  readonly executionTarget: AdapterExecutionTarget;
+  readonly executionTarget: AcpxLocalWorkspaceTarget;
   releaseExecutionTarget(failed?: boolean): Promise<void>;
 }
 
@@ -280,7 +280,7 @@ export function localExecutionOrchestrator(
         },
       });
 
-      const executionTarget: AdapterExecutionTarget = {
+      const executionTarget: AcpxLocalWorkspaceTarget = {
         kind: "local",
         leaseId: acquired.lease.id,
       };

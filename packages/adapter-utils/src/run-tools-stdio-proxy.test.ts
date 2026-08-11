@@ -180,4 +180,98 @@ describe("run-tools stdio proxy", () => {
       expect.arrayContaining(["init", "ping", "slow", "fast", "new", "list"]),
     );
   });
+
+  it("handles cancellation locally while the durable call settles once and later calls remain usable", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "paperclip-run-tools-"));
+    temporaryDirectories.push(directory);
+    const proxyPath = join(directory, "proxy.mjs");
+    const configPath = join(directory, "config.json");
+    await writeFile(proxyPath, RUN_TOOLS_STDIO_PROXY_SOURCE, {
+      mode: 0o700,
+    });
+
+    const requests: Array<{ id: unknown; method: unknown }> = [];
+    let cancelledCallSettlements = 0;
+    const server = createServer(async (request, response) => {
+      let raw = "";
+      for await (const chunk of request) raw += String(chunk);
+      const body = JSON.parse(raw) as Record<string, unknown>;
+      requests.push({ id: body.id, method: body.method });
+      if (body.id === "cancelled") {
+        await delay(70);
+        cancelledCallSettlements += 1;
+      }
+      response.statusCode = 200;
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: { echoed: body.id },
+      }));
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected a TCP test address");
+    }
+    await writeFile(configPath, JSON.stringify({
+      kind: "paperclip.run-tools/v1",
+      endpoint: `http://127.0.0.1:${address.port}/run-tools`,
+      bearer: "private-bearer",
+    }));
+
+    const child = spawn(process.execPath, [proxyPath, configPath], {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.setEncoding("utf8").on("data", (chunk) => {
+      stderr += chunk;
+    });
+    const call = (id: string, name: string, args: Record<string, unknown>) => ({
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { name, arguments: args },
+    });
+    const messages = [
+      { jsonrpc: "2.0", id: "init", method: "initialize" },
+      { jsonrpc: "2.0", method: "notifications/initialized", params: {} },
+      call("cancelled", "agent_hire", { name: "cto" }),
+      {
+        jsonrpc: "2.0",
+        method: "notifications/cancelled",
+        params: { requestId: "cancelled", reason: "client timeout" },
+      },
+      call("later", "list_agents", {}),
+    ];
+    child.stdin.end(
+      messages.map((message) => JSON.stringify(message)).join("\n") + "\n",
+    );
+    const [exitCode] = await once(child, "close");
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(cancelledCallSettlements).toBe(1);
+    expect(requests).toEqual([
+      { id: "init", method: "initialize" },
+      { id: "cancelled", method: "tools/call" },
+      { id: "later", method: "tools/call" },
+    ]);
+    const responses = stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { id: unknown });
+    expect(responses.map((response) => response.id)).toEqual([
+      "init",
+      "later",
+    ]);
+  });
 });

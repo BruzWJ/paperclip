@@ -1,7 +1,6 @@
 import type {
   AgentAdapterRevisionConfigurationInput,
   AgentOperationalConfigurationUpdateInput,
-  CompanySkillChannel,
   CompanySkillPin,
   RuntimeAgentCreateConfigurationInput,
 } from "@paperclipai/shared";
@@ -26,7 +25,6 @@ export function buildNewAgentControlPlanePayloads(input: {
   configValues: CreateConfigValues;
   adapterConfig: Record<string, unknown>;
   companySkillPins: readonly CompanySkillPin[];
-  skillChannel: CompanySkillChannel;
 }): NewAgentControlPlanePayloads {
   return {
     runtimeAgent: {
@@ -47,7 +45,6 @@ export function buildNewAgentControlPlanePayloads(input: {
         cheapModelEnabled: input.configValues.cheapModelEnabled,
       }),
       companySkillPins: parseCompanySkillPins(input.companySkillPins),
-      skillChannel: input.skillChannel,
     },
     operational: {
       budgetMonthlyAmount: parseMoneyAmount("0"),

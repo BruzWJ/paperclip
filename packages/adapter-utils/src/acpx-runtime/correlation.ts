@@ -2,7 +2,7 @@ export const ACP_SESSION_CORRELATION_ENVELOPE_VERSION =
   "issue-execution-native/v1" as const;
 export const ACP_SESSION_CORRELATION_KIND = "acp-session/v1" as const;
 
-export interface AcpSessionCorrelationPayload {
+interface AcpSessionCorrelationPayload {
   readonly sessionId: string;
 }
 
@@ -74,8 +74,4 @@ export function parseAcpSessionCorrelation(
   return createAcpSessionCorrelation(
     exactOpaqueSessionId(value.payload.sessionId),
   );
-}
-
-export function readAcpSessionCorrelation(value: unknown): string {
-  return parseAcpSessionCorrelation(value).payload.sessionId;
 }

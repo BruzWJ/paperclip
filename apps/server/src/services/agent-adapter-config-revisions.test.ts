@@ -1,5 +1,5 @@
 import type { AdapterImplementationIdentity } from "@paperclipai/shared";
-import type { AcpSubprocessAdapterDefinition } from "@paperclipai/adapter-utils";
+import type { AcpxAdapterDefinition } from "@paperclipai/adapter-utils";
 import { describe, expect, it } from "vitest";
 import {
   deriveAgentAdapterConfigRevision,
@@ -12,14 +12,13 @@ const implementationIdentity: AdapterImplementationIdentity = Object.freeze({
   adapterType: FIXTURE_AGENT,
   definitionVersion: "acpx-runtime/v1",
   protocolVersion: 1,
-  origin: "builtin",
   packageName: "acpx",
   packageVersion: "runtime",
   buildIdentity: `acpx-runtime:${FIXTURE_AGENT}`,
   artifactDigest: "a".repeat(64),
 });
 
-const fixtureDefinition: AcpSubprocessAdapterDefinition = Object.freeze({
+const fixtureDefinition: AcpxAdapterDefinition = Object.freeze({
   version: "acpx-runtime/v1",
   launchProfile: Object.freeze({ registryName: FIXTURE_AGENT }),
   environment: Object.freeze({
@@ -114,7 +113,6 @@ function derive(model = "model-1", reasoningEffort = "high") {
         versionId: "00000000-0000-4000-8000-000000000003",
       },
     ],
-    skillChannel: "operator_native",
     runtimeMetadata,
   });
 }
@@ -148,7 +146,6 @@ describe("canonical ACP adapter configuration revision", () => {
             versionId: "00000000-0000-4000-8000-000000000003",
           },
         ],
-        skillChannel: "operator_native",
       },
     });
   });
@@ -158,7 +155,7 @@ describe("canonical ACP adapter configuration revision", () => {
     expect(derive("model-2").digest).not.toBe(derive().digest);
   });
 
-  it("fails closed for undeclared config and unsupported skill homes", () => {
+  it("fails closed for undeclared config", () => {
     expect(() =>
       deriveAgentAdapterConfigRevision({
         adapterType: FIXTURE_AGENT,
@@ -168,18 +165,8 @@ describe("canonical ACP adapter configuration revision", () => {
           apiKey: "must-not-exist",
         },
         companySkillPins: [],
-        skillChannel: "operator_native",
         runtimeMetadata,
       }),
     ).toThrow(/unknown field apiKey/);
-    expect(() =>
-      deriveAgentAdapterConfigRevision({
-        adapterType: FIXTURE_AGENT,
-        adapterConfig: { model: "model-1", reasoning_effort: "high" },
-        companySkillPins: [],
-        skillChannel: "isolated_skills_home",
-        runtimeMetadata,
-      }),
-    ).toThrow(/does not support isolated skills homes/);
   });
 });

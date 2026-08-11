@@ -3,7 +3,7 @@ import {
   ACP_SESSION_CORRELATION_ENVELOPE_VERSION,
   ACP_SESSION_CORRELATION_KIND,
   createAcpSessionCorrelation,
-} from "@paperclipai/adapter-utils/acp-subprocess";
+} from "@paperclipai/adapter-utils/acpx-runtime";
 import {
   NativeCorrelationRejected,
   createNativeCorrelationService,
@@ -74,40 +74,33 @@ function harness() {
 }
 
 describe("fixed ACP session correlation", () => {
-  it("always selects new without reading correlation for a false-carry base", async () => {
+  it("rejects a false-carry base resume without reading correlation", async () => {
     const { service, open } = harness();
-    await expect(service.resolveStart({
+    await expect(service.resolveResume({
       promptKind: "base",
       carryContext: false,
+      bootstrapHandoff: false,
       stored: null,
-    })).resolves.toEqual({ kind: "new" });
+    })).rejects.toThrow("false-carry base prompt cannot resolve an ACP resume");
     expect(open).not.toHaveBeenCalled();
   });
 
   it("rejects a forbidden lookup supplied to a false-carry base", async () => {
     const { service } = harness();
-    await expect(service.resolveStart({
+    await expect(service.resolveResume({
       promptKind: "base",
       carryContext: false,
+      bootstrapHandoff: false,
       stored: stored("active_run_steering"),
     })).rejects.toBeInstanceOf(NativeCorrelationRejected);
   });
 
-  it("resumes only carry for true carry and steering-only for false steering", async () => {
+  it("resumes an exact bootstrap handoff for a false-carry base", async () => {
     const { service } = harness();
-    await expect(service.resolveStart({
+    await expect(service.resolveResume({
       promptKind: "base",
-      carryContext: true,
-      stored: stored("carry"),
-    })).resolves.toEqual({
-      kind: "resume",
-      correlationId: "correlation-1",
-      correlationGeneration: 3,
-      start: { kind: "resume", sessionId: "opaque-acp-session" },
-    });
-    await expect(service.resolveStart({
-      promptKind: "steering",
       carryContext: false,
+      bootstrapHandoff: true,
       stored: stored("active_run_steering"),
     })).resolves.toMatchObject({
       kind: "resume",
@@ -115,30 +108,60 @@ describe("fixed ACP session correlation", () => {
     });
   });
 
-  it("uses one typed target_not_found for every eligible missing mapping", async () => {
+  it("resumes only carry for true carry and steering-only for false steering", async () => {
     const { service } = harness();
-    await expect(service.resolveStart({
+    await expect(service.resolveResume({
       promptKind: "base",
       carryContext: true,
-      stored: null,
-    })).resolves.toEqual({ kind: "target_not_found" });
-    await expect(service.resolveStart({
+      bootstrapHandoff: false,
+      stored: stored("carry"),
+    })).resolves.toEqual({
+      kind: "resume",
+      correlationId: "correlation-1",
+      correlationGeneration: 3,
+      start: { kind: "resume", sessionId: "opaque-acp-session" },
+    });
+    await expect(service.resolveResume({
       promptKind: "steering",
       carryContext: false,
+      bootstrapHandoff: false,
+      stored: stored("active_run_steering"),
+    })).resolves.toMatchObject({
+      kind: "resume",
+      start: { sessionId: "opaque-acp-session" },
+    });
+  });
+
+  it("rejects every frozen resume that lost its exact stored mapping", async () => {
+    const { service } = harness();
+    await expect(service.resolveResume({
+      promptKind: "base",
+      carryContext: true,
+      bootstrapHandoff: false,
       stored: null,
-    })).resolves.toEqual({ kind: "target_not_found" });
+    })).rejects.toThrow(
+      "frozen ACP resume operation lost its exact stored correlation",
+    );
+    await expect(service.resolveResume({
+      promptKind: "steering",
+      carryContext: false,
+      bootstrapHandoff: false,
+      stored: null,
+    })).rejects.toBeInstanceOf(NativeCorrelationRejected);
   });
 
   it("rejects cross-purpose rows and malformed fixed envelopes", async () => {
     const { service } = harness();
-    await expect(service.resolveStart({
+    await expect(service.resolveResume({
       promptKind: "base",
       carryContext: true,
+      bootstrapHandoff: false,
       stored: stored("active_run_steering"),
     })).rejects.toBeInstanceOf(NativeCorrelationRejected);
-    await expect(service.resolveStart({
+    await expect(service.resolveResume({
       promptKind: "base",
       carryContext: true,
+      bootstrapHandoff: false,
       stored: {
         ...stored("carry"),
         codecKind: "adapter-thread/v1" as never,

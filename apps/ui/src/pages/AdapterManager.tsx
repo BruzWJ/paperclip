@@ -4,7 +4,7 @@ import { Cpu } from "lucide-react";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { adaptersApi, type AdapterInfo } from "@/api/adapters";
-import { useAdapterCatalogSync } from "@/adapters/use-adapter-catalog";
+import { useAdapterCatalogSyncState } from "@/adapters/use-adapter-catalog";
 import { queryKeys } from "@/lib/queryKeys";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -66,7 +66,7 @@ function AdapterCatalogRow({ adapter }: { adapter: AdapterInfo }) {
 export function AdapterManager() {
   const { selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
-  useAdapterCatalogSync();
+  useAdapterCatalogSyncState();
 
   useEffect(() => {
     setBreadcrumbs([

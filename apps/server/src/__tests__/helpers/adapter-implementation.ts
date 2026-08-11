@@ -1,4 +1,4 @@
-import type { AcpSubprocessAdapterDefinition } from "@paperclipai/adapter-utils";
+import type { AcpxAdapterDefinition } from "@paperclipai/adapter-utils";
 import type { AdapterImplementationIdentity } from "@paperclipai/shared";
 
 /** A test-only ACPX discovery result; production never reads this fixture. */
@@ -9,14 +9,13 @@ export const CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY: AdapterImplementati
     adapterType: CANONICAL_TEST_ADAPTER_TYPE,
     definitionVersion: "acpx-runtime/v1",
     protocolVersion: 1,
-    origin: "builtin",
     packageName: "acpx",
     packageVersion: "test-runtime",
     buildIdentity: `acpx-test-runtime:${CANONICAL_TEST_ADAPTER_TYPE}`,
     artifactDigest: "a".repeat(64),
   });
 
-export const CANONICAL_TEST_ADAPTER_DEFINITION: AcpSubprocessAdapterDefinition =
+export const CANONICAL_TEST_ADAPTER_DEFINITION: AcpxAdapterDefinition =
   Object.freeze({
     version: "acpx-runtime/v1",
     launchProfile: Object.freeze({

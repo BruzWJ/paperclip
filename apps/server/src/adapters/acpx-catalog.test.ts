@@ -2,13 +2,25 @@ import {
   resolveAcpAdapterRevisionConfiguration,
   validateServerAdapterModule,
 } from "@paperclipai/adapter-utils";
-import type { AcpxAgentDiscovery } from "@paperclipai/adapter-utils/acp-subprocess";
-import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import type { AcpxAgentDiscovery } from "@paperclipai/adapter-utils/acpx-runtime";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   acpxDiscoveryToServerAdapter,
   discoverLocalAcpxAdapterCatalog,
 } from "./acpx-catalog.js";
+
+const acpxMocks = vi.hoisted(() => ({
+  listAgentNames: vi.fn(),
+  probeAgent: vi.fn(),
+}));
+
+vi.mock("@paperclipai/adapter-utils/acpx-runtime", async (importOriginal) => ({
+  ...await importOriginal<
+    typeof import("@paperclipai/adapter-utils/acpx-runtime")
+  >(),
+  listAcpxAgentNames: acpxMocks.listAgentNames,
+  probeAcpxAgent: acpxMocks.probeAgent,
+}));
 
 const discovery: AcpxAgentDiscovery = Object.freeze({
   agentName: "fixture-agent",
@@ -21,6 +33,7 @@ const discovery: AcpxAgentDiscovery = Object.freeze({
       id: "model",
       name: "Model",
       type: "select",
+      category: "model",
       currentValue: "fixture-model",
       options: Object.freeze([
         Object.freeze({
@@ -48,33 +61,29 @@ const discovery: AcpxAgentDiscovery = Object.freeze({
   ]),
 });
 
-describe("ACPX adapter catalog conversion", () => {
-  it("does not probe a package-runner entry whose exact ACPX name is not installed", async () => {
-    const fixtureEntrypoint = fileURLToPath(
-      new URL(
-        "../../../../packages/adapter-utils/src/acp-subprocess/fixtures/acp-agent-fixture.mjs",
-        import.meta.url,
-      ),
-    );
-    const registry = {
-      list: () => ["fixture", "definitely-not-installed-agent"],
-      resolve: (name: string) =>
-        name === "fixture"
-          ? [process.execPath, fixtureEntrypoint]
-          : ["npx", "-y", "definitely-not-installed-package"],
-    };
+beforeEach(() => {
+  acpxMocks.listAgentNames.mockReset();
+  acpxMocks.probeAgent.mockReset();
+});
 
-    const snapshot = await discoverLocalAcpxAdapterCatalog(
-      process.cwd(),
-      registry,
-    );
+describe("ACPX adapter catalog conversion", () => {
+  it("probes only the locally available names returned by ACPX", async () => {
+    acpxMocks.listAgentNames.mockResolvedValue(["fixture"]);
+    acpxMocks.probeAgent.mockResolvedValue({
+      ...discovery,
+      agentName: "fixture",
+    });
+
+    const snapshot = await discoverLocalAcpxAdapterCatalog(process.cwd());
 
     expect(snapshot.adapters.map((adapter) => adapter.type)).toEqual([
       "fixture",
     ]);
-    expect(snapshot.unavailable).not.toHaveProperty(
-      "definitely-not-installed-agent",
-    );
+    expect(snapshot.unavailable).toEqual({});
+    expect(acpxMocks.probeAgent).toHaveBeenCalledWith({
+      cwd: process.cwd(),
+      agentName: "fixture",
+    });
   });
 
   it("copies the ACPX agent name, selectable options, and models without provider assumptions", () => {
@@ -97,6 +106,21 @@ describe("ACPX adapter catalog conversion", () => {
       "model",
       "reasoning_effort",
     ]);
+  });
+
+  it("quarantines an invalid ACPX projection at the catalog boundary", async () => {
+    acpxMocks.listAgentNames.mockResolvedValue([" invalid-agent "]);
+    acpxMocks.probeAgent.mockResolvedValue({
+      ...discovery,
+      agentName: " invalid-agent ",
+    });
+
+    const snapshot = await discoverLocalAcpxAdapterCatalog(process.cwd());
+
+    expect(snapshot.adapters).toEqual([]);
+    expect(snapshot.unavailable[" invalid-agent "]).toMatchObject({
+      code: "acpx_catalog_invalid",
+    });
   });
 
   it("persists every ACPX config selection, including reasoning effort", () => {

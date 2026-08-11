@@ -5,7 +5,7 @@ import type {
   AcpAdapterConfigValue,
   ServerAdapterModule,
 } from "./types.js";
-import type { AcpSessionConfigValue } from "./acp-subprocess/contract.js";
+import type { AcpSessionConfigValue } from "./acpx-runtime/contract.js";
 
 type JsonRecord = Record<string, unknown>;
 

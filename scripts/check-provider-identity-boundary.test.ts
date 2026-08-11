@@ -29,14 +29,7 @@ function fixtureRoot(): string {
     'if (typeof value === "string") return;',
     "if (isEnvironmentEntry && isProviderChildReservedEnvironmentKey(key)) reject();",
   ].join("\n"));
-  write(root, "packages/adapter-utils/src/server-utils.ts", [
-    "export function sanitizeInheritedProviderChildEnv() {",
-    'if (normalizedKey.startsWith("PAPERCLIP_")) delete env[key];',
-    "}",
-    "const child = { ...sanitizeInheritedProviderChildEnv(process.env), ...opts.env };",
-  ].join("\n"));
-  write(root, "packages/adapter-utils/src/acp-subprocess/process.ts", "const child = { ...sanitizeInheritedProviderChildEnv(process.env), ...hostLaunch.environment };\n");
-  write(root, "apps/server/src/services/issue-execution-attempt-executor.ts", "executeAcpxOneShotPrompt({\nmcpServers: Object.freeze([\nmessage: input.message,\n");
+  write(root, "apps/server/src/services/issue-execution-attempt-executor.ts", "executeAcpxOneShotPrompt({\nmcpServers: Object.freeze([\nmessage: input.request.message,\n");
   write(root, "apps/server/src/services/runtime-agent-action-port.ts", [
     "type Options = { requestChangeConsent?: (input: unknown) => Promise<void> };",
     "export function create(service: any, options: Options) {",
@@ -79,12 +72,6 @@ function fixtureRoot(): string {
     "text: JSON.stringify({ status })",
     "",
   ].join("\n"));
-  write(root, "packages/adapter-utils/src/server-utils.test.ts", [
-    "uses explicit adapter provider configuration without inheriting host provider state",
-    'OPENAI_API_KEY: "operator-openai-key"',
-    "sanitizeInheritedProviderChildEnv",
-    "",
-  ].join("\n"));
   write(root, "packages/shared/src/validators/runtime-agent-configuration.test.ts", "keeps explicit provider-native configuration opaque without a prefix ban\nPAPERCLIP_CLOUD_PROD_PROVIDER_TOKEN\nexpect(adapterConfigSchema.parse(adapterConfig)).toEqual(adapterConfig)\n");
   return root;
 }
@@ -123,21 +110,22 @@ test("rejects opaque provider string inspection", () => {
   assert.ok(providerIdentityBoundaryViolations(root).some((entry) => entry.includes("inspected")));
 });
 
-test("rejects loss of inherited control-plane scrubbing", () => {
+test("rejects reviving a Paperclip-owned provider process boundary", () => {
   const root = fixtureRoot();
-  write(root, "packages/adapter-utils/src/server-utils.ts", "export function sanitizeInheritedProviderChildEnv() {}\n...sanitizeInheritedProviderChildEnv(process.env)\n...opts.env\n");
-  assert.ok(providerIdentityBoundaryViolations(root).some((entry) => entry.includes('normalizedKey.startsWith("PAPERCLIP_")')));
-});
-
-test("rejects explicit configuration layered before inherited state", () => {
-  const root = fixtureRoot();
-  write(root, "packages/adapter-utils/src/acp-subprocess/process.ts", "const child = { ...hostLaunch.environment, ...sanitizeInheritedProviderChildEnv(process.env) };\n");
-  assert.ok(providerIdentityBoundaryViolations(root).some((entry) => entry.includes("must precede")));
+  write(
+    root,
+    "packages/adapter-utils/src/server-utils.ts",
+    "export function sanitizeInheritedProviderChildEnv() {}\n",
+  );
+  assert.ok(
+    providerIdentityBoundaryViolations(root).some((entry) =>
+      entry.includes("retired provider-process owner")),
+  );
 });
 
 test("rejects a Paperclip-authored setup prompt override", () => {
   const root = fixtureRoot();
-  write(root, "apps/server/src/services/issue-execution-attempt-executor.ts", "executeAcpxOneShotPrompt({\nmcpServers: Object.freeze([\nmessage: input.message,\nsystemPrompt: generated,\n");
+  write(root, "apps/server/src/services/issue-execution-attempt-executor.ts", "executeAcpxOneShotPrompt({\nmcpServers: Object.freeze([\nmessage: input.request.message,\nsystemPrompt: generated,\n");
   assert.ok(providerIdentityBoundaryViolations(root).some((entry) => entry.includes("prompt override")));
 });
 

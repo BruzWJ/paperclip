@@ -6,9 +6,8 @@
  * catalog but does not install, register, or maintain a parallel one.
  */
 
-import { Router, type Response } from "express";
+import { Router } from "express";
 import {
-  findActiveServerAdapter,
   findServerAdapter,
   listAcpxAdapterProbeDiagnostics,
   listServerAdapters,
@@ -20,7 +19,7 @@ import type {
   ServerAdapterModule,
 } from "@paperclipai/adapter-utils";
 import { validateAdapterConfigSchema } from "@paperclipai/adapter-utils";
-import { assertBoardOrgAccess, assertInstanceAdmin } from "./authz.js";
+import { assertBoardOrgAccess } from "./authz.js";
 
 interface AdapterCapabilities {
   supportsModelProfiles: boolean;
@@ -116,13 +115,6 @@ function buildUnavailableAdapterInfo(
   };
 }
 
-function acpxCatalogOnly(res: Response): void {
-  res.status(410).json({
-    error:
-      "Paperclip discovers compatible local agents automatically. Install or authenticate the local CLI, then let the catalog refresh.",
-  });
-}
-
 export function adapterRoutes() {
   const router = Router();
 
@@ -149,48 +141,15 @@ export function adapterRoutes() {
     res.json(buildAdapterInfo(adapter));
   });
 
-  /**
-   * Retired: changing local-agent availability would make Paperclip a second
-   * authority beside ACPX. ACPX probing is the sole admission decision.
-   */
-  router.patch("/adapters/:type", (req, res) => {
-    assertInstanceAdmin(req);
-    acpxCatalogOnly(res);
-  });
-
   router.get("/adapters/:type/config-schema", async (req, res) => {
     assertBoardOrgAccess(req);
     await refreshAcpxAdapters();
-    const adapter = findActiveServerAdapter(req.params.type);
+    const adapter = findServerAdapter(req.params.type);
     if (!adapter) {
       res.status(404).json({ error: `Local agent "${req.params.type}" is not available.` });
       return;
     }
     res.json(adapterConfigSchema(adapter));
-  });
-
-  // These legacy management operations would make Paperclip a second catalog
-  // authority, so retain explicit migration guidance rather than silently
-  // accepting package-defined agent metadata.
-  router.post("/adapters/install", (req, res) => {
-    assertInstanceAdmin(req);
-    acpxCatalogOnly(res);
-  });
-  router.patch("/adapters/:type/override", (req, res) => {
-    assertInstanceAdmin(req);
-    acpxCatalogOnly(res);
-  });
-  router.delete("/adapters/:type", (req, res) => {
-    assertInstanceAdmin(req);
-    acpxCatalogOnly(res);
-  });
-  router.post("/adapters/:type/reload", (req, res) => {
-    assertInstanceAdmin(req);
-    acpxCatalogOnly(res);
-  });
-  router.post("/adapters/:type/reinstall", (req, res) => {
-    assertInstanceAdmin(req);
-    acpxCatalogOnly(res);
   });
 
   return router;

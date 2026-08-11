@@ -35,7 +35,6 @@ function configuration() {
       { key: "code-review", versionId: SKILL_VERSION_A },
       { key: "research", versionId: SKILL_VERSION_B },
     ],
-    skillChannel: "isolated_skills_home" as const,
   };
 }
 
@@ -116,12 +115,6 @@ describe("agent adapter ACP revision configuration", () => {
       agentAdapterAcpConfigurationSchema.safeParse({
         ...base,
         companySkillPins: [...base.companySkillPins].reverse(),
-      }).success,
-    ).toBe(false);
-    expect(
-      agentAdapterAcpConfigurationSchema.safeParse({
-        ...base,
-        skillChannel: "workspace",
       }).success,
     ).toBe(false);
     for (const [key, value] of [

@@ -28,7 +28,7 @@ import { findUIAdapter } from "../adapters";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { ReportsToPicker } from "./ReportsToPicker";
 import { listAdapterOptions, listVisibleAdapterTypes } from "../adapters/metadata";
-import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
+import { useAdapterCatalogSyncState } from "../adapters/use-adapter-catalog";
 import { buildAgentUpdatePatch, omitUndefinedEntries, type AgentConfigOverlay } from "../lib/agent-config-patch";
 import { publicRuntimeMessage } from "../lib/public-runtime-message";
 import {
@@ -98,7 +98,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const showAdapterTypeField = props.showAdapterTypeField ?? true;
   const { selectedCompanyId } = useCompany();
 
-  const admittedAdapters = useAdapterCatalogSync();
+  const { adapters: admittedAdapters } = useAdapterCatalogSyncState();
 
   const uploadMarkdownImage = useMutation({
     mutationFn: async ({ file, namespace }: { file: File; namespace: string }) => {

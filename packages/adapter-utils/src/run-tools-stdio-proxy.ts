@@ -79,12 +79,12 @@ function emitFailure(id) {
   });
 }
 
-async function forward(line, ingressOrdinal) {
+async function forward(line, ingressOrdinal, shouldEmit = () => true) {
   let message;
   try {
     message = JSON.parse(line);
   } catch {
-    emitFailure(null);
+    if (shouldEmit()) emitFailure(null);
     return;
   }
   try {
@@ -105,7 +105,7 @@ async function forward(line, ingressOrdinal) {
     });
     const body = await response.text();
     if (!body.trim()) {
-      if (!response.ok) emitFailure(requestId(message));
+      if (!response.ok && shouldEmit()) emitFailure(requestId(message));
       return;
     }
     try {
@@ -116,15 +116,15 @@ async function forward(line, ingressOrdinal) {
         Array.isArray(parsed) ||
         parsed.jsonrpc !== "2.0"
       ) {
-        emitFailure(requestId(message));
+        if (shouldEmit()) emitFailure(requestId(message));
         return;
       }
-      emit(parsed);
+      if (shouldEmit()) emit(parsed);
     } catch {
-      emitFailure(requestId(message));
+      if (shouldEmit()) emitFailure(requestId(message));
     }
   } catch {
-    emitFailure(requestId(message));
+    if (shouldEmit()) emitFailure(requestId(message));
   }
 }
 
@@ -135,6 +135,7 @@ const input = createInterface({
 });
 const inFlight = new Set();
 const ingressByCallIdentity = new Map();
+const activeCallsByIdentity = new Map();
 let nextIngressOrdinal = 0;
 
 async function awaitInFlight() {
@@ -152,9 +153,28 @@ function launchCall(line, message) {
     ingressOrdinal = nextIngressOrdinal++;
     ingressByCallIdentity.set(identity, ingressOrdinal);
   }
-  const task = forward(line, ingressOrdinal);
+  const active = identity === null
+    ? null
+    : activeCallsByIdentity.get(identity) ?? {
+        cancelled: false,
+        tasks: new Set(),
+      };
+  if (identity !== null && !activeCallsByIdentity.has(identity)) {
+    activeCallsByIdentity.set(identity, active);
+  }
+  const task = forward(
+    line,
+    ingressOrdinal,
+    () => active === null || !active.cancelled,
+  );
   inFlight.add(task);
-  void task.finally(() => inFlight.delete(task));
+  active?.tasks.add(task);
+  void task.finally(() => {
+    inFlight.delete(task);
+    if (identity === null || active === null) return;
+    active.tasks.delete(task);
+    if (active.tasks.size === 0) activeCallsByIdentity.delete(identity);
+  });
 }
 
 for await (const line of input) {
@@ -169,6 +189,26 @@ for await (const line of input) {
   }
   if (requestMethod(message) === "tools/call") {
     launchCall(line, message);
+    continue;
+  }
+  if (requestMethod(message) === "notifications/cancelled") {
+    const requestId =
+      message &&
+      typeof message === "object" &&
+      !Array.isArray(message) &&
+      message.params &&
+      typeof message.params === "object" &&
+      !Array.isArray(message.params)
+        ? message.params.requestId
+        : null;
+    const identity =
+      typeof requestId === "string" || typeof requestId === "number"
+        ? typeof requestId + "\\0" + String(requestId)
+        : null;
+    if (identity !== null) {
+      const active = activeCallsByIdentity.get(identity);
+      if (active) active.cancelled = true;
+    }
     continue;
   }
   if (requestMethod(message) === "notifications/initialized") {

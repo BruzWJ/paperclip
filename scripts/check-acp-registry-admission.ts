@@ -5,22 +5,24 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("..", import.meta.url));
-const ACP_DIRECTORY = "packages/adapter-utils/src/acp-subprocess";
+const ACPX_RUNTIME_DIRECTORY = "packages/adapter-utils/src/acpx-runtime";
 const ADAPTER_UTILS_MANIFEST = "packages/adapter-utils/package.json";
 const ROOT_MANIFEST = "package.json";
 const LOCKFILE = "pnpm-lock.yaml";
-const REGISTRY_PATH = `${ACP_DIRECTORY}/agent-registry.ts`;
-const DISCOVERY_PATH = `${ACP_DIRECTORY}/acpx-discovery.ts`;
-const RUNTIME_EXECUTION_PATH = `${ACP_DIRECTORY}/acpx-runtime-execution.ts`;
-const RUNTIME_INVOCATION_PATH = `${ACP_DIRECTORY}/acpx-runtime-invocation.ts`;
-const RUNTIME_READINESS_PATH = `${ACP_DIRECTORY}/acpx-runtime-readiness.ts`;
+const REGISTRY_PATH = `${ACPX_RUNTIME_DIRECTORY}/agent-registry.ts`;
+const DISCOVERY_PATH = `${ACPX_RUNTIME_DIRECTORY}/acpx-discovery.ts`;
+const RUNTIME_EXECUTION_PATH = `${ACPX_RUNTIME_DIRECTORY}/acpx-runtime-execution.ts`;
+const RUNTIME_INVOCATION_PATH = `${ACPX_RUNTIME_DIRECTORY}/acpx-runtime-invocation.ts`;
+const RUNTIME_READINESS_PATH = `${ACPX_RUNTIME_DIRECTORY}/acpx-runtime-readiness.ts`;
 const SERVER_CATALOG_PATH = "apps/server/src/adapters/acpx-catalog.ts";
 const SERVER_REGISTRY_PATH = "apps/server/src/adapters/registry.ts";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".mjs", ".cjs"]);
-const EXACT_DEPENDENCIES = Object.freeze({
-  "@agentclientprotocol/sdk": "1.3.0",
+const EXACT_RUNTIME_DEPENDENCIES = Object.freeze({
   acpx: "0.13.0",
+});
+const EXACT_FIXTURE_DEV_DEPENDENCIES = Object.freeze({
+  "@agentclientprotocol/sdk": "1.3.0",
 });
 const RETIRED_STATIC_CATALOG_MARKERS = Object.freeze([
   "APPROVED_ACP_LAUNCHES",
@@ -43,7 +45,7 @@ const RAW_ACP_INVOCATION_SYMBOLS = Object.freeze([
   "AcpRegistryLaunch",
 ]);
 const RAW_ACP_INVOCATION_MODULE =
-  /^@paperclipai\/adapter-utils\/acp-subprocess\/(?:agent-registry|client|execution-target|process)$/;
+  /^@paperclipai\/adapter-utils\/acp-subprocess\/(?:client|execution-target|process)$/;
 const PROVIDER_PARSER_PATTERNS = Object.freeze([
   {
     expression:
@@ -63,6 +65,10 @@ const PROVIDER_PARSER_PATTERNS = Object.freeze([
     expression:
       /from\s+["'](?:openai|ai|@anthropic-ai\/sdk|@google\/generative-ai)["']/,
     message: "provider/model SDK imports are forbidden in the canonical ACP directory",
+  },
+  {
+    expression: /from\s+["']@agentclientprotocol\/sdk["']/,
+    message: "production Paperclip ACP code must consume ACPX public runtime types only",
   },
 ]);
 
@@ -86,7 +92,6 @@ export interface AcpRegistryAdmissionViolation {
     | "runtime_readiness"
     | "raw_invocation"
     | "tool_output"
-    | "experimental_plan"
     | "provider_parser"
     | "installed_runtime";
   readonly message: string;
@@ -104,7 +109,7 @@ interface RegistryLike {
 }
 
 interface RegistryModule {
-  loadAcpxAgentRegistry(input: { cwd: string }): Promise<RegistryLike>;
+  loadAcpxAgentRegistry(cwd: string): Promise<RegistryLike>;
   listAcpRegistryAgentNames(registry: RegistryLike): readonly string[];
   assertAcpRegistryAgentName(
     requestedName: string,
@@ -220,6 +225,7 @@ function scanDependencyPins(
 
   let manifest: {
     dependencies?: Record<string, unknown>;
+    devDependencies?: Record<string, unknown>;
     bundleDependencies?: unknown;
   };
   try {
@@ -235,7 +241,7 @@ function scanDependencyPins(
   }
 
   for (const [packageName, expectedVersion] of Object.entries(
-    EXACT_DEPENDENCIES,
+    EXACT_RUNTIME_DEPENDENCIES,
   )) {
     const actual = manifest.dependencies?.[packageName];
     if (actual !== expectedVersion) {
@@ -247,10 +253,29 @@ function scanDependencyPins(
       });
     }
   }
+  for (const [packageName, expectedVersion] of Object.entries(
+    EXACT_FIXTURE_DEV_DEPENDENCIES,
+  )) {
+    const actual = manifest.devDependencies?.[packageName];
+    if (actual !== expectedVersion) {
+      violations.push({
+        path: ADAPTER_UTILS_MANIFEST,
+        kind: "dependency",
+        message: `${packageName} fixture dependency must be pinned exactly to ${expectedVersion}`,
+        offset: manifestSource.indexOf(packageName),
+      });
+    }
+    if (manifest.dependencies?.[packageName] !== undefined) {
+      violations.push({
+        path: ADAPTER_UTILS_MANIFEST,
+        kind: "dependency",
+        message: `${packageName} must not be a production adapter-utils dependency`,
+        offset: manifestSource.indexOf(packageName),
+      });
+    }
+  }
   const selectedFrontend = Object.keys(manifest.dependencies ?? {}).find(
-    (name) =>
-      name.startsWith("@agentclientprotocol/") &&
-      name !== "@agentclientprotocol/sdk",
+    (name) => name.startsWith("@agentclientprotocol/"),
   );
   if (selectedFrontend) {
     violations.push({
@@ -265,19 +290,18 @@ function scanDependencyPins(
   const bundled = manifest.bundleDependencies;
   if (
     !Array.isArray(bundled) ||
-    !Object.keys(EXACT_DEPENDENCIES).every((name) => bundled.includes(name)) ||
+    !Object.keys(EXACT_RUNTIME_DEPENDENCIES).every((name) => bundled.includes(name)) ||
     bundled.some(
       (name) =>
         typeof name === "string" &&
-        name.startsWith("@agentclientprotocol/") &&
-        name !== "@agentclientprotocol/sdk",
+        name.startsWith("@agentclientprotocol/"),
     )
   ) {
     addMissing(
       violations,
       ADAPTER_UTILS_MANIFEST,
       "dependency",
-      "the official SDK and ACPX runtime must be bundled without a selected frontend",
+      "ACPX must be bundled without a direct ACP SDK or selected frontend",
     );
   }
 
@@ -334,7 +358,10 @@ function scanDependencyPins(
     return;
   }
   for (const [packageName, expectedVersion] of Object.entries(
-    EXACT_DEPENDENCIES,
+    {
+      ...EXACT_RUNTIME_DEPENDENCIES,
+      ...EXACT_FIXTURE_DEV_DEPENDENCIES,
+    },
   )) {
     const quotedName = packageName.includes("/") ? `'${packageName}'` : packageName;
     const expression = new RegExp(
@@ -448,11 +475,7 @@ function scanRegistryOwner(
     }
   }
   const assertionOffset = source.indexOf("export function assertAcpRegistryAgentName");
-  const legacyResolverOffset = source.indexOf("export function resolveAcpRegistryLaunch");
-  const assertionBody = source.slice(
-    Math.max(0, assertionOffset),
-    legacyResolverOffset < 0 ? source.length : legacyResolverOffset,
-  );
+  const assertionBody = source.slice(Math.max(0, assertionOffset));
   if (
     assertionOffset < 0 ||
     !assertionBody.includes("includes(registryName)") ||
@@ -477,7 +500,7 @@ function scanDiscoveryAndCatalog(
     violations,
     path: DISCOVERY_PATH,
     kind: "discovery",
-    contract: "temporary local ACPX compatibility discovery",
+    contract: "local ACPX discovery",
     fragments: [
       "listAcpxAgentNames",
       "probeAcpxAgent",
@@ -495,11 +518,12 @@ function scanDiscoveryAndCatalog(
     kind: "catalog",
     contract: "ACPX dynamic catalog projection",
     fragments: [
-      "listLocallyAvailableAcpRegistryAgentNames",
+      "listAcpxAgentNames",
       "probeAcpxAgent",
       "acpxDiscoveryToServerAdapter",
       "discoverLocalAcpxAdapterCatalog",
       "configOptions",
+      "registryName: discovery.agentName",
       "limits: null",
     ],
   });
@@ -525,8 +549,8 @@ function scanDiscoveryAndCatalog(
     fragments: [
       "discoverLocalAcpxAdapterCatalog",
       "refreshAcpxAdapters",
-      "assertAcpRegistryAgentName",
-      "loadAcpxAgentRegistry",
+      "acpxRuntimeIdentity",
+      "snapshot.adapters",
     ],
   });
 }
@@ -547,11 +571,16 @@ function scanAcpxRuntimeBridge(
       "createRuntimeStore",
       "ensureSession",
       "startTurn",
-      "await runtime.setConfigOption?.({",
-      "cancel",
+      "const setConfigOption = runtime.setConfigOption.bind(runtime)",
       "close",
       "assertAcpRegistryAgentName",
       "isAcpRegistryAgentLocallyAvailable",
+      "readonly onSessionEvent:",
+      "readonly activatePrompt:",
+      "readonly beginPromptTransmission:",
+      "await input.activatePrompt({ sessionId })",
+      "await input.beginPromptTransmission({ sessionId })",
+      "await input.onSessionEvent(",
     ],
   });
   requireFragments({
@@ -563,8 +592,7 @@ function scanAcpxRuntimeBridge(
     fragments: [
       "prepareAcpxRuntimeInvocation",
       "requireLocalTarget",
-      "materializeAdapterExecutionTargetTextFiles",
-      "operator_native",
+      "materializeAcpxInvocationFiles",
     ],
   });
   requireFragments({
@@ -587,18 +615,10 @@ function scanAcpxRuntimeBridge(
   requireFragments({
     sources,
     violations,
-    path: `${ACP_DIRECTORY}/tool-output.ts`,
+    path: `${ACPX_RUNTIME_DIRECTORY}/tool-output.ts`,
     kind: "tool_output",
     contract: "canonical ACP tool-output encoding",
     fragments: ["Object.keys(record).sort(codeUnitCompare)", 'join("\\n")'],
-  });
-  requireFragments({
-    sources,
-    violations,
-    path: `${ACP_DIRECTORY}/events.ts`,
-    kind: "experimental_plan",
-    contract: "common ACP event projector",
-    fragments: ['case "plan_removed":'],
   });
 }
 
@@ -621,12 +641,15 @@ function scanProductionRawInvocationImports(
         violations.push({
           path: filePath,
           kind: "raw_invocation",
-          message: "production code must not import a legacy raw ACP subprocess module",
+          message: "production code must not import a retired raw ACP subprocess module",
           offset,
         });
         continue;
       }
-      if (moduleSpecifier !== "@paperclipai/adapter-utils/acp-subprocess") {
+      if (
+        moduleSpecifier !== "@paperclipai/adapter-utils/acpx-runtime" &&
+        moduleSpecifier !== "@paperclipai/adapter-utils/acp-subprocess"
+      ) {
         continue;
       }
       const bindings = statement.importClause?.namedBindings;
@@ -639,7 +662,7 @@ function scanProductionRawInvocationImports(
         violations.push({
           path: filePath,
           kind: "raw_invocation",
-          message: `production code must not import legacy raw ACP invocation ${importedName}`,
+          message: `production code must not import retired raw ACP invocation ${importedName}`,
           offset: element.getStart(sourceFile),
         });
       }
@@ -653,7 +676,7 @@ function scanProviderParsers(
 ): void {
   for (const [filePath, source] of sources) {
     if (
-      !filePath.startsWith(`${ACP_DIRECTORY}/`) ||
+      !filePath.startsWith(`${ACPX_RUNTIME_DIRECTORY}/`) ||
       isTestOrFixturePath(filePath)
     ) {
       continue;
@@ -804,7 +827,7 @@ async function inspectInstalledRuntime(
       pathToFileURL(path.resolve(repositoryRoot, ADAPTER_UTILS_MANIFEST)),
     );
     for (const [packageName, expectedVersion] of Object.entries(
-      EXACT_DEPENDENCIES,
+      EXACT_RUNTIME_DEPENDENCIES,
     )) {
       const resolved = anchoredRequire.resolve(
         packageName === "acpx" ? "acpx/runtime" : packageName,
@@ -821,9 +844,7 @@ async function inspectInstalledRuntime(
       path.resolve(repositoryRoot, REGISTRY_PATH),
     ).href;
     const registryModule = (await import(moduleUrl)) as RegistryModule;
-    const registry = await registryModule.loadAcpxAgentRegistry({
-      cwd: repositoryRoot,
-    });
+    const registry = await registryModule.loadAcpxAgentRegistry(repositoryRoot);
     const names = registryModule.listAcpRegistryAgentNames(registry);
     if (
       !Array.isArray(names) ||

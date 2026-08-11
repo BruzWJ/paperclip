@@ -90,8 +90,7 @@ export const agentAdapterConfigRevisions = pgTable(
           'sessionConfigSelections',
           'model',
           'workspaceSelector',
-          'companySkillPins',
-          'skillChannel'
+          'companySkillPins'
         ]::text[]
         and ${table.acpConfiguration} - array[
           'contractVersion',
@@ -99,8 +98,7 @@ export const agentAdapterConfigRevisions = pgTable(
           'sessionConfigSelections',
           'model',
           'workspaceSelector',
-          'companySkillPins',
-          'skillChannel'
+          'companySkillPins'
         ]::text[] = '{}'::jsonb
         and ${table.acpConfiguration} ->> 'contractVersion' = 'acpx-runtime/v1'
         and jsonb_typeof(${table.acpConfiguration} -> 'launchProfile') = 'object'
@@ -164,7 +162,6 @@ export const agentAdapterConfigRevisions = pgTable(
         and (${table.acpConfiguration} -> 'workspaceSelector') - 'kind' = '{}'::jsonb
         and ${table.acpConfiguration} #>> '{workspaceSelector,kind}' = 'issue_execution_workspace'
         and jsonb_typeof(${table.acpConfiguration} -> 'companySkillPins') = 'array'
-        and ${table.acpConfiguration} ->> 'skillChannel' in ('isolated_skills_home', 'operator_native')
       `,
     ),
   ],

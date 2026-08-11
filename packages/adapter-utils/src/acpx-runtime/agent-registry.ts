@@ -6,8 +6,6 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { createAgentRegistry, type AcpAgentRegistry } from "acpx/runtime";
 
-export type { AcpAgentRegistry } from "acpx/runtime";
-
 const execFileAsync = promisify(execFile);
 const ACPX_CONFIG_TIMEOUT_MS = 5_000;
 const ACPX_CONFIG_CACHE_MS = 30_000;
@@ -21,27 +19,6 @@ type CachedResolvedRegistry = {
 };
 
 const resolvedRegistryCache = new Map<string, CachedResolvedRegistry>();
-
-/**
- * Paperclip persists only the exact ACPX registry name. Resolving it again at
- * use time keeps ACPX in control of built-ins, configured overrides, upgrades,
- * and local agent launch details.
- */
-export interface AcpRegistryLaunch {
-  readonly registryName: string;
-  readonly command: string;
-  readonly args: readonly string[];
-}
-
-export interface LoadAcpxAgentRegistryInput {
-  /**
-   * ACPX resolves a project `.acpxrc.json` relative to this host workspace.
-   * The global config and all merge/validation semantics remain ACPX-owned.
-   */
-  readonly cwd: string;
-  /** Used only by tests or an explicit caller that needs a shorter deadline. */
-  readonly timeoutMs?: number;
-}
 
 function exactName(value: string): string {
   if (value.length === 0 || value !== value.trim()) {
@@ -64,13 +41,6 @@ function exactStringArray(value: string | string[]): readonly string[] {
   return Object.freeze([...argv]);
 }
 
-function sameArgv(left: readonly string[], right: readonly string[]): boolean {
-  return (
-    left.length === right.length &&
-    left.every((entry, index) => entry === right[index])
-  );
-}
-
 function exactString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 && value === value.trim()
     ? value
@@ -90,8 +60,8 @@ function structuredArgv(value: unknown): string[] | undefined {
 
 /**
  * ACPX's documented `config show --format json` result contains a resolved
- * `agents` map. Preserve ACPX's structured argv or legacy command form as an
- * ACPX registry override. Paperclip passes it back unchanged. The generic
+ * `agents` map. Preserve ACPX's current `argv | command` union as an ACPX
+ * registry override. Paperclip passes it back unchanged. The generic
  * availability fence may recognize only a simple executable token, but ACPX
  * remains the sole interpreter and launcher.
  */
@@ -110,8 +80,8 @@ function configShowOverrides(value: unknown): Record<string, AcpxRegistryOverrid
       overrides[exactName] = argv;
       continue;
     }
-    // ACPX owns parsing of its historical command form. Passing it back to the
-    // ACPX registry preserves its own compatibility semantics without giving
+    // ACPX owns parsing of its command form. Passing it back to the registry
+    // preserves the exact ACPX-owned launch value without giving
     // Paperclip a command parser or executable launch surface.
     const command = exactString(candidate.command);
     if (command) {
@@ -130,14 +100,6 @@ function resolveConfiguredRegistryCwd(value: string): string {
     throw new Error("ACPX configured registry cwd is required");
   }
   return path.resolve(value);
-}
-
-function resolveConfigTimeout(value: number | undefined): number {
-  if (value === undefined) return ACPX_CONFIG_TIMEOUT_MS;
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error("ACPX config timeout must be a positive integer");
-  }
-  return value;
 }
 
 async function resolvedConfigOverrides(input: {
@@ -185,15 +147,17 @@ async function resolvedConfigOverrides(input: {
  * configured entries; Paperclip neither parses config files nor owns a list.
  */
 export async function loadAcpxAgentRegistry(
-  input: LoadAcpxAgentRegistryInput,
+  configuredCwd: string,
 ): Promise<AcpAgentRegistry> {
-  const cwd = resolveConfiguredRegistryCwd(input.cwd);
-  const timeoutMs = resolveConfigTimeout(input.timeoutMs);
+  const cwd = resolveConfiguredRegistryCwd(configuredCwd);
   const now = Date.now();
   const cached = resolvedRegistryCache.get(cwd);
   if (cached && cached.expiresAt > now) return cached.registry;
 
-  const overrides = await resolvedConfigOverrides({ cwd, timeoutMs });
+  const overrides = await resolvedConfigOverrides({
+    cwd,
+    timeoutMs: ACPX_CONFIG_TIMEOUT_MS,
+  });
   const registry = createAgentRegistry({ overrides });
   resolvedRegistryCache.set(cwd, {
     registry,
@@ -201,12 +165,6 @@ export async function loadAcpxAgentRegistry(
   });
   return registry;
 }
-
-/** @deprecated Use `loadAcpxAgentRegistry`; configured entries are overrides. */
-export const loadConfiguredAcpRegistry = loadAcpxAgentRegistry;
-
-/** @deprecated Use `LoadAcpxAgentRegistryInput`. */
-export type LoadConfiguredAcpRegistryInput = LoadAcpxAgentRegistryInput;
 
 /**
  * Enumerates exact names supplied by ACPX's registry. This does not claim that
@@ -223,15 +181,6 @@ export function listAcpRegistryAgentNames(
   return Object.freeze(
     [...new Set(names.filter((name) => exactString(name) !== undefined))].sort(),
   );
-}
-
-export interface AcpRegistryLocalAvailabilityInput {
-  /** Host workspace used for PATH entries that explicitly reference cwd. */
-  readonly cwd: string;
-  /** Test seam; production uses the server process environment. */
-  readonly env?: Readonly<NodeJS.ProcessEnv>;
-  /** Test seam for platform-specific executable suffix behavior. */
-  readonly platform?: NodeJS.Platform;
 }
 
 const STANDALONE_MATERIALIZING_RUNNERS = new Set([
@@ -253,79 +202,17 @@ function executableName(value: string): string {
   return path.basename(value).replace(/\.(?:bat|cmd|com|exe)$/iu, "").toLowerCase();
 }
 
-/**
- * Tokenize only the simple command form needed for a non-launching executable
- * check. Ambiguous shell programs are rejected instead of being evaluated.
- */
-function simpleCommandArgv(value: string): readonly string[] | undefined {
-  const tokens: string[] = [];
-  let token = "";
-  let quote: "'" | '"' | null = null;
-  let escaping = false;
-  let tokenStarted = false;
-
-  for (const character of value) {
-    if (escaping) {
-      token += character;
-      tokenStarted = true;
-      escaping = false;
-      continue;
-    }
-    if (quote === "'") {
-      if (character === "'") quote = null;
-      else token += character;
-      tokenStarted = true;
-      continue;
-    }
-    if (quote === '"') {
-      if (character === '"') quote = null;
-      else if (character === "\\") escaping = true;
-      else token += character;
-      tokenStarted = true;
-      continue;
-    }
-    if (character === "'" || character === '"') {
-      quote = character;
-      tokenStarted = true;
-      continue;
-    }
-    if (character === "\\") {
-      escaping = true;
-      tokenStarted = true;
-      continue;
-    }
-    if (/\s/u.test(character)) {
-      if (tokenStarted) tokens.push(token);
-      token = "";
-      tokenStarted = false;
-      continue;
-    }
-    // ACPX evaluates string registry entries as shell commands. Never execute
-    // or try to predict expansion, pipelines, redirection, or command lists.
-    if ("$`|&;<>\n\r".includes(character)) return undefined;
-    token += character;
-    tokenStarted = true;
-  }
-  if (escaping || quote !== null) return undefined;
-  if (tokenStarted) tokens.push(token);
-  return tokens.length > 0 && tokens.every((entry) => entry.length > 0)
-    ? Object.freeze(tokens)
-    : undefined;
-}
-
 function availabilityArgv(
   value: string | string[],
-  platform: NodeJS.Platform,
 ): readonly string[] | undefined {
   if (typeof value === "string") {
-    // ACPX delegates legacy strings to cmd.exe on Windows. Do not approximate
-    // that language: only a single literal executable is safe to inspect.
-    if (platform === "win32") {
-      return value.length > 0 && value === value.trim() && !/[\s"'&|<>^]/u.test(value)
-        ? Object.freeze([value])
-        : undefined;
-    }
-    return simpleCommandArgv(value);
+    // ACPX owns command-string parsing. Paperclip can safely inspect only a
+    // literal executable; every command-language form fails closed.
+    return value.length > 0 &&
+      value === value.trim() &&
+      !/[\s"'&|<>^$`;]/u.test(value)
+      ? Object.freeze([value])
+      : undefined;
   }
   try {
     return exactStringArray(value);
@@ -346,106 +233,27 @@ const SHELL_COMMAND_LAUNCHERS = new Set([
   "zsh",
 ]);
 
-/**
- * `env` is a common transparent argv wrapper. Unwrap only its simple,
- * deterministic form; options whose arity or string-splitting semantics would
- * require interpreting a command language fail closed.
- */
-function unwrapEnvironmentCommand(
-  argv: readonly string[],
-): readonly string[] | undefined {
-  const [command, ...args] = argv;
-  if (!command || executableName(command) !== "env") return argv;
-  let cursor = 0;
-  while (cursor < args.length) {
-    const argument = args[cursor]!;
-    if (argument === "--") {
-      cursor += 1;
-      break;
-    }
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/u.test(argument)) {
-      cursor += 1;
-      continue;
-    }
-    if (argument.startsWith("-")) return undefined;
-    break;
-  }
-  return args.length > cursor
-    ? Object.freeze(args.slice(cursor))
-    : undefined;
-}
-
-function directlyUsesMaterializingPackageRunner(
-  argv: readonly string[],
-): boolean {
-  const [command, ...args] = argv;
-  if (!command) return false;
-  const runner = executableName(command);
-  if (STANDALONE_MATERIALIZING_RUNNERS.has(runner)) return true;
-
-  const subcommands = MATERIALIZING_RUNNER_SUBCOMMANDS.get(runner);
-  if (subcommands && args.some((argument) => subcommands.has(argument))) return true;
-  if (runner === "uv") {
-    const toolIndex = args.indexOf("tool");
-    return toolIndex >= 0 && args.slice(toolIndex + 1).includes("run");
-  }
-  // Corepack delegates to a package manager. Inspect the delegated argv with
-  // the same generic runner rules rather than treating corepack as evidence
-  // that the requested agent is installed.
-  if (runner === "corepack") {
-    const delegatedIndex = args.findIndex((argument) =>
-      MATERIALIZING_RUNNER_SUBCOMMANDS.has(executableName(argument)),
-    );
-    if (delegatedIndex < 0) return false;
-    return directlyUsesMaterializingPackageRunner([
-      args[delegatedIndex]!,
-      ...args.slice(delegatedIndex + 1),
-    ]);
-  }
-  return false;
-}
-
-function usesMaterializingPackageRunner(argv: readonly string[]): boolean {
-  const unwrapped = unwrapEnvironmentCommand(argv);
-  if (!unwrapped) return true;
-  // Scan every argv suffix. This catches transparent process wrappers such as
-  // `nice`, `timeout`, `nohup`, or a future wrapper without maintaining a
-  // wrapper catalog in Paperclip. An installed wrapper is not evidence that a
-  // nested package-exec target is installed.
-  for (let index = 0; index < unwrapped.length; index += 1) {
-    const suffix = unwrapped.slice(index);
-    if (directlyUsesMaterializingPackageRunner(suffix)) return true;
-    const token = suffix[0];
-    if (!token || !/\s/u.test(token)) continue;
-    const nested = simpleCommandArgv(token);
-    if (nested && usesMaterializingPackageRunner(nested)) return true;
-  }
-  return false;
-}
-
-function containsShellCommandLanguage(argv: readonly string[]): boolean {
-  for (const token of argv) {
-    if (SHELL_COMMAND_LAUNCHERS.has(executableName(token))) return true;
-    if (!/\s/u.test(token)) continue;
-    const nested = simpleCommandArgv(token);
-    if (nested && containsShellCommandLanguage(nested)) return true;
-  }
-  return false;
-}
-
 function availabilityProgram(
   registryName: string,
   argv: readonly string[],
 ): string | undefined {
-  const unwrapped = unwrapEnvironmentCommand(argv);
-  if (!unwrapped) return undefined;
-  const command = unwrapped[0];
-  if (!command || containsShellCommandLanguage(unwrapped)) {
-    return undefined;
+  const command = argv[0];
+  if (!command || argv.some((token) => /\s/u.test(token))) return undefined;
+  for (let index = 0; index < argv.length; index += 1) {
+    const runner = executableName(argv[index]!);
+    if (SHELL_COMMAND_LAUNCHERS.has(runner)) return undefined;
+    if (STANDALONE_MATERIALIZING_RUNNERS.has(runner)) return registryName;
+    const subcommands = MATERIALIZING_RUNNER_SUBCOMMANDS.get(runner);
+    if (subcommands?.has(argv[index + 1] ?? "")) return registryName;
+    if (
+      runner === "uv" &&
+      argv[index + 1] === "tool" &&
+      argv[index + 2] === "run"
+    ) {
+      return registryName;
+    }
   }
-  return usesMaterializingPackageRunner(unwrapped)
-    ? registryName
-    : command;
+  return command;
 }
 
 function environmentValue(
@@ -525,19 +333,19 @@ async function executableAvailable(input: {
 export async function isAcpRegistryAgentLocallyAvailable(
   requestedName: string,
   candidateRegistry: AcpAgentRegistry,
-  input: AcpRegistryLocalAvailabilityInput,
+  input: { readonly cwd: string },
 ): Promise<boolean> {
   const registryName = assertAcpRegistryAgentName(requestedName, candidateRegistry);
   const cwd = resolveConfiguredRegistryCwd(input.cwd);
-  const env = input.env ?? process.env;
-  const platform = input.platform ?? process.platform;
+  const env = process.env;
+  const platform = process.platform;
   let resolved: string | string[];
   try {
     resolved = candidateRegistry.resolve(registryName);
   } catch {
     return false;
   }
-  const argv = availabilityArgv(resolved, platform);
+  const argv = availabilityArgv(resolved);
   if (!argv) return false;
   const program = availabilityProgram(registryName, argv);
   if (!program) return false;
@@ -547,7 +355,7 @@ export async function isAcpRegistryAgentLocallyAvailable(
 /** Lists the ACPX-supplied registry entries that have local launch evidence. */
 export async function listLocallyAvailableAcpRegistryAgentNames(
   candidateRegistry: AcpAgentRegistry,
-  input: AcpRegistryLocalAvailabilityInput,
+  input: { readonly cwd: string },
 ): Promise<readonly string[]> {
   const names = listAcpRegistryAgentNames(candidateRegistry);
   const availability = await Promise.all(
@@ -583,41 +391,4 @@ export function assertAcpRegistryAgentName(
     throw new Error(`ACP registry name is not listed by ACPX: ${registryName}`);
   }
   return registryName;
-}
-
-/**
- * Legacy raw-subprocess helper retained only for private fixture support.
- * Production Paperclip code hands the exact name to ACPX's public runtime.
- * Apart from the generic non-launching availability fence, it does not inspect
- * or execute ACPX's launch argv.
- */
-export function resolveAcpRegistryLaunch(
-  requestedName: string,
-  candidateRegistry: AcpAgentRegistry,
-): AcpRegistryLaunch {
-  const registryName = assertAcpRegistryAgentName(
-    requestedName,
-    candidateRegistry,
-  );
-  const argv = exactStringArray(candidateRegistry.resolve(registryName));
-  const [command, ...args] = argv;
-  if (!command) {
-    throw new Error(`ACPX registry returned no command for ${registryName}`);
-  }
-  return Object.freeze({
-    registryName,
-    command,
-    args: Object.freeze(args),
-  });
-}
-
-export function sameAcpRegistryLaunch(
-  left: AcpRegistryLaunch,
-  right: AcpRegistryLaunch,
-): boolean {
-  return (
-    left.registryName === right.registryName &&
-    left.command === right.command &&
-    sameArgv(left.args, right.args)
-  );
 }

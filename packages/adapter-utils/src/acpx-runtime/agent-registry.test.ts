@@ -2,15 +2,13 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AcpAgentRegistry } from "acpx/runtime";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertAcpRegistryAgentName,
   isAcpRegistryAgentLocallyAvailable,
   listAcpRegistryAgentNames,
   listLocallyAvailableAcpRegistryAgentNames,
   loadAcpxAgentRegistry,
-  resolveAcpRegistryLaunch,
-  sameAcpRegistryLaunch,
 } from "./agent-registry.js";
 
 function registry(input: {
@@ -22,6 +20,10 @@ function registry(input: {
     resolve: input.resolve,
   };
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("ACPX launch registry", () => {
   it("treats project-configured agents as ACPX overrides within the complete registry", async () => {
@@ -38,15 +40,10 @@ describe("ACPX launch registry", () => {
         }),
         "utf8",
       );
-      const configured = await loadAcpxAgentRegistry({ cwd });
+      const configured = await loadAcpxAgentRegistry(cwd);
 
       expect(listAcpRegistryAgentNames(configured)).toContain("custom-runner");
       expect(listAcpRegistryAgentNames(configured)).toContain("codex");
-      expect(resolveAcpRegistryLaunch("custom-runner", configured)).toEqual({
-        registryName: "custom-runner",
-        command: "./bin/custom-acp",
-        args: ["serve", "--stdio"],
-      });
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -82,11 +79,11 @@ describe("ACPX launch registry", () => {
           return ["direct-acp", "--stdio"];
         },
       });
+      vi.stubEnv("PATH", bin);
 
       await expect(
         listLocallyAvailableAcpRegistryAgentNames(candidate, {
           cwd,
-          env: { PATH: bin },
         }),
       ).resolves.toEqual(["codex", "direct-runtime", "fast-agent"]);
     } finally {
@@ -95,6 +92,8 @@ describe("ACPX launch registry", () => {
   });
 
   it.each([
+    ["npx -y some-package"],
+    ["sh -c 'npx -y some-package'"],
     [["npx", "-y", "some-package"]],
     [["uvx", "some-package"]],
     [["pnpm", "dlx", "some-package"]],
@@ -114,6 +113,7 @@ describe("ACPX launch registry", () => {
     [["setsid", "wrapped", "uvx some-package"]],
     [["nice", "sh", "-c", "npx${IFS}-y${IFS}some-package"]],
   ])("does not mistake a materializing runner %j for an installed agent", async (argv) => {
+    vi.stubEnv("PATH", "");
     const candidate = registry({
       names: ["not-installed-agent"],
       resolve: () => argv,
@@ -123,7 +123,7 @@ describe("ACPX launch registry", () => {
       isAcpRegistryAgentLocallyAvailable(
         "not-installed-agent",
         candidate,
-        { cwd: process.cwd(), env: { PATH: "" } },
+        { cwd: process.cwd() },
       ),
     ).resolves.toBe(false);
   });
@@ -141,11 +141,11 @@ describe("ACPX launch registry", () => {
         names: ["custom-runtime"],
         resolve: () => ["./bin/custom-acp", "serve", "--stdio"],
       });
+      vi.stubEnv("PATH", "");
 
       await expect(
         isAcpRegistryAgentLocallyAvailable("custom-runtime", candidate, {
           cwd,
-          env: { PATH: "" },
         }),
       ).resolves.toBe(false);
     } finally {
@@ -176,29 +176,13 @@ describe("ACPX launch registry", () => {
     expect(resolve).not.toHaveBeenCalled();
   });
 
-  it("resolves argv supplied by ACPX for an exact registry name", () => {
-    const resolve = vi.fn((name: string) => ["npx", "--yes", name]);
-
-    expect(
-      resolveAcpRegistryLaunch(
-        "runner-a",
-        registry({ names: ["runner-a"], resolve }),
-      ),
-    ).toEqual({
-      registryName: "runner-a",
-      command: "npx",
-      args: ["--yes", "runner-a"],
-    });
-    expect(resolve).toHaveBeenCalledExactlyOnceWith("runner-a");
-  });
-
-  it.each(["unknown", " runner-a", "runner-a ", "RUNNER-A", ""]) (
+  it.each(["unknown", " runner-a", "runner-a ", "RUNNER-A", ""])(
     "rejects %j before ACPX can use its raw-command fallback",
     (name) => {
       const resolve = vi.fn(() => "forbidden-command");
 
       expect(() =>
-        resolveAcpRegistryLaunch(
+        assertAcpRegistryAgentName(
           name,
           registry({ names: ["runner-a"], resolve }),
         ),
@@ -206,29 +190,4 @@ describe("ACPX launch registry", () => {
       expect(resolve).not.toHaveBeenCalled();
     },
   );
-
-  it("rejects malformed argv returned by ACPX", () => {
-    expect(() =>
-      resolveAcpRegistryLaunch(
-        "runner-a",
-        registry({ names: ["runner-a"], resolve: () => ["npx", " "] }),
-      ),
-    ).toThrow(/invalid launch argv/);
-  });
-
-  it("compares the complete ACPX-resolved command identity", () => {
-    const launch = {
-      registryName: "runner-a",
-      command: "npx",
-      args: ["--yes", "runner-a"],
-    } as const;
-
-    expect(sameAcpRegistryLaunch(launch, launch)).toBe(true);
-    expect(
-      sameAcpRegistryLaunch(launch, { ...launch, args: ["runner-a"] }),
-    ).toBe(false);
-    expect(
-      sameAcpRegistryLaunch(launch, { ...launch, command: "node" }),
-    ).toBe(false);
-  });
 });

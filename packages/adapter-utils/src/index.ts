@@ -12,7 +12,7 @@ export type {
   AcpAdapterEnvironmentRequirements,
   AcpAdapterRuntimeContract,
   AcpAdapterUiMetadata,
-  AcpSubprocessAdapterDefinition,
+  AcpxAdapterDefinition,
   AcpAdapterRevisionConfiguration,
   ServerAdapterModule,
   CreateConfigValues,

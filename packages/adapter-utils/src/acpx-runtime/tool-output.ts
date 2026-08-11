@@ -1,6 +1,10 @@
-import type { ToolCallContent } from "@agentclientprotocol/sdk";
+import type { NormalizedAcpSessionEvent } from "./events.js";
 
-export class InvalidAcpToolOutput extends Error {
+type ToolCallContent = NonNullable<
+  Extract<NormalizedAcpSessionEvent, { kind: "tool_call" }>["content"]
+>[number];
+
+class InvalidAcpToolOutput extends Error {
   readonly code = "invalid_acp_tool_output";
 
   constructor(message: string) {

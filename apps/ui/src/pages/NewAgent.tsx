@@ -15,7 +15,7 @@ import { AgentConfigForm } from "../components/AgentConfigForm";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import { defaultCreateValues } from "../components/agent-config-defaults";
 import { getUIAdapter } from "../adapters";
-import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
+import { useAdapterCatalogSyncState } from "../adapters/use-adapter-catalog";
 import { isValidAdapterType } from "../adapters/metadata";
 import { buildNewAgentControlPlanePayloads } from "../lib/new-agent-control-plane-payload";
 import { useStructuralAdapterConfiguration } from "../adapters/use-structural-adapter-configuration";
@@ -52,13 +52,9 @@ export function NewAgent() {
     );
   const [configValues, setConfigValues] = useState<CreateConfigValues>(defaultCreateValues);
   const [selectedSkillKeys, setSelectedSkillKeys] = useState<string[]>([]);
-  // The packaged local runtime accepts the operator-native skill channel;
-  // Paperclip must not offer the legacy isolated-home mode that execution
-  // rejects before it reaches the local runtime.
-  const skillChannel = "operator_native" as const;
   const [formError, setFormError] = useState<string | null>(null);
   const createIdempotencyKeyRef = useRef(crypto.randomUUID());
-  const admittedAdapters = useAdapterCatalogSync();
+  const { adapters: admittedAdapters } = useAdapterCatalogSyncState();
 
   const { data: companySkills } = useQuery({
     queryKey: queryKeys.companySkills.list(selectedCompanyId ?? ""),
@@ -176,7 +172,6 @@ export function NewAgent() {
         configValues,
         adapterConfig: adapterConfigResolution.config,
         companySkillPins,
-        skillChannel,
       }),
       issueTitle: initialIssueTitle.trim() || null,
       issueRequest: initialRequest.trim(),
@@ -323,16 +318,6 @@ export function NewAgent() {
                 Optional provider-owned skills from the company library.
                 Paperclip does not add a hidden runtime skill bundle.
               </p>
-            </div>
-            <div className="grid gap-1.5 text-sm">
-              <span className="font-medium">Skill channel</span>
-              <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
-                Operator-managed native skills
-              </div>
-              <span className="text-xs text-muted-foreground">
-                The local CLI uses its native skill handling. Paperclip
-                performs no isolated skill-home materialization.
-              </span>
             </div>
             {availableSkills.length === 0 ? (
               <p className="text-xs text-muted-foreground">

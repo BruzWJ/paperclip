@@ -4,7 +4,7 @@ import type {
   AcpAdapterRevisionConfiguration,
   ServerAdapterModule,
 } from "./types.js";
-import type { AcpSessionConfigValue } from "./acp-subprocess/contract.js";
+import type { AcpSessionConfigValue } from "./acpx-runtime/contract.js";
 
 function exactConfigValue(value: unknown): value is AcpSessionConfigValue {
   return (

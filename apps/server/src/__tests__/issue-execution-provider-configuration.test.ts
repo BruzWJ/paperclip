@@ -21,7 +21,6 @@ const configuration: AgentAdapterAcpConfiguration = {
   },
   workspaceSelector: { kind: "issue_execution_workspace" },
   companySkillPins: [],
-  skillChannel: "operator_native",
 };
 
 function acquisitionInput(

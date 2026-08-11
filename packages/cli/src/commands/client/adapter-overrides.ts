@@ -1,7 +1,4 @@
-import {
-  companySkillChannelSchema,
-  type CompanyPortabilityAdapterOverride,
-} from "@paperclipai/shared";
+import type { CompanyPortabilityAdapterOverride } from "@paperclipai/shared";
 
 function parseAssignment(
   raw: string,
@@ -18,12 +15,10 @@ function parseAssignment(
 export function parseExplicitAdapterOverrides(
   typeValues: string[] | undefined,
   configValues: string[] | undefined,
-  skillChannelValues?: string[] | undefined,
 ): Record<string, CompanyPortabilityAdapterOverride> | undefined {
   if (
     (!typeValues || typeValues.length === 0) &&
-    (!configValues || configValues.length === 0) &&
-    (!skillChannelValues || skillChannelValues.length === 0)
+    (!configValues || configValues.length === 0)
   ) {
     return undefined;
   }
@@ -33,7 +28,6 @@ export function parseExplicitAdapterOverrides(
     {
       adapterType: string;
       adapterConfig?: Record<string, unknown>;
-      skillChannel?: CompanyPortabilityAdapterOverride["skillChannel"];
     }
   > = {};
   for (const raw of typeValues ?? []) {
@@ -105,51 +99,10 @@ export function parseExplicitAdapterOverrides(
     );
   }
 
-  const seenSkillChannelSlugs = new Set<string>();
-  for (const raw of skillChannelValues ?? []) {
-    const [slug, rawSkillChannel] = parseAssignment(
-      raw,
-      "--skill-channel",
-      "slug=isolated_skills_home|operator_native",
-    );
-    if (!slug || !rawSkillChannel) {
-      throw new Error(
-        `Invalid --skill-channel "${raw}". Use slug=isolated_skills_home|operator_native.`,
-      );
-    }
-    if (seenSkillChannelSlugs.has(slug)) {
-      throw new Error(
-        `Duplicate --skill-channel for agent slug "${slug}".`,
-      );
-    }
-    seenSkillChannelSlugs.add(slug);
-
-    const override = result[slug];
-    if (!override) {
-      throw new Error(
-        `--skill-channel for "${slug}" requires a matching --adapter-override.`,
-      );
-    }
-    const parsed = companySkillChannelSchema.safeParse(rawSkillChannel);
-    if (!parsed.success) {
-      throw new Error(
-        `Invalid --skill-channel for "${slug}": ${parsed.error.issues
-          .map((issue) => issue.message)
-          .join("; ")}`,
-      );
-    }
-    override.skillChannel = parsed.data;
-  }
-
   for (const [slug, override] of Object.entries(result)) {
     if (!override.adapterConfig) {
       throw new Error(
         `--adapter-override for "${slug}" requires a matching --adapter-config.`,
-      );
-    }
-    if (!override.skillChannel) {
-      throw new Error(
-        `--adapter-override for "${slug}" requires a matching --skill-channel.`,
       );
     }
   }

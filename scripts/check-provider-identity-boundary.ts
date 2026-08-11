@@ -9,8 +9,6 @@ import {
 
 const SHARED_BOUNDARY = "packages/shared/src/provider-child-boundary.ts";
 const ADAPTER_VALIDATOR = "packages/shared/src/validators/agent.ts";
-const PROCESS_ENV = "packages/adapter-utils/src/server-utils.ts";
-const ACP_PROCESS = "packages/adapter-utils/src/acp-subprocess/process.ts";
 const ATTEMPT_EXECUTOR =
   "apps/server/src/services/issue-execution-attempt-executor.ts";
 const AGENT_ACTION_PORT =
@@ -68,24 +66,15 @@ const RETIRED_INSTRUCTION_OWNERS = [
   "apps/server/src/services/default-agent-instructions.ts",
 ] as const;
 
+const RETIRED_PROVIDER_PROCESS_OWNERS = [
+  "packages/adapter-utils/src/execution-target.ts",
+  "packages/adapter-utils/src/server-utils.ts",
+  "packages/adapter-utils/src/local-process-sandbox.ts",
+] as const;
+
 function read(repositoryRoot: string, path: string): string | null {
   const absolute = resolve(repositoryRoot, path);
   return existsSync(absolute) ? readFileSync(absolute, "utf8") : null;
-}
-
-function requireOrderedTokens(
-  repositoryRoot: string,
-  path: string,
-  first: string,
-  second: string,
-): string[] {
-  const source = read(repositoryRoot, path);
-  if (source === null) return [`${path}: required canonical owner is missing`];
-  const firstOffset = source.indexOf(first);
-  const secondOffset = source.indexOf(second);
-  return firstOffset >= 0 && secondOffset > firstOffset
-    ? []
-    : [`${path}: ${first} must precede ${second}`];
 }
 
 /**
@@ -128,32 +117,10 @@ export function providerIdentityBoundaryViolations(
       "isEnvironmentEntry && isProviderChildReservedEnvironmentKey(key)",
       "if (typeof value === \"string\") return;",
     ]),
-    ...requireFileTokens(repositoryRoot, PROCESS_ENV, [
-      "export function sanitizeInheritedProviderChildEnv",
-      'normalizedKey.startsWith("PAPERCLIP_")',
-      "...sanitizeInheritedProviderChildEnv(process.env)",
-      "...opts.env",
-    ]),
-    ...requireFileTokens(repositoryRoot, ACP_PROCESS, [
-      "...sanitizeInheritedProviderChildEnv(process.env)",
-      "...hostLaunch.environment",
-    ]),
-    ...requireOrderedTokens(
-      repositoryRoot,
-      PROCESS_ENV,
-      "...sanitizeInheritedProviderChildEnv(process.env)",
-      "...opts.env",
-    ),
-    ...requireOrderedTokens(
-      repositoryRoot,
-      ACP_PROCESS,
-      "...sanitizeInheritedProviderChildEnv(process.env)",
-      "...hostLaunch.environment",
-    ),
     ...requireFileTokens(repositoryRoot, ATTEMPT_EXECUTOR, [
       "executeAcpxOneShotPrompt",
       "mcpServers: Object.freeze([",
-      "message: input.message",
+      "message: input.request.message",
     ]),
     ...requireFileTokens(repositoryRoot, AGENT_ACTION_PORT, [
       ") => Promise<void>",
@@ -183,15 +150,6 @@ export function providerIdentityBoundaryViolations(
     ]),
     ...requireFileTokens(
       repositoryRoot,
-      "packages/adapter-utils/src/server-utils.test.ts",
-      [
-        "uses explicit adapter provider configuration without inheriting host provider state",
-        'OPENAI_API_KEY: "operator-openai-key"',
-        "sanitizeInheritedProviderChildEnv",
-      ],
-    ),
-    ...requireFileTokens(
-      repositoryRoot,
       "packages/shared/src/validators/runtime-agent-configuration.test.ts",
       [
         "keeps explicit provider-native configuration opaque without a prefix ban",
@@ -204,6 +162,11 @@ export function providerIdentityBoundaryViolations(
   for (const path of RETIRED_INSTRUCTION_OWNERS) {
     if (read(repositoryRoot, path) !== null) {
       violations.push(`${path}: retired instruction owner still exists`);
+    }
+  }
+  for (const path of RETIRED_PROVIDER_PROCESS_OWNERS) {
+    if (read(repositoryRoot, path) !== null) {
+      violations.push(`${path}: retired provider-process owner still exists`);
     }
   }
 

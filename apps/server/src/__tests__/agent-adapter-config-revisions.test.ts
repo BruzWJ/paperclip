@@ -6,7 +6,7 @@ import { createMockDb, type MockDbHarness } from "./helpers/mock-db.js";
 
 const adapterRegistry = vi.hoisted(() => ({
   refreshAcpxAdapters: vi.fn(),
-  findSelectableServerAdapterImplementation: vi.fn(),
+  findServerAdapterImplementation: vi.fn(),
 }));
 
 vi.mock("../adapters/registry.js", () => adapterRegistry);
@@ -18,7 +18,6 @@ const now = new Date("2026-08-01T12:00:00.000Z");
 
 const noCompanySkills = {
   companySkillPins: [],
-  skillChannel: "operator_native" as const,
 };
 
 const TEST_ADAPTER = Object.freeze({
@@ -88,7 +87,6 @@ const TEST_IMPLEMENTATION_IDENTITY = Object.freeze({
   adapterType: "codex",
   definitionVersion: "acpx-runtime/v1" as const,
   protocolVersion: 1 as const,
-  origin: "builtin" as const,
   packageName: "acpx",
   packageVersion: "test-runtime",
   buildIdentity: "acpx-test-runtime:codex",
@@ -192,7 +190,6 @@ async function createRevision(
     model?: "gpt-5.6" | "gpt-5.6-sol";
     runtimeConfig?: Record<string, unknown>;
     companySkillPins?: Array<{ key: string; versionId: string }>;
-    skillChannel?: "operator_native" | "isolated_skills_home";
   } = {},
 ) {
   return createAgentAdapterConfigurationService(harness.db).createRevision({
@@ -203,7 +200,6 @@ async function createRevision(
       adapterConfig: adapterConfig(input.model ?? "gpt-5.6"),
       runtimeConfig: input.runtimeConfig ?? {},
       companySkillPins: input.companySkillPins ?? [],
-      skillChannel: input.skillChannel ?? "operator_native",
     },
     actor: { type: "user", userId: boardUserId },
   });
@@ -212,7 +208,7 @@ async function createRevision(
 beforeEach(() => {
   vi.clearAllMocks();
   adapterRegistry.refreshAcpxAdapters.mockResolvedValue(undefined);
-  adapterRegistry.findSelectableServerAdapterImplementation.mockReturnValue({
+  adapterRegistry.findServerAdapterImplementation.mockReturnValue({
     adapter: TEST_ADAPTER,
     identity: TEST_IMPLEMENTATION_IDENTITY,
   });
@@ -310,7 +306,6 @@ describe("agent adapter configuration revisions", () => {
 
     await expect(createRevision(harness, {
       companySkillPins: [{ key: "code-review", versionId }],
-      skillChannel: "isolated_skills_home",
     })).rejects.toThrow("does not belong to company skill code-review");
 
     expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
@@ -342,7 +337,6 @@ describe("agent adapter configuration revisions", () => {
           },
           workspaceSelector: { kind: "issue_execution_workspace" },
           companySkillPins: [{ key: "code-review", versionId }],
-          skillChannel: "isolated_skills_home",
         },
       }]],
     });
@@ -354,7 +348,6 @@ describe("agent adapter configuration revisions", () => {
       }),
     ).resolves.toEqual({
       entries: [{ key: "code-review", versionId }],
-      skillChannel: "isolated_skills_home",
     });
   });
 

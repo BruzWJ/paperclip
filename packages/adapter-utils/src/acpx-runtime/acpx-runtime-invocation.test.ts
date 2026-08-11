@@ -29,9 +29,8 @@ describe("ACPX-only runtime invocation preparation", () => {
   it("materializes request files without exposing launch argv or a subprocess starter", async () => {
     const targetCwd = await localWorkspace();
     const prepared = await prepareAcpxRuntimeInvocation({
-      target: { kind: "local" },
+      target: { kind: "local", leaseId: "lease-with-files" },
       targetCwd,
-      companySkills: { channel: "operator_native" },
       invocationFiles: [
         { fileName: "run-tools-proxy.mjs", contents: "export {};\n" },
         { fileName: "run-tools.json", contents: '{"bearer":"secret"}\n' },
@@ -41,7 +40,6 @@ describe("ACPX-only runtime invocation preparation", () => {
     expect(prepared).toMatchObject({
       targetCwd,
       targetNodeExecutable: process.execPath,
-      selectedCompanySkillMaterialization: null,
     });
     expect("launch" in prepared).toBe(false);
     expect("startSubprocess" in prepared).toBe(false);
@@ -49,46 +47,23 @@ describe("ACPX-only runtime invocation preparation", () => {
       await fs.readFile(prepared.invocationFilePaths["run-tools.json"]!, "utf8"),
     ).toBe('{"bearer":"secret"}\n');
 
-    await prepared.disposeBeforeStart();
-    await prepared.disposeBeforeStart();
+    await prepared.cleanup();
+    await prepared.cleanup();
     await expect(
       fs.access(prepared.invocationFilePaths["run-tools.json"]!),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("rejects isolated skills explicitly because ACPX has no generic skills-home API", async () => {
-    const targetCwd = await localWorkspace();
-
-    await expect(
-      prepareAcpxRuntimeInvocation({
-        target: { kind: "local" },
-        targetCwd,
-        companySkills: {
-          channel: "isolated_skills_home",
-          identity: {
-            companyId: "company",
-            agentId: "agent",
-            executionTargetIdentity: "target",
-            adapterConfigRevisionId: "revision",
-          },
-          entries: [],
-        },
-        invocationFiles: [{ fileName: "must-not-write", contents: "secret" }],
-      }),
-    ).rejects.toThrow("does not support isolated_skills_home");
-  });
-
   it("accepts no invocation files without constructing a launcher", async () => {
     const targetCwd = await localWorkspace();
     const prepared = await prepareAcpxRuntimeInvocation({
-      target: { kind: "local" },
+      target: { kind: "local", leaseId: "lease-without-files" },
       targetCwd,
-      companySkills: { channel: "operator_native" },
     });
 
     expect(prepared.invocationFilePaths).toEqual({});
     expect("launch" in prepared).toBe(false);
     expect("startSubprocess" in prepared).toBe(false);
-    await expect(prepared.disposeBeforeStart()).resolves.toBeUndefined();
+    await expect(prepared.cleanup()).resolves.toBeUndefined();
   });
 });

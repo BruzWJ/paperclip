@@ -17,8 +17,6 @@ const catalog = vi.hoisted(() => ({
 
 function registerModuleMocks() {
   vi.doMock("../adapters/index.js", () => ({
-    findActiveServerAdapter: (type: string) =>
-      catalog.adapters.find((adapter) => adapter.type === type) ?? null,
     findServerAdapter: (type: string) =>
       catalog.adapters.find((adapter) => adapter.type === type) ?? null,
     listServerAdapters: () => [...catalog.adapters],
@@ -27,7 +25,7 @@ function registerModuleMocks() {
   }));
 }
 
-function createApp(isInstanceAdmin = false) {
+function createApp() {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -39,7 +37,7 @@ function createApp(isInstanceAdmin = false) {
         membershipRole: "operator",
         status: "active",
       }],
-      isInstanceAdmin,
+      isInstanceAdmin: false,
     });
     next();
   });
@@ -72,8 +70,8 @@ describe("ACPX adapter routes", () => {
     errorHandler = middleware.errorHandler;
   });
 
-  function app(isInstanceAdmin = false) {
-    const result = createApp(isInstanceAdmin);
+  function app() {
+    const result = createApp();
     result.use("/api", adapterRoutes());
     result.use(errorHandler);
     return result;
@@ -184,22 +182,4 @@ describe("ACPX adapter routes", () => {
     });
   });
 
-  it("retires instance-level ACPX availability mutation", async () => {
-    const type = catalog.adapters[0]!.type;
-    const res = await request(app(true))
-      .patch(`/api/adapters/${type}`)
-      .send({ disabled: true });
-
-    expect(res.status, JSON.stringify(res.body)).toBe(410);
-    expect(res.body.error).toMatch(/discovers compatible local agents/i);
-  });
-
-  it("rejects legacy adapter package management because ACPX owns the catalog", async () => {
-    const res = await request(app(true))
-      .post("/api/adapters/install")
-      .send({ packageName: "irrelevant-adapter-package" });
-
-    expect(res.status, JSON.stringify(res.body)).toBe(410);
-    expect(res.body.error).toMatch(/discovers compatible local agents/i);
-  });
 });

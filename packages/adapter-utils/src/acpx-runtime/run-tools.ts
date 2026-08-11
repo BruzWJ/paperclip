@@ -1,5 +1,7 @@
 import path from "node:path";
-import type { McpServer } from "@agentclientprotocol/sdk";
+import type { AcpRuntimeOptions } from "acpx/runtime";
+
+type AcpxMcpServer = NonNullable<AcpRuntimeOptions["mcpServers"]>[number];
 
 function requireAbsoluteFile(value: string, label: string): string {
   if (
@@ -22,7 +24,7 @@ export function createPaperclipRunToolsMcpServer(input: {
   readonly nodeExecutable: string;
   readonly proxyEntrypoint: string;
   readonly secretFile: string;
-}): McpServer {
+}): AcpxMcpServer {
   return {
     name: "paperclip",
     command: requireAbsoluteFile(

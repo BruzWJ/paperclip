@@ -93,6 +93,5 @@ export function buildAdapterRevisionConfiguration(input: {
       (input.patch.runtimeConfig as Record<string, unknown> | undefined) ??
       input.agent.runtimeConfig,
     companySkillPins: acpConfiguration?.companySkillPins ?? [],
-    skillChannel: acpConfiguration?.skillChannel ?? "operator_native",
   };
 }

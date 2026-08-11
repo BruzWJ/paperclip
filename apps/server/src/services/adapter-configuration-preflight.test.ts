@@ -2,23 +2,36 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AcpxRuntimeReadinessCapabilityError,
   AcpxRuntimeReadinessCleanupError,
-  type AcpxRuntimeReadinessProbeInput,
-  type AcpxRuntimeReadinessProbeResult,
-} from "@paperclipai/adapter-utils/acp-subprocess";
-import type { AdapterExecutionTarget } from "@paperclipai/adapter-utils/execution-target";
-import type {
-  SelectedCompanySkillLaunchChannel,
-} from "@paperclipai/adapter-utils/selected-company-skills";
+} from "@paperclipai/adapter-utils/acpx-runtime";
+import type { AcpxLocalWorkspaceTarget } from "@paperclipai/adapter-utils/acpx-runtime";
 import type { AgentAdapterAcpConfiguration } from "@paperclipai/shared";
 import {
   createAdapterConfigurationPreflightService,
   type AdapterConfigurationPreflightRuntime,
   type AdapterRuntimeReadinessRepository,
 } from "./adapter-configuration-preflight.js";
-import {
-  CompanySkillMaterializationLifecycleRejected,
-} from "./company-skill-materialization-lifecycle.js";
 import { LocalExecutionTargetError } from "./local-execution-orchestrator.js";
+
+type ProbeAcpxRuntimeReadiness =
+  typeof import("@paperclipai/adapter-utils/acpx-runtime").probeAcpxRuntimeReadiness;
+type AcpxRuntimeReadinessProbeInput = Parameters<ProbeAcpxRuntimeReadiness>[0];
+type AcpxRuntimeReadinessProbeResult = Awaited<
+  ReturnType<ProbeAcpxRuntimeReadiness>
+>;
+
+const acpxRuntimeMocks = vi.hoisted(() => ({
+  probeAcpxRuntimeReadiness: vi.fn(),
+}));
+
+vi.mock(
+  "@paperclipai/adapter-utils/acpx-runtime",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("@paperclipai/adapter-utils/acpx-runtime")
+    >()),
+    probeAcpxRuntimeReadiness: acpxRuntimeMocks.probeAcpxRuntimeReadiness,
+  }),
+);
 
 const COMPANY_ID = "00000000-0000-4000-8000-000000000001";
 const ISSUE_ID = "00000000-0000-4000-8000-000000000002";
@@ -52,16 +65,11 @@ const ACP_CONFIGURATION: AgentAdapterAcpConfiguration = {
     kind: "issue_execution_workspace",
   },
   companySkillPins: [],
-  skillChannel: "operator_native",
 };
 
-const TARGET: AdapterExecutionTarget = Object.freeze({
+const TARGET: AcpxLocalWorkspaceTarget = Object.freeze({
   kind: "local",
   leaseId: "readiness-lease",
-});
-
-const OPERATOR_NATIVE: SelectedCompanySkillLaunchChannel = Object.freeze({
-  channel: "operator_native",
 });
 
 function persistedBinding(overrides: Record<string, unknown> = {}) {
@@ -83,8 +91,6 @@ function persistedBinding(overrides: Record<string, unknown> = {}) {
 
 interface HarnessOptions {
   readonly binding?: ReturnType<typeof persistedBinding>;
-  readonly companySkills?: SelectedCompanySkillLaunchChannel;
-  readonly companySkillsError?: unknown;
   readonly acquisitionError?: unknown;
   readonly probeError?: unknown;
   readonly releaseError?: unknown;
@@ -99,10 +105,6 @@ function createHarness(options: HarnessOptions = {}) {
   const repository: AdapterRuntimeReadinessRepository = {
     async loadExactBinding() {
       return binding;
-    },
-    async resolveCompanySkills() {
-      if (options.companySkillsError) throw options.companySkillsError;
-      return options.companySkills ?? OPERATOR_NATIVE;
     },
   };
 
@@ -126,15 +128,17 @@ function createHarness(options: HarnessOptions = {}) {
         };
       },
     },
-    async probeAcpxRuntimeReadiness(input) {
+  };
+  acpxRuntimeMocks.probeAcpxRuntimeReadiness
+    .mockReset()
+    .mockImplementation(async (input: AcpxRuntimeReadinessProbeInput) => {
       probeInputs.push(input);
       if (options.probeError) throw options.probeError;
       return Object.freeze({
         capabilities: Object.freeze({ controls: ["session/status"] }),
         status: Object.freeze({ backendSessionId: "provider-session" }),
       }) as AcpxRuntimeReadinessProbeResult;
-    },
-  };
+    });
 
   return {
     service: createAdapterConfigurationPreflightService({
@@ -207,33 +211,6 @@ describe("adapter runtime readiness", () => {
       configSelections: ACP_CONFIGURATION.sessionConfigSelections,
     }]);
     expect(harness.releases).toEqual([false]);
-  });
-
-  it("maps a rejected skill revision to typed configuration-incomplete before the ACPX probe", async () => {
-    const harness = createHarness({
-      companySkillsError: new CompanySkillMaterializationLifecycleRejected(
-        "immutable company skill revision pin cannot be resolved",
-      ),
-    });
-
-    await expect(harness.service.inspect(IDENTITY)).resolves.toEqual({
-      status: "incomplete",
-      scope: {
-        runId: RUN_ID,
-        agentId: AGENT_ID,
-        adapterConfigRevisionId: REVISION_ID,
-      },
-      reason: "adapter_revision_invalid",
-      remediationCommand: null,
-    });
-    expect(harness.acquisitionInputs).toEqual([]);
-    expect(harness.probeInputs).toEqual([]);
-  });
-
-  it("does not disguise an unexpected skill repository failure as invalid configuration", async () => {
-    const failure = new Error("database disconnected");
-    const harness = createHarness({ companySkillsError: failure });
-    await expect(harness.service.inspect(IDENTITY)).rejects.toBe(failure);
   });
 
   it.each([

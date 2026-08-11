@@ -9,9 +9,9 @@ import {
 } from "./check-acp-registry-admission.ts";
 
 const REGISTRY_PATH =
-  "packages/adapter-utils/src/acp-subprocess/agent-registry.ts";
+  "packages/adapter-utils/src/acpx-runtime/agent-registry.ts";
 const RUNTIME_EXECUTION_PATH =
-  "packages/adapter-utils/src/acp-subprocess/acpx-runtime-execution.ts";
+  "packages/adapter-utils/src/acpx-runtime/acpx-runtime-execution.ts";
 const MANIFEST_PATH = "packages/adapter-utils/package.json";
 
 const canonicalFiles = await listAcpRegistryAdmissionFiles();
@@ -76,13 +76,13 @@ describe("dynamic ACPX registry and dependency pins", () => {
     assert.deepEqual(scanAcpRegistryAdmissionFiles(canonicalFiles), []);
   });
 
-  it("rejects every ACPX/SDK semver range or a Paperclip-selected frontend", () => {
-    for (const [packageName, version] of [
-      ["@agentclientprotocol/sdk", "^1.3.0"],
-      ["acpx", "~0.13.0"],
+  it("rejects every ACPX/fixture-SDK semver range or a Paperclip-selected frontend", () => {
+    for (const [section, packageName, version] of [
+      ["devDependencies", "@agentclientprotocol/sdk", "^1.3.0"],
+      ["dependencies", "acpx", "~0.13.0"],
     ] as const) {
       const mutation = editJson(canonicalFiles, MANIFEST_PATH, (manifest) => {
-        manifest.dependencies[packageName] = version;
+        manifest[section][packageName] = version;
       });
       expectViolation(mutation, "dependency", `${packageName} ${version}`);
     }
@@ -90,6 +90,22 @@ describe("dynamic ACPX registry and dependency pins", () => {
       manifest.dependencies["@agentclientprotocol/example-acp-frontend"] = "1.0.0";
     });
     expectViolation(selectedFrontend, "dependency", "selected frontend");
+
+    const productionSdk = editJson(canonicalFiles, MANIFEST_PATH, (manifest) => {
+      manifest.dependencies["@agentclientprotocol/sdk"] = "1.3.0";
+      manifest.bundleDependencies.push("@agentclientprotocol/sdk");
+    });
+    expectViolation(productionSdk, "dependency", "production ACP SDK");
+  });
+
+  it("rejects direct SDK imports from production ACP code", () => {
+    const mutation = replaceSource(
+      canonicalFiles,
+      RUNTIME_EXECUTION_PATH,
+      'from "acpx/runtime";',
+      'from "acpx/runtime";\nimport { RequestError } from "@agentclientprotocol/sdk";',
+    );
+    expectViolation(mutation, "provider_parser", "direct ACP SDK import");
   });
 
   it("rejects a patched ACPX dependency", () => {
@@ -150,15 +166,15 @@ describe("ACPX runtime configuration and provider-neutral boundaries", () => {
       replaceSource(
         canonicalFiles,
         RUNTIME_EXECUTION_PATH,
-        "await runtime.setConfigOption?.({",
-        "await runtime.legacyConfigOption?.({",
+        "const setConfigOption = runtime.setConfigOption.bind(runtime)",
+        "const setConfigOption = runtime.legacyConfigOption.bind(runtime)",
       ),
       "runtime_execution",
       "stable session config",
     );
   });
 
-  it("rejects importing a legacy raw ACP invocation from production server code", () => {
+  it("rejects importing a retired raw ACP invocation from production server code", () => {
     expectViolation(
       addFile(canonicalFiles, {
         path: "apps/server/src/services/raw-acp-escape.ts",
@@ -170,7 +186,7 @@ describe("ACPX runtime configuration and provider-neutral boundaries", () => {
     );
   });
 
-  it("rejects importing a legacy raw ACP launcher type from production server code", () => {
+  it("rejects importing a retired raw ACP launcher type from production server code", () => {
     expectViolation(
       addFile(canonicalFiles, {
         path: "apps/server/src/services/raw-acp-launcher-type-escape.ts",
@@ -182,7 +198,7 @@ describe("ACPX runtime configuration and provider-neutral boundaries", () => {
     );
   });
 
-  it("rejects direct imports of a legacy raw ACP subprocess module", () => {
+  it("rejects direct imports of a retired raw ACP subprocess module", () => {
     expectViolation(
       addFile(canonicalFiles, {
         path: "apps/server/src/services/raw-acp-module-escape.ts",
@@ -207,7 +223,7 @@ describe("ACPX runtime configuration and provider-neutral boundaries", () => {
     );
     expectViolation(
       addFile(canonicalFiles, {
-        path: "packages/adapter-utils/src/acp-subprocess/provider-jsonl-parser.ts",
+        path: "packages/adapter-utils/src/acpx-runtime/provider-jsonl-parser.ts",
         source: "export function parseCodexJsonl() { return null; }",
       }),
       "provider_parser",

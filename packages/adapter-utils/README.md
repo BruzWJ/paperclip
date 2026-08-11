@@ -2,8 +2,7 @@
 
 Shared utilities for Paperclip's ACPX-discovered local agents. ACPX owns agent
 discovery, launch resolution, sessions, and execution. Paperclip supplies the
-authorized local workspace, request-scoped MCP files, cancellation, cleanup,
-and an optional local Bubblewrap confinement boundary.
+authorized local workspace, request-scoped MCP files, cancellation, and cleanup.
 
 For the ACPX discovery contract, see
 [`apps/docs/adapters/creating-an-adapter.md`](../../apps/docs/adapters/creating-an-adapter.md).

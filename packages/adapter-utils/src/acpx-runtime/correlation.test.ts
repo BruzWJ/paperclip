@@ -4,7 +4,6 @@ import {
   ACP_SESSION_CORRELATION_KIND,
   createAcpSessionCorrelation,
   parseAcpSessionCorrelation,
-  readAcpSessionCorrelation,
 } from "./correlation.js";
 
 describe("ACP session correlation", () => {
@@ -14,7 +13,7 @@ describe("ACP session correlation", () => {
       ACP_SESSION_CORRELATION_ENVELOPE_VERSION,
     );
     expect(correlation.kind).toBe(ACP_SESSION_CORRELATION_KIND);
-    expect(readAcpSessionCorrelation(correlation)).toBe("opaque/session id");
+    expect(parseAcpSessionCorrelation(correlation).payload.sessionId).toBe("opaque/session id");
     expect(parseAcpSessionCorrelation(correlation)).toEqual(correlation);
   });
 
@@ -22,7 +21,7 @@ describe("ACP session correlation", () => {
     "rejects invalid payload %j",
     (payload) => {
       expect(() =>
-        readAcpSessionCorrelation({
+        parseAcpSessionCorrelation({
           version: "issue-execution-native/v1",
           kind: ACP_SESSION_CORRELATION_KIND,
           payload,
@@ -33,18 +32,18 @@ describe("ACP session correlation", () => {
 
   it("rejects adapter-defined correlation kinds and envelope extensions", () => {
     expect(() =>
-      readAcpSessionCorrelation({
+      parseAcpSessionCorrelation({
         version: ACP_SESSION_CORRELATION_ENVELOPE_VERSION,
         kind: "provider-session/v1",
         payload: { sessionId: "opaque" },
       }),
     ).toThrow();
     expect(() =>
-      readAcpSessionCorrelation({
+      parseAcpSessionCorrelation({
         version: ACP_SESSION_CORRELATION_ENVELOPE_VERSION,
         kind: ACP_SESSION_CORRELATION_KIND,
         payload: { sessionId: "opaque" },
-        provider: "legacy",
+        provider: "custom",
       }),
     ).toThrow();
   });

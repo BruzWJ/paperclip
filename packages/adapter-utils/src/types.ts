@@ -5,7 +5,7 @@
 import type {
   AcpSessionConfigSelection,
   AcpSessionConfigValue,
-} from "./acp-subprocess/contract.js";
+} from "./acpx-runtime/contract.js";
 
 /** Immutable token limits for one advertised ACP model selection. */
 export interface AdapterModelLimits {
@@ -121,10 +121,10 @@ export interface AcpAdapterUiMetadata {
  * Complete declarative AI-adapter definition. It owns no invocation callback,
  * prompt builder, parser, session codec, credential hook, or provider SDK.
  */
-export interface AcpSubprocessAdapterDefinition {
+export interface AcpxAdapterDefinition {
   /**
    * Paperclip's durable contract is supplied and executed by ACPX. The
-   * historical ACP subprocess wire fixtures remain private implementation
+   * ACPX runtime fixtures remain private implementation
    * details and are not this public revision ABI.
    */
   readonly version: "acpx-runtime/v1";
@@ -155,7 +155,7 @@ export interface AcpAdapterRevisionConfiguration {
 /** The adapter ABI contains one closed declarative ACP definition and nothing else. */
 export interface ServerAdapterModule {
   readonly type: string;
-  readonly definition: AcpSubprocessAdapterDefinition;
+  readonly definition: AcpxAdapterDefinition;
 }
 
 // ---------------------------------------------------------------------------

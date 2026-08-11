@@ -15,7 +15,7 @@ vi.mock("@/api/adapters", () => ({
 }));
 
 vi.mock("@/adapters/use-adapter-catalog", () => ({
-  useAdapterCatalogSync: vi.fn(),
+  useAdapterCatalogSyncState: vi.fn(),
 }));
 
 vi.mock("@/context/CompanyContext", () => ({

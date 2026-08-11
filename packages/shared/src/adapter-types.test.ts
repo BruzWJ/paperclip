@@ -30,7 +30,6 @@ describe("dynamic adapter type validation schemas", () => {
         adapterConfig: {},
         runtimeConfig: {},
         companySkillPins: [],
-        skillChannel: "operator_native",
       }).adapterType,
     ).toBe("external_adapter");
   });

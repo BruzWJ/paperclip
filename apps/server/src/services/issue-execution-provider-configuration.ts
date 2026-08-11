@@ -1,7 +1,7 @@
 import path from "node:path";
 import type {
-  AdapterExecutionTarget,
-} from "@paperclipai/adapter-utils/execution-target";
+  AcpxLocalWorkspaceTarget,
+} from "@paperclipai/adapter-utils/acpx-runtime";
 import type { AgentAdapterAcpConfiguration } from "@paperclipai/shared";
 import { agentAdapterAcpConfigurationSchema } from "@paperclipai/shared";
 import { redactSensitiveText } from "../redaction.js";
@@ -21,7 +21,7 @@ export interface IssueExecutionTargetAcquisitionInput {
   readonly adapterConfigRevisionId: string;
   readonly executionWorkspaceBindingId: string;
   readonly acpConfiguration: AgentAdapterAcpConfiguration;
-  /** Exact host cwd recorded for the local provider process. */
+  /** Exact host cwd supplied to the bounded ACPX execution. */
   readonly hostCwd: string;
   /** Exact local workspace cwd when the selected target is local. */
   readonly localWorkspaceCwd: string;
@@ -36,7 +36,7 @@ export interface IssueExecutionRuntimeRedactor {
 export interface AcquiredIssueExecutionTarget {
   readonly adapterConfigRevisionId: string;
   readonly acpConfiguration: AgentAdapterAcpConfiguration;
-  readonly executionTarget: AdapterExecutionTarget;
+  readonly executionTarget: AcpxLocalWorkspaceTarget;
   readonly hostCwd: string;
   readonly targetCwd: string;
   readonly targetAdditionalDirectories: readonly string[];

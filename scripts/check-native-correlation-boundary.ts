@@ -38,7 +38,7 @@ const FORBIDDEN_TERMS = [
 type ForbiddenTerm = (typeof FORBIDDEN_TERMS)[number];
 
 const FIXED_ACP_CORRELATION_CONTRACT_PATH =
-  "packages/adapter-utils/src/acp-subprocess/correlation.ts";
+  "packages/adapter-utils/src/acpx-runtime/correlation.ts";
 
 export interface NativeCorrelationBoundaryFile {
   path: string;

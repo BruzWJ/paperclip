@@ -9,7 +9,7 @@ import {
 import {
   ACP_SESSION_CORRELATION_ENVELOPE_VERSION,
   ACP_SESSION_CORRELATION_KIND,
-} from "@paperclipai/adapter-utils/acp-subprocess";
+} from "@paperclipai/adapter-utils/acpx-runtime";
 import {
   NativeCorrelationRejected,
   validateAcpCorrelationScope,

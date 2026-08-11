@@ -2,16 +2,10 @@ import { createHash } from "node:crypto";
 import {
   sameAdapterModel,
   validateAdapterModel,
-  validateServerAdapterModule,
   type AdapterModel,
   type AdapterModelProfileDefinition,
   type ServerAdapterModule,
 } from "@paperclipai/adapter-utils";
-import {
-  assertAcpRegistryAgentName,
-  loadAcpxAgentRegistry,
-  type AcpAgentRegistry,
-} from "@paperclipai/adapter-utils/acp-subprocess";
 import {
   adapterImplementationIdentityKey,
   type AdapterImplementationIdentity,
@@ -37,16 +31,6 @@ export interface AcpxAdapterProbeDiagnostic {
   readonly type: string;
   readonly code: AcpxCatalogDiagnosticCode;
   readonly message: string;
-}
-
-/**
- * Kept as a source-compatible type for integrations compiled against older
- * Paperclip versions. ACPX is now the only selectable catalog supplier, so
- * runtime registration is intentionally rejected below.
- */
-export interface RegisterServerAdapterOptions {
-  readonly identity?: AdapterImplementationIdentity;
-  readonly selectable?: boolean;
 }
 
 const ACPX_CATALOG_REFRESH_INTERVAL_MS = 30_000;
@@ -92,58 +76,10 @@ function acpxRuntimeIdentity(
     adapterType: adapter.type,
     definitionVersion: "acpx-runtime/v1",
     protocolVersion: 1,
-    // ACPX owns the agent metadata, launch argv, settings, and execution
-    // contract. `builtin` is legacy identity vocabulary for Paperclip's
-    // supervisor, not a claim that this is a built-in agent catalog.
-    origin: "builtin",
     packageName: "acpx",
     packageVersion: "runtime",
     buildIdentity: `acpx-runtime:${adapter.type}:${artifactDigest.slice(0, 16)}`,
     artifactDigest,
-  });
-}
-
-function assertAcpxRegistryDefinition(
-  adapter: ServerAdapterModule,
-  registry: AcpAgentRegistry,
-): ServerAdapterModule {
-  const validated = validateServerAdapterModule(adapter);
-  if (validated.type !== validated.definition.launchProfile.registryName) {
-    throw new Error(
-      `Adapter ${validated.type} must use its exact ACPX registry name`,
-    );
-  }
-  // Exact membership prevents ACPX's raw-command fallback from becoming a
-  // Paperclip surface. The runtime retains ownership of the resolved command
-  // and argv; Paperclip fingerprints only ACPX's discovered definition.
-  assertAcpRegistryAgentName(validated.type, registry);
-  return validated;
-}
-
-function createDiscoveredAcpxAdapter(
-  adapter: ServerAdapterModule,
-  registry: AcpAgentRegistry,
-): RegisteredServerAdapterImplementation {
-  const validated = assertAcpxRegistryDefinition(adapter, registry);
-  const identity = acpxRuntimeIdentity(validated);
-  const registered = Object.freeze({
-    identity,
-    identityKey: adapterImplementationIdentityKey(identity),
-    adapter: validated,
-  });
-  return registered;
-}
-
-function acpxCandidateDiagnostic(
-  type: string,
-  error: unknown,
-): AcpxAdapterProbeDiagnostic {
-  return Object.freeze({
-    type,
-    code: "acpx_catalog_invalid",
-    message: error instanceof Error
-      ? error.message
-      : "ACPX candidate could not be admitted",
   });
 }
 
@@ -166,23 +102,16 @@ export function refreshAcpxAdapters(input: { force?: boolean } = {}): Promise<vo
   refreshInFlight = (async () => {
     try {
       const cwd = process.cwd();
-      const registry = await loadAcpxAgentRegistry({ cwd });
-      const snapshot = await discoverLocalAcpxAdapterCatalog(cwd, registry);
+      const snapshot = await discoverLocalAcpxAdapterCatalog(cwd);
       const next = new Map<string, RegisteredServerAdapterImplementation>();
       const nextDiagnostics = new Map<string, AcpxAdapterProbeDiagnostic>();
       for (const adapter of snapshot.adapters) {
-        try {
-          const registered = createDiscoveredAcpxAdapter(adapter, registry);
-          next.set(registered.adapter.type, registered);
-        } catch (error) {
-          // The discovery projection validates each candidate already. Keep
-          // this admission fence as a second containment boundary so an
-          // unexpected malformed candidate never hides healthy ACPX agents.
-          nextDiagnostics.set(
-            adapter.type,
-            acpxCandidateDiagnostic(adapter.type, error),
-          );
-        }
+        const identity = acpxRuntimeIdentity(adapter);
+        next.set(adapter.type, Object.freeze({
+          identity,
+          identityKey: adapterImplementationIdentityKey(identity),
+          adapter,
+        }));
       }
       for (const [type, diagnostic] of Object.entries(snapshot.unavailable)) {
         // A successful probe always wins should an upstream supplier ever emit
@@ -217,41 +146,10 @@ export function refreshAcpxAdapters(input: { force?: boolean } = {}): Promise<vo
   return refreshInFlight;
 }
 
-/** Historical startup name. It now initializes the ACPX-supplied catalog. */
-export function waitForExternalAdapters(): Promise<void> {
-  return refreshAcpxAdapters({ force: true });
-}
-
-/**
- * Paperclip no longer accepts declarative adapter packages as catalog input.
- * Agent names, models, and configuration are supplied exclusively by ACPX.
- */
-export function registerServerAdapter(
-  _adapter: ServerAdapterModule,
-  _options: RegisterServerAdapterOptions = {},
-): RegisteredServerAdapterImplementation {
-  throw new Error(
-    "Paperclip discovers compatible local agents automatically; install and authenticate the local CLI instead of registering an adapter package",
-  );
-}
-
-/** No-op compatibility shim: ACPX discovery owns the current catalog. */
-export function unregisterServerAdapter(_type: string): void {}
-
-function currentImplementation(
+export function findServerAdapterImplementation(
   type: string,
 ): RegisteredServerAdapterImplementation | null {
   return currentByType.get(type) ?? null;
-}
-
-export function findSelectableServerAdapterImplementation(
-  type: string,
-): RegisteredServerAdapterImplementation | null {
-  return currentImplementation(type);
-}
-
-export function listServerAdapterImplementations(): readonly RegisteredServerAdapterImplementation[] {
-  return [...currentByType.values()];
 }
 
 /**
@@ -265,7 +163,7 @@ export function listAcpxAdapterProbeDiagnostics(): readonly AcpxAdapterProbeDiag
 }
 
 export async function listAdapterModels(type: string): Promise<AdapterModel[]> {
-  const implementation = currentImplementation(type);
+  const implementation = findServerAdapterImplementation(type);
   if (!implementation) return [];
   return implementation.adapter.definition.models.map((model) =>
     validateAdapterModel(model),
@@ -281,7 +179,7 @@ export async function resolveAvailableAdapterModel(
   }
   const candidates = (
     await Promise.all(
-      listEnabledServerAdapters().map(async (adapter) =>
+      listServerAdapters().map(async (adapter) =>
         (await listAdapterModels(adapter.type)).filter(
           (model) => model.id === modelId,
         ),
@@ -311,39 +209,6 @@ export function listServerAdapters(): ServerAdapterModule[] {
     .sort((left, right) => left.type.localeCompare(right.type));
 }
 
-export function listEnabledServerAdapters(): ServerAdapterModule[] {
-  return listServerAdapters();
-}
-
-/** ACPX has no Paperclip override layer. */
-export function setOverridePaused(_type: string, _paused: boolean): boolean {
-  return false;
-}
-
-/** ACPX has no Paperclip override layer. */
-export function isOverridePaused(_type: string): boolean {
-  return false;
-}
-
-/** ACPX has no Paperclip override layer. */
-export function getPausedOverrides(): Set<string> {
-  return new Set();
-}
-
 export function findServerAdapter(type: string): ServerAdapterModule | null {
-  return currentImplementation(type)?.adapter ?? null;
-}
-
-export function findActiveServerAdapter(type: string): ServerAdapterModule | null {
-  return findServerAdapter(type);
-}
-
-export function findSelectableServerAdapter(type: string): ServerAdapterModule | null {
-  return findSelectableServerAdapterImplementation(type)?.adapter ?? null;
-}
-
-export function requireServerAdapter(type: string): ServerAdapterModule {
-  const adapter = findActiveServerAdapter(type);
-  if (!adapter) throw new Error(`Unknown local agent type: ${type}`);
-  return adapter;
+  return findServerAdapterImplementation(type)?.adapter ?? null;
 }

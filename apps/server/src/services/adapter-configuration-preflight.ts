@@ -12,11 +12,7 @@ import {
   AcpxRuntimeReadinessCapabilityError,
   AcpxRuntimeReadinessCleanupError,
   probeAcpxRuntimeReadiness,
-  type AcpxRuntimeReadinessProbeInput,
-  type AcpxRuntimeReadinessProbeResult,
-} from "@paperclipai/adapter-utils/acp-subprocess";
-import type { SelectedCompanySkillLaunchChannel } from "@paperclipai/adapter-utils/selected-company-skills";
-import { ZodError } from "zod";
+} from "@paperclipai/adapter-utils/acpx-runtime";
 import { notFound } from "../errors.js";
 import {
   createIssueExecutionTargetAcquirer,
@@ -27,10 +23,6 @@ import {
   LocalExecutionTargetError,
   type LocalExecutionOrchestrator,
 } from "./local-execution-orchestrator.js";
-import {
-  CompanySkillMaterializationLifecycleRejected,
-  resolveCompanySkillMaterializationRevisionInTransaction,
-} from "./company-skill-materialization-lifecycle.js";
 import {
   readIssueExecutionRuntimeReadinessBinding,
   type IssueExecutionRuntimeReadinessBinding,
@@ -52,25 +44,10 @@ export interface AdapterRuntimeReadinessRepository {
   loadExactBinding(
     identity: AdapterRuntimeReadinessIdentity,
   ): Promise<IssueExecutionRuntimeReadinessBinding | null>;
-  /**
-   * Resolves the immutable skill pin as a revision-integrity check. ACPX owns
-   * its local runtime environment, so readiness does not prepare a
-   * Paperclip-managed skills home for this disposable probe.
-   */
-  resolveCompanySkills(
-    binding: IssueExecutionRuntimeReadinessBinding,
-  ): Promise<SelectedCompanySkillLaunchChannel>;
 }
 
 export interface AdapterConfigurationPreflightRuntime {
   readonly targetAcquirer: IssueExecutionTargetAcquirer;
-  /**
-   * Test seam. Production uses ACPX's public runtime through adapter-utils;
-   * Paperclip does not own a launch catalog or a raw ACP client here.
-   */
-  readonly probeAcpxRuntimeReadiness?: (
-    input: AcpxRuntimeReadinessProbeInput,
-  ) => Promise<AcpxRuntimeReadinessProbeResult>;
 }
 
 export interface AdapterConfigurationPreflightService {
@@ -85,20 +62,6 @@ function createPostgresAdapterRuntimeReadinessRepository(
   return {
     async loadExactBinding(identity) {
       return readIssueExecutionRuntimeReadinessBinding(db, identity);
-    },
-    async resolveCompanySkills(binding) {
-      return db.transaction(async (transaction) => {
-        const resolved =
-          await resolveCompanySkillMaterializationRevisionInTransaction(
-            transaction,
-            {
-              companyId: binding.companyId,
-              agentId: binding.agentId,
-              adapterConfigRevisionId: binding.adapterConfigRevisionId,
-            },
-          );
-        return resolved.launchChannel;
-      });
     },
   };
 }
@@ -195,20 +158,6 @@ export function createAdapterConfigurationPreflightService(options: {
         return incomplete(scope, "adapter_revision_invalid");
       }
 
-      try {
-        // Retain immutable selected-skill revision validation. No skills home
-        // is materialized: ACPX owns the local runtime process and its config.
-        await options.repository.resolveCompanySkills(binding);
-      } catch (error) {
-        if (
-          !(error instanceof ZodError) &&
-          !(error instanceof CompanySkillMaterializationLifecycleRejected)
-        ) {
-          throw error;
-        }
-        return incomplete(scope, "adapter_revision_invalid");
-      }
-
       let acquired: AcquiredIssueExecutionTarget;
       try {
         acquired = await options.runtime.targetAcquirer.acquire({
@@ -229,8 +178,7 @@ export function createAdapterConfigurationPreflightService(options: {
 
       let result: AdapterRuntimeReadiness;
       try {
-        const probe = await (options.runtime.probeAcpxRuntimeReadiness ??
-          probeAcpxRuntimeReadiness)({
+        const probe = await probeAcpxRuntimeReadiness({
           cwd: acquired.targetCwd,
           // All ACPX catalog/revision validation is resolved relative to the
           // Paperclip service configuration scope. The acquired workspace is

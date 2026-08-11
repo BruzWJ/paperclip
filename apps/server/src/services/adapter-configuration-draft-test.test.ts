@@ -1,16 +1,51 @@
-import { describe, expect, it, vi } from "vitest";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AcpxRuntimeReadinessCapabilityError,
   AcpxRuntimeReadinessCleanupError,
-  type AcpxRuntimeReadinessProbeInput,
-  type AcpxRuntimeReadinessProbeResult,
-} from "@paperclipai/adapter-utils/acp-subprocess";
+} from "@paperclipai/adapter-utils/acpx-runtime";
 import {
   createAdapterConfigurationDraftTestService,
 } from "./adapter-configuration-draft-test.js";
 import type {
   ResolvedRegisteredAdapterRuntimeConfiguration,
 } from "./agent-adapter-config-revisions.js";
+
+type AcpxRuntimeReadinessProbeInput = Parameters<
+  typeof import("@paperclipai/adapter-utils/acpx-runtime").probeAcpxRuntimeReadiness
+>[0];
+
+const moduleMocks = vi.hoisted(() => ({
+  createTemporarySessionCwd: vi.fn(),
+  probeAcpxRuntimeReadiness: vi.fn(),
+  removeTemporarySessionCwd: vi.fn(),
+  resolveRegisteredAdapterRuntimeConfiguration: vi.fn(),
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:fs/promises")>()),
+  mkdtemp: moduleMocks.createTemporarySessionCwd,
+  rm: moduleMocks.removeTemporarySessionCwd,
+}));
+
+vi.mock(
+  "@paperclipai/adapter-utils/acpx-runtime",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("@paperclipai/adapter-utils/acpx-runtime")
+    >()),
+    probeAcpxRuntimeReadiness: moduleMocks.probeAcpxRuntimeReadiness,
+  }),
+);
+
+vi.mock("./agent-adapter-config-revisions.js", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("./agent-adapter-config-revisions.js")
+  >()),
+  resolveRegisteredAdapterRuntimeConfiguration:
+    moduleMocks.resolveRegisteredAdapterRuntimeConfiguration,
+}));
 
 const TESTED_AT = new Date("2026-08-04T18:00:00.000Z");
 const ADAPTER_TYPE = "fixture-agent";
@@ -37,14 +72,16 @@ function resolvedConfiguration(): ResolvedRegisteredAdapterRuntimeConfiguration 
 }
 
 function createHarness(probeError?: unknown) {
-  const resolveConfiguration = vi.fn(async () =>
-    resolvedConfiguration());
-  const probeInputs: AcpxRuntimeReadinessProbeInput[] = [];
-  const removeTemporarySessionCwd = vi.fn(async () => {});
-  const probe = vi.fn(async (
+  moduleMocks.resolveRegisteredAdapterRuntimeConfiguration.mockResolvedValue(
+    resolvedConfiguration(),
+  );
+  moduleMocks.createTemporarySessionCwd.mockResolvedValue(
+    "/private/draft-test-workspace",
+  );
+  moduleMocks.removeTemporarySessionCwd.mockResolvedValue(undefined);
+  moduleMocks.probeAcpxRuntimeReadiness.mockImplementation(async (
     input: AcpxRuntimeReadinessProbeInput,
-  ): Promise<AcpxRuntimeReadinessProbeResult> => {
-    probeInputs.push(input);
+  ) => {
     if (probeError) throw probeError;
     return {
       capabilities: {
@@ -55,23 +92,21 @@ function createHarness(probeError?: unknown) {
     };
   });
   return {
-    service: createAdapterConfigurationDraftTestService({
-      resolveRegisteredAdapterRuntimeConfiguration:
-        resolveConfiguration,
-      probeAcpxRuntimeReadiness: probe,
-      createTemporarySessionCwd: async () => "/private/draft-test-workspace",
-      removeTemporarySessionCwd,
-      serviceCwd: "/paperclip/service",
-      now: () => TESTED_AT,
-    }),
-    resolveConfiguration,
-    probe,
-    probeInputs,
-    removeTemporarySessionCwd,
+    service: createAdapterConfigurationDraftTestService(),
   };
 }
 
 describe("unsaved adapter configuration test", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(TESTED_AT);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("reuses canonical dynamic resolution and delegates exact generic selections to a no-prompt ACPX probe", async () => {
     const harness = createHarness();
 
@@ -88,19 +123,24 @@ describe("unsaved adapter configuration test", () => {
       testedAt: TESTED_AT.toISOString(),
     });
 
-    expect(harness.resolveConfiguration).toHaveBeenCalledWith({
+    expect(
+      moduleMocks.resolveRegisteredAdapterRuntimeConfiguration,
+    ).toHaveBeenCalledWith({
       adapterType: ADAPTER_TYPE,
       adapterConfig: ADAPTER_CONFIG,
     });
-    expect(harness.probeInputs).toEqual([{
+    expect(moduleMocks.createTemporarySessionCwd).toHaveBeenCalledWith(
+      join(tmpdir(), "paperclip-acpx-draft-test-"),
+    );
+    expect(moduleMocks.probeAcpxRuntimeReadiness).toHaveBeenCalledWith({
       cwd: "/private/draft-test-workspace",
-      registryCwd: "/paperclip/service",
+      registryCwd: process.cwd(),
       agentName: ADAPTER_TYPE,
       configSelections: ACP_CONFIGURATION.sessionConfigSelections,
-      requireBackendSessionDiscard: true,
-    }]);
-    expect(harness.removeTemporarySessionCwd).toHaveBeenCalledWith(
+    });
+    expect(moduleMocks.removeTemporarySessionCwd).toHaveBeenCalledWith(
       "/private/draft-test-workspace",
+      { recursive: true, force: true },
     );
   });
 
@@ -145,33 +185,20 @@ describe("unsaved adapter configuration test", () => {
         testedAt: TESTED_AT.toISOString(),
       });
       expect(JSON.stringify(result)).not.toContain("secret provider detail");
-      expect(harness.removeTemporarySessionCwd).toHaveBeenCalledWith(
+      expect(moduleMocks.removeTemporarySessionCwd).toHaveBeenCalledWith(
         "/private/draft-test-workspace",
+        { recursive: true, force: true },
       );
     },
   );
 
   it("fails a ready observation when Paperclip cannot remove the isolated test workspace", async () => {
-    const removeTemporarySessionCwd = vi.fn(async () => {
-      throw new Error("secret filesystem detail");
-    });
-    const service = createAdapterConfigurationDraftTestService({
-      resolveRegisteredAdapterRuntimeConfiguration: async () =>
-        resolvedConfiguration(),
-      probeAcpxRuntimeReadiness: async () => ({
-        capabilities: {
-          controls: ["session/status", "session/set_config_option"],
-        },
-        status: { backendSessionId: "disposable-backend-session" },
-      }),
-      createTemporarySessionCwd: async () =>
-        "/private/draft-test-workspace",
-      removeTemporarySessionCwd,
-      serviceCwd: "/paperclip/service",
-      now: () => TESTED_AT,
-    });
+    const harness = createHarness();
+    moduleMocks.removeTemporarySessionCwd.mockRejectedValue(
+      new Error("secret filesystem detail"),
+    );
 
-    const result = await service.test({
+    const result = await harness.service.test({
       adapterType: ADAPTER_TYPE,
       adapterConfig: ADAPTER_CONFIG,
     });
@@ -188,18 +215,12 @@ describe("unsaved adapter configuration test", () => {
   });
 
   it("reports a sanitized initialization failure when the isolated test workspace cannot be created", async () => {
-    const probe = vi.fn();
-    const service = createAdapterConfigurationDraftTestService({
-      resolveRegisteredAdapterRuntimeConfiguration: async () =>
-        resolvedConfiguration(),
-      probeAcpxRuntimeReadiness: probe,
-      createTemporarySessionCwd: async () => {
-        throw new Error("secret filesystem detail");
-      },
-      now: () => TESTED_AT,
-    });
+    const harness = createHarness();
+    moduleMocks.createTemporarySessionCwd.mockRejectedValue(
+      new Error("secret filesystem detail"),
+    );
 
-    const result = await service.test({
+    const result = await harness.service.test({
       adapterType: ADAPTER_TYPE,
       adapterConfig: ADAPTER_CONFIG,
     });
@@ -213,28 +234,24 @@ describe("unsaved adapter configuration test", () => {
       testedAt: TESTED_AT.toISOString(),
     });
     expect(JSON.stringify(result)).not.toContain("secret filesystem detail");
-    expect(probe).not.toHaveBeenCalled();
+    expect(moduleMocks.probeAcpxRuntimeReadiness).not.toHaveBeenCalled();
+    expect(moduleMocks.removeTemporarySessionCwd).not.toHaveBeenCalled();
   });
 
   it("does not disguise canonical catalog or structural validation failures as runtime observations", async () => {
     const validationError = new Error(
       "Adapter configuration is structurally invalid",
     );
-    const probe = vi.fn();
-    const createTemporarySessionCwd = vi.fn();
-    const service = createAdapterConfigurationDraftTestService({
-      resolveRegisteredAdapterRuntimeConfiguration: async () => {
-        throw validationError;
-      },
-      probeAcpxRuntimeReadiness: probe,
-      createTemporarySessionCwd,
-    });
+    const harness = createHarness();
+    moduleMocks.resolveRegisteredAdapterRuntimeConfiguration.mockRejectedValue(
+      validationError,
+    );
 
-    await expect(service.test({
+    await expect(harness.service.test({
       adapterType: ADAPTER_TYPE,
       adapterConfig: ADAPTER_CONFIG,
     })).rejects.toBe(validationError);
-    expect(probe).not.toHaveBeenCalled();
-    expect(createTemporarySessionCwd).not.toHaveBeenCalled();
+    expect(moduleMocks.probeAcpxRuntimeReadiness).not.toHaveBeenCalled();
+    expect(moduleMocks.createTemporarySessionCwd).not.toHaveBeenCalled();
   });
 });

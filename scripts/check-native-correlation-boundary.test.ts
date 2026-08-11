@@ -6,10 +6,10 @@ import {
 } from "./check-native-correlation-boundary.ts";
 
 const FIXED_CORRELATION_PATH =
-  "packages/adapter-utils/src/acp-subprocess/correlation.ts";
+  "packages/adapter-utils/src/acpx-runtime/correlation.ts";
 const FIXED_CORRELATION_SOURCE = readFileSync(
   new URL(
-    "../packages/adapter-utils/src/acp-subprocess/correlation.ts",
+    "../packages/adapter-utils/src/acpx-runtime/correlation.ts",
     import.meta.url,
   ),
   "utf8",
@@ -75,10 +75,9 @@ test("allows only the fixed ACP envelope literal in its canonical owner", () => 
   );
 });
 
-test("ACP client and event boundaries cannot transport correlation fields", () => {
+test("ACPX event boundaries cannot transport correlation fields", () => {
   for (const path of [
-    "packages/adapter-utils/src/acp-subprocess/client.ts",
-    "packages/adapter-utils/src/acp-subprocess/events.ts",
+    "packages/adapter-utils/src/acpx-runtime/events.ts",
     "apps/server/src/services/issue-execution-plan-live.ts",
   ]) {
     const violations = scan(

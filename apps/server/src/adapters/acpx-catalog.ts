@@ -1,12 +1,10 @@
 import {
-  listLocallyAvailableAcpRegistryAgentNames,
-  loadAcpxAgentRegistry,
+  listAcpxAgentNames,
   type AcpxAgentDiscovery,
   type AcpxDiscoveredConfigOption,
   type AcpxDiscoveredConfigOptionValue,
-  type AcpAgentRegistry,
   probeAcpxAgent,
-} from "@paperclipai/adapter-utils/acp-subprocess";
+} from "@paperclipai/adapter-utils/acpx-runtime";
 import type {
   AcpAdapterConfigOption,
   AdapterModel,
@@ -88,30 +86,13 @@ function selectableOptions(
   );
 }
 
-function modelOption(
-  discovery: AcpxAgentDiscovery,
-  options: readonly SelectableOption[],
-): SelectableOption | null {
-  // Prefer ACPX's own semantic annotation when it supplies one. This remains
-  // entirely dynamic, while allowing an ACPX-resolved frontend to expose a model option
-  // whose visible values are a stricter subset of status.models.
+function modelOption(options: readonly SelectableOption[]): SelectableOption | null {
   const categorised = options.filter(
     (option) =>
       option.kind === "select" && option.source.category === "model",
   );
   if (categorised.length === 1) return categorised[0]!;
-  if (discovery.models.length === 0) return null;
-  const expected = new Set(discovery.models);
-  const matches = options.filter((option) => {
-    if (option.kind !== "select") return false;
-    const { values } = option;
-    const actual = new Set(values.map((value) => value.value));
-    return (
-      actual.size === expected.size &&
-      [...expected].every((value) => actual.has(value))
-    );
-  });
-  return matches.length === 1 ? matches[0]! : null;
+  return null;
 }
 
 function fieldOptions(
@@ -243,7 +224,7 @@ export function acpxDiscoveryToServerAdapter(
   discovery: AcpxAgentDiscovery,
 ): ServerAdapterModule {
   const options = selectableOptions(discovery);
-  const selectedModelOption = modelOption(discovery, options);
+  const selectedModelOption = modelOption(options);
   const models = modelsFor(selectedModelOption, discovery);
   return Object.freeze({
     type: discovery.agentName,
@@ -263,7 +244,7 @@ export function acpxDiscoveryToServerAdapter(
       }),
       ui: Object.freeze({
         label: discovery.agentName,
-        description: "Available from a compatible local agent runtime.",
+        description: "Available from the local ACPX runtime.",
       }),
       configSchema: Object.freeze({
         fields: Object.freeze(options.map(configSchemaField)),
@@ -341,12 +322,8 @@ function candidateDiagnostic(
  */
 export async function discoverLocalAcpxAdapterCatalog(
   cwd = process.cwd(),
-  suppliedRegistry?: AcpAgentRegistry,
 ): Promise<AcpxCatalogSnapshot> {
-  const registry = suppliedRegistry ?? await loadAcpxAgentRegistry({ cwd });
-  const names = await listLocallyAvailableAcpRegistryAgentNames(registry, {
-    cwd,
-  });
+  const names = await listAcpxAgentNames(cwd);
   const probes = await mapConcurrent<
     string,
     AcpxCatalogCandidate
@@ -356,7 +333,6 @@ export async function discoverLocalAcpxAdapterCatalog(
       discovery = await probeAcpxAgent({
         cwd,
         agentName,
-        dependencies: { createAgentRegistry: () => registry },
       });
       if (!discovery.controls.includes("session/status")) {
         throw new Error("ACPX runtime does not advertise session/status");

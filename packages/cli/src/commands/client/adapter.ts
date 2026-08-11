@@ -10,7 +10,6 @@ import {
 
 interface AdapterOptions extends BaseClientOptions {
   companyId?: string;
-  payloadJson?: string;
 }
 
 export function registerAdapterCommands(program: Command): void {
@@ -46,8 +45,6 @@ export function registerAdapterCommands(program: Command): void {
         }
       }),
   );
-
-  addAdapterPatch(adapter, "update", "Update discovered-agent visibility", "");
 
   addCommonClientOptions(
     adapter
@@ -89,24 +86,6 @@ export function registerAdapterCommands(program: Command): void {
   addCompanyAdapterGet(adapter, "model-profiles", "List adapter model profiles", "model-profiles");
 }
 
-function addAdapterPatch(parent: Command, name: string, description: string, suffix: string): void {
-  addCommonClientOptions(
-    parent
-      .command(name)
-      .description(description)
-      .argument("<type>", "Adapter type")
-      .requiredOption("--payload-json <json>", "JSON payload")
-      .action(async (type: string, opts: AdapterOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.patch(`${apiPath`/api/adapters/${type}`}${suffix}`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-}
-
 function addCompanyAdapterGet(parent: Command, name: string, description: string, suffix: string): void {
   addCommonClientOptions(
     parent
@@ -124,8 +103,4 @@ function addCompanyAdapterGet(parent: Command, name: string, description: string
       }),
     { includeCompany: false },
   );
-}
-
-function parseJson(value: string): unknown {
-  return JSON.parse(value) as unknown;
 }

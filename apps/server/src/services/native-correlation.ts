@@ -5,7 +5,7 @@ import {
   parseAcpSessionCorrelation,
   type AcpSessionCorrelation,
   type AcpSessionStart,
-} from "@paperclipai/adapter-utils/acp-subprocess";
+} from "@paperclipai/adapter-utils/acpx-runtime";
 
 interface AcpCorrelationScopeBase {
   readonly companyId: string;
@@ -66,15 +66,12 @@ export interface AcpSessionCorrelationProtector {
   ): Promise<unknown>;
 }
 
-export type ResolvedAcpSessionStart =
-  | { readonly kind: "new" }
-  | {
-      readonly kind: "resume";
-      readonly correlationId: string;
-      readonly correlationGeneration: number;
-      readonly start: Extract<AcpSessionStart, { kind: "resume" }>;
-    }
-  | { readonly kind: "target_not_found" };
+export interface ResolvedAcpSessionResume {
+  readonly kind: "resume";
+  readonly correlationId: string;
+  readonly correlationGeneration: number;
+  readonly start: Extract<AcpSessionStart, { kind: "resume" }>;
+}
 
 export class NativeCorrelationRejected extends Error {
   readonly code = "native_correlation_rejected";
@@ -166,26 +163,30 @@ export function createNativeCorrelationService(options: {
   readonly protector: AcpSessionCorrelationProtector;
 }) {
   return {
-    /**
-     * Converts the exact eligible encrypted row into the only ACP start
-     * branches. False-carry base prompts perform no lookup at all.
-     */
-    async resolveStart(input: {
+    /** Opens the exact eligible encrypted row for one frozen resume. */
+    async resolveResume(input: {
       readonly promptKind: "base" | "steering";
       readonly carryContext: boolean;
+      readonly bootstrapHandoff: boolean;
       readonly stored: StoredAcpSessionCorrelation | null;
-    }): Promise<ResolvedAcpSessionStart> {
-      if (!input.carryContext && input.promptKind === "base") {
-        if (input.stored !== null) {
-          throw new NativeCorrelationRejected(
-            "false-carry base prompt received a forbidden correlation lookup",
-          );
-        }
-        return { kind: "new" };
+    }): Promise<ResolvedAcpSessionResume> {
+      if (
+        !input.carryContext &&
+        input.promptKind === "base" &&
+        !input.bootstrapHandoff
+      ) {
+        throw new NativeCorrelationRejected(
+          "false-carry base prompt cannot resolve an ACP resume",
+        );
       }
 
-      if (!input.stored) return { kind: "target_not_found" };
-      const expectedPurpose = input.promptKind === "steering"
+      if (!input.stored) {
+        throw new NativeCorrelationRejected(
+          "frozen ACP resume operation lost its exact stored correlation",
+        );
+      }
+      const expectedPurpose =
+        input.promptKind === "steering" || input.bootstrapHandoff
         ? input.stored.scope.purpose
         : "carry";
       validateStoredCorrelation(input.stored, expectedPurpose);

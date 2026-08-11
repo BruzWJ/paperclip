@@ -17,17 +17,14 @@ export function canonicalTestAgentAdapterRevision(
       readonly key: string;
       readonly versionId: string;
     }[];
-    readonly skillChannel: "isolated_skills_home" | "operator_native";
   } = {
     companySkillPins: [],
-    skillChannel: "operator_native",
   },
 ) {
   return deriveAgentAdapterConfigRevision({
     adapterType: CANONICAL_TEST_ADAPTER_TYPE,
     adapterConfig: canonicalTestAdapterConfig(),
     companySkillPins: companySkills.companySkillPins,
-    skillChannel: companySkills.skillChannel,
     runtimeMetadata: {
       implementationIdentity:
         CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,

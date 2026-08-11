@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  InvalidAcpToolOutput,
-  normalizeAcpToolOutput,
-} from "./tool-output.js";
+import { normalizeAcpToolOutput } from "./tool-output.js";
 
 describe("canonical ACP tool output", () => {
   it("preserves a raw JavaScript string byte-for-code-unit", () => {
@@ -24,7 +21,7 @@ describe("canonical ACP tool output", () => {
     );
   });
 
-  it("joins an ordered all-text stable content fallback", () => {
+  it("joins ordered all-text stable content", () => {
     expect(
       normalizeAcpToolOutput({
         content: [
@@ -84,7 +81,7 @@ describe("canonical ACP tool output", () => {
     ]) {
       if (rawOutput === undefined) continue;
       expect(() => normalizeAcpToolOutput({ rawOutput })).toThrow(
-        InvalidAcpToolOutput,
+        /ACP tool output/,
       );
     }
     const sparse = Array<string>(1);

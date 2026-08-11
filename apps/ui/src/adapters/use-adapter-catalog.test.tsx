@@ -4,7 +4,7 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useAdapterCatalogSync } from "./use-adapter-catalog";
+import { useAdapterCatalogSyncState } from "./use-adapter-catalog";
 import { listUIAdapters, syncServerAdapters } from "./registry";
 import { queryKeys } from "@/lib/queryKeys";
 import { useAdapterConfigSchema } from "./schema-config-fields";
@@ -18,11 +18,11 @@ vi.mock("@/api/adapters", () => ({
 }));
 
 function Probe({ enabled }: { enabled: boolean }) {
-  const catalog = useAdapterCatalogSync({ enabled });
+  const { adapters } = useAdapterCatalogSyncState({ enabled });
   const types = listUIAdapters().map((adapter) => adapter.type);
   return (
     <div data-testid="adapter-types">
-      {catalog.length}:{types.join(",")}
+      {adapters.length}:{types.join(",")}
     </div>
   );
 }
@@ -37,13 +37,13 @@ function SchemaProbe({ adapterType }: { adapterType: string }) {
 }
 
 function CatalogSchemaProbe({ adapterType }: { adapterType: string }) {
-  const catalog = useAdapterCatalogSync();
-  return catalog.some((adapter) => adapter.type === adapterType)
+  const { adapters } = useAdapterCatalogSyncState();
+  return adapters.some((adapter) => adapter.type === adapterType)
     ? <SchemaProbe adapterType={adapterType} />
     : null;
 }
 
-describe("useAdapterCatalogSync", () => {
+describe("useAdapterCatalogSyncState", () => {
   let container: HTMLDivElement;
   let root: Root;
   let queryClient: QueryClient;

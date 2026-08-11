@@ -1,9 +1,67 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 import {
   PostgresIssueExecutionAcpEventRejected,
   canonicalPaperclipMcpToolName,
+  createPostgresIssueExecutionAcpEventSink,
   projectedAcpToolName,
 } from "./issue-execution-acp-events-postgres.js";
+
+describe("ACP Session projection lock order", () => {
+  it("locks company, issue, and Session before the canonical run", async () => {
+    const order: string[] = [];
+    const lockSql: string[] = [];
+    const dialect = new PgDialect();
+    const stop = new Error("stop after observing run lock");
+    let rootLock = 0;
+    const transaction = {
+      execute: vi.fn(async (query: unknown) => {
+        lockSql.push(dialect.sqlToQuery(query as never).sql);
+        rootLock += 1;
+        if (rootLock === 1) {
+          order.push("company");
+          return [{ id: "company-1" }];
+        }
+        if (rootLock === 2) {
+          order.push("issue");
+          return [{ id: "issue-1" }];
+        }
+        order.push("session");
+        return [{ projectedEventSeq: 0 }];
+      }),
+    };
+    const sink = createPostgresIssueExecutionAcpEventSink({
+      database: {
+        transaction: vi.fn(
+          async (work: (tx: typeof transaction) => unknown) =>
+            work(transaction),
+        ),
+      } as never,
+      runService: {
+        lockRun: vi.fn(async () => {
+          order.push("run");
+          throw stop;
+        }),
+      },
+    });
+
+    await expect(sink.publish({
+      prompt: {
+        companyId: "company-1",
+        issueId: "issue-1",
+        sessionId: "session-1",
+      } as never,
+      capability: {} as never,
+      event: {} as never,
+      redactor: {} as never,
+    })).rejects.toBe(stop);
+    expect(order).toEqual(["company", "issue", "session", "run"]);
+    expect(lockSql).toHaveLength(3);
+    expect(lockSql[0]).toMatch(/from "companies"[\s\S]*for key share/i);
+    expect(lockSql[1]).toMatch(/from "issues"[\s\S]*for no key update/i);
+    expect(lockSql[2]).toMatch(/from issue_sessions[\s\S]*for update/i);
+  });
+});
 
 describe("canonical Paperclip MCP tool identity", () => {
   it("uses only the exact Paperclip server/tool envelope", () => {

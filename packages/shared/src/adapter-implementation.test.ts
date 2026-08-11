@@ -10,7 +10,6 @@ const identity: AdapterImplementationIdentity = {
   adapterType: "codex",
   definitionVersion: "acpx-runtime/v1",
   protocolVersion: 1,
-  origin: "builtin",
   packageName: "@paperclipai/server",
   packageVersion: "0.3.1",
   buildIdentity: "@paperclipai/server@0.3.1:codex",

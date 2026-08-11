@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  companySkillChannelSchema,
   companySkillPinsSchema,
 } from "./company-skill-pins.js";
 
@@ -111,7 +110,6 @@ export const agentAdapterAcpConfigurationSchema = z
       })
       .strict(),
     companySkillPins: canonicalCompanySkillPinsSchema,
-    skillChannel: companySkillChannelSchema,
   })
   .strict();
 

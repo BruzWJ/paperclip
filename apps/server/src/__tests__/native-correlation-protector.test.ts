@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createAcpSessionCorrelation,
-} from "@paperclipai/adapter-utils/acp-subprocess";
+} from "@paperclipai/adapter-utils/acpx-runtime";
 import {
   createAuthenticatedNativeCorrelationProtector,
 } from "../services/native-correlation-postgres.js";

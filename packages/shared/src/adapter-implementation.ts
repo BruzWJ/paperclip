@@ -2,14 +2,6 @@
 export const ACPX_RUNTIME_DEFINITION_VERSION = "acpx-runtime/v1" as const;
 export const ACP_PROTOCOL_VERSION = 1 as const;
 
-export const ADAPTER_IMPLEMENTATION_ORIGINS = [
-  "builtin",
-  "external",
-] as const;
-
-export type AdapterImplementationOrigin =
-  (typeof ADAPTER_IMPLEMENTATION_ORIGINS)[number];
-
 /**
  * Immutable ACPX discovery provenance pinned by every adapter configuration
  * revision. A package version is descriptive; artifactDigest is the
@@ -20,7 +12,6 @@ export interface AdapterImplementationIdentity {
   adapterType: string;
   definitionVersion: typeof ACPX_RUNTIME_DEFINITION_VERSION;
   protocolVersion: typeof ACP_PROTOCOL_VERSION;
-  origin: AdapterImplementationOrigin;
   packageName: string;
   packageVersion: string;
   buildIdentity: string;
@@ -43,11 +34,10 @@ export function isAdapterImplementationIdentity(
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const candidate = value as Record<string, unknown>;
   return (
-    Object.keys(candidate).length === 8 &&
+    Object.keys(candidate).length === 7 &&
     exactNonEmptyString(candidate.adapterType) &&
     candidate.definitionVersion === ACPX_RUNTIME_DEFINITION_VERSION &&
     candidate.protocolVersion === ACP_PROTOCOL_VERSION &&
-    (candidate.origin === "builtin" || candidate.origin === "external") &&
     exactNonEmptyString(candidate.packageName) &&
     exactNonEmptyString(candidate.packageVersion) &&
     exactNonEmptyString(candidate.buildIdentity) &&
@@ -66,7 +56,6 @@ export function adapterImplementationIdentityKey(
     identity.adapterType,
     identity.definitionVersion,
     identity.protocolVersion,
-    identity.origin,
     identity.packageName,
     identity.packageVersion,
     identity.buildIdentity,

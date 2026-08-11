@@ -14,12 +14,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./acp-subprocess": "./src/acp-subprocess/index.ts",
-    "./acp-subprocess/agent-registry": null,
-    "./acp-subprocess/client": null,
-    "./acp-subprocess/execution-target": null,
-    "./acp-subprocess/process": null,
-    "./*": "./src/*.ts"
+    "./acpx-runtime": "./src/acpx-runtime/index.ts",
+    "./run-tools-stdio-proxy": "./src/run-tools-stdio-proxy.ts",
+    "./selected-company-skills": "./src/selected-company-skills.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -28,17 +25,17 @@
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
       },
-      "./acp-subprocess": {
-        "types": "./dist/acp-subprocess/index.d.ts",
-        "import": "./dist/acp-subprocess/index.js"
+      "./acpx-runtime": {
+        "types": "./dist/acpx-runtime/index.d.ts",
+        "import": "./dist/acpx-runtime/index.js"
       },
-      "./acp-subprocess/agent-registry": null,
-      "./acp-subprocess/client": null,
-      "./acp-subprocess/execution-target": null,
-      "./acp-subprocess/process": null,
-      "./*": {
-        "types": "./dist/*.d.ts",
-        "import": "./dist/*.js"
+      "./run-tools-stdio-proxy": {
+        "types": "./dist/run-tools-stdio-proxy.d.ts",
+        "import": "./dist/run-tools-stdio-proxy.js"
+      },
+      "./selected-company-skills": {
+        "types": "./dist/selected-company-skills.d.ts",
+        "import": "./dist/selected-company-skills.js"
       }
     },
     "main": "./dist/index.js",
@@ -48,7 +45,6 @@
     "dist"
   ],
   "bundleDependencies": [
-    "@agentclientprotocol/sdk",
     "acpx",
     "zod"
   ],
@@ -58,12 +54,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "1.3.0",
     "@paperclipai/shared": "workspace:*",
     "acpx": "0.13.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@agentclientprotocol/sdk": "1.3.0",
     "@types/node": "^22.19.21",
     "typescript": "^5.7.3"
   }
