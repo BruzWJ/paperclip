@@ -26,10 +26,11 @@ limited to:
 - its `reportsTo` relationship;
 - a free-text capabilities description used in the owner catalog.
 
-An agent may additionally have an optional board-owned `instruction`. On a new
-ACPX provider session, Paperclip sends it once as a bootstrap turn on that same
-session before the unchanged issue message. It grants no authority, is not a
-provider system prompt or work-message prefix, and is not repeated on resume.
+An agent may additionally have an optional board-owned `instruction`. For a
+new issue, Paperclip queues it as its own bootstrap execution immediately
+before the unchanged issue request. The work execution resumes that exact
+provider session. The instruction grants no authority and is not a provider
+system prompt or work-message prefix.
 
 Other control-plane configuration—adapter binding, provider-native target
 declaration, context/action/mention dials, lifecycle state, budget, and
@@ -58,8 +59,8 @@ An ordinary issue has:
   disposition;
 - parent/sub-issue links, comments, documents, attachments, and work products.
 
-Board users administer titles, ownership, reopen, and fresh-session requests
-through distinct audited commands. Provider actors receive only the seven
+Board users administer titles, ownership, reopen, and comments through
+distinct audited commands. Provider actors receive only the seven
 dynamically compiled Paperclip actions allowed by their exact active execution;
 generic REST issue mutation is not an agent tool.
 
@@ -74,12 +75,8 @@ The canonical log is not ambient provider history. Each issue-execution ref has
 an immutable authorized lowering view. Context from another issue appears only
 through an explicitly enabled, permission-checked composition dial.
 Paperclip never automatically replays, summarizes, or injects this log into a
-replacement work prompt. If ACPX reports a missing frozen target, Paperclip may
-retry the same authorized ref once as a fresh provider session. Its instructed
-bootstrap may expose `restore_session`, which returns the exact provider-safe
-`read_issue_agent_run` results for the current agent's earlier runs in that
-issue Session, excluding the triggering run. The ordinary work prompt remains
-unchanged.
+replacement work prompt. If ACPX reports a missing frozen target, Paperclip
+invalidates that correlation and fails the run closed.
 
 Provider-native continuity is separately correlated to the exact
 `(issue, ownership epoch, agent, adapter revision)` scope. With effective

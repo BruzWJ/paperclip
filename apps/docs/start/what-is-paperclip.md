@@ -42,11 +42,14 @@ The CLI owns its provider login, native prompts, model/tool loop, native tools,
 history, and native compaction. ACPX owns provider-process and temporary
 runtime state. Paperclip owns issue admission, request-scoped tools, exact
 prompt authority, cancellation requests, structured event projection, and an
-opaque scoped correlation. ACPX's typed `target_not_found` result for a frozen
-resume invalidates that correlation and creates one fresh successor for the
-same authorized ref. Paperclip does not automatically reconstruct or inject
-history; an instructed successor may call `restore_session` for the exact
-provider-safe run traces that precede the triggering run. There is no
+opaque scoped correlation. ACPX setup and resume failures are ordinary
+pre-transmission errors. A frozen resume or steering resume fails terminal
+without falling back to a new provider session; only an exact initial `new` setup may
+receive a bounded transport retry. Paperclip does not automatically reconstruct
+or inject history. An observed ACPX `cancelled` result with usage is settled and
+accounted; without usage it remains truthfully `cancelled` and `incomplete`.
+Delivery of Paperclip's local abort request alone proves neither case, and
+Paperclip never fabricates the missing occupancy. There is no
 process/HTTP provider adapter, generic API polling path, or separately
 connected remote-machine runtime in this design.
 

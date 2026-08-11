@@ -231,7 +231,7 @@ pnpm paperclipai agent get <agent-id>
 pnpm paperclipai agent runtime:create --company-id <company-id> --payload-json '{...}' [--idempotency-key <key>]
 pnpm paperclipai agent runtime:get <agent-id>
 pnpm paperclipai agent runtime:update <agent-id> --payload-json '{"title":"Senior Builder"}' [--idempotency-key <key>]
-pnpm paperclipai agent adapter-revision:create <agent-id> --payload-json '{"adapterType":"<acpx-registry-name>","adapterConfig":{"<acpx-option-id>":"<selected-advertised-value>"},"runtimeConfig":{},"companySkillPins":[],"skillChannel":"operator_native"}'
+pnpm paperclipai agent adapter-revision:create <agent-id> --payload-json '{"adapterType":"<acpx-registry-name>","adapterConfig":{"<acpx-option-id>":"<selected-advertised-value>"},"runtimeConfig":{},"companySkillPins":[]}'
 pnpm paperclipai agent adapter-revisions <agent-id>
 pnpm paperclipai agent adapter-revision:current <agent-id>
 pnpm paperclipai agent operational:update <agent-id> --payload-json '{"budgetMonthlyAmount":"250"}'
@@ -296,9 +296,8 @@ Runtime identity/grants, immutable adapter/provider revisions, and operational
 display/budget configuration are three non-overlapping owners. An agent created
 through `runtime:create` remains unconfigured and cannot dispatch until
 `adapter-revision:create` succeeds. Adapter revisions contain sorted immutable
-company-skill pins and the ACPX-supported `skillChannel` (`operator_native`). Legacy
-`isolated_skills_home` revisions fail closed because ACPX exposes no generic
-skills-home contract. Provider credentials and CLI-native configuration stay
+company-skill pins; ACPX owns native skill discovery.
+Provider credentials and CLI-native configuration stay
 outside Paperclip. Existing runs
 stay pinned to the revision they started with; there is no rollback writer, mixed agent update,
 agent-wide session reset, conversational-session API, managed instruction bundle, generic
@@ -365,11 +364,10 @@ By default the command creates an ordinary issue whose immutable request is the 
    whole company. This is what `skills install`, `skills import`, and
    `skills create` do.
 2. **Agent selection** — appends an immutable adapter revision containing the
-   exact sorted company-skill version pins and selected skill channel.
+   exact sorted company-skill version pins.
 3. **Invocation exposure** — ACPX runs use `operator_native`; Paperclip does
    not materialize a skills home or inject skill content into the
-   Paperclip-authored request. A legacy `isolated_skills_home` selection is
-   rejected before ACPX invocation.
+   Paperclip-authored request.
 
 Company skill mutations (`skills install`, `skills import`, and `skills create`)
 are open to same-company actors by default. Missing
@@ -463,38 +461,6 @@ maintenance loop for catalog-installed skills:
 - `skills remove` and `skills reset` prompt in a TTY and require `--yes` in
   non-interactive use.
 - `--json` prints the raw API result for each command.
-
-## Teams Commands
-
-`paperclipai teams` works with the app-shipped team catalog in
-`@paperclipai/teams-catalog`. Browse, search, inspect, and file reads do not
-change company state. `preview` runs the company import planner, and `install`
-imports the catalog team into an existing company.
-
-```sh
-pnpm paperclipai teams browse [--kind bundled|optional] [--category <slug>] [--query <text>]
-pnpm paperclipai teams search "<text>" [--kind bundled|optional] [--category <slug>]
-pnpm paperclipai teams inspect <catalog-id-or-key-or-slug> [--file TEAM.md]
-pnpm paperclipai teams preview <catalog-id-or-key-or-slug> --company-id <company-id>
-pnpm paperclipai teams install <catalog-id-or-key-or-slug> --company-id <company-id>
-```
-
-Preview/install options:
-
-- Use `paperclipai company list --json`, `paperclipai company current --json`,
-  or `PAPERCLIP_BOARD_COMPANY_ID` to select the target company. `teams install`
-  creates agents and therefore requires board authentication.
-- `--request-approval-on-forbidden` turns a 403 install denial into a linked
-  board approval request instead of a raw failed command; use
-  `--approval-issue-id <id>` to attach it to a specific issue.
-- `--target-manager-agent-id <id>` or `--target-manager-slug <slug>` reparents
-  catalog root agents under an existing manager.
-- `--agent <slug>` and `--selected-file <path>` narrow the import.
-- `--collision-strategy rename|skip|replace` controls name/key collisions.
-- `--allow-external-sources`, `--allow-unpinned-optional-sources`, and
-  `--allow-local-path-sources` explicitly opt into higher-trust source policy.
-  Local-path sources are development-only and stay blocked unless that flag is
-  passed.
 
 ## Secrets Commands
 
@@ -664,10 +630,8 @@ pnpm paperclipai adapter model-profiles <adapter-type> --company-id <company-id>
 ```
 
 ACPX is the only local-agent availability, identity, model, session-settings,
-and execution-contract authority. Adapter install, update, override, reload,
-reinstall, and delete commands are retired and return `410`; the adapter list
-instead includes non-selectable ACPX probe diagnostics when a registry-listed
-local agent cannot initialize.
+and execution-contract authority. The adapter list includes non-selectable ACPX
+probe diagnostics when a registry-listed local agent cannot initialize.
 
 ```sh
 pnpm paperclipai asset image:upload --company-id <company-id> --file ./image.png [--namespace docs] [--alt "..."]

@@ -51,7 +51,7 @@ Paperclip's worker resolves the issue's server-owned run directory and invokes A
 disposable local runtime for each prompt. ACPX supplies the exact local agent
 name, launch, models, and stable session configuration; Paperclip does not
 maintain a separate agent or model catalog. Each discovered agent is represented
-by a data-only `acpx-runtime/v1` definition. The existing `acp-subprocess`
+by a data-only `acpx-runtime/v1` definition. The `acpx-runtime`
 bridge delegates initialize, new/resume, configuration, prompt, structured
 updates, cancellation, and cleanup to ACPX; Paperclip does not launch raw ACP
 clients or provider CLIs itself.

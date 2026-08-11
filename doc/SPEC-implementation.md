@@ -50,8 +50,8 @@ The shared package exports the closed canonical vocabulary:
 It does not export generic issue mutation, checkout/release, general provider
 credentials, role-based authority, conversational agent sessions, arbitrary
 wake operations, generic managed-instruction injection, or interaction-card
-contracts. `agents.instruction` is the narrow exception: a one-time bootstrap
-turn in a newly created provider session before its unchanged work message.
+contracts. `agents.instruction` is the narrow exception: a bootstrap execution
+queued before a new issue's unchanged work execution.
 
 ### Adapters and `packages/adapter-utils`
 
@@ -99,12 +99,9 @@ requires byte-equivalent source, Session, prompt, and event arguments.
   attempt, immutable ACP revision, run directory, capabilities, and native-session
   operation under that lease.
 - `issue-execution-attempt-executor.ts` drives the Session runner and adapter.
-  A missing correlated ACP target is invalidated and retried once as a fresh
-  session using the exact current source. Paperclip never automatically
-  injects Session history into that replacement work prompt; an instructed
-  recovery bootstrap may expose `restore_session`, which returns the exact
-  provider-safe `read_issue_agent_run` results for the current agent's prior
-  runs in the issue Session, excluding the triggering run.
+  A missing correlated ACP target invalidates that correlation and fails the
+  run closed. Paperclip never automatically injects Session history into a
+  replacement work prompt.
 - `agent-execution/session-runner/output.ts` publishes productive Session
   output.
 - `productive-run-linkage.ts` verifies exact run/reference/source evidence.
@@ -166,10 +163,10 @@ force.
 
 The issue-execution resolver supplies the resolved local directory to the
 bounded ACPX path. ACPX launches the local compatible CLI itself; adapter
-definitions do not execute or transport provider work. A new instructed session
-may receive one bootstrap turn on the same runtime/handle before its work
-prompt; resumes have only the work prompt. The current public ACPX runtime is
-local-only, so remote driver selection is not admitted.
+definitions do not execute or transport provider work. A new instructed issue
+queues a bootstrap run before its work run; each has its own prompt capability,
+and the work run resumes the bootstrap run's exact provider session. The current
+public ACPX runtime is local-only, so remote driver selection is not admitted.
 
 ### Creator routing and recovery
 
@@ -195,7 +192,6 @@ Board/user REST routes provide:
 - audited board reopen with one invokable-agent ref branch and one
   provider-free system-escalation board branch
 - typed human comment/owner mention
-- issue-execution fresh-session control
 - agent lifecycle/configuration/grant/selection administration
 - run inspection/cancellation
 - company, project, goal, routine, plugin, approval, and audit control
@@ -221,7 +217,7 @@ The UI and CLI are board/operator clients. They:
 - create issues with immutable request, explicit eligible owner, and
   idempotency key
 - show owner/creator/lifecycle terminology
-- expose distinct title/reassign/reopen/comment/fresh-session controls
+- expose distinct title/reassign/reopen/comment controls
 - configure the context matrix and independent action/mention/skill selections,
   with create-and-assign as one action grant and relationship-derived lifecycle
   updates

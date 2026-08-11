@@ -35,7 +35,7 @@ Create agents from the Agents page. Each agent requires:
 - **Local agent runtime** — an installed local CLI that passed the runtime probe
 - **Adapter config** — only the model and session settings that ACPX advertises
 - **Capabilities** — verbatim description shown when another agent selects an owner
-- **Instructions** — optional high-level role guidance delivered once when a new provider session starts
+- **Instructions** — optional high-level role guidance queued before a new issue's work run
 - **Context and action grants** — independent, explicit per-agent permissions
 - **Company skills** — explicit selections only
 
@@ -58,7 +58,7 @@ permissions.
 Edit an agent's configuration from the agent detail page:
 
 - **Identity** — name, display title, icon, capabilities, and direct reporting edge
-- **Instructions** — optional durable role guidance; it is delivered once when a new provider session starts
+- **Instructions** — optional durable role guidance queued before a new issue's work run
 - **Adapter config** — change only the model and session choices currently
   advertised by ACPX (including reasoning effort when the selected agent
   advertises it)

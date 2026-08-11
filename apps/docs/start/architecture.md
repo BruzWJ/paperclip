@@ -38,7 +38,6 @@ paperclip/
 │   ├── adapter-utils/            # ACPX runtime/discovery bridge
 │   ├── adapters/                 # Adapter-authoring guidance
 │   ├── skills-catalog/           # Bundled skill catalog and manifest builder
-│   ├── teams-catalog/            # Bundled team catalog and manifest builder
 │   ├── *-mcp-server/             # MCP server packages and fixtures
 │   └── plugins/                  # Plugin SDK, tooling, plugins, and examples
 └── doc/                          # Internal product, engineering, and plan docs
@@ -70,7 +69,7 @@ intentionally standalone rather than a pnpm root workspace.
    A rejected ACPX operation fails the attempt; Paperclip does not substitute a
    provider-specific fresh-session fallback.
    Projectors derive comments, lifecycle outcomes, costs, and audit views.
-8. Process loss or a retryable failure re-leases the existing valid ref. It
+8. Worker loss or a retryable failure re-leases the existing valid ref. It
    never fabricates a generic wake, agent-wide session, or singleton run link
    on the issue.
 
@@ -84,7 +83,8 @@ polling loop.
 Each issue has one Session graph. Paperclip may retain a provider's opaque
 native handle only for the same issue, ownership epoch, agent, and immutable
 adapter revision when the effective `carry_context` grant is true. Reassignment,
-revision change, explicit fresh-session action, or a false grant prevents reuse.
+revision change, or a false grant prevents reuse and never authorizes a
+replacement session for later work.
 
 Provider-native storage remains opaque and provider-owned. Paperclip stores no
 model-visible cross-issue continuity state and never selects a handle from another issue.

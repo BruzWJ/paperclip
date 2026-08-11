@@ -446,9 +446,9 @@ This is not required for phase 1 UI, but it is required for a robust long-term s
 
 Retain:
 
-- `POST /api/companies/:companyId/export`
-- `POST /api/companies/import/preview`
-- `POST /api/companies/import`
+- `POST /api/companies/:companyId/exports`
+- `POST /api/companies/imports/preview`
+- `POST /api/companies/imports`
 
 But evolve payloads toward the markdown-first graph model.
 

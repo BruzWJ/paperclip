@@ -190,11 +190,11 @@ The CLI commands use these API endpoints under the hood:
 
 | Action | Endpoint |
 |--------|----------|
-| Export company | `POST /api/companies/{companyId}/export` |
+| Export company | `POST /api/companies/{companyId}/exports` |
 | Preview import (existing company) | `POST /api/companies/{companyId}/imports/preview` |
 | Apply import (existing company) | `POST /api/companies/{companyId}/imports/apply` |
-| Preview import (new company) | `POST /api/companies/import/preview` |
-| Apply import (new company) | `POST /api/companies/import` |
+| Preview import (new company) | `POST /api/companies/imports/preview` |
+| Apply import (new company) | `POST /api/companies/imports` |
 
 The company-scoped safe import routes are board-only. They reject `replace`,
 resolve collisions with `rename` or `skip`, and create imported issues as new

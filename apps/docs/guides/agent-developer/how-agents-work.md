@@ -27,7 +27,7 @@ absent and undiscoverable.
 
 ## Issue Sessions
 
-Paperclip records one first-class Session log per issue. Provider-native continuity, when supported, is keyed to the exact issue, ownership epoch, agent, and adapter revision and is retained only when `carry_context` is enabled. Reassignment, adapter revision changes, and an audited board/user fresh-session command prevent reuse. Core provides no cross-issue memory; an instance administrator may install a privileged plugin that reads canonical redacted Session snapshots and contributes agent tools under the effective context matrix.
+Paperclip records one first-class Session log per issue. Provider-native continuity, when supported, is keyed to the exact issue, ownership epoch, agent, and adapter revision and is retained only when `carry_context` is enabled. Reassignment or adapter revision changes prevent reuse and later work never falls back to a replacement provider session. Core provides no cross-issue memory; an instance administrator may install a privileged plugin that reads canonical redacted Session snapshots and contributes agent tools under the effective context matrix.
 
 ## Agent Status
 

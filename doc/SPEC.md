@@ -203,7 +203,7 @@ system nudge—atomically persist their source, Session input, and
 `IssueExecutionRef` before dispatch. The provider-free reopen branch is valid
 only for a named-user or collective-board-owned system escalation and persists
 no ref or run. The internal dispatcher leases only a still-valid persisted
-reference. Process loss or transient retry re-leases that reference; it never
+reference. Worker loss or transient retry re-leases that reference; it never
 fabricates a wake, prompt, Session, or idempotency identity.
 
 There is no generic manual invoke, timer ping, arbitrary wake queue,

@@ -29,7 +29,7 @@ Before making changes, read in this order:
 - `packages/db/`: Drizzle schema, migrations, DB clients
 - `packages/shared/`: shared types, constants, validators, API path constants
 - `packages/adapter-utils/`: ACPX public-runtime discovery and execution bridge
-- `packages/skills-catalog/` and `packages/teams-catalog/`: generated catalog packages
+- `packages/skills-catalog/`: bundled skill catalog and generated manifest
 - `packages/plugins/`: plugin SDK, tooling, first-party plugins, and examples
 - `doc/`: repository-internal product, engineering, operations, and planning docs
 
@@ -191,8 +191,9 @@ A change is done when all are true:
 ## 12. Adapter ownership
 
 Paperclip has one AI execution path: the ACPX public-runtime bounded bridge.
-For a new provider session of an agent with a non-null `instruction`, it sends
-one bootstrap turn on that same session before the ordinary work prompt.
+For a new issue owned by an agent with a non-null `instruction`, it admits the
+instruction and issue request as two ordered executions. The instruction run
+creates the provider session; the immediately following work run resumes it.
 ACPX is the sole supplier of exact agent names, launch resolution, models, and
 stable session settings. Paperclip loads ACPX's public registry, including its
 resolved `agents` overrides, and never treats that override map as an
@@ -210,9 +211,9 @@ launch returned by ACPX and must never execute or materialize a package. ACPX
 owns resolution and lifecycle of the local provider CLI; Paperclip
 owns durable authority fences, request-scoped MCP, safe event projection,
 cancellation requests, and cleanup of its own request files. ACPX's temporary
-state store is deleted after each bounded execution, including an optional
-bootstrap and work pair; only an opaque provider backend session id may be
-retained in Paperclip's scoped correlation record for an eligible resume.
+state store is deleted after each bounded execution; only an opaque provider
+backend session id may be retained in Paperclip's scoped correlation record
+for the queued bootstrap handoff or an eligible ordinary resume.
 
 ### Local Dev
 

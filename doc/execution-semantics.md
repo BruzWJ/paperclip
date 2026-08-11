@@ -162,17 +162,21 @@ Existing-issue automation records a typed system notice and may invoke only the 
 
 Escalation owner selection follows the locked creator/ancestor-user/board ladder. Manager relationships, CEO/root position, display title, ordered invokable agents, and budget reranking grant nothing. Escalation issues are not blockers or parents of the affected issue and never recursively escalate.
 
-## Pause, termination, and fresh session
+## Pause and termination
 
 Pausing an agent prevents new leases and cancels/signals its active work according to control-plane policy; it does not rewrite history or transfer ownership.
 
 Termination preserves a tombstone identity and immutable creator/owner/run/comment/session audit. It cancels live work, terminalizes creator edges, blocks open owned issues with a typed system record, and follows canonical creator recovery.
 
-A board/user fresh-session command scopes to one issue execution. It cancels that execution's live run, increments its reset generation, drops Paperclip's native correlation only, and writes an audit record. Provider-owned storage is untouched.
-
 ## Output and finalization
 
-Adapters stream normalized Paperclip Session events. The projector alone mutates materialized messages and chronological comments. Run summaries, telemetry, and UI transcripts are derived projections.
+Paperclip consumes each ACPX turn through the public runtime's single ordered
+event stream. Contiguous text or reasoning fragments are joined before crossing
+the durable Session boundary; a channel change, tool event, or turn completion
+flushes one full-value event through the sole projector. There is no raw ACP
+consumer, polling transport, parallel token writer, or retained provider log.
+The projector alone mutates materialized messages and chronological comments.
+Run summaries, telemetry, and UI transcripts are derived projections.
 
 The outcome translator:
 

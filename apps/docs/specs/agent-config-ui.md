@@ -9,7 +9,7 @@ summary: Canonical agent identity, explicit grants, provider configuration, and 
 - No role, first-agent, root-agent, title, or manager default grants permissions.
 - Paperclip has no generic prompt template, provider home, generic API key, or
   agent-wide session. Its optional board-owned Instruction is delivered once
-  when ACPX creates a new provider session.
+  as the first queued run for a new issue.
 - Context grants, five configurable action grants, mention reach, and genuine
   company skills are selected explicitly.
   Issue updates are relationship-derived: the owner receives its active-issue
@@ -31,7 +31,7 @@ The creation dialog contains:
 | Title | no | Display-only; grants no authority |
 | Reports to | no | Same-company org edge; roots are ordinary |
 | Capabilities | no | Verbatim description used only in eligible target catalogs |
-| Instruction | no | Canonical board-owned role text; delivered once on a new provider session |
+| Instruction | no | Canonical board-owned role text; queued before a new issue's work run |
 
 ### Provider adapter
 
@@ -75,9 +75,9 @@ render separate assign or lifecycle controls: create-and-assign is one grant,
 while the canonical lifecycle/creator update follows the issue owner/creator
 relationship and automatically mentions its counterpart.
 
-Explain prospective behavior: narrowing a dial changes gateway acceptance immediately, but content already inside one live provider-native conversation remains there; the board/user issue-execution fresh-session action is required to discard it.
+Explain prospective behavior: narrowing a dial changes gateway acceptance immediately, but content already inside one live provider-native conversation remains provider-owned. Later work must have an exact eligible correlation under the new grant or fail closed; Paperclip exposes no reset path that silently creates a replacement session.
 
-Changing Instruction affects only a later new provider session; it is not
+Changing Instruction affects only a later new issue; it is not
 prepended to work messages or replayed into an existing session.
 
 ### Runs

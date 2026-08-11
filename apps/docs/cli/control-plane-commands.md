@@ -85,7 +85,7 @@ pnpm paperclipai agent runtime:update <agent-id> \
   --payload-json '{...}' [--idempotency-key <key>]
 
 pnpm paperclipai agent adapter-revision:create <agent-id> \
-  --payload-json '{"adapterType":"<acpx-registry-name>","adapterConfig":{"<acpx-option-id>":"<selected-advertised-value>"},"runtimeConfig":{},"companySkillPins":[],"skillChannel":"operator_native"}'
+  --payload-json '{"adapterType":"<acpx-registry-name>","adapterConfig":{"<acpx-option-id>":"<selected-advertised-value>"},"runtimeConfig":{},"companySkillPins":[]}'
 pnpm paperclipai agent adapter-revisions <agent-id>
 pnpm paperclipai agent adapter-revision:current <agent-id>
 
@@ -103,7 +103,7 @@ The three mutation families are deliberately disjoint:
   complete 9/6/2 grant maps and exact company-skill selections.
 - Adapter revisions own adapter type/configuration, runtime configuration,
   sorted immutable company-skill pins, and the exact
-  `isolated_skills_home` or `operator_native` channel. Provider credentials and
+  `operator_native` channel. Provider credentials and
   CLI-native configuration remain outside Paperclip. Revisions are append-only;
   there is no rollback command.
 - Operational configuration owns only icon and monthly

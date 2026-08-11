@@ -11,8 +11,7 @@ docker build -t paperclip-local .
 ```
 
 The Dockerfile installs common runtime tools (`git`, `gh`, `curl`, `wget`,
-`ripgrep`, `python3`). It does not install provider CLIs or provider-specific
-adapter packages.
+`ripgrep`, `python3`). It does not install ACPX-compatible provider CLIs.
 
 Build arguments:
 
@@ -79,8 +78,9 @@ PAPERCLIP_PORT=3200 PAPERCLIP_DATA_DIR=../data/pc \
 Private deployments derive the authentication origin from each browser request. Set `PAPERCLIP_PUBLIC_URL` only when changing the deployment exposure to `public`.
 
 Do not pass provider credentials as Paperclip server environment variables.
-Prepare provider-native configuration on the declared execution target, or
-bind a credential explicitly in an individual adapter configuration.
+Install and authenticate the provider CLI through its native flow in the local
+environment where ACPX will run it. Paperclip does not bind provider
+credentials in an adapter configuration.
 
 ### Full stack (with PostgreSQL)
 
@@ -138,11 +138,13 @@ Use `PAPERCLIP_PUBLIC_URL` as the one external HTTPS origin. Set `PAPERCLIP_ALLO
 
 Set `PAPERCLIP_ALLOWED_HOSTNAMES` explicitly only when you need additional hostnames beyond the public URL host (for example Tailscale/LAN aliases or multiple private hostnames).
 
-## Adapter Transports in Docker
+## ACPX Agents in Docker
 
-The Paperclip image contains the built-in `process` and `http` transports. It
-does not preinstall a provider CLI or provider-specific adapter. External
-adapters own their full runtime dependency and configuration contract.
+The Paperclip image contains the ACPX public-runtime execution bridge. It does
+not preinstall a provider CLI or maintain a Paperclip adapter catalog. Install
+an ACPX-compatible CLI in the execution target and authenticate it through its
+native flow. Paperclip discovers locally installed registry entries, while
+ACPX supplies their launch and configuration metadata.
 
 ```sh
 docker run --name paperclip \
@@ -155,11 +157,15 @@ docker run --name paperclip \
 
 Notes:
 
-- Paperclip does not inherit server-process provider credentials or
-  provider-specific home variables into child processes.
-- Prepare an external adapter's target-native configuration yourself and use
-  only its explicit configuration schema.
-- An incomplete target declaration blocks dispatch without a provider probe.
+- A built-in ACPX registry name is not evidence that its CLI is installed.
+  Paperclip admits it only after the no-install fence and a disposable ACPX
+  session both succeed.
+- Paperclip does not accept a raw command, HTTP provider endpoint, external
+  adapter package, or provider-specific configuration schema as an execution
+  path.
+- Provision the CLI and its native authentication in the execution target;
+  Paperclip does not install or authenticate provider software during
+  discovery.
 
 ## Podman Quadlet (systemd)
 

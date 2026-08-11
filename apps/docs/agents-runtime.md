@@ -1,7 +1,7 @@
 # Agent Runtime Guide
 
 Status: User-facing guide
-Last updated: 2026-08-06
+Last updated: 2026-08-10
 Audience: Operators setting up and running agents in Paperclip
 
 ## 1. What this system does
@@ -15,13 +15,12 @@ For each productive prompt, the worker:
 2. resolves its ownership epoch, immutable adapter revision, execution
    server-resolved run directory, context dial, configurable action grants, and relationship
    authority;
-3. starts one disposable ACPX public-runtime session for the discovered local
+3. starts one disposable ACPX public runtime for the discovered local
    compatible CLI;
 4. lets ACPX create or resume the eligible provider backend session;
-5. supplies a complete request-scoped Paperclip MCP capability binding;
-6. sends the canonical work prompt (preceded only on a new instructed provider
-   session by one bootstrap turn) and consumes structured ACP updates plus its
-   stop result; and
+5. supplies the exact request-scoped Paperclip runtime-tool capability;
+6. sends that run's one canonical prompt and consumes structured ACP updates
+   plus its stop result; and
 7. revokes the request capability, closes ACPX, and deletes its temporary
    runtime state before another prompt can start.
 
@@ -130,13 +129,14 @@ server process cwd, or a prior issue's working directory.
 
 ### 3.5 Board-owned agent instruction
 
-`agents.instruction` is optional canonical board-owned role text. On a new ACPX
-provider session, Paperclip sends it once as a bootstrap turn on the same
-runtime and session, then sends the unchanged managed issue message. It grants
-no authority, is not a provider system prompt or work-message prefix, and is
-not repeated on resume. A null instruction has no bootstrap turn. A typed
-missing-target recovery makes `restore_session` available during that one-time
-bootstrap before the unchanged managed issue message.
+`agents.instruction` is optional canonical board-owned role text. For a new
+issue, Paperclip admits it as a bootstrap run immediately before the unchanged
+work run. Both follow the ordinary issue queue and have independent authority,
+events, and settlement; the work run resumes the bootstrap run's exact provider
+session. It grants no authority and is not a provider system prompt or
+work-message prefix. A null instruction has no bootstrap run. If that frozen
+resume cannot be set up, the work run fails terminal instead of starting a new
+provider session.
 
 Agent-reaching managed actions do have canonical source-message contracts.
 Each producer supplies its tool name, immutable tool arguments, and locked
@@ -157,26 +157,24 @@ and therefore has no ACPX prompt contract.
 
 ## 4. Issue-session continuity
 
-Paperclip records one canonical Session log per issue. `carry_context` controls
-native continuity:
+Paperclip records one canonical Session log per issue. Exactly one genuine
+initial issue start may use `session/new`: the instruction bootstrap when the
+owner has a nonblank Instruction, or the issue work itself when it does not.
+An instructed issue's immediately following work turn resumes the bootstrap's
+exact provider session.
 
-- **False:** every ordinary request uses `session/new`; its exact source text is
-  the entire canonical input and Paperclip performs no built-in history
-  composition.
-- **True with an eligible stored target:** the worker asks ACPX to perform the
-  frozen resume operation and still uses only the exact new canonical source.
-- **True with no stored target:** the worker selects `session/new` before
-  launch and uses only the exact current source text. The canonical Session
-  log remains available for inspection but is not replayed, summarized, or
-  injected by core.
+Every later base turn must resume one eligible exact-scope correlation with
+effective `carry_context`; otherwise it fails closed before ACPX launch.
+Steering likewise requires its exact active source. Paperclip never substitutes
+`session/new`, replays the canonical Session log, or injects reconstructed
+history when a correlation is absent or rejected.
 
-If ACPX returns typed `target_not_found` for a frozen native resume, Paperclip
-invalidates that correlation and retries the same authorized ref once as
-`session/new`. An instructed successor may call recovery-only
-`restore_session`, which returns the exact provider-safe
-`read_issue_agent_run` results for that agent's earlier runs in the current
-issue Session, excluding the triggering run. Paperclip does not automatically
-retrieve, summarize, or prefix that history into the work message.
+ACPX session setup and resume failures are ordinary pre-transmission errors;
+Paperclip does not inspect provider result or error codes to choose a recovery
+path. A failed frozen `resume` is terminal and never falls back to a new
+provider session. Only transport failure while setting up a fresh `new`
+operation may enter the bounded retry path. Paperclip does not automatically
+retrieve, summarize, or prefix history into a replacement work message.
 
 An administrator-approved plugin may implement the generic blocking
 before-prompt lifecycle. Paperclip gives that hook a bounded canonical Session
@@ -197,18 +195,16 @@ exposes its id through REST, UI, CLI, logs, tools, or environment variables.
 
 ## 5. Tools and steering
 
-Every productive prompt gets a distinct request-scoped Paperclip MCP
-connection. Its `tools/list` result is compiled from that run's effective
+Every productive prompt gets a distinct request-scoped Paperclip runtime-tool
+capability. Its exact turn projection is compiled from that run's effective
 context dial, configurable action grants, owner/creator relationship authority,
-and current target catalogs. Paperclip supplies the same complete MCP list when
-it creates the ACPX runtime; it never accumulates a prior request's authority.
+current target catalogs, and ready plugin tools. It never
+accumulates a prior request's authority.
 
-The same complete Paperclip MCP list is attached to bootstrap and work turns.
-During an ordinary instruction bootstrap, only plugin tools declared
-`bootstrapEnabled` may execute. During a missing-target recovery bootstrap,
-the recovery-only core `restore_session` call is the narrow additional
-exception; it is callable only while that bootstrap is active. Other Paperclip
-calls return an unavailable error. Provider-native tools remain provider-owned.
+An instruction bootstrap exposes only plugin tools declared `bootstrapEnabled`.
+The work turn exposes its dynamically authorized managed tools and all ready
+plugin tools. Discovery and invocation use the same turn projection.
+Provider-native tools remain provider-owned.
 
 The AI CLI keeps its own built-in shell, file, browser, and other native tools.
 Paperclip owns and audits only the dynamically supplied prompt-capability
@@ -219,9 +215,9 @@ An authorized reply to an active run-progress comment steers that exact run.
 Paperclip revokes the old capability, requests cancellation through ACPX,
 settles the current prompt, then invokes the frozen ACPX operation for the new
 exact message. ACPX decides whether that operation can resume the opaque
-provider backend session; a rejected operation fails closed rather than
-silently changing context semantics. The UI uses the comment's producing run;
-users never select or see a provider session id.
+provider backend session; failed `steer_resume` setup is terminal and never
+falls back to a new session. The UI uses the comment's producing run; users
+never select or see a provider session id.
 
 ## 6. Logs, status, and run history
 
@@ -241,7 +237,11 @@ only. Neither stream becomes an assistant transcript or durable run-log store.
 
 A prompt owns accounting only when its terminal response has both a stop result
 and the immediately preceding valid ACP context occupancy (`used` / `size`).
-Cost remains optional. Missing or malformed accounting does not become zero.
+Cost remains optional. A cancelled ACPX result with valid occupancy settles as
+`cancelled` and is accounted normally. Without occupancy it settles truthfully
+as `cancelled` and `incomplete`; Paperclip does not fabricate usage, cost, or
+accounting. `nativeCancellationSettledAt` records the observed ACPX cancelled
+result, not delivery of Paperclip's local `AbortController` signal.
 
 ## 7. Issue output and lifecycle
 
@@ -308,10 +308,11 @@ protocol framing failure, or a stop result without the required terminal
 occupancy.
 
 Paperclip never retains or reconstructs ACPX runtime state. Each run uses a
-bounded ACPX runtime; an instructed new provider session may make one bootstrap
-turn before work on that same runtime. A typed missing-target resume result
-creates one fresh successor; other setup, resume, or turn errors fail the
-attempt and any later retry re-evaluates the current immutable request.
+bounded ACPX runtime and sends exactly one queued prompt. An instructed new
+issue has a bootstrap run followed by a work run on the same provider session.
+Setup and resume failures remain ordinary pre-transmission errors. Only fresh
+`new` setup may receive a bounded transport retry; frozen `resume` and
+`steer_resume` failures are terminal and never switch to a new session.
 
 ## 10. Minimal setup checklist
 

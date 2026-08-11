@@ -111,8 +111,7 @@ the live ACPX-backed adapter catalog before creating a revision:
     "<acpx-option-id>": "<selected-advertised-value>"
   },
   "runtimeConfig": {},
-  "companySkillPins": [],
-  "skillChannel": "operator_native"
+  "companySkillPins": []
 }
 ```
 

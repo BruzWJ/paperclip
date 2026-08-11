@@ -40,7 +40,7 @@ It looks like an issue manager. Under the hood: org charts, budgets, governance,
 |        | Step            | Example                                                            |
 | ------ | --------------- | ------------------------------------------------------------------ |
 | **01** | Define the goal | _"Build the #1 AI note-taking app to $1M MRR."_                    |
-| **02** | Configure agents | Coding, research, design, and operations — any supported provider. |
+| **02** | Configure agents | Coding, research, design, and operations — any locally available ACPX agent. |
 | **03** | Approve and run | Review strategy. Set budgets. Hit go. Monitor from the dashboard.  |
 
 <br/>
@@ -49,13 +49,11 @@ It looks like an issue manager. Under the hood: org charts, budgets, governance,
 <table>
   <tr>
     <td align="center"><strong>Works<br/>with</strong></td>
-    <td align="center"><strong>Process</strong><br/><sub>Built-in transport</sub></td>
-    <td align="center"><strong>HTTP</strong><br/><sub>Built-in transport</sub></td>
-    <td align="center"><strong>External</strong><br/><sub>Full-ABI adapters</sub></td>
+    <td align="center" colspan="3"><strong>ACPX-compatible local agents</strong><br/><sub>One public runtime contract</sub></td>
   </tr>
 </table>
 
-<em>If it can run an issue execution, it can join the company.</em>
+<em>If ACPX can discover and initialize it locally, it can join the company.</em>
 
 </div>
 
@@ -174,11 +172,11 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 │  │& Schedules│  │  Storage  │  │ & Events  │  │Portability│  │
 │  └───────────┘  └───────────┘  └───────────┘  └───────────┘  │
 └──────────────────────────────────────────────────────────────┘
-         ▲              ▲              ▲              ▲
-   ┌─────┴─────┐  ┌─────┴─────┐  ┌─────┴─────┐  ┌─────┴─────┐
-   │  Process  │  │   HTTP    │  │ External  │  │ External  │
-   │ transport │  │ transport │  │ adapter   │  │ adapter   │
-   └───────────┘  └───────────┘  └───────────┘  └───────────┘
+                            ▲
+              ┌─────────────┴─────────────┐
+              │    ACPX public runtime    │
+              │ locally installed agents │
+              └───────────────────────────┘
 ```
 
 ### The Systems
@@ -387,7 +385,6 @@ See [doc/DEVELOPING.md](https://github.com/paperclipai/paperclip/blob/master/doc
 - ✅ Better Budgeting
 - ✅ Agent Reviews and Approvals
 - ✅ Multiple Human Users
-- ⚪ Cloud / sandbox agents provided through full-ABI external adapters
 - ⚪ Artifacts & Work Products
 - ⚪ Knowledge Artifacts
 - ⚪ Enforced Outcomes

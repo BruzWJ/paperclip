@@ -47,9 +47,9 @@ request-scoped compiled run-tools descriptor.
 
 Provider-native continuity is retained only for an exact true-carry owner or
 consult scope. Its encrypted opaque correlation is handed only to ACPX's
-public runtime. A first run, false-carry run, ownership-epoch change,
-board/user fresh-session command, agent/lane/context mismatch, or
-adapter revision change cannot resume an earlier provider conversation.
+public runtime. A false-carry later run, ownership-epoch change,
+agent/lane/context mismatch, or adapter revision change cannot resume an
+earlier provider conversation and does not fall back to a new one.
 
 No agent-wide or issue-key session state exists.
 
@@ -74,14 +74,20 @@ through the canonical attempt path; late events or callbacks must revalidate
 their generation and cannot append events, comments, checkpoints, or outcomes
 after authority is lost.
 
-Transient/process-loss recovery may re-lease only the original valid ref. It preserves the same admitted source and execution view. An invalid or stale ref terminalizes with audit evidence and does not create replacement work.
+The local `AbortController` delivers Paperclip's request; it does not prove that
+ACPX or the provider stopped. `nativeCancellationSettledAt` is written only
+when Paperclip observes an ACPX turn result with status `cancelled`. If that
+result includes valid usage, the prompt settles as `cancelled` with its ordinary
+accounting. Without usage, it settles as `cancelled` and `incomplete`, with no
+fabricated occupancy, cost, or accounting row.
 
-When ACPX reports its typed `target_not_found` result for a frozen native
-resume, Paperclip invalidates the correlation and creates one fresh successor
-for the same authorized ref. Its work source remains unchanged. An instructed
-successor may call recovery-only `restore_session` for the exact
-provider-safe run traces of the current agent that precede the triggering run;
-Paperclip never automatically injects that history into the work prompt.
+ACPX session setup and resume failures are ordinary pre-transmission errors;
+Paperclip does not parse a provider-specific result or error code to choose a
+second path. Only a transport failure during setup of a fresh `new` operation
+may re-lease the original valid ref for bounded retry. A failed frozen `resume`
+or `steer_resume` operation terminalizes without falling back to `new` or
+creating replacement work. An invalid or stale ref likewise terminalizes with
+audit evidence.
 
 ## API surface
 

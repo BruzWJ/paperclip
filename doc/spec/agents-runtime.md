@@ -40,9 +40,10 @@ The canonical record is the issue's Paperclip Session log. Effective
 `carry_context` permits an encrypted opaque provider-native correlation only
 for the same issue, ownership epoch, agent, and adapter configuration identity.
 The owner/consult lane, execution target, and authorized context exposure must
-also match exactly. Disabled carry, reassignment, reset, or any
-scope/revision change runs fresh; one agent's correlation is never shared with
-another agent.
+also match exactly. Disabled carry, reassignment, or any scope/revision change
+cannot silently create a replacement session; later work fails closed unless
+it has the exact eligible resume source. One agent's correlation is never
+shared with another agent.
 
 Provider-native storage is opaque. Paperclip does not read, display, delete, derive, or migrate it, and never carries it across issues.
 
@@ -63,14 +64,29 @@ Provider-hidden state and credentials never enter the log.
 
 A productive final always yields the canonical assistant turn. The outcome translator applies any authorized zero-tool completion or counterpart routing and writes at most one comment of record.
 
+## Cancellation
+
+Paperclip requests cancellation through the active ACPX turn. Delivery of the
+local `AbortController` signal is only a request; it is not evidence that the
+provider turn stopped. `nativeCancellationSettledAt` records the time Paperclip
+observes ACPX return a cancelled turn.
+
+A cancelled ACPX result with valid terminal usage settles as `cancelled` and is
+accounted normally. A cancelled result without usage settles truthfully as
+`cancelled` and `incomplete`; Paperclip does not invent occupancy, cost, or an
+accounting record.
+
 ## Recovery
 
-Process loss and retry re-lease the original persisted reference and resume its persisted execution view. They never create a replacement wake, prompt, session, or idempotency identity. Stale authority, epoch, revision, lease, input, or source causes terminal rejection.
+An eligible bounded retry re-leases the original persisted reference and its
+persisted execution view. It never creates a replacement wake, prompt, session,
+or idempotency identity. Stale authority, epoch, revision, lease, input, or
+source causes terminal rejection.
 
-ACPX receives a frozen resume operation when that eligible correlation exists.
-Its typed `target_not_found` result invalidates the correlation and creates one
-fresh successor for the same authorized ref; the successor's work source stays
-unchanged. An instructed successor may call recovery-only `restore_session`
-for the exact provider-safe run traces of the current agent that precede the
-triggering run. Paperclip never automatically replays, summarizes, or injects
-that history into the work prompt. Other resume failures fail closed.
+ACPX session setup and resume failures are ordinary pre-transmission errors;
+Paperclip does not parse provider result or error codes to select a recovery
+path. A failed frozen `resume` or `steer_resume` operation is terminal and never
+falls back to a new provider session. Only transport failure while setting up a
+fresh `new` operation may enter the bounded retry path. Paperclip never
+automatically replays, summarizes, or injects history into a replacement work
+prompt.

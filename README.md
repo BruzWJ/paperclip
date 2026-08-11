@@ -41,7 +41,7 @@ It looks like an issue manager. Under the hood: org charts, budgets, governance,
 |        | Step            | Example                                                            |
 | ------ | --------------- | ------------------------------------------------------------------ |
 | **01** | Define the goal | _"Build the #1 AI note-taking app to $1M MRR."_                    |
-| **02** | Build the team  | Name owners, reporting lines, and explicit permissions — any bot, any provider. |
+| **02** | Build the team  | Name owners, reporting lines, and explicit permissions for locally available ACPX agents. |
 | **03** | Approve and run | Review strategy. Set budgets. Hit go. Monitor from the dashboard.  |
 
 <br/>
@@ -50,13 +50,11 @@ It looks like an issue manager. Under the hood: org charts, budgets, governance,
 <table>
   <tr>
     <td align="center"><strong>Works<br/>with</strong></td>
-    <td align="center"><strong>Process</strong><br/><sub>Built-in transport</sub></td>
-    <td align="center"><strong>HTTP</strong><br/><sub>Built-in transport</sub></td>
-    <td align="center"><strong>External</strong><br/><sub>Full-ABI adapters</sub></td>
+    <td align="center" colspan="3"><strong>ACPX-compatible local agents</strong><br/><sub>One public runtime contract</sub></td>
   </tr>
 </table>
 
-<em>If it can own issue work, it can join the team.</em>
+<em>If ACPX can discover and initialize it locally, it can join the team.</em>
 
 </div>
 
@@ -194,11 +192,11 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 │  │& Schedules│  │  Storage  │  │ & Events  │  │Portability│  │
 │  └───────────┘  └───────────┘  └───────────┘  └───────────┘  │
 └──────────────────────────────────────────────────────────────┘
-         ▲              ▲              ▲              ▲
-   ┌─────┴─────┐  ┌─────┴─────┐  ┌─────┴─────┐  ┌─────┴─────┐
-   │  Process  │  │   HTTP    │  │ External  │  │ External  │
-   │ transport │  │ transport │  │ adapter   │  │ adapter   │
-   └───────────┘  └───────────┘  └───────────┘  └───────────┘
+                            ▲
+              ┌─────────────┴─────────────┐
+              │    ACPX public runtime    │
+              │ locally installed agents │
+              └───────────────────────────┘
 ```
 
 ### The Systems
@@ -407,7 +405,6 @@ packages/
   adapter-utils/  # ACPX runtime discovery and execution bridge
   adapters/       # Adapter-authoring guidance
   skills-catalog/ # Bundled skill catalog and manifest builder
-  teams-catalog/  # Bundled team catalog and manifest builder
   *-mcp-server/   # MCP server packages and fixtures
   plugins/        # Plugin SDK, tooling, plugins, and examples
 doc/              # Internal product, engineering, operations, and plan docs

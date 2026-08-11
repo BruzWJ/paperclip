@@ -44,7 +44,7 @@ These define the contract between server, CLI, and UI.
 
 | File | Endpoints |
 |---|---|
-| `apps/server/src/routes/companies.ts` | `POST /api/companies/:companyId/export` — legacy export bundle<br>`POST /api/companies/:companyId/exports/preview` — export preview<br>`POST /api/companies/:companyId/exports` — export package<br>`POST /api/companies/import/preview` — import preview<br>`POST /api/companies/import` — perform import |
+| `apps/server/src/routes/companies.ts` | `POST /api/companies/:companyId/exports/preview` — export preview<br>`POST /api/companies/:companyId/exports` — export package<br>`POST /api/companies/imports/preview` — new-company import preview<br>`POST /api/companies/imports` — perform new-company import |
 
 Route registration lives in `apps/server/src/app.ts` via `companyRoutes(db, storage)`.
 

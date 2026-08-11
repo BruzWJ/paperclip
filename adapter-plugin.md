@@ -7,7 +7,7 @@ agent catalog.
 The worker reads exact ACPX registry names, opens a discarded ACPX runtime
 session to verify each candidate, and surfaces only compatible local CLIs. ACPX
 owns the agent name, launch argv, advertised model values, selectable session
-configuration, and provider runtime. Paperclip's retained `acp-subprocess`
+configuration, and provider runtime. Paperclip's `acpx-runtime`
 bridge calls only ACPX's public runtime: it establishes the immutable new or
 eligible-resume session, applies configuration, supplies the current
 request-scoped MCP input, sends one prompt, projects updates, and requests
