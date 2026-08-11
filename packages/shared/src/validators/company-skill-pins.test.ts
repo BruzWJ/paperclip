@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   agentCompanySkillPinsResponseSchema,
   agentCompanySkillPinsUpdateSchema,
-  companySkillChannelSchema,
   companySkillPinSchema,
   companySkillPinsSchema,
   parseCompanySkillPins,
@@ -45,24 +44,11 @@ describe("company skill pins", () => {
     ]).success).toBe(false);
   });
 
-  it("accepts only the two canonical skill channels", () => {
-    expect(companySkillChannelSchema.parse("isolated_skills_home")).toBe(
-      "isolated_skills_home",
-    );
-    expect(companySkillChannelSchema.parse("operator_native")).toBe(
-      "operator_native",
-    );
-    expect(companySkillChannelSchema.safeParse("workspace").success).toBe(
-      false,
-    );
-  });
-
   it("defines closed request and response contracts for the agent operation", () => {
     const exact = {
       entries: [
         { key: "code-review", versionId: REVIEW_VERSION },
       ],
-      skillChannel: "isolated_skills_home" as const,
     };
     expect(agentCompanySkillPinsUpdateSchema.parse(exact)).toEqual(exact);
     expect(agentCompanySkillPinsResponseSchema.parse(exact)).toEqual(exact);
@@ -83,16 +69,11 @@ describe("company skill pins", () => {
     }
   });
 
-  it("requires an explicit channel even for an empty selection", () => {
-    expect(agentCompanySkillPinsUpdateSchema.safeParse({
-      entries: [],
-    }).success).toBe(false);
+  it("accepts an empty selection without a redundant mode discriminator", () => {
     expect(agentCompanySkillPinsUpdateSchema.parse({
       entries: [],
-      skillChannel: "operator_native",
     })).toEqual({
       entries: [],
-      skillChannel: "operator_native",
     });
   });
 });

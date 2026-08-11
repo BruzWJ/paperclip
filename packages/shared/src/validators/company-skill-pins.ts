@@ -1,12 +1,5 @@
 import { z } from "zod";
 
-export const COMPANY_SKILL_CHANNELS = [
-  "isolated_skills_home",
-  "operator_native",
-] as const;
-
-export const companySkillChannelSchema = z.enum(COMPANY_SKILL_CHANNELS);
-
 const canonicalCompanySkillKeySchema = z
   .string()
   .min(1)
@@ -43,21 +36,16 @@ export const companySkillPinsSchema = z
 export const agentCompanySkillPinsUpdateSchema = z
   .object({
     entries: companySkillPinsSchema,
-    skillChannel: companySkillChannelSchema,
   })
   .strict();
 
 export const agentCompanySkillPinsResponseSchema = z
   .object({
     entries: companySkillPinsSchema,
-    skillChannel: companySkillChannelSchema,
   })
   .strict();
 
 export type CompanySkillPin = z.infer<typeof companySkillPinSchema>;
-export type CompanySkillChannel = z.infer<
-  typeof companySkillChannelSchema
->;
 export type AgentCompanySkillPinsUpdate = z.infer<
   typeof agentCompanySkillPinsUpdateSchema
 >;

@@ -32,7 +32,6 @@ import { MarkdownBody } from "../components/MarkdownBody";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { CopyText } from "../components/CopyText";
-import { Identity } from "../components/Identity";
 import { AgentIcon } from "../components/AgentIconPicker";
 import { AgentMultiSelect } from "../components/AgentMultiSelect";
 import {
@@ -52,7 +51,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -79,7 +77,6 @@ import {
   buildForkSkillDraft,
   defaultSkillMarkdown,
   normalizeSkillDraftSlug,
-  skillAccentColor,
   skillCreateDraftToPayload,
   splitCategoryDraft,
   type SkillCreateDraft,
@@ -125,7 +122,6 @@ import {
   Code2,
   Download,
   Eye,
-  Filter,
   FileCode2,
   FileText,
   Folder,
@@ -278,19 +274,9 @@ function shortRef(ref: string | null | undefined) {
   return ref.slice(0, 7);
 }
 
-function middleTruncate(value: string, maxLength = 72) {
-  if (value.length <= maxLength) return value;
-  const edgeLength = Math.floor((maxLength - 3) / 2);
-  return `${value.slice(0, edgeLength)}...${value.slice(value.length - edgeLength)}`;
-}
-
 function fileIcon(kind: CompanySkillFileInventoryEntry["kind"]) {
   if (kind === "script" || kind === "reference") return FileCode2;
   return FileText;
-}
-
-function catalogSkillRoute(catalogRef: string) {
-  return `/skills?view=catalog&catalog=${encodeURIComponent(catalogRef)}`;
 }
 
 function parentDirectoryPaths(filePath: string) {
@@ -301,150 +287,6 @@ function parentDirectoryPaths(filePath: string) {
   }
   return parents;
 }
-
-type SourceFilter = "all" | "company" | "bundled" | "optional" | "external";
-
-const SOURCE_FILTER_LABELS: Record<SourceFilter, string> = {
-  all: "All",
-  company: "Company",
-  bundled: "Bundled",
-  optional: "Optional",
-  external: "External",
-};
-
-function readonlyMetadataValue(metadata: Record<string, unknown> | null | undefined, key: string): string | null {
-  if (!metadata || typeof metadata !== "object") return null;
-  const raw = (metadata as Record<string, unknown>)[key];
-  if (typeof raw !== "string") return null;
-  const trimmed = raw.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function readonlyMetadataKind(metadata: Record<string, unknown> | null | undefined): "bundled" | "optional" | null {
-  const value = readonlyMetadataValue(metadata, "sourceKind") ?? readonlyMetadataValue(metadata, "catalogKind");
-  if (value === "bundled") return "bundled";
-  if (value === "optional") return "optional";
-  return null;
-}
-
-function classifySource(skill: {
-  sourceBadge: CompanySkillSourceBadge;
-  sourceType: string;
-  catalogKind?: "bundled" | "optional" | null;
-  metadata?: Record<string, unknown> | null;
-}): SourceFilter {
-  if (skill.sourceBadge === "paperclip") return "company";
-  if (skill.sourceType === "local_path" && !skill.sourceBadge.toString().includes("github")) {
-    return "company";
-  }
-  if (skill.sourceType === "catalog" || skill.sourceBadge === "catalog") {
-    const kind = skill.catalogKind ?? readonlyMetadataKind(skill.metadata);
-    if (kind === "bundled") return "bundled";
-    if (kind === "optional") return "optional";
-    return "company";
-  }
-  if (skill.sourceBadge === "github" || skill.sourceBadge === "skills_sh" || skill.sourceBadge === "url" || skill.sourceBadge === "local") {
-    return "external";
-  }
-  return "company";
-}
-
-function SourceFilterMenu({
-  counts,
-  value,
-  onChange,
-}: {
-  counts: Record<SourceFilter, number>;
-  value: SourceFilter;
-  onChange: (next: SourceFilter) => void;
-}) {
-  const filters: SourceFilter[] = ["all", "company", "bundled", "optional", "external"];
-  const activeFilterCount = value === "all" ? 0 : 1;
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={cn("relative shrink-0", activeFilterCount > 0 && "text-blue-600 dark:text-blue-400")}
-          title={activeFilterCount > 0 ? `Filters: ${activeFilterCount}` : "Filter"}
-        >
-          <Filter className="h-3.5 w-3.5" />
-          {activeFilterCount > 0 ? (
-            <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-600 text-(length:--text-nano) font-bold text-white">
-              {activeFilterCount}
-            </span>
-          ) : null}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuLabel>Source</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={value} onValueChange={(next) => onChange(next as SourceFilter)}>
-          {filters.map((filter) => (
-            <DropdownMenuRadioItem key={filter} value={filter}>
-              <span>{SOURCE_FILTER_LABELS[filter]}</span>
-              <span className="ml-auto text-xs text-muted-foreground">{counts[filter] ?? 0}</span>
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function CatalogFilterMenu({
-  kindFilter,
-  categoryFilter,
-  categories,
-  onKindChange,
-  onCategoryChange,
-}: {
-  kindFilter: "all" | "bundled" | "optional";
-  categoryFilter: string;
-  categories: string[];
-  onKindChange: (next: "all" | "bundled" | "optional") => void;
-  onCategoryChange: (next: string) => void;
-}) {
-  const activeFilterCount = (kindFilter === "all" ? 0 : 1) + (categoryFilter ? 1 : 0);
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={cn("relative shrink-0", activeFilterCount > 0 && "text-blue-600 dark:text-blue-400")}
-          title={activeFilterCount > 0 ? `Filters: ${activeFilterCount}` : "Filter"}
-        >
-          <Filter className="h-3.5 w-3.5" />
-          {activeFilterCount > 0 ? (
-            <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-600 text-(length:--text-nano) font-bold text-white">
-              {activeFilterCount}
-            </span>
-          ) : null}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="max-h-(--sz-calc-32) w-56 overflow-y-auto">
-        <DropdownMenuLabel>Type</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={kindFilter} onValueChange={(next) => onKindChange(next as "all" | "bundled" | "optional")}>
-          <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="bundled">Bundled</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="optional">Optional</DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>Category</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={categoryFilter || "__all__"} onValueChange={(next) => onCategoryChange(next === "__all__" ? "" : next)}>
-          <DropdownMenuRadioItem value="__all__">All categories</DropdownMenuRadioItem>
-          {categories.map((category) => (
-            <DropdownMenuRadioItem key={category} value={category}>
-              {category}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 function TrustChip({ level }: { level: CompanySkillTrustLevel }) {
   const map = {
     markdown_only: {
@@ -1658,149 +1500,6 @@ function NewSkillWizard({
   );
 }
 
-function CatalogList({
-  skills,
-  kindFilter,
-  categoryFilter,
-  catalogFilter,
-  installedByKey,
-  selectedCatalogRef,
-  selectedPath,
-  expandedSkillId,
-  expandedDirs,
-  onSelect,
-  onSelectPath,
-  onToggleSkill,
-  onToggleDir,
-}: {
-  skills: CatalogSkill[];
-  kindFilter: "all" | "bundled" | "optional";
-  categoryFilter: string;
-  catalogFilter: string;
-  installedByKey: Map<string, CompanySkillListItem>;
-  selectedCatalogRef: string | null;
-  selectedPath: string;
-  expandedSkillId: string | null;
-  expandedDirs: Record<string, Set<string>>;
-  onSelect: (catalogRef: string) => void;
-  onSelectPath: (catalogRef: string, path: string) => void;
-  onToggleSkill: (catalogRef: string) => void;
-  onToggleDir: (catalogRef: string, path: string) => void;
-}) {
-  const lowered = catalogFilter.trim().toLowerCase();
-  const filtered = skills.filter((skill) => {
-    if (kindFilter !== "all" && skill.kind !== kindFilter) return false;
-    if (categoryFilter && skill.category !== categoryFilter) return false;
-    if (!lowered) return true;
-    const haystack = `${skill.name} ${skill.slug} ${skill.key} ${skill.description} ${skill.category} ${skill.tags.join(" ")}`.toLowerCase();
-    return haystack.includes(lowered);
-  });
-
-  if (filtered.length === 0) {
-    return (
-      <div className="px-4 py-6 text-sm text-muted-foreground">
-        No catalog skills match this filter.
-      </div>
-    );
-  }
-
-  const available = filtered.filter((skill) => !installedByKey.has(skill.key));
-  const installed = filtered.filter((skill) => installedByKey.has(skill.key));
-  const bundled = available.filter((skill) => skill.kind === "bundled");
-  const optional = available.filter((skill) => skill.kind === "optional");
-
-  function renderRow(skill: CatalogSkill) {
-    const isSelected = selectedCatalogRef === skill.id || selectedCatalogRef === skill.key;
-    const expanded = expandedSkillId === skill.id;
-    const tree = buildTree(skill.files.map((file) => ({
-      path: file.path,
-      kind: file.kind,
-    })));
-    return (
-      <div key={skill.id} className="border-b border-border">
-        <div
-          className={cn(
-            "group grid grid-cols-(--gtc-3) items-center gap-x-1 px-3 py-1.5 hover:bg-accent/30",
-            isSelected && "text-foreground",
-          )}
-        >
-          <Link
-            to={catalogSkillRoute(skill.id)}
-            className="flex min-w-0 items-center self-stretch pr-2 text-left no-underline"
-            onClick={() => onSelect(skill.id)}
-          >
-            <span className="flex min-w-0 items-center gap-2 self-center">
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground opacity-75 transition-opacity group-hover:opacity-100">
-                <Boxes className={cn("h-3.5 w-3.5", skill.kind === "optional" && "opacity-70")} aria-hidden="true" />
-              </span>
-              <span className="min-w-0 overflow-hidden text-(length:--text-compact) font-medium leading-5 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3]">
-                {skill.name}
-              </span>
-            </span>
-          </Link>
-          <button
-            type="button"
-            className="flex h-9 w-9 shrink-0 items-center justify-center self-center rounded-sm text-muted-foreground opacity-80 transition-(--tp-background-color-color-opacity) hover:bg-accent hover:text-foreground group-hover:opacity-100"
-            onClick={() => onToggleSkill(skill.id)}
-            aria-label={expanded ? `Collapse ${skill.name}` : `Expand ${skill.name}`}
-          >
-            {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-        <div
-          aria-hidden={!expanded}
-          className={cn(
-            "grid overflow-hidden transition-(--tp-grid-template-rows-opacity) duration-200 ease-(--e-cubic-bezier-0_16-1-0_3-1)",
-            expanded ? "grid-rows-(--gtr-2) opacity-100" : "grid-rows-(--gtr-3) opacity-0",
-          )}
-        >
-          <div className="min-h-0 overflow-hidden">
-            <SkillTree
-              nodes={tree}
-              skillId={skill.id}
-              selectedPath={isSelected ? selectedPath : "SKILL.md"}
-              expandedDirs={expandedDirs[skill.id] ?? new Set<string>()}
-              onToggleDir={(path) => onToggleDir(skill.id, path)}
-              onSelectPath={(path) => onSelectPath(skill.id, path)}
-              fileHref={(skillId) => catalogSkillRoute(skillId)}
-              depth={1}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      {bundled.length > 0 && kindFilter !== "optional" ? (
-        <div>
-          <div className="border-b border-border bg-background px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Bundled · {bundled.length}
-          </div>
-          {bundled.map(renderRow)}
-        </div>
-      ) : null}
-      {optional.length > 0 && kindFilter !== "bundled" ? (
-        <div>
-          <div className="border-b border-border bg-background px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Optional · {optional.length}
-          </div>
-          {optional.map(renderRow)}
-        </div>
-      ) : null}
-      {installed.length > 0 ? (
-        <div>
-          <div className="border-b border-border bg-background px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Installed · {installed.length}
-          </div>
-          {installed.map(renderRow)}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function CatalogDetailPane({
   skill,
   packageName,
@@ -2307,131 +2006,6 @@ function SkillTree({
             </span>
             <span className="truncate">{node.name}</span>
           </Link>
-        );
-      })}
-    </div>
-  );
-}
-
-function SkillList({
-  skills,
-  selectedSkillId,
-  skillFilter,
-  sourceFilter,
-  expandedSkillId,
-  expandedDirs,
-  selectedPaths,
-  onToggleSkill,
-  onToggleDir,
-  onSelectSkill,
-  onSelectPath,
-  onClearFilters,
-}: {
-  skills: CompanySkillListItem[];
-  selectedSkillId: string | null;
-  skillFilter: string;
-  sourceFilter: SourceFilter;
-  expandedSkillId: string | null;
-  expandedDirs: Record<string, Set<string>>;
-  selectedPaths: Record<string, string>;
-  onToggleSkill: (skillId: string) => void;
-  onToggleDir: (skillId: string, path: string) => void;
-  onSelectSkill: (skillId: string) => void;
-  onSelectPath: (skillId: string, path: string) => void;
-  onClearFilters: () => void;
-}) {
-  const filteredSkills = skills.filter((skill) => {
-    const haystack = `${skill.name} ${skill.key} ${skill.slug} ${skill.sourceLabel ?? ""}`.toLowerCase();
-    if (!haystack.includes(skillFilter.toLowerCase())) return false;
-    if (sourceFilter === "all") return true;
-    const skillSource = classifySource(skill);
-    return skillSource === sourceFilter;
-  });
-
-  if (filteredSkills.length === 0) {
-    if (sourceFilter !== "all" && skills.length > 0) {
-      return (
-        <div className="px-4 py-6 text-sm text-muted-foreground">
-          No {SOURCE_FILTER_LABELS[sourceFilter].toLowerCase()} skills installed.{" "}
-          <button type="button" className="text-foreground underline" onClick={onClearFilters}>
-            Clear filter
-          </button>
-        </div>
-      );
-    }
-    return (
-      <div className="px-4 py-6 text-sm text-muted-foreground">
-        No skills match this filter.
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      {filteredSkills.map((skill) => {
-        const expanded = expandedSkillId === skill.id;
-        const tree = buildTree(skill.fileInventory);
-        const source = sourceMeta(skill.sourceBadge, skill.sourceLabel);
-        const SourceIcon = source.icon;
-
-        return (
-          <div key={skill.id} className="border-b border-border">
-            <div
-              className={cn(
-                "group grid grid-cols-(--gtc-3) items-center gap-x-1 px-3 py-1.5 hover:bg-accent/30",
-                skill.id === selectedSkillId && "text-foreground",
-              )}
-            >
-              <Link
-                to={skillRoute(skill, skills)}
-                className="flex min-w-0 items-center self-stretch pr-2 text-left no-underline"
-                onClick={() => onSelectSkill(skill.id)}
-              >
-                <span className="flex min-w-0 items-center gap-2 self-center">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground opacity-75 transition-opacity group-hover:opacity-100">
-                        <SourceIcon className="h-3.5 w-3.5" />
-                        <span className="sr-only">{source.managedLabel}</span>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">{source.managedLabel}</TooltipContent>
-                  </Tooltip>
-                  <span className="min-w-0 overflow-hidden text-(length:--text-compact) font-medium leading-5 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3]">
-                    {skill.name}
-                  </span>
-                </span>
-              </Link>
-              <button
-                type="button"
-                className="flex h-9 w-9 shrink-0 items-center justify-center self-center rounded-sm text-muted-foreground opacity-80 transition-(--tp-background-color-color-opacity) hover:bg-accent hover:text-foreground group-hover:opacity-100"
-                onClick={() => onToggleSkill(skill.id)}
-                aria-label={expanded ? `Collapse ${skill.name}` : `Expand ${skill.name}`}
-              >
-                {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-              </button>
-            </div>
-            <div
-              aria-hidden={!expanded}
-              className={cn(
-                "grid overflow-hidden transition-(--tp-grid-template-rows-opacity) duration-200 ease-(--e-cubic-bezier-0_16-1-0_3-1)",
-                expanded ? "grid-rows-(--gtr-2) opacity-100" : "grid-rows-(--gtr-3) opacity-0",
-              )}
-            >
-              <div className="min-h-0 overflow-hidden">
-                <SkillTree
-                  nodes={tree}
-                  skillId={skill.id}
-                  selectedPath={selectedPaths[skill.id] ?? "SKILL.md"}
-                  expandedDirs={expandedDirs[skill.id] ?? new Set<string>()}
-                  onToggleDir={(path) => onToggleDir(skill.id, path)}
-                  onSelectPath={(path) => onSelectPath(skill.id, path)}
-                  fileHref={(_, path) => skillRoute(skill, skills, path)}
-                  depth={1}
-                />
-              </div>
-            </div>
-          </div>
         );
       })}
     </div>
@@ -3571,326 +3145,6 @@ export function SkillDetailPage({
   );
 }
 
-function SkillPane({
-  loading,
-  detail,
-  file,
-  fileLoading,
-  updateStatus,
-  updateStatusLoading,
-  viewMode,
-  editMode,
-  draft,
-  setViewMode,
-  setEditMode,
-  setDraft,
-  onCheckUpdates,
-  checkUpdatesPending,
-  onInstallUpdate,
-  installUpdatePending,
-  onDelete,
-  deletePending,
-  onSave,
-  savePending,
-  attachAgents,
-  versions,
-  onSubmitAttach,
-  attachPending,
-}: {
-  loading: boolean;
-  detail: CompanySkillDetail | null | undefined;
-  file: CompanySkillFileDetail | null | undefined;
-  fileLoading: boolean;
-  updateStatus: CompanySkillUpdateStatus | null | undefined;
-  updateStatusLoading: boolean;
-  viewMode: "preview" | "code";
-  editMode: boolean;
-  draft: string;
-  setViewMode: (mode: "preview" | "code") => void;
-  setEditMode: (value: boolean) => void;
-  setDraft: (value: string) => void;
-  onCheckUpdates: () => void;
-  checkUpdatesPending: boolean;
-  onInstallUpdate: () => void;
-  installUpdatePending: boolean;
-  onDelete: () => void;
-  deletePending: boolean;
-  onSave: () => void;
-  savePending: boolean;
-  attachAgents: AttachAgentOption[];
-  versions: CompanySkillVersion[];
-  onSubmitAttach: (ids: string[], versionId: string | null) => void;
-  attachPending: boolean;
-}) {
-  if (!detail) {
-    if (loading) {
-      return <PageSkeleton variant="detail" />;
-    }
-    return (
-      <EmptyState
-        icon={Boxes}
-        message="Select a skill to inspect its files."
-      />
-    );
-  }
-
-  const source = sourceMeta(detail.sourceBadge, detail.sourceLabel);
-  const SourceIcon = source.icon;
-  const usedBy = detail.usedByAgents;
-  const body = file?.markdown ? stripFrontmatter(file.content) : file?.content ?? "";
-  const currentPin = shortRef(detail.sourceRef);
-  const latestPin = shortRef(updateStatus?.latestRef);
-  const displaySourcePath = detail.sourcePath ? middleTruncate(detail.sourcePath) : null;
-  const removeBlocked = usedBy.length > 0;
-  const removeDisabledReason = removeBlocked
-    ? "Detach this skill from all agents before removing it."
-    : null;
-
-  return (
-    <div className="min-w-0">
-      <div className="border-b border-border px-5 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="flex items-center gap-2 truncate text-2xl font-semibold">
-              <SourceIcon className="h-5 w-5 shrink-0 text-muted-foreground" />
-              {detail.name}
-            </h1>
-            {detail.description && (
-              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{detail.description}</p>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button variant="outline" size="sm" asChild>
-              <Link to={skillStudioRoute(detail.id)}>
-                <FlaskConical data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
-                Open in Studio
-              </Link>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onDelete}
-              disabled={deletePending}
-              title={removeDisabledReason ?? undefined}
-            >
-              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-              {deletePending ? "Removing..." : "Remove"}
-            </Button>
-            {detail.editable ? (
-              <button
-                className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-                onClick={() => setEditMode(!editMode)}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                {editMode ? "Stop editing" : "Edit"}
-              </button>
-            ) : (
-              <div className="text-sm text-muted-foreground">{detail.editableReason}</div>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-4 space-y-3 border-t border-border pt-4 text-sm">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground">Source</span>
-              <span className="flex min-w-0 items-center gap-2">
-                <SourceIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                {detail.sourcePath && displaySourcePath ? (
-                  <>
-                    <span
-                      className="block min-w-0 max-w-(--sz-calc-35) truncate font-mono text-xs text-muted-foreground"
-                      title={detail.sourcePath}
-                    >
-                      {displaySourcePath}
-                    </span>
-                    <CopyText
-                      text={detail.sourcePath}
-                      copiedLabel="Copied path"
-                      ariaLabel="Copy source path"
-                      title="Copy source path"
-                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </CopyText>
-                  </>
-                ) : (
-                  <span className="truncate">{source.label}</span>
-                )}
-              </span>
-            </div>
-            {detail.sourceType === "github" && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground">Pin</span>
-                <span className="font-mono text-xs">{currentPin ?? "untracked"}</span>
-                {updateStatus?.trackingRef && (
-                  <span className="text-xs text-muted-foreground">tracking {updateStatus.trackingRef}</span>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onCheckUpdates}
-                  disabled={checkUpdatesPending || updateStatusLoading}
-                >
-                  <RefreshCw data-icon="inline-start" className={cn("mr-1.5 h-3.5 w-3.5", (checkUpdatesPending || updateStatusLoading) && "animate-spin")} />
-                  Check for updates
-                </Button>
-                {updateStatus?.supported && updateStatus.hasUpdate && (
-                  <Button
-                    size="sm"
-                    onClick={onInstallUpdate}
-                    disabled={installUpdatePending}
-                  >
-                    <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", installUpdatePending && "animate-spin")} />
-                    Install update{latestPin ? ` ${latestPin}` : ""}
-                  </Button>
-                )}
-                {updateStatus?.supported && !updateStatus.hasUpdate && !updateStatusLoading && (
-                  <span className="text-xs text-muted-foreground">Up to date</span>
-                )}
-                {!updateStatus?.supported && updateStatus?.reason && (
-                  <span className="text-xs text-muted-foreground">{updateStatus.reason}</span>
-                )}
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              <span className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground">Key</span>
-              <span className="font-mono text-xs">{detail.key}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground">Mode</span>
-              <span>{detail.editable ? "Editable" : "Read only"}</span>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground">Trust</span>
-            <TrustChip level={detail.trustLevel} />
-            <CompatChip compatibility={detail.compatibility} />
-            {readonlyMetadataValue(detail.metadata, "userModifiedAt") ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge variant="outline" className="border-violet-500/40 bg-violet-500/10 text-(length:--text-micro) text-violet-200">
-                    <Pencil className="h-3 w-3" aria-hidden="true" />
-                    Locally modified
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent>You have edited this skill after installing. Updates from the catalog will overwrite your changes.</TooltipContent>
-              </Tooltip>
-            ) : null}
-            {(() => {
-              const packageName = readonlyMetadataValue(detail.metadata, "originPackageName") ?? readonlyMetadataValue(detail.metadata, "catalogPackageName");
-              const packageVersion = readonlyMetadataValue(detail.metadata, "originVersion") ?? readonlyMetadataValue(detail.metadata, "catalogPackageVersion");
-              return <ProvenanceBadge packageName={packageName} packageVersion={packageVersion} />;
-            })()}
-          </div>
-          <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground">Used by</span>
-              <AttachAgentsPopover
-                agents={attachAgents}
-                attachedAgentIds={usedBy.map((agent) => agent.id)}
-                versions={versions}
-                selectedVersionId={usedBy.find((agent) => agent.versionId)?.versionId ?? null}
-                pending={attachPending}
-                onSaveAssignments={onSubmitAttach}
-              />
-            </div>
-            {usedBy.length === 0 ? (
-              <span className="text-muted-foreground">No agents attached</span>
-            ) : (
-              <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {usedBy.map((agent) => (
-                  <Link
-                    key={agent.id}
-                    to={`/agents/${agent.urlKey}/skills`}
-                    className="group rounded-md border border-transparent p-2 no-underline hover:border-border hover:bg-accent/40"
-                  >
-                    <Identity name={agent.name} size="sm" />
-                    <span className="sr-only">View agent skill assignments</span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="border-b border-border px-5 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="truncate font-mono text-sm">{file?.path ?? "SKILL.md"}</div>
-          </div>
-          <div className="flex items-center gap-2">
-            {file?.markdown && !editMode && (
-              <div className="flex items-center border border-border">
-                <button
-                  className={cn("px-3 py-1.5 text-sm", viewMode === "preview" && "text-foreground", viewMode !== "preview" && "text-muted-foreground")}
-                  onClick={() => setViewMode("preview")}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <Eye className="h-3.5 w-3.5" />
-                    View
-                  </span>
-                </button>
-                <button
-                  className={cn("border-l border-border px-3 py-1.5 text-sm", viewMode === "code" && "text-foreground", viewMode !== "code" && "text-muted-foreground")}
-                  onClick={() => setViewMode("code")}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <Code2 className="h-3.5 w-3.5" />
-                    Code
-                  </span>
-                </button>
-              </div>
-            )}
-            {editMode && file?.editable && (
-              <>
-                <Button variant="ghost" size="sm" onClick={() => setEditMode(false)} disabled={savePending}>
-                  Cancel
-                </Button>
-                <Button size="sm" onClick={onSave} disabled={savePending}>
-                  <Save className="mr-1.5 h-3.5 w-3.5" />
-                  {savePending ? "Saving..." : "Save"}
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="min-h-(--sz-560px) px-5 py-5">
-        {fileLoading ? (
-          <PageSkeleton variant="detail" />
-        ) : !file ? (
-          <div className="text-sm text-muted-foreground">Select a file to inspect.</div>
-        ) : editMode && file.editable ? (
-          file.markdown ? (
-            <MarkdownEditor
-              value={draft}
-              onChange={setDraft}
-              bordered={false}
-              className="min-h-(--sz-520px)"
-            />
-          ) : (
-            <Textarea
-              aria-label="Skill file content"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              className="min-h-(--sz-520px) rounded-none border-0 bg-transparent px-0 py-0 font-mono text-sm shadow-none focus-visible:ring-0"
-            />
-          )
-        ) : file.markdown && viewMode === "preview" ? (
-          <MarkdownBody softBreaks={false} linkIssueReferences={false}>{body}</MarkdownBody>
-        ) : (
-          <pre className="overflow-x-auto whitespace-pre-wrap wrap-break-word border-0 bg-transparent p-0 font-mono text-sm text-foreground">
-            <code>{file.content}</code>
-          </pre>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function CompanySkills() {
   const { "*": routePath } = useParams<{ "*": string }>();
   const navigate = useNavigate();
@@ -3912,10 +3166,8 @@ export function CompanySkills() {
       body: error instanceof Error && error.message ? error.message : fallbackBody,
     });
   };
-  const [skillFilter, setSkillFilter] = useState("");
   const [source, setSource] = useState("");
   const [emptySourceHelpOpen, setEmptySourceHelpOpen] = useState(false);
-  const [expandedSkillId, setExpandedSkillId] = useState<string | null>(null);
   const [expandedDirs, setExpandedDirs] = useState<Record<string, Set<string>>>({});
   const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
   const [editMode, setEditMode] = useState(false);
@@ -3925,11 +3177,7 @@ export function CompanySkills() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTargetSkillId, setDeleteTargetSkillId] = useState<string | null>(null);
   const [deleteTargetDetail, setDeleteTargetDetail] = useState<CompanySkillDetail | null>(null);
-  const [catalogFilter, setCatalogFilter] = useState("");
-  const [catalogKindFilter, setCatalogKindFilter] = useState<"all" | "bundled" | "optional">("all");
-  const [catalogCategoryFilter, setCatalogCategoryFilter] = useState<string>("");
   const [catalogSelectedPath, setCatalogSelectedPath] = useState<string>("SKILL.md");
-  const [expandedCatalogSkillId, setExpandedCatalogSkillId] = useState<string | null>(null);
   const [expandedCatalogDirs, setExpandedCatalogDirs] = useState<Record<string, Set<string>>>({});
   const [installDialogState, setInstallDialogState] = useState<{
     open: boolean;
@@ -3961,12 +3209,6 @@ export function CompanySkills() {
   const isStudioNew = routePath === "studio/new";
   const routeSkillToken = isStudioNew ? null : parsedRoute.skillToken;
   const selectedPath = parsedRoute.filePath;
-  const viewParam = searchParams.get("view");
-  const activeView: "installed" | "catalog" = viewParam === "catalog" ? "catalog" : "installed";
-  const sourceFilterParam = searchParams.get("source") ?? "all";
-  const sourceFilter: SourceFilter = (["all", "company", "bundled", "optional", "external"] as SourceFilter[]).includes(sourceFilterParam as SourceFilter)
-    ? (sourceFilterParam as SourceFilter)
-    : "all";
   const selectedCatalogRef = searchParams.get("catalog");
   const tabParam = searchParams.get("tab");
   const discoveryTab = resolveDiscoveryTab(tabParam);
@@ -4024,15 +3266,6 @@ export function CompanySkills() {
     });
   }
 
-  function setSourceFilter(next: SourceFilter) {
-    setSearchParams((current) => {
-      const params = new URLSearchParams(current);
-      if (next === "all") params.delete("source");
-      else params.set("source", next);
-      return params;
-    });
-  }
-
   function selectCatalog(catalogRef: string | null, path = "SKILL.md") {
     setSearchParams((current) => {
       const params = new URLSearchParams(current);
@@ -4047,21 +3280,6 @@ export function CompanySkills() {
     if (!isStudioNew) return;
     setCreateError(null);
   }, [isStudioNew, studioForkFromId]);
-
-  // The old split catalog view no longer exists — catalog/bundled skills now open
-  // as a regular full page keyed by `?catalog=<ref>`. Strip the legacy `view`
-  // param so stale `?view=catalog` deep links land on the new surface (PAP-10907).
-  useEffect(() => {
-    if (!searchParams.has("view")) return;
-    setSearchParams(
-      (current) => {
-        const next = new URLSearchParams(current);
-        next.delete("view");
-        return next;
-      },
-      { replace: true },
-    );
-  }, [searchParams, setSearchParams]);
 
   const skillsQuery = useQuery({
     queryKey: queryKeys.companySkills.list(selectedCompanyId ?? ""),
@@ -4152,10 +3370,6 @@ export function CompanySkills() {
       { replace: true },
     );
   }, [installedSkills, navigate, routeResolution, searchParams, selectedPath, skillsQuery.isLoading]);
-
-  useEffect(() => {
-    setExpandedSkillId(selectedSkillId);
-  }, [selectedSkillId]);
 
   useEffect(() => {
     if (!selectedSkillId || selectedPath === "SKILL.md") return;
@@ -4407,12 +3621,6 @@ export function CompanySkills() {
     () => new Map(installedSkills.map((skill) => [skill.key, skill])),
     [installedSkills],
   );
-  const catalogCategories = useMemo(() => {
-    const set = new Set<string>();
-    for (const skill of catalogListQuery.data ?? []) set.add(skill.category);
-    return Array.from(set).sort();
-  }, [catalogListQuery.data]);
-
   // --- Discovery grid derived data (PAP-10879) ---
   const discoveryCards = useMemo(
     () => buildDiscoveryCards(installedSkills, catalogListQuery.data ?? []),
@@ -4467,10 +3675,6 @@ export function CompanySkills() {
     ?? null;
 
   useEffect(() => {
-    setExpandedCatalogSkillId(selectedCatalogSkill?.id ?? null);
-  }, [selectedCatalogSkill?.id]);
-
-  useEffect(() => {
     if (!selectedCatalogSkill || catalogSelectedPath === "SKILL.md") return;
     const parents = parentDirectoryPaths(catalogSelectedPath);
     if (parents.length === 0) return;
@@ -4487,14 +3691,6 @@ export function CompanySkills() {
     });
   }, [catalogSelectedPath, selectedCatalogSkill]);
 
-  const sourceCounts = useMemo<Record<SourceFilter, number>>(() => {
-    const counts: Record<SourceFilter, number> = { all: installedSkills.length, company: 0, bundled: 0, optional: 0, external: 0 };
-    for (const skill of installedSkills) {
-      const cls = classifySource(skill);
-      counts[cls] += 1;
-    }
-    return counts;
-  }, [installedSkills]);
   const installCatalog = useMutation({
     mutationFn: (payload: { catalogSkillId: string; slug: string | null; force: boolean }) =>
       companySkillsApi.installCatalog(selectedCompanyId!, {
@@ -4964,9 +4160,8 @@ export function CompanySkills() {
     importSkill.mutate(trimmedSource);
   }
 
-  // Opening a card stays inside the new store and always lands on a regular full
-  // page: installed skills go to their detail route; catalog/bundled/optional
-  // skills open the standalone catalog page (no modal, no legacy split view).
+  // Installed skills use their detail route; catalog, bundled, and optional
+  // skills use the catalog detail route.
   function openDiscoveryCard(card: DiscoveryCard) {
     if (card.skillId) {
       navigate(routeForSkillId(card.skillId));
@@ -5326,7 +4521,7 @@ export function CompanySkills() {
           onClearSelected={showInstalledFolders ? () => setSelectedSkillIds([]) : undefined}
           folderNudgeStorageKey={showInstalledFolders ? `paperclip:skills-folder-nudge:${selectedCompanyId ?? "none"}` : undefined}
         />
-      ) : activeView === "installed" && selectedSkillId ? (
+      ) : selectedSkillId ? (
         <SkillDetailPage
           detail={activeDetail}
           folderDisplayPath={activeSkillFolderDisplayPath}
@@ -5388,8 +4583,7 @@ export function CompanySkills() {
           studioHref={skillStudioRoute(selectedSkillId)}
         />
       ) : selectedCatalogRef ? (
-        // Catalog / optional / bundled skills open as a regular full page in the
-        // new store — no modal, no legacy split view (PAP-10907).
+        // Catalog, optional, and bundled skills share the catalog detail page.
         <div className="min-h-(--sz-calc-30)">
           <div className="border-b border-border px-4 py-3">
             <Link

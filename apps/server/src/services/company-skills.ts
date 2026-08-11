@@ -189,12 +189,6 @@ type CompanySkillListRow = Pick<
   | "createdAt"
   | "updatedAt"
 >;
-type CompanySkillReferenceRow = Pick<
-  CompanySkillRow,
-  | "id"
-  | "key"
-  | "slug"
->;
 type SkillReferenceTarget = Pick<CompanySkill, "id" | "key" | "slug">;
 type SkillSourceInfoTarget = Pick<
   CompanySkill,
@@ -2831,18 +2825,6 @@ export function companySkillService(db: Db) {
       .sort((left, right) => right.count - left.count || left.slug.localeCompare(right.slug));
   }
 
-  async function listReferenceTargets(companyId: string): Promise<SkillReferenceTarget[]> {
-    const rows = await db
-      .select({
-        id: companySkills.id,
-        key: companySkills.key,
-        slug: companySkills.slug,
-      })
-      .from(companySkills)
-      .where(eq(companySkills.companyId, companyId));
-    return rows as CompanySkillReferenceRow[];
-  }
-
   async function getById(companyId: string, id: string) {
     const row = await db
       .select(selectCompanySkillColumns())
@@ -3419,7 +3401,6 @@ export function companySkillService(db: Db) {
               versionId: fork.currentVersionId,
             },
           ],
-          skillChannel: selection.skillChannel,
         },
         actor: { type: "system" },
       });
