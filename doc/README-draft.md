@@ -20,7 +20,7 @@ Paperclip is a node server & UI that orchestrates a team of agents to run busine
 
 Bring-your-own agents, assign goals, and track your agent's work and costs.
 
-It looks like an issue manager but has specialized skills and agent coordination
+It looks like a task manager but has specialized skills and agent coordination
 
 **It's high taste, and feels good to use**
 
@@ -31,7 +31,7 @@ It looks like an issue manager but has specialized skills and agent coordination
 - You have 20 simultaneous Claude Code terminals open (and lose track of what everyone is working on)
 - You want to let your agents run autonomously 24/7, but still audit their work and chime in when needed
 - You want to monitor costs
-- You want a process for managing your agents that feels like using an issue manager
+- You want a process for managing your agents that feels like using a task manager
 - You want to manage your autonomous businesses from your phone
 
 # What is not

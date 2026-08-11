@@ -1,6 +1,6 @@
-# Agent Management Follow-up Plan (CEO Patch + Config Rollback + Issue↔Approval Linking)
+# Agent Management Follow-up Plan (CEO Patch + Config Rollback + Task↔Approval Linking)
 
-> Historical only. CEO-special behavior and provider operational skills described here were retired by the roleless issue-execution cutover and have no runtime reader.
+> Historical only. CEO-special behavior and provider operational skills described here were retired by the roleless task-execution cutover and have no runtime reader.
 
 Status: Proposed  
 Date: 2026-02-19  
@@ -22,11 +22,11 @@ So even though the CEO has hire permission, the route still enforces old self-on
 - `skills/paperclip/SKILL.md` and `skills/paperclip/references/api-reference.md` do not currently require markdown formatting quality for status comments (links, structure, readable updates).
 - Agents therefore produce plain prose comments with raw IDs, not linked entities.
 
-## 1.3 Issue↔Approval linkage gap
+## 1.3 Task↔Approval linkage gap
 
-- There is no direct DB relation between issues and approvals today.
+- There is no direct DB relation between tasks and approvals today.
 - Approval payloads may include contextual IDs, but this is not canonical linkage.
-- UI pages cannot reliably cross-link issue/approval without manual copy-paste IDs.
+- UI pages cannot reliably cross-link task/approval without manual copy-paste IDs.
 
 ## 1.4 Config rollback gap
 
@@ -60,7 +60,7 @@ Every config-affecting mutation must create a revision record with:
 
 Rollback must be one API call that restores a prior revision atomically.
 
-## 2.3 Enforce markdown and links for issue comments in skills
+## 2.3 Enforce markdown and links for task comments in skills
 
 Skill guidance should require:
 
@@ -68,9 +68,9 @@ Skill guidance should require:
 - links to created/updated entities when relevant
 - avoid raw IDs without links
 
-## 2.4 Add explicit Issue↔Approval linkage (many-to-many)
+## 2.4 Add explicit Task↔Approval linkage (many-to-many)
 
-Implement canonical join model so one issue can link many approvals and one approval can link many issues.
+Implement canonical join model so one task can link many approvals and one approval can link many tasks.
 
 ## 3. Data Model Plan
 
@@ -95,13 +95,13 @@ Indexes:
 - `(company_id, agent_id, revision_number desc)`
 - `(agent_id, created_at desc)`
 
-## 3.2 New table: `issue_approvals`
+## 3.2 New table: `task_approvals`
 
 Columns:
 
 - `id` uuid pk
 - `company_id` uuid fk
-- `issue_id` uuid fk
+- `task_id` uuid fk
 - `approval_id` uuid fk
 - `relationship` text default `context`
 - `linked_by_agent_id` uuid null
@@ -110,11 +110,11 @@ Columns:
 
 Constraints:
 
-- unique `(company_id, issue_id, approval_id)`
+- unique `(company_id, task_id, approval_id)`
 
 Indexes:
 
-- `(company_id, issue_id)`
+- `(company_id, task_id)`
 - `(company_id, approval_id)`
 
 ## 4. API Plan
@@ -151,27 +151,27 @@ Behavior:
 - rollback writes a new revision entry (does not mutate history)
 - rollback response includes resulting active config
 
-## 4.4 Issue↔Approval link APIs
+## 4.4 Task↔Approval link APIs
 
 Add:
 
-- `GET /api/issues/:id/approvals`
-- `POST /api/issues/:id/approvals` (link existing approval)
-- `DELETE /api/issues/:id/approvals/:approvalId`
-- `GET /api/approvals/:id/issues`
+- `GET /api/tasks/:id/approvals`
+- `POST /api/tasks/:id/approvals` (link existing approval)
+- `DELETE /api/tasks/:id/approvals/:approvalId`
+- `GET /api/approvals/:id/tasks`
 
 ## 4.5 Auto-link on approval creation
 
-Extend create payloads to optionally include issue context:
+Extend create payloads to optionally include task context:
 
-- `POST /api/companies/:companyId/approvals` supports `issueId` or `issueIds`
-- The retired mixed hire endpoint supported `sourceIssueId` or
-  `sourceIssueIds`; the current control plane does not preserve that contract.
+- `POST /api/companies/:companyId/approvals` supports `taskId` or `taskIds`
+- The retired mixed hire endpoint supported `sourceTaskId` or
+  `sourceTaskIds`; the current control plane does not preserve that contract.
 
 Server behavior:
 
 - create approval first
-- insert link rows in `issue_approvals`
+- insert link rows in `task_approvals`
 
 ## 5. UI Plan
 
@@ -183,10 +183,10 @@ Add configuration history panel on `AgentDetail`:
 - diff preview
 - rollback button with confirmation
 
-## 5.2 Approval page and Issue page cross-links
+## 5.2 Approval page and Task page cross-links
 
-- On approval detail: show linked issues with links
-- On issue detail: show linked approvals with links
+- On approval detail: show linked tasks with links
+- On task detail: show linked approvals with links
 - link/unlink actions in board context
 
 ## 5.3 Better comment UX cues
@@ -203,14 +203,14 @@ Add comment standard:
 - Include links for related entities:
   - approval: `/approvals/{id}`
   - agent: `/agents/{id}`
-  - issue: `/issues/{id}`
+  - task: `/tasks/{id}`
 
 ## 6.2 `skills/paperclip-create-agent/SKILL.md`
 
 Require:
 
-- include `sourceIssueId` when hire is created from an issue
-- comment back to issue with markdown + links to approval and pending agent
+- include `sourceTaskId` when hire is created from a task
+- comment back to task with markdown + links to approval and pending agent
 
 ## 7. Implementation Phases
 
@@ -226,22 +226,22 @@ Require:
 - Write-on-change for all relevant agent mutations
 - rollback endpoints + tests
 
-## Phase C: Issue↔Approval linking
+## Phase C: Task↔Approval linking
 
-- Add `issue_approvals`
+- Add `task_approvals`
 - add link APIs + auto-link behavior
-- update approvals/issues UI cross-links
+- update approvals/tasks UI cross-links
 
 ## Phase D: Skill guidance
 
-- update skills for markdown/link expectations and sourceIssue linking
+- update skills for markdown/link expectations and sourceTask linking
 
 ## 8. Acceptance Criteria
 
 - CEO can patch CTO (same company) successfully.
 - Every config change creates a retrievable revision.
 - Rollback restores prior config in one action and creates a new revision record.
-- Issue and approval pages show stable bidirectional links from canonical DB relation.
+- Task and approval pages show stable bidirectional links from canonical DB relation.
 - Agent comments in hiring workflow use markdown and include entity links.
 
 ## 9. Risks and Mitigations

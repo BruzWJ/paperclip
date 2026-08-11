@@ -22,7 +22,7 @@
   vars:
     agentId: agent-coder-01
     companyId: company-eval-01
-    taskId: issue-123
+    taskId: task-123
     wakeReason: timer
     approvalId: ""
   assert:
@@ -38,7 +38,7 @@
   vars:
     agentId: agent-coder-01
     companyId: company-eval-01
-    taskId: issue-456
+    taskId: task-456
     wakeReason: timer
     approvalId: ""
   assert:
@@ -67,14 +67,14 @@
   vars:
     agentId: agent-coder-01
     companyId: company-eval-01
-    taskId: issue-123
+    taskId: task-123
     wakeReason: assignment
     approvalId: ""
   assert:
     - type: contains
       value: checkout
     - type: contains
-      value: "POST /api/issues"
+      value: "POST /api/tasks"
     - type: contains
       value: X-Paperclip-Run-Id
       metric: run_id_header
@@ -83,7 +83,7 @@
   vars:
     agentId: agent-coder-01
     companyId: company-eval-01
-    taskId: issue-conflict
+    taskId: task-conflict
     wakeReason: timer
     approvalId: ""
   assert:

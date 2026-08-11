@@ -2,25 +2,25 @@
 
 Status: current fresh-redesign architecture
 
-Paperclip is a board-operated control plane for issue-backed provider work. It
-owns durable authority, execution admission, audit, costs, and the issue-session
+Paperclip is a board-operated control plane for task-backed provider work. It
+owns durable authority, execution admission, audit, costs, and the task-session
 projection. Providers remain operator-chosen runtimes.
 
 ## Core invariants
 
-1. No model-visible state or provider session crosses issues implicitly.
+1. No model-visible state or provider session crosses tasks implicitly.
 2. With every context dial false, a fresh execution receives exactly the
-   immutable issue request or typed follow-up text.
+   immutable task request or typed follow-up text.
 3. Names, titles, creation order, and organization presentation grant no
    authority.
 4. Provider executions receive no general Paperclip REST credential, caller
    profile, eager context payload, managed instructions, or operational
    Paperclip skill.
-5. The canonical conversation is one issue-scoped Paperclip Session log.
+5. The canonical conversation is one task-scoped Paperclip Session log.
    Provider-native state stays opaque and may be correlated only within one
-   exact issue ownership epoch.
+   exact task ownership epoch.
 6. Every provider invocation starts from a persisted, still-valid
-   issue-execution reference and a compiled run interface.
+   task-execution reference and a compiled run interface.
 7. Paperclip uses only externally provisioned PostgreSQL and evolves its schema
    through ordinary ordered Drizzle migrations.
 8. Human identity has one lifecycle in every environment: Better Auth signup,
@@ -31,7 +31,7 @@ projection. Providers remain operator-chosen runtimes.
 Better Auth is the sole account/session owner. A human board actor always has a
 persisted Better Auth user id and acts through a browser session or a board API
 key derived from that user. Instance roles, company memberships, preferences,
-secrets, issue attribution, and board API keys are authorization/domain records;
+secrets, task attribution, and board API keys are authorization/domain records;
 none creates or substitutes for a user.
 
 Every product entity is company-scoped. An agent stores:
@@ -48,9 +48,9 @@ authentication/configuration is opaque and target-scoped; Paperclip never
 infers, seeds, reads, copies, reconciles, or deletes a provider home or
 credential store.
 
-## Issues and authority
+## Tasks and authority
 
-An ordinary issue has:
+An ordinary task has:
 
 - immutable `request`
 - optional board-editable display `title`
@@ -59,7 +59,7 @@ An ordinary issue has:
 - monotonically increasing ownership epoch
 - lifecycle `open | blocked | done | cancelled`
 - required terminal disposition
-- optional parent issue/Session link
+- optional parent task/Session link
 - project, goal, priority, dependency, document, attachment, and work-product
   metadata
 
@@ -75,7 +75,7 @@ collective-board-owned system-escalation branch is provider-free and commits no
 ref or run. Other owner shapes are rejected without mutation.
 
 The board may edit title metadata, reassign, reopen, and request a fresh
-execution through distinct audited operations. No generic issue
+execution through distinct audited operations. No generic task
 status/description/assignee patch, checkout/release protocol, comment-driven
 reopen, or freeform text routing exists.
 
@@ -83,39 +83,39 @@ reopen, or freeform text routing exists.
 
 Every agent has nine false-by-default context keys:
 
-| Tier | Issue content | Comments | Structured runs |
+| Tier | Task content | Comments | Structured runs |
 | --- | --- | --- | --- |
-| current issue | `carry_context` | `read_issue_comments` | `read_issue_agent_run` |
-| sub-issues | `list_sub_issues` | `read_sub_issue_comments` | `read_sub_issue_agent_run` |
-| company | `list_company_issues` | `read_company_issue_comments` | `read_company_issue_agent_run` |
+| current task | `carry_context` | `read_task_comments` | `read_task_agent_run` |
+| sub-tasks | `list_sub_tasks` | `read_sub_task_comments` | `read_sub_task_agent_run` |
+| company | `list_company_tasks` | `read_company_task_comments` | `read_company_task_agent_run` |
 
 The same keys govern retrieval and fresh-execution composition. During an active
-owner execution, Paperclip automatically grants all current-issue and sub-issue
+owner execution, Paperclip automatically grants all current-task and sub-task
 cells. The three company cells remain exactly the agent's configured grants.
 Consults, non-owners, and restricted execution modes receive no owner baseline;
 false surfaces are absent and undiscoverable.
 
-`carry_context` controls same-issue provider continuity; it never controls what
+`carry_context` controls same-task provider continuity; it never controls what
 Paperclip records. A false-carry execution is always fresh and receives only
-composition authorized by the two current-issue read cells.
+composition authorized by the two current-task read cells.
 
-## Issue-session log
+## Task-session log
 
 Paperclip owns the Session schema, event store, projector, history, runner,
 lowering, revert, and tool-state behavior as first-class
 application architecture. Source-conformance provenance is a development-time
 verification record, never a runtime dependency or connector boundary.
 
-An issue maps to `Session`; a sub-issue maps to a child Session. Typed user,
+A task maps to `Session`; a sub-task maps to a child Session. Typed user,
 synthetic, system, assistant, reasoning, and tool messages are
 stored as validated, secret-redacted PostgreSQL events and projected into
 materialized messages. The chronological comment thread is the human-facing
 projection, not a second conversation store.
 
 Provider-native continuity is represented only by a fixed, encrypted
-`issue-execution-native/v1` correlation envelope keyed to:
+`task-execution-native/v1` correlation envelope keyed to:
 
-`(company, issue, ownership epoch, agent, adapter configuration identity)`
+`(company, task, ownership epoch, agent, adapter configuration identity)`
 
 It is retained only for effective-true-carry work. A mention always creates a
 fresh Paperclip run, but the receiving agent may resume its own compatible ACP
@@ -132,26 +132,26 @@ session remains resumable.
 
 ## Compiled provider interface
 
-The seven possible issue actions are:
+The seven possible task actions are:
 
-- `issue_create`
-- `issue_assign`
-- `issue_update`
+- `task_create`
+- `task_assign`
+- `task_update`
 - `mention_agent`
 - `mention_board`
 - `agent_hire`
 - `agent_configure`
 
-The runtime compiler derives the exact interface from the leased issue
+The runtime compiler derives the exact interface from the leased task
 reference, live owner/creator authority, and context/action/mention grants.
 The four configurable action grants govern
-`issue_create`, `mention_board`, `agent_hire`, and
-`agent_configure`; `issue_create` also enables reassignment of eligible direct
-children created by that exact execution. `issue_update` is relationship-derived
-instead: the current owner omits `issueId` to update its active issue, and the
-exact creator execution supplies an eligible direct-child `issueId`. Both paths
+`task_create`, `mention_board`, `agent_hire`, and
+`agent_configure`; `task_create` also enables reassignment of eligible direct
+children created by that exact execution. `task_update` is relationship-derived
+instead: the current owner omits `taskId` to update its active task, and the
+exact creator execution supplies an eligible direct-child `taskId`. Both paths
 record one canonical comment and automatically mention the owner/creator
-counterpart in that counterpart's issue context. `mention_agent` is dynamically
+counterpart in that counterpart's task context. `mention_agent` is dynamically
 compiled from reachable mention targets (direct children and granted ancestor/
 descendant reach) and does not require a persisted grant. A creator
 path may send a message or set nonterminal `open`/`blocked`; terminal
@@ -161,17 +161,17 @@ configuration targets. There is no implicit response route; explicit upward
 mentions require the ancestor grant. A missing configurable grant means false.
 
 The provider receives a `paperclip.run-tools/v1` endpoint/bearer bound to the
-run, issue, epoch, agent, adapter revision, reference, and lease. It is accepted
+run, task, epoch, agent, adapter revision, reference, and lease. It is accepted
 only by the compiled endpoint and becomes invalid on lease loss or authority
-change. General issue, comment, activity, agent-profile, company, skill, and
+change. General task, comment, activity, agent-profile, company, skill, and
 tool-selector REST routes reject provider credentials.
 
 ## Communication, admission, and recovery
 
-Delegation creates a direct child issue with an explicit owner and immutable
-creator edge. Canonical `issue_update` writes ordered progress or terminal
+Delegation creates a direct child task with an explicit owner and immutable
+creator edge. Canonical `task_update` writes ordered progress or terminal
 disposition as the counterpart-facing chronological comment. A child-owner
-update targets the direct parent, a root-owner update targets the root issue's
+update targets the direct parent, a root-owner update targets the root task's
 Board creator, and a creator-targeted child update targets the child. Both paths
 may carry a message and nonterminal `open`/`blocked` status but cannot mutate
 request, title, owner, dependencies, or metadata. Terminal `done`/`cancelled`
@@ -183,24 +183,24 @@ execution.
 An ordinary human comment is durable and non-dispatching by default. A typed
 mention may invoke only the exact current agent owner and ownership epoch. Prose
 is never parsed as a mention, assignment, approval, or lifecycle operation.
-`mention_agent` atomically records one canonical same-issue comment and admits
+`mention_agent` atomically records one canonical same-task comment and admits
 the recipient's execution reference. It is asynchronous and non-terminal, and
 dispatch begins after the action transaction commits. The recipient's final
 provider response is not automatically relayed; any further communication must
-use `mention_agent`, `mention_board`, or `issue_update`.
+use `mention_agent`, `mention_board`, or `task_update`.
 
 An agent with the explicit `mention_board` action grant may publish a canonical
 comment to collective Board Attention. It atomically commits its non-terminal
-acknowledgement with that request. It does not change issue lifecycle or create
+acknowledgement with that request. It does not change task lifecycle or create
 an approval, review, or execution reference. A later typed Board comment mention to that exact owner
 and ownership epoch supplies the response in a fresh run and removes the request
-from Board Attention. A terminal issue hides the request, and a later reopen
+from Board Attention. A terminal task hides the request, and a later reopen
 does not revive it.
 
 Provider-producing sources—creation, reassignment, the invokable-agent branch
 of audited reopen, typed mention/update, routine/plugin creation, and typed
 system nudge—atomically persist their source, Session input, and
-`IssueExecutionRef` before dispatch. The provider-free reopen branch is valid
+`TaskExecutionRef` before dispatch. The provider-free reopen branch is valid
 only for a named-user or collective-board-owned system escalation and persists
 no ref or run. The internal dispatcher leases only a still-valid persisted
 reference. Worker loss or transient retry re-leases that reference; it never
@@ -208,11 +208,11 @@ fabricates a wake, prompt, Session, or idempotency identity.
 
 There is no generic manual invoke, timer ping, arbitrary wake queue,
 provider-facing wake endpoint, or direct plugin agent session. Scheduled work is
-a routine that creates an ordinary execution issue with explicit request and
+a routine that creates an ordinary execution task with explicit request and
 owner.
 
-Recovery first records a typed system notice on the affected issue. Escalation
-is a distinct root-level issue only after the canonical creator edge is
+Recovery first records a typed system notice on the affected task. Escalation
+is a distinct root-level task only after the canonical creator edge is
 structurally or exhaustively unreceivable. Titles, creation order, and budget
 reranking never select escalation authority.
 
@@ -225,22 +225,22 @@ or plugin transport; a declarative adapter definition receives no process
 callback or alternate remote transport.
 
 Paperclip does not inject an ambient caller profile, working-directory metadata,
-a general REST credential, provider instructions, or another issue's cwd/home
+a general REST credential, provider instructions, or another task's cwd/home
 into a provider child. A canonical source created by an agent-reaching managed
-tool may identify that tool's locked source agent, target issue, and lifecycle
+tool may identify that tool's locked source agent, target task, and lifecycle
 state in its own persisted message envelope. The only Paperclip capability is
 still the compiled run interface. Explicitly selected genuine company skills may
 be materialized for a run but grant no authority.
 
 ## Plugins and routines
 
-Plugins may create callback-bound ordinary issues and receive canonical
+Plugins may create callback-bound ordinary tasks and receive canonical
 lifecycle/comment callbacks. They cannot invoke agents, open provider sessions,
-wake work directly, patch arbitrary issue lifecycle, or impersonate another
+wake work directly, patch arbitrary task lifecycle, or impersonate another
 creator. Managed agents remain ordinary identities and cannot be reclaimed
 after board adoption or termination.
 
-Routine slots create ordinary issues with configured owners and minimal
+Routine slots create ordinary tasks with configured owners and minimal
 immutable requests. Their canonical comment and run history remains the source
 of record; no built-in summarizer agent or draft token stream exists.
 
@@ -248,7 +248,7 @@ of record; no built-in summarizer agent or draft token stream exists.
 
 Company archive and reactivation are ordinary product operations over the
 current schema. Archiving fences new execution and hides the company from normal
-active views while retaining its coherent issue, Session, run, comment,
+active views while retaining its coherent task, Session, run, comment,
 prompt-capability, and audit graph. Reactivation restores availability but starts
 no prior execution. Cancellation-gated hard deletion removes the complete
 company graph atomically.

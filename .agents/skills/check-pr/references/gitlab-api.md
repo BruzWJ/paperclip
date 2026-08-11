@@ -50,7 +50,7 @@ glab api --method PUT \
   --field resolved=true
 ```
 
-There is no batch resolution in GitLab - issue one PUT per discussion.
+There is no batch resolution in GitLab - send one PUT per discussion.
 
 ## Fetch pipeline status for an MR
 

@@ -46,7 +46,7 @@ At runtime, Paperclip resolves the selected secret server-side and injects the
 resolved value under the env key from the binding row. The stored secret name
 can be human-readable; the binding key is what the run process receives.
 
-Project env applies to every issue run in that project. Paperclip injects its
+Project env applies to every task run in that project. Paperclip injects its
 own reserved `PAPERCLIP_*` runtime variables separately.
 
 ## User-Specific Secrets

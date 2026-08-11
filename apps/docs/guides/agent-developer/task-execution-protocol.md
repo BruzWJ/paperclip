@@ -1,23 +1,23 @@
 ---
-title: Issue Execution Protocol
-summary: Step-by-step procedure for a run admitted from an ordinary issue execution
+title: Task Execution Protocol
+summary: Step-by-step procedure for a run admitted from an ordinary task execution
 ---
 
 Paperclip does not ask a provider to poll an assignment inbox. Each provider
-invocation is admitted from one persisted issue-execution reference and is
-already bound to the exact issue, ownership epoch, agent, adapter revision,
+invocation is admitted from one persisted task-execution reference and is
+already bound to the exact task, ownership epoch, agent, adapter revision,
 server-resolved run directory, context policy, configurable action grants, and relationship
 authority.
 
 There is no provider-side identity lookup, assignment search, checkout, generic
-issue PATCH, release, or out-of-band dispatch step.
+task PATCH, release, or out-of-band dispatch step.
 
 ## The procedure
 
 ### 1. Accept the active scope
 
 Use the immutable request and composed context supplied by the runtime. Do not
-look for another assignment or infer authority over a related issue.
+look for another assignment or infer authority over a related task.
 
 An owner execution may publish owner lifecycle/disposition. A non-owner
 mention execution is advisory and cannot do so.
@@ -30,10 +30,10 @@ authorized for this run.
 
 Possible Paperclip tools include:
 
-- bounded context reads: `list_company_issues`, `list_sub_issues`,
-  `read_issue_comments`, and `read_issue_agent_run`
-- issue actions: `issue_update`, `issue_create`, and `issue_assign`
-- canonical same-issue agent mention: `mention_agent`
+- bounded context reads: `list_company_tasks`, `list_sub_tasks`,
+  `read_task_comments`, and `read_task_agent_run`
+- task actions: `task_update`, `task_create`, and `task_assign`
+- canonical same-task agent mention: `mention_agent`
 - collective Board requests: `mention_board`
 - administrator-installed plugin prompt capabilities, when present
 
@@ -44,10 +44,10 @@ generic REST call.
 ### 3. Understand the request
 
 Read only the context needed for the admitted work and available through the
-compiled interface. If the invocation was caused by a creator-targeted issue update, typed
+compiled interface. If the invocation was caused by a creator-targeted task update, typed
 human mention, invokable-agent board reopen, routine, plugin
 callback, or system nudge, the committed source is already represented in the
-issue Session. A board-only system-escalation reopen has no provider request.
+task Session. A board-only system-escalation reopen has no provider request.
 
 ### 4. Do concrete work
 
@@ -55,7 +55,7 @@ Use the current run directory and available prompt capabilities to advance the
 immutable request. Do not stop at a plan unless planning is the requested
 deliverable.
 
-For parallel work, use `issue_create` when present. It creates a direct child
+For parallel work, use `task_create` when present. It creates a direct child
 with an immutable request and explicit owner, then dispatches from a persisted
 reference. The same grant also permits reassignment of eligible direct children
 created by this exact execution. Do not poll the child or dispatch it
@@ -67,12 +67,12 @@ acknowledgement, and is non-terminal. Paperclip dispatches the recipient after
 that action transaction commits.
 
 The recipient's final response is not an implicit reply. Further communication
-must use `mention_agent`, `mention_board`, or `issue_update`; explicit upward
+must use `mention_agent`, `mention_board`, or `task_update`; explicit upward
 mentions require `mention_any_ancestor`.
 
 ### 5. Publish progress or disposition
 
-The current owner updates its active issue with `issue_update`. Omit `issueId`;
+The current owner updates its active task with `task_update`. Omit `taskId`;
 the compiled schema accepts the required `message` and optional `status` or
 `structuredResult`:
 
@@ -104,26 +104,26 @@ When blocked:
 `open`, `blocked`, `done`, and `cancelled` are the canonical lifecycle values.
 Every update requires `message` and may include `status`; `structuredResult` is
 allowed only for a current-owner terminal `done` or `cancelled` update. A
-current owner omits `issueId` for its active issue, while an exact creator
-execution supplies an eligible direct-child `issueId`. A creator-targeted update
+current owner omits `taskId` for its active task, while an exact creator
+execution supplies an eligible direct-child `taskId`. A creator-targeted update
 may send a message or set nonterminal `open`/`blocked`; terminal updates remain
-current-owner-only. A run with neither relationship cannot update that issue.
+current-owner-only. A run with neither relationship cannot update that task.
 Each canonical update is recorded once as the counterpart-facing comment and
-automatically mentions that counterpart in its issue context. Do not send a
+automatically mentions that counterpart in its task context. Do not send a
 separate agent comment for the same update.
 
 ### 6. Return the provider result
 
 Return the best final output available. Paperclip records the normalized
 provider result, structured Session events, tool calls, usage, cost, errors,
-and the durable issue updates made through the compiled interface.
+and the durable task updates made through the compiled interface.
 
 ## Admission and continuity
 
 Productive work is admitted only after a canonical operation commits its
 source and execution reference, including:
 
-- issue creation with an explicit owner
+- task creation with an explicit owner
 - creator-authorized reassignment
 - an explicit typed current-owner mention or creator update
 - the invokable-agent branch of audited board reopen
@@ -134,7 +134,7 @@ provider-free board lifecycle commit and therefore creates no execution ref.
 
 For an effective true-carry owner, eligible inputs may coalesce at safe turn
 boundaries and the validated provider-native handle may resume within the exact
-issue/epoch/agent/revision scope. Every mention creates a fresh Paperclip run,
+task/epoch/agent/revision scope. Every mention creates a fresh Paperclip run,
 but its recipient may resume its own compatible ACP backend session when
 `carry_context` and that exact scope match; the caller's session is never
 shared. False-carry, reassignment, reset, changed-agent, and changed-revision
@@ -146,19 +146,19 @@ agent outside a committed canonical operation.
 ## Liveness and retry
 
 Run status (`queued`, `running`, `succeeded`, `failed`, `timed_out`, or
-`cancelled`) is operational evidence, not issue lifecycle.
+`cancelled`) is operational evidence, not task lifecycle.
 
 Paperclip may classify a provider result for bounded continuation. Continuation
 attempts, process recovery, queue delivery, and provider-native resume are
-separate mechanisms. A continuation never silently marks an issue done,
+separate mechanisms. A continuation never silently marks a task done,
 blocked, or reopened.
 
 ## Critical rules
 
-- Never perform caller-identity lookup or search a generic issue inbox from a provider
+- Never perform caller-identity lookup or search a generic task inbox from a provider
   execution.
-- Never checkout, release, delete, or generically PATCH an issue.
-- Never send generic issue comments; use the compiled action available for the
+- Never checkout, release, delete, or generically PATCH a task.
+- Never send generic task comments; use the compiled action available for the
   current authority.
 - Never invent a target omitted from a compiled schema.
 - Never infer a dispatch from prose. Human dispatch requires an explicit typed

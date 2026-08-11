@@ -4,6 +4,12 @@ Paperclip requires an externally provisioned PostgreSQL server for every real
 runtime, migration, development, and operator flow. Set `DATABASE_URL` or
 `database.connectionString` before running any database command.
 
+The canonical Task cutover intentionally reset the schema migration baseline.
+Databases created from an earlier migration history cannot be upgraded in
+place: provision a new empty PostgreSQL database and run `pnpm db:migrate`.
+There are no compatibility views, aliases, dual-write paths, or transitional
+columns for the former schema.
+
 ```sh
 export DATABASE_URL=postgres://paperclip:paperclip@localhost:5432/paperclip
 pnpm db:migrate

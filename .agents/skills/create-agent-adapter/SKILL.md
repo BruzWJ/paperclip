@@ -62,7 +62,7 @@ Never add:
 - model/session CLI flags, `_meta` config, or config fallbacks;
 - login/quota probes, credential fields, auth copyback, or home mutation;
 - adapter-owned MCP/tool injection or Paperclip REST credentials;
-- issue, run, Session, agent, company, workspace, or ACP-session selectors.
+- task, run, Session, agent, company, workspace, or ACP-session selectors.
 
 The common official-SDK ACP client owns initialize, new/resume, stable session
 configuration, MCP replacement, prompt, updates, cancellation, and subprocess

@@ -136,7 +136,7 @@ paperclip-ext/<environment>/<company-id>/user-secrets/<definition-key>/<opaque-o
 
 Paperclip stores the external ref and provider version as metadata. Treat those
 fields as secret-adjacent: they must be redacted from comments, activity logs,
-run transcripts, issue documents, and broad board views unless a route is
+run transcripts, task documents, and broad board views unless a route is
 explicitly designed to show sanitized provider metadata.
 
 ## IAM And KMS Assumptions

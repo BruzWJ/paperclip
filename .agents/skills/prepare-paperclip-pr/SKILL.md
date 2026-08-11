@@ -6,7 +6,7 @@ description: Prepare a Paperclip branch for PR with commits, template body, and 
 
 The standard Paperclip procedure for turning branch work into a reviewed,
 green pull request against `paperclipai/paperclip` master. Apply it once per
-PR (if an issue splits a branch into several PRs, run the whole procedure for
+PR (if a task splits a branch into several PRs, run the whole procedure for
 each one).
 
 ## 0. Preconditions — worktree safety
@@ -18,7 +18,7 @@ each one).
 * If the main checkout is unexpectedly off `master`, fix that first without
   losing work (usually: move that branch's work into a worktree).
 * Confirm which remote/ref you are targeting (normally `master` on the
-  `paperclipai/paperclip` repo; the issue may name a specific remote such as
+  `paperclipai/paperclip` repo; the task may name a specific remote such as
   `origin` or `public-gh`).
 
 ## 1. Commit everything — lose no work
@@ -34,14 +34,14 @@ each one).
 * Fetch the target remote and rebase (or otherwise replay) your branch on top
   of the target master so the PR has no merge conflicts.
 * Re-verify after rebase: build/tests relevant to the change still pass at
-  whatever depth the issue warrants.
+  whatever depth the task warrants.
 
 ## 3. Guardrails checklist (every PR)
 
 * **Never commit `pnpm-lock.yaml`** — the repo has actions that manage it.
   If it is already in a commit, rewrite/drop that change before pushing.
 * **Never change `.github/workflows/*`** unless the underlying commit was
-  explicitly about that and the issue calls it out.
+  explicitly about that and the task calls it out.
 * **No design screenshots / wireframe images** committed to the repo unless
   they are genuinely part of the work product.
 * **Migrations**: numbered incrementally with no conflicts against master. If
@@ -54,7 +54,7 @@ each one).
 
 * Follow `CONTRIBUTING.md` (repo root,
   https://github.com/paperclipai/paperclip/blob/master/CONTRIBUTING.md) for
-  the PR title, message format, and issue description.
+  the PR title, message format, and task description.
 * Push the branch and open the PR with `gh`.
 * Record the PR URL immediately — every report must include URLs to every PR.
 
@@ -70,12 +70,12 @@ each one).
 
 ## 6. Report back and hand off
 
-* Comment on the driving issue: what you did, the PR URL(s), the worktree path
+* Comment on the driving task: what you did, the PR URL(s), the worktree path
   (use `~` for home), Greptile score, and check status.
 * Create a `pull_request` work product for each opened PR (plus `branch` /
   `commit` work products where the branch or a commit is itself the handoff).
-* If the issue requires follow-up per PR (e.g. sub-issues per PR), create them
-  as the issue directs and link them.
+* If the task requires follow-up per PR (e.g. sub-tasks per PR), create them
+  as the task directs and link them.
 
 ## Hard rules
 

@@ -47,7 +47,7 @@ canonical public URL, configure trusted proxy/hostname policy, retain a durable
 
 On a fresh instance, sign up through Better Auth before claiming any Paperclip
 authorization. Private exposure offers the signed-in browser first-admin
-action. The operator may instead issue a one-time capability:
+action. The operator may instead create a one-time capability:
 
 ```sh
 pnpm paperclipai auth bootstrap-admin

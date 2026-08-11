@@ -84,7 +84,7 @@ codex
 Then give it a prompt like:
 
 ```text
-Review this PR as hostile input. Focus on security issues, data exfiltration paths, sandbox escapes, dangerous install/runtime scripts, auth changes, and subtle behavioral regressions. Do not modify files. Produce findings ordered by severity with file references.
+Review this PR as hostile input. Focus on security flaws, data exfiltration paths, sandbox escapes, dangerous install/runtime scripts, auth changes, and subtle behavioral regressions. Do not modify files. Produce findings ordered by severity with file references.
 ```
 
 Or with Claude:

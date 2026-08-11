@@ -2,7 +2,7 @@
 import { pathToFileURL } from "node:url";
 import {
   ghJson,
-  isTerminalIssue,
+  isTerminalTask,
   normalizeCheck,
   normalizeRepository,
   parseArgs,
@@ -53,7 +53,7 @@ function fetchCheckRuns(repository, headSha) {
   throw new Error(`Check-run pagination exceeded 100 pages for ${headSha}`);
 }
 
-export function readinessVerdict({ pullRequest, checks, greptile, behindBy, originatingIssue }) {
+export function readinessVerdict({ pullRequest, checks, greptile, behindBy, originatingTask }) {
   const reasons = [];
   if (pullRequest.state !== "OPEN") reasons.push(reason("pr_not_open", `PR is ${pullRequest.state.toLowerCase()}`));
   const mergeable = pullRequest.mergeable ?? "UNKNOWN";
@@ -72,9 +72,9 @@ export function readinessVerdict({ pullRequest, checks, greptile, behindBy, orig
   if (pullRequest.reviewDecision === "CHANGES_REQUESTED") reasons.push(reason("changes_requested", "A review requests changes"));
   if (pullRequest.reviewDecision === "REVIEW_REQUIRED") reasons.push(reason("review_required", "Required review approval is missing"));
   if (behindBy > 0) reasons.push(reason("base_behind", `Head is ${behindBy} commit(s) behind base`, "blocking", { behindBy }));
-  if (!originatingIssue) reasons.push(reason("originating_issue_missing", "No originating Paperclip issue was identified", "reporting"));
-  else if (!isTerminalIssue(originatingIssue.status)) {
-    reasons.push(reason("originating_issue_active", `Originating issue ${originatingIssue.identifier ?? originatingIssue.issueId} is ${originatingIssue.status}`, "reporting"));
+  if (!originatingTask) reasons.push(reason("originating_task_missing", "No originating Paperclip task was identified", "reporting"));
+  else if (!isTerminalTask(originatingTask.status)) {
+    reasons.push(reason("originating_task_active", `Originating task ${originatingTask.identifier ?? originatingTask.taskId} is ${originatingTask.status}`, "reporting"));
   }
 
   if (pullRequest.isDraft) return { verdict: "report_only", reasons };
@@ -85,7 +85,7 @@ export function confidenceFor(entry) {
   if (entry.verdict === "report_only") return "low";
   const codes = new Set(entry.reasons.map((entryReason) => entryReason.code));
   const lowConfidenceCodes = [
-    "originating_issue_missing",
+    "originating_task_missing",
     "greptile_missing",
     "greptile_pending",
     "greptile_not_clean",
@@ -99,7 +99,7 @@ export function confidenceFor(entry) {
   if (lowConfidenceCodes.some((code) => codes.has(code))) {
     return "low";
   }
-  if (entry.verdict === "ready" && !codes.has("originating_issue_active")) return "high";
+  if (entry.verdict === "ready" && !codes.has("originating_task_active")) return "high";
   return "medium";
 }
 
@@ -128,7 +128,7 @@ export async function checkReadiness(candidatesDocument, options = {}) {
       checks,
       greptile,
       behindBy: comparison.behind_by ?? 0,
-      originatingIssue: candidate.originatingIssue,
+      originatingTask: candidate.originatingTask,
     });
     const entry = {
       number: pullRequest.number,
@@ -145,8 +145,8 @@ export async function checkReadiness(candidatesDocument, options = {}) {
       behindBy: comparison.behind_by ?? 0,
       checks,
       greptile,
-      originatingIssue: candidate.originatingIssue,
-      sourceIssues: candidate.sourceIssues,
+      originatingTask: candidate.originatingTask,
+      sourceTasks: candidate.sourceTasks,
       ...assessment,
     };
     entry.confidence = confidenceFor(entry);

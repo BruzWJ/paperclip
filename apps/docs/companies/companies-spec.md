@@ -7,9 +7,9 @@ Version: `agentcompanies/v1-draft`
 ## 1. Purpose
 
 An Agent Company package is a filesystem- and GitHub-native format for
-describing a company, team, configured agent identity, project, starter issue,
+describing a company, team, configured agent identity, project, starter task,
 and associated skills using Markdown files with YAML frontmatter. The portable
-filename is `ISSUE.md`; Paperclip imports it as a canonical issue.
+filename is `TASK.md`; Paperclip imports it as a canonical task.
 
 This specification is an extension of the Agent Skills specification, not a replacement for it.
 
@@ -46,7 +46,7 @@ A package root is identified by one primary markdown file:
 - `TEAM.md` for a team package
 - `AGENTS.md` for an agent package
 - `PROJECT.md` for a project package
-- `ISSUE.md` for a portable starter-issue package
+- `TASK.md` for a portable starter-task package
 - `SKILL.md` for a skill package defined by the Agent Skills specification
 
 A GitHub repo may contain one package at root or many packages in subdirectories.
@@ -60,14 +60,14 @@ COMPANY.md
 TEAM.md
 AGENTS.md
 PROJECT.md
-ISSUE.md
+TASK.md
 SKILL.md
 
 agents/<slug>/AGENTS.md
 teams/<slug>/TEAM.md
 projects/<slug>/PROJECT.md
-projects/<slug>/issues/<slug>/ISSUE.md
-issues/<slug>/ISSUE.md
+projects/<slug>/tasks/<slug>/TASK.md
+tasks/<slug>/TASK.md
 skills/<slug>/SKILL.md
 .paperclip.yaml
 
@@ -89,7 +89,7 @@ Package docs may support these fields:
 
 ```yaml
 schema: agentcompanies/v1
-kind: company | team | agent | project | issue
+kind: company | team | agent | project | task
 slug: my-slug
 name: Human Readable Name
 description: Short description
@@ -149,7 +149,7 @@ requirements:
 - local package contents should be discovered implicitly by folder convention
 - `includes` is optional and should be used mainly for external refs or nonstandard locations
 - included items may be local or external references
-- `COMPANY.md` may include agents directly, teams, projects, issues, or skills
+- `COMPANY.md` may include agents directly, teams, projects, tasks, or skills
 - a company importer may render `includes` as the tree/checkbox import UI
 
 ## 7. TEAM.md
@@ -240,15 +240,15 @@ owner: engineering-lead
 
 ### Semantics
 
-- a project package groups related starter issues and supporting markdown
+- a project package groups related starter tasks and supporting markdown
 - `owner` should reference an agent slug when there is a clear project owner
-- a conventional `issues/` subfolder should be discovered implicitly
-- `includes` may contain `ISSUE.md`, `SKILL.md`, or supporting docs when explicit wiring is needed
-- project packages are intended to seed planned work, not represent runtime issue state
+- a conventional `tasks/` subfolder should be discovered implicitly
+- `includes` may contain `TASK.md`, `SKILL.md`, or supporting docs when explicit wiring is needed
+- project packages are intended to seed planned work, not represent runtime task state
 
-## 10. ISSUE.md
+## 10. TASK.md
 
-`ISSUE.md` is the external package name for a lightweight starter issue.
+`TASK.md` is the external package name for a lightweight starter task.
 
 ### Example
 
@@ -261,19 +261,19 @@ recurring: true
 
 ### Semantics
 
-- body content is the issue's canonical immutable `request`
+- body content is the task's canonical immutable `request`
 - `owner` is required and references an agent slug inside the package
-- `project` should reference a project slug when the issue belongs to a `PROJECT.md`
-- `recurring: true` marks the issue as ongoing recurring work instead of a one-time starter issue
-- starter issues are intentionally basic: title, immutable request, explicit
+- `project` should reference a project slug when the task belongs to a `PROJECT.md`
+- `recurring: true` marks the task as ongoing recurring work instead of a one-time starter task
+- starter tasks are intentionally basic: title, immutable request, explicit
   agent owner, project linkage, and optional `recurring: true`
 - tools may also support optional fields like `priority`, `labels`, or `metadata`, but they should not require them in the base package
 
-### Recurring Issues
+### Recurring Tasks
 
-- the base package only needs to say whether an issue is recurring
+- the base package only needs to say whether a task is recurring
 - vendors may attach the actual schedule / trigger / runtime fidelity in a vendor extension such as `.paperclip.yaml`
-- this keeps `ISSUE.md` portable while still allowing richer runtime systems to round-trip their own automation details
+- this keeps `TASK.md` portable while still allowing richer runtime systems to round-trip their own automation details
 - legacy packages may still use `schedule.recurrence` during transition, but exporters should prefer `recurring: true`
 
 Example Paperclip extension:
@@ -287,7 +287,7 @@ routines:
         timezone: America/Chicago
 ```
 
-- vendors should ignore unknown recurring-issue extensions they do not understand
+- vendors should ignore unknown recurring-task extensions they do not understand
 - vendors importing legacy `schedule.recurrence` data may translate it into their own runtime trigger model, but new exports should prefer the simpler `recurring: true` base field
 
 ## 11. SKILL.md Compatibility
@@ -404,7 +404,7 @@ A package importer should build a graph from:
 - `TEAM.md`
 - `AGENTS.md`
 - `PROJECT.md`
-- `ISSUE.md`
+- `TASK.md`
 - `SKILL.md`
 - local and external refs
 
@@ -414,8 +414,8 @@ Suggested import UI behavior:
 - checkbox at entity level, not raw file level
 - selecting an agent auto-selects required docs and referenced skills
 - selecting a team auto-selects its subtree
-- selecting a project auto-selects its included issues
-- selecting a recurring issue should make it clear that the import target is a routine / automation, not a one-time issue
+- selecting a project auto-selects its included tasks
+- selecting a recurring task should make it clear that the import target is a routine / automation, not a one-time task
 - selecting referenced third-party content shows attribution, license, and fetch policy
 
 ## 15. Vendor Extensions
@@ -436,7 +436,7 @@ Example uses:
 - permissions
 - budgets
 - approval policies
-- issue Paperclip-only metadata
+- task Paperclip-only metadata
 
 Rules:
 
@@ -498,8 +498,8 @@ A compliant exporter should:
 - omit machine-local ids and timestamps
 - omit secret values
 - omit machine-specific paths
-- preserve immutable issue requests, explicit owners, and recurring
-  declarations when exporting `ISSUE.md`
+- preserve immutable task requests, explicit owners, and recurring
+  declarations when exporting `TASK.md`
 - omit empty/default fields
 - default to the vendor-neutral base package
 - Paperclip exporters should emit `.paperclip.yaml` as a sidecar by default
@@ -548,8 +548,8 @@ Paperclip can map this spec to its runtime model like this:
   - `TEAM.md` -> importable org subtree
   - `AGENTS.md` -> agent identity, direct reporting edge, and explicit skill selections
   - `PROJECT.md` -> starter project definition
-  - `ISSUE.md` -> starter issue definition with immutable request and explicit
-    agent owner, or recurring issue template when `recurring: true`
+  - `TASK.md` -> starter task definition with immutable request and explicit
+    agent owner, or recurring task template when `recurring: true`
   - `SKILL.md` -> imported skill package
   - `sources[]` -> provenance and pinned upstream refs
 - Paperclip extension:
@@ -584,13 +584,13 @@ lean-dev-shop/
 ├── projects/
 │   └── q2-launch/
 │       ├── PROJECT.md
-│       └── issues/
+│       └── tasks/
 │           └── monday-review/
-│               └── ISSUE.md
+│               └── TASK.md
 ├── teams/
 │   └── engineering/TEAM.md
-├── issues/
-│   └── weekly-review/ISSUE.md
+├── tasks/
+│   └── weekly-review/TASK.md
 └── skills/
     └── review/SKILL.md
 

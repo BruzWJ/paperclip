@@ -14,7 +14,7 @@ Use it when you need to:
 
 | File | Role |
 |---|---|
-| `apps/docs/companies/companies-spec.md` | **Normative spec** — defines the markdown-first package format (COMPANY.md, TEAM.md, AGENTS.md, PROJECT.md, ISSUE.md, SKILL.md), reserved files, frontmatter schemas, and vendor extension conventions (`.paperclip.yaml`). |
+| `apps/docs/companies/companies-spec.md` | **Normative spec** — defines the markdown-first package format (COMPANY.md, TEAM.md, AGENTS.md, PROJECT.md, TASK.md, SKILL.md), reserved files, frontmatter schemas, and vendor extension conventions (`.paperclip.yaml`). |
 | `doc/plans/2026-03-13-company-import-export-v2.md` | Implementation plan for the markdown-first package model cutover — phases, API changes, UI plan, and rollout strategy. |
 | `doc/SPEC-implementation.md` | V1 implementation contract; references the portability system and `.paperclip.yaml` sidecar format. |
 | `doc/plans/2026-02-16-module-system.md` | Module system plan; JSON-only company template sections superseded by the markdown-first model. |
@@ -26,7 +26,7 @@ These define the contract between server, CLI, and UI.
 
 | File | What it defines |
 |---|---|
-| `packages/shared/src/types/company-portability.ts` | TypeScript interfaces: `CompanyPortabilityManifest`, `CompanyPortabilityFileEntry`, `CompanyPortabilityEnvInput`, export/import/preview request and result types, manifest entry types for agents, skills, projects, issues, recurring routines, companies. |
+| `packages/shared/src/types/company-portability.ts` | TypeScript interfaces: `CompanyPortabilityManifest`, `CompanyPortabilityFileEntry`, `CompanyPortabilityEnvInput`, export/import/preview request and result types, manifest entry types for agents, skills, projects, tasks, recurring routines, companies. |
 | `packages/shared/src/validators/company-portability.ts` | Zod schemas for all portability request/response shapes — used by both server routes and CLI. |
 | `packages/shared/src/types/index.ts` | Re-exports portability types. |
 | `packages/shared/src/validators/index.ts` | Re-exports portability validators. |
@@ -35,8 +35,8 @@ These define the contract between server, CLI, and UI.
 
 | File | Responsibility |
 |---|---|
-| `apps/server/src/services/company-portability.ts` | **Core portability service.** Export (manifest generation, markdown file emission, `.paperclip.yaml` sidecars), import (graph resolution, collision handling, entity creation), preview (planned-action summary). Handles skill key derivation, recurring issue <-> routine mapping, recurrence validation, and package README generation. References `agentcompanies/v1` version string. |
-| `apps/server/src/services/routines.ts` | Paperclip routine runtime service. Portability exports routines as recurring `ISSUE.md` entries and imports recurring issues back through this service. |
+| `apps/server/src/services/company-portability.ts` | **Core portability service.** Export (manifest generation, markdown file emission, `.paperclip.yaml` sidecars), import (graph resolution, collision handling, entity creation), preview (planned-action summary). Handles skill key derivation, recurring task <-> routine mapping, recurrence validation, and package README generation. References `agentcompanies/v1` version string. |
+| `apps/server/src/services/routines.ts` | Paperclip routine runtime service. Portability exports routines as recurring `TASK.md` entries and imports recurring tasks back through this service. |
 | `apps/server/src/services/company-export-readme.ts` | Generates `README.md` and Mermaid org-chart for exported company packages. |
 | `apps/server/src/services/index.ts` | Re-exports `companyPortabilityService`. |
 
@@ -59,7 +59,7 @@ Route registration lives in `apps/server/src/app.ts` via `companyRoutes(db, stor
 
 | File | Commands |
 |---|---|
-| `packages/cli/src/commands/client/company.ts` | `company export` — exports a company package to disk (flags: `--out`, `--include`, `--projects`, `--issues`, `--projectIssues`).<br>`company import <fromPathOrUrl>` — imports a company package from a file or folder (flags: positional source path/URL or GitHub shorthand, `--include`, `--target`, `--companyId`, `--newCompanyName`, `--agents`, `--collision`, `--ref`, `--dryRun`).<br>Reads/writes portable file entries and handles `.paperclip.yaml` filtering. |
+| `packages/cli/src/commands/client/company.ts` | `company export` — exports a company package to disk (flags: `--out`, `--include`, `--projects`, `--tasks`, `--projectTasks`).<br>`company import <fromPathOrUrl>` — imports a company package from a file or folder (flags: positional source path/URL or GitHub shorthand, `--include`, `--target`, `--companyId`, `--newCompanyName`, `--agents`, `--collision`, `--ref`, `--dryRun`).<br>Reads/writes portable file entries and handles `.paperclip.yaml` filtering. |
 
 ## 7. UI — Pages
 
@@ -102,7 +102,7 @@ Route registration lives in `apps/server/src/app.ts` via `companyRoutes(db, stor
 | `COMPANY.md` frontmatter & body | `company-portability.ts` (export emitter + import parser) |
 | `AGENTS.md` frontmatter & body | `company-portability.ts` |
 | `PROJECT.md` frontmatter & body | `company-portability.ts` |
-| `ISSUE.md` frontmatter & body | `company-portability.ts` |
+| `TASK.md` frontmatter & body | `company-portability.ts` |
 | `SKILL.md` packages | `company-portability.ts`, `company-skills.ts` |
 | `.paperclip.yaml` vendor sidecar | `company-portability.ts`, `routines.ts`, `CompanyExport.tsx`, `company.ts` (CLI) |
 | `manifest.json` | `company-portability.ts` (generation), shared types (schema) |

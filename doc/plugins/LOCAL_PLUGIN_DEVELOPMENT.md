@@ -6,7 +6,7 @@ For the full alpha surface — manifest fields, capabilities, managed agents/pro
 
 If your plugin has background-like recurring work, model it as managed resources:
 declare managed routines plus managed agents/projects/skills, then reconcile those
-resources in worker actions. This gives operators visible work items, budgets,
+resources in worker actions. This gives operators visible tasks, budgets,
 pause controls, and consistent audits instead of hidden daemon behavior.
 
 ## Prerequisites
@@ -153,7 +153,7 @@ So the API URL is explicit and overridable — the gap was never that you *could
 ### Run the branch service and install into it
 
 ```bash
-# 1. From the branch checkout (e.g. an issue worktree), run that branch's server.
+# 1. From the branch checkout (e.g. a task worktree), run that branch's server.
 #    Pick a port that does not collide with any control-plane instance.
 PAPERCLIP_SERVER_PORT=3120 pnpm dev          # or: pnpm paperclipai run
 
@@ -229,7 +229,7 @@ When you are done iterating locally, publish the package and reinstall the npm-p
 - **Install an in-repo plugin from the board:** On a source checkout, open **Instance settings → Plugins** as an instance admin. The available list includes plugin packages under `packages/plugins/`; selecting **Install** builds that exact workspace package and installs its canonical local path. SDK and scaffolding packages are excluded because they do not declare `paperclipPlugin.manifest`.
 - **Inspect installed plugins:** `paperclipai plugin list` and `paperclipai plugin inspect <plugin-installation-id>` report the packages this instance actually installed.
 - **Go deeper:** [`PLUGIN_AUTHORING_GUIDE.md`](./PLUGIN_AUTHORING_GUIDE.md) covers worker capabilities, managed agents/projects/routines/skills, plugin database namespaces, scoped API routes, and the shared UI components in `@paperclipai/plugin-sdk/ui`. [`PLUGIN_SPEC.md`](./PLUGIN_SPEC.md) is the longer-form specification, including future ideas that are not yet implemented.
-- **Routine-first automation:** If your plugin should produce periodic issue work, prefer managed routines and `ctx.routines.managed` reconciliation over custom process loops or unobserved cron code.
+- **Routine-first automation:** If your plugin should produce periodic task work, prefer managed routines and `ctx.routines.managed` reconciliation over custom process loops or unobserved cron code.
 
 ## Troubleshooting
 

@@ -1,6 +1,6 @@
 ---
 title: Architecture
-summary: Stack overview, issue-execution flow, and adapter model
+summary: Stack overview, task-execution flow, and adapter model
 ---
 
 Paperclip is a TypeScript monorepo built around a PostgreSQL control plane.
@@ -10,13 +10,13 @@ Paperclip is a TypeScript monorepo built around a PostgreSQL control plane.
 ```text
 ┌───────────────────────────────────────────┐
 │ React UI + CLI                            │
-│ Board control, issue/session inspection  │
+│ Board control, task/session inspection  │
 ├───────────────────────────────────────────┤
 │ Express API + runtime services            │
-│ Auth, issue authority, dispatcher, run interface │
+│ Auth, task authority, dispatcher, run interface │
 ├───────────────────────────────────────────┤
 │ PostgreSQL + Drizzle                      │
-│ Issues, Sessions, refs, runs, audit       │
+│ Tasks, Sessions, refs, runs, audit       │
 ├───────────────────────────────────────────┤
 │ ACPX public-runtime bounded prompt bridge │
 │ Dynamic local CLI discovery + execution  │
@@ -49,11 +49,11 @@ repository-internal specifications, runbooks, design records, and plans.
 The orchestration smoke fixture under `packages/plugins/examples/` is
 intentionally standalone rather than a pnpm root workspace.
 
-## Canonical Issue-Execution Flow
+## Canonical Task-Execution Flow
 
-1. An authorized source creates or updates an ordinary issue through a
+1. An authorized source creates or updates an ordinary task through a
    transaction that records the immutable causal input.
-2. The dispatcher admits an `IssueExecutionRef` for the exact issue, ownership
+2. The dispatcher admits an `TaskExecutionRef` for the exact task, ownership
    epoch, owner, adapter revision, mode, and source.
 3. The context resolver computes effective grants and an immutable composition
    view. Context that is not granted is absent.
@@ -71,23 +71,23 @@ intentionally standalone rather than a pnpm root workspace.
    Projectors derive comments, lifecycle outcomes, costs, and audit views.
 8. Worker loss or a retryable failure re-leases the existing valid ref. It
    never fabricates a generic wake, agent-wide session, or singleton run link
-   on the issue.
+   on the task.
 
 Routines, plugin work, mentions, creator updates, and system nudges all enter
 this same flow. There is no direct agent invoke/heartbeat endpoint, static
-Paperclip MCP, provider-held Paperclip credential, issue checkout, or agent
+Paperclip MCP, provider-held Paperclip credential, task checkout, or agent
 polling loop.
 
 ## Session and Continuity Model
 
-Each issue has one Session graph. Paperclip may retain a provider's opaque
-native handle only for the same issue, ownership epoch, agent, and immutable
+Each task has one Session graph. Paperclip may retain a provider's opaque
+native handle only for the same task, ownership epoch, agent, and immutable
 adapter revision when the effective `carry_context` grant is true. Reassignment,
 revision change, or a false grant prevents reuse and never authorizes a
 replacement session for later work.
 
 Provider-native storage remains opaque and provider-owned. Paperclip stores no
-model-visible cross-issue continuity state and never selects a handle from another issue.
+model-visible cross-task continuity state and never selects a handle from another task.
 
 ## ACP Backend Model
 
@@ -106,13 +106,13 @@ prompt/model/tool/history harness.
 Paperclip owns durable authority, request MCP, redacted projection, and
 accounting.
 The current public ACPX runtime launches the provider CLI locally in the exact
-working directory authorized for the issue. Generic process, HTTP, gateway,
+working directory authorized for the task. Generic process, HTTP, gateway,
 raw-provider, or provider-specific execution adapters do not exist.
 
 ## Key Invariants
 
-- Every provider attempt belongs to an admitted issue-execution ref.
-- Issue creator and request are immutable; ownership changes advance the epoch.
+- Every provider attempt belongs to an admitted task-execution ref.
+- Task creator and request are immutable; ownership changes advance the epoch.
 - Agent org position, title, or creation order grants no authority.
 - Context and actions are explicit and evaluated independently.
 - The provider never receives generic Paperclip API credentials or ambient

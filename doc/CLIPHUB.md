@@ -1,14 +1,14 @@
 # ClipHub — The Company Registry
 
 > Historical concept document. Any future registry artifact must use ordinary
-> agent identities, explicit grants/selections, canonical issue
+> agent identities, explicit grants/selections, canonical task
 > request/creator/owner fields, and the data-only ACP adapter contract. It may
 > not publish Paperclip-managed instructions, provider credentials, launch
 > commands, endpoints, or legacy adapter configuration.
 
 **Download a company.**
 
-ClipHub is the public registry where people share, discover, and download Paperclip company configurations. A company template is a portable artifact containing an entire org — ordinary agent identities, reporting structure, explicit grants and selections, approved adapter revisions, and seed issues — ready to spin up with one command.
+ClipHub is the public registry where people share, discover, and download Paperclip company configurations. A company template is a portable artifact containing an entire org — ordinary agent identities, reporting structure, explicit grants and selections, approved adapter revisions, and seed tasks — ready to spin up with one command.
 
 ---
 
@@ -32,10 +32,10 @@ A ClipHub package is a **company template export** — the portable artifact for
 | **Org chart** | Full reporting hierarchy — who reports to whom |
 | **Agent definitions** | Every agent: name, optional title, capabilities, reporting edge, and explicit context/action selections |
 | **ACP adapter revisions** | Exact approved adapter type plus its closed non-secret stable ACP option values and execution-target selection |
-| **Seed issues** | Optional starter issues and initiatives to bootstrap the company's first run |
+| **Seed tasks** | Optional starter tasks and initiatives to bootstrap the company's first run |
 | **Budget defaults** | Suggested token/cost budgets per agent and per company |
 
-Templates are **structure, not state.** No in-progress issues, no historical cost data, no runtime artifacts. Just the blueprint.
+Templates are **structure, not state.** No in-progress tasks, no historical cost data, no runtime artifacts. Just the blueprint.
 
 ### Sub-packages
 
@@ -79,7 +79,7 @@ Clicking into a company template shows:
 - **Full description** — what this company does, how it operates, what to expect
 - **Interactive org chart** — visual tree of every agent with name, optional title, and capabilities
 - **Agent list** — expandable details for each agent (approved adapter type, non-secret option summary, capabilities)
-- **Seed issues** — the starter initiatives and issues included
+- **Seed tasks** — the starter initiatives and tasks included
 - **Budget overview** — suggested cost structure
 - **Install command** — one-line CLI command to download and create
 - **Version history** — changelog, semver, previous versions available
@@ -96,7 +96,7 @@ paperclip install cliphub:<publisher>/<company-slug>
 Downloads the template and creates a new company in your Paperclip instance.
 You authenticate each selected AI CLI through its native login on the chosen
 execution target, confirm the exact approved adapter/model selections, set
-budgets, customize agents, and start ordinary issue work. ClipHub never carries
+budgets, customize agents, and start ordinary task work. ClipHub never carries
 provider credentials or makes an omitted adapter resolve to a default.
 
 **Fork:**
@@ -275,7 +275,7 @@ Report
 3. Read the description, inspect the org chart, check the comments
 4. Run `paperclipai install cliphub:acme/lean-saas-shop`
 5. Paperclip creates the company locally with all agents pre-configured
-6. Complete each selected CLI's native login on its execution target, confirm adapter/model selections, adjust budgets, and add initial issues
+6. Complete each selected CLI's native login on its execution target, confirm adapter/model selections, adjust budgets, and add initial tasks
 7. Hit go
 
 ### "I built something great and want to share it"

@@ -21,20 +21,20 @@ Authorization: Bearer <token>
 
 Supported control-plane credentials are:
 
-- **Board API keys** — long-lived keys issued to a concrete board user
+- **Board API keys** — long-lived keys granted to a concrete board user
 - **User session cookies** — board operators using the web UI
 
 Loopback and private-network deployments use the same Better Auth sessions as
 public deployments; none supplies an implicit operator. A provider run instead
 receives a short-lived `paperclip.run-tools/v1` bearer bound to one leased
-issue-execution reference. That bearer is accepted only by the compiled
+task-execution reference. That bearer is accepted only by the compiled
 run-tools endpoint and is rejected by the general REST API.
 
 ## Request Format
 
 - All request bodies are JSON with `Content-Type: application/json`
 - Company-scoped endpoints require `:companyId` in the path
-- Provider-side issue actions are submitted through the compiled run-tools interface rather than these generic REST endpoints
+- Provider-side task actions are submitted through the compiled run-tools interface rather than these generic REST endpoints
 
 ## Response Format
 
@@ -60,7 +60,7 @@ All responses return JSON. Successful responses return the entity directly. Erro
 
 ## Pagination
 
-List endpoints support standard pagination query parameters when applicable. Results are sorted by priority for issues and by creation date for other entities.
+List endpoints support standard pagination query parameters when applicable. Results are sorted by priority for tasks and by creation date for other entities.
 
 ## Rate Limiting
 

@@ -48,7 +48,7 @@ Do not skip this step. Use AskUserQuestion to align with the user before writing
 - Whether this is a full company (needs a CEO) or a team/department (no CEO required)
 - Any specific skills the agents should have
 - How work flows through the organization (see "Workflow" below)
-- Whether they want projects and starter issues
+- Whether they want projects and starter tasks
 
 **For from-repo companies**, present your analysis and ask:
 
@@ -62,7 +62,7 @@ Do not skip this step. Use AskUserQuestion to align with the user before writing
 
 A company is not just a list of agents with skills. It's an organization that takes ideas and turns them into work products. You need to understand the workflow so each agent knows:
 
-- Who gives them work and in what form (an issue, a branch, a question, a review request)
+- Who gives them work and in what form (a task, a branch, a question, a review request)
 - What they do with it
 - Who they hand off to when they're done, and what that handoff looks like
 - What "done" means for their role
@@ -112,8 +112,8 @@ Create the directory structure and all files. Follow the spec's conventions exac
 │   └── <slug>/TEAM.md        (if teams are needed)
 ├── projects/
 │   └── <slug>/PROJECT.md     (if projects are needed)
-├── issues/
-│   └── <slug>/ISSUE.md       (if issues are needed)
+├── tasks/
+│   └── <slug>/TASK.md       (if tasks are needed)
 ├── skills/
 │   └── <slug>/SKILL.md       (if custom skills are needed)
 └── .paperclip.yaml            (Paperclip vendor extension)
@@ -141,7 +141,7 @@ Create the directory structure and all files. Follow the spec's conventions exac
 
 Each AGENTS.md body should include not just what the agent does, but how they fit into the organization's workflow. Include:
 
-1. **Where work comes from** — "You receive feature ideas from the user" or "You pick up issues assigned to you by the CTO"
+1. **Where work comes from** — "You receive feature ideas from the user" or "You pick up tasks assigned to you by the CTO"
 2. **What you produce** — "You produce a technical plan with architecture diagrams" or "You produce a reviewed, approved branch ready for shipping"
 3. **Who you hand off to** — "When your plan is locked, hand off to the Staff Engineer for implementation" or "When review passes, hand off to the Release Engineer to ship"
 4. **What triggers you** — "You are activated when a new feature idea needs product-level thinking" or "You are activated when a branch is ready for pre-landing review"
@@ -152,7 +152,7 @@ Add a concise execution contract to every generated working agent:
 
 - Start actionable work in the same heartbeat and do not stop at a plan unless planning was requested.
 - Leave durable progress in comments, documents, or work products with the next action.
-- Use child issues for long or parallel delegated work instead of polling agents, sessions, or processes.
+- Use child tasks for long or parallel delegated work instead of polling agents, sessions, or processes.
 - Mark blocked work with the unblock owner and action.
 - Respect budget, pause/cancel, approval gates, and company boundaries.
 
@@ -184,7 +184,7 @@ Write all files, then give a brief summary:
 - Company name and what it does
 - Agent roster with roles and reporting structure
 - Skills (custom + referenced)
-- Projects and issues if any
+- Projects and tasks if any
 - The output path
 
 ## .paperclip.yaml Guidelines

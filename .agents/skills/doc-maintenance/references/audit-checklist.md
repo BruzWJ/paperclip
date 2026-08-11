@@ -57,8 +57,8 @@ against the change summary from git history.
 - [ ] Agent configuration description is accurate
 - [ ] No features described as "not supported" or "not V1" that shipped
 
-### Issue Model
-- [ ] Issue hierarchy description is accurate
+### Task Model
+- [ ] Task hierarchy description is accurate
 - [ ] Status values match current implementation
 
 ### Extensions / Plugins
@@ -72,7 +72,7 @@ against the change summary from git history.
 ## doc/PRODUCT.md
 
 ### Core Concepts
-- [ ] Company, Employees, Issue Management descriptions accurate
+- [ ] Company, Employees, Task Management descriptions accurate
 - [ ] Agent Execution modes described correctly
 - [ ] No missing major concepts
 

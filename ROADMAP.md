@@ -32,7 +32,7 @@ Agents need a practical way to discover, install, create, test, and share skills
 
 ### ✅ Scheduled Routines
 
-Recurring work should be native. Routine issues like reports, reviews, and other periodic work need first-class scheduling so the company keeps operating even when no human is manually kicking work off.
+Recurring work should be native. Routine tasks like reports, reviews, and other periodic work need first-class scheduling so the company keeps operating even when no human is manually kicking work off.
 
 ### ✅ Better Budgeting
 
@@ -40,7 +40,7 @@ Budgets are a core control-plane feature, not an afterthought. Better budgeting 
 
 ### ✅ Agent Reviews and Approvals
 
-Paperclip should support explicit review and approval stages as first-class workflow steps, not just ad hoc comments. That means reviewer routing, approval gates, change requests, and durable audit trails that fit the same issue model as the rest of the control plane.
+Paperclip should support explicit review and approval stages as first-class workflow steps, not just ad hoc comments. That means reviewer routing, approval gates, change requests, and durable audit trails that fit the same task model as the rest of the control plane.
 
 ### ✅ Multiple Human Users
 
@@ -56,7 +56,7 @@ Paperclip should make outputs first-class. That means generated artifacts, previ
 
 ### ✅ Deep Planning (planning mode, revisioned plans, plan approvals)
 
-Some work needs more than an immutable issue request before execution starts. Deeper planning means a dedicated planning mode, revisioned plans, and explicit plan approvals for strategy-heavy work before agents begin execution.
+Some work needs more than an immutable task request before execution starts. Deeper planning means a dedicated planning mode, revisioned plans, and explicit plan approvals for strategy-heavy work before agents begin execution.
 
 ### ✅ Enforced Outcomes (system safeguards, persisted nudges, review gates)
 
@@ -72,7 +72,7 @@ Operators need a durable record of what changed and who initiated it. Activity h
 
 ### ✅ Self-healing runs & automatic recovery
 
-Agent work should recover from routine failures without waiting for a human to notice every stalled run. Recovery policies can retry safe work, route failures, and keep the issue lifecycle aligned with what actually happened.
+Agent work should recover from routine failures without waiting for a human to notice every stalled run. Recovery policies can retry safe work, route failures, and keep the task lifecycle aligned with what actually happened.
 
 ### ✅ Agent evals & feedback
 
@@ -81,9 +81,9 @@ Agent performance should be measurable over time, not judged only from anecdotes
 ### ⚪ Knowledge Artifacts
 
 We want stronger durable knowledge artifacts for companies and projects. They
-must remain explicit issue-linked documents, work products, or selected plugin
+must remain explicit task-linked documents, work products, or selected plugin
 tools. They may never become agent-wide conversational memory, automatic
-cross-issue recall, or ambient provider context.
+cross-task recall, or ambient provider context.
 
 ### ⚪ MAXIMIZER MODE
 

@@ -51,7 +51,7 @@ Behavior:
 - Uses a Mulberry32 seeded PRNG internally.
 - Supports count, width, height, jitter, gap, and background parameters.
 - Good for understanding public brand-guide templates and palettes.
-- Weaker for issue deliverables because the UI does not expose seed/config as a first-class copyable control.
+- Weaker for task deliverables because the UI does not expose seed/config as a first-class copyable control.
 
 ## Mirrored Graphic Generator Contract
 
@@ -92,7 +92,7 @@ Use `identicon-prototyper.md` when generating a reproducible capsule identity fo
 
 ## Artifact Record Template
 
-When generating assets for issue work, record this next to the attachment or deliverable:
+When generating assets for task work, record this next to the attachment or deliverable:
 
 ```md
 Capsule artifact

@@ -137,7 +137,7 @@ Paperclip should continue exposing run and transcript events to plugins, for exa
 - run started / finished
 - tool started / finished
 - usage reported
-- issue comment created
+- task comment created
 
 This matches Paperclip's control-plane posture: observe, react, automate.
 
@@ -171,7 +171,7 @@ These `pi-mono` capabilities are a bad fit for Paperclip core:
 
 Paperclip should not let general plugins rewrite:
 
-- issue checkout semantics
+- task checkout semantics
 - approval outcomes
 - budget enforcement
 - assignment rules
@@ -202,7 +202,7 @@ Hooks like:
 
 are tied to `pi-mono` being an interactive terminal coding harness.
 
-They do not map directly to Paperclip's board-and-issues model.
+They do not map directly to Paperclip's board-and-tasks model.
 
 ## Recommended Paperclip direction
 
@@ -221,7 +221,7 @@ Allowed surfaces:
 
 Disallowed:
 
-- mutation of core issue/approval/budget invariants
+- mutation of core task/approval/budget invariants
 
 ### Layer 2: trusted runtime middleware
 

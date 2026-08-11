@@ -1,36 +1,36 @@
 ---
 title: Control-Plane Commands
-summary: Issue, agent, approval, and dashboard commands
+summary: Task, agent, approval, and dashboard commands
 ---
 
-Client-side commands for managing issues, agents, approvals, and more.
+Client-side commands for managing tasks, agents, approvals, and more.
 
-## Issue Commands
+## Task Commands
 
 ```sh
-# List issues
-pnpm paperclipai issue list [--status open,blocked] [--owner-agent-id <id>] [--match text]
+# List tasks
+pnpm paperclipai task list [--status open,blocked] [--owner-agent-id <id>] [--match text]
 
-# Get issue details
-pnpm paperclipai issue get <issue-id-or-identifier>
+# Get task details
+pnpm paperclipai task get <task-id-or-identifier>
 
-# Create issue
-pnpm paperclipai issue create -C <company-id> --request "..." --owner-agent-id <agent-id> [--title "..."] [--priority high]
+# Create task
+pnpm paperclipai task create -C <company-id> --request "..." --owner-agent-id <agent-id> [--title "..."] [--priority high]
 
 # Update title metadata
-pnpm paperclipai issue title <issue-id> --title "..."
+pnpm paperclipai task title <task-id> --title "..."
 
 # Creator-only reassignment
-pnpm paperclipai issue reassign <issue-id> --owner-agent-id <agent-id> [--idempotency-key <key>]
+pnpm paperclipai task reassign <task-id> --owner-agent-id <agent-id> [--idempotency-key <key>]
 
 # Audited board reopen
-pnpm paperclipai issue reopen <issue-id> --reason "..." [--idempotency-key <key>]
+pnpm paperclipai task reopen <task-id> --reason "..." [--idempotency-key <key>]
 
 # Non-dispatch comment
-pnpm paperclipai issue comment <issue-id> --message "..." [--idempotency-key <key>]
+pnpm paperclipai task comment <task-id> --message "..." [--idempotency-key <key>]
 
 # Explicit current-owner mention
-pnpm paperclipai issue comment <issue-id> --message "..." \
+pnpm paperclipai task comment <task-id> --message "..." \
   --mention-target-agent-id <agent-id> --mention-ownership-epoch <epoch>
 ```
 
@@ -152,7 +152,7 @@ pnpm paperclipai approval list [--status pending]
 pnpm paperclipai approval get <approval-id>
 
 # Create approval
-pnpm paperclipai approval create --type hire_agent --payload '{"name":"..."}' [--issue-ids <id1,id2>]
+pnpm paperclipai approval create --type hire_agent --payload '{"name":"..."}' [--task-ids <id1,id2>]
 
 # Approve
 pnpm paperclipai approval approve <approval-id> [--decision-note "..."]
@@ -173,7 +173,7 @@ pnpm paperclipai approval comment <approval-id> --body "..."
 ## Activity Commands
 
 ```sh
-pnpm paperclipai activity list [--agent-id <id>] [--entity-type issue] [--entity-id <id>]
+pnpm paperclipai activity list [--agent-id <id>] [--entity-type task] [--entity-id <id>]
 ```
 
 ## Dashboard
@@ -198,7 +198,7 @@ settings are:
 | `enableWorkspaceBranchReconcileForward` | On | Allows a retained managed worktree to advance only when its checked-out branch is a proven descendant of the recorded branch. Direct project folders are never changed. |
 | `enableWorkspaceDirtyQuarantineRepair` | On | Preserves dirty retained managed-worktree changes on a rescue branch before restoring the recorded branch. Direct project folders are never changed. |
 | `enableServerInfoDebugView` | Off | Shows server restart, running commit, and checkout-state details in the account-menu **Server Info** debug view. It changes only that view. |
-| `autoRestartDevServerWhenIdle` | Off | Lets the managed dev runner request a restart for backend changes after there are no queued or running issue executions. Migrations remain explicit. |
+| `autoRestartDevServerWhenIdle` | Off | Lets the managed dev runner request a restart for backend changes after there are no queued or running task executions. Migrations remain explicit. |
 | `enableWorktreeRunExecution` | Off | In a worktree instance, permits automatic schedule and webhook dispatch only for routines created after the server-recorded activation cutoff. Normal instances are unaffected. |
 
 For the worktree dispatch control, the server—not the client—controls the
@@ -215,4 +215,4 @@ pnpm paperclipai instance settings:general:update \
 ```
 
 There is no direct agent-invocation command. Provider work starts only from a
-committed canonical issue source and persisted issue-execution reference.
+committed canonical task source and persisted task-execution reference.

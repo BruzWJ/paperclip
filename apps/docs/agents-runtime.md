@@ -7,11 +7,11 @@ Audience: Operators setting up and running agents in Paperclip
 ## 1. What this system does
 
 Agents in Paperclip do not run continuously. They execute accepted work through
-durable, issue-scoped runs in Paperclip's existing server + worker topology.
+durable, task-scoped runs in Paperclip's existing server + worker topology.
 
 For each productive prompt, the worker:
 
-1. selects one current persisted issue-execution ref or steering segment;
+1. selects one current persisted task-execution ref or steering segment;
 2. resolves its ownership epoch, immutable adapter revision, execution
    server-resolved run directory, context dial, configurable action grants, and relationship
    authority;
@@ -24,21 +24,21 @@ For each productive prompt, the worker:
 7. revokes the request capability, closes ACPX, and deletes its temporary
    runtime state before another prompt can start.
 
-The issue Session log is the canonical durable conversation and audit record.
+The task Session log is the canonical durable conversation and audit record.
 The run row is only the control envelope around that work; it is not a second
 transcript store.
 
 ## 2. How work is admitted
 
-Provider work starts only after a canonical issue operation commits its source
+Provider work starts only after a canonical task operation commits its source
 and execution ref:
 
-- issue creation with an explicit owner;
+- task creation with an explicit owner;
 - creator-authorized reassignment;
 - an explicit mention or creator/owner update;
 - the `agent_execution` branch of audited board reopen for an invokable agent
   owner;
-- an allowed routine or plugin-created issue;
+- an allowed routine or plugin-created task;
 - a human owner mention or typed system nudge.
 
 There is no generic manual invoke, provider-visible wake API, or model-producing
@@ -71,7 +71,7 @@ owns no parallel list of agents, models, frontends, or provider flags.
 Paperclip checks the unchanged registry name before ACPX resolution, so it
 never accepts an alias or arbitrary command fallback. ACPX owns the provider
 process and its ephemeral runtime/session state; Paperclip owns the durable
-issue session, queue, prompt authority, tools, and event projection.
+task session, queue, prompt authority, tools, and event projection.
 
 ### 3.2 Authentication and model configuration
 
@@ -99,19 +99,19 @@ Configure eligibility and limits as control-plane policy:
 
 - lifecycle status and budgets;
 - all nine context-dial cells, with active owners receiving the six
-  current-issue and sub-issue cells automatically;
-- five configurable action grants and explicit mention reach; `issue_create`
+  current-task and sub-task cells automatically;
+- five configurable action grants and explicit mention reach; `task_create`
   combines direct-child creation and reassignment;
 - explicitly selected company skills through the `operator_native` channel.
 
 The compiled prompt-capability interface is the model-visible context-access
 boundary; the server still reauthorizes every call. An active owner receives
-the current-issue and sub-issue context cells automatically; company cells stay
+the current-task and sub-task context cells automatically; company cells stay
 at the agent's configured grants. Lifecycle reporting is not a grant: the
-current owner receives `issue_update` for its active issue, and an exact
+current owner receives `task_update` for its active task, and an exact
 creator execution receives it
 for eligible direct children. The canonical update automatically mentions the
-owner/creator counterpart in that counterpart's issue context. Creator child
+owner/creator counterpart in that counterpart's task context. Creator child
 updates may send a message or set `open`/`blocked`; only the current owner may
 set terminal `done`/`cancelled` or `structuredResult`.
 
@@ -120,18 +120,18 @@ set terminal `done`/`cancelled` or `structuredResult`.
 - The server supplies the validated ACPX session `cwd`. ACPX registry
   configuration is resolved at the Paperclip service scope.
 - ACPX owns the local provider process mechanics and launches it in the exact
-  project or issue working directory selected by Paperclip.
+  project or task working directory selected by Paperclip.
 - Runtime timeout and cancellation policy remain control-plane limits.
 - Provider-native CLI configuration stays operator-owned and opaque.
 
 Paperclip does not fall back to an agent home, an adapter-configured cwd, the
-server process cwd, or a prior issue's working directory.
+server process cwd, or a prior task's working directory.
 
 ### 3.5 Board-owned agent instruction
 
 `agents.instruction` is optional canonical board-owned role text. For a new
-issue, Paperclip admits it as a bootstrap run immediately before the unchanged
-work run. Both follow the ordinary issue queue and have independent authority,
+task, Paperclip admits it as a bootstrap run immediately before the unchanged
+work run. Both follow the ordinary task queue and have independent authority,
 events, and settlement; the work run resumes the bootstrap run's exact provider
 session. It grants no authority and is not a provider system prompt or
 work-message prefix. A null instruction has no bootstrap run. If that frozen
@@ -140,14 +140,14 @@ provider session.
 
 Agent-reaching managed actions do have canonical source-message contracts.
 Each producer supplies its tool name, immutable tool arguments, and locked
-issue/source context; admission then selects that tool's renderer exactly once:
+task/source context; admission then selects that tool's renderer exactly once:
 
 | Managed tool | Canonical source shape | Exact body |
 | --- | --- | --- |
-| `mention_agent` | `[Paperclip agent message]` with issue and sender identity | `message` |
-| `issue_create` | `[Paperclip issue assignment]`, action `Created and assigned`, issue, sender, owner, and status | `request` |
-| `issue_assign` | `[Paperclip issue assignment]`, action `Reassigned`, issue, sender, owner, and status | immutable issue `request` |
-| `issue_update` | `[Paperclip issue update]` with updated issue, sender role/identity, and effective status | `message` |
+| `mention_agent` | `[Paperclip agent message]` with task and sender identity | `message` |
+| `task_create` | `[Paperclip task assignment]`, action `Created and assigned`, task, sender, owner, and status | `request` |
+| `task_assign` | `[Paperclip task assignment]`, action `Reassigned`, task, sender, owner, and status | immutable task `request` |
+| `task_update` | `[Paperclip task update]` with updated task, sender role/identity, and effective status | `message` |
 
 That rendered text is simultaneously the canonical Session comment and
 execution-ref message. The ACPX path consumes it as the same canonical source;
@@ -155,12 +155,12 @@ a separately governed before-prompt prelude may compose around that source but
 does not rebuild or switch on tool prompts. `mention_board` invokes no agent
 and therefore has no ACPX prompt contract.
 
-## 4. Issue-session continuity
+## 4. Task-session continuity
 
-Paperclip records one canonical Session log per issue. Exactly one genuine
-initial issue start may use `session/new`: the instruction bootstrap when the
-owner has a nonblank Instruction, or the issue work itself when it does not.
-An instructed issue's immediately following work turn resumes the bootstrap's
+Paperclip records one canonical Session log per task. Exactly one genuine
+initial task start may use `session/new`: the instruction bootstrap when the
+owner has a nonblank Instruction, or the task work itself when it does not.
+An instructed task's immediately following work turn resumes the bootstrap's
 exact provider session.
 
 Every later base turn must resume one eligible exact-scope correlation with
@@ -190,7 +190,7 @@ Operators cannot manually reset or rotate native continuity; epoch, target, and
 authorization eligibility decide it automatically.
 
 Provider-native session state stays opaque and provider-owned. Paperclip keeps
-only an encrypted issue/epoch/agent/target-scoped ACP correlation and never
+only an encrypted task/epoch/agent/target-scoped ACP correlation and never
 exposes its id through REST, UI, CLI, logs, tools, or environment variables.
 
 ## 5. Tools and steering
@@ -221,10 +221,10 @@ never select or see a provider session id.
 
 ## 6. Logs, status, and run history
 
-For each issue-execution run, Paperclip exposes a joined read over:
+For each task-execution run, Paperclip exposes a joined read over:
 
-- the typed `issue_execution_runs` control envelope;
-- canonical issue Session messages and events stamped with that run/ref/segment;
+- the typed `task_execution_runs` control envelope;
+- canonical task Session messages and events stamped with that run/ref/segment;
 - typed attempt, lease, cancellation, accounting, cost, tool-decision,
   execution and audit records; and
 - the run's one stable progress comment projection.
@@ -243,37 +243,37 @@ as `cancelled` and `incomplete`; Paperclip does not fabricate usage, cost, or
 accounting. `nativeCancellationSettledAt` records the observed ACPX cancelled
 result, not delivery of Paperclip's local `AbortController` signal.
 
-## 7. Issue output and lifecycle
+## 7. Task output and lifecycle
 
-The chronological issue comment stream is the durable human-facing output.
+The chronological task comment stream is the durable human-facing output.
 Each active run has one stable progress-comment root, which may become its final
 output comment or settle as a folded progress card. Replies are grouped under
 that root in canonical sequence.
 
-No tool-free final closes an issue or invokes another agent. The current owner
-must call `issue_update` with `done` or `cancelled` and a final message to close
-its active issue, omitting `issueId`. An exact creator execution can update an
+No tool-free final closes a task or invokes another agent. The current owner
+must call `task_update` with `done` or `cancelled` and a final message to close
+its active task, omitting `taskId`. An exact creator execution can update an
 eligible direct child only with a message or nonterminal `open`/`blocked`. A
-nonterminal issue that becomes idle remains idle until a canonical input
+nonterminal task that becomes idle remains idle until a canonical input
 explicitly admits more work.
 
 ## 8. Common operating patterns
 
-### 8.1 Issue-driven execution
+### 8.1 Task-driven execution
 
-1. Create an issue with an immutable request and explicit eligible owner.
+1. Create a task with an immutable request and explicit eligible owner.
 2. Grant only the configurable actions and context depth needed for that work;
    lifecycle reporting follows the eventual owner/creator relationship.
 3. Let the owner report progress or disposition through the canonical
-   `issue_update`; its canonical comment automatically mentions the creator.
+   `task_update`; its canonical comment automatically mentions the creator.
 4. Let the exact creator update an eligible direct child through the same
    canonical action when needed; it may send a message or set `open`/`blocked`,
    and its canonical comment automatically mentions the child owner.
-5. Inspect the durable issue thread and bounded structured run history.
+5. Inspect the durable task thread and bounded structured run history.
 
 ### 8.2 Scheduled work
 
-Use a routine whose occurrence creates an ordinary execution issue with an
+Use a routine whose occurrence creates an ordinary execution task with an
 explicit owner and immutable request. The routine does not invoke an agent
 directly.
 
@@ -309,7 +309,7 @@ occupancy.
 
 Paperclip never retains or reconstructs ACPX runtime state. Each run uses a
 bounded ACPX runtime and sends exactly one queued prompt. An instructed new
-issue has a bootstrap run followed by a work run on the same provider session.
+task has a bootstrap run followed by a work run on the same provider session.
 Setup and resume failures remain ordinary pre-transmission errors. Only fresh
 `new` setup may receive a bounded transport retry; frozen `resume` and
 `steer_resume` failures are terminal and never switch to a new session.
@@ -323,8 +323,8 @@ Setup and resume failures remain ordinary pre-transmission errors. Only fresh
 4. Select the exact discovered adapter and complete its required stable ACPX
    configuration.
 5. Set agent context dials, the five configurable action grants, and selected
-   company skills. Active owners receive current-issue and sub-issue context
+   company skills. Active owners receive current-task and sub-task context
    automatically; lifecycle reporting needs no separate grant.
-6. Create an issue with an immutable request and eligible owner.
+6. Create a task with an immutable request and eligible owner.
 7. Confirm the Session projection, progress comment, terminal state, and any
    valid accounting were recorded.

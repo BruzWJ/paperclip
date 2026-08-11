@@ -212,7 +212,7 @@ Do not run stable.
 
 Instead:
 
-1. fix the issue on `master`
+1. fix the defect on `master`
 2. merge the fix
 3. wait for the next automatic canary
 4. rerun artifact validation

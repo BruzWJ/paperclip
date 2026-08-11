@@ -106,19 +106,19 @@ describe("shipped skills catalog", () => {
   });
 
   it("populates browse/search-relevant fields for every shipped skill", () => {
-    const issues: string[] = [];
+    const violations: string[] = [];
     for (const skill of catalogSkills) {
       if (skill.compatibility !== "compatible") {
-        issues.push(`${skill.key} compatibility=${skill.compatibility}`);
+        violations.push(`${skill.key} compatibility=${skill.compatibility}`);
       }
       if (!skill.description || skill.description.length < 40) {
-        issues.push(`${skill.key} description must be at least 40 characters for catalog browse/search`);
+        violations.push(`${skill.key} description must be at least 40 characters for catalog browse/search`);
       }
       if (skill.tags.length === 0) {
-        issues.push(`${skill.key} must list tags`);
+        violations.push(`${skill.key} must list tags`);
       }
     }
-    expect(issues).toEqual([]);
+    expect(violations).toEqual([]);
   });
 
   it("uses canonical paperclipai keys derived from kind/category/slug", () => {

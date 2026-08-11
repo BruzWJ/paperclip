@@ -130,7 +130,7 @@ design/<task-slug>/
 **Page anatomy** (start from `assets/site-template.html` and adjust — do not re-derive the CSS):
 
 - **Sticky sidebar TOC** (240px on desktop) listing every screen with anchor links. Group by Flow / Screens / Open questions.
-- **Hero header** at the top: crumb (issue id), title, one-paragraph summary, pill row of meta tags (`12 screens`, `Lo-fi · monochrome`, `Click any wireframe to zoom`).
+- **Hero header** at the top: crumb (task id), title, one-paragraph summary, pill row of meta tags (`12 screens`, `Lo-fi · monochrome`, `Click any wireframe to zoom`).
 - **One section per screen** with a 2-column grid: wireframe on the left, reference image + numbered annotations + a "Why this changes" callout on the right. The wireframe `<img>` points to the SVG file directly — do not inline it.
 - **Click-to-zoom lightbox** for any element marked `[data-zoom]`. Esc and backdrop click both close.
 - **Flow diagram** section near the top that loads `wireframes/flow.svg` full-width.

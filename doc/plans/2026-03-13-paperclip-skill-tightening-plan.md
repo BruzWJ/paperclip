@@ -12,7 +12,7 @@ The current PR should ship the lower-risk infrastructure wins first:
 
 - telemetry normalization
 - safe session reuse
-- incremental issue/comment context
+- incremental task/comment context
 - bootstrap versus heartbeat prompt separation
 - Codex worktree isolation
 
@@ -60,7 +60,7 @@ The core should cover only what is needed on nearly every wake:
 - `heartbeat-context` first
 - incremental comment retrieval rules
 - mention/self-assign exception
-- blocked-issue dedup
+- blocked-task dedup
 - status/comment/release expectations before exit
 
 ### 2. Normalize The Skill Around One Canonical Procedure
@@ -150,9 +150,9 @@ Run scenario checks for:
 
 - normal assigned heartbeat
 - comment-triggered wake
-- blocked-issue dedup behavior
+- blocked-task dedup behavior
 - approval-resolution wake
-- delegation/sub-issue creation
+- delegation/sub-task creation
 - board transfer back to user
 - plan-request handling
 
@@ -181,6 +181,6 @@ Do not change this loading policy without validation.
 ## Success Criteria
 
 - materially lower first-run input tokens for Paperclip-coordinated agents
-- no regression in checkout discipline, issue updates, blocked handling, or delegation
+- no regression in checkout discipline, task updates, blocked handling, or delegation
 - no increase in malformed API usage or ownership mistakes
 - agents still complete rare workflows correctly when explicitly asked

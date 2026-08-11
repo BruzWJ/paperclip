@@ -40,7 +40,7 @@ Before proceeding, verify all of the following:
 5. If manifests changed, the CI-owned `pnpm-lock.yaml` refresh is already merged on `master`.
 6. npm publish rights are available through GitHub trusted publishing, or through local npm auth for emergency/manual use.
 7. If running through Paperclip, the current compiled interface exposes any
-   issue updates or follow-up creation needed for the release.
+   task updates or follow-up creation needed for the release.
 
 If any precondition fails, stop and report the blocker.
 
@@ -55,7 +55,7 @@ Collect these inputs up front:
 - whether the target is a canary check or a stable promotion
 - the candidate `source_ref` for stable
 - whether the stable run is dry-run or live
-- release issue / company context for website and announcement follow-up
+- release task / company context for website and announcement follow-up
 
 ## Step 0 — Release Model
 
@@ -177,7 +177,7 @@ This validation does not launch Paperclip, a container, or a database service.
 If artifact validation fails:
 
 - stop the stable release
-- fix the issue on `master`
+- fix the defect on `master`
 - wait for the next automatic canary
 - rerun artifact validation
 
@@ -223,7 +223,7 @@ Create or verify follow-up work for:
 
 - website changelog publishing
 - launch post / social announcement
-- release summary in Paperclip issue context
+- release summary in Paperclip task context
 
 These should reference the stable release, not the canary.
 
@@ -235,7 +235,7 @@ If the canary is bad:
 
 If stable npm publish succeeds but tag push or GitHub release creation fails:
 
-- fix the git/GitHub issue immediately from the same release result
+- fix the Git or GitHub failure immediately from the same release result
 - do not republish the same version
 
 If `latest` is bad after stable publish:

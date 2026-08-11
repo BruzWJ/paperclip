@@ -594,7 +594,7 @@ URL 404s after upload:
 Stale browser cache:
 
 - The helper uses `Cache-Control: public,max-age=60`.
-- Wait a minute or issue a CloudFront invalidation if the operator wants an
+- Wait a minute or request a CloudFront invalidation if the operator wants an
   immediate refresh.
 
 CloudFront returns 403:

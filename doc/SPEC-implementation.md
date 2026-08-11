@@ -8,10 +8,10 @@ architecture.
 
 ## Package boundaries
 
-### Paperclip Issue Session
+### Paperclip Task Session
 
 Paperclip owns Session contracts/codecs under
-`packages/shared/src/issue-session`, physical tables under `packages/db`, and
+`packages/shared/src/task-session`, physical tables under `packages/db`, and
 event, admission, projection, history, runner, lowering, and revert services
 under `server`. They form one first-class Paperclip Session engine.
 
@@ -21,18 +21,18 @@ The schema owns:
 
 - Better Auth user/account/session/verification tables for Better Auth's
   adapter, plus Paperclip authorization records that reference real users
-- issue request/owner/creator/lifecycle/epoch fields
-- issue Sessions, durable events, materialized messages, inputs, and
+- task request/owner/creator/lifecycle/epoch fields
+- task Sessions, durable events, materialized messages, inputs, and
   dispositions
 - execution-history views and ordered membership
-- issue-execution references, leases, authorities, native correlations, and
+- task-execution references, leases, authorities, native correlations, and
   reset generations
 - creator edges and ordered deliveries
 - context/action/mention grants
 - installed plugin manifests and exact plugin tool-call bindings, and genuine
   company skills
 
-Company, issue, run, Session, authority, reference, and grant relations remain
+Company, task, run, Session, authority, reference, and grant relations remain
 company-scoped with database uniqueness and foreign-key enforcement.
 
 ### `packages/shared`
@@ -40,18 +40,18 @@ company-scoped with database uniqueness and foreign-key enforcement.
 The shared package exports the closed canonical vocabulary:
 
 - nine context keys
-- five configurable action-grant keys and seven runtime issue-action keys
+- five configurable action-grant keys and seven runtime task-action keys
 - two mention-reach keys
 - canonical owner/creator/lifecycle/disposition types
-- `IssueExecutionRef`
+- `TaskExecutionRef`
 - `paperclip.run-tools/v1`
 - strict board-ingress and compiled-tool schemas
 
-It does not export generic issue mutation, checkout/release, general provider
+It does not export generic task mutation, checkout/release, general provider
 credentials, role-based authority, conversational agent sessions, arbitrary
 wake operations, generic managed-instruction injection, or interaction-card
 contracts. `agents.instruction` is the narrow exception: a bootstrap execution
-queued before a new issue's unchanged work execution.
+queued before a new task's unchanged work execution.
 
 ### Adapters and `packages/adapter-utils`
 
@@ -70,42 +70,42 @@ and noncanonical continuity fields.
 
 ### Session and admission
 
-- `issue-session/event-store.ts` persists durable Session events.
-- `issue-session/projector.ts` is the sole steady-state
+- `task-session/event-store.ts` persists durable Session events.
+- `task-session/projector.ts` is the sole steady-state
   materialized-message/comment writer.
-- `issue-session/admission.ts` admits typed user, synthetic, and system sources
-  plus issue-execution references atomically.
+- `task-session/admission.ts` admits typed user, synthetic, and system sources
+  plus task-execution references atomically.
 - Session input/history/composition services promote inputs and compose scoped
   execution views directly from PostgreSQL.
 - `agent-execution/session-runner/*` owns provider steps, continuations,
   lowering, and productive Session output.
-- `issue-session-lifecycle.ts` coordinates company archive, reactivation, and
+- `task-session-lifecycle.ts` coordinates company archive, reactivation, and
   cancellation-gated purge across the coherent Session graph.
 
 Every input has one stable source identity and admission. Idempotent replay
 requires byte-equivalent source, Session, prompt, and event arguments.
 
-### Issue execution
+### Task execution
 
-- `ordinary-issue-runtime.ts` owns board/user/plugin/routine/system issue
+- `ordinary-task-runtime.ts` owns board/user/plugin/routine/system task
   creation, reassignment, comments, typed mentions, and the checked
   `agent_execution | board_only` reopen transaction.
-- `issue-execution-dispatcher.ts` leases only persisted active references.
-- `issue-execution-postgres.ts` assembles the PostgreSQL
+- `task-execution-dispatcher.ts` leases only persisted active references.
+- `task-execution-postgres.ts` assembles the PostgreSQL
   lease/resolution/finalization repositories.
-- `issue-execution-dispatcher-postgres.ts` locks and validates dispatchable
+- `task-execution-dispatcher-postgres.ts` locks and validates dispatchable
   refs before it creates a run attempt and lease.
-- `issue-execution-prompt-cycle-postgres.ts` resolves the exact current
+- `task-execution-prompt-cycle-postgres.ts` resolves the exact current
   attempt, immutable ACP revision, run directory, capabilities, and native-session
   operation under that lease.
-- `issue-execution-attempt-executor.ts` drives the Session runner and adapter.
+- `task-execution-attempt-executor.ts` drives the Session runner and adapter.
   A missing correlated ACP target invalidates that correlation and fails the
   run closed. Paperclip never automatically injects Session history into a
   replacement work prompt.
 - `agent-execution/session-runner/output.ts` publishes productive Session
   output.
 - `productive-run-linkage.ts` verifies exact run/reference/source evidence.
-- `runtime-issue-action-port.ts` commits lifecycle and routes create, assign,
+- `runtime-task-action-port.ts` commits lifecycle and routes create, assign,
   and update communication through the canonical agent/Board mention helpers.
 
 The dispatcher is the only steady-state provider-invocation producer. Recovery
@@ -124,10 +124,10 @@ mutate historical runs.
 - `run-interface-session-db.ts` persists those bearer sessions.
 - `run-tools.ts` is the sole provider-facing Paperclip route.
 - `runtime-tool-gateway.ts` is the ACPX ingress for validated compiled calls.
-- `runtime-issue-action-port.ts` implements issue actions.
+- `runtime-task-action-port.ts` implements task actions.
 - `paperclip-agent-message.ts` defines the closed managed-tool prompt contract
   and the per-tool renderers used at agent-mention admission. Tool producers
-  supply immutable arguments plus locked source/issue context; the rendered
+  supply immutable arguments plus locked source/task context; the rendered
   bytes become the one Session comment, execution-ref message, and ACPX source.
 - `runtime-agent-configuration.ts` implements granted agent
   hire/configuration operations.
@@ -146,7 +146,7 @@ MCP feature layered beside a provider-runtime feature:
 - `paperclip-managed-tool-router.ts` is the sole authority-aware executor and
   `routeExecution` entrypoint. Board MCP supplies a board-user authority and
   raw Board input; ACPX supplies the descriptor-normalized command and run
-  authority. Both invoke the same command executor. Its lower issue and agent
+  authority. Both invoke the same command executor. Its lower task and agent
   ports enforce domain transactions; they are not alternate tool surfaces.
 
 The runtime compiler only selects the registry's provider projections for a
@@ -156,14 +156,14 @@ and passes the canonical command to the shared router. Board MCP only
 authenticates the existing board key, lists the visible registry tools, and
 passes raw calls to that same router. A Board authority is full-control inside
 its active company memberships: it bypasses agent grants, context dials, and
-mention reach, while tenancy and canonical issue-integrity rules remain in
+mention reach, while tenancy and canonical task-integrity rules remain in
 force.
 
 ### Run directories
 
-The issue-execution resolver supplies the resolved local directory to the
+The task-execution resolver supplies the resolved local directory to the
 bounded ACPX path. ACPX launches the local compatible CLI itself; adapter
-definitions do not execute or transport provider work. A new instructed issue
+definitions do not execute or transport provider work. A new instructed task
 queues a bootstrap run before its work run; each has its own prompt capability,
 and the work run resumes the bootstrap run's exact provider session. The current
 public ACPX runtime is local-only, so remote driver selection is not admitted.
@@ -171,22 +171,22 @@ public ACPX runtime is local-only, so remote driver selection is not admitted.
 ### Creator routing and recovery
 
 Creator edges bind immutable creator authority to each ownership epoch. Every
-canonical `issue_update` atomically admits its counterpart comment/ref in the
+canonical `task_update` atomically admits its counterpart comment/ref in the
 recipient Session: owner updates target the immediate parent or current root,
 while creator child updates target the child. Creator updates may carry only
 nonterminal `open`/`blocked` lifecycle transitions. Endpoint loss, epoch
 replacement, fresh-execution reset, cancellation, and termination revoke the
 relevant reference/edge generation atomically.
 
-Recovery services record typed existing-issue notices first. The canonical
-resolver creates at most one root system escalation per affected issue/epoch
+Recovery services record typed existing-task notices first. The canonical
+resolver creates at most one root system escalation per affected task/epoch
 only when its immutable creator edge becomes terminal.
 
 ## Board/operator routes
 
 Board/user REST routes provide:
 
-- canonical issue and child creation
+- canonical task and child creation
 - title metadata update
 - creator/board reassignment
 - audited board reopen with one invokable-agent ref branch and one
@@ -196,7 +196,7 @@ Board/user REST routes provide:
 - run inspection/cancellation
 - company, project, goal, routine, plugin, approval, and audit control
 
-Every issue route rejects a provider actor. There is no generic
+Every task route rejects a provider actor. There is no generic
 description/status/assignee patch, checkout/release protocol, comment reopen,
 arbitrary wake/invoke, general agent credential, agent-self/context route,
 agent-wide conversation reset, interaction operation, or selector-session tool
@@ -214,7 +214,7 @@ user.
 The UI and CLI are board/operator clients. They:
 
 - use Better Auth signup/sign-in/profile/sign-out for every human
-- create issues with immutable request, explicit eligible owner, and
+- create tasks with immutable request, explicit eligible owner, and
   idempotency key
 - show owner/creator/lifecycle terminology
 - expose distinct title/reassign/reopen/comment controls
@@ -225,17 +225,17 @@ The UI and CLI are board/operator clients. They:
 - configure bind/exposure without selecting a different identity path
 
 They do not emulate provider behavior or retain alternate commands for generic
-issue mutation, provider credentials, arbitrary wake/invoke, generic managed
+task mutation, provider credentials, arbitrary wake/invoke, generic managed
 instructions/skills, or agent-wide conversations. Board users may edit the
 optional canonical agent instruction through operational configuration.
 
 ## Plugins, routines, and company lifecycle
 
-Plugin issue APIs use immutable installation/callback creator authority.
+Plugin task APIs use immutable installation/callback creator authority.
 Plugins may list/get/create/update their own message/lifecycle projection and
-withdraw only their own nonterminal issue through the dedicated audited
+withdraw only their own nonterminal task through the dedicated audited
 operation. They cannot invoke agents, request arbitrary work, own provider
-sessions, or patch unrelated issue state.
+sessions, or patch unrelated task state.
 
 Administrator-approved infrastructure plugins may declare generic elevated
 worker capabilities for direct all-agent tools, exact live run-context
@@ -250,7 +250,7 @@ identities and an immutable source-message snapshot; they return no provider
 content, run in deterministic installation order, and fail closed before
 provider transmission. Core sends the canonical source message byte-for-byte.
 
-Routine executions create ordinary issues with immutable request and configured
+Routine executions create ordinary tasks with immutable request and configured
 owner. Their canonical comment and run history remains the source of record. No
 built-in summarizer identity or provider draft stream exists.
 
@@ -289,16 +289,16 @@ including:
 
 - the external-PostgreSQL boundary
 - the zero-database test boundary
-- canonical issue, Session, runtime, provider, and authentication boundaries
+- canonical task, Session, runtime, provider, and authentication boundaries
 
 Other focused gates prove:
 
 - the Session projector is the only materialized-comment writer
 - the Session donor/provenance and Paperclip-owned structure remain exact
 - provider child control inputs contain no ambient caller identity, general
-  REST bridge, cross-issue memory, or noncanonical continuity state; managed
+  REST bridge, cross-task memory, or noncanonical continuity state; managed
   tool source identity exists only inside its canonical persisted message
-- only canonical issue/session/runtime writers remain
+- only canonical task/session/runtime writers remain
 - Better Auth is the sole human account/session writer
 
 ## Required validation

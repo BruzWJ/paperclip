@@ -16,8 +16,8 @@ GET /api/companies/{companyId}/dashboard
 Returns a summary including:
 
 - **Agent counts** by status (active, idle, running, error, paused)
-- **Issue counts** by lifecycle status
-- **Stale issues** — active issues with no recent progress
+- **Task counts** by lifecycle status
+- **Stale tasks** — active tasks with no recent progress
 - **Cost summary** — current month spend vs budget
 - **Recent activity** — latest mutations
 

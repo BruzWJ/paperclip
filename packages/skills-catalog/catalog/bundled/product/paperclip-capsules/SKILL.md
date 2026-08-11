@@ -63,7 +63,7 @@ Use **seeded identicons/profile pills** when an agent needs a reproducible perso
    - Video work: pair this skill with the Paperclip feature-video HyperFrames skill when available.
 4. If generating an artifact, choose a reproducible workflow and write down the seed/config.
 5. Verify that the result still reads as agent-related. Remove capsules if they became decoration.
-6. Attach or otherwise expose generated deliverables when doing issue work, and name the exact workflow used.
+6. Attach or otherwise expose generated deliverables when doing task work, and name the exact workflow used.
 
 ## Output Expectations
 
@@ -84,7 +84,7 @@ For code changes, include targeted checks that exercise the edited surface. For 
 - Are app, website, video, identicon, and hero-bank palettes kept separate?
 - Is motion reduced or removed under reduced-motion settings?
 - Is the source path or reproducible seed/config recorded?
-- Are generated files attached or linked as inspectable deliverables for issue work?
+- Are generated files attached or linked as inspectable deliverables for task work?
 
 ## References
 

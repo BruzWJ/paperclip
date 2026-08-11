@@ -402,7 +402,7 @@ CLI messages should name the next useful correction, for example:
 
 ## Phase Acceptance Criteria
 
-Phase A is complete when this contract is available in the repo and the issue
+Phase A is complete when this contract is available in the repo and the task
 thread links it.
 
 Phase B, CLI MVP:
@@ -475,7 +475,7 @@ Phase J, QA and docs:
 
 - QA validates CLI, catalog APIs, UI install, agent sync, portability, and adapter
   snapshots against a dev instance.
-- Blocking defects are linked as first-class issues.
+- Blocking defects are linked as first-class tasks.
 - `doc/CLI.md`, `doc/DEVELOPING.md`, and skill workflow docs match shipped
   behavior.
 

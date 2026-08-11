@@ -12,10 +12,10 @@ and cost is company-scoped.
 
 A company has:
 
-- a goal and a hierarchy of projects and issues that explain why work exists;
+- a goal and a hierarchy of projects and tasks that explain why work exists;
 - configured agent identities connected by reporting lines;
 - board users, budgets, approvals, and skills;
-- an auditable issue-session log and human-facing comment thread.
+- an auditable task-session log and human-facing comment thread.
 
 ### Agents Are Configured Identities
 
@@ -27,8 +27,8 @@ limited to:
 - a free-text capabilities description used in the owner catalog.
 
 An agent may additionally have an optional board-owned `instruction`. For a
-new issue, Paperclip queues it as its own bootstrap execution immediately
-before the unchanged issue request. The work execution resumes that exact
+new task, Paperclip queues it as its own bootstrap execution immediately
+before the unchanged task request. The work execution resumes that exact
 provider session. The instruction grants no authority and is not a provider
 system prompt or work-message prefix.
 
@@ -40,53 +40,53 @@ Provider-native configuration and storage are operator-owned and opaque.
 Paperclip does not inspect, seed, copy, merge, or delete provider homes,
 authentication, or hidden state.
 
-### Issues Are the Only Invocation Boundary
+### Tasks Are the Only Invocation Boundary
 
-Every provider invocation is an issue execution. An assignment, invokable-agent
-reopen, typed comment or mention, routine dispatch, plugin-created issue, or
-system nudge first records a durable issue-execution source and only then enters
+Every provider invocation is a task execution. An assignment, invokable-agent
+reopen, typed comment or mention, routine dispatch, plugin-created task, or
+system nudge first records a durable task-execution source and only then enters
 the internal dispatcher. Reopening a named-user or collective-board-owned
 system escalation is a provider-free board lifecycle commit. There is no
-arbitrary invoke endpoint, timer ping, issueless wake, agent-wide session, or
+arbitrary invoke endpoint, timer ping, taskless wake, agent-wide session, or
 plugin-owned agent session.
 
-An ordinary issue has:
+An ordinary task has:
 
 - an immutable, non-empty request and optional board-editable title;
 - exactly one canonical owner and an immutable typed creator;
 - a monotonic ownership epoch that advances on every reassignment;
 - the lifecycle `open | blocked | done | cancelled`, with a required terminal
   disposition;
-- parent/sub-issue links, comments, documents, attachments, and work products.
+- parent/sub-task links, comments, documents, attachments, and work products.
 
 Board users administer titles, ownership, reopen, and comments through
 distinct audited commands. Provider actors receive only the seven
 dynamically compiled Paperclip actions allowed by their exact active execution;
-generic REST issue mutation is not an agent tool.
+generic REST task mutation is not an agent tool.
 
-### Issue Sessions and Continuity
+### Task Sessions and Continuity
 
-Paperclip persists one canonical, PostgreSQL-backed issue Session. Its typed
+Paperclip persists one canonical, PostgreSQL-backed task Session. Its typed
 source inputs, assistant turns, tool state, cost/tokens, and derived
 comments are Paperclip-owned, auditable, and secret-redacted before
 persistence.
 
-The canonical log is not ambient provider history. Each issue-execution ref has
-an immutable authorized lowering view. Context from another issue appears only
+The canonical log is not ambient provider history. Each task-execution ref has
+an immutable authorized lowering view. Context from another task appears only
 through an explicitly enabled, permission-checked composition dial.
 Paperclip never automatically replays, summarizes, or injects this log into a
 replacement work prompt. If ACPX reports a missing frozen target, Paperclip
 invalidates that correlation and fails the run closed.
 
 Provider-native continuity is separately correlated to the exact
-`(issue, ownership epoch, agent, adapter revision)` scope. With effective
+`(task, ownership epoch, agent, adapter revision)` scope. With effective
 `carry_context` disabled, Paperclip neither reads nor writes a native
-correlation. A new issue or ownership epoch cannot inherit another issue's
+correlation. A new task or ownership epoch cannot inherit another task's
 Paperclip-authored context.
 
 ### Provider Targets
 
-Before launch, every issue execution receives a resolved local working
+Before launch, every task execution receives a resolved local working
 directory. There is no agent-home, adapter-configured working-directory,
 process-directory, or prior-session fallback.
 
@@ -119,10 +119,10 @@ surface, or generic REST instruction bundle is injected into a run.
 
 1. **Company is the unit of organization.** Everything is company-scoped.
 2. **Agent identity is configuration.** Paperclip core does not synthesize an
-   agent-wide provider context between issues.
-3. **All execution is issue-backed.** Durable authority and source records
+   agent-wide provider context between tasks.
+3. **All execution is task-backed.** Durable authority and source records
    precede every provider invocation.
-4. **All work explains why it exists.** Parent/sub-issue and project/goal links
+4. **All work explains why it exists.** Parent/sub-task and project/goal links
    keep work inspectable and aligned.
 5. **Control plane, not provider internals.** Paperclip coordinates, authorizes,
    records, and bills; providers own their native configuration and hidden
@@ -130,7 +130,7 @@ surface, or generic REST instruction bundle is injected into a run.
 6. **Board-level clarity first.** Human-readable status, comments, outputs,
    cost, and approvals lead; raw run details remain available for audit.
 7. **Thin core, rich edges.** Optional product surfaces belong in plugins, but
-   plugins cannot bypass the canonical issue-execution boundary.
+   plugins cannot bypass the canonical task-execution boundary.
 
 ## First-Run Flow
 
@@ -138,11 +138,11 @@ surface, or generic REST instruction bundle is injected into a run.
 2. Configure one ordinary agent identity and an explicit provider target.
 3. Optionally add reporting relationships, selected skills, budgets, and
    further agents.
-4. Create a board issue with an immutable request and an invokable agent owner.
-5. Observe its typed issue execution, comments, work products, cost, and
+4. Create a board task with an immutable request and an invokable agent owner.
+5. Observe its typed task execution, comments, work products, cost, and
    terminal disposition.
 6. Add routines when recurring work is needed; each routine creates an ordinary
-   execution issue.
+   execution task.
 
 There is no built-in CEO, automatic privileged agent, default instruction
 bundle, or automatic provider invocation during onboarding.

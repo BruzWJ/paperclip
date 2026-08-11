@@ -17,7 +17,7 @@ a single copy-pasteable Discord block in dotta's voice.
 ## What dotta said
 
 > This is for discord — try to follow my format. If I have a section where I
-> think about the future, pull from recent issues we're working on etc.
+> think about the future, pull from recent tasks we're working on etc.
 
 The Discord announcement is **not** the changelog. The changelog is exhaustive;
 the announcement is opinionated, in-voice, and built around the same handful of
@@ -139,11 +139,11 @@ Mimic this register; do not invent a "professional" tone.
   release notes](url).").
 - **"WHATS NEXT" is forward-looking themes**, not a literal sprint list. 3–5
   bullets is the right size. Pull these from active goals, in-flight projects,
-  and recent issues the team is working on — do not invent themes.
+  and recent tasks the team is working on — do not invent themes.
 - **"What's on my mind"** is dotta's personal/strategic thinking — docs gaps,
   philosophical positioning ("we're the human control plane for ai labor"),
   invitations ("if you've ever wanted to write about how you use Paperclip,
-  hit me up"). Pull real tensions from recent issues/comments; do not invent.
+  hit me up"). Pull real tensions from recent tasks/comments; do not invent.
 - **Press section** is optional. Only include it if there is real press in the
   release window (a tweet, a podcast, a talk, a star milestone). No press →
   drop the section entirely.
@@ -164,7 +164,7 @@ Mimic this register; do not invent a "professional" tone.
 
 1. Read the matching `releases/vYYYY.MDD.P.md` produced by `release-changelog`.
    Use the version and contributor list from that file — never re-derive them.
-2. Use only the issue/session context already authorized by the current
+2. Use only the task/session context already authorized by the current
    compiled interface to source `WHATS NEXT` and `What's on my mind`. If that
    context is unavailable or insufficient, ask the operator for the missing
    themes instead of inventing them.
@@ -261,7 +261,7 @@ https://github.com/paperclipai/paperclip/releases/tag/v2026.403.0
 
 This release has *tons* of quality of life improvements around speed, performance, and workflow. You should notice that comment threads feel faster and your agents stay on task longer
 
-:thread: Issue chat threads now are a conversation more than comments
+:thread: Task chat threads now are a conversation more than comments
 :police_officer: Execution policies like **Reviewer** and **Approver** are now first-class in the harness (e.g. enforce that QA *must* review a task)
 :no_smoking: Blocker dependencies - first-class "wake on blocker resolved" which means now you can have "task graphs" that depend on one another and it's enforced by Paperclip
 :woman_feeding_baby: Parent-child tasks - better support for sub-tasks all around, which makes it much easier to organize your work
@@ -321,7 +321,7 @@ THIS IS THE OFFICIAL TWITTER FOLLOW IT: https://x.com/papercliping
 
 :man_feeding_baby: **MULTI USER** - you can now invite multiple users to your instance
 :factory_worker:  **HARDER WORKING** - robosut liveness continuations and lifecycle recovery means your instance tries harder before involving you
-:white_check_mark:  **SUBISSUE CHECKLISTS** - subissues have better ordering which allows for long-run planning
+:white_check_mark:  **SUBTASK CHECKLISTS** - subtasks have better ordering which allows for long-run planning
 :thread: **Rich Thread UX** - now your agents can ask you questions, ask for approvals, suggest tasks and you can approve or refine them right in your task threads
 :cloud:  **BETA: Sandbox Providers** - Cloud sandboxing is in beta - the API ships in this release and we'll be adding more providers
 ... and *tons* of other improvements and bugfixes.
@@ -379,7 +379,7 @@ Before handing off:
 2. Contributor list matches the changelog (same exclusions: bots, founders).
 3. Highlights are a subset of the changelog Highlights — same shipped features,
    not invented or pre-alpha work.
-4. `WHATS NEXT` and `What's on my mind` are pulled from real recent issues /
+4. `WHATS NEXT` and `What's on my mind` are pulled from real recent tasks /
    active goals — not invented themes.
 5. Section style (UPPERCASE vs Title Case) is internally consistent.
 6. Closing tagline is `ITS TIME TO CLIP :paperclip: :paperclip: :paperclip:`

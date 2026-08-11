@@ -2,7 +2,7 @@
 
 **Status:** v0.3 — anchor document for design-language simplification. Governs structure, not brand. Brand values (color, type, iconography) are intentionally unspecified: they are being redesigned and will land as token values only. Nothing in `apps/ui/` may hardcode them. Spacing/radius scales are likewise TBD pending the token audit (see Principle 3).
 
-Changes from v0.2: token layer location corrected to the repo's real source (`apps/ui/src/index.css`); existing token tiers inventoried; snapshot-coverage scope bounded for Run 1; the issue→task copy rename moved out of the zero-visual-change run.
+Changes from v0.2: token layer location corrected to the repo's real source (`apps/ui/src/index.css`); existing token tiers inventoried; snapshot-coverage scope bounded for Run 1; the canonical task terminology cutover moved out of the zero-visual-change run.
 
 ## What this document is for
 
@@ -32,7 +32,7 @@ Existing tiers already in index.css (~80+ tokens) — extraction maps to these o
 4. **Hierarchy through structure, not decoration.** Prefer position, size, and weight over borders, backgrounds, and dividers. Every border, divider, and background fill must justify itself; when in doubt, remove it. A screen should survive the removal of one visual layer.
 5. **Status is systematic.** States like running / paused / blocked / awaiting-approval / over-budget map to a single semantic status token set used identically everywhere (badge, row, chart, log). An operator learns the vocabulary once.
 6. **Machine values look machine-made.** IDs, costs, token counts, timestamps, and log output use the monospace token and consistent formatting helpers. Never format these ad hoc per screen.
-7. **Words are part of the system.** One name per concept across the entire UI — the canonical term is *task* (never *issue* or *ticket* in copy, labels, or empty states). Buttons name the action ("Approve hire," not "Submit"). Errors say what happened and what to do. Empty states say what to do first. **Note:** enforcing the task rename is a visible change and is explicitly OUT of the zero-visual-change extraction run; it happens in its own follow-up run.
+7. **Words are part of the system.** One name per concept across the entire UI — the canonical work-object term is *task* in copy, labels, and empty states. Buttons name the action ("Approve hire," not "Submit"). Errors say what happened and what to do. Empty states say what to do first.
 8. **Agent-modifiable by design.** The system must be changeable via instructions: single token source, lint rules that enforce it, and this document kept current. A correct change should be expressible as "edit tokens + run checks," not "visit 40 files."
 
 ## Enforcement (what "compliant" means for the extraction run)

@@ -88,19 +88,19 @@ If any of these is missing, ask. Critique without these is opinion.
 
 ## Output format
 
-Group findings by severity, then by category. Each finding is one issue and one suggested fix.
+Group findings by severity, then by category. Give each finding one suggested fix.
 
 ```md
 ## Design critique: <screen name>
 
 ### Must-fix (blocks ship)
-- **<category>:** <one-line issue>. **Try:** <one-line suggestion>.
+- **<category>:** <one-line task>. **Try:** <one-line suggestion>.
 
 ### Should-fix (before broader rollout)
-- **<category>:** <one-line issue>. **Try:** <one-line suggestion>.
+- **<category>:** <one-line task>. **Try:** <one-line suggestion>.
 
 ### Nice-to-fix (when there's room)
-- **<category>:** <one-line issue>. **Try:** <one-line suggestion>.
+- **<category>:** <one-line task>. **Try:** <one-line suggestion>.
 
 ### Strengths to keep
 - <one-line thing the design got right>

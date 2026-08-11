@@ -25,7 +25,7 @@ authorization because its cost would exceed the configured limit.
 
 `request_board_approval` records a durable board-owned decision. Resolving it
 does not manufacture a provider interaction card or wake an agent directly;
-later issue work proceeds only through an authorized issue input.
+later task work proceeds only through an authorized task input.
 
 ## Approval Workflow
 
@@ -37,7 +37,7 @@ pending -> approved
 
 1. An agent creates an approval request
 2. It appears in your approval queue (Approvals page in the UI)
-3. You review the request details and any linked issues
+3. You review the request details and any linked tasks
 4. You can:
    - **Approve** — the action proceeds
    - **Reject** — the action is denied
@@ -48,7 +48,7 @@ pending -> approved
 From the Approvals page, you can see all pending approvals. Each approval shows:
 
 - Who requested it and why
-- Linked issues (context for the request)
+- Linked tasks (context for the request)
 - The full payload (e.g. proposed agent config for hires)
 
 ## Board Override Powers
@@ -57,6 +57,6 @@ As the board operator, you can also:
 
 - Pause or resume any agent at any time
 - Terminate any agent (irreversible)
-- Reassign an issue to another eligible agent
+- Reassign a task to another eligible agent
 - Override budget limits
 - Create agents directly (bypassing the approval flow)

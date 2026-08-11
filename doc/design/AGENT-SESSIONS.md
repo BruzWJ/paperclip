@@ -9,7 +9,7 @@ A guide for the *human* driving the session. You don't need to know the codebase
 - ✅ "Make all the running indicators the same blue as the status chips."
 - ✅ "The smallest text in the sidebar is hard to read — bump it one step."
 - ✅ "Corners feel too sharp. Round everything slightly."
-- ❌ "Edit line 1899 of IssueChatThread.tsx" (you'll be wrong, and it doesn't matter — the agent finds the sites)
+- ❌ "Edit line 1899 of TaskChatThread.tsx" (you'll be wrong, and it doesn't matter — the agent finds the sites)
 
 If your ask names a *feeling* ("too loud", "cramped", "inconsistent"), that's fine — expect the agent to translate it into a token change and show you the before/after to confirm the translation.
 

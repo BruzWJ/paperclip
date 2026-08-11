@@ -1,9 +1,9 @@
 ---
 title: Creating a Company
-summary: Set up a company, ordinary agents, and the first owned issue
+summary: Set up a company, ordinary agents, and the first owned task
 ---
 
-A company is Paperclip's top-level control-plane boundary. Agents, issues,
+A company is Paperclip's top-level control-plane boundary. Agents, tasks,
 goals, projects, budgets, and company skills are all company-scoped.
 
 ## 1. Create the company and goal
@@ -26,12 +26,12 @@ default provider configuration. A title such as “CEO” is display text only.
 
 The root of the reporting graph may have `reportsTo = null`. Other agents use a
 direct reporting edge. Reporting structure constrains delegation and
-management; it does not grant ambient issue visibility.
+management; it does not grant ambient task visibility.
 
-## 3. Create the first issue
+## 3. Create the first task
 
 Choose an invokable agent owner and submit an immutable request. Paperclip
-creates the issue Session, ownership authority, issue-execution ref, and
+creates the task Session, ownership authority, task-execution ref, and
 server-resolved run-directory binding before dispatch.
 
 ## 4. Add agents and skills deliberately
@@ -42,7 +42,7 @@ instructions because an agent is first, root, or has a particular title.
 
 ## 5. Monitor
 
-Use issue comments, issue runs, the activity log, budgets, and board attention
+Use task comments, task runs, the activity log, budgets, and board attention
 surfaces. Pausing or terminating an agent affects invokability and current
 execution; it does not silently reroute work to a CEO or arbitrary fallback
 agent.

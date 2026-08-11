@@ -58,7 +58,7 @@ The new direction is:
   - company definition
   - org subtree / team definition
   - agent definitions
-  - optional starter projects and issues
+  - optional starter projects and tasks
   - reusable skills
 - V1 skill support is compatible with the existing `skills.sh` / Agent Skills ecosystem.
 - A user can import into:
@@ -100,7 +100,7 @@ Current product limitations:
 
 1. Import/export UX still needs deeper tree-selection and skill/package management polish.
 2. Adapter-specific skill sync remains uneven across adapters and must degrade cleanly when unsupported.
-3. Projects and starter issues should stay opt-in on export rather than default package content.
+3. Projects and starter tasks should stay opt-in on export rather than default package content.
 4. Import/export still needs stronger coverage around attribution, pin verification, and executable-package warnings.
 5. The current markdown frontmatter parser is intentionally lightweight and should stay constrained to the documented shape.
 
@@ -114,7 +114,7 @@ The canonical authoring format becomes a markdown-first package rooted in one of
 - `TEAM.md`
 - `AGENTS.md`
 - `PROJECT.md`
-- `ISSUE.md`
+- `TASK.md`
 - `SKILL.md`
 
 The normative draft is:
@@ -181,7 +181,7 @@ Paperclip import/export should support these entity kinds:
 - team
 - agent
 - project
-- issue
+- task
 - skill
 
 ### 6.2 Team Semantics
@@ -212,7 +212,7 @@ Examples:
 - selecting an agent auto-selects its required docs and skill refs
 - selecting a team auto-selects its subtree
 - selecting a company auto-selects all included entities by default
-- selecting a project auto-selects its starter issues
+- selecting a project auto-selects its starter tasks
 
 The preview output should reflect graph resolution explicitly.
 
@@ -305,7 +305,7 @@ Every import preview should surface:
 - entity-level create/update/skip plan
 - referenced external content
 - missing files
-- hash mismatch or pinning issues
+- hash mismatch or pinning tasks
 - env inputs, including required vs optional and default values when present
 - unsupported content types
 - trust/licensing warnings
@@ -382,15 +382,15 @@ Exports should:
 - express adapter env/secrets as portable env input declarations rather than exported secret binding ids
 - preserve compatible `SKILL.md` content as-is
 
-Projects and issues should not be exported by default.
+Projects and tasks should not be exported by default.
 
 They should be opt-in through selectors such as:
 
 - `--projects project-shortname-1,project-shortname-2`
-- `--issues PAP-1,PAP-3`
-- `--project-issues project-shortname-1,project-shortname-2`
+- `--tasks PAP-1,PAP-3`
+- `--project-tasks project-shortname-1,project-shortname-2`
 
-This supports “clean public company package” workflows where a maintainer exports a follower-facing company package without bundling active work items every time.
+This supports “clean public company package” workflows where a maintainer exports a follower-facing company package without bundling active tasks every time.
 
 ### 9.3 Export Units
 
@@ -403,7 +403,7 @@ Initial export units:
 Later optional units:
 
 - skill pack export
-- seed projects/issues bundle
+- seed projects/tasks bundle
 
 ## 10. Storage Model Inside Paperclip
 
@@ -590,7 +590,7 @@ If importing skills:
 
 - goals
 - projects
-- starter issues
+- starter tasks
 
 This phase is intentionally after the structural model is stable.
 

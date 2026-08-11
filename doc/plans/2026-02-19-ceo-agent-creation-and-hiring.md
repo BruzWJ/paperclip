@@ -1,6 +1,6 @@
 # CEO Agent Creation and Hiring Governance Plan (V1.1)
 
-> Historical only. CEO authority/defaults, Paperclip-authored instructions, and provider operational skills described here were retired by the roleless issue-execution cutover and have no runtime reader.
+> Historical only. CEO authority/defaults, Paperclip-authored instructions, and provider operational skills described here were retired by the roleless task-execution cutover and have no runtime reader.
 
 Status: Proposed  
 Date: 2026-02-19  
@@ -309,7 +309,7 @@ New/updated invariants:
 
 - `pending_approval` agents cannot:
   - be invoked/woken
-  - be assigned issues
+  - be assigned tasks
   - create or use API keys
   - transition to active lifecycle states except through hire approval
 - approval transitions:
@@ -329,7 +329,7 @@ New/updated invariants:
 
 - permission resolver and authz guards
 - separated runtime-agent and board configuration routes
-- limbo status enforcement in heartbeat/issue/key flows
+- limbo status enforcement in heartbeat/task/key flows
 - approval revision/comment endpoints
 
 ## Phase 3: Reflection and config-read APIs

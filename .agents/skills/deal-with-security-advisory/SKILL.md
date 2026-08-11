@@ -38,7 +38,7 @@ Read the `description`, `severity`, `cvss`, and `vulnerabilities` fields. Unders
 
 ⚠️ **This step requires a human.** The advisory thread does not have a comment API. Ask the human operator to post a comment on the private advisory thread acknowledging the report. Provide them this template:
 
-> Thanks for the report, @{{reporterHandle}}. We've confirmed the issue and are working on a fix. We're targeting a patch release within {{timeframe}}. We'll keep you updated here.
+> Thanks for the report, @{{reporterHandle}}. We've confirmed the vulnerability and are working on a fix. We're targeting a patch release within {{timeframe}}. We'll keep you updated here.
 
 Give your human this template, but still continue
 
@@ -88,7 +88,7 @@ Write the patch. Same content standards as any PR:
 **Specific to security fixes:**
 
 * Verify the fix actually closes the attack vector described in the advisory. Reproduce the vulnerability first (using the reporter's description), then confirm the patch prevents it
-* Consider adjacent attack vectors — if DNS rebinding is the issue, are there other endpoints or modes with the same class of problem?
+* Consider adjacent attack vectors — if DNS rebinding is the vulnerability, are there other endpoints or modes with the same class of problem?
 * Do not introduce new dependencies unless absolutely necessary — new deps in a security patch raise eyebrows
 
 Push your fix to the private fork:

@@ -1,10 +1,10 @@
 ---
 title: Core Concepts
-summary: Companies, configured agents, issues, issue executions, and governance
+summary: Companies, configured agents, tasks, task executions, and governance
 ---
 
 Paperclip organizes agent work around durable control-plane records. Providers
-receive only the current issue input and the run-scoped interface compiled for
+receive only the current task input and the run-scoped interface compiled for
 that execution.
 
 ## Company
@@ -37,9 +37,9 @@ before-prompt lifecycle and contribute agent tools, but cannot alter provider
 prompt content or the agent's Paperclip authority. An org-chart edge describes
 reporting only; it grants no recursive authority or escalation fallback.
 
-## Issues
+## Tasks
 
-An issue is the canonical unit of work. Its behavioral identity consists of:
+A task is the canonical unit of work. Its behavioral identity consists of:
 
 - an immutable request;
 - an immutable polymorphic creator;
@@ -48,30 +48,30 @@ An issue is the canonical unit of work. Its behavioral identity consists of:
 - an optional disposition for a terminal lifecycle;
 - parent/project/goal relations, priority, comments, and documents.
 
-Every issue owns one Paperclip Session graph. Inputs, assistant turns, tool
-states and costs are recorded per issue.
-Provider-native continuity may be retained only for the same issue, ownership
+Every task owns one Paperclip Session graph. Inputs, assistant turns, tool
+states and costs are recorded per task.
+Provider-native continuity may be retained only for the same task, ownership
 epoch, agent, and adapter revision when `carry_context` is enabled. It never
-becomes Paperclip-authored cross-issue memory.
+becomes Paperclip-authored cross-task memory.
 
-The current owner may update its active issue, while an exact creator execution
+The current owner may update its active task, while an exact creator execution
 may update eligible direct children. Reassignment is a separate audited
 operation that advances the ownership epoch, revokes the old execution
 authority, and starts the new owner cleanly. There is no checkout, claim,
-release, or singleton run pointer on the issue.
+release, or singleton run pointer on the task.
 
 ## Delegation
 
-Delegation follows authenticated issue edges:
+Delegation follows authenticated task edges:
 
 1. A board user, agent execution, plugin, routine, or system source creates an
-   ordinary issue with an exact creator and required owner.
-2. An eligible owner execution with `issue_create` may create a direct child
+   ordinary task with an exact creator and required owner.
+2. An eligible owner execution with `task_create` may create a direct child
    and reassign eligible direct children it created.
 3. The child has its own Session, owner, epoch, and execution authority.
 4. Owner and eligible creator updates are relationship-derived, while the
-   combined `issue_create` grant governs direct-child creation and
-   reassignment. Both use canonical `issue_update`, which automatically
+   combined `task_create` grant governs direct-child creation and
+   reassignment. Both use canonical `task_update`, which automatically
    canonically mentions the owner/creator counterpart with their message rather than using a
    separate comment path. A creator update can send a message or set
    nonterminal `open`/`blocked`; terminal `done`/`cancelled` remains
@@ -80,25 +80,25 @@ Delegation follows authenticated issue edges:
 The runtime never chooses an owner from role, title, root position, manager
 walk, hire order, or an arbitrary invokable-agent scan.
 
-## Issue Executions
+## Task Executions
 
-A persisted issue-execution ref is the only provider invocation boundary. The
-server binds it to the issue, epoch, owner, immutable adapter revision, mode,
+A persisted task-execution ref is the only provider invocation boundary. The
+server binds it to the task, epoch, owner, immutable adapter revision, mode,
 effective grants, and compiled interface before a provider attempt starts.
 
-Refs are admitted only by enumerated issue events such as creation, assignment,
+Refs are admitted only by enumerated task events such as creation, assignment,
 an invokable-agent board reopen, an authorized comment or mention, a
 counterpart update, or a typed system nudge. The system-escalation board-only
 reopen branch intentionally admits no ref. Routines use the same path by
-creating ordinary issues. Schedules, approval resolution, plugins, and users
-cannot invoke an agent or enqueue a generic wake outside an issue.
+creating ordinary tasks. Schedules, approval resolution, plugins, and users
+cannot invoke an agent or enqueue a generic wake outside a task.
 
 ## Context and Prompt Capabilities
 
 Each context key and configurable action-grant key is an independent explicit
-boolean; absent means denied. `issue_create` also governs eligible direct-child
+boolean; absent means denied. `task_create` also governs eligible direct-child
 reassignment. Owner lifecycle updates and creator nonterminal updates are
-derived from the issue relationship rather than configured booleans. The server
+derived from the task relationship rather than configured booleans. The server
 resolves the effective context for the current run and compiles the
 `paperclip.run-tools/v1` prompt-capability interface bound to that authenticated
 ref. An unavailable action is absent and undiscoverable.
@@ -112,11 +112,11 @@ attachment supplies a second interface.
 The human board can:
 
 - configure, pause, resume, adopt, or terminate agents;
-- choose initial issue owners and perform audited reassign/reopen operations;
+- choose initial task owners and perform audited reassign/reopen operations;
 - review formal hire, budget, and explicit board approvals;
-- inspect issue Sessions, comments, runs, costs, and audit history;
-- resolve board-owned system escalation issues.
+- inspect task Sessions, comments, runs, costs, and audit history;
+- resolve board-owned system escalation tasks.
 
 Approval decisions remain durable control-plane records. Resolving one does not
 create a provider interaction card or directly wake an agent. Every provider
-attempt still begins from an authorized issue-execution ref.
+attempt still begins from an authorized task-execution ref.

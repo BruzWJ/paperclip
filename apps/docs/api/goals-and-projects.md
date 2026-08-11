@@ -47,7 +47,7 @@ Valid status values: `planned`, `active`, `achieved`, `cancelled`.
 
 ## Projects
 
-Projects group related issues toward a deliverable and can be linked to goals.
+Projects group related tasks toward a deliverable and can be linked to goals.
 
 ### List Projects
 
@@ -81,8 +81,8 @@ POST /api/companies/{companyId}/projects
 
 `repoUrl` records source provenance. It does not clone the repository.
 `localFolder` must be absolute on the Paperclip server and becomes the working
-directory for agents running issues in this project. If it is omitted, runs use
-an instance-managed issue directory.
+directory for agents running tasks in this project. If it is omitted, runs use
+an instance-managed task directory.
 
 ### Update Project
 
@@ -113,4 +113,4 @@ PATCH /api/projects/{projectId}/codebase
 ```
 
 Send `null` for either field to clear it. Clearing both removes the project
-codebase; future runs then use instance-managed issue directories.
+codebase; future runs then use instance-managed task directories.

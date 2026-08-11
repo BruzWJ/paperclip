@@ -15,17 +15,17 @@ Community Edition even when EE policy editing is unavailable.
 
 `low_trust_review` is resolved from existing JSON policy fields:
 
-- issue/run policy: `executionPolicy.authorizationPolicy.trustBoundary`
+- task/run policy: `executionPolicy.authorizationPolicy.trustBoundary`
 
-The resolver intersects issue and run policy sources. Narrower wins. A low-trust preset must
-resolve to a concrete company-local project, root issue, or issue-id scope. If a
+The resolver intersects task and run policy sources. Narrower wins. A low-trust preset must
+resolve to a concrete company-local project, root task, or task-id scope. If a
 policy source names another company, uses an unsupported preset, or lacks that
 scope for risky access, Paperclip fails closed.
 
 ## Containment, Not Privacy
 
 This is containment for hostile automated work. It is not a general project,
-issue, or human privacy system.
+task, or human privacy system.
 
 V1 standard work remains company-visible by default: board users and in-company
 actors can inspect company work objects unless a separate access-control feature
@@ -43,7 +43,7 @@ Managed `low_trust_review` runs fail closed unless Paperclip can enforce the
 runtime boundary:
 
 - the runtime must enforce the selected sandbox boundary
-- the issue being run must be inside the resolved low-trust boundary
+- the task being run must be inside the resolved low-trust boundary
 - secret references must use binding ids explicitly allowed by the boundary
 - inline sensitive values such as API keys and tokens are rejected
 

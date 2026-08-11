@@ -2,7 +2,7 @@
 
 Status: Proposed
 Date: 2026-04-08
-Related issue: `PAP-1231`
+Related task: `PAP-1231`
 Audience: Engineering
 
 ## Goal
@@ -27,9 +27,9 @@ If Codex, Claude, Cursor, or a skill launched through them starts Chrome or Chro
 - timeout handling sends `SIGTERM` and then `SIGKILL` to the direct child
 - there is no process-group creation or process-group kill path there today
 
-`packages/db/schema/issue_execution_runs.ts`
+`packages/db/schema/task_execution_runs.ts`
 
-- `issue_execution_runs` stores `process_pid`
+- `task_execution_runs` stores `process_pid`
 - there is no persisted `process_group_id`
 
 The retired run-centric execution service previously owned this behavior.
@@ -111,7 +111,7 @@ Work:
 
 Deliverable:
 
-- one short repro note attached to the implementation issue or child issue
+- one short repro note attached to the implementation task or child task
 
 ### Phase 1: give heartbeat-run local adapters process-group ownership
 
@@ -131,9 +131,9 @@ Work:
 Likely touched surfaces:
 
 - `packages/adapter-utils/src/server-utils.ts`
-- `packages/db/schema/issue_execution_runs.ts`
-- `packages/shared/src/types/issue-execution-run.ts`
-- the canonical issue-execution attempt executor and ACP subprocess boundary
+- `packages/db/schema/task_execution_runs.ts`
+- `packages/shared/src/types/task-execution-run.ts`
+- the canonical task-execution attempt executor and ACP subprocess boundary
 
 Important design choice:
 
@@ -160,7 +160,7 @@ Recommendation:
 Reason:
 
 - runtime services are long-lived and adoptable
-- heartbeat runs are issue executions with stricter audit and cancellation semantics
+- heartbeat runs are task executions with stricter audit and cancellation semantics
 
 ### Phase 3: add operator-visible cleanup tools
 
@@ -196,7 +196,7 @@ Tests to add:
 The first shipping slice should be narrow:
 
 1. introduce process-group ownership for local heartbeat-run adapters on POSIX
-2. persist group metadata on `issue_execution_runs`
+2. persist group metadata on `task_execution_runs`
 3. switch timeout/cancel paths from direct-child kill to group kill
 4. add one regression test that proves descendants die with the parent run
 

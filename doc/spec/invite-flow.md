@@ -25,7 +25,7 @@ Human invites cannot approve an agent join request.
 5. Approval atomically creates/configures an ordinary agent and its first immutable adapter revision, with no privileged role or default grants.
 6. The board explicitly configures context/action/mention grants, company skills, budget, and provider-native readiness before assigning work.
 
-The join response and approval flow do not return an agent API key, claim secret, claim path, Paperclip REST bearer, operational skill, or session handle. Providers receive only a run-scoped compiled interface after an ordinary issue is assigned and its execution reference is leased.
+The join response and approval flow do not return an agent API key, claim secret, claim path, Paperclip REST bearer, operational skill, or session handle. Providers receive only a run-scoped compiled interface after an ordinary task is assigned and its execution reference is leased.
 
 ## Idempotency and audit
 

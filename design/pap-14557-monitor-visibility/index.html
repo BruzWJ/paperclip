@@ -231,7 +231,7 @@
       <header class="hero">
         <div class="crumb">PAP-14557 · Wireframes</div>
         <h1>Make a waiting monitor obvious</h1>
-        <p>When an issue has a monitor armed, nothing on the page says so unless you squint at a truncated properties row. These wireframes surface the same monitor state in three places — a banner at the top of the task page, a strip directly above the reply composer, and a readable two-line properties row with a hover tooltip for full details. Every surface shows both the exact time and how far away it is from now.</p>
+        <p>When a task has a monitor armed, nothing on the page says so unless you squint at a truncated properties row. These wireframes surface the same monitor state in three places — a banner at the top of the task page, a strip directly above the reply composer, and a readable two-line properties row with a hover tooltip for full details. Every surface shows both the exact time and how far away it is from now.</p>
         <div class="pills">
           <span class="pill">4 screens + 2 mobile</span>
           <span class="pill">Desktop + mobile</span>
@@ -253,15 +253,15 @@
       <section id="s1">
         <div class="lede">Step 1 · Task page top</div>
         <h2><span class="step-num">1.</span>Monitor banner under the title</h2>
-        <p class="desc">A full-width banner sits between the issue title and the description whenever a monitor is scheduled, due, or overdue. Headline leads with the relative time ("resumes in 2h 12m"); the second line gives the exact local time, the attempt count, and what is being watched. "Check now" fires the monitor immediately; "Edit" opens the existing monitor editor.</p>
+        <p class="desc">A full-width banner sits between the task title and the description whenever a monitor is scheduled, due, or overdue. Headline leads with the relative time ("resumes in 2h 12m"); the second line gives the exact local time, the attempt count, and what is being watched. "Check now" fires the monitor immediately; "Edit" opens the existing monitor editor.</p>
         <div class="grid">
           <div class="wire" data-zoom data-caption="01 · Task page top with monitor banner (desktop)">
-            <div class="label"><span>01-issue-top.svg</span><span>1280×800 · desktop</span></div>
-            <img src="wireframes/01-issue-top.svg" alt="Task page top with monitor banner (desktop) wireframe" />
+            <div class="label"><span>01-task-top.svg</span><span>1280×800 · desktop</span></div>
+            <img src="wireframes/01-task-top.svg" alt="Task page top with monitor banner (desktop) wireframe" />
           </div>
           <div class="wire mobile-wire mobile-col" data-zoom data-caption="01 · Task page (mobile)">
             <div class="label"><span>mobile</span><span>375×812</span></div>
-            <img src="wireframes/01-issue-top-mobile.svg" alt="Task page with monitor banner (mobile) wireframe" />
+            <img src="wireframes/01-task-top-mobile.svg" alt="Task page with monitor banner (mobile) wireframe" />
           </div>
           <div class="notes-col">
             <div class="notes">
@@ -290,17 +290,13 @@
             <img src="wireframes/02-composer-mobile.svg" alt="Monitor strip above composer (mobile) wireframe" />
           </div>
           <div class="notes-col">
-            <div class="ref">
-              <div class="label"><span>Reference</span><span>current thread bottom</span></div>
-              <img src="screenshots/current-thread-bottom.png" alt="Current thread bottom with no monitor indication" data-zoom />
-            </div>
             <div class="notes">
               <h3>Annotations</h3>
               <ul>
                 <li><b>1</b> — Monitor strip: anchored to the composer (scrolls with it), not part of the comment list. Same copy system as the banner.</li>
                 <li><b>2</b> — Wake hint under the composer: sets the expectation that sending a message preempts the scheduled check.</li>
               </ul>
-              <div class="why"><b>Why this changes:</b> in the reference screenshot the last comment says a monitor is armed only in prose ("issue monitor fires 16:08Z"), and once more comments land even that disappears. The strip keeps the resume time visible at the exact spot where a human decides whether to wait or to nudge.</div>
+              <div class="why"><b>Why this changes:</b> in the reference screenshot the last comment says a monitor is armed only in prose ("task monitor fires 16:08Z"), and once more comments land even that disappears. The strip keeps the resume time visible at the exact spot where a human decides whether to wait or to nudge.</div>
             </div>
           </div>
         </div>
@@ -362,7 +358,7 @@
         <h2>Open questions</h2>
         <div class="notes">
           <ul>
-            <li><b>Banner vs. existing card</b> — there is already an "IssueMonitorActivityCard" that renders in the description area. Proposal: promote/replace it with the pinned banner (screen 1) rather than showing both. OK?</li>
+            <li><b>Banner vs. existing card</b> — there is already an "TaskMonitorActivityCard" that renders in the description area. Proposal: promote/replace it with the pinned banner (screen 1) rather than showing both. OK?</li>
             <li><b>Strip stickiness</b> — should the composer strip scroll with the thread (inline, as drawn) or stick to the composer even mid-scroll? Drawn as anchored to the composer.</li>
             <li><b>Relative-time precision</b> — adopt the two-unit format ("in 2h 12m") everywhere, including the existing scheduled-retry row which uses the same formatter?</li>
             <li><b>Hover vs. click</b> — the properties row currently opens the editor on click. Proposal keeps click = editor, hover/tap = read-only details tooltip. Fine, or should tap open the editor directly on mobile?</li>

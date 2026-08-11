@@ -77,8 +77,8 @@ If you change schema/API behavior, update all impacted layers:
 - `apps/ui` API clients and pages
 
 3. Preserve control-plane invariants.
-- Exactly one checked issue owner record
-- Issue-execution refs as the only provider invocation source
+- Exactly one checked task owner record
+- Task-execution refs as the only provider invocation source
 - Approval gates for governed actions
 - Budget hard-stop auto-pause behavior
 - Activity logging for mutating actions
@@ -87,7 +87,7 @@ If you change schema/API behavior, update all impacted layers:
 Prefer additive updates. Keep `doc/SPEC.md` and `doc/SPEC-implementation.md` aligned.
 
 5. Keep repo plan docs dated and centralized.
-When you are creating a plan file in the repository itself, new plan documents belong in `doc/plans/` and should use `YYYY-MM-DD-slug.md` filenames. This does not replace Paperclip issue planning: if a Paperclip issue asks for a plan, update the issue `plan` document per the `paperclip` skill instead of creating a repo markdown file.
+When you are creating a plan file in the repository itself, new plan documents belong in `doc/plans/` and should use `YYYY-MM-DD-slug.md` filenames. This does not replace Paperclip task planning: if a Paperclip task asks for a plan, update the task `plan` document per the `paperclip` skill instead of creating a repo markdown file.
 
 6. Keep provider output inside the execution boundary.
 Write generated files beneath the current execution workspace, verify them, and
@@ -135,7 +135,7 @@ pnpm test:release-smoke
 
 Run the browser suites only when your change touches them or when you are explicitly verifying CI/release flows.
 
-For normal issue work, run the smallest relevant verification first. Do not default to repo-wide typecheck/build/test on every heartbeat when a narrower check is enough to prove the change.
+For normal task work, run the smallest relevant verification first. Do not default to repo-wide typecheck/build/test on every heartbeat when a narrower check is enough to prove the change.
 
 Run this full check before claiming repo work done in a PR-ready hand-off, or when the change scope is broad enough that targeted checks are not sufficient:
 
@@ -191,8 +191,8 @@ A change is done when all are true:
 ## 12. Adapter ownership
 
 Paperclip has one AI execution path: the ACPX public-runtime bounded bridge.
-For a new issue owned by an agent with a non-null `instruction`, it admits the
-instruction and issue request as two ordered executions. The instruction run
+For a new task owned by an agent with a non-null `instruction`, it admits the
+instruction and task request as two ordered executions. The instruction run
 creates the provider session; the immediately following work run resumes it.
 ACPX is the sole supplier of exact agent names, launch resolution, models, and
 stable session settings. Paperclip loads ACPX's public registry, including its

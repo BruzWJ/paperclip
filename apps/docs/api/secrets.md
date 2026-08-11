@@ -384,7 +384,7 @@ POST /api/secrets/{secretId}/rotate
 ```
 
 Creates a new version of the secret. Agents referencing `"version": "latest"`
-automatically get the new value on the next eligible issue execution. Pin to a specific version
+automatically get the new value on the next eligible task execution. Pin to a specific version
 when a bad `latest` rollout would affect many agents at once.
 
 ## Using Secrets in Agent Config

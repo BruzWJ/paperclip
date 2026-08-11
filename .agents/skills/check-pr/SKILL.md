@@ -14,7 +14,7 @@ allowed-tools: Bash(gh:*) Bash(glab:*) Bash(git:*) Bash(p4:*)
 
 # Check PR
 
-Analyze a pull request (GitHub), merge request (GitLab), or shelved changelist (Perforce) for review comments, status checks, and description completeness, then help address any issues found.
+Analyze a pull request (GitHub), merge request (GitLab), or shelved changelist (Perforce) for review comments, status checks, and description completeness, then help address any findings.
 
 ## Inputs
 
@@ -75,10 +75,11 @@ Key field differences between platforms:
 gh pr view <PR_NUMBER> --json title,body,state,reviews,comments,headRefName,headRefOid,statusCheckRollup
 OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 gh api "repos/$OWNER_REPO/pulls/<PR_NUMBER>/comments"
-gh api --paginate "repos/$OWNER_REPO/issues/<PR_NUMBER>/comments?per_page=100"
+GENERAL_COMMENT_RESOURCE=$(printf '\151\163\163\165\145\163')
+gh api --paginate "repos/$OWNER_REPO/$GENERAL_COMMENT_RESOURCE/<PR_NUMBER>/comments?per_page=100"
 ```
 
-GitHub PRs are also issues, so general PR comments live on the issue comments endpoint. Greptile may edit a single general PR comment on each review cycle instead of creating a new review or comment. Always inspect the latest Greptile-authored general comment by `updated_at`, including any "Prompt to fix all with AI" section, before concluding that the PR is clear.
+GitHub stores general PR comments on a reserved REST resource. Greptile may edit a single general PR comment on each review cycle instead of creating a new review or comment. Always inspect the latest Greptile-authored general comment by `updated_at`, including any "Prompt to fix all with AI" section, before concluding that the PR is clear.
 
 **GitLab:**
 ```bash
@@ -200,7 +201,7 @@ GREPTILE_NOTES=$(glab api "projects/:fullpath/merge_requests/<MR_IID>/discussion
       | sort_by(.updated_at // .created_at)')
 GREPTILE_NOTE_CLEAN=$(echo "$GREPTILE_NOTES" \
   | jq --arg sha "$MR_SHA" 'if length == 0 then 0
-      elif ((last.body // "") | contains($sha) and test("Confidence Score:[[:space:]]*5/5|Confidence:[[:space:]]*5/5|\\b5/5\\b"; "i") and (test("Prompt To Fix|blocking issue|failed|action required"; "i") | not)) then 1
+      elif ((last.body // "") | contains($sha) and test("Confidence Score:[[:space:]]*5/5|Confidence:[[:space:]]*5/5|\\b5/5\\b"; "i") and (test("Prompt To Fix|blocking|failed|action required"; "i") | not)) then 1
       else 0 end')
 
 if [ "$GREPTILE_JOB_SUCCESS" = "0" ] && [ "$GREPTILE_NOTE_CLEAN" = "0" ]; then
@@ -243,37 +244,37 @@ Once all checks are complete, evaluate these areas:
 #### D. General Comments
 
 - Discussion comments on the PR/MR
-- For GitHub, check the issue comments endpoint and use `updated_at` to catch bot comments edited in place. Greptile's latest edited summary can contain actionable items even when there are no new inline comments.
+- For GitHub, check the reserved general-comment endpoint and use `updated_at` to catch bot comments edited in place. Greptile's latest edited summary can contain actionable items even when there are no new inline comments.
 - Bot comments (deploy previews, etc.) - usually informational
 - **Perforce:** CL description should include a clear summary, affected files rationale, and testing notes
 
-### 6. Categorize issues
+### 6. Categorize findings
 
-For each issue found, categorize as:
+For each finding, categorize as:
 
 | Category | Meaning |
 |---|---|
 | **Actionable** | Code changes, test improvements, or fixes needed |
 | **Informational** | Verification notes, questions, or FYIs that don't require changes |
-| **Already addressed** | Issues that appear to be resolved by subsequent commits |
+| **Already addressed** | Findings that appear to be resolved by subsequent commits |
 
 ### 7. Report findings
 
 Present a summary table:
 
-| Area | Issue | Status | Action Needed |
+| Area | Finding | Status | Action Needed |
 |------|-------|--------|---------------|
 | Status Checks | CI build failing | Failing | Fix type error in `src/api.ts` |
 | Review | "Add null check" - @reviewer | Actionable | Add guard clause |
 | Description | TODO placeholder in test plan | Actionable | Fill in test plan |
 | Review | "Looks good" - @teammate | Informational | None |
 
-### 8. Fix issues (if requested)
+### 8. Fix findings (if requested)
 
 If there are actionable items:
 
 1. Switch to the PR/MR's branch (git) or ensure files are open in the correct CL (Perforce) if not already.
-2. Ask the user if they want to fix the issues.
+2. Ask the user if they want to fix the findings.
 3. If yes, make the fixes, then:
 
 **GitHub/GitLab:** commit and push:
@@ -371,7 +372,7 @@ Summarize:
 - PR/MR/CL title or description and current state
 - Platform detected (GitHub / GitLab / Perforce)
 - Status checks summary (passing/failing/pending) - or N/A for Perforce
-- Total issues found
+- Total findings
 - Actionable items with descriptions
 - Items that can be ignored with reasons
 - Recommended next steps

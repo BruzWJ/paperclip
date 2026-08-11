@@ -1,24 +1,24 @@
-# Issue Documents Plan
+# Task Documents Plan
 
-> Historical only. References to provider-exposed Paperclip operational skills and generic agent REST access were retired by the issue-execution cutover; they have no runtime reader or supported installation path.
+> Historical only. References to provider-exposed Paperclip operational skills and generic agent REST access were retired by the task-execution cutover; they have no runtime reader or supported installation path.
 
 Status: Draft  
 Owner: Backend + UI + Agent Protocol  
 Date: 2026-03-13  
-Primary issue: `PAP-448`
+Primary task: `PAP-448`
 
 ## Summary
 
-Add first-class **documents** to Paperclip as editable, revisioned, company-scoped text artifacts that can be linked to issues.
+Add first-class **documents** to Paperclip as editable, revisioned, company-scoped text artifacts that can be linked to tasks.
 
 The first required convention is a document with key `plan`.
 
 This solves the immediate workflow problem in `PAP-448`:
 
-- plans should stop living inside issue descriptions as `<plan>` blocks
-- agents and board users should be able to create/update issue documents directly
-- `GET /api/issues/:id` should include the full `plan` document and expose the other available documents
-- issue detail should render documents under the description
+- plans should stop living inside task descriptions as `<plan>` blocks
+- agents and board users should be able to create/update task documents directly
+- `GET /api/tasks/:id` should include the full `plan` document and expose the other available documents
+- task detail should render documents under the description
 
 This should be built as the **text-document slice** of the broader artifact system, not as a replacement for attachments/assets.
 
@@ -27,23 +27,23 @@ This should be built as the **text-document slice** of the broader artifact syst
 ### Documents vs attachments vs artifacts
 
 - **Documents**: editable text content with stable keys and revision history.
-- **Attachments**: uploaded/generated opaque files backed by storage (`assets` + `issue_attachments`).
+- **Attachments**: uploaded/generated opaque files backed by storage (`assets` + `task_attachments`).
 - **Artifacts**: later umbrella/read-model that can unify documents, attachments, and previews.
 
 Recommendation:
 
-- implement **issue documents now**
+- implement **task documents now**
 - keep existing attachments as-is
-- defer full artifact unification until there is a second real consumer beyond issue documents + attachments
+- defer full artifact unification until there is a second real consumer beyond task documents + attachments
 
 This keeps `PAP-448` focused while still fitting the larger artifact direction.
 
 ## Goals
 
-1. Give issues first-class keyed documents, starting with `plan`.
-2. Make documents editable by board users and same-company agents with issue access.
+1. Give tasks first-class keyed documents, starting with `plan`.
+2. Make documents editable by board users and same-company agents with task access.
 3. Preserve change history with append-only revisions.
-4. Make the `plan` document automatically available in the normal issue fetch used by agents/heartbeats.
+4. Make the `plan` document automatically available in the normal task fetch used by agents/heartbeats.
 5. Replace the current `<plan>`-in-description convention in skills/docs.
 6. Keep the design compatible with a future artifact/deliverables layer.
 
@@ -57,9 +57,9 @@ This keeps `PAP-448` focused while still fitting the larger artifact direction.
 
 ## Product Decisions
 
-### 1. Keyed issue documents
+### 1. Keyed task documents
 
-Each issue can have multiple documents. Each document relation has a stable key:
+Each task can have multiple documents. Each document relation has a stable key:
 
 - `plan`
 - `design`
@@ -69,7 +69,7 @@ Each issue can have multiple documents. Each document relation has a stable key:
 
 Key rules:
 
-- unique per issue, case-insensitive
+- unique per task, case-insensitive
 - normalized to lowercase slug form
 - machine-oriented and stable
 - title is separate and user-facing
@@ -111,20 +111,20 @@ Updates should include `baseRevisionId`:
 
 This is important because both board users and agents may edit the same document.
 
-### 5. Issue fetch behavior
+### 5. Task fetch behavior
 
-`GET /api/issues/:id` should include:
+`GET /api/tasks/:id` should include:
 
 - full `planDocument` when a `plan` document exists
 - `documentSummaries` for all linked documents
 
 It should not inline every document body by default.
 
-This keeps issue fetches useful for agents without making every issue payload unbounded.
+This keeps task fetches useful for agents without making every task payload unbounded.
 
 ### 6. Legacy `<plan>` compatibility
 
-If an issue has no `plan` document but its description contains a legacy `<plan>` block:
+If a task has no `plan` document but its description contains a legacy `<plan>` block:
 
 - expose that as a legacy read-only fallback in API/UI
 - mark it as legacy/synthetic
@@ -132,12 +132,12 @@ If an issue has no `plan` document but its description contains a legacy `<plan>
 
 Recommendation:
 
-- do not auto-rewrite old issue descriptions in the first rollout
+- do not auto-rewrite old task descriptions in the first rollout
 - provide an explicit import/migrate path later
 
 ## Proposed Data Model
 
-Recommendation: make documents first-class, but keep issue linkage explicit via a join table.
+Recommendation: make documents first-class, but keep task linkage explicit via a join table.
 
 This preserves foreign keys today and gives a clean path to future `project_documents` or `company_documents` tables later.
 
@@ -183,15 +183,15 @@ Constraints:
 
 - unique `(document_id, revision_number)`
 
-### `issue_documents`
+### `task_documents`
 
-Issue relation + workflow key.
+Task relation + workflow key.
 
 Suggested columns:
 
 - `id`
 - `company_id`
-- `issue_id`
+- `task_id`
 - `document_id`
 - `key`
 - `created_at`
@@ -199,8 +199,8 @@ Suggested columns:
 
 Constraints:
 
-- unique `(company_id, issue_id, key)`
-- unique `(document_id)` to keep one issue relation per document in v1
+- unique `(company_id, task_id, key)`
+- unique `(document_id)` to keep one task relation per document in v1
 
 ## Why not use `assets` for this?
 
@@ -210,7 +210,7 @@ Because `assets` solves blob storage, not:
 - inline text editing
 - revision history
 - optimistic concurrency
-- cheap inclusion in `GET /issues/:id`
+- cheap inclusion in `GET /tasks/:id`
 
 Documents and attachments should remain separate primitives, then meet later in a deliverables/artifact read-model.
 
@@ -221,19 +221,19 @@ Documents and attachments should remain separate primitives, then meet later in 
 Add:
 
 - `DocumentFormat`
-- `IssueDocument`
-- `IssueDocumentSummary`
+- `TaskDocument`
+- `TaskDocumentSummary`
 - `DocumentRevision`
 
-Recommended `IssueDocument` shape:
+Recommended `TaskDocument` shape:
 
 ```ts
 type DocumentFormat = "markdown" | "plain_text" | "json" | "html";
 
-interface IssueDocument {
+interface TaskDocument {
   id: string;
   companyId: string;
-  issueId: string;
+  taskId: string;
   key: string;
   title: string | null;
   format: DocumentFormat;
@@ -249,10 +249,10 @@ interface IssueDocument {
 }
 ```
 
-Recommended `IssueDocumentSummary` shape:
+Recommended `TaskDocumentSummary` shape:
 
 ```ts
-interface IssueDocumentSummary {
+interface TaskDocumentSummary {
   id: string;
   key: string;
   title: string | null;
@@ -263,34 +263,34 @@ interface IssueDocumentSummary {
 }
 ```
 
-## Issue type enrichment
+## Task type enrichment
 
-Extend `Issue` with:
+Extend `Task` with:
 
 ```ts
-interface Issue {
+interface Task {
   ...
-  planDocument?: IssueDocument | null;
-  documentSummaries?: IssueDocumentSummary[];
+  planDocument?: TaskDocument | null;
+  documentSummaries?: TaskDocumentSummary[];
   legacyPlanDocument?: {
     key: "plan";
     body: string;
-    source: "issue_description";
+    source: "task_description";
   } | null;
 }
 ```
 
-This directly satisfies the `PAP-448` requirement for heartbeat/API issue fetches.
+This directly satisfies the `PAP-448` requirement for heartbeat/API task fetches.
 
 ## API endpoints
 
 Recommended endpoints:
 
-- `GET /api/issues/:issueId/documents`
-- `GET /api/issues/:issueId/documents/:key`
-- `PUT /api/issues/:issueId/documents/:key`
-- `GET /api/issues/:issueId/documents/:key/revisions`
-- `DELETE /api/issues/:issueId/documents/:key` optionally board-only in v1
+- `GET /api/tasks/:taskId/documents`
+- `GET /api/tasks/:taskId/documents/:key`
+- `PUT /api/tasks/:taskId/documents/:key`
+- `GET /api/tasks/:taskId/documents/:key/revisions`
+- `DELETE /api/tasks/:taskId/documents/:key` optionally board-only in v1
 
 Recommended `PUT` body:
 
@@ -313,9 +313,9 @@ Behavior:
 ## Authorization and invariants
 
 - all document records are company-scoped
-- issue relation must belong to same company
-- board access follows existing issue access rules
-- agent access follows existing same-company issue access rules
+- task relation must belong to same company
+- board access follows existing task access rules
+- agent access follows existing same-company task access rules
 - every mutation writes activity log entries
 
 Recommended delete rule for v1:
@@ -327,9 +327,9 @@ That keeps automated systems from removing canonical docs too easily.
 
 ## UI Plan
 
-## Issue detail
+## Task detail
 
-Add a new **Documents** section directly under the issue description.
+Add a new **Documents** section directly under the task description.
 
 Recommended behavior:
 
@@ -349,7 +349,7 @@ Recommended presentation order:
 1. Description
 2. Documents
 3. Attachments
-4. Comments / activity / sub-issues
+4. Comments / activity / sub-tasks
 
 This matches the request that documents live under the description while still leaving attachments available.
 
@@ -372,20 +372,20 @@ If there is no stored `plan` document but legacy `<plan>` exists:
 
 ## Agent Protocol and Skills
 
-Update the Paperclip agent workflow so planning no longer edits the issue description.
+Update the Paperclip agent workflow so planning no longer edits the task description.
 
 Required changes:
 
 - update `skills/paperclip/SKILL.md`
 - replace the `<plan>` instructions with document creation/update instructions
-- document the new endpoints in `apps/docs/api/issues.md`
+- document the new endpoints in `apps/docs/api/tasks.md`
 - update any internal planning docs that still teach inline `<plan>` blocks
 
 New rule:
 
-- when asked to make a plan for an issue, create or update the issue document with key `plan`
+- when asked to make a plan for a task, create or update the task document with key `plan`
 - leave a comment that the plan document was created/updated
-- do not mark the issue done
+- do not mark the task done
 
 ## Relationship to the Artifact Plan
 
@@ -396,8 +396,8 @@ Recommendation:
 - keep documents as their own primitive in this change
 - add `document` to any future `ArtifactKind`
 - later build a deliverables read-model that aggregates:
-  - issue documents
-  - issue attachments
+  - task documents
+  - task attachments
   - preview URLs
 
 The artifact proposal currently has no explicit `document` kind. It should.
@@ -420,47 +420,47 @@ Files:
 
 - `packages/db/schema/documents.ts`
 - `packages/db/schema/document_revisions.ts`
-- `packages/db/schema/issue_documents.ts`
+- `packages/db/schema/task_documents.ts`
 - `packages/db/schema/index.ts`
 - `packages/db/migrations/*`
-- `packages/shared/src/types/issue.ts`
-- `packages/shared/src/validators/issue.ts` or new document validator file
+- `packages/shared/src/types/task.ts`
+- `packages/shared/src/validators/task.ts` or new document validator file
 - `packages/shared/src/index.ts`
 
 Acceptance:
 
-- schema enforces one key per issue
+- schema enforces one key per task
 - revisions are append-only
-- shared types expose plan/document fields on issue fetch
+- shared types expose plan/document fields on task fetch
 
 ## Phase 2: Server services and routes
 
 Files:
 
-- `apps/server/src/services/issues.ts` or `apps/server/src/services/documents.ts`
-- `apps/server/src/routes/issues.ts`
+- `apps/server/src/services/tasks.ts` or `apps/server/src/services/documents.ts`
+- `apps/server/src/routes/tasks.ts`
 - `apps/server/src/services/activity.ts` callsites
 
 Behavior:
 
 - list/get/upsert/delete documents
 - revision listing
-- `GET /issues/:id` returns `planDocument` + `documentSummaries`
-- company boundary checks match issue routes
+- `GET /tasks/:id` returns `planDocument` + `documentSummaries`
+- company boundary checks match task routes
 
 Acceptance:
 
-- agents and board can fetch/update same-company issue documents
+- agents and board can fetch/update same-company task documents
 - stale edits return `409`
 - activity timeline shows document changes
 
-## Phase 3: UI issue documents surface
+## Phase 3: UI task documents surface
 
 Files:
 
-- `apps/ui/src/api/issues.ts`
+- `apps/ui/src/api/tasks.ts`
 - `apps/ui/src/lib/queryKeys.ts`
-- `apps/ui/src/pages/IssueDetail.tsx`
+- `apps/ui/src/pages/TaskDetail.tsx`
 - new reusable document UI component if needed
 
 Behavior:
@@ -472,23 +472,23 @@ Behavior:
 
 Acceptance:
 
-- board can create a `plan` doc from issue detail
+- board can create a `plan` doc from task detail
 - updated plan appears immediately
-- issue detail no longer depends on description-embedded `<plan>`
+- task detail no longer depends on description-embedded `<plan>`
 
 ## Phase 4: Skills/docs migration
 
 Files:
 
 - `skills/paperclip/SKILL.md`
-- `apps/docs/api/issues.md`
+- `apps/docs/api/tasks.md`
 - `doc/SPEC-implementation.md`
 - relevant plan/docs that mention `<plan>`
 
 Acceptance:
 
-- planning guidance references issue documents, not inline issue description tags
-- API docs describe the new document endpoints and issue payload additions
+- planning guidance references task documents, not inline task description tags
+- API docs describe the new document endpoints and task payload additions
 
 ## Phase 5: Legacy compatibility and follow-up
 
@@ -513,13 +513,13 @@ Follow-up, not required for first merge:
 - `baseRevisionId` conflict handling
 - company boundary enforcement
 - agent vs board authorization
-- issue fetch includes `planDocument` and document summaries
+- task fetch includes `planDocument` and document summaries
 - legacy `<plan>` fallback behavior
 - activity log mutation coverage
 
 ### UI
 
-- issue detail shows plan document
+- task detail shows plan document
 - create/update flows invalidate queries correctly
 - conflict and validation errors are surfaced
 - legacy plan fallback renders correctly
@@ -548,21 +548,21 @@ pnpm build
 4. Should legacy `<plan>` blocks ever be auto-migrated?
    Recommendation: no automatic mutation in the first rollout.
 
-5. Should documents appear inside a future Deliverables section or remain a top-level Issue section?
+5. Should documents appear inside a future Deliverables section or remain a top-level Task section?
    Recommendation: keep a dedicated Documents section now; later also expose them in Deliverables if an aggregated artifact view is added.
 
 ## Final Recommendation
 
-Ship **issue documents** as a focused, text-first primitive now.
+Ship **task documents** as a focused, text-first primitive now.
 
 Do not try to solve full artifact unification in the same implementation.
 
 Use:
 
 - first-class document tables
-- issue-level keyed linkage
+- task-level keyed linkage
 - append-only revisions
-- `planDocument` embedded in normal issue fetches
+- `planDocument` embedded in normal task fetches
 - legacy `<plan>` fallback
 - skill/docs migration away from description-embedded plans
 

@@ -6,22 +6,22 @@ The user-facing runtime guide is [apps/docs/agents-runtime.md](../../apps/docs/a
 
 ## Admission
 
-A provider run may start only from a persisted, active `IssueExecutionRef` produced by a canonical issue operation. The dispatcher must lease and revalidate the exact company, issue, ownership epoch, target agent, adapter revision, authority, source, and session input immediately before launch.
+A provider run may start only from a persisted, active `TaskExecutionRef` produced by a canonical task operation. The dispatcher must lease and revalidate the exact company, task, ownership epoch, target agent, adapter revision, authority, source, and session input immediately before launch.
 
-There is no generic invoke, wake, timer ping, agent REST credential, or provider-side issue polling loop. Scheduled work is represented by a routine-created ordinary issue.
+There is no generic invoke, wake, timer ping, agent REST credential, or provider-side task polling loop. Scheduled work is represented by a routine-created ordinary task.
 
 ## Input
 
 The Paperclip-authored user message is exactly the persisted canonical source
 text. For an agent-reaching managed tool, that source is rendered once from a
 closed contract containing the tool name, its immutable arguments, and locked
-context. `issue_create`, `issue_assign`, `issue_update`, and `mention_agent`
+context. `task_create`, `task_assign`, `task_update`, and `mention_agent`
 each own their message shape; the request or message bytes remain unchanged as
 the body after the envelope header. Other source kinds retain their own exact
 request or follow-up text.
 
-A fresh execution may prepend only the deterministic issue-session composition
-authorized by the current-issue comment/run dial cells. With both false, no
+A fresh execution may prepend only the deterministic task-session composition
+authorized by the current-task comment/run dial cells. With both false, no
 prefix exists. Paperclip supplies no ambient caller profile, company context,
 goal ancestry, managed instructions, generic prompt template, run-directory
 metadata, or generic REST bridge beyond fields deliberately rendered into that
@@ -36,16 +36,16 @@ expires with the lease.
 
 ## Session
 
-The canonical record is the issue's Paperclip Session log. Effective
+The canonical record is the task's Paperclip Session log. Effective
 `carry_context` permits an encrypted opaque provider-native correlation only
-for the same issue, ownership epoch, agent, and adapter configuration identity.
+for the same task, ownership epoch, agent, and adapter configuration identity.
 The owner/consult lane, execution target, and authorized context exposure must
 also match exactly. Disabled carry, reassignment, or any scope/revision change
 cannot silently create a replacement session; later work fails closed unless
 it has the exact eligible resume source. One agent's correlation is never
 shared with another agent.
 
-Provider-native storage is opaque. Paperclip does not read, display, delete, derive, or migrate it, and never carries it across issues.
+Provider-native storage is opaque. Paperclip does not read, display, delete, derive, or migrate it, and never carries it across tasks.
 
 ## Run directory
 

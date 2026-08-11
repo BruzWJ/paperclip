@@ -60,7 +60,7 @@ Modules live in a top-level `modules/` directory. Each module is a pnpm workspac
   "hooks": [
     "agent:heartbeat",
     "agent:created",
-    "issue:status_changed",
+    "task:status_changed",
     "budget:threshold_crossed"
   ],
 
@@ -168,7 +168,7 @@ interface ModuleAPI {
   // Access core services (read-only helpers)
   core: {
     agents: AgentService;
-    issues: IssueService;
+    tasks: TaskService;
     projects: ProjectService;
     goals: GoalService;
     activity: ActivityService;
@@ -194,9 +194,9 @@ Hooks are the primary integration point. The core emits events at well-defined m
 | `agent:deleted` | `{ agent }` | After an agent is removed |
 | `agent:heartbeat` | `{ agentId, timestamp, meta }` | When an agent checks in. `meta` carries tokens_used, cost, latency, etc. |
 | `agent:status_changed` | `{ agent, from, to }` | When agent status transitions (idle→active, active→error, etc.) |
-| `issue:created` | `{ issue }` | After a new issue is inserted |
-| `issue:status_changed` | `{ issue, from, to }` | When issue moves between statuses |
-| `issue:assigned` | `{ issue, agent }` | When an issue is assigned to an agent |
+| `task:created` | `{ task }` | After a new task is inserted |
+| `task:status_changed` | `{ task, from, to }` | When task moves between statuses |
+| `task:assigned` | `{ task, agent }` | When a task is assigned to an agent |
 | `goal:created` | `{ goal }` | After a new goal is inserted |
 | `goal:completed` | `{ goal }` | When a goal's status becomes complete |
 | `budget:spend_recorded` | `{ agentId, amount, total }` | After spend is incremented |
@@ -507,7 +507,7 @@ A company template is a JSON file describing a full company structure:
     }
   ],
 
-  "issues": [
+  "tasks": [
     {
       "title": "Set up CI/CD pipeline",
       "status": "todo",
@@ -538,7 +538,7 @@ Templates use `ref` strings (not UUIDs) for internal cross-references. On import
 3. Insert agents (topological sort by reportsTo)
 4. Insert goals (topological sort by parentRef)
 5. Insert projects
-6. Insert issues (resolve projectRef, assigneeRef, goalRef to real IDs)
+6. Insert tasks (resolve projectRef, assigneeRef, goalRef to real IDs)
 7. Log activity events for everything created
 ```
 
@@ -609,8 +609,8 @@ pnpm paperclipai store export                  # export current company as templ
 
 | Module | What it does | Key hooks |
 |--------|-------------|-----------|
-| **Analytics Dashboard** | Burn rate trends, agent utilization over time, goal velocity charts | `agent:heartbeat`, `issue:status_changed`, `goal:completed` |
-| **Workflow Automation** | If/then rules: "when issue is done, create follow-up", "when budget at 90%, pause agent" | `issue:status_changed`, `budget:threshold_crossed` |
+| **Analytics Dashboard** | Burn rate trends, agent utilization over time, goal velocity charts | `agent:heartbeat`, `task:status_changed`, `goal:completed` |
+| **Workflow Automation** | If/then rules: "when task is done, create follow-up", "when budget at 90%, pause agent" | `task:status_changed`, `budget:threshold_crossed` |
 | **Knowledge Base** | Shared document store, vector search, agents read/write organizational knowledge | `agent:heartbeat` (for context injection) |
 
 ### Tier 3 — Nice to have

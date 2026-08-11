@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the Issues Kanban board usable with hundreds of issues by adding compact high-volume rendering, collapsed cold lanes, and per-column reveal controls.
+**Goal:** Make the Tasks Kanban board usable with hundreds of tasks by adding compact high-volume rendering, collapsed cold lanes, and per-column reveal controls.
 
-**Architecture:** Keep the change UI-only. `IssuesList` owns persisted board density preferences in existing company-scoped view state, while `KanbanBoard` owns lane rendering, card density, collapsed rails, and per-column "show more" state.
+**Architecture:** Keep the change UI-only. `TasksList` owns persisted board density preferences in existing company-scoped view state, while `KanbanBoard` owns lane rendering, card density, collapsed rails, and per-column "show more" state.
 
 **Tech Stack:** React 19, TypeScript, Vite, Vitest/jsdom, `@dnd-kit/core`, `@dnd-kit/sortable`, Tailwind utility classes.
 
@@ -12,10 +12,10 @@
 
 ## File Structure
 
-- Modify `apps/ui/src/components/IssuesList.tsx`: extend `IssueViewState`, derive high-volume board preferences, add toolbar controls, pass props into `KanbanBoard`.
+- Modify `apps/ui/src/components/TasksList.tsx`: extend `TaskViewState`, derive high-volume board preferences, add toolbar controls, pass props into `KanbanBoard`.
 - Modify `apps/ui/src/components/KanbanBoard.tsx`: add compact cards, collapsed rail lanes, visible-card limits, and per-column reveal behavior.
 - Create `apps/ui/src/components/KanbanBoard.test.tsx`: focused tests for high-volume behavior and drag/drop update callback.
-- Modify `apps/ui/src/components/IssuesList.test.tsx`: update the mocked `KanbanBoard` expectations for new props.
+- Modify `apps/ui/src/components/TasksList.test.tsx`: update the mocked `KanbanBoard` expectations for new props.
 - Keep `doc/plans/2026-05-05-scaled-kanban-board-design.md` as the design source of truth.
 
 ## Task 1: Add Kanban Board Scaling Mechanics
@@ -26,10 +26,10 @@
 
 - [ ] **Step 1: Write focused tests**
 
-Create `apps/ui/src/components/KanbanBoard.test.tsx` with tests that render 60 todo issues and assert:
+Create `apps/ui/src/components/KanbanBoard.test.tsx` with tests that render 60 todo tasks and assert:
 
 ```tsx
-renderBoard({ issues: createIssues(60, "todo"), compactCards: true, initialVisibleCount: 10, revealIncrement: 10 });
+renderBoard({ tasks: createTasks(60, "todo"), compactCards: true, initialVisibleCount: 10, revealIncrement: 10 });
 expect(container.textContent).toContain("Showing 10 of 60");
 expect(container.textContent).toContain("Show 10 more");
 ```
@@ -37,10 +37,10 @@ expect(container.textContent).toContain("Show 10 more");
 Also test collapsed rails:
 
 ```tsx
-renderBoard({ issues: createIssues(3, "done"), collapsedStatuses: ["done"] });
+renderBoard({ tasks: createTasks(3, "done"), collapsedStatuses: ["done"] });
 expect(container.textContent).toContain("Done");
 expect(container.textContent).toContain("3");
-expect(container.textContent).not.toContain("Issue 1");
+expect(container.textContent).not.toContain("Task 1");
 ```
 
 - [ ] **Step 2: Run tests to verify failure**
@@ -73,7 +73,7 @@ initialVisibleCount?: number;
 revealIncrement?: number;
 ```
 
-Add per-status visible-count state keyed by status. Expanded columns render `issues.slice(0, visibleCount)` and show a button when hidden issues remain. Collapsed columns render a narrow droppable rail with status icon, label, and count, but no cards.
+Add per-status visible-count state keyed by status. Expanded columns render `tasks.slice(0, visibleCount)` and show a button when hidden tasks remain. Collapsed columns render a narrow droppable rail with status icon, label, and count, but no cards.
 
 Reset per-status visible-count state when `initialVisibleCount` or `revealIncrement` changes so choosing a smaller cards-per-column preset does not leave a column expanded past the newly selected page size.
 
@@ -98,15 +98,15 @@ git add apps/ui/src/components/KanbanBoard.tsx apps/ui/src/components/KanbanBoar
 git commit -m "Scale kanban board columns"
 ```
 
-## Task 2: Wire Board Density State Into IssuesList
+## Task 2: Wire Board Density State Into TasksList
 
 **Files:**
-- Modify: `apps/ui/src/components/IssuesList.tsx`
-- Modify: `apps/ui/src/components/IssuesList.test.tsx`
+- Modify: `apps/ui/src/components/TasksList.tsx`
+- Modify: `apps/ui/src/components/TasksList.test.tsx`
 
 - [ ] **Step 1: Write/update tests**
 
-In `IssuesList.test.tsx`, update the `KanbanBoard` mock to capture:
+In `TasksList.test.tsx`, update the `KanbanBoard` mock to capture:
 
 ```ts
 compactCards?: boolean;
@@ -115,7 +115,7 @@ initialVisibleCount?: number;
 revealIncrement?: number;
 ```
 
-Add a test that stores board mode in localStorage, renders more than 100 issues, and expects:
+Add a test that stores board mode in localStorage, renders more than 100 tasks, and expects:
 
 ```ts
 expect(mockKanbanBoard).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -131,14 +131,14 @@ expect(mockKanbanBoard).toHaveBeenLastCalledWith(expect.objectContaining({
 Run:
 
 ```bash
-pnpm exec vitest run apps/ui/src/components/IssuesList.test.tsx
+pnpm exec vitest run apps/ui/src/components/TasksList.test.tsx
 ```
 
-Expected: fail because `IssuesList` does not pass the new props yet.
+Expected: fail because `TasksList` does not pass the new props yet.
 
 - [ ] **Step 3: Add persisted board density preferences**
 
-Extend `IssueViewState`:
+Extend `TaskViewState`:
 
 ```ts
 boardCardDensity: "auto" | "compact" | "comfortable";
@@ -177,14 +177,14 @@ Update the `KanbanBoard` call:
 
 ```tsx
 <KanbanBoard
-  issues={filtered}
+  tasks={filtered}
   agents={agents}
-  liveIssueIds={liveIssueIds}
+  liveTaskIds={liveTaskIds}
   compactCards={boardCompactCards}
   collapsedStatuses={boardCollapsedStatuses}
   initialVisibleCount={viewState.boardColumnPageSize}
   revealIncrement={viewState.boardColumnPageSize}
-  onUpdateIssue={onUpdateIssue}
+  onUpdateTask={onUpdateTask}
 />
 ```
 
@@ -193,7 +193,7 @@ Update the `KanbanBoard` call:
 Run:
 
 ```bash
-pnpm exec vitest run apps/ui/src/components/IssuesList.test.tsx apps/ui/src/components/KanbanBoard.test.tsx
+pnpm exec vitest run apps/ui/src/components/TasksList.test.tsx apps/ui/src/components/KanbanBoard.test.tsx
 ```
 
 Expected: pass.
@@ -201,8 +201,8 @@ Expected: pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/ui/src/components/IssuesList.tsx apps/ui/src/components/IssuesList.test.tsx
-git commit -m "Wire issue board density controls"
+git add apps/ui/src/components/TasksList.tsx apps/ui/src/components/TasksList.test.tsx
+git commit -m "Wire task board density controls"
 ```
 
 ## Task 3: Verification And PR Prep
@@ -213,7 +213,7 @@ git commit -m "Wire issue board density controls"
 - [ ] **Step 1: Run targeted UI tests**
 
 ```bash
-pnpm exec vitest run apps/ui/src/components/IssuesList.test.tsx apps/ui/src/components/KanbanBoard.test.tsx
+pnpm exec vitest run apps/ui/src/components/TasksList.test.tsx apps/ui/src/components/KanbanBoard.test.tsx
 ```
 
 Expected: pass.

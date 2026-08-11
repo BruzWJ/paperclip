@@ -21,7 +21,7 @@ export function trackYourFeatureActionPerformed(
   },
 ): void {
   client.track(
-    // @ts-expect-error -- proposed-telemetry(https://github.com/paperclipai/paperclip/issues/123): measure feature action completion
+    // @ts-expect-error -- proposed-telemetry(paperclipai/paperclip#123): measure feature action completion
     "your_feature.action_performed",
     dims,
   );
@@ -33,10 +33,10 @@ The multi-line shape is recommended because TypeScript places the unregistered-n
 The suffix format is:
 
 ```text
--- proposed-telemetry(<issue>): <rationale>
+-- proposed-telemetry(<task>): <rationale>
 ```
 
-`<issue>` should be a public `https://github.com/paperclipai/paperclip/issues/123` URL. The rationale should be a short product reason for collecting the event. Missing issue or rationale text is tolerated at the call site and flagged by `scripts/extract-proposed-events.mjs`; it is not an OSS CI failure.
+`<task>` should be a public GitHub ticket reference such as `paperclipai/paperclip#123`. The rationale should be a short product reason for collecting the event. Missing task or rationale text is tolerated at the call site and flagged by `scripts/extract-proposed-events.mjs`; it is not an OSS CI failure.
 
 These formatting conventions are documentation-only. Do not add repo-wide bans for `@ts-expect-error`, casts, or single-line calls as part of this workflow.
 

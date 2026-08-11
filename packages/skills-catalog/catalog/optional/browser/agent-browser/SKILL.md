@@ -25,7 +25,7 @@ Use a controlled browser to verify behavior, capture evidence, or extract inform
 - The page is reachable as static HTML. Use `curl`/HTTP fetch — it is cheaper, faster, and more reliable.
 - The task is unattended large-scale scraping. That belongs to a dedicated scraper with rate limits, robots.txt handling, and a real user agent policy — not this skill.
 - The site is behind authentication you do not own credentials for, or whose terms of service prohibit automation.
-- The site involves sensitive accounts (banking, healthcare, government) where automation risks lockout or compliance issues.
+- The site involves sensitive accounts (banking, healthcare, government) where automation risks lockout or compliance tasks.
 
 ## Before launching the browser
 

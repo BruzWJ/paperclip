@@ -11,7 +11,7 @@ generic Paperclip credential.
 
 ```http
 GET /api/companies/{companyId}/agents
-GET /api/companies/{companyId}/issue-owner-catalog
+GET /api/companies/{companyId}/task-owner-catalog
 GET /api/agents/{agentId}
 GET /api/companies/{companyId}/org
 ```
@@ -20,7 +20,7 @@ Agent identity contains name, optional display title, capabilities, optional
 board-owned `instruction`, and optional `reportsTo`. There is no role field,
 chain-of-command authority, or privileged first/root agent.
 
-The company-authorized issue-owner catalog is the picker projection for new
+The company-authorized task-owner catalog is the picker projection for new
 ownership. It returns only `id`, `name`, `title`, and `icon`, and omits any
 paused, pending-approval, terminated, invalid-reporting-chain,
 or missing-revision agent through the canonical invokable-owner resolver.
@@ -41,17 +41,17 @@ Content-Type: application/json
   "capabilities": "Full-stack development",
   "contextGrants": {
     "carry_context": false,
-    "read_issue_comments": false,
-    "read_issue_agent_run": false,
-    "list_sub_issues": false,
-    "read_sub_issue_comments": false,
-    "read_sub_issue_agent_run": false,
-    "list_company_issues": false,
-    "read_company_issue_comments": false,
-    "read_company_issue_agent_run": false
+    "read_task_comments": false,
+    "read_task_agent_run": false,
+    "list_sub_tasks": false,
+    "read_sub_task_comments": false,
+    "read_sub_task_agent_run": false,
+    "list_company_tasks": false,
+    "read_company_task_comments": false,
+    "read_company_task_agent_run": false
   },
   "actionGrants": {
-    "issue_create": false,
+    "task_create": false,
     "mention_board": false,
     "agent_hire": false,
     "agent_configure": false,
@@ -70,15 +70,15 @@ does not mint a Paperclip credential, install an operational skill, create an
 agent-wide session, or stamp role-derived grants. The complete context/action
 and mention-reach maps make the all-false baseline unambiguous.
 
-`issue_create` is the combined create-and-assign grant: it permits an exact
+`task_create` is the combined create-and-assign grant: it permits an exact
 creator execution to create direct children and reassign its eligible direct
-children. `issue_update` is not a configured grant. The current owner receives
-an active-issue update automatically, and the exact creator execution receives
+children. `task_update` is not a configured grant. The current owner receives
+an active-task update automatically, and the exact creator execution receives
 an eligible-child update automatically. Both use the same canonical
-`issue_update({ message, status?, structuredResult?, issueId? })` path, which
+`task_update({ message, status?, structuredResult?, taskId? })` path, which
 delivers the update message to the owner/creator counterpart; there is no
-separate agent comment path for that update. Omit `issueId` for the active owned
-issue; provide an eligible direct-child ID for a creator update. The current
+separate agent comment path for that update. Omit `taskId` for the active owned
+task; provide an eligible direct-child ID for a creator update. The current
 owner alone may set terminal `done`/`cancelled` and `structuredResult`; a
 creator update may send a message or set nonterminal `open`/`blocked`.
 
@@ -150,12 +150,12 @@ POST /api/agents/{agentId}/clear-error
 POST /api/agents/{agentId}/terminate
 ```
 
-Termination preserves the immutable issue/Session/run/comment audit. It
-cancels live work and follows canonical creator recovery for open owned issues.
+Termination preserves the immutable task/Session/run/comment audit. It
+cancels live work and follows canonical creator recovery for open owned tasks.
 
 There is no generic invoke/wake endpoint, agent API-key endpoint, agent-wide
 runtime reset, or conversational-session endpoint. Work begins only through a
-canonical issue-execution source.
+canonical task-execution source.
 
 ## Models and structural readiness
 

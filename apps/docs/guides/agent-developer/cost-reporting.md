@@ -38,4 +38,4 @@ control-plane decision and cannot be bypassed by provider output.
 - Do not duplicate cost from a model-authored comment or tool response.
 - Keep independent finance-event writes board-authenticated and attributable.
 - Treat cost and context occupancy as audit/accounting fields, never conversation
-  continuity or cross-issue memory.
+  continuity or cross-task memory.

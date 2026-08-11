@@ -19,8 +19,8 @@ my-company/
 │   └── main/PROJECT.md
 ├── skills/
 │   └── review/SKILL.md
-├── issues/
-│   └── onboarding/ISSUE.md
+├── tasks/
+│   └── onboarding/TASK.md
 └── .paperclip.yaml     # Adapter config, env inputs, routines
 ```
 
@@ -28,7 +28,7 @@ my-company/
 - **AGENTS.md** files contain portable identity (`name`, optional display
   `title`, `reportsTo`) and explicit company-skill selections. They contain no
   Paperclip instruction bundle or role field.
-- **ISSUE.md** is the external package filename for starter issues. Its Markdown
+- **TASK.md** is the external package filename for starter tasks. Its Markdown
   body is the canonical immutable request and its `owner` names an agent slug.
 - **SKILL.md** files are compatible with the Agent Skills ecosystem.
 - **.paperclip.yaml** holds Paperclip-specific adapter/runtime settings,
@@ -47,11 +47,11 @@ paperclipai company export <company-id> --out ./my-export
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--out <path>` | Output directory (required) | — |
-| `--include <values>` | Comma-separated set: `company`, `agents`, `projects`, `issues`, `skills` | `company,agents` |
+| `--include <values>` | Comma-separated set: `company`, `agents`, `projects`, `tasks`, `skills` | `company,agents` |
 | `--skills <values>` | Export only specific skill slugs | all |
 | `--projects <values>` | Export only specific project shortnames or IDs | all |
-| `--issues <values>` | Export specific issue identifiers or IDs | none |
-| `--project-issues <values>` | Export issues belonging to specific projects | none |
+| `--tasks <values>` | Export specific task identifiers or IDs | none |
+| `--project-tasks <values>` | Export tasks belonging to specific projects | none |
 | `--expand-referenced-skills` | Vendor skill file contents instead of keeping upstream references | `false` |
 
 ### Examples
@@ -60,8 +60,8 @@ paperclipai company export <company-id> --out ./my-export
 # Export company with agents and projects
 paperclipai company export abc123 --out ./backup --include company,agents,projects
 
-# Export everything including starter issues and skills
-paperclipai company export abc123 --out ./full-export --include company,agents,projects,issues,skills
+# Export everything including starter tasks and skills
+paperclipai company export abc123 --out ./full-export --include company,agents,projects,tasks,skills
 
 # Export only specific skills
 paperclipai company export abc123 --out ./skills-only --include skills --skills review,deploy
@@ -72,7 +72,7 @@ paperclipai company export abc123 --out ./skills-only --include skills --skills 
 - Company name, description, and metadata
 - Agent identity, reporting structure, explicit permission grants, and selected skills
 - Project definitions
-- Issue immutable requests and explicit agent owners (when included as `ISSUE.md`)
+- Task immutable requests and explicit agent owners (when included as `TASK.md`)
 - Skill packages (as references or vendored content)
 - Adapter type and env input declarations in `.paperclip.yaml`
 
@@ -104,7 +104,7 @@ paperclipai company import org/repo/companies/acme
 | `--target <mode>` | `new` (create a new company) or `existing` (merge into existing) | inferred from context |
 | `--company-id <id>` | Target company ID for `--target existing` | current context |
 | `--new-company-name <name>` | Override company name for `--target new` | from package |
-| `--include <values>` | Comma-separated set: `company`, `agents`, `projects`, `issues`, `skills` | auto-detected |
+| `--include <values>` | Comma-separated set: `company`, `agents`, `projects`, `tasks`, `skills` | auto-detected |
 | `--agents <list>` | Comma-separated agent slugs to import, or `all` | `all` |
 | `--collision <mode>` | How to handle name conflicts: `rename`, `skip`, or `replace` | `rename` |
 | `--ref <value>` | Git ref for GitHub imports (branch, tag, or commit) | default branch |
@@ -131,7 +131,7 @@ When importing into an existing company, agent or project names may conflict wit
 
 ### Interactive Selection
 
-When running interactively (no `--yes` or `--json` flags), the import command shows a selection picker before applying. You can choose exactly which agents, projects, skills, and issues to import using a checkbox interface.
+When running interactively (no `--yes` or `--json` flags), the import command shows a selection picker before applying. You can choose exactly which agents, projects, skills, and tasks to import using a checkbox interface.
 
 ### Preview Before Applying
 
@@ -142,12 +142,12 @@ paperclipai company import org/repo --target existing --company-id abc123 --dry-
 ```
 
 The preview shows:
-- **Package contents** — How many agents, projects, issues, and skills are in the source
+- **Package contents** — How many agents, projects, tasks, and skills are in the source
 - **Import plan** — What will be created, renamed, skipped, or replaced
 - **Env inputs** — Environment variables that may need values after import
-- **Warnings** — Potential issues like missing skills or unresolved references
+- **Warnings** — Potential problems such as missing skills or unresolved references
 
-Imported agents retain only supported issue-execution runtime policy fields. Execution begins from canonical issue refs; imports do not restore queued or running work.
+Imported agents retain only supported task-execution runtime policy fields. Execution begins from canonical task refs; imports do not restore queued or running work.
 
 ### Common Workflows
 
@@ -197,8 +197,8 @@ The CLI commands use these API endpoints under the hood:
 | Apply import (new company) | `POST /api/companies/imports` |
 
 The company-scoped safe import routes are board-only. They reject `replace`,
-resolve collisions with `rename` or `skip`, and create imported issues as new
-board-created issues with explicit agent owners. Imports never restore agent
+resolve collisions with `rename` or `skip`, and create imported tasks as new
+board-created tasks with explicit agent owners. Imports never restore agent
 roles, prompt/instruction bundles, Paperclip memory, provider sessions, queued
 runs, or ambient permissions.
 

@@ -1,10 +1,10 @@
 # Paperclip UI Spec
 
 > Historical draft. Its role/CEO, assignee, task, heartbeat, interaction-card,
-> and privileged-strategy examples predate the canonical issue owner/session
+> and privileged-strategy examples predate the canonical task owner/session
 > model and are not current product contracts. Current UI behavior uses ordinary
-> agents, explicit grants, immutable issue requests/creators, canonical owners,
-> and issue-execution refs.
+> agents, explicit grants, immutable task requests/creators, canonical owners,
+> and task-execution refs.
 
 Status: Draft
 Date: 2026-02-17
@@ -16,7 +16,7 @@ Paperclip's UI is a professional-grade control plane, not a toy dashboard. It sh
 Design principles:
 
 - **Dense but scannable.** Show maximum information without requiring clicks to reveal it. Use whitespace to separate, not to pad.
-- **Keyboard-first.** Global shortcuts for search (Cmd+K), new issue (C), navigation. Power users should rarely touch the mouse.
+- **Keyboard-first.** Global shortcuts for search (Cmd+K), new task (C), navigation. Power users should rarely touch the mouse.
 - **Contextual, not modal.** Inline editing over dialog boxes. Dropdowns over page navigations. The user's mental context should never be broken unnecessarily.
 - **Dark theme default.** Neutral grays, not pure black. Accent colors used sparingly for status and priority. Text is the primary visual element.
 
@@ -75,7 +75,7 @@ The app is a three-zone layout:
 - **Sidebar:** Fixed left, 240px. Collapsible to icon-only (48px) via toggle or keyboard shortcut.
 - **Breadcrumb bar:** Spans the full width above main+properties. Shows navigation path, entity actions, and view controls.
 - **Main content:** Scrollable. Contains the primary view (list, detail, chart, etc).
-- **Properties panel:** Right side, 320px. Shown on detail views (issue detail, project detail, agent detail). Hidden on list views and dashboard. Resizable.
+- **Properties panel:** Right side, 320px. Shown on detail views (task detail, project detail, agent detail). Hidden on list views and dashboard. Resizable.
 
 The properties panel slides in when you click into a detail view and slides out when you go back to a list. It is NOT a sidebar — it's contextual to the selected entity.
 
@@ -93,7 +93,7 @@ Top of sidebar. Always visible.
 ┌─────────────────────────┐
 │ [icon] Acme Corp      ▼ │  ← Company switcher dropdown
 ├─────────────────────────┤
-│ [🔍]  [✏️]              │  ← Search + New Issue
+│ [🔍]  [✏️]              │  ← Search + New Task
 └─────────────────────────┘
 ```
 
@@ -110,7 +110,7 @@ Clicking opens a dropdown with:
 
 Below the company name, a row of icon buttons:
 - **Search** (magnifying glass icon) — opens Cmd+K search modal
-- **New Issue** (pencil/square-pen icon) — opens new issue modal in the current company context
+- **New Task** (pencil/square-pen icon) — opens new task modal in the current company context
 
 ### 3.2 Personal Section
 
@@ -118,11 +118,11 @@ No section header — these are always at the top, below the company header.
 
 ```
   Inbox                    3
-  My Issues
+  My Tasks
 ```
 
 - **Inbox** — items requiring the board operator's attention. Badge count on the right. Includes: pending approvals, budget alerts, failed heartbeats. The number is the total unread/unresolved count.
-- **My Issues** — issues created by or assigned to the board operator.
+- **My Tasks** — tasks created by or assigned to the board operator.
 
 ### 3.3 Work Section
 
@@ -130,14 +130,14 @@ Section header: **Work** (collapsible, with a chevron toggle)
 
 ```
   Work                     ▼
-    Issues
+    Tasks
     Projects
     Goals
     Views
 ```
 
-- **Issues** — main task list for the selected company. This is the workhorse view.
-- **Projects** — project list. Projects group issues and link to goals.
+- **Tasks** — main task list for the selected company. This is the workhorse view.
+- **Projects** — project list. Projects group tasks and link to goals.
 - **Goals** — company goal hierarchy.
 - **Views** — saved filter/sort configurations (e.g., "Critical bugs", "Unassigned tasks", "CEO's tasks"). Users can create, name, and pin custom views here.
 
@@ -178,8 +178,8 @@ Each nav item has a distinctive icon (lucide-react):
 | Item | Icon |
 |------|------|
 | Inbox | `Inbox` |
-| My Issues | `CircleUser` |
-| Issues | `CircleDot` |
+| My Tasks | `CircleUser` |
+| Tasks | `CircleDot` |
 | Projects | `Hexagon` |
 | Goals | `Target` |
 | Views | `LayoutList` |
@@ -199,7 +199,7 @@ The breadcrumb bar sits above the main content and properties panel. It serves a
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│ Projects › Paperclip › Issues › CLIP-42  [⭐] [···]     [🔔] [⬜] │
+│ Projects › Paperclip › Tasks › CLIP-42  [⭐] [···]     [🔔] [⬜] │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -220,30 +220,30 @@ On certain detail pages, the breadcrumb bar also contains a tab row below the br
 
 **Project detail:**
 ```
-  Overview    Updates    Issues    Settings
+  Overview    Updates    Tasks    Settings
 ```
 
 **Agent detail:**
 ```
-  Overview    Heartbeats    Issues    Costs
+  Overview    Heartbeats    Tasks    Costs
 ```
 
 Tabs are rendered as pill-shaped buttons. Active tab has a subtle background fill.
 
 ---
 
-## 5. Issues (Task Management)
+## 5. Tasks (Task Management)
 
-Issues are the core work unit. This section details the full issue experience.
+Tasks are the core work unit. This section details the full task experience.
 
-### 5.1 Issue List View
+### 5.1 Task List View
 
-The issue list is the default view when clicking "Issues" in the sidebar.
+The task list is the default view when clicking "Tasks" in the sidebar.
 
 **Layout:**
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ [All Issues] [Active] [Backlog]  [⚙ Settings]    [≡ Filter]  [Display ▼] │
+│ [All Tasks] [Active] [Backlog]  [⚙ Settings]    [≡ Filter]  [Display ▼] │
 ├─────────────────────────────────────────────────────────────────┤
 │ ▼ Todo                                                3    [+] │
 │ ☐ --- CLIP-5  ○ Implement user auth          @CTO    Feb 16  │
@@ -261,42 +261,42 @@ The issue list is the default view when clicking "Issues" in the sidebar.
 ```
 
 **Top toolbar:**
-- **Status tabs:** `All Issues`, `Active` (todo + in_progress + in_review + blocked), `Backlog`. Each tab shows a status icon and count. Active tab is filled, others outlined.
-- **Settings gear:** Configure issue display defaults, custom fields.
+- **Status tabs:** `All Tasks`, `Active` (todo + in_progress + in_review + blocked), `Backlog`. Each tab shows a status icon and count. Active tab is filled, others outlined.
+- **Settings gear:** Configure task display defaults, custom fields.
 - **Filter button:** Opens a filter bar below the toolbar.
 - **Display dropdown:** Toggle between grouping modes (by status, by priority, by assignee, by project, none) and layout modes (list, board/kanban).
 
 **Grouping:**
-- Issues are grouped by status by default (matching the reference screenshots).
-- Each group header shows: collapse chevron, status icon, status name, count, and a `+` button to create a new issue in that status.
+- Tasks are grouped by status by default (matching the reference screenshots).
+- Each group header shows: collapse chevron, status icon, status name, count, and a `+` button to create a new task in that status.
 - Groups are collapsible. Collapsed groups show just the header with count.
 
-**Issue rows:**
+**Task rows:**
 Each row contains, left to right:
 1. **Checkbox** — for bulk selection. Hidden by default, appears on hover (left of priority).
 2. **Priority indicator** — icon representing critical/high/medium/low (see Color System above). Always visible.
-3. **Issue key** — e.g., `CLIP-5`. Monospace, muted color. The prefix is derived from the project (or company if no project).
+3. **Task key** — e.g., `CLIP-5`. Monospace, muted color. The prefix is derived from the project (or company if no project).
 4. **Status circle** — clickable to open status change dropdown (same as reference screenshot). The circle's fill/color reflects current status.
 5. **Title** — primary text, truncated with ellipsis if too long.
 6. **Assignee** — avatar (agent icon) + agent name, right-aligned. If unassigned, shows a dashed circle placeholder.
 7. **Date** — creation date or target date, muted text, far right.
 
 **Row interactions:**
-- Click row → navigate to issue detail view.
+- Click row → navigate to task detail view.
 - Click status circle → opens inline status dropdown (Backlog, Todo, In Progress, In Review, Done, Cancelled) with keyboard numbers as shortcuts (1-6).
 - Click checkbox → selects for bulk actions. When any checkbox is selected, a bulk action bar appears at the bottom of the list.
 - Hover → shows checkbox, and row gets subtle background highlight.
 - Right-click → context menu (same actions as three-dot menu).
 
 **Bulk action bar:**
-When one or more issues are selected, a floating bar appears at the bottom:
+When one or more tasks are selected, a floating bar appears at the bottom:
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  3 selected    [Status ▼] [Priority ▼] [Assignee ▼] [Project ▼]  [🗑 Delete]  [✕ Cancel] │
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 5.2 Issue Filter Bar
+### 5.2 Task Filter Bar
 
 Clicking "Filter" reveals a filter bar below the toolbar:
 
@@ -315,13 +315,13 @@ Clicking "Filter" reveals a filter bar below the toolbar:
 - Filters are AND-composed.
 - Active filters persist in the URL query string so they're shareable/bookmarkable.
 
-### 5.3 Issue Detail View (Three-Pane)
+### 5.3 Task Detail View (Three-Pane)
 
-Clicking an issue opens the detail view. The main content area splits into two zones, with the sidebar still visible on the left.
+Clicking a task opens the detail view. The main content area splits into two zones, with the sidebar still visible on the left.
 
 ```
 ┌──────────┬────────────────────────────────┬──────────────────────┐
-│          │ Issues › CLIP-42               │                      │
+│          │ Tasks › CLIP-42               │                      │
 │ Sidebar  │                                │   Properties     [+] │
 │          │ Fix user authentication bug    │                      │
 │          │ Implement proper token...      │   Status    In Progress │
@@ -354,8 +354,8 @@ Clicking an issue opens the detail view. The main content area splits into two z
 #### Middle Pane (Main Content)
 
 **Header area:**
-- Issue title, large (18px, semi-bold), editable on click (inline editing).
-- Subtitle: issue key `CLIP-42` in muted text.
+- Task title, large (18px, semi-bold), editable on click (inline editing).
+- Subtitle: task key `CLIP-42` in muted text.
 - Below the title: inline properties bar showing key properties as clickable chips (same pattern as reference screenshots): `[○ In Progress] [!!! High] [👤 CTO] [📅 Target date] [📁 Auth] [···]`. Each chip is clickable to change that property inline.
 
 **Description:**
@@ -365,7 +365,7 @@ Clicking an issue opens the detail view. The main content area splits into two z
 
 **Subtasks (if any):**
 - Listed below description as a collapsible section.
-- Each subtask is a mini issue row (status circle + title + assignee).
+- Each subtask is a mini task row (status circle + title + assignee).
 - `+ Add subtask` button at the bottom.
 
 **Comments:**
@@ -403,16 +403,16 @@ Below properties, a divider, then:
 - Compact timeline of recent events: status changes, assignment changes, comments, etc.
 - Each entry: icon + description + relative timestamp.
 
-### 5.4 New Issue Modal
+### 5.4 New Task Modal
 
-Triggered by the sidebar pencil icon, keyboard shortcut `C`, or the `+` buttons in the issue list.
+Triggered by the sidebar pencil icon, keyboard shortcut `C`, or the `+` buttons in the task list.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ [📁 CLIP] › New issue               [Save as draft] [↗] [×] │
+│ [📁 CLIP] › New task               [Save as draft] [↗] [×] │
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
-│ Issue title                                             │
+│ Task title                                             │
 │ ___________________________________________________     │
 │                                                         │
 │ Add a description...                                    │
@@ -424,29 +424,29 @@ Triggered by the sidebar pencil icon, keyboard shortcut `C`, or the `+` buttons 
 │ [○ Todo] [--- Priority] [👤 Assignee] [📁 Project]     │
 │ [🏷 Labels] [···]                                       │
 ├─────────────────────────────────────────────────────────┤
-│ [📎]                    [◻ Create more] [Create issue]  │
+│ [📎]                    [◻ Create more] [Create task]  │
 └─────────────────────────────────────────────────────────┘
 ```
 
 **Top bar:**
-- Breadcrumb showing context: project key (or company key) `›` "New issue".
+- Breadcrumb showing context: project key (or company key) `›` "New task".
 - "Save as draft" button.
 - Expand icon (open as full page instead of modal).
 - Close `×`.
 
 **Body:**
-- Title field: large input, placeholder "Issue title". Auto-focused on open.
+- Title field: large input, placeholder "Task title". Auto-focused on open.
 - Description: markdown editor below, placeholder "Add a description...". Expandable.
 
 **Property chips (bottom bar):**
 - Compact row of property buttons. Each opens a dropdown to set that property.
 - Default chips shown: Status (defaults to Todo), Priority, Assignee, Project, Labels.
-- `···` more button reveals: Goal, Start date, Target date, Billing code, Parent issue.
+- `···` more button reveals: Goal, Start date, Target date, Billing code, Parent task.
 
 **Footer:**
 - Attachment button (paperclip icon).
-- "Create more" toggle — when on, creating an issue clears the form and stays open for rapid entry.
-- "Create issue" primary button.
+- "Create more" toggle — when on, creating a task clears the form and stays open for rapid entry.
+- "Create task" primary button.
 
 **Behavior:**
 - `Cmd+Enter` submits the form.
@@ -454,21 +454,21 @@ Triggered by the sidebar pencil icon, keyboard shortcut `C`, or the `+` buttons 
 - If opened from a specific status group's `+` button, that status is pre-filled.
 - The slug/key is auto-generated from the project prefix + incrementing number (shown in breadcrumb).
 
-### 5.5 Issue Board View (Kanban)
+### 5.5 Task Board View (Kanban)
 
 Accessible via Display dropdown → Board layout.
 
 Columns represent statuses: Backlog | Todo | In Progress | In Review | Done
 
 Each card shows:
-- Issue key (muted)
+- Task key (muted)
 - Title (primary text)
 - Priority icon (bottom-left)
 - Assignee avatar (bottom-right)
 
 Cards are draggable between columns. Dragging a card to a new column changes its status (with transition validation — invalid transitions show an error toast).
 
-Each column header has a `+` button to create a new issue in that status.
+Each column header has a `+` button to create a new task in that status.
 
 ---
 
@@ -476,7 +476,7 @@ Each column header has a `+` button to create a new issue in that status.
 
 ### 6.1 Project List View
 
-Similar to the issue list but for projects.
+Similar to the task list but for projects.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -492,9 +492,9 @@ Each row: project icon (colored hexagon), name, status badge, lead agent, target
 
 ### 6.2 Project Detail View (Three-Pane)
 
-Uses the same three-pane layout as issue detail.
+Uses the same three-pane layout as task detail.
 
-**Breadcrumb tabs:** Overview | Updates | Issues | Settings
+**Breadcrumb tabs:** Overview | Updates | Tasks | Settings
 
 **Overview tab (middle pane):**
 - Project icon + name (editable)
@@ -505,7 +505,7 @@ Uses the same three-pane layout as issue detail.
 - Description (markdown body)
 - Milestones section (collapsible): list of milestone markers with date and status
 
-**Issues tab:** filtered issue list showing only issues in this project. Same controls as the main issues view.
+**Tasks tab:** filtered task list showing only tasks in this project. Same controls as the main tasks view.
 
 **Right pane (properties):** Status, Priority, Lead, Members, Start date, Target date, Teams, Labels, Goal link.
 
@@ -576,7 +576,7 @@ The dashboard is the company health overview. Shown when clicking "Dashboard" in
 
 **Bottom row: Detail panels** (2 across)
 5. **Recent Activity** — last ~10 activity log entries, compact timeline format.
-6. **Stale Tasks** — tasks that have been in progress for too long without updates. Each shows issue key, title, assignee, time since last activity.
+6. **Stale Tasks** — tasks that have been in progress for too long without updates. Each shows task key, title, assignee, time since last activity.
 
 All cards and panels are clickable to navigate to their respective full pages.
 
@@ -615,7 +615,7 @@ Nodes are clickable to navigate to agent detail.
 ### 9.2 Interactions
 
 - Zoom/pan with mouse wheel and drag.
-- Click a node to select it — shows a brief tooltip with key info (last run, current issue, spend).
+- Click a node to select it — shows a brief tooltip with key info (last run, current task, spend).
 - Double-click a node to navigate to agent detail page.
 - Right-click node for context menu: View, Pause, Resume, Edit.
 
@@ -643,19 +643,19 @@ Clicking a row navigates to agent detail.
 
 ### 10.2 Agent Detail View (Three-Pane)
 
-**Breadcrumb tabs:** Overview | Runs | Issues | Costs
+**Breadcrumb tabs:** Overview | Runs | Tasks | Costs
 
 **Overview (middle pane):**
 - Agent name + optional title
 - Capabilities description
 - Adapter type + config summary
-- Current issue execution (if any)
+- Current task execution (if any)
 - Reports to: [clickable agent name]
 - Direct reports: list of agents
 
-**Runs tab:** table of productive and consult issue-execution runs — time, typed source, status, duration, and error (if any). Provider invocation is initiated only by a persisted issue-execution source; this view has no arbitrary invoke action.
+**Runs tab:** table of productive and consult task-execution runs — time, typed source, status, duration, and error (if any). Provider invocation is initiated only by a persisted task-execution source; this view has no arbitrary invoke action.
 
-**Issues tab:** issues owned by this agent.
+**Tasks tab:** tasks owned by this agent.
 
 **Costs tab:** cost breakdown for this agent — by model, by time period, with budget progress bar.
 
@@ -667,7 +667,7 @@ Clicking a row navigates to agent detail.
 
 ## 11. Approvals (Contextual, Not Standalone)
 
-Approvals are governance gates — decisions the board must make (hire an agent, approve a CEO strategy). They are NOT work items. Their data model stays separate from issues (different status machine, side-effect triggers, unstructured payload). But they don't need their own top-level nav entry.
+Approvals are governance gates — decisions the board must make (hire an agent, approve a CEO strategy). They are NOT tasks. Their data model stays separate from tasks (different status machine, side-effect triggers, unstructured payload). But they don't need their own top-level nav entry.
 
 ### 11.1 Where Approvals Surface
 
@@ -771,7 +771,7 @@ A chronological, filterable audit trail.
 ┌─────────────────────────────────────────────────────────┐
 │ Activity                            [Filter by type ▼]  │
 ├─────────────────────────────────────────────────────────┤
-│ 🤖 CEO created issue CLIP-12 "Fix auth"      2 min ago │
+│ 🤖 CEO created task CLIP-12 "Fix auth"      2 min ago │
 │ 👤 Board approved hire "Marketing Analyst"    5 min ago │
 │ 🤖 CTO changed CLIP-8 status → In Progress  10 min ago │
 │ ⚙  System paused agent DevOps (budget limit) 15 min ago│
@@ -782,7 +782,7 @@ A chronological, filterable audit trail.
 
 Each entry: actor icon (bot for agent, user for board, gear for system), actor name, action description with entity links, relative timestamp.
 
-Filterable by: actor type (agent/user/system), entity type (issue/agent/project/etc), action type, time range.
+Filterable by: actor type (agent/user/system), entity type (task/agent/project/etc), action type, time range.
 
 Infinite scroll with "Load more" fallback.
 
@@ -832,7 +832,7 @@ Items are grouped by category, with the most actionable items first:
 
 **Alerts.** Agent errors (failed heartbeats, error status) and budget alerts (agents or company approaching 80% or 100% limits). Each links to the relevant agent or cost page.
 
-**Stale work.** Tasks in `in_progress` or `todo` with no activity (no comments, no status changes) beyond a configurable threshold (default: 24h). Each shows issue key, title, and time since last activity. Clicking navigates to the issue.
+**Stale work.** Tasks in `in_progress` or `todo` with no activity (no comments, no status changes) beyond a configurable threshold (default: 24h). Each shows task key, title, and time since last activity. Clicking navigates to the task.
 
 ### 14.3 Inbox Behavior
 
@@ -851,7 +851,7 @@ Global search accessible via `Cmd+K` or the sidebar search icon.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ 🔍 Search issues, agents, projects...                   │
+│ 🔍 Search tasks, agents, projects...                   │
 ├─────────────────────────────────────────────────────────┤
 │ Recent                                                  │
 │   📋 CLIP-42 Fix user authentication bug                │
@@ -859,13 +859,13 @@ Global search accessible via `Cmd+K` or the sidebar search icon.
 │   📁 Auth project                                       │
 ├─────────────────────────────────────────────────────────┤
 │ Actions                                                 │
-│   ✏️  Create new issue                         C        │
+│   ✏️  Create new task                         C        │
 │   🤖 Create new agent                                   │
 │   📁 Create new project                                 │
 └─────────────────────────────────────────────────────────┘
 ```
 
-- Type-ahead search across all entity types (issues, agents, projects, goals).
+- Type-ahead search across all entity types (tasks, agents, projects, goals).
 - Results grouped by type with icons.
 - Recent items shown when input is empty.
 - Quick actions section at the bottom.
@@ -878,7 +878,7 @@ Global search accessible via `Cmd+K` or the sidebar search icon.
 | Shortcut | Action |
 |----------|--------|
 | `Cmd+K` | Open search |
-| `C` | Create new issue |
+| `C` | Create new task |
 | `Cmd+Enter` | Submit form (in modals) |
 | `Escape` | Close modal / deselect |
 | `[` | Toggle sidebar collapsed |
@@ -886,7 +886,7 @@ Global search accessible via `Cmd+K` or the sidebar search icon.
 | `J` / `K` | Navigate up/down in lists |
 | `Enter` | Open selected item |
 | `Backspace` | Go back |
-| `S` | Toggle status on selected issue |
+| `S` | Toggle status on selected task |
 | `X` | Toggle checkbox selection |
 | `Cmd+A` | Select all (in list context) |
 
@@ -906,7 +906,7 @@ The properties panel is always dismissible — it should never block the main co
 
 Every list view should have a thoughtful empty state:
 
-- **No issues:** "No issues yet. Create your first issue to start tracking work." with a `[Create issue]` button.
+- **No tasks:** "No tasks yet. Create your first task to start tracking work." with a `[Create task]` button.
 - **No agents:** "No agents in this company. Create an agent to start building your team." with a `[Create agent]` button.
 - **No company selected:** "Select a company to get started." with a company switcher or `[Create company]` button.
 
@@ -918,7 +918,7 @@ Empty states should use a muted illustration (simple line art, not cartoons) and
 
 - **Loading:** Skeleton placeholders matching the layout of the expected content (not spinners). Skeleton blocks animate with a subtle shimmer.
 - **Error:** Inline error message with a retry button. Never a full-page error unless the app itself is broken.
-- **Conflict (409):** Toast notification: "This issue was updated by another user. Refresh to see changes." with a [Refresh] action.
+- **Conflict (409):** Toast notification: "This task was updated by another user. Refresh to see changes." with a [Refresh] action.
 - **Optimistic updates:** Status changes and property edits should update immediately in the UI, with rollback on failure.
 
 ---
@@ -949,12 +949,12 @@ All routes are company-scoped after company selection (company context stored in
 /                           → redirects to /dashboard
 /dashboard                  → company dashboard
 /inbox                      → inbox / attention items
-/my-issues                  → board operator's issues
-/issues                     → issue list
-/issues/:issueId            → issue detail
+/my-tasks                  → board operator's tasks
+/tasks                     → task list
+/tasks/:taskId            → task detail
 /projects                   → project list
 /projects/:projectId        → project detail (overview tab)
-/projects/:projectId/issues → project issues
+/projects/:projectId/tasks → project tasks
 /goals                      → goal hierarchy
 /goals/:goalId              → goal detail
 /org                        → org chart
@@ -979,11 +979,11 @@ All routes are company-scoped after company selection (company context stored in
 4. Cmd+K search modal
 5. Install `lucide-react`
 
-### Phase 2: Issue Management (Core)
-6. Issue list view with grouping, filtering, status circles
-7. Issue detail view (three-pane with properties panel)
-8. New issue modal
-9. Issue comments
+### Phase 2: Task Management (Core)
+6. Task list view with grouping, filtering, status circles
+7. Task detail view (three-pane with properties panel)
+8. New task modal
+9. Task comments
 10. Bulk selection and actions
 11. Kanban board view
 

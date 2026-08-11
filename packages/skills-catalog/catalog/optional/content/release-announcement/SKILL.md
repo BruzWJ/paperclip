@@ -75,7 +75,7 @@ Same as changelog, plus:
 
 - Migration guide section with before/after code.
 - Compatibility table (versions, runtimes, OS).
-- Known issues and workarounds.
+- Known limitations and workarounds.
 - Acknowledgements (contributors, reporters of fixed bugs).
 
 ### Dev blog post (300–800 words)

@@ -9,8 +9,8 @@ Scope: Paperclip-derived ingestion into the LLM Wiki before any asset or work-pr
 
 Phase 5 remains **fail-closed** for Paperclip assets and work products.
 
-- Paperclip-derived **text extraction is allowed only** for issue titles/descriptions, issue comments, and issue documents.
-- Paperclip **assets/attachments** and **issue work products** are **metadata-only** in Phase 5.
+- Paperclip-derived **text extraction is allowed only** for task titles/descriptions, task comments, and task documents.
+- Paperclip **assets/attachments** and **task work products** are **metadata-only** in Phase 5.
 - **Linked summaries** and **content extraction** for assets/work products are **not approved** in Phase 5.
 - No implementation may fetch `/api/assets/:id/content`, dereference a work-product `url`, scrape preview pages, or embed binary/blob content into source bundles or source snapshots.
 
@@ -22,7 +22,7 @@ These source kinds may contribute body text to Paperclip-derived source bundles:
 
 | Source kind | Allowed body fields | Reason |
 | --- | --- | --- |
-| Issue | `title`, `description`, identifier/status metadata | First-party Paperclip text under company ACL |
+| Task | `title`, `description`, identifier/status metadata | First-party Paperclip text under company ACL |
 | Comment | `body` | First-party Paperclip text under company ACL |
 | Document | `body`, `title`, `key`, revision metadata | First-party Paperclip text under company ACL |
 
@@ -33,7 +33,7 @@ These source kinds may contribute body text to Paperclip-derived source bundles:
 Allowed in Phase 5:
 
 - metadata-only references built from allowlisted structured fields already stored in Paperclip
-- recommended fields: `issueId`, `issueCommentId`, `attachmentId`, `assetId`, `originalFilename`, `contentType`, `byteSize`, `sha256`, `createdAt`, `createdByAgentId`, `createdByUserId`
+- recommended fields: `taskId`, `taskCommentId`, `attachmentId`, `assetId`, `originalFilename`, `contentType`, `byteSize`, `sha256`, `createdAt`, `createdByAgentId`, `createdByUserId`
 
 Disallowed in Phase 5:
 
@@ -47,7 +47,7 @@ Disallowed in Phase 5:
 Allowed in Phase 5:
 
 - metadata-only references built from allowlisted structured fields already stored in Paperclip
-- recommended fields: `issueId`, `workProductId`, `type`, `provider`, `title`, `status`, `reviewState`, `healthStatus`, `externalId`, `isPrimary`, `createdAt`, `updatedAt`
+- recommended fields: `taskId`, `workProductId`, `type`, `provider`, `title`, `status`, `reviewState`, `healthStatus`, `externalId`, `isPrimary`, `createdAt`, `updatedAt`
 - optional boolean/derived metadata such as `hasUrl: true`
 
 Disallowed in Phase 5:
@@ -65,7 +65,7 @@ No MIME allowlist is approved for asset content extraction in Phase 5 because **
 - Existing upload limits remain storage concerns, not ingestion approvals.
 - Work-product destinations are also opaque regardless of MIME type or size.
 
-Any future issue that wants blob parsing must define:
+Any future task that wants blob parsing must define:
 
 - a positive MIME allowlist
 - per-type parser strategy
@@ -90,7 +90,7 @@ This addresses Sensitive Information Disclosure, Unsafe Consumption of APIs, and
 Every metadata-only reference must preserve enough provenance to explain where it came from without reading the underlying content:
 
 - `companyId`
-- `issueId`
+- `taskId`
 - attachment/work-product id
 - producer identity when available
 - timestamps
@@ -100,7 +100,7 @@ Every metadata-only reference must preserve enough provenance to explain where i
 
 Human review is **not** required for plain metadata-only references that stay inside the allowlisted fields above.
 
-Human review **is required**, with a separate security sign-off issue, before enabling any of the following:
+Human review **is required**, with a separate security sign-off task, before enabling any of the following:
 
 - asset body extraction
 - work-product URL fetching
@@ -112,7 +112,7 @@ Human review **is required**, with a separate security sign-off issue, before en
 
 This gate exists because the current host surfaces have different trust properties:
 
-- issue/comment/document text is first-party Paperclip content already exposed through company-scoped issue/document APIs
+- task/comment/document text is first-party Paperclip content already exposed through company-scoped task/document APIs
 - asset content is a blob download surface (`/api/assets/:id/content`) and can carry prompt-injection or parser-risk payloads
 - work products can point at arbitrary destinations through `url`, which reintroduces SSRF, token leakage, and prompt-injection risk if dereferenced automatically
 
@@ -124,7 +124,7 @@ Relevant threat classes:
 
 ## Follow-Up Implementation Scope
 
-A follow-up implementation issue is justified only for **metadata-only references**.
+A follow-up implementation task is justified only for **metadata-only references**.
 
 That implementation must:
 

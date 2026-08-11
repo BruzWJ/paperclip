@@ -35,7 +35,7 @@ Ship a PR a reviewer can land without follow-up clarifying questions. The aim is
 
 - Imperative mood, under 70 characters.
 - Lead with the user-visible change, not the file touched. `Allow CSV export from reports table` beats `Update reports.tsx`.
-- If the repo uses an issue prefix convention (`PAP-1234:`, `[security]`), follow it.
+- If the repo uses a task prefix convention (`PAP-1234:`, `[security]`), follow it.
 - No trailing period.
 
 ## PR body
@@ -80,7 +80,7 @@ Skip the `Risk and rollback` section only for clearly trivial PRs (typos, docs).
 - All required checks green.
 - All review comments resolved.
 - PR title/body still accurate (update if scope changed mid-review).
-- Linked issue moves to `in_review` or `done` per project convention.
+- Linked task moves to `in_review` or `done` per project convention.
 - Delete the branch after merge unless it is a long-lived integration branch.
 
 ## Anti-patterns

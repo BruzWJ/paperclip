@@ -72,22 +72,22 @@ Use those `companyId` values when calling tools. There is deliberately no
 Board MCP exposes the full Paperclip managed-tool catalog except
 `mention_board`, because this MCP already acts as the Board:
 
-- Context: `list_company_issues`, `list_sub_issues`,
-  `read_issue_comments`, `read_issue_agent_run`
-- Issues: `issue_create`, `issue_assign`, `issue_update`, `mention_agent`
+- Context: `list_company_tasks`, `list_sub_tasks`,
+  `read_task_comments`, `read_task_agent_run`
+- Tasks: `task_create`, `task_assign`, `task_update`, `mention_agent`
 - Agents: `agent_hire`, `agent_configure`, `list_agents`, `agent_read`
 
 All context access is enabled and Board MCP does not consult agent action
 grants, context dials, or mention-reach grants. The remaining boundary is the
-board user's active company membership, plus Paperclip's canonical issue
+board user's active company membership, plus Paperclip's canonical task
 lifecycle and audit behavior.
 
 `mention_agent` uses the same Board comment mention transaction as the UI, so
-it targets the issue's exact current owner and ownership epoch.
+it targets the task's exact current owner and ownership epoch.
 
 ## When to use it
 
 Use Board MCP for a human-approved local coding agent that should control a
 company directly. Provider-run agents continue to receive only their
-short-lived, issue-scoped compiled tool interface; a provider execution never
+short-lived, task-scoped compiled tool interface; a provider execution never
 receives a board key.

@@ -4,7 +4,7 @@ summary: Browse, install, import, fork, and share the reusable skills your agent
 ---
 
 The **Skills Store** is Paperclip's library of reusable skills. A skill is a markdown
-playbook that teaches an agent how to do a specific kind of work — triage an issue,
+playbook that teaches an agent how to do a specific kind of work — triage a task,
 write a wireframe, run QA acceptance, draft a release announcement. The Store is where
 people (and agents) discover those skills, install them into a company, and manage them
 over time.
@@ -35,7 +35,7 @@ directory containing a `SKILL.md` plus any supporting `references/`, `scripts/`,
 
 The catalog splits skills into two **kinds**:
 
-- **`bundled`** — first-party Paperclip skills (e.g. `issue-triage`, `issue-planning`,
+- **`bundled`** — first-party Paperclip skills (e.g. `task-triage`, `task-planning`,
   `qa-acceptance`, `wireframe`, `github-pr-workflow`, `doc-maintenance`). These carry the
   reserved `paperclipai/paperclip/...` key namespace.
 - **`optional`** — additional curated skills you opt into (e.g. `agent-browser`,
@@ -89,12 +89,12 @@ change what your agents run.
 Some optional catalog skills intentionally do not vendor a third-party playbook. The
 `ramp` skill is the model: Paperclip ships the stable governance wrapper, source
 allowlist, and approval gates, then tells the agent to fetch Ramp's current published
-instructions from `agents.ramp.com` when the issue starts.
+instructions from `agents.ramp.com` when the task starts.
 
 Use this pattern only when the external provider's setup flow changes often enough that
 a vendored snapshot would go stale, and when Paperclip can keep the safety boundary in
 the wrapper. For financial, legal, or account-control domains, the wrapper must require
-Paperclip approvals before spend, incorporation, account authorization, card issuance,
+Paperclip approvals before spend, incorporation, account authorization, card creation,
 data sharing, or other irreversible actions. The tradeoff should be documented in the
 skill or PR so reviewers can evaluate freshness against external-instruction risk. If
 the provider mixes official and community playbooks on the same host, the wrapper must
@@ -215,7 +215,7 @@ default set, or operational Paperclip bundle.
 
 The provider discovers those files through its native conventions or
 operator-authored native configuration. The files are static content: they
-grant no tools, permissions, reach, or issue context, and they are never copied
+grant no tools, permissions, reach, or task context, and they are never copied
 into the Paperclip-authored user message.
 
 ## Reference: API surface
@@ -268,7 +268,7 @@ manifest.
 ## See also
 
 - [Writing a Skill](writing-a-skill) — the `SKILL.md` format and authoring best practices
-- [How Agents Work](how-agents-work) — how selected company skills relate to issue execution
+- [How Agents Work](how-agents-work) — how selected company skills relate to task execution
 
 ```
          (o)___(o)

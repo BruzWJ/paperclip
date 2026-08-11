@@ -74,13 +74,13 @@ POST /api/approvals/{approvalId}/resubmit
 { "payload": { "updated": "config..." } }
 ```
 
-## Linked Issues
+## Linked Tasks
 
 ```
-GET /api/approvals/{approvalId}/issues
+GET /api/approvals/{approvalId}/tasks
 ```
 
-Returns issues linked to this approval.
+Returns tasks linked to this approval.
 
 ## Approval Comments
 

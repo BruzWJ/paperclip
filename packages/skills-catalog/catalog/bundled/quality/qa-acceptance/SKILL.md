@@ -67,8 +67,8 @@ Each criterion needs evidence on the verification pass:
 
 ## Quarantine and follow-up
 
-- A failing criterion blocks acceptance unless explicitly waived by the owner with a tracked follow-up issue.
-- "Known issue" without a linked follow-up is not a waiver.
+- A failing criterion blocks acceptance unless explicitly waived by the owner with a tracked follow-up task.
+- "Known limitation" without a linked follow-up is not a waiver.
 - If you add a new criterion mid-pass, restart the pass — partial coverage hides regressions.
 
 ## Return the findings to the author

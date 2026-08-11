@@ -9,15 +9,15 @@ summary: Canonical agent identity, explicit grants, provider configuration, and 
 - No role, first-agent, root-agent, title, or manager default grants permissions.
 - Paperclip has no generic prompt template, provider home, generic API key, or
   agent-wide session. Its optional board-owned Instruction is delivered once
-  as the first queued run for a new issue.
+  as the first queued run for a new task.
 - Context grants, five configurable action grants, mention reach, and genuine
   company skills are selected explicitly.
-  Issue updates are relationship-derived: the owner receives its active-issue
+  Task updates are relationship-derived: the owner receives its active-task
   update and an exact creator execution receives eligible-child updates. Both
   use one canonical comment with an automatic counterpart mention. A creator may
   send a message or set `open`/`blocked` on an eligible child; only its current
   owner may apply terminal `done`/`cancelled` updates.
-- Active runs stay on their recorded immutable adapter revision. A later edit affects only later issue executions and never cancels, resets, or invokes a provider by itself.
+- Active runs stay on their recorded immutable adapter revision. A later edit affects only later task executions and never cancels, resets, or invokes a provider by itself.
 
 ## Agent creation
 
@@ -31,7 +31,7 @@ The creation dialog contains:
 | Title | no | Display-only; grants no authority |
 | Reports to | no | Same-company org edge; roots are ordinary |
 | Capabilities | no | Verbatim description used only in eligible target catalogs |
-| Instruction | no | Canonical board-owned role text; queued before a new issue's work run |
+| Instruction | no | Canonical board-owned role text; queued before a new task's work run |
 
 ### Provider adapter
 
@@ -63,7 +63,7 @@ Show:
 - readiness/ineligibility reason
 - current-month spend and budget
 - reporting parent and direct reports
-- active issue executions and recent run outcomes
+- active task executions and recent run outcomes
 
 ### Configuration
 
@@ -72,31 +72,31 @@ provider-native declaration, runtime limits, and explicit grants/selections.
 Present the nine context cells as a 3×3
 matrix and the action/mention/skill grants as independent controls. Do not
 render separate assign or lifecycle controls: create-and-assign is one grant,
-while the canonical lifecycle/creator update follows the issue owner/creator
+while the canonical lifecycle/creator update follows the task owner/creator
 relationship and automatically mentions its counterpart.
 
 Explain prospective behavior: narrowing a dial changes gateway acceptance immediately, but content already inside one live provider-native conversation remains provider-owned. Later work must have an exact eligible correlation under the new grant or fail closed; Paperclip exposes no reset path that silently creates a replacement session.
 
-Changing Instruction affects only a later new issue; it is not
+Changing Instruction affects only a later new task; it is not
 prepended to work messages or replayed into an existing session.
 
 ### Runs
 
-List structured productive and consult issue-execution runs. Show status, issue, epoch, adapter revision, model, timing, token/cost data, and structured transcript. Never display a provider-native session handle.
+List structured productive and consult task-execution runs. Show status, task, epoch, adapter revision, model, timing, token/cost data, and structured transcript. Never display a provider-native session handle.
 
 ### Skills and tools
 
 Skills list only the genuine company skills explicitly selected for this agent,
-including version/provenance. Skill selection grants no Paperclip issue
+including version/provenance. Skill selection grants no Paperclip task
 authority.
 
-## Issue-scoped controls
+## Task-scoped controls
 
-Fresh-session, reassignment, and reopen live on the issue/execution surface:
+Fresh-session, reassignment, and reopen live on the task/execution surface:
 
 | Action | Contract |
 | --- | --- |
-| Fresh session | Board/user only; one issue execution; cancels its live run, drops Paperclip's correlation, audits actor/scope/reason |
+| Fresh session | Board/user only; one task execution; cancels its live run, drops Paperclip's correlation, audits actor/scope/reason |
 | Reassign | Creator/board authority; advances ownership epoch and starts the new owner fresh |
 | Reopen | Board-user audited command; preserves owner/epoch/session/run-directory binding, clears terminal disposition, and returns either one invokable-agent execution ref or a provider-free system-escalation board-only result |
 

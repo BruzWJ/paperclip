@@ -134,7 +134,7 @@ pnpm dev:stop
 stale, the board UI shows a `Restart required` banner. Automatic idle restart
 is off by default; enable `autoRestartDevServerWhenIdle` in **Instance settings
 → General** to let the managed runner request a restart after backend changes
-and after queued or running issue executions finish. Database migrations remain
+and after queued or running task executions finish. Database migrations remain
 an explicit `pnpm db:migrate` operation.
 
 Private-network development:
@@ -190,7 +190,7 @@ is artifact-only in `.github/workflows/release-smoke.yml` and does not launch a
 deployed service. These checks are intended for targeted local verification and
 CI, not the default agent/human test command.
 
-For normal issue work, start with the smallest targeted check that proves the change. Reserve repo-wide typecheck/build/test runs for PR-ready delivery or changes broad enough that narrow checks do not cover the risk.
+For normal task work, start with the smallest targeted check that proves the change. Reserve repo-wide typecheck/build/test runs for PR-ready delivery or changes broad enough that narrow checks do not cover the risk.
 
 ## One-Command Local Run
 
@@ -297,7 +297,7 @@ Configure storage provider/settings:
 pnpm paperclipai configure --section storage
 ```
 
-## Issue Artifact Uploads
+## Task Artifact Uploads
 
 When a provider run generates a file that a board user or reviewer should
 inspect, attach it through a board/operator client. Do not rely on an unbound
@@ -306,8 +306,8 @@ local path as the only access path.
 Board CLI example:
 
 ```sh
-pnpm paperclipai issue attachment:upload <issue-id> dist/demo.mp4
-pnpm paperclipai issue work-product:create <issue-id> \
+pnpm paperclipai task attachment:upload <task-id> dist/demo.mp4
+pnpm paperclipai task work-product:create <task-id> \
   --payload-json '{"type":"artifact","title":"Demo video render"}'
 ```
 
@@ -365,7 +365,7 @@ Creation verifies the connected parent and target PostgreSQL identities, rejects
 the same physical database, generates a distinct Better Auth secret, and writes
 immutable creation metadata plus a mode-`0600` `.paperclip/.env`. Apply the
 ordinary pending migrations to the target before starting the worktree. No
-user, company, issue, session, or other product row is copied.
+user, company, task, session, or other product row is copied.
 
 The worktree bootstrap always loads its pinned `DATABASE_URL` and
 `BETTER_AUTH_SECRET` before database or authentication initialization. Missing,
@@ -534,9 +534,9 @@ Paperclip CLI now includes client-side control-plane commands in addition to set
 Quick examples:
 
 ```sh
-pnpm paperclipai issue list --company-id <company-id>
-pnpm paperclipai issue create --company-id <company-id> --title "Investigate checkout conflict"
-pnpm paperclipai issue update <issue-id> --status in_progress --comment "Started triage"
+pnpm paperclipai task list --company-id <company-id>
+pnpm paperclipai task create --company-id <company-id> --title "Investigate checkout conflict"
+pnpm paperclipai task comment <task-id> --message "Started triage"
 ```
 
 Set defaults once with context profiles:
@@ -548,7 +548,7 @@ pnpm paperclipai context set --api-base http://localhost:3100 --company-id <comp
 Then run commands without repeating flags:
 
 ```sh
-pnpm paperclipai issue list
+pnpm paperclipai task list
 pnpm paperclipai dashboard get
 ```
 
@@ -571,6 +571,6 @@ agent. Adapter configuration contains only the non-secret stable ACPX options
 that ACPX advertises, plus the separately selected execution target and skill
 channel. Paperclip rejects command/endpoint/provider-payload fields, generic
 bridge credentials, provider secrets, and native-session selectors. When a
-canonical issue-execution ref is dispatched, the worker supplies a fresh
+canonical task-execution ref is dispatched, the worker supplies a fresh
 request-scoped compiled tool interface through that prompt's ACPX `mcpServers`
 input. Paperclip never retains a prior request's tool authority.

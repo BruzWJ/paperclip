@@ -38,7 +38,7 @@ host, for example `https://pages.paperclip.ing/<slug>/`.
 .agents/skills/paperclip-page/scripts/publish.sh ./site --slug my-page
 ```
 
-5. Return the printed public URL and S3 prefix to the issue/user.
+5. Return the printed public URL and S3 prefix to the task/user.
 
 ## Update Workflow
 

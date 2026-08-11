@@ -22,7 +22,7 @@
     <line x1="16" y1="148" x2="264" y2="148" stroke="#666" />
   </g>
 
-  <!-- previous-issue nav card -->
+  <!-- previous-task nav card -->
   <g transform="translate(16,296)">
     <rect width="280" height="56" rx="8" />
     <polyline points="20,20 14,28 20,36" fill="none" />

@@ -16,7 +16,7 @@ Query parameters:
 | Param | Description |
 |-------|-------------|
 | `agentId` | Filter by actor agent |
-| `entityType` | Filter by entity type (`issue`, `agent`, `approval`) |
+| `entityType` | Filter by entity type (`task`, `agent`, `approval`) |
 | `entityId` | Filter by specific entity |
 
 ## Activity Record
@@ -36,7 +36,7 @@ Each entry includes:
 
 All mutations are recorded:
 
-- Issue creation, updates, status transitions, assignments
+- Task creation, updates, status transitions, assignments
 - Agent creation, configuration changes, pausing, resuming, termination
 - Approval creation, approval/rejection decisions
 - Comment creation

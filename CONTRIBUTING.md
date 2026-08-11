@@ -6,10 +6,10 @@ We really appreciate both small fixes and thoughtful larger changes.
 
 ## Before You Start: Search First
 
-Before you start work, **search GitHub** for existing PRs and issues that touch the same area:
+Before you start work, **search GitHub** for existing PRs and tickets that touch the same area:
 
 - Look for **duplicate or in-flight PRs**. If something close already exists, prefer helping that PR over the line (see [Helping Other Contributors](#helping-other-contributors)) instead of opening a parallel one.
-- Look for **related open issues**. Link them in your PR body.
+- Look for **related open tickets**. Link them in your PR body.
 - If an older PR is effectively dead (stale, unmaintained, would be painful to rebase/merge), a fresh PR is fine — just call out the prior PR in your description so the reviewer has context.
 
 Duplicate PRs create extra work for reviewers and make merging harder. A 60-second search saves hours later.
@@ -50,40 +50,40 @@ PRs that follow this path are **much** more likely to be accepted, even when the
 
 Every pull request **must** follow the PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). If you create a PR via the GitHub API or other tooling that bypasses the template, copy its contents into your PR description manually. The template includes required sections: Thinking Path, What Changed, Verification, Risks, Model Used, and a Checklist.
 
-### Link Issues or Describe Them In-PR
+### Link Tickets or Describe Them In-PR
 
-We do not gate PRs on a pre-existing issue. Two acceptable paths:
+We do not gate PRs on a pre-existing ticket. Two acceptable paths:
 
-1. **Issue exists** — search the [Issues database](https://github.com/paperclipai/paperclip/issues) for anything this PR addresses and tag each one with `Fixes: #123` / `Closes #123` / `Refs #123` so GitHub auto-links them. If there are **duplicate or closely related issues**, link all of them, not just the one you picked. If there are **related PRs** (prior attempts, dependent work, follow-ups, abandoned predecessors), link those too.
-2. **No issue exists** — describe the problem directly in your PR body, following one of our [issue templates](.github/ISSUE_TEMPLATE/) so a reviewer has the same fields they'd get from a filed issue:
-   - **Bug fix:** what happened, expected behavior, steps to reproduce, Paperclip version/commit, deployment mode. See [`bug_report.yml`](.github/ISSUE_TEMPLATE/bug_report.yml).
-   - **Feature:** problem/motivation, proposed solution, alternatives considered, roadmap alignment. See [`feature_request.yml`](.github/ISSUE_TEMPLATE/feature_request.yml).
-   - **New adapter:** agent or provider, why it's useful, how it's invoked. See [`adapter_request.yml`](.github/ISSUE_TEMPLATE/adapter_request.yml).
+1. **Ticket exists** — search GitHub for anything this PR addresses and tag each ticket with `Fixes: #123` / `Closes #123` / `Refs #123` so GitHub auto-links it. If there are **duplicate or closely related tickets**, link all of them, not just the one you picked. If there are **related PRs** (prior attempts, dependent work, follow-ups, abandoned predecessors), link those too.
+2. **No ticket exists** — describe the problem directly in your PR body using the corresponding fields:
+   - **Bug fix:** what happened, expected behavior, steps to reproduce, Paperclip version/commit, deployment mode.
+   - **Feature:** problem/motivation, proposed solution, alternatives considered, roadmap alignment.
+   - **New adapter:** agent or provider, why it's useful, how it's invoked.
 
-Either way, a reviewer should be able to understand the underlying issue without leaving the PR. Commitperclip may check that one of these two paths is satisfied. Only link **public** GitHub issues — see [No Internal Issue References](#no-internal-issue-references) for what to leave out.
+Either way, a reviewer should be able to understand the underlying work without leaving the PR. Commitperclip may check that one of these two paths is satisfied. Only link **public** GitHub tickets — see [No Internal Task References](#no-internal-task-references) for what to leave out.
 
-### No Internal Issue References
+### No Internal Task References
 
-Many contributors run their own Paperclip instance to manage their work. Issue ids and links from *your* instance are private — reviewers and other contributors cannot open them, so they show up as clutter or broken links.
+Many contributors run their own Paperclip instance to manage their work. Task IDs and links from *your* instance are private — reviewers and other contributors cannot open them, so they show up as clutter or broken links.
 
-In your PR title, description, commits, and comments, **only reference public GitHub issues and PRs** — `#123`, `Fixes #123` / `Closes #123` / `Refs #123`, or full `https://github.com/paperclipai/paperclip/...` URLs.
+In your PR title, description, commits, and comments, **only reference public GitHub tickets and PRs** — `#123`, `Fixes #123` / `Closes #123` / `Refs #123`, or public PR URLs.
 
 Do **not** include references to internal/instance-local Paperclip work, such as:
 
-- Internal ticket ids like `PAPA-123`, `PAP-224`, or any `{PREFIX}-{NUMBER}` identifier that isn't a public GitHub issue number.
-- Instance UI links such as `/PAP/issues/...`, `/PAP/agents/...`, `agent://...`, or document deep links.
+- Internal task IDs like `PAPA-123`, `PAP-224`, or any `{PREFIX}-{NUMBER}` identifier that isn't a public GitHub ticket number.
+- Instance UI links such as `/PAP/tasks/...`, `/PAP/agents/...`, `agent://...`, or document deep links.
 - `localhost`, private IP, or tailnet URLs pointing at your own instance.
 
-If an internal issue captured useful context, restate that context in plain English in the PR body instead of linking to it.
+If an internal task captured useful context, restate that context in plain English in the PR body instead of linking to it.
 
 ### Branch Naming
 
-Tooling (including Paperclip) often names a working branch after an internal issue and task — e.g. `PAPA-42-why-did-this-break`. That name leaks instance-local context, isn't meaningful to reviewers, and ends up as the public branch on your PR.
+Tooling (including Paperclip) often names a working branch after an internal task — e.g. `PAPA-42-why-did-this-break`. That name leaks instance-local context, isn't meaningful to reviewers, and ends up as the public branch on your PR.
 
 Before you push, **rename the branch to something descriptive of the change itself**, not of your instance:
 
-- Use short, kebab-case names scoped to the change, optionally with a conventional prefix: `docs/no-internal-issue-references`, `fix/sandbox-secret-resolution`, `feat/adapter-retry-backoff`.
-- Do **not** include internal Paperclip ticket ids (`PAPA-123`, `PAP-224`), instance task slugs, or other instance-derived details in the branch name.
+- Use short, kebab-case names scoped to the change, optionally with a conventional prefix: `docs/no-internal-task-references`, `fix/sandbox-secret-resolution`, `feat/adapter-retry-backoff`.
+- Do **not** include internal Paperclip task IDs (`PAPA-123`, `PAP-224`), instance task slugs, or other instance-derived details in the branch name.
 
 To rename and push under the new name:
 
@@ -162,7 +162,7 @@ Your PR description must follow the [PR template](.github/PULL_REQUEST_TEMPLATE.
 ### Thinking Path Example 1:
 
 > - Paperclip is the open source app people use to manage AI agents for work
-> - Every provider invocation must come from a persisted issue-execution reference
+> - Every provider invocation must come from a persisted task-execution reference
 > - But one retry path could launch after its reference became stale
 > - So the dispatcher must revalidate the reference immediately before launch
 > - This pull request adds that exact lease-time validation

@@ -20,7 +20,7 @@ Keep Paperclip low-friction while making the mode model simpler and safer:
 3. authenticated flow gives guidance for private vs public exposure.
 4. `doctor` should also be flagless by default (read config and evaluate the selected mode/profile).
 5. do not add backward-compatibility alias layers for abandoned mode names.
-6. plan must explicitly cover how users/Board are represented in DB and how that affects issue assignment and permissions.
+6. plan must explicitly cover how users/Board are represented in DB and how that affects task assignment and permissions.
 
 ## Current Implementation Audit (As Of 2026-02-23)
 
@@ -39,7 +39,7 @@ Keep Paperclip low-friction while making the mode model simpler and safer:
 
 ## Membership/Assignment Integration
 
-- User issue assignment requires active `company_memberships` entry for that user (`apps/server/src/services/issues.ts`).
+- User task assignment requires active `company_memberships` entry for that user (`apps/server/src/services/tasks.ts`).
 - Local implicit board identity is not automatically a real membership principal; this is a gap for “board as assignable user” semantics.
 
 ## Proposed Runtime Model
@@ -117,7 +117,7 @@ Optional flags may exist for override/testing, but are not required for normal o
 
 ## Requirement
 
-Board must be a real DB user principal so user-centric features (issue assignment, membership, audit identity) work consistently.
+Board must be a real DB user principal so user-centric features (task assignment, membership, audit identity) work consistently.
 
 ## Target Behavior
 
@@ -136,7 +136,7 @@ Board must be a real DB user principal so user-centric features (issue assignmen
 ## Why This Matters
 
 - `assigneeUserId` validation checks company membership.
-- without a real board user + membership path, assigning issues to board user is inconsistent.
+- without a real board user + membership path, assigning tasks to board user is inconsistent.
 
 ## Configuration Contract (Target)
 
@@ -204,7 +204,7 @@ This change is a clean cut:
   - private host policy rejects untrusted hosts
 - Board principal tests:
   - local_trusted board user exists as real DB user
-  - board can be assigned issues via `assigneeUserId` after membership setup
+  - board can be assigned tasks via `assigneeUserId` after membership setup
   - creator membership behavior for authenticated flows
 
 ## Acceptance Criteria
@@ -213,7 +213,7 @@ This change is a clean cut:
 2. authenticated mode is one runtime mode with `private/public` exposure guidance.
 3. `pnpm paperclipai doctor` works flagless with mode-aware checks.
 4. no extra compatibility aliases for dropped naming variants.
-5. Board identity is represented by real DB user/role/membership integration points, enabling consistent issue assignment and permission behavior.
+5. Board identity is represented by real DB user/role/membership integration points, enabling consistent task assignment and permission behavior.
 
 ## Verification Gate
 

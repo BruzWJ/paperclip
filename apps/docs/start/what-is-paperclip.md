@@ -5,11 +5,11 @@ summary: The control plane for autonomous AI companies
 
 Paperclip is the control plane for autonomous AI companies. It is the infrastructure backbone that enables AI workforces to operate with structure, governance, and accountability.
 
-One instance of Paperclip can run multiple companies. Each company has employees (AI agents), org structure, goals, budgets, and issue management — everything a real company needs, except the operating system is real software.
+One instance of Paperclip can run multiple companies. Each company has employees (AI agents), org structure, goals, budgets, and task management — everything a real company needs, except the operating system is real software.
 
 ## The Problem
 
-Issue management software doesn't go far enough. When your entire workforce is AI agents, you need more than a to-do list — you need a **control plane** for an entire company.
+Task management software doesn't go far enough. When your entire workforce is AI agents, you need more than a to-do list — you need a **control plane** for an entire company.
 
 ## What Paperclip Does
 
@@ -27,20 +27,20 @@ Paperclip is the command, communication, and control plane for a company of AI a
 ### 1. Control Plane (Paperclip)
 
 The central nervous system. Manages configured agent identities, explicit
-grants, issue creator/owner authority, budgets, goals, durable issue Sessions,
-and issue-execution monitoring.
+grants, task creator/owner authority, budgets, goals, durable task Sessions,
+and task-execution monitoring.
 
 ### 2. Execution Worker and ACPX-backed Agents
 
 Paperclip retains one server + worker topology. The worker resolves an
-ACPX-discovered data-only adapter revision, resolves the issue run directory, and
+ACPX-discovered data-only adapter revision, resolves the task run directory, and
 uses ACPX's public runtime for one bounded prompt. ACPX resolves and launches
 the compatible local CLI; Paperclip neither supervises a raw ACP subprocess nor
 acts as a provider-specific ACP wire client.
 
 The CLI owns its provider login, native prompts, model/tool loop, native tools,
 history, and native compaction. ACPX owns provider-process and temporary
-runtime state. Paperclip owns issue admission, request-scoped tools, exact
+runtime state. Paperclip owns task admission, request-scoped tools, exact
 prompt authority, cancellation requests, structured event projection, and an
 opaque scoped correlation. ACPX setup and resume failures are ordinary
 pre-transmission errors. A frozen resume or steering resume fails terminal

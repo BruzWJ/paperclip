@@ -71,7 +71,7 @@ Paperclip plugin design is based on the following assumptions:
    enable boundary.
 3. Plugins are administrator-trusted code, but host services still enforce
    the exact invocation company and actor authority.
-4. Board governance, approval gates, budget hard-stops, and core issue invariants remain owned by Paperclip core.
+4. Board governance, approval gates, budget hard-stops, and core task invariants remain owned by Paperclip core.
 
 ## 3. Goals
 
@@ -84,7 +84,7 @@ The plugin system must:
 5. Support plugin categories such as:
    - revenue tracking
    - knowledge base
-   - issue tracker sync
+   - ticket tracker sync
    - metrics/dashboards
    - file/project tooling
 6. Use simple, explicit, typed contracts.
@@ -95,7 +95,7 @@ The plugin system must:
 Plugins must not:
 
 1. Allow arbitrary plugins to override core routes or core invariants.
-2. Allow arbitrary plugins to mutate approval, auth, issue checkout, or budget enforcement logic.
+2. Allow arbitrary plugins to mutate approval, auth, task checkout, or budget enforcement logic.
 3. Allow plugins to run unrestricted or cross-namespace DB migrations.
 4. Depend on project-local plugin folders such as `.paperclip/plugins`.
 5. Depend on automatic install-and-execute behavior at server startup from arbitrary config files.
@@ -117,7 +117,7 @@ An installable instance-wide extension package loaded through the Paperclip plug
 Examples:
 
 - Linear sync
-- GitHub Issues sync
+- GitHub ticket sync
 - Grafana widgets
 - Stripe revenue sync
 - terminal
@@ -304,7 +304,7 @@ export interface PaperclipPluginManifestV1 {
     slots?: Array<{
       type: "page"
         | "detailTab"
-        | "issueDetailView"
+        | "taskDetailView"
         | "dashboardWidget"
         | "sidebar"
         | "routeSidebar"
@@ -319,7 +319,7 @@ export interface PaperclipPluginManifestV1 {
       /** Which export name in the UI bundle provides this component */
       exportName: string;
       /** Required by entity-scoped slots */
-      entityTypes?: Array<"project" | "issue">;
+      entityTypes?: Array<"project" | "task">;
       /** Required by page, routeSidebar, and companySettingsPage */
       routePath?: string;
     }>;
@@ -363,7 +363,7 @@ tools?: Array<{
 ```
 
 Provider-visible tool names use the reserved MCP-safe form `pluginId__toolName`
-(for example `linear__search-issues`). Manifest plugin IDs and tool names cannot
+(for example `linear__search-tickets`). Manifest plugin IDs and tool names cannot
 contain `__`, and the combined name cannot exceed 128 characters, so plugins
 cannot shadow core tools or each other's tools.
 
@@ -375,9 +375,9 @@ during an instruction bootstrap; it does not change normal discovery or executio
 When an agent invokes a plugin tool during a run, the host routes the call to the plugin worker via an `executeTool` RPC method:
 
 - `executeTool(input)` receives the tool name, parsed parameters, and an opaque
-  host-issued run-context handle. A plugin declaring `runtime.context.read` may
+  host-minted run-context handle. A plugin declaring `runtime.context.read` may
   resolve canonical identity for that exact live invocation or ask the host to
-  evaluate issue reach; the worker cannot manufacture or reuse the handle.
+  evaluate task reach; the worker cannot manufacture or reuse the handle.
 
 The worker executes the tool logic and returns a typed result. The host enforces capability gates — a plugin must declare `agent.tools.register` to contribute tools, and individual tools may require additional capabilities (e.g. `http.outbound` for tools that call external APIs).
 
@@ -393,7 +393,7 @@ authority. It re-reads the exact ready installation, current manifest
 declaration, and company-scoped request authority before every list and call. Execution then
 routes the compiled bare handler name directly to that installation's live
 worker; there is no parallel in-memory plugin-tool registry.
-Agents still use ordinary Paperclip list/read tools to discover issue IDs, and
+Agents still use ordinary Paperclip list/read tools to discover task IDs, and
 a plugin's capability-gated host reads enforce company and context reach.
 
 Plugin tools appear in the agent's tool list alongside core tools but are visually distinguished in the UI as plugin-contributed.
@@ -506,7 +506,7 @@ Optional methods:
 - `getData(input)`
 - `performAction(input)`
 - `executeTool(input)`
-- `issues.creatorCallback.deliver(input)`
+- `tasks.creatorCallback.deliver(input)`
 
 ### 13.1 `initialize`
 
@@ -609,7 +609,7 @@ The plugin UI calls the host bridge, which forwards the request to the worker. T
 
 Input includes:
 
-- data key (plugin-defined, e.g. `"sync-health"`, `"issue-detail"`)
+- data key (plugin-defined, e.g. `"sync-health"`, `"task-detail"`)
 - context (company id, project id, entity id, etc.)
 - optional query parameters
 
@@ -625,8 +625,8 @@ ordinary untrusted plugin input and must not be used for authorization.
 Examples:
 
 - "resync now"
-- "link GitHub issue"
-- "create branch from issue"
+- "link GitHub ticket"
+- "create branch from task"
 - "restart process"
 
 ### 13.10 `executeTool`
@@ -664,7 +664,7 @@ Required SDK clients:
 - `ctx.routines`
 - `ctx.skills`
 - `ctx.companies`
-- `ctx.issues`
+- `ctx.tasks`
 - `ctx.agents`
 - `ctx.goals`
 - `ctx.access`
@@ -680,10 +680,10 @@ Required SDK clients:
 
 Plugins that need filesystem, git, terminal, or process operations handle those directly using standard Node APIs or libraries. The host provides project-scoped run-directory metadata through `ctx.projects` so plugins can resolve authorized paths, but the host does not proxy low-level OS operations.
 
-## 14.1 Issue Orchestration APIs
+## 14.1 Task Orchestration APIs
 
-Trusted orchestration plugins create ordinary Paperclip issues through
-`ctx.issues` instead of importing server internals. Creation requires an
+Trusted orchestration plugins create ordinary Paperclip tasks through
+`ctx.tasks` instead of importing server internals. Creation requires an
 immutable non-empty request, explicit invokable agent owner, and registered
 versioned creator callback. Optional metadata is limited to title,
 parent/project/goal, and priority.
@@ -691,24 +691,24 @@ parent/project/goal, and priority.
 Plugins that perform durable work should declare managed Paperclip resources rather than using private plugin state:
 
 - `agents` + `ctx.agents.managed.*` for named, invokable operators (`agents.managed` required)
-- `projects` + `ctx.projects.managed.*` for stable, scoped issue/workspace ownership (`projects.managed` required)
-- `routines` + `ctx.routines.managed.*` for schedule/webhook/manual execution with issue trails (`routines.managed` required)
+- `projects` + `ctx.projects.managed.*` for stable, scoped task/workspace ownership (`projects.managed` required)
+- `routines` + `ctx.routines.managed.*` for schedule/webhook/manual execution with task trails (`routines.managed` required)
 - `skills` + `ctx.skills.managed.*` for reusable agent capabilities (`skills.managed` required)
 
 Content-oriented plugins should follow this model instead of running
 unmanaged background loops: make the LLM-facing worker an operator-visible
 managed agent, attach reusable prompt/tool guidance as managed skills, keep
-operation issues in a managed project, and drive recurring work through managed
+operation tasks in a managed project, and drive recurring work through managed
 routines.
 
-Provider work starts only through `ctx.issues.create` with an explicit
+Provider work starts only through `ctx.tasks.create` with an explicit
 eligible owner. Creator updates are either an exact message or reassignment to
-another invokable agent. Creator cancellation uses `ctx.issues.withdraw`, which
-is limited to the plugin's own nonterminal issue and produces no callback or
+another invokable agent. Creator cancellation uses `ctx.tasks.withdraw`, which
+is limited to the plugin's own nonterminal task and produces no callback or
 provider run.
 
 The host records the installed plugin/callback identity as immutable creator
-provenance. A plugin cannot supply origin aliases, own an issue, generically
+provenance. A plugin cannot supply origin aliases, own a task, generically
 patch lifecycle/request/title/metadata, mutate blocker relationships through
 this surface, or invoke an agent directly.
 
@@ -744,7 +744,7 @@ The host enforces capabilities in the SDK layer and refuses calls outside the gr
 
 - `companies.read`
 - `projects.read`
-- `issues.read`
+- `tasks.read`
 - `agents.read`
 - `goals.read`
 - `access.members.read`
@@ -758,9 +758,9 @@ The host enforces capabilities in the SDK layer and refuses calls outside the gr
 
 - `goals.create`
 - `goals.update`
-- `issues.create`
-- `issues.update`
-- `issues.withdraw`
+- `tasks.create`
+- `tasks.update`
+- `tasks.withdraw`
 - `projects.managed`
 - `routines.managed`
 - `skills.managed`
@@ -816,7 +816,7 @@ The host must not expose capabilities for:
 - approval decisions
 - budget override
 - auth bypass
-- issue checkout lock override
+- task checkout lock override
 - direct DB access
 
 ## 15.3 Upgrade Rules
@@ -831,12 +831,12 @@ no pending capability-escalation lifecycle state.
 The host emits a deliberately small set of typed post-commit domain events that
 plugins may subscribe to:
 
-- `issue.board.comment.created`
+- `task.board.comment.created`
 - `agent.run.finished`
 - `agent.run.failed`
 - `agent.run.cancelled`
 
-`issue.board.comment.created` means exactly a committed comment from the board
+`task.board.comment.created` means exactly a committed comment from the board
 comment HTTP command. Session-projected agent comments do not emit it; the
 terminal run events are the post-run warming signal for that production path.
 
@@ -860,7 +860,7 @@ Supported filter fields:
 
 Filters are optional. If omitted, the plugin receives all events of the
 subscribed type. The two fields may be combined on terminal run events. The
-host rejects `agentId` on `issue.board.comment.created`; plugin-scoped event
+host rejects `agentId` on `task.board.comment.created`; plugin-scoped event
 patterns may use it when the plugin event payload defines `agentId`.
 
 ### 16.2 Plugin-to-Plugin Events
@@ -951,7 +951,7 @@ export function DashboardWidget({ context }: PluginHostContextProps) {
 
   return (
     <div>
-      <MetricCard label="Synced Issues" value={data.syncedCount} trend={data.trend} />
+      <MetricCard label="Synced Tasks" value={data.syncedCount} trend={data.trend} />
       {data.mappings.map(m => (
         <StatusBadge key={m.id} label={m.label} status={m.status} />
       ))}
@@ -1063,14 +1063,14 @@ declarations are accepted only for the entity kinds listed here.
 | --- | --- | --- | --- |
 | `page` | Company plugin route | — | `ui.page.register` |
 | `routeSidebar` | Secondary sidebar for its paired `page` | — | `ui.sidebar.register` |
-| `detailTab` | Project and issue detail tabs | `project`, `issue` | `ui.detailTab.register` |
-| `issueDetailView` | Inline issue detail region | `issue` | `ui.detailTab.register` |
+| `detailTab` | Project and task detail tabs | `project`, `task` | `ui.detailTab.register` |
+| `taskDetailView` | Inline task detail region | `task` | `ui.detailTab.register` |
 | `dashboardWidget` | Company dashboard | — | `ui.dashboardWidget.register` |
 | `sidebar` | Main company sidebar navigation | — | `ui.sidebar.register` |
 | `sidebarPanel` | Main company sidebar panel region | — | `ui.sidebar.register` |
 | `projectSidebarItem` | Each project row in the sidebar | `project` | `ui.sidebar.register` |
 | `globalToolbarButton` | Global breadcrumb toolbar | — | `ui.action.register` |
-| `toolbarButton` | Project and issue action rows | `project`, `issue` | `ui.action.register` |
+| `toolbarButton` | Project and task action rows | `project`, `task` | `ui.action.register` |
 | `settingsPage` | Instance plugin settings detail | — | `instance.settings.register` |
 | `companySettingsPage` | Company Settings route and sidebar | — | `instance.settings.register` |
 
@@ -1080,7 +1080,7 @@ Launcher placements are a separate closed vocabulary:
 | --- | --- | --- | --- |
 | `sidebar` | Main company sidebar navigation | — | `ui.sidebar.register` |
 | `globalToolbarButton` | Global breadcrumb toolbar | — | `ui.action.register` |
-| `toolbarButton` | Project and issue action rows | `project`, `issue` | `ui.action.register` |
+| `toolbarButton` | Project and task action rows | `project`, `task` | `ui.action.register` |
 
 Launcher actions are also a closed contract. `navigate` resolves a Paperclip
 route, `deepLink` opens an absolute HTTP(S) URL in a new tab, and
@@ -1100,7 +1100,7 @@ with exactly one `page` in the same manifest using the same `routePath`.
 Plugins may add tabs to:
 
 - project detail
-- issue detail
+- task detail
 
 Recommended route pattern:
 
@@ -1146,15 +1146,15 @@ The host SDK ships shared components that plugins can import to quickly build UI
 |---|---|---|
 | `MetricCard` | Single number with label, optional trend/sparkline | KPIs, counts, rates |
 | `StatusBadge` | Inline status indicator (ok/warning/error/info) | Sync health, connection status |
-| `DataTable` | Rows and columns with optional sorting and pagination | Issue lists, job history, process lists |
+| `DataTable` | Rows and columns with optional sorting and pagination | Task lists, job history, process lists |
 | `MarkdownBlock` | Rendered markdown text | Descriptions, help text, notes |
 | `KeyValueList` | Label/value pairs in a definition-list layout | Entity metadata, config summary |
 | `JsonTree` | Collapsible JSON tree for debugging | Raw API responses, plugin state inspection |
 | `Spinner` | Loading indicator | Data fetch states |
 | `FileTree` | Host-styled file/directory tree | Plugin-owned file trees and import previews |
-| `IssuesList` | Host issue list | Plugin pages that need a native issue view |
-| `OwnerPicker` | Agent-only canonical issue-owner picker | Creating and reassigning ordinary plugin issues |
-| `ProjectPicker` | Host project picker | Creating issues, scoping dashboards, filtering work |
+| `TasksList` | Host task list | Plugin pages that need a native task view |
+| `OwnerPicker` | Agent-only canonical task-owner picker | Creating and reassigning ordinary plugin tasks |
+| `ProjectPicker` | Host project picker | Creating tasks, scoping dashboards, filtering work |
 | `ManagedRoutinesList` | Host routine list | Plugin settings pages that manage routines |
 
 Plugins may also use entirely custom components. The shared components exist to reduce boilerplate and keep visual consistency, not to limit what plugins can render.
@@ -1281,7 +1281,7 @@ Constraints:
 
 - `id` uuid pk
 - `plugin_id` uuid fk `plugins.id` not null
-- `scope_kind` enum: `instance | company | project | agent | issue | goal | run`
+- `scope_kind` enum: `instance | company | project | agent | task | goal | run`
 - `scope_id` uuid/text null
 - `namespace` text not null
 - `state_key` text not null
@@ -1294,7 +1294,7 @@ Constraints:
 
 Examples:
 
-- Linear external IDs keyed by `issue`
+- Linear external IDs keyed by `task`
 - GitHub sync cursors keyed by `project`
 - git branch metadata keyed by `project`
 - process metadata keyed by `run`
@@ -1374,8 +1374,8 @@ Constraints and indexes:
 
 Use cases:
 
-- imported Linear issues
-- imported GitHub issues
+- imported Linear tickets
+- imported GitHub tickets
 - plugin-owned process records
 - plugin-owned external metric bindings
 
@@ -1627,13 +1627,13 @@ const harness = createTestHarness({ manifest });
 await plugin.definition.setup(harness.ctx);
 
 // Simulate an event
-await harness.emit("issue.board.comment.created", {
-  issueId: "iss-1",
+await harness.emit("task.board.comment.created", {
+  taskId: "task-1",
   commentId: "comment-1",
 });
 
 // Verify state was written
-const state = harness.getState({ scopeKind: "issue", scopeId: "iss-1", stateKey: "external-id" });
+const state = harness.getState({ scopeKind: "task", scopeId: "task-1", stateKey: "external-id" });
 expect(state).toBeDefined();
 
 // Simulate a UI data request
@@ -1669,7 +1669,7 @@ This spec directly supports the following plugin types:
 - `@paperclip/plugin-terminal`
 - `@paperclip/plugin-git`
 - `@paperclip/plugin-linear`
-- `@paperclip/plugin-github-issues`
+- `@paperclip/plugin-github-tickets`
 - `@paperclip/plugin-grafana`
 - `@paperclip/plugin-runtime-processes`
 - `@paperclip/plugin-stripe`

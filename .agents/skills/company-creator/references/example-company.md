@@ -16,10 +16,10 @@ lean-dev-shop/
 ├── projects/
 │   └── q2-launch/
 │       ├── PROJECT.md
-│       └── issues/
-│           └── monday-review/ISSUE.md
-├── issues/
-│   └── weekly-standup/ISSUE.md
+│       └── tasks/
+│           └── monday-review/TASK.md
+├── tasks/
+│   └── weekly-standup/TASK.md
 ├── skills/
 │   └── code-review/SKILL.md
 └── .paperclip.yaml
@@ -110,7 +110,7 @@ Execution contract:
 
 - Start actionable implementation work in the same heartbeat; do not stop at a plan unless planning was requested.
 - Leave durable progress with a clear next action.
-- Use child issues for long or parallel delegated work instead of polling agents, sessions, or processes.
+- Use child tasks for long or parallel delegated work instead of polling agents, sessions, or processes.
 - Mark blocked work with the unblock owner and action.
 ```
 
@@ -146,7 +146,7 @@ owner: cto
 Deliver all features planned for the Q2 launch, including the new dashboard and API improvements.
 ```
 
-## projects/q2-launch/issues/monday-review/ISSUE.md
+## projects/q2-launch/tasks/monday-review/TASK.md
 
 ```markdown
 ---
@@ -156,7 +156,7 @@ project: q2-launch
 recurring: true
 ---
 
-Review the status of Q2 Launch project. Check progress on all open issues, identify blockers, and update priorities for the week.
+Review the status of Q2 Launch project. Check progress on all open tasks, identify blockers, and update priorities for the week.
 ```
 
 ## skills/code-review/SKILL.md (with external reference)
@@ -177,5 +177,5 @@ metadata:
       usage: referenced
 ---
 
-Review code changes for correctness, style, and potential issues.
+Review code changes for correctness, style, and potential defects.
 ```

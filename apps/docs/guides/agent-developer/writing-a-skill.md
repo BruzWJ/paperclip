@@ -45,7 +45,7 @@ Detailed instructions for the agent...
 1. Operators import or author a versioned `SKILL.md` package.
 2. The company library records metadata, trust, version, and explicit
    selections.
-3. A selected company skill remains data and grants no issue or company
+3. A selected company skill remains data and grants no task or company
    execution authority.
 4. Paperclip materializes only that agent's exact selected version set for the
    current run. The provider discovers those files through its native

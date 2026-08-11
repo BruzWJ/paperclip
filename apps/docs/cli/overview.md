@@ -73,4 +73,4 @@ Context is stored at `~/.paperclip/context.json`.
 The CLI has two categories:
 
 1. **[Setup commands](/cli/setup-commands)** — instance bootstrap, diagnostics, configuration
-2. **[Control-plane commands](/cli/control-plane-commands)** — issues, agents, approvals, activity
+2. **[Control-plane commands](/cli/control-plane-commands)** — tasks, agents, approvals, activity

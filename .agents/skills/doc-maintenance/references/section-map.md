@@ -9,7 +9,7 @@ look when a feature ships or changes.
 | Adapters (new runtimes) | "Works with" table, FAQ | Agent Model, Agent Configuration | Employees & Agents, Agent Execution |
 | Governance / Approvals | Features table, "Why special" | Board Governance, Board Approval Gates | Principles |
 | Budget / Cost Control | Features table, "Why special" | Budget Delegation | Company (revenue & expenses) |
-| Issue Management | Features table | Issue Model | Issue Management |
+| Task Management | Features table | Task Model | Task Management |
 | Org Chart / Hierarchy | Features table | Agent Model (reporting) | Employees & Agents |
 | Multi-Company | Features table, FAQ | Company Model | Company |
 | Heartbeats | Features table, FAQ | Agent Execution | Agent Execution |

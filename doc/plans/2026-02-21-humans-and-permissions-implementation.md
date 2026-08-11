@@ -218,7 +218,7 @@ Note:
 
 ## 5.3 Existing table changes
 
-1. `issues`
+1. `tasks`
 
 - add `assignee_user_id` text null
 - enforce single-assignee invariant:
@@ -574,7 +574,7 @@ Required UX:
 ## 12.4 Regression tests
 
 - existing agent API key flows still work
-- issue assignment and checkout invariants unchanged
+- task assignment and checkout invariants unchanged
 - activity logging still emitted for all mutations
 
 ## 13. Delivery plan

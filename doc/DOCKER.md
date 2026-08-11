@@ -17,7 +17,7 @@ Build arguments:
 
 | Arg | Default | Purpose |
 |-----|---------|---------|
-| `USER_UID` | `1000` | UID for the container `node` user (match your host UID to avoid permission issues on bind mounts) |
+| `USER_UID` | `1000` | UID for the container `node` user (match your host UID to avoid permission problems on bind mounts) |
 | `USER_GID` | `1000` | GID for the container `node` group |
 
 ```sh
@@ -258,5 +258,5 @@ through mocks. It does not launch Paperclip, a container, or a database.
 
 ## General Notes
 
-- The `docker-entrypoint.sh` adjusts the container `node` user UID/GID at startup to match the values passed via `USER_UID`/`USER_GID`, avoiding permission issues on bind-mounted volumes.
+- The `docker-entrypoint.sh` adjusts the container `node` user UID/GID at startup to match the values passed via `USER_UID`/`USER_GID`, avoiding permission problems on bind-mounted volumes.
 - Paperclip data persists via Docker volumes/bind mounts (compose) or at `~/.local/share/paperclip` (quadlet).

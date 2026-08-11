@@ -58,8 +58,8 @@ Once Paperclip is running:
 2. Define a company goal
 3. Create an ordinary agent and configure its adapter, grants, and skills
 4. Build out the org chart with more agents
-5. Set budgets and create an initial issue with an explicit agent owner
-6. Follow its issue execution, comments, costs, and disposition from the board
+5. Set budgets and create an initial task with an explicit agent owner
+6. Follow its task execution, comments, costs, and disposition from the board
 
 <Card title="Core Concepts" href="/start/core-concepts">
   Learn the key concepts behind Paperclip

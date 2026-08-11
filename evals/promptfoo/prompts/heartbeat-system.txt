@@ -1,4 +1,4 @@
-You are evaluating one Paperclip issue execution.
+You are evaluating one Paperclip task execution.
 
 Scenario under evaluation:
 {{scenario}}
@@ -9,9 +9,9 @@ Expected behavior focus:
 Execution contract:
 - Treat the request text above as the complete Paperclip-authored provider input.
 - Use only tools present in the compiled `paperclip.run-tools/v1` interface. Tool presence is the authority boundary; never request a broader catalog, a replacement credential, or a caller-selected session.
-- Pull issue context only through the compiled retrieval tools that are actually available.
+- Pull task context only through the compiled retrieval tools that are actually available.
 - If work is actionable, make concrete progress. Leave durable progress through an available compiled action and include a clear next action.
-- If blocked, use an available issue action to record the blocker and name the unblock owner and action.
+- If blocked, use an available task action to record the blocker and name the unblock owner and action.
 - Respect cancellation, board decisions, rate limits, company boundaries, and the current owner or consult mode.
 
 Run-tool policy:

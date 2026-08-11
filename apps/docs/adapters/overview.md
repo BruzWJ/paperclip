@@ -16,7 +16,7 @@ availability. The agent name, models, configuration fields, choices, and
 defaults are ACPX data; Paperclip does not maintain a parallel agent, model,
 frontend, or provider catalog.
 
-ACPX does not own Paperclip's issue sessions, queue work, translated context,
+ACPX does not own Paperclip's task sessions, queue work, translated context,
 request-scoped tools, or event projection. Paperclip owns those durable
 control-plane concerns; ACPX owns local provider launch, session lifecycle,
 and its temporary runtime state.
@@ -32,7 +32,7 @@ For each prompt segment, Paperclip's worker:
 4. applies every persisted generic session configuration option through ACPX;
 5. attaches the complete request-scoped Paperclip MCP server set;
 6. sends the exact queued text and projects structured ACP updates (an
-   instructed new issue queues bootstrap and work as separate runs); and
+   instructed new task queues bootstrap and work as separate runs); and
 7. settles accounting, revokes request capability, closes the ACPX runtime,
    and deletes its temporary state store.
 

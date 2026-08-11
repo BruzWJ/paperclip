@@ -20,7 +20,7 @@ Better Auth owns signup, sign-in, profile updates, and sign-out:
 
 Paperclip authorization starts only after that session resolves to a persisted
 Better Auth user. Instance roles, company memberships, preferences, secrets,
-issue attribution, and board API keys remain explicit records attached to that
+task attribution, and board API keys remain explicit records attached to that
 user.
 
 ## Reachability
@@ -54,7 +54,7 @@ A fresh database contains no human or administrator. First:
 
 1. Open Paperclip and sign up or sign in through Better Auth.
 2. On private exposure, use the first-admin setup action in the browser.
-3. Alternatively, issue a short-lived capability with:
+3. Alternatively, create a short-lived capability with:
 
    ```sh
    pnpm paperclipai auth bootstrap-admin

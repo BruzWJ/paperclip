@@ -10,11 +10,11 @@ Add a single storage subsystem for Paperclip that supports:
 
 - local disk storage for single-user local deployment
 - S3-compatible object storage for cloud deployment
-- a provider-agnostic interface for issue images and future file attachments
+- a provider-agnostic interface for task images and future file attachments
 
 ## V1 Scope
 
-- First consumer: issue attachments/images.
+- First consumer: task attachments/images.
 - Storage adapters: `local_disk` and `s3`.
 - Files are always company-scoped and access-controlled.
 - API serves attachment bytes through authenticated Paperclip endpoints.
@@ -30,7 +30,7 @@ Add a single storage subsystem for Paperclip that supports:
 
 - Default local path is under instance root: `~/.paperclip/instances/<instanceId>/data/storage`.
 - Object bytes live in storage provider; metadata lives in Postgres.
-- `assets` is generic metadata table; `issue_attachments` links assets to issues/comments.
+- `assets` is generic metadata table; `task_attachments` links assets to tasks/comments.
 - S3 credentials come from runtime environment/default AWS provider chain, not DB rows.
 - All object keys include company prefix to preserve hard tenancy boundaries.
 
@@ -85,10 +85,10 @@ Add a single storage subsystem for Paperclip that supports:
 ### Checklist (Per File)
 
 - [ ] `packages/db/schema/assets.ts`: new generic asset metadata table.
-- [ ] `packages/db/schema/issue_attachments.ts`: issue-to-asset linking table.
+- [ ] `packages/db/schema/task_attachments.ts`: task-to-asset linking table.
 - [ ] `packages/db/schema/index.ts`: export new tables.
 - [ ] `packages/db/migrations/*`: generate migration for both tables and indexes.
-- [ ] `packages/shared/src/types/issue.ts` (or new asset types file): add `IssueAttachment` type.
+- [ ] `packages/shared/src/types/task.ts` (or new asset types file): add `TaskAttachment` type.
 - [ ] `packages/shared/src/index.ts`: export new types.
 
 ### Suggested Columns
@@ -97,23 +97,23 @@ Add a single storage subsystem for Paperclip that supports:
   - `id`, `company_id`, `provider`, `object_key`
   - `content_type`, `byte_size`, `sha256`, `original_filename`
   - `created_by_agent_id`, `created_by_user_id`, timestamps
-- `issue_attachments`:
-  - `id`, `company_id`, `issue_id`, `asset_id`, `issue_comment_id` (nullable), timestamps
+- `task_attachments`:
+  - `id`, `company_id`, `task_id`, `asset_id`, `task_comment_id` (nullable), timestamps
 
 ### Acceptance Criteria
 
 - Migration applies cleanly on empty and existing local dev DB.
-- Metadata rows are company-scoped and indexed for issue lookup.
+- Metadata rows are company-scoped and indexed for task lookup.
 
-## Phase 4: Issue Attachment API
+## Phase 4: Task Attachment API
 
 ### Checklist (Per File)
 
-- [ ] `packages/shared/src/validators/issue.ts`: add schemas for upload/list/delete attachment operations.
-- [ ] `apps/server/src/services/issues.ts`: add attachment CRUD helpers with company checks.
-- [ ] `apps/server/src/routes/issues.ts`: add endpoints:
-  - `POST /companies/:companyId/issues/:issueId/attachments` (multipart)
-  - `GET /issues/:issueId/attachments`
+- [ ] `packages/shared/src/validators/task.ts`: add schemas for upload/list/delete attachment operations.
+- [ ] `apps/server/src/services/tasks.ts`: add attachment CRUD helpers with company checks.
+- [ ] `apps/server/src/routes/tasks.ts`: add endpoints:
+  - `POST /companies/:companyId/tasks/:taskId/attachments` (multipart)
+  - `GET /tasks/:taskId/attachments`
   - `GET /attachments/:attachmentId/content`
   - `DELETE /attachments/:attachmentId`
 - [ ] `apps/server/src/routes/authz.ts`: reuse/enforce company access for attachment endpoints.
@@ -128,24 +128,24 @@ Add a single storage subsystem for Paperclip that supports:
 
 ### Acceptance Criteria
 
-- Board and same-company agents can upload and read attachments per issue permissions.
+- Board and same-company agents can upload and read attachments per task permissions.
 - Cross-company access is denied even with valid attachment id.
 - Activity log records attachment add/remove actions.
 
-## Phase 5: UI Issue Attachment Integration
+## Phase 5: UI Task Attachment Integration
 
 ### Checklist (Per File)
 
-- [ ] `apps/ui/src/api/issues.ts`: add attachment API client methods.
+- [ ] `apps/ui/src/api/tasks.ts`: add attachment API client methods.
 - [ ] `apps/ui/src/api/client.ts`: support multipart upload helper (no JSON `Content-Type` for `FormData`).
-- [ ] `apps/ui/src/lib/queryKeys.ts`: add issue attachment query keys.
-- [ ] `apps/ui/src/pages/IssueDetail.tsx`: add upload UI + attachment list/query invalidation.
+- [ ] `apps/ui/src/lib/queryKeys.ts`: add task attachment query keys.
+- [ ] `apps/ui/src/pages/TaskDetail.tsx`: add upload UI + attachment list/query invalidation.
 - [ ] `apps/ui/src/components/CommentThread.tsx`: optional comment image attach or display linked images.
 - [ ] `packages/shared/src/types/index.ts`: ensure attachment types are consumed cleanly in UI.
 
 ### Acceptance Criteria
 
-- User can upload an image from issue detail and see it listed immediately.
+- User can upload an image from task detail and see it listed immediately.
 - Uploaded image can be opened/rendered via authenticated API route.
 - Upload and fetch failures are visible to users (no silent errors).
 
@@ -157,7 +157,7 @@ Add a single storage subsystem for Paperclip that supports:
 - [ ] `packages/cli/src/checks/index.ts`: export new storage check.
 - [ ] `packages/cli/src/commands/doctor.ts`: include storage check in doctor sequence.
 - [ ] `doc/DATABASE.md` or `doc/DEVELOPING.md`: mention storage backend behavior by deployment mode.
-- [ ] `doc/SPEC-implementation.md`: add storage subsystem and issue-attachment endpoint contract.
+- [ ] `doc/SPEC-implementation.md`: add storage subsystem and task-attachment endpoint contract.
 
 ### Acceptance Criteria
 
@@ -169,8 +169,8 @@ Add a single storage subsystem for Paperclip that supports:
 
 ### Server Integration Tests
 
-- [ ] `apps/server/src/__tests__/issue-attachments.auth.test.ts`: company boundary and permission tests.
-- [ ] `apps/server/src/__tests__/issue-attachments.lifecycle.test.ts`: upload/list/read/delete flow.
+- [ ] `apps/server/src/__tests__/task-attachments.auth.test.ts`: company boundary and permission tests.
+- [ ] `apps/server/src/__tests__/task-attachments.lifecycle.test.ts`: upload/list/read/delete flow.
 - [ ] `apps/server/src/__tests__/storage-local-provider.test.ts`: local provider path safety and round-trip.
 - [ ] `apps/server/src/__tests__/storage-s3-provider.test.ts`: s3 provider contract (mocked client).
 - [ ] `apps/server/src/__tests__/activity-log.attachments.test.ts`: mutation logging assertions.
@@ -182,7 +182,7 @@ Add a single storage subsystem for Paperclip that supports:
 
 ### UI Tests (if present in current stack)
 
-- [ ] `apps/ui/src/...`: issue detail upload and error handling tests.
+- [ ] `apps/ui/src/...`: task detail upload and error handling tests.
 
 ## Verification Gate Before Merge
 

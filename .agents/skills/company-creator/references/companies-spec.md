@@ -15,7 +15,7 @@ Read the local spec file before generating any package files. The spec defines t
 | TEAM.md    | team    | Reusable org subtree                              |
 | AGENTS.md  | agent   | One role, instructions, and attached skills       |
 | PROJECT.md | project | Planned work grouping                             |
-| ISSUE.md   | issue   | Portable starter issue                            |
+| TASK.md   | task   | Portable starter task                            |
 | SKILL.md   | skill   | Agent Skills capability package (do not redefine) |
 
 ## Directory Layout
@@ -30,10 +30,10 @@ company-package/
 ├── projects/
 │   └── <slug>/
 │       ├── PROJECT.md
-│       └── issues/
-│           └── <slug>/ISSUE.md
-├── issues/
-│   └── <slug>/ISSUE.md
+│       └── tasks/
+│           └── <slug>/TASK.md
+├── tasks/
+│   └── <slug>/TASK.md
 ├── skills/
 │   └── <slug>/SKILL.md
 ├── assets/
@@ -46,7 +46,7 @@ company-package/
 
 ```yaml
 schema: agentcompanies/v1
-kind: company | team | agent | project | issue
+kind: company | team | agent | project | task
 slug: url-safe-stable-identity
 name: Human Readable Name
 description: Short description for discovery
@@ -109,10 +109,10 @@ description: What this project delivers
 owner: agent-slug
 ```
 
-## ISSUE.md Key Fields
+## TASK.md Key Fields
 
 ```yaml
-name: Issue Name
+name: Task Name
 owner: agent-slug
 project: project-slug
 recurring: true

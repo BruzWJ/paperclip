@@ -55,7 +55,7 @@ Phase 0 covers narrow behavior evals for the Paperclip heartbeat skill:
 
 Phase 5 control-surface prompt evals should be paired with deterministic server/shared tests for:
 
-- board command/chat-like routes creating auditable issues, comments, documents, approvals, or work products
+- board command/chat-like routes creating auditable tasks, comments, documents, approvals, or work products
 
 ### Adding new cases
 

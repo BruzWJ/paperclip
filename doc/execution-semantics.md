@@ -1,14 +1,14 @@
-# Issue Execution Semantics
+# Task Execution Semantics
 
 Status: current
 
-This document defines how ordinary issue ownership becomes provider execution. It complements [SPEC.md](./SPEC.md) and the runtime contract in [spec/agent-runs.md](./spec/agent-runs.md).
+This document defines how ordinary task ownership becomes provider execution. It complements [SPEC.md](./SPEC.md) and the runtime contract in [spec/agent-runs.md](./spec/agent-runs.md).
 
 ## Ownership
 
-Every ordinary issue has one explicit owner and a monotonically increasing ownership epoch. The owner may be an eligible agent or a permitted named user/board identity. The immutable creator is stored independently from the current owner.
+Every ordinary task has one explicit owner and a monotonically increasing ownership epoch. The owner may be an eligible agent or a permitted named user/board identity. The immutable creator is stored independently from the current owner.
 
-Creation commits request, creator, owner, epoch, issue session, creator edge, server-owned run-directory binding, and any initial execution reference atomically. Reassignment is available only to the immutable creator (or board), selects from the same eligible catalog as creation, advances the epoch, revokes/cancels the former engagement, and starts the new owner fresh. For an agent creator, the one `issue_create` grant covers both direct-child creation and eligible direct-child reassignment; there is no assign-only grant.
+Creation commits request, creator, owner, epoch, task session, creator edge, server-owned run-directory binding, and any initial execution reference atomically. Reassignment is available only to the immutable creator (or board), selects from the same eligible catalog as creation, advances the epoch, revokes/cancels the former engagement, and starts the new owner fresh. For an agent creator, the one `task_create` grant covers both direct-child creation and eligible direct-child reassignment; there is no assign-only grant.
 
 There is no provider checkout/release or generic owner/status patch. Run/execution lock columns are control-plane concurrency evidence only; they do not grant ownership.
 
@@ -21,33 +21,33 @@ The canonical lifecycle is:
 - `done`
 - `cancelled`
 
-`issue_update({ message, status?, structuredResult?, issueId? })` is available
+`task_update({ message, status?, structuredResult?, taskId? })` is available
 from relationship authority rather than a configurable grant. The current owner
-omits `issueId` to update its active issue; an exact creator execution supplies
-an eligible direct-child `issueId`. A creator-targeted update may send a
+omits `taskId` to update its active task; an exact creator execution supplies
+an eligible direct-child `taskId`. A creator-targeted update may send a
 message or set nonterminal `open`/`blocked`; terminal `done`/`cancelled` and
 `structuredResult` are current-owner-only. Terminal owner updates require a
 disposition, are ordered after any earlier same-run updates, and reject later
 updates. Each canonical update is itself the counterpart-facing comment and
 automatically mentions that counterpart: child-owner updates target the direct
-parent, root-owner updates target the root issue's Board creator, and
+parent, root-owner updates target the root task's Board creator, and
 creator-targeted child updates target the current owner in the child. A nonterminal
 creator-targeted update
 admits that current owner’s follow-up execution.
 
-`blocked` is nonterminal: it records that the owner cannot currently complete the issue, but it does not freeze the issue execution graph. Existing or newly admitted mentions may run while the issue remains blocked, and a mention never changes it back to `open` implicitly. `cancelled` is terminal: the transition atomically fences pending refs and requests cancellation of every active run in the ownership epoch. Reopening never revives those fenced refs.
+`blocked` is nonterminal: it records that the owner cannot currently complete the task, but it does not freeze the task execution graph. Existing or newly admitted mentions may run while the task remains blocked, and a mention never changes it back to `open` implicitly. `cancelled` is terminal: the transition atomically fences pending refs and requests cancellation of every active run in the ownership epoch. Reopening never revives those fenced refs.
 
 Neither relationship path can alter request, title, owner, dependencies, or
 metadata. Both use the same canonical update/comment and neither has a separate
 agent comment path.
 
-Board reopen is a separate audited command. Under the issue lock it changes a terminal issue to `open`, clears disposition, preserves request/owner/epoch/session/run-directory binding, re-applies the native-continuity fence, and materializes or re-evaluates the current epoch's creator edge. A preserved invokable agent commits and dispatches exactly one new ref. A named-user or collective-board-owned system escalation commits the provider-free `board_only` branch with no ref or run. Every other owner is rejected. Reopen never revives an old terminal edge or acts as a fresh-session reset.
+Board reopen is a separate audited command. Under the task lock it changes a terminal task to `open`, clears disposition, preserves request/owner/epoch/session/run-directory binding, re-applies the native-continuity fence, and materializes or re-evaluates the current epoch's creator edge. A preserved invokable agent commits and dispatches exactly one new ref. A named-user or collective-board-owned system escalation commits the provider-free `board_only` branch with no ref or run. Every other owner is rejected. Reopen never revives an old terminal edge or acts as a fresh-session reset.
 
 ## Request and title
 
-`request` is immutable and byte-preserved. For managed `issue_create` and
-`issue_assign`, it is the unchanged body of the owner's canonical
-`[Paperclip issue assignment]` source message. Other creation and
+`request` is immutable and byte-preserved. For managed `task_create` and
+`task_assign`, it is the unchanged body of the owner's canonical
+`[Paperclip task assignment]` source message. Other creation and
 invokable-agent reopen sources retain their own exact request contract. A
 board-only system-escalation reopen sends no provider message. Clarification
 uses the chronological thread; no actor rewrites the request.
@@ -60,13 +60,13 @@ An invocation-capable operation must atomically persist:
 
 1. its typed source and exact message
 2. the canonical Paperclip Session input/event
-3. an `IssueExecutionRef`
+3. an `TaskExecutionRef`
 4. the canonical counterpart Session comment/ref generated through the same
-   mention path by an issue update
+   mention path by a task update
 
 Every agent-reaching managed tool enters that path with one discriminated
 prompt contract containing its tool name, immutable arguments, and resolved
-locked context. `issue_create`, `issue_assign`, `issue_update`, and
+locked context. `task_create`, `task_assign`, `task_update`, and
 `mention_agent` each render their own source shape at admission. The rendered
 text is not a second delivery: the Session comment and execution ref share
 those exact bytes, and the ACPX path later consumes the ref's canonical source
@@ -77,7 +77,7 @@ creates no provider execution and therefore has no ACPX prompt.
 Only after commit may the internal dispatcher lease the ref. Immediately before launch it validates:
 
 - company active state
-- issue lifecycle and current ownership epoch
+- task lifecycle and current ownership epoch
 - target owner/consult identity and immutable authority
 - adapter configuration revision
 - server-owned run-directory binding
@@ -87,11 +87,11 @@ Only after commit may the internal dispatcher lease the ref. Immediately before 
 
 Failure is terminal or held according to the typed source policy; the dispatcher never fabricates a replacement prompt or wake.
 
-An issue-tree pause is not an issue status. It is a board execution control checked at capability revalidation and immediately before lease. The active control and interruption intents for running attempts commit atomically. Queued refs and retries remain durable and become leaseable again only after the control is released; transmitted prompts are never replayed.
+A task-tree pause is not a task status. It is a board execution control checked at capability revalidation and immediately before lease. The active control and interruption intents for running attempts commit atomically. Queued refs and retries remain durable and become leaseable again only after the control is released; transmitted prompts are never replayed.
 
 ## Input ordering and continuity
 
-The issue-session input inbox preserves causal admission order. Eligible
+The task-session input inbox preserves causal admission order. Eligible
 true-carry steers coalesce only at copied safe turn boundaries. False-carry
 refs, new epochs, reset generations, adapter revisions, or any
 agent/lane/run-directory/context mismatch use independent fresh views. A consult
@@ -102,22 +102,22 @@ A fresh execution lowers:
 
 `[authorized composition?] + [exact committed source messages] + [execution-owned output]`
 
-The optional composition is nothing, the chronological thread, or full structured history according to the current-issue dial cells. It immediately precedes the source without rewriting canonical chronology.
+The optional composition is nothing, the chronological thread, or full structured history according to the current-task dial cells. It immediately precedes the source without rewriting canonical chronology.
 
 ## Comments and mentions
 
 Every accepted human/board comment is a typed user input and durable chronological comment.
 
-- no typed mention: non-dispatching, valid even on a terminal issue, never reopens
-- typed mention: may target only the exact current agent owner and ownership epoch on a nonterminal issue
+- no typed mention: non-dispatching, valid even on a terminal task, never reopens
+- typed mention: may target only the exact current agent owner and ownership epoch on a nonterminal task
 
 Paperclip never parses prose for names, mentions, assignments, approvals, or lifecycle. Document annotations and other freeform activity are evidence only; they do not create provider work.
 
-Agent-to-agent same-issue assistance uses compiled `mention_agent`. Any agent
+Agent-to-agent same-task assistance uses compiled `mention_agent`. Any agent
 with the explicit grant may use `mention_board` to request information or direction from
 the collective Board; this records a comment but creates no execution ref,
 approval, review, or lifecycle transition. Delegation uses a direct child
-issue. Creation, reassignment, owner reports, and creator-targeted child updates
+task. Creation, reassignment, owner reports, and creator-targeted child updates
 all use these canonical mention primitives; no generic comment tool or automatic
 final-response relay exists for providers.
 
@@ -126,31 +126,31 @@ revive a Board request or execution reference from the prior terminal lifetime.
 
 ## Run directory
 
-Every provider attempt resolves the persisted `(company, issue, ownership epoch)` run-directory binding. Projectless issues are first-class and receive a server-owned run directory. A missing, stale, or cross-company binding blocks before provider launch.
+Every provider attempt resolves the persisted `(company, task, ownership epoch)` run-directory binding. Projectless tasks are first-class and receive a server-owned run directory. A missing, stale, or cross-company binding blocks before provider launch.
 
 Local providers receive the resolved absolute path as process `cwd`. Remote
 providers receive a closed server-to-provider launch envelope containing only
 the repository/ref target selectors their native API requires. Neither launch
-path injects ambient caller identity, issue metadata, run-directory metadata,
+path injects ambient caller identity, task metadata, run-directory metadata,
 or a general Paperclip credential; the canonical managed-tool source
-message is the sole narrow carrier of its explicitly rendered sender/issue
+message is the sole narrow carrier of its explicitly rendered sender/task
 fields.
 
 ## Configuration readiness
 
-Pre-dispatch readiness is distinct from runtime failure. Missing provider-native declarations, secret bindings, target availability, run-directory binding, selected tool/skill integrity, or adapter capability block before a run starts. The issue retains explicit auditable waiting/recovery evidence.
+Pre-dispatch readiness is distinct from runtime failure. Missing provider-native declarations, secret bindings, target availability, run-directory binding, selected tool/skill integrity, or adapter capability block before a run starts. The task retains explicit auditable waiting/recovery evidence.
 
 An adapter configuration edit creates a new immutable revision. An active run finishes on its recorded revision; the edit itself does not cancel, reset, or invoke anything. A later invocation on the new revision cannot resume the old revision's native correlation.
 
 ## Dependencies and blocked work
 
-First-class issue dependencies govern readiness independently of creator routing and system escalation. An unresolved blocker prevents productive dispatch. When the final blocker resolves, any continuation must enter through a canonical typed system/creator source and persisted ref; no raw dependency wake exists.
+First-class task dependencies govern readiness independently of creator routing and system escalation. An unresolved blocker prevents productive dispatch. When the final blocker resolves, any continuation must enter through a canonical typed system/creator source and persisted ref; no raw dependency wake exists.
 
 `blocked` requires a durable reason/disposition and owner/creator path. A comment or unmanaged local process does not make work live.
 
 ## Scheduled and external work
 
-Scheduled work is represented by a routine execution issue with immutable request and explicit owner. External asynchronous work must have a durable monitor, dependency, issue, or named human action. A PID, detached shell, provider-native session, log file, or promise to check later is evidence only.
+Scheduled work is represented by a routine execution task with immutable request and explicit owner. External asynchronous work must have a durable monitor, dependency, task, or named human action. A PID, detached shell, provider-native session, log file, or promise to check later is evidence only.
 
 When a monitor becomes due, its typed system source may admit one current-owner execution ref according to the monitor's bounds. It cannot call a generic invoke path or silently recur.
 
@@ -158,15 +158,15 @@ When a monitor becomes due, its typed system source may admit one current-owner 
 
 Process-loss, transient-provider, and quota recovery re-lease only the original valid ref and persisted execution view. They never create a new source, prompt, session, idempotency key, or generic wake row.
 
-Existing-issue automation records a typed system notice and may invoke only the current eligible owner through a canonical ref. If the immutable creator edge is still receivable, recovery uses it. Only structural or exhausted unreceivability creates/nudges one root-level system escalation per affected issue/epoch.
+Existing-task automation records a typed system notice and may invoke only the current eligible owner through a canonical ref. If the immutable creator edge is still receivable, recovery uses it. Only structural or exhausted unreceivability creates/nudges one root-level system escalation per affected task/epoch.
 
-Escalation owner selection follows the locked creator/ancestor-user/board ladder. Manager relationships, CEO/root position, display title, ordered invokable agents, and budget reranking grant nothing. Escalation issues are not blockers or parents of the affected issue and never recursively escalate.
+Escalation owner selection follows the locked creator/ancestor-user/board ladder. Manager relationships, CEO/root position, display title, ordered invokable agents, and budget reranking grant nothing. Escalation tasks are not blockers or parents of the affected task and never recursively escalate.
 
 ## Pause and termination
 
 Pausing an agent prevents new leases and cancels/signals its active work according to control-plane policy; it does not rewrite history or transfer ownership.
 
-Termination preserves a tombstone identity and immutable creator/owner/run/comment/session audit. It cancels live work, terminalizes creator edges, blocks open owned issues with a typed system record, and follows canonical creator recovery.
+Termination preserves a tombstone identity and immutable creator/owner/run/comment/session audit. It cancels live work, terminalizes creator edges, blocks open owned tasks with a typed system record, and follows canonical creator recovery.
 
 ## Output and finalization
 

@@ -7,7 +7,7 @@ An agent is a reusable configured identity. It has display identity, a direct
 reporting edge, capabilities text, explicit context and action grants, provider
 configuration, optional board-owned role instructions, and control-plane
 accounting. It has no role-derived authority, generic instruction bundle, or
-built-in Paperclip memory shared between issues.
+built-in Paperclip memory shared between tasks.
 Instance administrators can separately install privileged infrastructure
 plugins that observe the generic before-prompt lifecycle and contribute agent
 tools; those plugins do not add prompt content, per-agent memory settings, or
@@ -18,8 +18,8 @@ authority.
 | Status | Meaning |
 |--------|---------|
 | `active` | Ready to receive work |
-| `idle` | Available with no active issue execution |
-| `running` | Currently executing issue work |
+| `idle` | Available with no active task execution |
+| `running` | Currently executing task work |
 | `error` | The most recent execution failed |
 | `pending_approval` | Waiting for a board decision on creation |
 | `paused` | Manually paused or budget-paused |
@@ -35,7 +35,7 @@ Create agents from the Agents page. Each agent requires:
 - **Local agent runtime** — an installed local CLI that passed the runtime probe
 - **Adapter config** — only the model and session settings that ACPX advertises
 - **Capabilities** — verbatim description shown when another agent selects an owner
-- **Instructions** — optional high-level role guidance queued before a new issue's work run
+- **Instructions** — optional high-level role guidance queued before a new task's work run
 - **Context and action grants** — independent, explicit per-agent permissions
 - **Company skills** — explicit selections only
 
@@ -58,7 +58,7 @@ permissions.
 Edit an agent's configuration from the agent detail page:
 
 - **Identity** — name, display title, icon, capabilities, and direct reporting edge
-- **Instructions** — optional durable role guidance queued before a new issue's work run
+- **Instructions** — optional durable role guidance queued before a new task's work run
 - **Adapter config** — change only the model and session choices currently
   advertised by ACPX (including reasoning effort when the selected agent
   advertises it)
@@ -73,18 +73,18 @@ persists no agent, revision, run, or ACPX state. It verifies the local ACPX
 runtime and selected session settings only; normal run admission still
 evaluates the persisted configuration.
 
-Configuration changes produce a new immutable adapter revision for later issue
+Configuration changes produce a new immutable adapter revision for later task
 executions. A run already in progress stays on the revision it started with.
 
 ## Pausing and Resuming
 
-Pause an agent to prevent new issue executions:
+Pause an agent to prevent new task executions:
 
 ```
 POST /api/agents/{agentId}/pause
 ```
 
-Resume to allow eligible issue work to dispatch again:
+Resume to allow eligible task work to dispatch again:
 
 ```
 POST /api/agents/{agentId}/resume

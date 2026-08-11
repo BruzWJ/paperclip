@@ -68,7 +68,7 @@ Worker:
 - scoped JSON API routes declared with `apiRoutes`
 - projects and plugin-managed projects
 - companies
-- issues, comments, namespaced `plugin:<pluginKey>` origins, blocker relations, and callback-bound ordinary-issue creation
+- tasks, comments, namespaced `plugin:<pluginKey>` origins, blocker relations, and callback-bound ordinary-task creation
 - agents and plugin-managed agents
 - plugin-managed routines
 - plugin-managed skills
@@ -89,7 +89,7 @@ First-party or otherwise trusted orchestration plugins can declare:
 ```ts
 database: {
   migrationsDir: "migrations",
-  coreReadTables: ["issues"],
+  coreReadTables: ["tasks"],
 }
 ```
 
@@ -115,8 +115,8 @@ apiRoutes: [
   {
     routeKey: "initialize",
     method: "POST",
-    path: "/issues/:issueId/smoke",
-    companyResolution: { from: "issue", param: "issueId" },
+    path: "/tasks/:taskId/smoke",
+    companyResolution: { from: "task", param: "taskId" },
   },
 ]
 ```
@@ -124,7 +124,7 @@ apiRoutes: [
 The host resolves the plugin, checks that it is ready, enforces
 `api.routes.register`, matches the declared method/path, resolves company access,
 and dispatches to the worker's `onApiRequest` handler.
-Every route declares `companyResolution`; issue resolution names an exact
+Every route declares `companyResolution`; task resolution names an exact
 `:param` in the route path, and GET routes cannot resolve from a request body.
 The worker receives sanitized headers, route params, query, parsed JSON
 body, actor context, and company id. Do not use plugin routes to claim core
@@ -158,7 +158,7 @@ to the board, scoped to a company, audited, budgeted, and assigned like normal
 Paperclip work.
 
 Content-oriented plugins, such as source ingestion or durable knowledge
-systems, should use the same pattern: managed projects for operation issues,
+systems, should use the same pattern: managed projects for operation tasks,
 managed agents plus managed skills for LLM work, and managed routines for
 ingest, lint, refresh, or maintenance runs.
 
@@ -166,18 +166,18 @@ Use these surfaces:
 
 - Managed agents: declare top-level `agents[]` and require
   `agents.managed`. Use this when the plugin provides a named worker the board
-  should see in the org, budget, pause, configure, assign ordinary issues to,
+  should see in the org, budget, pause, configure, assign ordinary tasks to,
   and inspect. Managed agents are normal Paperclip agents with plugin ownership
   metadata, not background plugin workers or provider-session owners.
 - Managed projects: declare top-level `projects[]` and require
   `projects.managed`. Use this when the plugin needs a stable company-scoped
-  project for its issues, routines, or workspace-oriented UI. Keep plugin work
-  in a project instead of scattering generated issues across unrelated projects.
+  project for its tasks, routines, or workspace-oriented UI. Keep plugin work
+  in a project instead of scattering generated tasks across unrelated projects.
 - Managed routines: declare top-level `routines[]` and require
   `routines.managed`. Use this for scheduled, webhook, or manually triggered
-  jobs that should create visible Paperclip issues. Prefer managed routines over
+  jobs that should create visible Paperclip tasks. Prefer managed routines over
   plugin `jobs[]` for recurring business work; plugin jobs are for plugin
-  runtime maintenance that does not need a board-visible issue trail.
+  runtime maintenance that does not need a board-visible task trail.
 - Managed skills: declare top-level `skills[]` and require `skills.managed`.
   Use this for reusable plugin capabilities that should be surfaced to operators and
   selected for ordinary managed agents.
@@ -308,8 +308,8 @@ Authoring rules:
   `routineKey`, or `skillKey` creates a new managed resource from the host's
   point of view.
 - Use managed agents for plugin-provided labor. Provider work starts only by
-  creating an ordinary issue with an explicit eligible owner through
-  `ctx.issues.create`; plugins cannot invoke an agent or open an agent session
+  creating an ordinary task with an explicit eligible owner through
+  `ctx.tasks.create`; plugins cannot invoke an agent or open an agent session
   directly.
 - A managed-agent declaration does not choose, infer, or default an AI
   adapter. The board must attach an explicit immutable revision referencing an
@@ -317,8 +317,8 @@ Authoring rules:
   runnable. Plugins cannot supply a command, HTTP endpoint, provider SDK,
   credential, native-session selector, or provider-specific response mapping.
 - Use managed routines for recurring or externally triggered work that should
-  produce issues. Schedule, webhook, and API triggers are visible routine
-  triggers, and each run has the normal Paperclip issue/audit trail.
+  produce tasks. Schedule, webhook, and API triggers are visible routine
+  triggers, and each run has the normal Paperclip task/audit trail.
 - Use managed skills for reusable operator-visible capabilities that are shared
   by managed agents. Reconcile skill declarations by `skillKey` and keep the
   declared skill markdown and files in sync with agent behavior.
@@ -337,7 +337,7 @@ broader than ordinary connector capabilities:
 | Capability | Generic host contract |
 | --- | --- |
 | `agent.tools.register` | Every declared tool is discovered from the ready installation manifest and compiled directly for all agents. The per-prompt DB compiler is the only tool catalog; no per-agent selection or in-memory registration is involved. |
-| `runtime.context.read` | An exact live tool handler can resolve its opaque `runContext` or ask whether a target issue is reachable under the agent's existing context-access matrix. |
+| `runtime.context.read` | An exact live tool handler can resolve its opaque `runContext` or ask whether a target task is reachable under the agent's existing context-access matrix. |
 | `runtime.records.read` | The worker can read company-scoped provider-safe run/comment projections and snapshot-bounded canonical Session identity/messages/events. Mutable Session-head metadata is excluded; message deltas can key on creation or model-visible update sequence. |
 | `runtime.prompt.observe` | The worker receives a blocking `onBeforePrompt` callback for every exact provider prompt, may synchronize against the bounded canonical snapshot, and returns `null` or one non-empty `{ prependText }` contribution. Paperclip prepends successful contributions only to the outbound request; the canonical Session message remains unchanged. |
 | `http.private-network` | The managed HTTP client may reach loopback/private addresses while retaining DNS pinning and other HTTP protections. Also requires `http.outbound`. |
@@ -375,16 +375,16 @@ Mount surfaces currently wired in the host include:
 - `routeSidebar`
 - `sidebarPanel`
 - `detailTab`
-- `issueDetailView`
+- `taskDetailView`
 - `projectSidebarItem`
 - `globalToolbarButton`
 - `toolbarButton`
 
-Entity-scoped mounts are exact: `detailTab` supports `project` and `issue`;
-`issueDetailView` supports only `issue`; `projectSidebarItem` supports only
-`project`; and `toolbarButton` supports `project` and `issue`.
+Entity-scoped mounts are exact: `detailTab` supports `project` and `task`;
+`taskDetailView` supports only `task`; `projectSidebarItem` supports only
+`project`; and `toolbarButton` supports `project` and `task`.
 Launcher placements are limited to `sidebar`, `globalToolbarButton`, and
-`toolbarButton`; launcher toolbar buttons mount only for `project` and `issue`.
+`toolbarButton`; launcher toolbar buttons mount only for `project` and `task`.
 Launcher component actions (`openModal`, `openDrawer`, and `openPopover`) require
 the sole mounted render environment, `hostOverlay`. Navigation, external
 `deepLink`, and worker `performAction` launchers do not accept render metadata;
@@ -414,18 +414,18 @@ the board's current styling, ordering, recent selections, and dark-mode behavior
 without importing `apps/ui/src` internals.
 
 Prefer shared components for common Paperclip UX patterns to reduce drift and
-deprecation risk, especially for issue/assignment flows and routine or sidebar-like
+deprecation risk, especially for task/assignment flows and routine or sidebar-like
 plugin screens.
 
 Currently exposed components include:
 
 - `MarkdownBlock` and `MarkdownEditor` for rendered and editable markdown.
 - `FileTree` for serializable file and directory trees.
-- `IssuesList` for a native company-scoped issue table.
+- `TasksList` for a native company-scoped task table.
 - `OwnerPicker` for the required agent owner of an ordinary plugin-created
-  issue. Its controlled value is an agent id or `""` before selection, and its
+  task. Its controlled value is an agent id or `""` before selection, and its
   payload is `{ ownerAgentId }`; it exposes no user-assignee compatibility.
-- `ProjectPicker` for the same project selector used in the new issue pane.
+- `ProjectPicker` for the same project selector used in the new task pane.
   Use the controlled project id value, or `""` for no project.
 - `ManagedRoutinesList` for plugin-owned routine settings pages.
 

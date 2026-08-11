@@ -21,7 +21,7 @@ Before adding or consolidating a UI component:
 
 ## Current scope
 
-The board exposes the retained issue, agent, project, goal, routine, approval,
+The board exposes the retained task, agent, project, goal, routine, approval,
 plugin, and run surfaces. Removed experimental products are intentionally absent
 from the inventory and must not be reintroduced through a component, route, or
 storybook story.

@@ -18,7 +18,7 @@ Current V1 assumptions are centered on one board operator. We now need:
 - multi-human collaboration with per-user permissions
 - safe cloud deployment defaults (no accidental loginless production)
 - local mode that still feels instant (`npx paperclipai run` and go)
-- agent-to-human issue delegation, including a human inbox
+- agent-to-human task delegation, including a human inbox
 - one user account with access to multiple companies in one deployment
 - instance admins who can manage company access across the instance
 - join approvals surfaced as actionable inbox alerts, not buried in admin-only pages
@@ -30,7 +30,7 @@ Current V1 assumptions are centered on one board operator. We now need:
 1. Keep company scoping strict for every new table, endpoint, and permission check.
 2. Preserve existing control-plane invariants:
 
-- single-assignee issue model
+- single-assignee task model
 - approval gates
 - budget hard-stop behavior
 - mutation activity logging
@@ -162,7 +162,7 @@ Security rules:
   - `agent_name`, `adapter_type`, `capabilities`, `created_agent_id` nullable until approved
 - each consumed invite creates exactly one join request record after join type is selected
 
-6. `issues` extension
+6. `tasks` extension
 
 - add `assignee_user_id` nullable
 - preserve single-assignee invariant with XOR check:
@@ -191,8 +191,8 @@ Core grants:
 1. `agents:create`
 2. `users:invite`
 3. `users:manage_permissions`
-4. `issues:assign`
-5. `issues:assign_scope` (org-constrained delegation)
+4. `tasks:assign`
+5. `tasks:assign_scope` (org-constrained delegation)
 6. `joins:approve` (approve/reject human and agent join requests)
 
 Additional behavioral rules:
@@ -262,9 +262,9 @@ Security rules:
 
 Behavior:
 
-- agents can assign issues to humans when policy permits
-- humans see assigned issues in inbox view (including in local trusted mode)
-- comment and status transitions follow same issue lifecycle guards
+- agents can assign tasks to humans when policy permits
+- humans see assigned tasks in inbox view (including in local trusted mode)
+- comment and status transitions follow same task lifecycle guards
 
 ## Agent join path (via unified invite link)
 
@@ -284,8 +284,8 @@ Long-lived token policy:
 
 API additions (proposed):
 
-- `GET /companies/:companyId/inbox` (human actor scoped to self; includes issue items + pending join approval alerts when authorized)
-- `POST /companies/:companyId/issues/:issueId/assign-user`
+- `GET /companies/:companyId/inbox` (human actor scoped to self; includes task items + pending join approval alerts when authorized)
+- `POST /companies/:companyId/tasks/:taskId/assign-user`
 - `POST /companies/:companyId/invites`
 - `GET /invites/:token` (invite landing payload with `allowed_join_types`)
 - `POST /invites/:token/accept` (body includes `requestType=human|agent` and request metadata)
@@ -314,7 +314,7 @@ API additions (proposed):
 
 - cloud agents continue authenticating through `agent_api_keys`
 - same-company boundary checks remain mandatory
-- agent ability to assign human issues is permission-gated, not implicit
+- agent ability to assign human tasks is permission-gated, not implicit
 
 ## Instance settings surface
 
@@ -363,11 +363,11 @@ V1 approach:
 - inbox alert generation for pending join requests
 - ensure invite and approval UX is enabled in both `cloud_hosted` and `local_trusted`
 
-## Phase 5: Human inbox + issue assignment updates
+## Phase 5: Human inbox + task assignment updates
 
-- extend issue assignee model for human users
+- extend task assignee model for human users
 - inbox API and UI for:
-  - issue assignments
+  - task assignments
   - pending join approval alerts with inline approve/reject actions
 - agent-to-human assignment flow with policy checks
 
@@ -405,8 +405,8 @@ V1 approach:
 20. Instance admins can manage which companies each user can access.
 21. Permissions can be granted/revoked per member principal (human or agent) through one shared grant system.
 22. Assignment scope prevents out-of-hierarchy or protected-role assignments.
-23. Agents can assign issues to humans only when allowed.
-24. Humans can view assigned issues in inbox and act on them per permissions.
+23. Agents can assign tasks to humans only when allowed.
+24. Humans can view assigned tasks in inbox and act on them per permissions.
 25. All new mutations are company-scoped and logged in `activity_log`.
 
 ## V1 decisions (locked)

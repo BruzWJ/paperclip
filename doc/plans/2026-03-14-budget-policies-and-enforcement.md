@@ -107,7 +107,7 @@ Paperclip should have two threshold classes:
 - hard stop
   - pauses the affected scope automatically
   - creates an approval requiring human resolution
-  - prevents additional heartbeats or issue pickup in that scope
+  - prevents additional heartbeats or task pickup in that scope
 
 Default thresholds:
 
@@ -318,7 +318,7 @@ Add budget checks to:
 - manual invoke endpoints
 - assignment-driven wakeups
 - queued run promotion
-- issue checkout or pickup paths where applicable
+- task checkout or pickup paths where applicable
 
 If a scope is budget-paused:
 
@@ -437,7 +437,7 @@ When work is blocked by budget, the API should return explicit errors.
 Examples:
 
 - agent invocation blocked because agent budget is paused
-- issue execution blocked because project budget is paused
+- task execution blocked because project budget is paused
 
 Do not silently no-op.
 
@@ -488,7 +488,7 @@ Add a project budget card:
 - pause status
 - approval link
 
-Project detail should also show if issue execution is blocked because the project is budget-paused.
+Project detail should also show if task execution is blocked because the project is budget-paused.
 
 ### Dashboard
 
@@ -584,7 +584,7 @@ Required coverage:
 - `subscription_overage` does consume money budget
 - hard-stop creates one incident per threshold per window
 - hard-stop creates approval and pauses correct scope
-- paused project blocks new issue execution
+- paused project blocks new task execution
 - paused agent blocks new heartbeat dispatch
 - policy update and resume clears or resolves active incident correctly
 - dashboard and `/costs` surface active incidents

@@ -1,17 +1,17 @@
 ---
-title: Issues
-summary: Canonical board issue creation, title metadata, reassignment, reopen, comments, and artifacts
+title: Tasks
+summary: Canonical board task creation, title metadata, reassignment, reopen, comments, and artifacts
 ---
 
-Issues are the unit of work in Paperclip. Board REST is a board-facing control
-surface; agents use only their run-scoped compiled interface. Generic issue and
+Tasks are the unit of work in Paperclip. Board REST is a board-facing control
+surface; agents use only their run-scoped compiled interface. Generic task and
 activity REST reads or mutations reject agent credentials with
 `compiled_run_interface_required`.
 
-## List Issues
+## List Tasks
 
 ```
-GET /api/companies/{companyId}/issues
+GET /api/companies/{companyId}/tasks
 ```
 
 Query parameters:
@@ -25,30 +25,30 @@ Query parameters:
 
 Results sorted by priority.
 
-## Get Issue
+## Get Task
 
 ```
-GET /api/issues/{issueId}
+GET /api/tasks/{taskId}
 ```
 
-Returns the issue with `project`, `goal`, and `ancestors` (parent chain with their projects and goals).
+Returns the task with `project`, `goal`, and `ancestors` (parent chain with their projects and goals).
 
 The response also includes:
 
-- `planDocument`: the full text of the issue document with key `plan`, when present
-- `documentSummaries`: metadata for all linked issue documents
+- `planDocument`: the full text of the task document with key `plan`, when present
+- `documentSummaries`: metadata for all linked task documents
 
-## Create Issue
+## Create Task
 
 ```
-POST /api/companies/{companyId}/issues
+POST /api/companies/{companyId}/tasks
 {
   "request": "Add Redis caching for hot queries",
   "ownerAgentId": "{agentId}",
   "idempotencyKey": "{stableRetryKey}",
   "title": "Implement caching layer",
   "priority": "high",
-  "parentId": "{parentIssueId}",
+  "parentId": "{parentTaskId}",
   "projectId": "{projectId}",
   "goalId": "{goalId}"
 }
@@ -60,7 +60,7 @@ provider input.
 ## Update Title Metadata
 
 ```
-PATCH /api/issues/{issueId}
+PATCH /api/tasks/{taskId}
 {
   "title": "Implement and measure the caching layer"
 }
@@ -72,21 +72,21 @@ change request, lifecycle, owner, priority, run-directory binding, or any other 
 ## Reassign
 
 ```http
-POST /api/issues/{issueId}/reassign
+POST /api/tasks/{taskId}/reassign
 {
   "ownerAgentId": "{newAgentId}",
   "idempotencyKey": "{stableRetryKey}"
 }
 ```
 
-The authenticated named board user must be the issue's immutable creator.
-Reassignment runs through the ordinary issue runtime, advances ownership
+The authenticated named board user must be the task's immutable creator.
+Reassignment runs through the ordinary task runtime, advances ownership
 authority, and starts the new owner from the stored immutable request.
 
 ## Audited Reopen
 
 ```http
-POST /api/issues/{issueId}/reopen
+POST /api/tasks/{taskId}/reopen
 {
   "reason": "New evidence requires another pass.",
   "idempotencyKey": "{stableRetryKey}"
@@ -101,7 +101,7 @@ disposition; re-evaluates the creator edge; and returns exactly one branch:
   `executionRef` for a preserved, invokable agent owner and dispatches it after
   commit.
 - `dispatch.kind = "board_only"` applies only to a named-user or
-  collective-board-owned issue with exact system-escalation provenance. It
+  collective-board-owned task with exact system-escalation provenance. It
   creates no ref, run, adapter/readiness fact, or provider dispatch.
 
 A user-withdrawal owner, invalid system provenance, or unavailable agent is
@@ -113,13 +113,13 @@ branch.
 ### List Comments
 
 ```
-GET /api/issues/{issueId}/comments
+GET /api/tasks/{taskId}/comments
 ```
 
 ### Add Comment
 
 ```
-POST /api/issues/{issueId}/comments
+POST /api/tasks/{taskId}/comments
 {
   "message": "Please check the new evidence.",
   "idempotencyKey": "{stableRetryKey}",
@@ -137,28 +137,28 @@ implicitly reopens or otherwise changes lifecycle.
 
 ## Decisions and Questions
 
-Post ordinary issue messages when a human answer or clarification is needed. Use the formal approval or execution-policy surface only when a durable governed decision is required, and link that decision to the issue and exact document revision. Resolving a board gate does not create a provider message or implicit wake.
+Post ordinary task messages when a human answer or clarification is needed. Use the formal approval or execution-policy surface only when a durable governed decision is required, and link that decision to the task and exact document revision. Resolving a board gate does not create a provider message or implicit wake.
 
 ## Documents
 
-Documents are editable, revisioned, text-first issue artifacts keyed by a stable identifier such as `plan`, `design`, or `notes`.
+Documents are editable, revisioned, text-first task artifacts keyed by a stable identifier such as `plan`, `design`, or `notes`.
 
 ### List
 
 ```
-GET /api/issues/{issueId}/documents
+GET /api/tasks/{taskId}/documents
 ```
 
 ### Get By Key
 
 ```
-GET /api/issues/{issueId}/documents/{key}
+GET /api/tasks/{taskId}/documents/{key}
 ```
 
 ### Create Or Update
 
 ```
-PUT /api/issues/{issueId}/documents/{key}
+PUT /api/tasks/{taskId}/documents/{key}
 {
   "title": "Implementation plan",
   "format": "markdown",
@@ -176,13 +176,13 @@ Rules:
 ### Revision History
 
 ```
-GET /api/issues/{issueId}/documents/{key}/revisions
+GET /api/tasks/{taskId}/documents/{key}/revisions
 ```
 
 ### Delete
 
 ```
-DELETE /api/issues/{issueId}/documents/{key}
+DELETE /api/tasks/{taskId}/documents/{key}
 ```
 
 Delete is board-only in the current implementation.
@@ -192,14 +192,14 @@ Delete is board-only in the current implementation.
 ### Upload
 
 ```
-POST /api/companies/{companyId}/issues/{issueId}/attachments
+POST /api/companies/{companyId}/tasks/{taskId}/attachments
 Content-Type: multipart/form-data
 ```
 
 ### List
 
 ```
-GET /api/issues/{issueId}/attachments
+GET /api/tasks/{taskId}/attachments
 ```
 
 ### Download
@@ -214,7 +214,7 @@ GET /api/attachments/{attachmentId}/content
 DELETE /api/attachments/{attachmentId}
 ```
 
-## Issue Lifecycle
+## Task Lifecycle
 
 Owner lifecycle changes are available only through the compiled named runtime
 interface. Board REST has no generic status patch, checkout, release, delete,

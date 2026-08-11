@@ -3,7 +3,7 @@
 Paperclip CLI now supports both:
 
 - instance setup/diagnostics (`onboard`, `doctor`, `configure`, `env`, `allowed-hostname`)
-- control-plane client operations (issues, approvals, agents, activity, dashboard)
+- control-plane client operations (tasks, approvals, agents, activity, dashboard)
 
 ## Base Usage
 
@@ -77,7 +77,7 @@ Use `--data-dir` on any CLI command to isolate all default local state (config/c
 
 ```sh
 pnpm paperclipai run --data-dir ./tmp/paperclip-dev
-pnpm paperclipai issue list --data-dir ./tmp/paperclip-dev
+pnpm paperclipai task list --data-dir ./tmp/paperclip-dev
 ```
 
 ## Context Profiles
@@ -110,7 +110,7 @@ pnpm paperclipai company create --payload-json '{...}'
 pnpm paperclipai company update <company-id> --payload-json '{...}'
 pnpm paperclipai company branding:update <company-id> --payload-json '{...}'
 pnpm paperclipai company archive <company-id>
-pnpm paperclipai company export <company-id> --out ./company --include company,agents,projects,issues,skills
+pnpm paperclipai company export <company-id> --out ./company --include company,agents,projects,tasks,skills
 pnpm paperclipai company export:preview <company-id> --payload-json '{...}'
 pnpm paperclipai company export:api <company-id> --payload-json '{...}'
 pnpm paperclipai company import ./company --target new --new-company-name "Imported Company"
@@ -133,74 +133,72 @@ Notes:
   an instance-wide setup command.
 - Deletion is server-gated by `PAPERCLIP_ENABLE_COMPANY_DELETION`.
 
-## Issue Commands
+## Task Commands
 
 ```sh
-pnpm paperclipai issue list --company-id <company-id> [--status open,blocked] [--owner-agent-id <agent-id>] [--match text]
-pnpm paperclipai issue get <issue-id-or-identifier>
-pnpm paperclipai issue create --company-id <company-id> --request "..." --owner-agent-id <agent-id> [--title "..."] [--priority high]
-pnpm paperclipai issue title <issue-id> --title "..."
-pnpm paperclipai issue reassign <issue-id> --owner-agent-id <agent-id>
-pnpm paperclipai issue reopen <issue-id> --reason "..."
-pnpm paperclipai issue comment <issue-id> --message "..."
-pnpm paperclipai issue comments <issue-id> [--limit 50]
-pnpm paperclipai issue comment:get <issue-id> <comment-id>
-pnpm paperclipai issue runs <issue-id-or-identifier>
-pnpm paperclipai issue live-runs <issue-id-or-identifier>
-pnpm paperclipai issue active-run <issue-id-or-identifier>
+pnpm paperclipai task list --company-id <company-id> [--status open,blocked] [--owner-agent-id <agent-id>] [--match text]
+pnpm paperclipai task get <task-id-or-identifier>
+pnpm paperclipai task create --company-id <company-id> --request "..." --owner-agent-id <agent-id> [--title "..."] [--priority high]
+pnpm paperclipai task title <task-id> --title "..."
+pnpm paperclipai task reassign <task-id> --owner-agent-id <agent-id>
+pnpm paperclipai task reopen <task-id> --reason "..."
+pnpm paperclipai task comment <task-id> --message "..."
+pnpm paperclipai task comments <task-id> [--limit 50]
+pnpm paperclipai task comment:get <task-id> <comment-id>
+pnpm paperclipai task runs <task-id-or-identifier>
 ```
 
-Issue creation requires an immutable request and an explicit agent owner. Title is
+Task creation requires an immutable request and an explicit agent owner. Title is
 board-editable display metadata; reassignment and reopen are audited commands.
 Reopen returns `agent_execution` with one ref for an invokable preserved agent,
 or `board_only` with no ref/run for a named-user or collective-board-owned
 system escalation; invalid preserved owners fail without mutation.
-Provider-side issue context and lifecycle actions are available only through the
+Provider-side task context and lifecycle actions are available only through the
 run-scoped compiled interface, not these generic CLI routes.
 
 ```sh
-pnpm paperclipai issue child:create <issue-id> --payload-json '{"request":"Child request","ownerAgentId":"<agent-id>","idempotencyKey":"<key>"}'
-pnpm paperclipai issue approvals <issue-id>
-pnpm paperclipai issue approval:link <issue-id> <approval-id>
-pnpm paperclipai issue approval:unlink <issue-id> <approval-id>
-pnpm paperclipai issue read <issue-id>
-pnpm paperclipai issue unread <issue-id>
-pnpm paperclipai issue archive <issue-id>
-pnpm paperclipai issue unarchive <issue-id>
+pnpm paperclipai task child:create <task-id> --payload-json '{"request":"Child request","ownerAgentId":"<agent-id>","idempotencyKey":"<key>"}'
+pnpm paperclipai task approvals <task-id>
+pnpm paperclipai task approval:link <task-id> <approval-id>
+pnpm paperclipai task approval:unlink <task-id> <approval-id>
+pnpm paperclipai task read <task-id>
+pnpm paperclipai task unread <task-id>
+pnpm paperclipai task archive <task-id>
+pnpm paperclipai task unarchive <task-id>
 ```
 
 ```sh
-pnpm paperclipai issue documents <issue-id> [--include-system]
-pnpm paperclipai issue document:get <issue-id> <key>
-pnpm paperclipai issue document:put <issue-id> <key> --body-file ./plan.md [--title Plan]
-pnpm paperclipai issue document:lock <issue-id> <key>
-pnpm paperclipai issue document:unlock <issue-id> <key>
-pnpm paperclipai issue document:revisions <issue-id> <key>
-pnpm paperclipai issue document:restore <issue-id> <key> <revision-id>
-pnpm paperclipai issue document:delete <issue-id> <key>
+pnpm paperclipai task documents <task-id> [--include-system]
+pnpm paperclipai task document:get <task-id> <key>
+pnpm paperclipai task document:put <task-id> <key> --body-file ./plan.md [--title Plan]
+pnpm paperclipai task document:lock <task-id> <key>
+pnpm paperclipai task document:unlock <task-id> <key>
+pnpm paperclipai task document:revisions <task-id> <key>
+pnpm paperclipai task document:restore <task-id> <key> <revision-id>
+pnpm paperclipai task document:delete <task-id> <key>
 ```
 
 ```sh
-pnpm paperclipai issue work-products <issue-id>
-pnpm paperclipai issue work-product:create <issue-id> --payload-json '{"type":"pull_request","provider":"github","title":"PR"}'
-pnpm paperclipai issue work-product:update <work-product-id> --payload-json '{"status":"archived"}'
-pnpm paperclipai issue work-product:delete <work-product-id>
+pnpm paperclipai task work-products <task-id>
+pnpm paperclipai task work-product:create <task-id> --payload-json '{"type":"pull_request","provider":"github","title":"PR"}'
+pnpm paperclipai task work-product:update <work-product-id> --payload-json '{"status":"archived"}'
+pnpm paperclipai task work-product:delete <work-product-id>
 ```
 
 ```sh
-pnpm paperclipai issue tree-state <issue-id>
-pnpm paperclipai issue tree-preview <issue-id> --payload-json '{"mode":"pause"}'
-pnpm paperclipai issue tree-holds <issue-id> [--status active] [--include-members]
-pnpm paperclipai issue tree-hold:create <issue-id> --payload-json '{"mode":"pause","reason":"review"}'
-pnpm paperclipai issue tree-hold:get <issue-id> <hold-id>
-pnpm paperclipai issue tree-hold:release <issue-id> <hold-id> [--payload-json '{"reason":"done"}']
-pnpm paperclipai issue attachments <issue-id>
-pnpm paperclipai issue attachment:upload <issue-id> --company-id <company-id> --file ./artifact.txt
-pnpm paperclipai issue attachment:download <attachment-id> [--out ./artifact.txt]
-pnpm paperclipai issue attachment:delete <attachment-id>
-pnpm paperclipai issue label:list --company-id <company-id>
-pnpm paperclipai issue label:create --company-id <company-id> --name bug --color '#ff0000'
-pnpm paperclipai issue label:delete <label-id>
+pnpm paperclipai task tree-state <task-id>
+pnpm paperclipai task tree-preview <task-id> --payload-json '{"mode":"pause"}'
+pnpm paperclipai task tree-holds <task-id> [--status active] [--include-members]
+pnpm paperclipai task tree-hold:create <task-id> --payload-json '{"mode":"pause","reason":"review"}'
+pnpm paperclipai task tree-hold:get <task-id> <hold-id>
+pnpm paperclipai task tree-hold:release <task-id> <hold-id> [--payload-json '{"reason":"done"}']
+pnpm paperclipai task attachments <task-id>
+pnpm paperclipai task attachment:upload <task-id> --company-id <company-id> --file ./artifact.txt
+pnpm paperclipai task attachment:download <attachment-id> [--out ./artifact.txt]
+pnpm paperclipai task attachment:delete <attachment-id>
+pnpm paperclipai task label:list --company-id <company-id>
+pnpm paperclipai task label:create --company-id <company-id> --name bug --color '#ff0000'
+pnpm paperclipai task label:delete <label-id>
 ```
 
 ## Project Commands
@@ -254,17 +252,17 @@ shape is:
   "reportsTo": null,
   "contextGrants": {
     "carry_context": false,
-    "read_issue_comments": false,
-    "read_issue_agent_run": false,
-    "list_sub_issues": false,
-    "read_sub_issue_comments": false,
-    "read_sub_issue_agent_run": false,
-    "list_company_issues": false,
-    "read_company_issue_comments": false,
-    "read_company_issue_agent_run": false
+    "read_task_comments": false,
+    "read_task_agent_run": false,
+    "list_sub_tasks": false,
+    "read_sub_task_comments": false,
+    "read_sub_task_agent_run": false,
+    "list_company_tasks": false,
+    "read_company_task_comments": false,
+    "read_company_task_agent_run": false
   },
   "actionGrants": {
-    "issue_create": false,
+    "task_create": false,
     "mention_board": false,
     "agent_hire": false,
     "agent_configure": false,
@@ -278,16 +276,16 @@ shape is:
 }
 ```
 
-`issue_create` is the combined create-and-assign grant. It allows an exact
+`task_create` is the combined create-and-assign grant. It allows an exact
 creator execution to create direct children and reassign eligible direct
 children it created. Lifecycle reporting is relationship-derived rather than
-configured: the current owner receives an active-issue update and an exact
+configured: the current owner receives an active-task update and an exact
 creator execution receives eligible direct-child updates. Both use canonical
-`issue_update({ message, status?, structuredResult?, issueId? })` and
-automatically mention the owner/creator counterpart in that counterpart's issue
+`task_update({ message, status?, structuredResult?, taskId? })` and
+automatically mention the owner/creator counterpart in that counterpart's task
 context; agents do
-not use a separate comment path for the same update. Omit `issueId` for the
-active owned issue; provide an eligible direct-child ID for a creator update.
+not use a separate comment path for the same update. Omit `taskId` for the
+active owned task; provide an eligible direct-child ID for a creator update.
 Only the current owner may set terminal `done`/`cancelled` and
 `structuredResult`; a creator update may send a message or set nonterminal
 `open`/`blocked`.
@@ -318,7 +316,7 @@ pnpm paperclipai token board revoke <key-id>
 
 `paperclipai run` without a subcommand still bootstraps and starts a local
 Paperclip instance. The subcommands below inspect and control persisted
-productive and consult issue-execution runs.
+productive and consult task-execution runs.
 
 ```sh
 pnpm paperclipai run list --company-id <company-id> [--agent-id <agent-id>] [--limit 50]
@@ -354,7 +352,7 @@ Prompt submission creates Paperclip work. It does not create a chat session.
 pnpm paperclipai board prompt --company-id <company-id> --agent <agent-name-or-id> "Prompt here"
 ```
 
-By default the command creates an ordinary issue whose immutable request is the submitted text and whose explicit owner is the target agent. `--issue <issue-id>` submits an ordinary board comment; a provider is invoked only when that comment carries a valid typed mention of the current owner.
+By default the command creates an ordinary task whose immutable request is the submitted text and whose explicit owner is the target agent. `--task <task-id>` submits an ordinary board comment; a provider is invoked only when that comment carries a valid typed mention of the current owner.
 
 ## Skills Commands
 
@@ -501,7 +499,7 @@ commands above. See the
 ```sh
 pnpm paperclipai approval list --company-id <company-id> [--status pending]
 pnpm paperclipai approval get <approval-id>
-pnpm paperclipai approval create --company-id <company-id> --type hire_agent --payload '{"name":"..."}' [--issue-ids <id1,id2>]
+pnpm paperclipai approval create --company-id <company-id> --type hire_agent --payload '{"name":"..."}' [--task-ids <id1,id2>]
 pnpm paperclipai approval approve <approval-id> [--decision-note "..."]
 pnpm paperclipai approval reject <approval-id> [--decision-note "..."]
 pnpm paperclipai approval request-revision <approval-id> [--decision-note "..."]
@@ -512,9 +510,9 @@ pnpm paperclipai approval comment <approval-id> --body "..."
 ## Activity Commands
 
 ```sh
-pnpm paperclipai activity list --company-id <company-id> [--agent-id <agent-id>] [--entity-type issue] [--entity-id <id>]
+pnpm paperclipai activity list --company-id <company-id> [--agent-id <agent-id>] [--entity-type task] [--entity-id <id>]
 pnpm paperclipai activity create --company-id <company-id> --payload-json '{...}'
-pnpm paperclipai activity issue <issue-id>
+pnpm paperclipai activity task <task-id>
 ```
 
 ## Dashboard Commands
@@ -590,7 +588,7 @@ settings are:
 | `enableWorkspaceBranchReconcileForward` | On | Allows a clean worktree to advance only when its checked-out branch is a proven descendant of the recorded branch. |
 | `enableWorkspaceDirtyQuarantineRepair` | On | Preserves dirty foreign-branch work on a rescue branch before restoring the recorded branch. |
 | `enableServerInfoDebugView` | Off | Shows server restart, running commit, and checkout-state details in the account-menu **Server Info** debug view. It changes only that view. |
-| `autoRestartDevServerWhenIdle` | Off | Lets the managed dev runner request a restart for backend changes after there are no queued or running issue executions. Migrations remain explicit. |
+| `autoRestartDevServerWhenIdle` | Off | Lets the managed dev runner request a restart for backend changes after there are no queued or running task executions. Migrations remain explicit. |
 | `enableWorktreeRunExecution` | Off | In a worktree instance, permits automatic schedule and webhook dispatch only for routines created after the server-recorded activation cutoff. Normal instances are unaffected. |
 
 For the worktree dispatch control, the server—not the client—controls the
@@ -658,9 +656,9 @@ pnpm paperclipai cost summary --company-id <company-id>
 pnpm paperclipai cost by-agent --company-id <company-id>
 pnpm paperclipai cost by-project --company-id <company-id>
 pnpm paperclipai cost events --company-id <company-id>
-pnpm paperclipai cost issue <issue-id>
+pnpm paperclipai cost task <task-id>
 pnpm paperclipai cost window-spend --company-id <company-id>
-pnpm paperclipai cost issue <issue-id>
+pnpm paperclipai cost task <task-id>
 pnpm paperclipai cost event:create --company-id <company-id> --payload-json '{...}'
 ```
 
