@@ -62,14 +62,12 @@ import {
 } from "@paperclipai/shared";
 import type { StorageService } from "../storage/types.js";
 import { validate } from "../middleware/validate.js";
-import * as serviceIndex from "../services/index.js";
 import {
   readIssueExecutionRun,
   resolveIssueExecutionRunIdentityById,
 } from "../services/issue-execution-run-service.js";
 import {
   accessService,
-  companySkillService,
   companyService,
   companySearchService,
   goalService,
@@ -86,7 +84,6 @@ import {
   logActivity,
   projectService,
   toPublicProject,
-  routineService,
   OrdinaryIssueRuntimeRejected,
   type OrdinaryIssueRuntime,
   workProductService,
@@ -1140,19 +1137,8 @@ export function issueRoutes(
   const issueApprovalsSvc = issueApprovalService(db);
   const workProductsSvc = workProductService(db);
   const documentsSvc = documentService(db);
-  const companySkillsSvc = companySkillService(db);
   const documentAnnotationsSvc = documentAnnotationService(db);
   const issueReferencesSvc = issueReferenceService(db);
-  const routinesSvc = routineService(db, { ordinaryIssues });
-  const issueTreeControlFactory = Object.prototype.hasOwnProperty.call(
-    serviceIndex,
-    "issueTreeControlService",
-  )
-    ? serviceIndex.issueTreeControlService
-    : undefined;
-  const treeControlSvc = issueTreeControlFactory?.(db) ?? {
-    getActivePauseHoldGate: async () => null,
-  };
 
   async function lookupLowTrustSourceArtifact(input: {
     issueId: string;
@@ -1446,68 +1432,6 @@ export function issueRoutes(
     return requestedRunId;
   }
 
-  function isExplicitResumeCapableStatus(status: string | null | undefined) {
-    return status === "done" || status === "blocked" || status === "todo" || status === "in_progress";
-  }
-
-  async function assertExplicitResumeIntentAllowed(
-    req: Request,
-    res: Response,
-    issue: { id: string; companyId: string; boardPresentationStatus: string },
-  ) {
-    if (issue.boardPresentationStatus === "cancelled") {
-      res.status(409).json({
-        error: "Cancelled issues must be restored through the dedicated restore flow",
-        details: {
-          issueId: issue.id,
-          boardPresentationStatus: issue.boardPresentationStatus,
-        },
-      });
-      return false;
-    }
-
-    if (!isExplicitResumeCapableStatus(issue.boardPresentationStatus)) {
-      res.status(409).json({
-        error: "Issue is not resumable through comment follow-up intent",
-        details: {
-          issueId: issue.id,
-          boardPresentationStatus: issue.boardPresentationStatus,
-        },
-      });
-      return false;
-    }
-
-    const activePauseHold = await treeControlSvc.getActivePauseHoldGate(issue.companyId, issue.id);
-    if (activePauseHold) {
-      res.status(409).json({
-        error: "Issue follow-up blocked by active subtree pause hold",
-        details: {
-          issueId: issue.id,
-          holdId: activePauseHold.holdId,
-          rootIssueId: activePauseHold.rootIssueId,
-          mode: activePauseHold.mode,
-        },
-      });
-      return false;
-    }
-
-    if (issue.boardPresentationStatus === "blocked") {
-      const readiness = await svc.getDependencyReadiness(issue.id);
-      if (readiness.unresolvedBlockerCount > 0) {
-        res.status(409).json({
-          error: "Issue follow-up blocked by unresolved blockers",
-          details: {
-            issueId: issue.id,
-            unresolvedBlockerIssueIds: readiness.unresolvedBlockerIssueIds,
-          },
-        });
-        return false;
-      }
-    }
-
-    return true;
-  }
-
   async function resolveIssueRouteId(rawId: string): Promise<string> {
     const identifier = normalizeIssueReferenceIdentifier(rawId);
     if (identifier) {
@@ -1532,12 +1456,6 @@ export function issueRoutes(
       return { project, goal: directGoal };
     }
 
-    const projectGoalId = project?.goalId ?? project?.goalIds[0] ?? null;
-    if (projectGoalId) {
-      const projectGoal = await goalsSvc.getById(projectGoalId);
-      return { project, goal: projectGoal };
-    }
-
     if (!issue.projectId) {
       const defaultGoal = await goalsSvc.getDefaultCompanyGoal(issue.companyId);
       return { project, goal: defaultGoal };
@@ -1552,7 +1470,6 @@ export function issueRoutes(
       id: project.id,
       companyId: project.companyId,
       urlKey: project.urlKey,
-      goalId: project.goalId,
       goalIds: project.goalIds,
       goals: project.goals,
       name: project.name,
@@ -1592,13 +1509,6 @@ export function issueRoutes(
     } catch (err) {
       next(err);
     }
-  });
-
-  // Common malformed path when companyId is empty in "/api/companies/{companyId}/issues".
-  router.get("/issues", (_req, res) => {
-    res.status(400).json({
-      error: "Missing companyId in path. Use /api/companies/{companyId}/issues.",
-    });
   });
 
   router.get("/companies/:companyId/search/extract", async (req, res) => {

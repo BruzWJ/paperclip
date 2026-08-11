@@ -46,13 +46,11 @@ function rejectCompanySkillRevisionFields(
     const entryPath = [...path, key];
     if (
       normalizedAdapterConfigKey(key) === "paperclipskillsync" ||
-      normalizedAdapterConfigKey(key) === "companyskillpins" ||
-      normalizedAdapterConfigKey(key) === "skillchannel"
+      normalizedAdapterConfigKey(key) === "companyskillpins"
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message:
-          "Company skill pins and channel belong only to the immutable ACP revision",
+        message: "Company skill pins belong only to the immutable ACP revision",
         path: entryPath,
       });
       continue;

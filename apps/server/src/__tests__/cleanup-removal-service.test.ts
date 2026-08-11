@@ -64,8 +64,7 @@ describe("cleanup removal services", () => {
     const postCommit = {
       actor: { kind: "system" },
       issueExecutionCancellation: {
-        reconcileRequestedAgentCancellations: vi.fn(),
-        reconcileRequestedAgentSuspensions: vi.fn(),
+        reconcileRequestedCancellations: vi.fn(),
       },
       dispatchRef: vi.fn(),
     };

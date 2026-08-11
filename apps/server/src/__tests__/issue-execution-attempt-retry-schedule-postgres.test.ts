@@ -48,8 +48,6 @@ function runRow(
     finishedAt: null,
     terminalClassification: null,
     terminalReasonCode: null,
-    processExitCode: null,
-    processSignal: null,
     createdAt,
     updatedAt: finishedAt,
     ...overrides,
@@ -158,7 +156,6 @@ function createTransaction(input: {
                 },
                 workspaceSelector: { kind: "issue_execution_workspace" },
                 companySkillPins: [],
-                skillChannel: "operator_native",
               },
             }]);
           }
@@ -294,7 +291,7 @@ describe("canonical PostgreSQL attempt retry schedules", () => {
         issueId: "issue-1",
         runId: "run-1",
         predecessorAttemptId: "attempt-1",
-        reasonCode: "provider_quota",
+        reasonCode: "transport_transient",
         retryAt,
         at: scheduledAt,
       }),

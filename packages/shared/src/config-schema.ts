@@ -17,11 +17,8 @@ export const configMetaSchema = z.object({
 export const databaseConfigSchema = z
   .object({
     connectionString: z.string().optional(),
-    // Legacy field accepted from older config files and ignored.
-    backup: z.unknown().optional(),
   })
-  .strict()
-  .transform(({ backup: _ignored, ...rest }) => rest);
+  .strict();
 
 export const loggingConfigSchema = z.object({
   mode: z.enum(["file", "cloud"]),
@@ -128,6 +125,7 @@ export const paperclipConfigSchema = z
       },
     }),
   })
+  .strict()
   .superRefine((value, ctx) => {
     for (const message of validateConfiguredBindMode({
       exposure: value.server.exposure,

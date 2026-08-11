@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../__tests__/helpers/mock-db.js";
 import { createIssueExecutionCancellationService } from "./issue-execution-cancellation.js";
 
 const pluginDomainEvents = {
@@ -132,23 +133,6 @@ describe("budget-scope execution suspension", () => {
     });
   });
 
-  it("returns the resumed budget scope without a delivery side channel", async () => {
-    const value = fixture();
-    const transaction = {} as never;
-    const now = new Date("2026-07-31T12:00:00.000Z");
-    await expect(
-      value.service.releaseBudgetScopeSuspensionInTransaction(transaction, {
-        companyId: "company-1",
-        scopeType: "agent",
-        scopeId: "agent-1",
-        now,
-      }),
-    ).resolves.toEqual({
-      companyId: "company-1",
-      scopeType: "agent",
-      scopeId: "agent-1",
-    });
-  });
 });
 
 describe("scoped execution cancellation", () => {
@@ -246,11 +230,71 @@ describe("scoped execution cancellation", () => {
       },
     })]);
 
-    await value.service.reconcileRequestedScopeCancellations(requested);
+    await value.service.reconcileRequestedCancellations(requested);
     expect(publish).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "agent.run.cancelled",
       companyId: "company-1",
       entityId: "run-queued",
+    }));
+  });
+});
+
+describe("direct run cancellation", () => {
+  it("uses the canonical detached-run transaction and publishes its exact terminal event", async () => {
+    const at = new Date("2026-08-05T12:00:00.000Z");
+    const publish = vi.fn(async () => undefined);
+    const terminalizeDetachedCancelledRunInTransaction = vi.fn(
+      async () => true,
+    );
+    const terminalizeCancelledRun = vi.fn(async () => undefined);
+    const lockRun = vi.fn(async () => activeRun("run-queued", "queued"));
+    const { db } = createMockDb({
+      select: [[{
+        companyId: "company-1",
+        issueId: "issue-1",
+        runId: "run-queued",
+      }]],
+    });
+    const service = createIssueExecutionCancellationService({
+      database: db,
+      runService: { lockRun } as never,
+      dispatcher: {} as never,
+      settlement: {
+        terminalizeCancelledRun,
+        terminalizeDetachedCancelledRunInTransaction,
+      } as never,
+      pluginDomainEvents: { publish },
+      now: () => at,
+    });
+
+    await expect(service.cancelRun("run-queued", " board_cancelled "))
+      .resolves.toEqual({
+        runId: "run-queued",
+        alreadyTerminal: false,
+        cancellationIntentId: null,
+        state: "terminalized",
+      });
+
+    expect(terminalizeDetachedCancelledRunInTransaction).toHaveBeenCalledWith(
+      db,
+      {
+        companyId: "company-1",
+        issueId: "issue-1",
+        runId: "run-queued",
+        reason: "board_cancelled",
+        finishedAt: at,
+      },
+    );
+    expect(terminalizeCancelledRun).not.toHaveBeenCalled();
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "agent.run.cancelled",
+      companyId: "company-1",
+      entityId: "run-queued",
+      payload: expect.objectContaining({
+        issueId: "issue-1",
+        agentId: "agent-1",
+        reason: "board_cancelled",
+      }),
     }));
   });
 });

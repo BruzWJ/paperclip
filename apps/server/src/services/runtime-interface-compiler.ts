@@ -20,15 +20,14 @@ import {
 } from "./runtime-tool-errors.js";
 import { validateJsonSchemaValue } from "./plugin-config-validator.js";
 
-const PAPERCLIP_RUNTIME_TOOL_NAMES = [
-  ...PAPERCLIP_MANAGED_TOOL_NAMES,
-  "restore_session",
-] as const;
+const PAPERCLIP_RUNTIME_TOOL_NAMES = PAPERCLIP_MANAGED_TOOL_NAMES;
 
 export type PaperclipRuntimeToolName =
   (typeof PAPERCLIP_RUNTIME_TOOL_NAMES)[number];
 
 export type RuntimeToolSource = "paperclip" | "plugin";
+export type RuntimeToolTurn = "bootstrap" | "work";
+type RuntimeToolAvailability = RuntimeToolTurn | "both";
 
 export interface CompiledRunToolDescriptor {
   name: string;
@@ -36,8 +35,8 @@ export interface CompiledRunToolDescriptor {
   description: string;
   inputSchema: JsonSchema;
   source: RuntimeToolSource;
-  /** Server-only declaration that this tool may run during a bootstrap turn. */
-  bootstrapEnabled?: boolean;
+  /** Server-only turn boundary; never exposed in the provider descriptor. */
+  availability: RuntimeToolAvailability;
   /** Server-only immutable installation identity for a direct plugin tool. */
   pluginInstallationId?: string;
   /** Server-only exact manifest identity compiled with this declaration. */
@@ -54,7 +53,7 @@ export interface CompiledRunToolDescriptor {
     scope: PaperclipRuntimeCommandScope,
   ) => RuntimePaperclipManagedToolCall;
   /**
-   * Server-only validator for non-registry tools such as plugins and recovery.
+   * Server-only validator for non-registry tools such as plugins.
    * Paperclip-managed descriptors use `normalizeRuntimeCommand` instead so
    * their raw payload is normalized exactly once.
    */
@@ -78,68 +77,22 @@ export interface RuntimePluginTool {
 
 export interface RuntimeInterfaceCompileInput
   extends PaperclipManagedToolRuntimeProjectionInput {
+  /** Exact provider turn derived from the current execution ref. */
+  turn: RuntimeToolTurn;
   mentionReachGrants?: Readonly<
     Partial<Record<AgentMentionReachGrantKey, boolean>>
   >;
   /** Ready plugin tools are host-managed and available to every agent. */
   pluginTools: readonly RuntimePluginTool[];
-  /**
-   * A direct target-not-found replacement may expose one recovery-only
-   * reader. It is derived from canonical attempts at compile time, never a
-   * persisted provider/session mode.
-   */
-  restoreSession?: boolean;
 }
 
-interface CompiledRuntimeInterface {
+interface CompiledRuntimeInterfaceContract {
   mode: IssueExecutionRefMode;
   descriptors: readonly CompiledRunToolDescriptor[];
+}
+
+interface CompiledRuntimeInterface extends CompiledRuntimeInterfaceContract {
   byName: ReadonlyMap<string, CompiledRunToolDescriptor>;
-}
-
-export interface RestoreSessionArguments {
-  runId?: string;
-  cursor?: string;
-}
-
-function restoreRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new RuntimeToolArgumentsInvalid("Tool arguments must be an object");
-  }
-  return value as Record<string, unknown>;
-}
-
-function restoreOptionalString(
-  value: unknown,
-  name: string,
-): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string" || value.length === 0) {
-    throw new RuntimeToolArgumentsInvalid(`${name} must be a non-empty string`);
-  }
-  return value;
-}
-
-export function parseRestoreSessionArguments(
-  value: unknown,
-): RestoreSessionArguments {
-  const input = restoreRecord(value);
-  const unknown = Object.keys(input).filter(
-    (key) => key !== "runId" && key !== "cursor",
-  );
-  if (unknown.length > 0) {
-    throw new RuntimeToolArgumentsInvalid(
-      `Unsupported tool arguments: ${unknown.join(", ")}`,
-    );
-  }
-  const runId = restoreOptionalString(input.runId, "runId");
-  const cursor = restoreOptionalString(input.cursor, "cursor");
-  if (cursor && !runId) {
-    throw new RuntimeToolArgumentsInvalid(
-      "runId is required when continuing a restored run trace",
-    );
-  }
-  return { ...(runId ? { runId } : {}), ...(cursor ? { cursor } : {}) };
 }
 
 function pluginDescriptors(
@@ -154,7 +107,7 @@ function pluginDescriptors(
     pluginInstallationId: tool.installationId,
     pluginManifestIdentity: tool.manifestIdentity,
     pluginToolName: tool.toolName,
-    bootstrapEnabled: tool.bootstrapEnabled === true,
+    availability: tool.bootstrapEnabled === true ? "both" : "work",
     validateArguments(argumentsValue) {
       const validation = validateJsonSchemaValue(
         argumentsValue,
@@ -172,35 +125,10 @@ function pluginDescriptors(
   }));
 }
 
-function recoveryDescriptors(
-  input: RuntimeInterfaceCompileInput,
-): CompiledRunToolDescriptor[] {
-  if (input.restoreSession !== true) return [];
-  return [{
-    name: "restore_session",
-    title: "Restore prior session history",
-    description:
-      "Returns the exact read_issue_agent_run result for each prior run by this agent in the current issue, excluding the current trigger run. To continue one trace, provide its runId and nextCursor. Available only during this recovery bootstrap.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        runId: { type: "string", minLength: 1 },
-        cursor: {
-          type: "string",
-          minLength: 1,
-          description: "Opaque bounded cursor returned by the preceding page.",
-        },
-      },
-      required: [],
-      additionalProperties: false,
-    },
-    source: "paperclip",
-    bootstrapEnabled: true,
-    validateArguments: parseRestoreSessionArguments,
-  }];
-}
-
 function validateCompileInput(input: RuntimeInterfaceCompileInput): void {
+  if (input.turn !== "bootstrap" && input.turn !== "work") {
+    throw new RuntimeInterfaceConflict("Invalid runtime tool turn");
+  }
   for (const key of PAPERCLIP_ACTION_KEYS) {
     if (
       input.actionGrants[key] !== undefined &&
@@ -223,20 +151,19 @@ function validateCompileInput(input: RuntimeInterfaceCompileInput): void {
 
 /**
  * Compiler responsibility is deliberately narrow: select the canonical
- * registry projections, add host-owned recovery/plugin descriptors, and
+ * registry projections, add host-owned plugin descriptors, and
  * verify a closed provider interface. Raw Paperclip action schemas and
  * parsers live solely with their registry definitions.
  */
-export function compileRuntimeInterface(
+function compileRuntimeInterfaceContract(
   input: RuntimeInterfaceCompileInput,
-): CompiledRuntimeInterface {
+): CompiledRuntimeInterfaceContract {
   validateCompileInput(input);
   const descriptors: CompiledRunToolDescriptor[] = [
     ...projectPaperclipManagedTools(input),
-    ...recoveryDescriptors(input),
     ...pluginDescriptors(input.pluginTools),
   ];
-  const byName = new Map<string, CompiledRunToolDescriptor>();
+  const names = new Set<string>();
   for (const descriptor of descriptors) {
     if (!isMcpToolName(descriptor.name)) {
       throw new RuntimeInterfaceConflict(
@@ -253,17 +180,39 @@ export function compileRuntimeInterface(
         `External tool collides with Paperclip tool: ${descriptor.name}`,
       );
     }
-    if (byName.has(descriptor.name)) {
+    if (names.has(descriptor.name)) {
       throw new RuntimeInterfaceConflict(
         `Duplicate compiled tool name: ${descriptor.name}`,
       );
     }
-    byName.set(descriptor.name, descriptor);
+    if (descriptor.inputSchema.type !== "object") {
+      throw new RuntimeInterfaceConflict(
+        `Compiled tool input schema is not an object: ${descriptor.name}`,
+      );
+    }
+    names.add(descriptor.name);
   }
   return {
     mode: input.mode,
     descriptors: Object.freeze(descriptors),
-    byName,
+  };
+}
+
+export function compileRuntimeInterface(
+  input: RuntimeInterfaceCompileInput,
+): CompiledRuntimeInterface {
+  const contract = compileRuntimeInterfaceContract(input);
+  const descriptors = contract.descriptors.filter(
+    (descriptor) =>
+      descriptor.availability === input.turn ||
+      descriptor.availability === "both",
+  );
+  return {
+    mode: contract.mode,
+    descriptors,
+    byName: new Map(
+      descriptors.map((descriptor) => [descriptor.name, descriptor]),
+    ),
   };
 }
 
@@ -306,7 +255,7 @@ function canonicalDescriptorJson(value: unknown): string {
  * call-time contract.
  */
 function compiledRuntimeInterfaceDigest(
-  compiled: CompiledRuntimeInterface,
+  compiled: CompiledRuntimeInterfaceContract,
 ): string {
   const contract = {
     mode: compiled.mode,
@@ -319,7 +268,7 @@ function compiledRuntimeInterfaceDigest(
       pluginInstallationId: descriptor.pluginInstallationId,
       pluginManifestIdentity: descriptor.pluginManifestIdentity,
       pluginToolName: descriptor.pluginToolName,
-      bootstrapEnabled: descriptor.bootstrapEnabled,
+      availability: descriptor.availability,
     })),
   };
   return createHash("sha256")

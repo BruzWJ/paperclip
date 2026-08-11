@@ -2,28 +2,27 @@ import { describe, expect, it } from "vitest";
 import { paperclipConfigSchema } from "./config-schema.js";
 
 describe("paperclip config schema", () => {
-  it("does not retain the retired global LLM credential configuration", () => {
-    const parsed = paperclipConfigSchema.parse({
-      $meta: {
-        version: 1,
-        updatedAt: "2026-07-26T00:00:00.000Z",
-        source: "configure",
-      },
-      llm: {
-        provider: "openai",
-        apiKey: "legacy-global-key",
-      },
-      database: {
-        connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
-      },
-      logging: {
-        mode: "file",
-      },
-      server: {},
-    });
-
-    expect(parsed).not.toHaveProperty("llm");
-    expect(JSON.stringify(parsed)).not.toContain("legacy-global-key");
+  it("rejects the retired global LLM credential configuration", () => {
+    expect(() =>
+      paperclipConfigSchema.parse({
+        $meta: {
+          version: 1,
+          updatedAt: "2026-07-26T00:00:00.000Z",
+          source: "configure",
+        },
+        llm: {
+          provider: "openai",
+          apiKey: "retired-global-key",
+        },
+        database: {
+          connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
+        },
+        logging: {
+          mode: "file",
+        },
+        server: {},
+      }),
+    ).toThrow(/unrecognized key/i);
   });
 
   it("keeps only external database configuration and rejects retired local fields", () => {
@@ -67,27 +66,27 @@ describe("paperclip config schema", () => {
     ).toThrow(/unrecognized key/i);
   });
 
-  it("accepts and strips legacy database-backup configuration", () => {
-    const parsed = paperclipConfigSchema.parse({
-      $meta: {
-        version: 1,
-        updatedAt: "2026-08-06T00:00:00.000Z",
-        source: "configure",
-      },
-      database: {
-        connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
-        backup: {
-          enabled: true,
-          intervalMinutes: 60,
-          retentionDays: 7,
-          dir: "~/.paperclip/instances/default/data/backups",
+  it("rejects the retired database-backup configuration", () => {
+    expect(() =>
+      paperclipConfigSchema.parse({
+        $meta: {
+          version: 1,
+          updatedAt: "2026-08-06T00:00:00.000Z",
+          source: "configure",
         },
-      },
-      logging: { mode: "file" },
-      server: {},
-    });
-
-    expect(parsed.database).not.toHaveProperty("backup");
+        database: {
+          connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
+          backup: {
+            enabled: true,
+            intervalMinutes: 60,
+            retentionDays: 7,
+            dir: "~/.paperclip/instances/default/data/backups",
+          },
+        },
+        logging: { mode: "file" },
+        server: {},
+      }),
+    ).toThrow(/unrecognized key/i);
   });
 
   it("uses bind and exposure without a deployment identity mode", () => {

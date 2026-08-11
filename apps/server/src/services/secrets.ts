@@ -58,7 +58,7 @@ import type {
   SecretProviderWriteContext,
 } from "../secrets/types.js";
 import { isSecretProviderClientError } from "../secrets/types.js";
-import { findActiveServerAdapter } from "../adapters/index.js";
+import { findServerAdapter } from "../adapters/index.js";
 import { logActivity } from "./activity-log.js";
 import {
   adapterConfigPathHasRootKey,
@@ -78,7 +78,6 @@ const COMING_SOON_SECRET_PROVIDERS: ReadonlySet<SecretProvider> = new Set([
   "gcp_secret_manager",
   "vault",
 ]);
-const FALLBACK_ADAPTER_SCHEMA_SECRET_FIELDS: Readonly<Record<string, readonly string[]>> = {};
 const USER_SECRET_DEFINITION_KEY_UNIQUE_CONSTRAINT = "user_secret_definitions_company_key_uq";
 const USER_SECRET_VALUE_UNIQUE_CONSTRAINT = "company_secrets_user_definition_owner_uq";
 type DbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -607,9 +606,6 @@ function deriveSecretNameFromExternalRef(externalRef: string) {
 }
 
 function canonicalizeBinding(binding: EnvBinding): CanonicalEnvBinding {
-  if (typeof binding === "string") {
-    return { type: "plain", value: binding };
-  }
   if (binding.type === "plain") {
     return { type: "plain", value: String(binding.value) };
   }
@@ -1365,15 +1361,11 @@ export function secretService(db: Db) {
 
   async function listAdapterSchemaSecretFieldKeys(adapterType: string | null | undefined): Promise<string[]> {
     if (!adapterType) return [];
-    const adapter = findActiveServerAdapter(adapterType);
-    const fallback = [...(FALLBACK_ADAPTER_SCHEMA_SECRET_FIELDS[adapterType] ?? [])];
-    if (!adapter) return fallback;
-    return [...new Set([
-      ...fallback,
-      ...adapter.definition.configSchema.fields
-        .filter((field) => field.meta?.secret === true)
-        .map((field) => field.key),
-    ])];
+    const adapter = findServerAdapter(adapterType);
+    if (!adapter) return [];
+    return adapter.definition.configSchema.fields
+      .filter((field) => field.meta?.secret === true)
+      .map((field) => field.key);
   }
 
   async function normalizeSchemaSecretFieldForPersistence(

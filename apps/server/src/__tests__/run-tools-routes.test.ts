@@ -37,6 +37,28 @@ function service(): PromptCapabilityGateway {
   };
 }
 
+function postToolCall(
+  instance: express.Express,
+  id: string,
+  ordinal: number,
+  meta: Record<string, unknown>,
+) {
+  return request(instance)
+    .post("/api/run-tools")
+    .set("authorization", "Bearer pc_run_v1_secret")
+    .set(RUN_TOOLS_INGRESS_ORDINAL_HEADER, String(ordinal))
+    .send({
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: {
+        name: "read_issue_comments",
+        arguments: {},
+        _meta: meta,
+      },
+    });
+}
+
 describe("run-tools routes", () => {
   it("advertises only the static tools capability it actually implements", async () => {
     const response = await request(app(service()))
@@ -46,6 +68,9 @@ describe("run-tools routes", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.result.capabilities).toEqual({ tools: {} });
+    expect(response.body.result.instructions).toBe(
+      "Paperclip-managed tools exposed by this server are already available in your tool catalog; invoke them directly without a separate discovery step. Use them for Paperclip company, issue, project, and agent state or mutations, and never substitute repository, catalog, or configuration-file edits for Paperclip actions.",
+    );
   });
 
   it("provides dynamic MCP discovery with no selector or identity payload", async () => {
@@ -130,6 +155,57 @@ describe("run-tools routes", () => {
       }),
     );
     expect(JSON.stringify(withIngress.body)).not.toContain("ingressOrdinal");
+  });
+
+  it("accepts MCP request metadata without adding it to tool arguments", async () => {
+    const runtime = service();
+    const response = await postToolCall(
+      app(runtime),
+      "call-with-progress",
+      0,
+      {
+        progressToken: 0,
+        "io.modelcontextprotocol/clientInfo": { name: "opencode" },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(runtime.callTool).toHaveBeenCalledWith({
+      bearer: "pc_run_v1_secret",
+      toolName: "read_issue_comments",
+      arguments: {},
+      ingressOrdinal: 0,
+      callIdentity: { source: "jsonrpc", id: "call-with-progress" },
+    });
+  });
+
+  it("terminal-registers malformed MCP request metadata without blocking the next call", async () => {
+    const runtime = service();
+    const instance = app(runtime);
+    const invalid = await postToolCall(
+      instance,
+      "invalid-progress",
+      0,
+      { progressToken: false },
+    );
+    const valid = await postToolCall(
+      instance,
+      "valid-after-invalid-progress",
+      1,
+      { progressToken: "next" },
+    );
+
+    expect(invalid.status).toBe(400);
+    expect(valid.status).toBe(200);
+    expect(runtime.registerTerminalInvalidToolCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ingressOrdinal: 0,
+        callIdentity: { source: "jsonrpc", id: "invalid-progress" },
+      }),
+    );
+    expect(runtime.callTool).toHaveBeenCalledWith(
+      expect.objectContaining({ ingressOrdinal: 1 }),
+    );
   });
 
   it.each([

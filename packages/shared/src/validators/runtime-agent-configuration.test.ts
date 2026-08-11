@@ -180,7 +180,6 @@ describe("adapter-revision control-plane validator", () => {
     adapterConfig: { model: "gpt-5.6" },
     runtimeConfig: {},
     companySkillPins: [],
-    skillChannel: "operator_native" as const,
   };
 
   it("accepts only adapter and execution-target configuration", () => {
@@ -211,7 +210,6 @@ describe("adapter-revision control-plane validator", () => {
           versionId: SKILL_VERSION_ID,
         },
       ],
-      skillChannel: "isolated_skills_home" as const,
     };
     expect(
       agentAdapterRevisionConfigurationSchema.parse(withPins),
@@ -252,12 +250,6 @@ describe("adapter-revision control-plane validator", () => {
         },
       }).success,
     ).toBe(false);
-    expect(
-      agentAdapterRevisionConfigurationSchema.safeParse({
-        ...valid,
-        skillChannel: "workspace",
-      }).success,
-    ).toBe(false);
   });
 
   it("keeps company-skill control fields out of revision provider remainders", () => {
@@ -292,9 +284,12 @@ describe("provider-only agent configuration", () => {
   it("keeps explicit provider-native configuration opaque without a prefix ban", () => {
     const adapterConfig = {
       env: {
-        HOME: "/operator/home",
-        CODEX_HOME: "/operator/codex",
-        PAPERCLIP_CLOUD_PROD_PROVIDER_TOKEN: "operator-selected",
+        HOME: { type: "plain", value: "/operator/home" },
+        CODEX_HOME: { type: "plain", value: "/operator/codex" },
+        PAPERCLIP_CLOUD_PROD_PROVIDER_TOKEN: {
+          type: "plain",
+          value: "operator-selected",
+        },
       },
       providerNative: {
         documentation: "https://provider.invalid/native/configuration",

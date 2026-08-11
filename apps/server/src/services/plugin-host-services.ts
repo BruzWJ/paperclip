@@ -23,7 +23,7 @@ import {
 import { companyService } from "./companies.js";
 import {
   agentService,
-  type AgentControlLifecycleService,
+  type AgentSuspensionService,
 } from "./agents.js";
 import { projectService, toPublicProject } from "./projects.js";
 import { issueService } from "./issues.js";
@@ -464,7 +464,7 @@ export interface PluginHostServicesOptions {
   pluginRunIssueContextReader: PluginRunIssueContextReader;
   pluginRuntimeRecordsReader: PluginRuntimeRecordsReader;
   ordinaryIssues: OrdinaryIssueRuntime;
-  issueExecutionCancellation: AgentControlLifecycleService;
+  issueExecutionCancellation: AgentSuspensionService;
 }
 
 export function buildHostServices(
@@ -1388,10 +1388,7 @@ export function buildHostServices(
         await ensurePluginAvailableForCompany(companyId);
         const agent = await agents.getById(params.agentId);
         requireInCompany("Agent", agent, companyId);
-        const updated = await agents.resume(
-          params.agentId,
-          options.issueExecutionCancellation,
-        );
+        const updated = await agents.resume(params.agentId);
         if (!updated) throw new Error("Agent not found after resume");
         return updated;
       },

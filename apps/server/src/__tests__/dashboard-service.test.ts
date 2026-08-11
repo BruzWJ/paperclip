@@ -128,19 +128,19 @@ describe("dashboard service", () => {
     });
   });
 
-  it("separates recovered restart kills from true failures and breaks failures down by error code", async () => {
+  it("separates recovered worker-loss runs from true failures and breaks failures down by error code", async () => {
     const day = utcDay(-2);
     mocks.listRuns.mockResolvedValue({
       items: [
-        run("original", "failed", day, { terminalReasonCode: "process_lost" }),
+        run("original", "failed", day, { terminalReasonCode: "worker_loss_after_prompt" }),
         run("retry", "succeeded", day, { retryOfRunId: "original" }),
-        run("chain-original", "failed", day, { terminalReasonCode: "process_lost" }),
+        run("chain-original", "failed", day, { terminalReasonCode: "worker_loss_after_prompt" }),
         run("chain-retry", "failed", day, {
           retryOfRunId: "chain-original",
-          terminalReasonCode: "process_lost",
+          terminalReasonCode: "worker_loss_after_prompt",
         }),
         run("chain-success", "succeeded", day, { retryOfRunId: "chain-retry" }),
-        run("quota", "failed", day, { terminalReasonCode: "provider_quota" }),
+        run("transport", "failed", day, { terminalReasonCode: "transport_transient" }),
       ],
       nextCursor: null,
     });
@@ -154,8 +154,8 @@ describe("dashboard service", () => {
       failed: 1,
       other: 0,
       total: 6,
-      failedByErrorCode: { provider_quota: 1 },
+      failedByErrorCode: { transport_transient: 1 },
     });
-    expect(bucket?.failedByErrorCode.process_lost).toBeUndefined();
+    expect(bucket?.failedByErrorCode.worker_loss_after_prompt).toBeUndefined();
   });
 });

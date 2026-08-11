@@ -7,10 +7,6 @@ import type {
 } from "@paperclipai/shared";
 
 type LiveEventListener = (event: LiveEvent) => void;
-type NonPlanLiveEventType = Exclude<
-  LiveEventType,
-  "issue.execution.plan.live"
->;
 
 const emitter = new EventEmitter();
 emitter.setMaxListeners(0);
@@ -32,12 +28,7 @@ function toLiveEvent<Type extends LiveEventType>(input: {
   } as LiveEventOf<Type>;
 }
 
-export function publishLiveEvent(input: {
-  companyId: string;
-  type: "issue.execution.plan.live";
-  payload: LiveEventPayloadMap["issue.execution.plan.live"];
-}): LiveEventOf<"issue.execution.plan.live">;
-export function publishLiveEvent<Type extends NonPlanLiveEventType>(input: {
+export function publishLiveEvent<Type extends LiveEventType>(input: {
   companyId: string;
   type: Type;
   payload?: LiveEventPayloadMap[Type];
@@ -47,12 +38,6 @@ export function publishLiveEvent(input: {
   type: LiveEventType;
   payload?: LiveEventPayloadMap[LiveEventType];
 }): LiveEvent {
-  if (
-    input.type === "issue.execution.plan.live" &&
-    input.payload === undefined
-  ) {
-    throw new TypeError("issue.execution.plan.live requires its exact payload");
-  }
   const event = toLiveEvent({
     companyId: input.companyId,
     type: input.type,

@@ -48,7 +48,8 @@ export interface LocalRunLeaseRecord {
 
 /**
  * Persist one lease for each local provider run. The durable row is also the
- * company-purge fence proving that no local provider process is still active.
+ * company-purge fence proving that no Paperclip execution workspace lease is
+ * still active.
  */
 export function localRunLeaseService(db: Db) {
   return {

@@ -8,8 +8,8 @@ vi.unmock("node:http");
 
 // Tests that verify the write-path membership/role checks restored by Fix 1.
 // `assertCompanyAccess` (in authz.ts) must reject viewer-role users and
-// inactive members on non-safe HTTP methods (POST/PUT/PATCH/DELETE), even when
-// `hasCompanyAccess` would let them through the 404 oracle gate.
+// inactive members on non-safe HTTP methods (POST/PUT/PATCH/DELETE), after
+// the canonical accessible-resource gate folds cross-company lookups to 404.
 
 const companyId = "11111111-1111-4111-8111-111111111111";
 const goalId = "22222222-2222-4222-8222-222222222222";

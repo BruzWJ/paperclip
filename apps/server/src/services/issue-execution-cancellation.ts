@@ -4,7 +4,6 @@ import {
   issueExecutionAttempts,
   issueExecutionCancellationIntents,
   issueExecutionLeases,
-  issueExecutionProcessFacts,
   type Db,
 } from "@paperclipai/db";
 import type { IssueExecutionRunStatus } from "@paperclipai/shared";
@@ -19,8 +18,8 @@ import {
 } from "./issue-execution-run-service.js";
 import {
   acknowledgeCompanyCancellationIntentsInTx,
-  completeCompanyCancellationIntentInTx,
   failCompanyCancellationIntentInTx,
+  reconcileCompanyCancellationIntentInTx,
   reconcileCompanySessionLifecycleOperationInTx,
 } from "./issue-session-lifecycle.js";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
@@ -164,20 +163,6 @@ export interface RequestedAgentRunCancellations {
   readonly requests: readonly RequestedRunCancellation[];
 }
 
-/** Suspended-agent cancellation fences descendant execution authority. */
-export interface RequestedAgentSuspensions {
-  readonly companyId: string;
-  readonly agentIds: readonly string[];
-  readonly reason: string;
-  readonly fence: IssueExecutionAuthorityFenceResult;
-  readonly requests: readonly RequestedRunCancellation[];
-}
-
-export interface ReleasedAgentSuspensions {
-  readonly companyId: string;
-  readonly agentIds: readonly string[];
-}
-
 export interface RequestedBudgetScopeSuspension {
   readonly companyId: string;
   readonly scopeType: "company" | "project" | "agent";
@@ -185,12 +170,6 @@ export interface RequestedBudgetScopeSuspension {
   readonly reason: string;
   readonly fence: IssueExecutionAuthorityFenceResult;
   readonly requests: readonly RequestedRunCancellation[];
-}
-
-export interface ReleasedBudgetScopeSuspension {
-  readonly companyId: string;
-  readonly scopeType: "company" | "project" | "agent";
-  readonly scopeId: string;
 }
 
 export interface RequestedScopedRunCancellations {
@@ -397,7 +376,7 @@ export function createIssueExecutionCancellationService(
     if (run.currentAttemptId === null || run.currentLeaseId === null) {
       reject("active run has a partial prompt-attempt attachment");
     }
-    const [attemptRows, leaseRows, processRows] = await Promise.all([
+    const [attemptRows, leaseRows] = await Promise.all([
       transaction
         .select()
         .from(issueExecutionAttempts)
@@ -410,19 +389,9 @@ export function createIssueExecutionCancellationService(
         .where(eq(issueExecutionLeases.id, run.currentLeaseId))
         .limit(2)
         .for("update"),
-      transaction
-        .select()
-        .from(issueExecutionProcessFacts)
-        .where(eq(issueExecutionProcessFacts.attemptId, run.currentAttemptId))
-        .limit(2)
-        .for("update"),
     ]);
-    if (
-      attemptRows.length !== 1 ||
-      leaseRows.length !== 1 ||
-      processRows.length > 1
-    ) {
-      reject("active run has an ambiguous attempt, lease, or process");
+    if (attemptRows.length !== 1 || leaseRows.length !== 1) {
+      reject("active run has an ambiguous attempt or lease");
     }
     const attempt = attemptRows[0]!;
     const lease = leaseRows[0]!;
@@ -444,15 +413,12 @@ export function createIssueExecutionCancellationService(
       runId: run.runId,
       attemptId: attempt.id,
       leaseId: lease.id,
-      processFactId: processRows[0]?.id ?? null,
       reasonKind: params.reasonKind,
       ...params.actor,
       state: "requested",
       requestedAt: params.at,
       acknowledgedAt: null,
-      sessionCancelSentAt: null,
-      processTerminationRequestedAt: processRows[0] ? params.at : null,
-      processTerminatedAt: null,
+      nativeCancellationSettledAt: null,
       completedAt: null,
       failedAt: null,
       failureCode: null,
@@ -601,39 +567,12 @@ export function createIssueExecutionCancellationService(
       readonly actor: IssueExecutionCancellationActor;
       readonly now: Date;
     },
-  ): Promise<RequestedAgentSuspensions> {
+  ): Promise<RequestedAgentRunCancellations> {
     return requestAgentCancellationsWithFenceInTransaction(
       transaction,
       input,
       "suspended_agents",
     );
-  }
-
-  async function releaseAgentSuspensionsInTransaction(
-    transaction: IssueSessionDbTransaction,
-    input: {
-      readonly companyId: string;
-      readonly agentIds: readonly string[];
-      readonly now: Date;
-    },
-  ): Promise<ReleasedAgentSuspensions> {
-    void transaction;
-    exactIdentifier(input.companyId, "company id");
-    exactDate(input.now, "agent resumption time");
-    const agentIds = [...new Set(input.agentIds)];
-    for (const agentId of agentIds) {
-      exactIdentifier(agentId, "resumed agent id");
-    }
-    if (agentIds.length === 0) {
-      return Object.freeze({
-        companyId: input.companyId,
-        agentIds: Object.freeze([]),
-      });
-    }
-    return Object.freeze({
-      companyId: input.companyId,
-      agentIds: Object.freeze(agentIds),
-    });
   }
 
   function validateBudgetScope(input: {
@@ -697,65 +636,6 @@ export function createIssueExecutionCancellationService(
       fence,
       requests,
     });
-  }
-
-  async function reconcileRequestedBudgetScopeSuspension(
-    requested: RequestedBudgetScopeSuspension,
-  ): Promise<readonly IssueExecutionCancellationResult[]> {
-    return reconcileRequestedCancellationBundle(requested);
-  }
-
-  async function releaseBudgetScopeSuspensionInTransaction(
-    transaction: IssueSessionDbTransaction,
-    input: {
-      readonly companyId: string;
-      readonly scopeType: "company" | "project" | "agent";
-      readonly scopeId: string;
-      readonly now: Date;
-    },
-  ): Promise<ReleasedBudgetScopeSuspension> {
-    void transaction;
-    validateBudgetScope(input);
-    exactDate(input.now, "budget resumption time");
-    return Object.freeze({
-      companyId: input.companyId,
-      scopeType: input.scopeType,
-      scopeId: input.scopeId,
-    });
-  }
-
-  async function reconcileRequestedAgentCancellations(
-    requested: RequestedAgentRunCancellations,
-  ): Promise<readonly IssueExecutionCancellationResult[]> {
-    exactIdentifier(requested.companyId, "company id");
-    const results: IssueExecutionCancellationResult[] = [];
-    for (const request of requested.requests) {
-      if (request.companyId !== requested.companyId) {
-        reject("agent cancellation bundle crossed its company");
-      }
-      if (request.state === "terminalized") {
-        results.push(await terminalizedCancellationResult(
-          options.pluginDomainEvents,
-          request,
-        ));
-        continue;
-      }
-      if (request.cancellationIntentId === null) {
-        reject("requested prompt cancellation lost its durable intent");
-      }
-      const result = await reconcileIntent(request.cancellationIntentId);
-      if (!result || result.runId !== request.runId) {
-        reject("agent cancellation reconciliation crossed its requested run");
-      }
-      results.push(result);
-    }
-    return Object.freeze(results);
-  }
-
-  async function reconcileRequestedAgentSuspensions(
-    requested: RequestedAgentSuspensions,
-  ): Promise<readonly IssueExecutionCancellationResult[]> {
-    return reconcileRequestedCancellationBundle(requested);
   }
 
   async function requestScopeCancellationsInTransaction(
@@ -902,19 +782,7 @@ export function createIssueExecutionCancellationService(
     });
   }
 
-  async function reconcileRequestedRunningIssueInterruptions(
-    requested: RequestedRunningIssueInterruptions,
-  ): Promise<readonly IssueExecutionCancellationResult[]> {
-    return reconcileRequestedCancellationBundle(requested);
-  }
-
-  async function reconcileRequestedScopeCancellations(
-    requested: RequestedScopedRunCancellations,
-  ): Promise<readonly IssueExecutionCancellationResult[]> {
-    return reconcileRequestedCancellationBundle(requested);
-  }
-
-  async function reconcileRequestedCancellationBundle(requested: {
+  async function reconcileRequestedCancellations(requested: {
     readonly companyId: string;
     readonly requests: readonly RequestedRunCancellation[];
   }): Promise<readonly IssueExecutionCancellationResult[]> {
@@ -960,7 +828,7 @@ export function createIssueExecutionCancellationService(
         state: intent.state,
       };
     }
-    const [attemptRows, leaseRows, processRows] = await Promise.all([
+    const [attemptRows, leaseRows] = await Promise.all([
       options.database
         .select()
         .from(issueExecutionAttempts)
@@ -973,16 +841,9 @@ export function createIssueExecutionCancellationService(
             .where(eq(issueExecutionLeases.id, intent.leaseId))
             .limit(2)
         : Promise.resolve([]),
-      intent.processFactId
-        ? options.database
-            .select()
-            .from(issueExecutionProcessFacts)
-            .where(eq(issueExecutionProcessFacts.id, intent.processFactId))
-            .limit(2)
-        : Promise.resolve([]),
     ]);
-    if (attemptRows.length !== 1 || leaseRows.length > 1 || processRows.length > 1) {
-      reject("cancellation intent has an ambiguous attempt, lease, or process");
+    if (attemptRows.length !== 1 || leaseRows.length > 1) {
+      reject("cancellation intent has an ambiguous attempt or lease");
     }
     const attempt = attemptRows[0]!;
     const lease = leaseRows[0] ?? null;
@@ -993,11 +854,7 @@ export function createIssueExecutionCancellationService(
     const workerActive = signal
       ? options.dispatcher.isAttemptActive(signal)
       : false;
-    const process = processRows[0] ?? null;
-    if (
-      workerActive ||
-      (process && (process.state === "starting" || process.state === "running"))
-    ) {
+    if (workerActive) {
       return {
         runId: run.runId,
         alreadyTerminal: false,
@@ -1005,44 +862,34 @@ export function createIssueExecutionCancellationService(
         state: "acknowledged",
       };
     }
-    const refreshed = await options.database
-      .select()
-      .from(issueExecutionCancellationIntents)
-      .where(eq(issueExecutionCancellationIntents.id, intent.id))
-      .limit(2);
-    if (refreshed.length !== 1) reject("acknowledged cancellation disappeared");
-    const latest = refreshed[0]!;
-    const requiredSessionCancel = attempt.state === "running";
-    if (requiredSessionCancel && latest.sessionCancelSentAt === null) {
-      return {
-        runId: run.runId,
-        alreadyTerminal: false,
-        cancellationIntentId: intent.id,
-        state: "acknowledged",
-      };
-    }
+    const reconciliationAt = now();
+    const cancellationReason = `${intent.reasonKind}_cancellation`;
     const completion = await options.database.transaction((transaction) =>
-      completeCompanyCancellationIntentInTx(transaction, {
+      reconcileCompanyCancellationIntentInTx(transaction, {
         intentId: intent.id,
-        proof: {
-          inMemoryExecutionAbsent: true,
-          nativeSessionCancellation: requiredSessionCancel ? "sent" : "not_required",
-        },
-        now: now(),
+        now: reconciliationAt,
       }));
+    if (!completion) {
+      return {
+        runId: run.runId,
+        alreadyTerminal: false,
+        cancellationIntentId: intent.id,
+        state: "acknowledged",
+      };
+    }
     await options.settlement.terminalizeCancelledRun({
       companyId: intent.companyId,
       issueId: intent.issueId,
       runId: intent.runId,
-      reason: `${intent.reasonKind}_cancellation`,
-      finishedAt: now(),
+      reason: cancellationReason,
+      finishedAt: reconciliationAt,
     });
     if (completion.operation) {
       await options.database.transaction((transaction) =>
         reconcileCompanySessionLifecycleOperationInTx(transaction, {
           companyId: intent.companyId,
           lifecycleOperationId: completion.operation!.id,
-          now: now(),
+          now: reconciliationAt,
         }));
     }
     return {
@@ -1108,78 +955,21 @@ export function createIssueExecutionCancellationService(
       runId,
     );
     if (!identity) return null;
+    const cancellationReason = boundedReason(reason, "authority_cancellation");
     const created = await options.database.transaction(async (transaction) => {
       const run = await options.runService.lockRun(transaction, identity);
       if (TERMINAL_RUN_STATUSES.has(run.status)) {
         return { kind: "terminal" as const, run };
       }
-      if (run.cancellationIntentId) {
-        return {
-          kind: "intent" as const,
-          intentId: run.cancellationIntentId,
-        };
-      }
-      if (!run.currentAttemptId || !run.currentLeaseId) {
-        return { kind: "detached" as const, run };
-      }
-      const [attemptRows, leaseRows, processRows] = await Promise.all([
-        transaction
-          .select()
-          .from(issueExecutionAttempts)
-          .where(eq(issueExecutionAttempts.id, run.currentAttemptId))
-          .limit(2)
-          .for("update"),
-        transaction
-          .select()
-          .from(issueExecutionLeases)
-          .where(eq(issueExecutionLeases.id, run.currentLeaseId))
-          .limit(2)
-          .for("update"),
-        transaction
-          .select()
-          .from(issueExecutionProcessFacts)
-          .where(eq(issueExecutionProcessFacts.attemptId, run.currentAttemptId))
-          .limit(2)
-          .for("update"),
-      ]);
-      if (attemptRows.length !== 1 || leaseRows.length !== 1 || processRows.length > 1) {
-        reject("active run has an ambiguous attempt, lease, or process");
-      }
-      const timestamp = now();
-      const intentId = idFactory();
-      await transaction.insert(issueExecutionCancellationIntents).values({
-        id: intentId,
-        companyId: run.companyId,
-        issueId: run.issueId,
-        runId: run.runId,
-        attemptId: attemptRows[0]!.id,
-        leaseId: leaseRows[0]!.id,
-        processFactId: processRows[0]?.id ?? null,
-        reasonKind: "authority",
-        actorKind: "system",
-        actorUserId: null,
-        actorAgentId: null,
-        state: "requested",
-        requestedAt: timestamp,
-        acknowledgedAt: null,
-        sessionCancelSentAt: null,
-        processTerminationRequestedAt: processRows[0] ? timestamp : null,
-        processTerminatedAt: null,
-        completedAt: null,
-        failedAt: null,
-        failureCode: null,
-        createdAt: timestamp,
-      });
-      await options.runService.attachCancellation(transaction, {
-        companyId: run.companyId,
-        issueId: run.issueId,
-        runId: run.runId,
-        expectedAttemptId: attemptRows[0]!.id,
-        expectedLeaseId: leaseRows[0]!.id,
-        cancellationIntentId: intentId,
-        at: timestamp,
-      });
-      return { kind: "intent" as const, intentId };
+      return {
+        kind: "request" as const,
+        request: await processCancellableRun(transaction, run, {
+          reason: cancellationReason,
+          at: now(),
+          reasonKind: "authority",
+          actor: cancellationActorColumns({ kind: "system" }),
+        }),
+      };
     });
     if (created.kind === "terminal") {
       return {
@@ -1189,22 +979,14 @@ export function createIssueExecutionCancellationService(
         state: "terminal",
       };
     }
-    if (created.kind === "detached") {
-      await options.settlement.terminalizeCancelledRun({
-        companyId: created.run.companyId,
-        issueId: created.run.issueId,
-        runId: created.run.runId,
-        reason: boundedReason(reason, "authority_cancellation"),
-        finishedAt: now(),
-      });
-      return {
-        runId,
-        alreadyTerminal: false,
-        cancellationIntentId: null,
-        state: "terminalized",
-      };
+    if (created.request.state === "terminalized") {
+      const result = await terminalizedCancellationResult(
+        options.pluginDomainEvents,
+        created.request,
+      );
+      return { ...result, alreadyTerminal: false };
     }
-    return reconcileIntent(created.intentId);
+    return reconcileIntent(created.request.cancellationIntentId);
   }
 
   async function cancelRunIds(runIds: readonly string[], reason: string) {
@@ -1220,17 +1002,11 @@ export function createIssueExecutionCancellationService(
     cancelRun,
     reconcileIntent,
     requestAgentCancellationsInTransaction,
-    reconcileRequestedAgentCancellations,
     requestAgentSuspensionsInTransaction,
-    releaseAgentSuspensionsInTransaction,
-    reconcileRequestedAgentSuspensions,
     requestBudgetScopeSuspensionInTransaction,
-    reconcileRequestedBudgetScopeSuspension,
-    releaseBudgetScopeSuspensionInTransaction,
     requestRunningIssueInterruptionsInTransaction,
-    reconcileRequestedRunningIssueInterruptions,
     requestScopeCancellationsInTransaction,
-    reconcileRequestedScopeCancellations,
+    reconcileRequestedCancellations,
 
     async reconcilePending(limit = 100) {
       const boundedLimit = Math.max(1, Math.min(1_000, Math.trunc(limit)));
@@ -1245,7 +1021,6 @@ export function createIssueExecutionCancellationService(
               "authority",
               "timeout",
               "lease_expired",
-              "process_policy",
             ]),
           ),
         )
@@ -1301,23 +1076,10 @@ export function createIssueExecutionCancellationService(
           reason: "budget_hard_stop",
           actor: { kind: "system" },
           now: now(),
-        }));
+      }));
       const settlements =
-        await reconcileRequestedBudgetScopeSuspension(requested);
+        await reconcileRequestedCancellations(requested);
       return { requested, settlements };
-    },
-
-    async resumeBudgetScopeWork(scope: {
-      companyId: string;
-      scopeType: "company" | "project" | "agent";
-      scopeId: string;
-    }) {
-      return options.database.transaction((transaction) =>
-        releaseBudgetScopeSuspensionInTransaction(transaction, {
-          ...scope,
-          now: now(),
-        }),
-      );
     },
 
     async drainRunningRunsForShutdown(signal = "paperclip_worker_shutdown") {

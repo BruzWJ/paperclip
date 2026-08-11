@@ -183,12 +183,6 @@ describe("issue-session shared contracts", () => {
     expect(versionedIssueSessionEventType(Event.Prompted.type)).toBe(
       "session.next.prompted.1",
     );
-    expect(
-      issueSessionEventDefinition("session.next.text.delta.1"),
-    ).toBeUndefined();
-    expect(() =>
-      versionedIssueSessionEventType(Event.Text.Delta.type),
-    ).toThrow("not durable");
   });
 
   it("round-trips the physical durable-event row without a handwritten version map", () => {

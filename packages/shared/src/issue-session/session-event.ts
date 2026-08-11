@@ -214,18 +214,6 @@ export namespace Text {
   })
   export type Started = typeof Started.Type
 
-  // Stream fragments are live-only; Text.Ended is the replayable full-value boundary.
-  export const Delta = EventDefinition.define({
-    type: "session.next.text.delta",
-    schema: {
-      ...Base,
-      assistantMessageID: SessionMessage.ID,
-      textID: Schema.String,
-      delta: Schema.String,
-    },
-  })
-  export type Delta = typeof Delta.Type
-
   export const Ended = EventDefinition.define({
     type: "session.next.text.ended",
     ...options,
@@ -251,18 +239,6 @@ export namespace Reasoning {
     },
   })
   export type Started = typeof Started.Type
-
-  // Stream fragments are live-only; Reasoning.Ended is the replayable full-value boundary.
-  export const Delta = EventDefinition.define({
-    type: "session.next.reasoning.delta",
-    schema: {
-      ...Base,
-      assistantMessageID: SessionMessage.ID,
-      reasoningID: Schema.String,
-      delta: Schema.String,
-    },
-  })
-  export type Delta = typeof Delta.Type
 
   export const Ended = EventDefinition.define({
     type: "session.next.reasoning.ended",
@@ -295,16 +271,6 @@ export namespace Tool {
       },
     })
     export type Started = typeof Started.Type
-
-    // Stream fragments are live-only; Input.Ended is the replayable raw-input boundary.
-    export const Delta = EventDefinition.define({
-      type: "session.next.tool.input.delta",
-      schema: {
-        ...ToolBase,
-        delta: Schema.String,
-      },
-    })
-    export type Delta = typeof Delta.Type
 
     export const Ended = EventDefinition.define({
       type: "session.next.tool.input.ended",
@@ -446,43 +412,10 @@ export const DurableDefinitions = EventDefinition.inventory(
   RevertEvent.Committed,
 )
 
-export const Definitions = EventDefinition.inventory(
-  AgentSwitched,
-  ModelSwitched,
-  Moved,
-  Prompted,
-  PromptAdmitted,
-  ContextUpdated,
-  Synthetic,
-  Shell.Started,
-  Shell.Ended,
-  Step.Started,
-  Step.Ended,
-  Step.Failed,
-  Text.Started,
-  Text.Delta,
-  Text.Ended,
-  Reasoning.Started,
-  Reasoning.Delta,
-  Reasoning.Ended,
-  Tool.Input.Started,
-  Tool.Input.Delta,
-  Tool.Input.Ended,
-  Tool.Called,
-  Tool.Progress,
-  Tool.Success,
-  Tool.Failed,
-  Retried,
-  RevertEvent.Staged,
-  RevertEvent.Cleared,
-  RevertEvent.Committed,
-)
-
 export const Durable = Schema.Union(DurableDefinitions, { mode: "oneOf" })
   .pipe(Schema.toTaggedUnion("type"))
   .annotate({ identifier: "SessionDurableEvent" })
 export type DurableEvent = typeof Durable.Type
 
-export const All = Schema.Union(Definitions, { mode: "oneOf" }).pipe(Schema.toTaggedUnion("type"))
-export type Event = typeof All.Type
+export type Event = DurableEvent
 export type Type = Event["type"]

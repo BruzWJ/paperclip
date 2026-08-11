@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseMoneyAmount } from "@paperclipai/shared";
-import {
-  agentService,
-  type AgentResumptionService,
-} from "../services/agents.js";
+import { agentService } from "../services/agents.js";
 import { budgetService } from "../services/budgets.js";
 import { createMockDb } from "./helpers/mock-db.js";
 
@@ -270,13 +267,8 @@ describe("canonical budget service", () => {
       execute: [[]],
       select: [[{ companyId }], [company], [pausedAgent]],
     });
-    const releaseAgentSuspensionsInTransaction = vi.fn();
-    const manualResumption = {
-      releaseAgentSuspensionsInTransaction,
-    } satisfies AgentResumptionService;
-
     await expect(
-      agentService(manualHarness.db).resume(agentId, manualResumption),
+      agentService(manualHarness.db).resume(agentId),
     ).rejects.toMatchObject({
       status: 409,
       details: {
@@ -284,8 +276,6 @@ describe("canonical budget service", () => {
         agentId,
       },
     });
-    expect(releaseAgentSuspensionsInTransaction).not.toHaveBeenCalled();
-
     const policy = policyRow({
       companyId,
       scopeType: "agent",

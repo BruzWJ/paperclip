@@ -4,6 +4,7 @@ import {
   isExactIssueUpdateCrossIssueProducer,
   previousOwnershipEpochForDispatchSource,
   reserveIssueExecutionLaneOrdinalInTransaction,
+  resolveDispatchingExecutionBatchMessageKinds,
   resolveIssueCommentReplyProjection,
   v2MessageKindForExecutionSource,
   type IssueSessionExecutionSource,
@@ -248,10 +249,15 @@ describe("Issue Session canonical source authorship", () => {
     sourceKind: "liveness",
     sourceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   } as const;
+  const issueRequestSystemActor = {
+    kind: "system",
+    sourceKind: "system_escalation",
+    sourceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  } as const;
 
   const sourceCases = {
     issue_request: {
-      source: { sourceKind: "issue_request", actor: agentActor },
+      source: { sourceKind: "issue_request", actor: issueRequestSystemActor },
       expected: "user",
     },
     issue_reassignment: {
@@ -282,30 +288,12 @@ describe("Issue Session canonical source authorship", () => {
       source: { sourceKind: "system_nudge", actor: systemActor },
       expected: "synthetic",
     },
-    termination_recovery: {
-      source: { sourceKind: "termination_recovery", actor: systemActor },
-      expected: "synthetic",
-    },
-    agent_liveness_followup: {
+    human_comment: {
       source: {
-        sourceKind: "agent_liveness_followup",
-        actor: systemActor,
-      },
-      expected: "synthetic",
-    },
-    human_active_run_steering: {
-      source: {
-        sourceKind: "human_active_run_steering",
+        sourceKind: "human_comment",
         actor: userActor,
       },
       expected: "user",
-    },
-    agent_active_run_steering: {
-      source: {
-        sourceKind: "agent_active_run_steering",
-        actor: agentActor,
-      },
-      expected: "synthetic",
     },
   } satisfies Record<
     IssueSessionExecutionSource["sourceKind"],
@@ -319,6 +307,76 @@ describe("Issue Session canonical source authorship", () => {
     for (const { source, expected } of Object.values(sourceCases)) {
       expect(v2MessageKindForExecutionSource(source)).toBe(expected);
     }
+  });
+
+  it("keeps every standalone issue request user-authored", () => {
+    for (const actor of [agentActor, issueRequestSystemActor]) {
+      expect(v2MessageKindForExecutionSource({
+        sourceKind: "issue_request",
+        actor,
+      })).toBe("user");
+    }
+  });
+
+  const initialBatchScope = {
+    companyId: "11111111-1111-4111-8111-111111111111",
+    issueId: "22222222-2222-4222-8222-222222222222",
+    sessionId: "ses_initial_request",
+    ownershipEpoch: 1,
+    targetAgentId: "33333333-3333-4333-8333-333333333333",
+    issueExecutionAuthorityId: "44444444-4444-4444-8444-444444444444",
+    consultExecutionId: null,
+    adapterConfigRevisionId: "55555555-5555-4555-8555-555555555555",
+    contextEpoch: 0,
+    mode: "owner",
+    executionScopeId: "66666666-6666-4666-8666-666666666666",
+    executionLineageId: "77777777-7777-4777-8777-777777777777",
+  } as const;
+  const instruction = {
+    ...initialBatchScope,
+    sourceKind: "issue_request",
+    actor: issueRequestSystemActor,
+    immutableSourceKey: "initial:instruction",
+    sourceRecordId: initialBatchScope.issueId,
+    exactText: "Agent instruction",
+    comment: null,
+    idempotencyKey: "initial:instruction",
+  } as const;
+  const work = {
+    ...initialBatchScope,
+    sourceKind: "issue_request",
+    actor: userActor,
+    immutableSourceKey: "initial:work",
+    sourceRecordId: initialBatchScope.issueId,
+    exactText: "Do the work",
+    comment: {
+      author: { kind: "user", userId: userActor.userId },
+      producingRun: null,
+    },
+    idempotencyKey: "initial:work",
+  } as const;
+
+  it("lowers the ordered pair's first member as bootstrap", () => {
+    expect(resolveDispatchingExecutionBatchMessageKinds([
+      instruction,
+      work,
+    ])).toEqual(["synthetic", "user"]);
+  });
+
+  it("lowers an instructed system escalation pair from its exact structure", () => {
+    const systemWork = {
+      ...work,
+      actor: issueRequestSystemActor,
+      comment: {
+        author: { kind: "system", source: "recovery" },
+        producingRun: null,
+      },
+    } as const;
+
+    expect(resolveDispatchingExecutionBatchMessageKinds([
+      instruction,
+      systemWork,
+    ])).toEqual(["synthetic", "user"]);
   });
 
   it("derives creator-update kind only from immutable actor provenance", () => {
@@ -350,7 +408,7 @@ describe("Issue Session canonical source authorship", () => {
   it("rejects producer overrides, unknown sources, and invalid actor pairs", () => {
     expect(() =>
       v2MessageKindForExecutionSource({
-        sourceKind: "agent_liveness_followup",
+        sourceKind: "system_nudge",
         actor: systemActor,
         eventKind: "system",
       } as IssueSessionExecutionSource),
@@ -363,7 +421,7 @@ describe("Issue Session canonical source authorship", () => {
     ).toThrow("Unclassified execution source");
     expect(() =>
       v2MessageKindForExecutionSource({
-        sourceKind: "agent_liveness_followup",
+        sourceKind: "system_nudge",
         actor: userActor,
       } as unknown as IssueSessionExecutionSource),
     ).toThrow("does not match its immutable source kind");
@@ -454,8 +512,6 @@ function exactCreatorProducerRun(
     finishedAt: null,
     terminalClassification: null,
     terminalReasonCode: null,
-    processExitCode: null,
-    processSignal: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,

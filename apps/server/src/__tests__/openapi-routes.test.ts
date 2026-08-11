@@ -46,7 +46,6 @@ const apiPrefixes: Record<string, string> = {
   "secrets.ts": "/api",
   "sidebar-badges.ts": "/api",
   "sidebar-preferences.ts": "/api",
-  "teams-catalog.ts": "/api",
   "user-profiles.ts": "/api",
 };
 
@@ -134,8 +133,8 @@ function loadActualRoutes() {
       routes.add(`${method} ${normalizeExpressPath(resolveMountedPath(file, prefix, routePath))}`);
     }
 
-    if (file === "companies.ts" && source.includes("router.post(COMPANY_IMPORT_ROUTE_PATH")) {
-      routes.add("POST /api/companies/import");
+    if (file === "companies.ts" && source.includes("router.post(COMPANY_IMPORTS_ROUTE_PATH")) {
+      routes.add("POST /api/companies/imports");
     }
   }
 
@@ -198,7 +197,7 @@ describe("openapi routes", () => {
     expect(companySkillPinsSchema).toMatchObject({
       type: "object",
       additionalProperties: false,
-      required: ["entries", "skillChannel"],
+      required: ["entries"],
       properties: {
         entries: {
           type: "array",
@@ -207,10 +206,6 @@ describe("openapi routes", () => {
             additionalProperties: false,
             required: ["key", "versionId"],
           },
-        },
-        skillChannel: {
-          type: "string",
-          enum: ["isolated_skills_home", "operator_native"],
         },
       },
     });
@@ -437,6 +432,6 @@ describe("openapi routes", () => {
     expect(spec.paths["/api/instance/database-backups"]).toBeUndefined();
     expect(spec.paths["/api/invites/{token}/accept"].post.responses["202"]).toBeDefined();
     expect(spec.paths["/api/board-api-keys"].post.responses["201"]).toBeDefined();
-    expect(spec.paths["/api/companies/import"].post.responses["202"]).toBeDefined();
+    expect(spec.paths["/api/companies/imports"].post.responses["202"]).toBeDefined();
   });
 });

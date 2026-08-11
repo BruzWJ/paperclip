@@ -9,7 +9,6 @@ import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
-  type CompanySkillChannel,
 } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { accessService } from "./access.js";
@@ -36,7 +35,6 @@ export interface JoinRequestApprovalInput {
     userId: string;
     authorization: Extract<AuthorizationActor, { type: "board" }>;
   };
-  skillChannel?: CompanySkillChannel | null;
 }
 
 /**
@@ -136,13 +134,6 @@ export function createJoinRequestApprovalService(
           "Agent join request is missing explicit adapter configuration",
         );
       }
-      if (!input.skillChannel) {
-        throw unprocessable(
-          "Agent join approval requires an explicit company skill channel",
-          { code: "agent_join_skill_channel_required" },
-        );
-      }
-
       const companyAgents = await tx
         .select({
           id: agents.id,
@@ -193,7 +184,6 @@ export function createJoinRequestApprovalService(
           adapterConfig: joinRequest.agentDefaultsPayload,
           runtimeConfig: {},
           companySkillPins: [],
-          skillChannel: input.skillChannel,
         },
         actor: {
           type: "user",

@@ -5,7 +5,6 @@ import {
   issueExecutionAttempts,
   issueExecutionCancellationIntents,
   issueExecutionLeases,
-  issueExecutionProcessFacts,
   issueExecutionPromptCapabilities,
   issueExecutionPromptSegments,
   issueExecutionRunControls,
@@ -21,6 +20,8 @@ import {
   eq,
   gt,
   inArray,
+  ne,
+  or,
   sql,
 } from "drizzle-orm";
 import {
@@ -38,7 +39,6 @@ import {
   type RequestIssueExecutionSteeringInput,
   type SteerableIssueExecutionRun,
 } from "./issue-execution-run-service.js";
-import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 import { promoteActiveRunSteeringInputInTransaction } from "./issue-session/input.js";
 import { decodeStoredIssueSessionMessage } from "./issue-session/store.js";
 
@@ -301,7 +301,7 @@ export function createPostgresIssueExecutionSteeringRepository(
     | { readonly kind: "settled" }
     | { readonly kind: "ambiguous"; readonly reason: string }
   > {
-    const [intentRows, attemptRows, leaseRows, processRows, promptRows] =
+    const [intentRows, attemptRows, leaseRows, promptRows] =
       await Promise.all([
         db
           .select()
@@ -346,21 +346,12 @@ export function createPostgresIssueExecutionSteeringRepository(
             ),
           )
           .limit(2),
-        db
-          .select()
-          .from(issueExecutionProcessFacts)
-          .where(
-            eq(
-              issueExecutionProcessFacts.attemptId,
-              request.cancellation.attemptId!,
-            ),
-          )
-          .limit(2),
         request.interruptedSegmentOrdinal === 0
           ? db
               .select({
                 protocolSettlementState:
                   issueExecutionRunRefs.protocolSettlementState,
+                outcome: issueExecutionRunRefs.outcome,
               })
               .from(issueExecutionRunRefs)
               .where(
@@ -375,6 +366,7 @@ export function createPostgresIssueExecutionSteeringRepository(
               .select({
                 protocolSettlementState:
                   issueExecutionPromptSegments.protocolSettlementState,
+                outcome: issueExecutionPromptSegments.outcome,
               })
               .from(issueExecutionPromptSegments)
               .where(
@@ -397,7 +389,6 @@ export function createPostgresIssueExecutionSteeringRepository(
       intentRows.length !== 1 ||
       attemptRows.length !== 1 ||
       leaseRows.length !== 1 ||
-      processRows.length !== 1 ||
       promptRows.length !== 1
     ) {
       return {
@@ -407,7 +398,6 @@ export function createPostgresIssueExecutionSteeringRepository(
     }
     const intent = intentRows[0]!;
     const attempt = attemptRows[0]!;
-    const process = processRows[0]!;
     const prompt = promptRows[0]!;
     const lease = leaseRows[0]!;
     if (intent.state === "failed") {
@@ -416,22 +406,25 @@ export function createPostgresIssueExecutionSteeringRepository(
         reason: intent.failureCode ?? "steering cancellation failed",
       };
     }
+    const nativeCancelledIncomplete =
+      prompt.protocolSettlementState === "incomplete" &&
+      prompt.outcome === "cancelled" &&
+      intent.nativeCancellationSettledAt !== null;
     if (
-      prompt.protocolSettlementState === "incomplete" ||
-      process.state === "lost"
+      prompt.protocolSettlementState === "incomplete" &&
+      !nativeCancelledIncomplete
     ) {
       return {
         kind: "ambiguous",
-        reason: "old ACP prompt or subprocess settled incompletely",
+        reason: "old ACP prompt settled incompletely",
       };
     }
     if (
       (prompt.protocolSettlementState === "settled" ||
-        prompt.protocolSettlementState === "not_sent") &&
+        prompt.protocolSettlementState === "not_sent" ||
+        nativeCancelledIncomplete) &&
       ["settled", "cancelled", "failed"].includes(attempt.state) &&
-      lease.state !== "active" &&
-      ["exited", "terminated"].includes(process.state) &&
-      process.settledAt !== null
+      lease.state !== "active"
     ) {
       return { kind: "settled" };
     }
@@ -512,7 +505,10 @@ export function createPostgresIssueExecutionSteeringRepository(
               .for("update"),
             "Selected run control does not resolve one current steering segment",
           );
-      if (currentSegment?.protocolSettlementState !== null) {
+      if (
+        currentSegment !== null &&
+        currentSegment.protocolSettlementState !== null
+      ) {
         reject("Selected steering segment is already settled");
       }
       const attempt = exactlyOne(
@@ -626,22 +622,6 @@ export function createPostgresIssueExecutionSteeringRepository(
       if (!carryTargetIsExact && !activeRunTargetIsExact) {
         reject("Selected prompt protected target session crossed its exact scope");
       }
-      const processFact = exactlyOne(
-        await transaction
-          .select()
-          .from(issueExecutionProcessFacts)
-          .where(
-            and(
-              eq(issueExecutionProcessFacts.runId, run.runId),
-              eq(issueExecutionProcessFacts.attemptId, attempt.id),
-              eq(issueExecutionProcessFacts.leaseId, lease.id),
-              inArray(issueExecutionProcessFacts.state, ["starting", "running"]),
-            ),
-          )
-          .limit(2)
-          .for("update"),
-        "Selected prompt has no unambiguous supervised subprocess",
-      );
       const sourceInput = input.sourceInputId === null
         ? null
         : exactlyOne(
@@ -789,7 +769,6 @@ export function createPostgresIssueExecutionSteeringRepository(
         runId: run.runId,
         attemptId: attempt.id,
         leaseId: lease.id,
-        processFactId: processFact.id,
         reasonKind: "steering",
         actorKind: input.actor.kind,
         actorUserId:
@@ -799,9 +778,7 @@ export function createPostgresIssueExecutionSteeringRepository(
         state: "requested",
         requestedAt: now,
         acknowledgedAt: null,
-        sessionCancelSentAt: null,
-        processTerminationRequestedAt: now,
-        processTerminatedAt: null,
+        nativeCancellationSettledAt: null,
         completedAt: null,
         failedAt: null,
         failureCode: null,
@@ -960,6 +937,14 @@ export function createPostgresIssueExecutionSteeringRepository(
           reject("Steering cancellation signal crossed canonical identity");
         }
         if (!delivered) return;
+        if (
+          (intent.state === "acknowledged" &&
+            segment.steeringState === "sent") ||
+          (intent.state === "completed" &&
+            segment.steeringState === "protocol_settled")
+        ) {
+          return;
+        }
         if (intent.state !== "requested" || segment.steeringState !== "requested") {
           reject("Steering cancellation signal was already consumed");
         }
@@ -968,7 +953,6 @@ export function createPostgresIssueExecutionSteeringRepository(
           .set({
             state: "acknowledged",
             acknowledgedAt: now,
-            sessionCancelSentAt: now,
           })
           .where(eq(issueExecutionCancellationIntents.id, intent.id));
         await transaction
@@ -1019,25 +1003,7 @@ export function createPostgresIssueExecutionSteeringRepository(
                 .for("update"),
               "Steering cancellation intent disappeared at settlement",
             );
-            const process = exactlyOne(
-              await transaction
-                .select()
-                .from(issueExecutionProcessFacts)
-                .where(
-                  eq(
-                    issueExecutionProcessFacts.attemptId,
-                    request.cancellation.attemptId!,
-                  ),
-                )
-                .limit(2)
-                .for("update"),
-              "Steering subprocess fact disappeared at settlement",
-            );
-            if (
-              intent.state === "failed" ||
-              !["exited", "terminated"].includes(process.state) ||
-              process.settledAt === null
-            ) {
+            if (intent.state === "failed") {
               reject("Steering settlement changed while committing its fence");
             }
             if (intent.state !== "completed") {
@@ -1046,8 +1012,6 @@ export function createPostgresIssueExecutionSteeringRepository(
                 .set({
                   state: "completed",
                   acknowledgedAt: intent.acknowledgedAt ?? now,
-                  processTerminatedAt:
-                    intent.processTerminatedAt ?? process.settledAt,
                   completedAt: now,
                 })
                 .where(eq(issueExecutionCancellationIntents.id, intent.id));
@@ -1076,16 +1040,15 @@ export function createPostgresIssueExecutionSteeringRepository(
               );
           });
           return {
-            kind: "settled_and_reaped",
+            kind: "settled",
             cancellationIntentId: request.cancellationIntentId,
           };
         }
         await wait(settlementPollIntervalMs);
       }
       return {
-        kind: "ambiguous",
+        kind: "pending",
         cancellationIntentId: request.cancellationIntentId,
-        reason: "timed out waiting for exact prompt settlement and process reap",
       };
     },
 
@@ -1686,6 +1649,114 @@ export function createPostgresIssueExecutionSteeringRepository(
           }),
         };
       });
+    },
+
+    async listRecoverableSources(limit) {
+      const boundedLimit = Math.max(1, Math.min(1_000, Math.trunc(limit)));
+      const rows = await db
+        .select({
+          companyId: issueCommentProjectionSources.companyId,
+          issueId: issueCommentProjectionSources.issueId,
+          sourceCommentId: issueCommentProjectionSources.commentId,
+        })
+        .from(issueCommentProjectionSources)
+        .innerJoin(
+          issueExecutionPromptSegments,
+          and(
+            eq(
+              issueExecutionPromptSegments.runId,
+              issueCommentProjectionSources.steeringTargetRunId,
+            ),
+            eq(
+              issueExecutionPromptSegments.refId,
+              issueCommentProjectionSources.refId,
+            ),
+            eq(
+              issueExecutionPromptSegments.refOrdinal,
+              issueCommentProjectionSources.refOrdinal,
+            ),
+            eq(
+              issueExecutionPromptSegments.segmentOrdinal,
+              issueCommentProjectionSources.segmentOrdinal,
+            ),
+            eq(
+              issueExecutionPromptSegments.sourceCommentId,
+              issueCommentProjectionSources.commentId,
+            ),
+          ),
+        )
+        .innerJoin(
+          issueExecutionCancellationIntents,
+          eq(
+            issueExecutionCancellationIntents.id,
+            issueExecutionPromptSegments.cancellationIntentId,
+          ),
+        )
+        .innerJoin(
+          issueExecutionAttempts,
+          and(
+            eq(
+              issueExecutionAttempts.id,
+              issueExecutionCancellationIntents.attemptId,
+            ),
+            eq(
+              issueExecutionAttempts.runId,
+              issueExecutionPromptSegments.runId,
+            ),
+          ),
+        )
+        .innerJoin(
+          issueExecutionLeases,
+          and(
+            eq(
+              issueExecutionLeases.id,
+              issueExecutionCancellationIntents.leaseId,
+            ),
+            eq(
+              issueExecutionLeases.attemptId,
+              issueExecutionAttempts.id,
+            ),
+          ),
+        )
+        .where(
+          and(
+            inArray(issueCommentProjectionSources.sourceKind, [
+              "human_comment",
+              "harness_delivery",
+            ]),
+            sql`${issueExecutionPromptSegments.protocolSettlementState} is null`,
+            inArray(issueExecutionPromptSegments.steeringState, [
+              "requested",
+              "sent",
+              "protocol_settled",
+              "rebound",
+            ]),
+            eq(issueExecutionCancellationIntents.reasonKind, "steering"),
+            inArray(issueExecutionCancellationIntents.state, [
+              "requested",
+              "acknowledged",
+              "completed",
+            ]),
+            or(
+              eq(issueExecutionPromptSegments.steeringState, "rebound"),
+              and(
+                inArray(issueExecutionAttempts.state, [
+                  "settled",
+                  "cancelled",
+                  "failed",
+                ]),
+                ne(issueExecutionLeases.state, "active"),
+              ),
+            ),
+          ),
+        )
+        .orderBy(
+          issueExecutionPromptSegments.createdAt,
+          issueExecutionPromptSegments.runId,
+          issueExecutionPromptSegments.segmentOrdinal,
+        )
+        .limit(boundedLimit);
+      return Object.freeze(rows.map((row) => Object.freeze(row)));
     },
   };
 }

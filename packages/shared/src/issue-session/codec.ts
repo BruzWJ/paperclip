@@ -2,7 +2,7 @@ import { Schema } from "effect";
 
 import * as EventDefinition from "./event.js";
 import {
-  All as EventSchema,
+  Durable as EventSchema,
   DurableDefinitions,
   type DurableEvent,
   type Event as IssueSessionEvent,

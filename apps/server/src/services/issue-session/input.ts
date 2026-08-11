@@ -78,11 +78,11 @@ export type IssueSessionInputRecord = typeof issueSessionInputs.$inferSelect;
 export interface IssueSessionInputService {
   /**
    * Promotes the held source of one freshly prepared ref before it can be
-   * leased. Direct-event refs and already-promoted refs return null.
+   * leased. Returns false when the locked ref needs no promotion.
    */
   promotePreparedInput(
     scope: IssueSessionPreparedInputScope,
-  ): Promise<IssueSessionInputRecord | null>;
+  ): Promise<boolean>;
   /**
    * Captures the canonical event boundary for a completed provider turn.
    * Inputs admitted after this value must not be promoted at that boundary.
@@ -197,7 +197,7 @@ async function validateActiveExecution(
   if (
     activeMembershipRows.length > 1 ||
     (scope.runId === null
-      ? activeMembership !== null
+      ? activeMembership !== null && ref.promotedSeq === null
       : !activeMembership ||
         activeMembership.runId !== scope.runId ||
         activeMembership.status !== "running" ||
@@ -995,7 +995,7 @@ export async function promoteActiveRunSteeringInputInTransaction(
     : null;
   if (
     !admittedRow ||
-    admittedRow.sourceKind !== "human_active_run_steering" ||
+    admittedRow.sourceKind !== "human_comment" ||
     admittedRow.sourceId !== projected.source.sourceId ||
     admittedRow.runId !== null ||
     admittedRow.agentId !== null ||
@@ -1109,7 +1109,9 @@ export function createIssueSessionInputService(
           activeRefId: scope.refId,
           runId: null,
         });
-        if (active.ref.inputId === null) return null;
+        if (active.ref.inputId === null || active.ref.promotedSeq !== null) {
+          return false;
+        }
         const rows = await transaction
           .select({
             inbox: issueSessionInputs,
@@ -1148,14 +1150,19 @@ export function createIssueSessionInputService(
           .limit(1)
           .for("update");
         const candidate = rows[0];
-        if (!candidate) return null;
+        if (!candidate) {
+          throw new IssueSessionInvariantError(
+            `Prepared Issue Session input ${active.ref.inputId} disappeared before promotion`,
+          );
+        }
         if (!candidateMatchesScope(active, candidate, false)) {
           throw new IssueSessionLifecycleConflict(
             "Prepared Issue Session input no longer matches its exact ref and history view",
             { refId: scope.refId, inputId: active.ref.inputId },
           );
         }
-        return promoteCandidate(transaction, candidate, clock());
+        await promoteCandidate(transaction, candidate, clock());
+        return true;
       });
     },
 

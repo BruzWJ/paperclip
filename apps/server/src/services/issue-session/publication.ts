@@ -5,9 +5,7 @@ import {
   issueCommentPresentationSchema,
 } from "@paperclipai/shared";
 import {
-  decodeIssueSessionEvent,
   encodeDurableIssueSessionEventRow,
-  encodeIssueSessionEvent,
   type IssueSessionEventType,
 } from "@paperclipai/shared/issue-session";
 import { sourceTrustMetadataSchema } from "@paperclipai/shared/validators/trust-policy";
@@ -19,7 +17,6 @@ import {
 import {
   appendIssueSessionEvent,
   assertReservedIssueSessionMessageIds,
-  decodeStoredIssueSessionEvent,
   makeDurableIssueSessionEvent,
   type IssueSessionDbTransaction,
 } from "./event-store.js";
@@ -47,7 +44,6 @@ export interface IssueSessionPublicationRedactor {
   redactText(value: string): string;
   redactValue<T>(value: T): T;
 }
-
 export interface IssueSessionDurableCandidate {
   id: string;
   sessionId: string;
@@ -535,7 +531,6 @@ function prepareProjection(
 function prepareCompanions(
   companions: IssueSessionPublicationCompanions | undefined,
   eventData: Record<string, unknown>,
-  redactor?: IssueSessionPublicationRedactor,
 ): IssueSessionPublicationCompanions {
   if (companions === undefined) return {};
   assertExactKeys(
@@ -746,7 +741,6 @@ export async function publishIssueSessionEventInTx(
   const companions = prepareCompanions(
     input.companions,
     encoded.data as Record<string, unknown>,
-    input.redactor,
   );
   const encodedData = encoded.data as Record<string, unknown>;
   const namedMessageIds = [
@@ -782,43 +776,6 @@ export async function publishIssueSessionEventInTx(
   return projected;
 }
 
-/**
- * Live Session deltas are validated and redacted here but intentionally never
- * inserted. The full-value durable end event remains the replay boundary.
- */
-export function prepareIssueSessionLiveEvent(input: {
-  type:
-    | "session.next.text.delta"
-    | "session.next.reasoning.delta"
-    | "session.next.tool.input.delta";
-  data: unknown;
-  redactor?: IssueSessionPublicationRedactor;
-}): Record<string, unknown> {
-  const redactedData = redactIssueSessionPublicationValue(
-    input.data,
-    input.redactor,
-  );
-  const candidate = decodeIssueSessionEvent({
-    id: "evt_live_publication",
-    type: input.type,
-    data: redactedData,
-  });
-  const encoded = encodeIssueSessionEvent(candidate) as Record<
-    string,
-    unknown
-  >;
-  if (
-    canonicalIssueSessionJson(redactedData) !==
-    canonicalIssueSessionJson(encoded.data)
-  ) {
-    throw new IssueSessionLifecycleConflict(
-      "Live Session event contains an unknown or non-canonical shape",
-      { eventType: input.type },
-    );
-  }
-  return encoded;
-}
-
 export async function publishIssueSessionFinalCommentInTx(
   transaction: IssueSessionDbTransaction,
   input: IssueSessionFinalCommentInput,
@@ -840,28 +797,4 @@ export async function publishIssueSessionFinalCommentInTx(
     eventId: input.eventId,
     progressCommentId,
   });
-}
-
-
-/**
- * Canonical run-log view rendering. It contains only already-redacted Session
- * event encodings and therefore creates no second retained log.
- */
-export function issueSessionEventsAsNdjson(
-  rows: readonly (typeof issueSessionEvents.$inferSelect)[],
-): string {
-  return rows
-    .map((row) => {
-      const event = decodeStoredIssueSessionEvent(row).event;
-      const encoded = encodeIssueSessionEvent(event);
-      const timestamp = (encoded.data as { timestamp: number }).timestamp;
-      return JSON.stringify({
-        ts: new Date(timestamp).toISOString(),
-        stream: "system",
-        chunk: JSON.stringify(encoded),
-        seq: row.seq,
-      });
-    })
-    .join("\n")
-    .concat(rows.length > 0 ? "\n" : "");
 }

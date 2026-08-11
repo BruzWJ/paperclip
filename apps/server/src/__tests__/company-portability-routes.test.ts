@@ -191,12 +191,11 @@ describe.sequential("company portability routes", () => {
 
   it.sequential.each([
     ["post", `/api/companies/${companyId}/exports/preview`, exportRequest],
-    ["post", `/api/companies/${companyId}/export`, exportRequest],
     ["post", `/api/companies/${companyId}/exports`, exportRequest],
     ["post", `/api/companies/${companyId}/imports/preview`, importRequest],
     ["post", `/api/companies/${companyId}/imports/apply`, importRequest],
-    ["post", "/api/companies/import/preview", importRequest],
-    ["post", "/api/companies/import", importRequest],
+    ["post", "/api/companies/imports/preview", importRequest],
+    ["post", "/api/companies/imports", importRequest],
   ] as const)("denies generic agent REST access to %s %s before service dispatch", async (method, path, body) => {
     const app = await createApp({
       type: "agent",
@@ -216,7 +215,7 @@ describe.sequential("company portability routes", () => {
     expect(mockCompanyPortabilityService.importBundle).not.toHaveBeenCalled();
   });
 
-  it.sequential("allows board users to export through legacy and safe bundle routes", async () => {
+  it.sequential("allows board users to export through the canonical bundle route", async () => {
     mockCompanyPortabilityService.exportBundle.mockResolvedValue(createExportResult());
     const app = await createApp(testBoardSessionActor({
       userId: "user-1",
@@ -224,13 +223,13 @@ describe.sequential("company portability routes", () => {
       isInstanceAdmin: false,
     }));
 
-    for (const path of [`/api/companies/${companyId}/export`, `/api/companies/${companyId}/exports`]) {
-      const res = await request(app).post(path).send(exportRequest);
+    const res = await request(app)
+      .post(`/api/companies/${companyId}/exports`)
+      .send(exportRequest);
 
-      expect(res.status).toBe(200);
-      expect(res.body.rootPath).toBe("paperclip");
-    }
-    expect(mockCompanyPortabilityService.exportBundle).toHaveBeenCalledTimes(2);
+    expect(res.status).toBe(200);
+    expect(res.body.rootPath).toBe("paperclip");
+    expect(mockCompanyPortabilityService.exportBundle).toHaveBeenCalledTimes(1);
   });
 
   it.sequential("rejects replace collision strategy on safe import routes", async () => {
@@ -312,7 +311,7 @@ describe.sequential("company portability routes", () => {
     });
 
     const res = await request(app)
-      .post("/api/companies/import/preview")
+      .post("/api/companies/imports/preview")
       .send({
         source: { type: "inline", files: { "COMPANY.md": "---\nname: Test\n---\n" } },
         include: { company: true, agents: true, projects: false, issues: false },
@@ -334,7 +333,7 @@ describe.sequential("company portability routes", () => {
     });
 
     const res = await request(app)
-      .post("/api/companies/import/preview")
+      .post("/api/companies/imports/preview")
       .send({ target: { mode: "existing_company", companyId: "not-a-uuid" } });
 
     expect(res.status).toBe(403);
@@ -350,7 +349,7 @@ describe.sequential("company portability routes", () => {
     }));
 
     const res = await request(app)
-      .post("/api/companies/import/preview")
+      .post("/api/companies/imports/preview")
       .send({
         source: { type: "inline", files: { "COMPANY.md": "---\nname: Test\n---\n" } },
         include: { company: true, agents: true, projects: false, issues: false },
@@ -392,7 +391,7 @@ describe.sequential("company portability routes", () => {
     }));
 
     const res = await request(app)
-      .post("/api/companies/import")
+      .post("/api/companies/imports")
       .send({
         source: { type: "inline", files: { "COMPANY.md": "---\nname: Test\n---\n" } },
         include: { company: true, agents: true, projects: false, issues: false },
@@ -410,7 +409,7 @@ describe.sequential("company portability routes", () => {
     const app = await createApp(sessionActor());
 
     const res = await request(app)
-      .post("/api/companies/import")
+      .post("/api/companies/imports")
       .send(importRequest);
 
     expect(res.status).toBe(200);

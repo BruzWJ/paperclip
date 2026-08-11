@@ -178,7 +178,6 @@ const FALLBACK_SELECTED_ID =
 
 const sourceCompanySkillSelectionByAgentId = new Map<string, {
   entries: readonly { key: string; versionId: string }[];
-  skillChannel: "isolated_skills_home" | "operator_native";
 }>();
 
 function sourceAcpConfiguration(agent: Record<string, any>) {
@@ -192,7 +191,6 @@ function sourceAcpConfiguration(agent: Record<string, any>) {
       : "fixture-agent";
   const selection = sourceCompanySkillSelectionByAgentId.get(agent.id) ?? {
     entries: [],
-    skillChannel: "operator_native" as const,
   };
   return {
     contractVersion: "acpx-runtime/v1" as const,
@@ -211,7 +209,6 @@ function sourceAcpConfiguration(agent: Record<string, any>) {
     },
     workspaceSelector: { kind: "issue_execution_workspace" as const },
     companySkillPins: [...selection.entries],
-    skillChannel: selection.skillChannel,
   };
 }
 
@@ -243,7 +240,6 @@ function canonicalAgentExtensionYaml(
     `${indent}  adapterConfig:`,
     `${indent}    model: "gpt-5.6"`,
     `${indent}  runtimeConfig: {}`,
-    `${indent}  skillChannel: "operator_native"`,
     `${indent}contextGrants:`,
     ...AGENT_CONTEXT_GRANT_KEYS.map(
       (key) => `${indent}  ${key}: false`,
@@ -330,7 +326,6 @@ function codexTargetAdapter() {
     adapterConfig: {
       model: "gpt-5.6",
     },
-    skillChannel: "operator_native" as const,
   };
 }
 
@@ -2315,7 +2310,7 @@ describe("company portability", () => {
     expect(extension).toContain('kind: "secret"');
   });
 
-  it("imports packaged skills into immutable revision pins and an explicit skill channel", async () => {
+  it("imports packaged skills into immutable revision pins", async () => {
     const portability = companyPortabilityService({} as any);
     const [sourceAgent] = await agentSvc.list();
     sourceCompanySkillSelectionByAgentId.set(sourceAgent.id, {
@@ -2326,7 +2321,6 @@ describe("company portability", () => {
             "41111111-1111-4111-8111-111111111111",
         },
       ],
-      skillChannel: "isolated_skills_home",
     });
 
     companySvc.create.mockResolvedValue({
@@ -2371,7 +2365,6 @@ describe("company portability", () => {
       adapterOverrides: {
         claudecoder: {
           ...codexTargetAdapter(),
-          skillChannel: "isolated_skills_home",
         },
         reviewer: codexTargetAdapter(),
       },
@@ -2399,7 +2392,6 @@ describe("company portability", () => {
                 "51111111-1111-4111-8111-111111111111",
             },
           ],
-          skillChannel: "isolated_skills_home",
         }),
       }),
     );
@@ -3324,7 +3316,6 @@ describe("company portability", () => {
           adapterConfig: {
             model: "gpt-5.6",
           },
-          skillChannel: "operator_native",
         },
       },
     }, "user-1", {

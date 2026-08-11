@@ -187,7 +187,7 @@ export function runtimeInterfaceCompilerBoundaryViolations(
         COMPILER,
         input,
         "company skills entered RuntimeInterfaceCompileInput",
-        /\b(?:skill|skills|companySkill|companySkills|companySkillPins|selectedCompanySkills|skillChannel|skillPins)\b/i,
+        /\b(?:skill|skills|companySkill|companySkills|companySkillPins|selectedCompanySkills|skillPins)\b/i,
       );
       rejectPattern(
         violations,
@@ -225,7 +225,7 @@ export function runtimeInterfaceCompilerBoundaryViolations(
         COMPILER,
         digest,
         "company skills entered the assembled runtime-interface digest",
-        /\b(?:skill|skills|companySkill|companySkills|companySkillPins|selectedCompanySkills|skillChannel|skillPins)\b/i,
+        /\b(?:skill|skills|companySkill|companySkills|companySkillPins|selectedCompanySkills|skillPins)\b/i,
       );
     }
 
@@ -291,7 +291,7 @@ export function runtimeInterfaceCompilerBoundaryViolations(
       DATABASE_OWNER,
       database,
       "company-skill storage entered the runtime-interface snapshot resolver",
-      /\b(?:companySkills|companySkillVersions|companySkillPins|runtimeSkillSelections|selectedCompanySkills|skillChannel)\b/,
+      /\b(?:companySkills|companySkillVersions|companySkillPins|runtimeSkillSelections|selectedCompanySkills)\b/,
     );
     rejectPattern(
       violations,
@@ -328,7 +328,7 @@ export function runtimeInterfaceCompilerBoundaryViolations(
       path,
       source,
       "company-skill data entered the run capability surface",
-      /\b(?:companySkill|companySkills|companySkillPins|selectedCompanySkills|skillChannel|skillPins)\b/i,
+      /\b(?:companySkill|companySkills|companySkillPins|selectedCompanySkills|skillPins)\b/i,
     );
     rejectPattern(
       violations,

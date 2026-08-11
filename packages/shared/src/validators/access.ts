@@ -7,7 +7,6 @@ import {
   PERMISSION_KEYS,
 } from "../constants.js";
 import { optionalAgentAdapterTypeSchema } from "../adapter-type.js";
-import { companySkillChannelSchema } from "./company-skill-pins.js";
 
 export const createCompanyInviteSchema = z.object({
   allowedJoinTypes: z.enum(INVITE_JOIN_TYPES).default("both"),
@@ -54,16 +53,9 @@ export const listJoinRequestsQuerySchema = z.object({
 
 export type ListJoinRequestsQuery = z.infer<typeof listJoinRequestsQuerySchema>;
 
-/**
- * Board approval may select the company-skill channel for an initial immutable
- * adapter revision. Runtime execution targets are resolved internally. Human
- * joins do not need either, so semantic requirements are enforced after the
- * locked join request has established its request type.
- */
+/** Board approval carries no adapter-runtime override fields. */
 export const approveJoinRequestSchema = z
-  .object({
-    skillChannel: companySkillChannelSchema.optional().nullable(),
-  })
+  .object({})
   .strict();
 
 export type ApproveJoinRequest = z.infer<typeof approveJoinRequestSchema>;

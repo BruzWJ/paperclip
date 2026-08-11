@@ -64,7 +64,7 @@ const mockBudgetService = vi.hoisted(() => ({
 
 const mockIssueExecutionCancellation = vi.hoisted(() => ({
   requestAgentCancellationsInTransaction: vi.fn(),
-  reconcileRequestedAgentCancellations: vi.fn(),
+  reconcileRequestedCancellations: vi.fn(),
 }));
 
 const mockIssueApprovalService = vi.hoisted(() => ({
@@ -126,12 +126,6 @@ vi.mock("../routes/authz.js", async () => {
     }
   }
 
-  function hasCompanyAccess(req: Express.Request, expectedCompanyId: string): boolean {
-    if (req.actor.type === "none") return false;
-    if (req.actor.type === "agent") return req.actor.companyId === expectedCompanyId;
-    return (req.actor.companyIds ?? []).includes(expectedCompanyId);
-  }
-
   async function getAccessibleResource<T extends { companyId: string }>(
     req: Express.Request,
     res: { status(code: number): { json(body: unknown): unknown } },
@@ -139,7 +133,11 @@ vi.mock("../routes/authz.js", async () => {
     notFoundMessage: string,
   ): Promise<T | null> {
     const resolved = await resource;
-    if (!resolved || !hasCompanyAccess(req, resolved.companyId)) {
+    if (
+      !resolved
+      || req.actor.type !== "board"
+      || !(req.actor.companyIds ?? []).includes(resolved.companyId)
+    ) {
       res.status(404).json({ error: notFoundMessage });
       return null;
     }
@@ -159,7 +157,6 @@ vi.mock("../routes/authz.js", async () => {
     assertCompanyAccess,
     assertInstanceAdmin,
     getAccessibleResource,
-    hasCompanyAccess,
   };
 });
 
@@ -291,7 +288,7 @@ function resetMockDefaults() {
       requests: [],
     }),
   );
-  mockIssueExecutionCancellation.reconcileRequestedAgentCancellations.mockImplementation(async () => undefined);
+  mockIssueExecutionCancellation.reconcileRequestedCancellations.mockImplementation(async () => undefined);
   mockLogActivity.mockImplementation(async () => undefined);
 }
 

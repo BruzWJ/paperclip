@@ -24,7 +24,6 @@ import { changeConsentRoutes } from "./routes/change-consents.js";
 import { inboxAgentPolicyRoutes } from "./routes/inbox-agent-policy.js";
 import { folderRoutes } from "./routes/folders.js";
 
-import { teamsCatalogRoutes } from "./routes/teams-catalog.js";
 import { agentRoutes } from "./routes/agents.js";
 import { projectRoutes } from "./routes/projects.js";
 import { issueRoutes } from "./routes/issues.js";
@@ -85,7 +84,7 @@ import {
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
 import { DEFAULT_JSON_BODY_LIMIT, PORTABLE_JSON_BODY_LIMIT } from "./http/body-limits.js";
-import { COMPANY_IMPORT_API_PATH } from "./routes/company-import-paths.js";
+import { COMPANY_IMPORTS_API_PATH } from "./routes/company-import-paths.js";
 import { apiCompression } from "./middleware/api-compression.js";
 import { denyGenericAgentRest } from "./routes/compiled-interface-only.js";
 import { rejectRunInterfaceBearerFromGenericApi } from "./middleware/prompt-capability-boundary.js";
@@ -174,17 +173,12 @@ export async function createApp(
     issueExecutionCancellation: Pick<
       IssueExecutionCancellationService,
       | "suspendBudgetScopeWork"
-      | "resumeBudgetScopeWork"
       | "cancelRun"
       | "requestAgentCancellationsInTransaction"
-      | "reconcileRequestedAgentCancellations"
+      | "reconcileRequestedCancellations"
       | "requestAgentSuspensionsInTransaction"
-      | "reconcileRequestedAgentSuspensions"
-      | "releaseAgentSuspensionsInTransaction"
       | "requestRunningIssueInterruptionsInTransaction"
-      | "reconcileRequestedRunningIssueInterruptions"
       | "requestScopeCancellationsInTransaction"
-      | "reconcileRequestedScopeCancellations"
     >;
     adapterReadinessLocalExecutionOrchestrator?: Pick<
       LocalExecutionOrchestrator,
@@ -220,7 +214,7 @@ export async function createApp(
     .paperclipRequestAuthorityBoundary = requestAuthorityBoundary;
   app.use(requestAuthorityBoundary.middleware);
 
-  app.use(COMPANY_IMPORT_API_PATH, express.json({
+  app.use(COMPANY_IMPORTS_API_PATH, express.json({
     limit: PORTABLE_JSON_BODY_LIMIT,
     verify: captureRawBody,
   }));
@@ -291,7 +285,6 @@ export async function createApp(
   api.use(companySkillPolicyRoutes(db));
   api.use(changeConsentRoutes(db));
   api.use(inboxAgentPolicyRoutes(db));
-  api.use(teamsCatalogRoutes(db, ordinaryIssues));
   api.use(
     agentRoutes(db, {
       pluginWorkerManager: workerManager,

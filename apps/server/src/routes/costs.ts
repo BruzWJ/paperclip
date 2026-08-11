@@ -48,7 +48,7 @@ export function costRoutes(
     pluginWorkerManager?: PluginWorkerManager;
     issueExecutionCancellation: Pick<
       IssueExecutionCancellationService,
-      "suspendBudgetScopeWork" | "resumeBudgetScopeWork"
+      "suspendBudgetScopeWork"
     >;
   },
 ) {
@@ -56,8 +56,6 @@ export function costRoutes(
   const budgetHooks = {
     suspendWorkForScope:
       options.issueExecutionCancellation.suspendBudgetScopeWork,
-    resumeWorkForScope:
-      options.issueExecutionCancellation.resumeBudgetScopeWork,
   };
   const costs = costService(db);
   const finance = financeService(db);

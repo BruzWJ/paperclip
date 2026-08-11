@@ -4,6 +4,7 @@ import {
   agentContextGrants,
   agentMentionReachGrants,
   agents,
+  issueExecutionRefs,
   issues,
   plugins,
   principalPermissionGrants,
@@ -20,7 +21,7 @@ import {
   type PaperclipPluginManifestV1,
   type PaperclipActionKey,
 } from "@paperclipai/shared";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   evaluateAgentInvokability,
   resolveInvokableIssueOwnerCatalog,
@@ -40,16 +41,12 @@ import type {
 import type {
   RuntimeInterfaceCompileInput,
   RuntimePluginTool,
+  RuntimeToolTurn,
 } from "./runtime-interface-compiler.js";
-import type { RuntimeRetrievalScopeResolver } from "./runtime-tool-gateway.js";
-import {
-  createPostgresRecoverySessionHistoryRepository,
-  isTargetNotFoundReplacement,
-  type RecoverySessionScope,
-} from "./recovery-session-history.js";
 import { listAuthorizedPluginAgentTools } from "./plugin-agent-tool-authority.js";
 import { pluginManifestIdentity } from "./plugin-manifest-identity.js";
 import { resolveExecutionModeContextMask } from "./execution-mode-context-mask.js";
+import { classifyOrderedExecutionScopePair } from "./issue-execution-initial-request-pair.js";
 import {
   resolveMentionReach,
   type MentionReachIssue,
@@ -58,7 +55,6 @@ import {
 type AgentRow = AgentOrgRow & {
   title: string | null;
   capabilities: string | null;
-  instruction?: string | null;
   currentAdapterConfigRevisionId: string | null;
 };
 
@@ -67,40 +63,10 @@ type ConfigureGrant = {
   scope: Record<string, unknown> | null;
 };
 
-function recoveryScopeForCapability(
-  capability: PromptCapabilityCompileScope,
-): RecoverySessionScope | undefined {
-  // Generic compiler callers omit these exact prompt fields and therefore
-  // cannot gain the recovery descriptor.
-  if (
-    typeof capability.sessionId !== "string" ||
-    typeof capability.runId !== "string" ||
-    typeof capability.attemptId !== "string" ||
-    typeof capability.refId !== "string" ||
-    typeof capability.refOrdinal !== "number" ||
-    typeof capability.segmentOrdinal !== "number" ||
-    !Number.isSafeInteger(capability.refOrdinal) ||
-    !Number.isSafeInteger(capability.segmentOrdinal)
-  ) {
-    return undefined;
-  }
-  return {
-    companyId: capability.companyId,
-    issueId: capability.issueId,
-    sessionId: capability.sessionId,
-    targetAgentId: capability.targetAgentId,
-    runId: capability.runId,
-    attemptId: capability.attemptId,
-    refId: capability.refId,
-    refOrdinal: capability.refOrdinal,
-    segmentOrdinal: capability.segmentOrdinal,
-  };
-}
-
 export interface RuntimeInterfaceCompilerSnapshot {
   capability: PromptCapabilityCompileScope;
-  /** Derived from prior canonical attempts; never a persisted runtime mode. */
-  restoreSession?: boolean;
+  /** Exact provider turn derived from the current execution ref. */
+  turn: RuntimeToolTurn;
   issue: {
     companyId: string;
     ownerKind: string | null;
@@ -132,6 +98,35 @@ export interface PostgresPromptCapabilityCompiler {
   resolve(
     capability: PromptCapabilityCompileScope,
   ): Promise<RuntimeInterfaceCompileInput>;
+}
+
+type RuntimeContextIssue = RuntimeInterfaceCompilerSnapshot["issue"];
+
+/** Resolves the context identity shared by admission and prompt compilation. */
+export function resolveRuntimeContextDial(input: {
+  readonly capability: Pick<
+    PromptCapabilityCompileScope,
+    "targetAgentId" | "executionMode"
+  >;
+  readonly issue: RuntimeContextIssue;
+  readonly contextGrantKeys: readonly AgentContextGrantKey[];
+}) {
+  return resolveContextDial({
+    agent: booleanRecord(
+      AGENT_CONTEXT_GRANT_KEYS,
+      input.contextGrantKeys,
+    ),
+    issueOwner:
+      input.capability.executionMode === "owner" &&
+      input.issue.ownerKind === "agent" &&
+      input.issue.ownerAgentId === input.capability.targetAgentId,
+    executionMode: resolveExecutionModeContextMask({
+      workMode: input.issue.workMode,
+      harnessKind: input.issue.harnessKind,
+      originKind: input.issue.originKind,
+      issueExecutionPolicy: input.issue.executionPolicy,
+    }),
+  }).effective;
 }
 
 function booleanRecord<const Key extends string>(
@@ -260,10 +255,6 @@ export function buildRuntimeInterfaceCompileInput(
     throw new Error("Prompt-capability target agent is not invokable");
   }
 
-  const contextGrants = booleanRecord(
-    AGENT_CONTEXT_GRANT_KEYS,
-    snapshot.contextGrantKeys,
-  );
   const actionGrants = booleanRecord(
     PAPERCLIP_ACTION_KEYS,
     snapshot.actionGrantKeys,
@@ -272,20 +263,14 @@ export function buildRuntimeInterfaceCompileInput(
     AGENT_MENTION_REACH_GRANT_KEYS,
     snapshot.mentionReachGrantKeys,
   );
-  const isCurrentOwner =
-    capability.executionMode === "owner" &&
+  const isCurrentOwner = capability.executionMode === "owner" &&
     issue.ownerKind === "agent" &&
     issue.ownerAgentId === sourceAgent.id;
-  const contextDial = resolveContextDial({
-    agent: contextGrants,
-    issueOwner: isCurrentOwner,
-    executionMode: resolveExecutionModeContextMask({
-      workMode: issue.workMode,
-      harnessKind: issue.harnessKind,
-      originKind: issue.originKind,
-      issueExecutionPolicy: issue.executionPolicy,
-    }),
-  }).effective;
+  const contextDial = resolveRuntimeContextDial({
+    capability,
+    issue,
+    contextGrantKeys: snapshot.contextGrantKeys,
+  });
 
   const directChildren = companyAgents
     .filter(
@@ -376,6 +361,7 @@ export function buildRuntimeInterfaceCompileInput(
 
   return {
     mode: capability.executionMode,
+    turn: snapshot.turn,
     contextDial,
     actionGrants,
     mentionReachGrants,
@@ -386,11 +372,57 @@ export function buildRuntimeInterfaceCompileInput(
     mentionTargets,
     configureTargets,
     pluginTools: snapshot.pluginTools,
-    restoreSession:
-      snapshot.restoreSession === true &&
-      typeof sourceAgent.instruction === "string" &&
-      sourceAgent.instruction.trim().length > 0,
   };
+}
+
+/** @internal Resolves the exact ref's structural role without source aliases. */
+export async function resolveRuntimeToolTurn(
+  db: Db,
+  capability: PromptCapabilityCompileScope,
+): Promise<RuntimeToolTurn> {
+  if (capability.refId === undefined) return "work";
+  const rows = await db
+    .select()
+    .from(issueExecutionRefs)
+    .where(
+      and(
+        eq(issueExecutionRefs.id, capability.refId),
+        eq(issueExecutionRefs.companyId, capability.companyId),
+        eq(issueExecutionRefs.issueId, capability.issueId),
+        eq(issueExecutionRefs.ownershipEpoch, capability.ownershipEpoch),
+        eq(issueExecutionRefs.targetAgentId, capability.targetAgentId),
+        eq(issueExecutionRefs.mode, capability.executionMode),
+      ),
+    )
+    .limit(2);
+  if (rows.length !== 1) {
+    throw new Error("Prompt-capability execution ref no longer exists");
+  }
+  const current = rows[0]!;
+  const grouped = await db
+    .select()
+    .from(issueExecutionRefs)
+    .where(
+      and(
+        eq(issueExecutionRefs.companyId, current.companyId),
+        eq(issueExecutionRefs.issueId, current.issueId),
+        eq(issueExecutionRefs.sessionId, current.sessionId),
+        eq(issueExecutionRefs.executionScopeId, current.executionScopeId),
+        eq(issueExecutionRefs.executionLineageId, current.executionLineageId),
+      ),
+    )
+    .orderBy(asc(issueExecutionRefs.laneOrdinal))
+    .limit(3);
+  const pair = classifyOrderedExecutionScopePair(grouped);
+  if (!pair) {
+    if (grouped.length > 1) {
+      throw new Error("Execution scope lost its exact ordered pair");
+    }
+    return "work";
+  }
+  if (pair.instruction.id === current.id) return "bootstrap";
+  if (pair.work.id === current.id) return "work";
+  throw new Error("Execution ref is not a member of its ordered scope");
 }
 
 async function loadSnapshot(
@@ -399,6 +431,7 @@ async function loadSnapshot(
 ): Promise<RuntimeInterfaceCompilerSnapshot> {
   const [
     issueRows,
+    turn,
     agentRows,
     adapterRevisionRows,
     contextRows,
@@ -423,6 +456,7 @@ async function loadSnapshot(
       .from(issues)
       .where(eq(issues.id, capability.issueId))
       .limit(1),
+    resolveRuntimeToolTurn(db, capability),
     db
       .select({
         id: agents.id,
@@ -430,7 +464,6 @@ async function loadSnapshot(
         name: agents.name,
         title: agents.title,
         capabilities: agents.capabilities,
-        instruction: agents.instruction,
         reportsTo: agents.reportsTo,
         status: agents.status,
         currentAdapterConfigRevisionId:
@@ -572,6 +605,7 @@ async function loadSnapshot(
   if (!issue) throw new Error("Prompt-capability issue no longer exists");
   return {
     capability,
+    turn,
     issue,
     agents: agentRows,
     adapterRevisions: adapterRevisionRows,
@@ -597,17 +631,10 @@ async function loadSnapshot(
 export function createPostgresRuntimeInterfaceCompiler(
   db: Db,
 ): PostgresPromptCapabilityCompiler {
-  const recoveryHistory = createPostgresRecoverySessionHistoryRepository(db);
   return {
     async resolve(capability) {
       const snapshot = await loadSnapshot(db, capability);
-      return buildRuntimeInterfaceCompileInput({
-        ...snapshot,
-        restoreSession: await isTargetNotFoundReplacement(
-          recoveryHistory,
-          recoveryScopeForCapability(capability),
-        ),
-      });
+      return buildRuntimeInterfaceCompileInput(snapshot);
     },
 
   };
@@ -615,9 +642,9 @@ export function createPostgresRuntimeInterfaceCompiler(
 
 export function createRuntimeRetrievalScopeResolver(
   compiler: PostgresPromptCapabilityCompiler,
-): RuntimeRetrievalScopeResolver {
+) {
   return {
-    async resolve(capability) {
+    async resolve(capability: PromptCapabilityCompileScope) {
       const input = await compiler.resolve(capability);
       return {
         companyId: capability.companyId,

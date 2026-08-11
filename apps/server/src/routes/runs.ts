@@ -27,7 +27,6 @@ import {
   assertBoard,
   assertCompanyAccess,
   getAccessibleResource,
-  hasCompanyAccess,
 } from "./authz.js";
 
 const MAX_RUN_DETAIL_LIMIT = 500;
@@ -122,8 +121,6 @@ function serializeRunEnvelope(
     finishedAt: run.finishedAt?.toISOString() ?? null,
     terminalClassification: run.terminalClassification,
     terminalReasonCode: run.terminalReasonCode,
-    processExitCode: run.processExitCode,
-    processSignal: run.processSignal,
     createdAt: run.createdAt.toISOString(),
     updatedAt: run.updatedAt.toISOString(),
   };
@@ -263,13 +260,12 @@ export function runRoutes(
       : never,
     runId: string,
   ) {
-    const identity = await resolveIssueExecutionRunIdentityById(db, runId);
-    if (!identity || !hasCompanyAccess(req, identity.companyId)) {
-      res.status(404).json({ error: "Issue execution run not found" });
-      return null;
-    }
-    assertCompanyAccess(req, identity.companyId);
-    return identity;
+    return getAccessibleResource(
+      req,
+      res,
+      resolveIssueExecutionRunIdentityById(db, runId),
+      "Issue execution run not found",
+    );
   }
 
   router.get("/runs/:runId", async (req, res) => {

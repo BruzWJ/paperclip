@@ -131,7 +131,6 @@ test("accepts the closed compiler/database/gateway graph", () => {
 for (const mutation of [
   "companySkillPins: readonly string[];",
   "selectedCompanySkills: readonly string[];",
-  "skillChannel: string;",
 ] as const) {
   test(`rejects compiler input mutation ${mutation}`, () => {
     const root = fixtureRoot();

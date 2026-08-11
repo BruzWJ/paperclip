@@ -104,7 +104,6 @@ export {
   issueExecutionAttempts,
   issueExecutionAttemptRetrySchedules,
   issueExecutionLeases,
-  issueExecutionProcessFacts,
   issueExecutionCancellationIntents,
   issueExecutionRunLivenessFacts,
   issueExecutionFinalizations,
@@ -124,8 +123,6 @@ export {
   type NewIssueExecutionAttemptRetrySchedule,
   type IssueExecutionLease,
   type NewIssueExecutionLease,
-  type IssueExecutionProcessFact,
-  type NewIssueExecutionProcessFact,
   type IssueExecutionCancellationIntent,
   type NewIssueExecutionCancellationIntent,
   type IssueExecutionRunLivenessFactRow,
@@ -136,14 +133,6 @@ export {
   type IssueExecutionFinalizationUpdateDependency,
   type NewIssueExecutionFinalizationUpdateDependency,
 } from "./issue_execution_runs.js";
-export {
-  issueExecutionFinalizationStaleCheckOutbox,
-  issueLivenessReconciliations,
-  type IssueExecutionFinalizationStaleCheckOutboxRow,
-  type NewIssueExecutionFinalizationStaleCheckOutboxRow,
-  type IssueLivenessReconciliation,
-  type NewIssueLivenessReconciliation,
-} from "./issue_liveness_reconciliations.js";
 export { companySessionLifecycleOperations } from "./company_session_lifecycle.js";
 export { issueCreateIdempotencyKeys } from "./issue_create_idempotency_keys.js";
 export { changeConsents } from "./change_consents.js";

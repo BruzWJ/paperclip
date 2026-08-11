@@ -41,7 +41,7 @@ export type AgentInvokability =
 export type InvokableIssueOwnerAgent = AgentOrgRow & Pick<
   typeof agents.$inferSelect,
   "currentAdapterConfigRevisionId"
-> & Partial<Pick<typeof agents.$inferSelect, "title" | "icon">>;
+> & Partial<Pick<typeof agents.$inferSelect, "title" | "icon" | "instruction">>;
 
 export type InvokableIssueOwnerRevision = Pick<
   typeof agentAdapterConfigRevisions.$inferSelect,

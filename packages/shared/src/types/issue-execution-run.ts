@@ -79,8 +79,6 @@ export interface IssueExecutionRunEnvelopeRecord {
   finishedAt: string | null;
   terminalClassification: IssueExecutionRunTerminalClassification | null;
   terminalReasonCode: string | null;
-  processExitCode: number | null;
-  processSignal: string | null;
   createdAt: string;
   updatedAt: string;
 }

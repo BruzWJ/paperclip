@@ -61,7 +61,6 @@ import {
   isUuidLike,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
 } from "@paperclipai/shared";
-import { parseObject } from "@paperclipai/adapter-utils/server-utils";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { instanceSettingsService } from "./instance-settings.js";
 import { redactCurrentUserText } from "../log-redaction.js";
@@ -343,7 +342,6 @@ type IssueUserContextInput = {
   createdAt: Date | string;
   updatedAt: Date | string;
 };
-type ProjectGoalReader = Pick<Db, "select">;
 type DbReader = Pick<Db, "select">;
 type IssueRelationSummaryMap = {
   blockedBy: IssueRelationIssueSummary[];
@@ -484,20 +482,6 @@ async function listUnresolvedBlockerIssueIds(
       ),
     )
     .then((rows) => rows.map((row) => row.id));
-}
-
-async function getProjectDefaultGoalId(
-  db: ProjectGoalReader,
-  companyId: string,
-  projectId: string | null | undefined,
-) {
-  if (!projectId) return null;
-  const row = await db
-    .select({ goalId: projects.goalId })
-    .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.companyId, companyId)))
-    .then((rows) => rows[0] ?? null);
-  return row?.goalId ?? null;
 }
 
 function touchedByUserCondition(companyId: string, userId: string) {
@@ -3263,23 +3247,6 @@ export function issueService(db: Db) {
     return empty;
   }
 
-  async function withIssueRelationSummaries<T extends { id: string }>(
-    companyId: string,
-    rows: T[],
-    dbOrTx: DbReader = db,
-  ): Promise<Array<T & IssueRelationSummaryMap>> {
-    if (rows.length === 0) return [];
-    const relationMap = await getIssueRelationSummaryMap(
-      companyId,
-      rows.map((row) => row.id),
-      dbOrTx,
-    );
-    return rows.map((row) => ({
-      ...row,
-      ...(relationMap.get(row.id) ?? { blockedBy: [], blocks: [] }),
-    }));
-  }
-
   async function assertNoBlockingCycles(
     companyId: string,
     issueId: string,
@@ -4177,22 +4144,12 @@ export function issueService(db: Db) {
       }
       const runUpdate = async (tx: any) => {
         const defaultCompanyGoal = await getDefaultCompanyGoal(tx, existing.companyId);
-        const [currentProjectGoalId, nextProjectGoalId] = await Promise.all([
-          getProjectDefaultGoalId(tx, existing.companyId, existing.projectId),
-          getProjectDefaultGoalId(
-            tx,
-            existing.companyId,
-            issueData.projectId !== undefined ? issueData.projectId : existing.projectId,
-          ),
-        ]);
 
         patch.goalId = resolveNextIssueGoalId({
           currentProjectId: existing.projectId,
           currentGoalId: existing.goalId,
-          currentProjectGoalId,
           projectId: issueData.projectId,
           goalId: issueData.goalId,
-          projectGoalId: nextProjectGoalId,
           defaultGoalId: defaultCompanyGoal?.id ?? null,
         });
         const updated = await tx
@@ -4728,18 +4685,16 @@ export function issueService(db: Db) {
         name: string;
         description: string | null;
         status: string;
-        goalId: string | null;
       }>();
       const goalMap = new Map<string, { id: string; title: string; description: string | null; level: string; status: string }>();
 
       if (projectIds.length > 0) {
         const rows = await db.select({
           id: projects.id, name: projects.name, description: projects.description,
-          status: projects.status, goalId: projects.goalId,
+          status: projects.status,
         }).from(projects).where(inArray(projects.id, projectIds));
         for (const r of rows) {
           projectMap.set(r.id, r);
-          if (r.goalId && !goalIds.includes(r.goalId)) goalIds.push(r.goalId);
         }
       }
 

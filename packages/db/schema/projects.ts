@@ -5,7 +5,6 @@ import type {
   ProjectStatus,
 } from "@paperclipai/shared";
 import { companies } from "./companies.js";
-import { goals } from "./goals.js";
 import { agents } from "./agents.js";
 
 export const projects = pgTable(
@@ -13,7 +12,6 @@ export const projects = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id),
-    goalId: uuid("goal_id").references(() => goals.id),
     name: text("name").notNull(),
     description: text("description"),
     status: text("status").$type<ProjectStatus>().notNull().default("backlog"),

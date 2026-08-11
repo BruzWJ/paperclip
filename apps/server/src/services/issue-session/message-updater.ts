@@ -182,15 +182,6 @@ export async function applyIssueSessionMessageEvent(
         );
       });
       return;
-    case "session.next.text.delta":
-      await updateAssistant(store, event.data.assistantMessageID, (message) => {
-        const part = message.content.findLast(
-          (item: any) =>
-            item.type === "text" && item.id === event.data.textID,
-        );
-        if (part) part.text += event.data.delta;
-      });
-      return;
     case "session.next.text.ended":
       await updateAssistant(store, event.data.assistantMessageID, (message) => {
         const part = message.content.findLast(
@@ -211,15 +202,6 @@ export async function applyIssueSessionMessageEvent(
             time: { created: event.data.timestamp },
           }),
         );
-      });
-      return;
-    case "session.next.reasoning.delta":
-      await updateAssistant(store, event.data.assistantMessageID, (message) => {
-        const part = message.content.findLast(
-          (item: any) =>
-            item.type === "reasoning" && item.id === event.data.reasoningID,
-        );
-        if (part) part.text += event.data.delta;
       });
       return;
     case "session.next.reasoning.ended":
@@ -338,7 +320,6 @@ export async function applyIssueSessionMessageEvent(
       return;
     case "session.next.moved":
     case "session.next.prompt.admitted":
-    case "session.next.tool.input.delta":
     case "session.next.retried":
     case "session.next.revert.staged":
     case "session.next.revert.cleared":

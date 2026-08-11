@@ -3,8 +3,8 @@ import {
   assertBoardOrgAccess,
   assertCompanyAccess,
   authorizeHumanIssueSteering,
+  getAccessibleResource,
   hasBoardOrgAccess,
-  hasCompanyAccess,
 } from "../routes/authz.js";
 import { testBoardKeyActor, testBoardSessionActor } from "./helpers/request-actor.js";
 
@@ -158,8 +158,22 @@ describe("assertCompanyAccess", () => {
   });
 });
 
-describe("hasCompanyAccess", () => {
-  it("allows members of the company", () => {
+describe("getAccessibleResource", () => {
+  function response() {
+    const payloads: Array<{ status: number; body: unknown }> = [];
+    const res = {
+      status(status: number) {
+        return {
+          json(body: unknown) {
+            payloads.push({ status, body });
+          },
+        };
+      },
+    } as Express.Response;
+    return { res, payloads };
+  }
+
+  it("returns resources in an accessible company", async () => {
     const req = makeReq({
       actor: testBoardSessionActor({
         userId: "user-1",
@@ -167,11 +181,15 @@ describe("hasCompanyAccess", () => {
         memberships: [{ companyId: "company-1", membershipRole: "viewer", status: "active" }],
       }),
     });
+    const { res, payloads } = response();
+    const resource = { id: "resource-1", companyId: "company-1" };
 
-    expect(hasCompanyAccess(req, "company-1")).toBe(true);
+    await expect(getAccessibleResource(req, res, resource, "Resource not found"))
+      .resolves.toEqual(resource);
+    expect(payloads).toEqual([]);
   });
 
-  it("denies users from other companies", () => {
+  it("folds cross-company resources into the canonical not-found response", async () => {
     const req = makeReq({
       actor: testBoardSessionActor({
         userId: "user-1",
@@ -179,54 +197,36 @@ describe("hasCompanyAccess", () => {
         memberships: [{ companyId: "company-1", membershipRole: "operator", status: "active" }],
       }),
     });
+    const { res, payloads } = response();
 
-    expect(hasCompanyAccess(req, "company-2")).toBe(false);
+    await expect(getAccessibleResource(
+      req,
+      res,
+      { id: "resource-2", companyId: "company-2" },
+      "Resource not found",
+    )).resolves.toBeNull();
+    expect(payloads).toEqual([{
+      status: 404,
+      body: { error: "Resource not found" },
+    }]);
   });
 
-  it("denies signed-in instance admins without explicit company access, matching assertCompanyAccess", () => {
+  it("folds missing resources into the same not-found response", async () => {
     const req = makeReq({
       actor: testBoardSessionActor({
-        userId: "admin-1",
-        isInstanceAdmin: true,
-        companyIds: [],
-        memberships: [],
+        userId: "user-1",
+        companyIds: ["company-1"],
+        memberships: [{ companyId: "company-1", membershipRole: "operator", status: "active" }],
       }),
     });
+    const { res, payloads } = response();
 
-    expect(hasCompanyAccess(req, "company-1")).toBe(false);
-    expect(() => assertCompanyAccess(req, "company-1")).toThrow("User does not have access to this company");
-  });
-
-  it("denies instance admins when the company-access snapshot is absent", () => {
-    const req = makeReq({
-      actor: {
-        type: "board",
-        userId: "board-user",
-        source: "session",
-        isInstanceAdmin: true,
-      },
-    });
-
-    expect(hasCompanyAccess(req, "company-1")).toBe(false);
-  });
-
-  it("does not treat runtime agents as generic company actors", () => {
-    const agent = {
-      type: "agent",
-      source: "internal",
-      agentId: "agent-1",
-      companyId: "company-1",
-      runId: "run-1",
-    } as const;
-
-    expect(hasCompanyAccess(makeReq({ actor: agent }), "company-1")).toBe(false);
-    expect(hasCompanyAccess(makeReq({ actor: agent }), "company-2")).toBe(false);
-  });
-
-  it("denies unauthenticated actors", () => {
-    const req = makeReq({ actor: { type: "none" } });
-
-    expect(hasCompanyAccess(req, "company-1")).toBe(false);
+    await expect(getAccessibleResource(req, res, null, "Resource not found"))
+      .resolves.toBeNull();
+    expect(payloads).toEqual([{
+      status: 404,
+      body: { error: "Resource not found" },
+    }]);
   });
 });
 

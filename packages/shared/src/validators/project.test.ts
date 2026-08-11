@@ -5,6 +5,13 @@ import {
 } from "./project.js";
 
 describe("project codebase validators", () => {
+  it("rejects the retired singular project goal field", () => {
+    expect(createProjectSchema.safeParse({
+      name: "Paperclip",
+      goalId: "11111111-1111-4111-8111-111111111111",
+    }).success).toBe(false);
+  });
+
   it("accepts an HTTPS repo and absolute local folder on project creation", () => {
     const parsed = createProjectSchema.parse({
       name: "Paperclip",

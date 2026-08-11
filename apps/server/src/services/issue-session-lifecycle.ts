@@ -32,7 +32,6 @@ import {
   issueExecutionHistoryViews,
   issueExecutionLanes,
   issueExecutionLeases,
-  issueExecutionProcessFacts,
   issueExecutionPromptCapabilities,
   issueExecutionRefs,
   issueExecutionRunRefs,
@@ -85,7 +84,6 @@ type PostgresCancellationIntent =
   typeof issueExecutionCancellationIntents.$inferSelect;
 
 const ACTIVE_ATTEMPT_STATES = ["pending", "leased", "running"] as const;
-const LIVE_PROCESS_STATES = ["starting", "running"] as const;
 const LIVE_CAPABILITY_STATES = ["pending_setup", "active"] as const;
 const LIVE_NATIVE_SESSION_STATES = ["eligible", "current"] as const;
 
@@ -100,7 +98,6 @@ interface LifecycleAttemptSnapshot {
   readonly runId: string;
   readonly attemptId: string;
   readonly leaseId: string | null;
-  readonly processFactId: string | null;
 }
 
 export interface CompanySessionLifecycleRun {
@@ -127,11 +124,6 @@ export interface CompanySessionLifecycleBeginResult {
   readonly intents: readonly PostgresCancellationIntent[];
   readonly runs: readonly CompanySessionLifecycleRun[];
   readonly created: boolean;
-}
-
-export interface CancellationAbsenceProof {
-  readonly inMemoryExecutionAbsent: true;
-  readonly nativeSessionCancellation: "not_required" | "sent";
 }
 
 function sessionDepth(
@@ -279,12 +271,10 @@ function parseLifecycleSnapshot(
           );
         }
       }
-      for (const key of ["leaseId", "processFactId"] as const) {
-        if (row[key] !== null && typeof row[key] !== "string") {
-          throw new IssueSessionInvariantError(
-            `Lifecycle operation ${operation.id} has invalid ${key}`,
-          );
-        }
+      if (row.leaseId !== null && typeof row.leaseId !== "string") {
+        throw new IssueSessionInvariantError(
+          `Lifecycle operation ${operation.id} has invalid leaseId`,
+        );
       }
       return row as unknown as LifecycleAttemptSnapshot;
     },
@@ -509,14 +499,6 @@ async function fenceCompanySessionGraphInTx(
         .orderBy(asc(issueExecutionLeases.id))
         .for("update")
     : [];
-  const processes = attemptIds.length
-    ? await tx
-        .select()
-        .from(issueExecutionProcessFacts)
-        .where(inArray(issueExecutionProcessFacts.attemptId, attemptIds))
-        .orderBy(asc(issueExecutionProcessFacts.id))
-        .for("update")
-    : [];
   const existingIntents = attemptIds.length
     ? await tx
         .select()
@@ -527,9 +509,6 @@ async function fenceCompanySessionGraphInTx(
     : [];
   const leaseByAttempt = new Map(
     leases.map((lease) => [lease.attemptId, lease] as const),
-  );
-  const processByAttempt = new Map(
-    processes.map((process) => [process.attemptId, process] as const),
   );
   const intentByAttempt = new Map(
     existingIntents.map((intent) => [intent.attemptId, intent] as const),
@@ -593,19 +572,12 @@ async function fenceCompanySessionGraphInTx(
       );
     }
     const lease = leaseByAttempt.get(attempt.id) ?? null;
-    const process = processByAttempt.get(attempt.id) ?? null;
     if (
       attempt.state !== "pending" &&
       (!lease || lease.state !== "active")
     ) {
       throw new IssueSessionLifecycleConflict(
         "A leased or running attempt requires its exact active lease",
-        { runId: attempt.runId, attemptId: attempt.id },
-      );
-    }
-    if (process && (!lease || process.leaseId !== lease.id)) {
-      throw new IssueSessionLifecycleConflict(
-        "A retained process fact crossed its exact attempt lease",
         { runId: attempt.runId, attemptId: attempt.id },
       );
     }
@@ -628,12 +600,10 @@ async function fenceCompanySessionGraphInTx(
         runId: attempt.runId,
         attemptId: attempt.id,
         leaseId: lease?.id ?? null,
-        processFactId: process?.id ?? null,
         reasonKind: "lifecycle",
         ...actor,
         state: "requested",
         requestedAt: input.now,
-        processTerminationRequestedAt: process ? input.now : null,
         createdAt: input.now,
       });
     }
@@ -645,7 +615,6 @@ async function fenceCompanySessionGraphInTx(
       runId: attempt.runId,
       attemptId: attempt.id,
       leaseId: lease?.id ?? null,
-      processFactId: process?.id ?? null,
     });
   }
 
@@ -1053,7 +1022,7 @@ export async function reactivateCompanySessionGraphInTx(
 /**
  * Claims durable cancellation work without inventing a second worker-lease
  * schema. Acknowledged rows remain restart-safe and every stop operation must
- * therefore be idempotent for the exact attempt/process identity.
+ * therefore be idempotent for the exact attempt/lease identity.
  */
 export async function acknowledgeCompanyCancellationIntentsInTx(
   tx: CompanySessionLifecycleTx,
@@ -1122,17 +1091,16 @@ export async function acknowledgeCompanyCancellationIntentsInTx(
     );
 }
 
-export async function completeCompanyCancellationIntentInTx(
+export async function reconcileCompanyCancellationIntentInTx(
   tx: CompanySessionLifecycleTx,
   input: {
     readonly intentId: string;
-    readonly proof: CancellationAbsenceProof;
     readonly now?: Date;
   },
 ): Promise<{
   readonly intent: PostgresCancellationIntent;
   readonly operation: PostgresLifecycleOperation | null;
-}> {
+} | null> {
   const now = input.now ?? new Date();
   const initial = await tx
     .select()
@@ -1158,17 +1126,10 @@ export async function completeCompanyCancellationIntentInTx(
       `Cancellation intent ${input.intentId} disappeared while locking`,
     );
   }
-  const operation = await activeOperationForIntent(tx, intent);
   if (intent.state === "completed") {
     return {
       intent,
-      operation: operation
-        ? await refreshLifecycleOperationAfterCancellationInTx(
-            tx,
-            operation,
-            now,
-          )
-        : null,
+      operation: await activeOperationForIntent(tx, intent),
     };
   }
   if (intent.state !== "acknowledged") {
@@ -1177,12 +1138,11 @@ export async function completeCompanyCancellationIntentInTx(
       { intentId: intent.id, state: intent.state },
     );
   }
-  if (input.proof.inMemoryExecutionAbsent !== true) {
-    throw new IssueSessionLifecycleConflict(
-      "Cancellation completion requires exact in-memory absence",
-      { intentId: intent.id },
-    );
-  }
+  const run = await lockIssueExecutionRunInTransaction(tx, {
+    companyId: intent.companyId,
+    issueId: intent.issueId,
+    runId: intent.runId,
+  });
   const attempt = await tx
     .select()
     .from(issueExecutionAttempts)
@@ -1204,43 +1164,72 @@ export async function completeCompanyCancellationIntentInTx(
   }
   if (
     attempt.state === "running" &&
-    input.proof.nativeSessionCancellation !== "sent"
+    intent.nativeCancellationSettledAt === null
   ) {
-    throw new IssueSessionLifecycleConflict(
-      "A running attempt requires an exact native-session cancellation signal",
-      { intentId: intent.id, attemptId: attempt.id },
-    );
+    if (
+      !intent.leaseId ||
+      run.status !== "running" ||
+      run.cancellationIntentId !== intent.id ||
+      run.currentAttemptId !== intent.attemptId ||
+      run.currentLeaseId !== intent.leaseId
+    ) {
+      throw new IssueSessionLifecycleConflict(
+        "Cancellation crossed the current run authority",
+        { intentId: intent.id, runId: intent.runId },
+      );
+    }
+    const lease = await tx
+      .select({
+        id: issueExecutionLeases.id,
+        state: issueExecutionLeases.state,
+        expiredAtDatabaseClock:
+          sql<boolean>`${issueExecutionLeases.expiresAt} <= clock_timestamp()`,
+      })
+      .from(issueExecutionLeases)
+      .where(
+        and(
+          eq(issueExecutionLeases.id, intent.leaseId),
+          eq(issueExecutionLeases.companyId, intent.companyId),
+          eq(issueExecutionLeases.issueId, intent.issueId),
+          eq(issueExecutionLeases.runId, intent.runId),
+          eq(issueExecutionLeases.attemptId, intent.attemptId),
+        ),
+      )
+      .limit(1)
+      .for("update")
+      .then((rows) => rows[0] ?? null);
+    if (!lease) {
+      throw new IssueSessionInvariantError(
+        `Cancellation intent ${intent.id} lost lease ${intent.leaseId}`,
+      );
+    }
+    if (lease.state !== "active") {
+      throw new IssueSessionLifecycleConflict(
+        "Cancellation lease is no longer active",
+        { intentId: intent.id, leaseId: lease.id },
+      );
+    }
+    if (!lease.expiredAtDatabaseClock) return null;
+    const capability = await tx
+      .select({
+        capabilityConnectionId:
+          issueExecutionPromptCapabilities.capabilityConnectionId,
+      })
+      .from(issueExecutionPromptCapabilities)
+      .where(
+        and(
+          eq(issueExecutionPromptCapabilities.companyId, intent.companyId),
+          eq(issueExecutionPromptCapabilities.issueId, intent.issueId),
+          eq(issueExecutionPromptCapabilities.runId, intent.runId),
+          eq(issueExecutionPromptCapabilities.attemptId, intent.attemptId),
+          eq(issueExecutionPromptCapabilities.leaseId, intent.leaseId),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    // Capability mint owns this same run lock and precedes every ACPX call.
+    if (capability) return null;
   }
-  const processFact = intent.processFactId
-    ? await tx
-        .select()
-        .from(issueExecutionProcessFacts)
-        .where(
-          and(
-            eq(issueExecutionProcessFacts.id, intent.processFactId),
-            eq(issueExecutionProcessFacts.companyId, intent.companyId),
-            eq(issueExecutionProcessFacts.issueId, intent.issueId),
-            eq(issueExecutionProcessFacts.runId, intent.runId),
-            eq(issueExecutionProcessFacts.attemptId, intent.attemptId),
-          ),
-        )
-        .limit(1)
-        .for("update")
-        .then((rows) => rows[0] ?? null)
-    : null;
-  if (
-    intent.processFactId &&
-    (!processFact ||
-      LIVE_PROCESS_STATES.includes(
-        processFact.state as (typeof LIVE_PROCESS_STATES)[number],
-      ))
-  ) {
-    throw new IssueSessionLifecycleConflict(
-      "Cancellation cannot complete while its exact process is live or missing",
-      { intentId: intent.id, processFactId: intent.processFactId },
-    );
-  }
-
   if (intent.leaseId) {
     await tx
       .update(issueExecutionLeases)
@@ -1267,11 +1256,6 @@ export async function completeCompanyCancellationIntentInTx(
     .update(issueExecutionCancellationIntents)
     .set({
       state: "completed",
-      sessionCancelSentAt:
-        input.proof.nativeSessionCancellation === "sent"
-          ? intent.sessionCancelSentAt ?? now
-          : intent.sessionCancelSentAt,
-      processTerminatedAt: processFact ? now : null,
       completedAt: now,
       failedAt: null,
       failureCode: null,
@@ -1285,30 +1269,24 @@ export async function completeCompanyCancellationIntentInTx(
     );
   }
 
-  const run = await lockIssueExecutionRunInTransaction(tx, {
-    companyId: intent.companyId,
-    issueId: intent.issueId,
-    runId: intent.runId,
-  });
-  if (run.cancellationIntentId === intent.id) {
-    await detachIssueExecutionRunCancellationInTransaction(tx, {
-      companyId: intent.companyId,
-      issueId: intent.issueId,
-      runId: intent.runId,
-      expectedCancellationIntentId: intent.id,
-      at: now,
-    });
-  } else if (run.cancellationIntentId !== null) {
+  const detachedRun = run.cancellationIntentId === intent.id
+    ? await detachIssueExecutionRunCancellationInTransaction(tx, {
+        companyId: intent.companyId,
+        issueId: intent.issueId,
+        runId: intent.runId,
+        expectedCancellationIntentId: intent.id,
+        at: now,
+      })
+    : run;
+  if (
+    run.cancellationIntentId !== null &&
+    run.cancellationIntentId !== intent.id
+  ) {
     throw new IssueSessionLifecycleConflict(
       "Cancellation completion crossed another run cancellation pointer",
       { runId: run.runId, cancellationIntentId: run.cancellationIntentId },
     );
   }
-  const detachedRun = await lockIssueExecutionRunInTransaction(tx, {
-    companyId: intent.companyId,
-    issueId: intent.issueId,
-    runId: intent.runId,
-  });
   if (
     intent.leaseId &&
     detachedRun.currentAttemptId === intent.attemptId &&
@@ -1334,13 +1312,7 @@ export async function completeCompanyCancellationIntentInTx(
 
   return {
     intent: completed,
-    operation: operation
-      ? await refreshLifecycleOperationAfterCancellationInTx(
-          tx,
-          operation,
-          now,
-        )
-      : null,
+    operation: await activeOperationForIntent(tx, completed),
   };
 }
 
@@ -1459,7 +1431,6 @@ export async function purgeCompanySessionGraphInTx(
   const [
     activeAttempt,
     activeLease,
-    liveProcess,
     liveCapability,
     liveNativeSession,
     activeRef,
@@ -1485,16 +1456,6 @@ export async function purgeCompanySessionGraphInTx(
         and(
           eq(issueExecutionLeases.companyId, input.companyId),
           eq(issueExecutionLeases.state, "active"),
-        ),
-      )
-      .limit(1),
-    tx
-      .select({ id: issueExecutionProcessFacts.id })
-      .from(issueExecutionProcessFacts)
-      .where(
-        and(
-          eq(issueExecutionProcessFacts.companyId, input.companyId),
-          inArray(issueExecutionProcessFacts.state, [...LIVE_PROCESS_STATES]),
         ),
       )
       .limit(1),
@@ -1577,7 +1538,6 @@ export async function purgeCompanySessionGraphInTx(
     uncompletedIntent ||
     activeAttempt[0] ||
     activeLease[0] ||
-    liveProcess[0] ||
     liveCapability[0] ||
     liveNativeSession[0] ||
     activeRef[0] ||
@@ -1594,7 +1554,6 @@ export async function purgeCompanySessionGraphInTx(
         uncompletedIntentId: uncompletedIntent?.id ?? null,
         activeAttemptId: activeAttempt[0]?.id ?? null,
         activeLeaseId: activeLease[0]?.id ?? null,
-        liveProcessFactId: liveProcess[0]?.id ?? null,
         liveCapabilityId: liveCapability[0]?.id ?? null,
         liveNativeSessionId: liveNativeSession[0]?.id ?? null,
         activeRefId: activeRef[0]?.id ?? null,
@@ -1631,9 +1590,6 @@ export async function purgeCompanySessionGraphInTx(
   await tx
     .delete(issueExecutionCancellationIntents)
     .where(eq(issueExecutionCancellationIntents.companyId, input.companyId));
-  await tx
-    .delete(issueExecutionProcessFacts)
-    .where(eq(issueExecutionProcessFacts.companyId, input.companyId));
   await tx
     .delete(issueExecutionLeases)
     .where(eq(issueExecutionLeases.companyId, input.companyId));

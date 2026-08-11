@@ -9,6 +9,7 @@ import {
   transitionIssueExecutionRunStatusInTransaction,
   type IssueExecutionSteeringCancellationSettlement,
   type PendingIssueExecutionSteeringForSource,
+  type RecoverableIssueExecutionSteeringSource,
   type RequestedIssueExecutionSteering,
 } from "./issue-execution-run-service.js";
 import { createMockDb } from "../__tests__/helpers/mock-db.js";
@@ -42,9 +43,7 @@ function persistedRunRow(
     startedAt: runTime,
     finishedAt: runTime,
     terminalClassification: "failed",
-    terminalReasonCode: "process_loss_before_prompt",
-    processExitCode: null,
-    processSignal: null,
+    terminalReasonCode: "worker_loss_before_prompt",
     createdAt: runTime,
     updatedAt: runTime,
     ...change,
@@ -127,6 +126,12 @@ const requested: RequestedIssueExecutionSteering = Object.freeze({
   }),
 });
 
+const steeringSource: RecoverableIssueExecutionSteeringSource = Object.freeze({
+  companyId: requested.companyId,
+  issueId: requested.issueId,
+  sourceCommentId: requested.sourceCommentId,
+});
+
 function fixture() {
   const order: string[] = [];
   const repository = {
@@ -138,7 +143,7 @@ function fixture() {
       async (): Promise<IssueExecutionSteeringCancellationSettlement> => {
       order.push("settled");
       return {
-        kind: "settled_and_reaped" as const,
+        kind: "settled" as const,
         cancellationIntentId: requested.cancellationIntentId,
       };
       },
@@ -167,6 +172,10 @@ function fixture() {
         kind: "requested" as const,
         request: requested,
       }),
+    ),
+    listRecoverableSources: vi.fn(
+      async (): Promise<readonly RecoverableIssueExecutionSteeringSource[]> =>
+        [],
     ),
   };
   const cancellation = {
@@ -227,32 +236,6 @@ describe("canonical issue-execution run steering", () => {
     );
   });
 
-  it("orders exact-attempt cancellation, settlement/reap, rebound, then same-run resume", async () => {
-    const { service, order, cancellation, resume } = fixture();
-    await expect(service.continueSteering(requested)).resolves.toMatchObject({
-      runId: requested.runId,
-      segmentOrdinal: requested.segmentOrdinal,
-    });
-    expect(order).toEqual([
-      "cancel",
-      "signal_recorded",
-      "settled",
-      "rebound",
-      "resume_ready",
-      "resume",
-    ]);
-    expect(cancellation.signalAttemptCancellation).toHaveBeenCalledWith(
-      requested.cancellation,
-    );
-    expect(resume.resumeSteering).toHaveBeenCalledWith(
-      expect.objectContaining({
-        runId: requested.runId,
-        refId: requested.refId,
-        segmentOrdinal: requested.segmentOrdinal,
-      }),
-    );
-  });
-
   it("still fences through durable settlement when natural completion wins the signal race", async () => {
     const fixtureValue = fixture();
     fixtureValue.cancellation.signalAttemptCancellation.mockImplementation(
@@ -261,7 +244,7 @@ describe("canonical issue-execution run steering", () => {
         return false;
       },
     );
-    await fixtureValue.service.continueSteering(requested);
+    await fixtureValue.service.continuePendingSteeringForSource(steeringSource);
     expect(fixtureValue.order).toEqual([
       "cancel",
       "signal_recorded",
@@ -270,6 +253,29 @@ describe("canonical issue-execution run steering", () => {
       "resume_ready",
       "resume",
     ]);
+  });
+
+  it("keeps an unsettled durable request pending without publishing failure", async () => {
+    const fixtureValue = fixture();
+    fixtureValue.cancellation.signalAttemptCancellation.mockImplementation(
+      () => {
+        fixtureValue.order.push("cancel");
+        return false;
+      },
+    );
+    fixtureValue.repository.awaitCancellationSettlement.mockResolvedValue({
+      kind: "pending",
+      cancellationIntentId: requested.cancellationIntentId,
+    });
+
+    await expect(
+      fixtureValue.service.continuePendingSteeringForSource(steeringSource),
+    ).resolves.toEqual({ kind: "still_pending" });
+    expect(
+      fixtureValue.repository.rebindAfterCancellation,
+    ).not.toHaveBeenCalled();
+    expect(fixtureValue.repository.markAmbiguous).not.toHaveBeenCalled();
+    expect(fixtureValue.steeringResults.publish).not.toHaveBeenCalled();
   });
 
   it("fails closed on ambiguous cancellation without rebound or resume", async () => {
@@ -281,7 +287,7 @@ describe("canonical issue-execution run steering", () => {
     });
 
     await expect(
-      fixtureValue.service.continueSteering(requested),
+      fixtureValue.service.continuePendingSteeringForSource(steeringSource),
     ).rejects.toMatchObject({
       reason: "cancellation_ambiguous",
     });
@@ -306,7 +312,7 @@ describe("canonical issue-execution run steering", () => {
     });
 
     await expect(
-      fixtureValue.service.continueSteering(requested),
+      fixtureValue.service.continuePendingSteeringForSource(steeringSource),
     ).rejects.toBeInstanceOf(IssueExecutionSteeringRejected);
     expect(fixtureValue.repository.markAmbiguous).toHaveBeenCalledOnce();
     expect(fixtureValue.resume.resumeSteering).not.toHaveBeenCalled();
@@ -359,6 +365,45 @@ describe("canonical issue-execution run steering", () => {
       "resume_ready",
       "resume",
     ]);
+  });
+
+  it("accepts exact durable convergence when another continuation wins rebind", async () => {
+    const fixtureValue = fixture();
+    fixtureValue.repository.findPendingForSource
+      .mockResolvedValueOnce({ kind: "requested", request: requested })
+      .mockResolvedValueOnce({ kind: "resumed" });
+    fixtureValue.repository.rebindAfterCancellation.mockRejectedValue(
+      new IssueExecutionRunInvariantViolation(
+        "another continuation already cleared the old attempt",
+      ),
+    );
+
+    await expect(
+      fixtureValue.service.continuePendingSteeringForSource(steeringSource),
+    ).resolves.toEqual({ kind: "already_resumed" });
+    expect(fixtureValue.repository.findPendingForSource).toHaveBeenCalledTimes(2);
+    expect(fixtureValue.steeringResults.publish).not.toHaveBeenCalled();
+    expect(fixtureValue.resume.resumeSteering).not.toHaveBeenCalled();
+  });
+
+  it("accepts exact durable convergence when another continuation wins resume readiness", async () => {
+    const fixtureValue = fixture();
+    fixtureValue.repository.findPendingForSource
+      .mockResolvedValueOnce({ kind: "requested", request: requested })
+      .mockResolvedValueOnce({ kind: "resumed" });
+    fixtureValue.repository.markResumeReady.mockRejectedValue(
+      new IssueExecutionSteeringRejected(
+        "another continuation already marked the segment resumable",
+        "invalid_request",
+      ),
+    );
+
+    await expect(
+      fixtureValue.service.continuePendingSteeringForSource(steeringSource),
+    ).resolves.toEqual({ kind: "already_resumed" });
+    expect(fixtureValue.repository.findPendingForSource).toHaveBeenCalledTimes(2);
+    expect(fixtureValue.steeringResults.publish).not.toHaveBeenCalled();
+    expect(fixtureValue.resume.resumeSteering).not.toHaveBeenCalled();
   });
 
   it("re-fences and schedules an already rebound segment without cancelling again", async () => {
@@ -487,6 +532,31 @@ describe("canonical issue-execution run steering", () => {
     ).rejects.toMatchObject({ reason: "persisted_ambiguous" });
     expect(fixtureValue.order).toEqual([]);
   });
+
+  it("feeds only recoverable source identities through the canonical continuation", async () => {
+    const fixtureValue = fixture();
+    fixtureValue.repository.listRecoverableSources.mockResolvedValue([
+      steeringSource,
+    ]);
+
+    await expect(
+      fixtureValue.service.reconcilePendingSteering(),
+    ).resolves.toEqual({
+      discovered: 1,
+      continued: 1,
+      pending: 0,
+      sourceCommentIds: [requested.sourceCommentId],
+    });
+    expect(fixtureValue.repository.findPendingForSource).toHaveBeenCalledOnce();
+    expect(fixtureValue.order).toEqual([
+      "cancel",
+      "signal_recorded",
+      "settled",
+      "rebound",
+      "resume_ready",
+      "resume",
+    ]);
+  });
 });
 
 describe("canonical issue-execution run envelope", () => {
@@ -519,6 +589,18 @@ describe("canonical issue-execution run envelope", () => {
         { ...members[1], admissionVersion: 12 },
       ]),
     ).not.toBe(computeIssueExecutionRunBatchDigest(members));
+  });
+
+  it("rejects a negative admission version for every message kind", () => {
+    for (const messageKind of ["user", "synthetic"] as const) {
+      expect(() => computeIssueExecutionRunBatchDigest([{
+        refId: `${messageKind}-ref`,
+        messageKind,
+        sourceMessageId: `${messageKind}-message`,
+        admissionOrder: 0,
+        admissionVersion: -1,
+      }])).toThrow(IssueExecutionRunInvariantViolation);
+    }
   });
 
   it("rejects empty, duplicate, and non-monotonic run batches", () => {

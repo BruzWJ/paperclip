@@ -149,28 +149,6 @@ export type {
   EnsureMySkillFolderRequest,
 } from "./folder.js";
 export type {
-  CatalogTeamKind,
-  CatalogTeamTrustLevel,
-  CatalogTeamCompatibility,
-  CatalogTeamFileKind,
-  CatalogTeamSkillRequirementType,
-  CatalogTeamSkillRequirement,
-  CatalogTeamEnvInputSummary,
-  CatalogTeamSourceRef,
-  CatalogTeamFile,
-  CatalogTeam,
-  CatalogManifest,
-  CatalogTeamListQuery,
-  CatalogTeamFileDetail,
-  CatalogTeamSourcePolicy,
-  CatalogTeamImportOptions,
-  CatalogTeamInstallOptions,
-  CatalogTeamSkillPreparationAction,
-  CatalogTeamSkillPreparation,
-  CatalogTeamImportPreviewResult,
-  CatalogTeamInstallResult,
-} from "./teams-catalog.js";
-export type {
   Agent,
   AgentAccessState,
   AgentChainOfCommandEntry,
@@ -449,17 +427,7 @@ export type {
   GitWorktreeBranchIncoherenceEvidence,
   GitWorktreeInProgressOperation,
 } from "./workspace-recovery.js";
-export {
-  ISSUE_EXECUTION_LIVE_PLAN_PRIORITIES,
-  ISSUE_EXECUTION_LIVE_PLAN_STATUSES,
-  decodeIssueExecutionPlanLiveEvent,
-  decodeIssueExecutionPlanLivePayload,
-} from "./live.js";
 export type {
-  IssueExecutionLivePlanItem,
-  IssueExecutionLivePlanPriority,
-  IssueExecutionLivePlanStatus,
-  IssueExecutionPlanLivePayload,
   LiveEvent,
   LiveEventOf,
   LiveEventPayloadMap,

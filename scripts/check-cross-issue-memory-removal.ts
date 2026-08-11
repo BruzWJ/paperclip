@@ -129,15 +129,13 @@ export const ACPX_STATE_TERMS = Object.freeze([
 ] as const);
 
 const ACPX_REGISTRY_OWNER =
-  "packages/adapter-utils/src/acp-subprocess/agent-registry.ts";
+  "packages/adapter-utils/src/acpx-runtime/agent-registry.ts";
 const ACPX_DISCOVERY_OWNER =
-  "packages/adapter-utils/src/acp-subprocess/acpx-discovery.ts";
-const ACPX_EXECUTION_TARGET_OWNER =
-  "packages/adapter-utils/src/acp-subprocess/execution-target.ts";
+  "packages/adapter-utils/src/acpx-runtime/acpx-discovery.ts";
 const ACPX_RUNTIME_EXECUTION_OWNER =
-  "packages/adapter-utils/src/acp-subprocess/acpx-runtime-execution.ts";
+  "packages/adapter-utils/src/acpx-runtime/acpx-runtime-execution.ts";
 const ACPX_RUNTIME_READINESS_OWNER =
-  "packages/adapter-utils/src/acp-subprocess/acpx-runtime-readiness.ts";
+  "packages/adapter-utils/src/acpx-runtime/acpx-runtime-readiness.ts";
 const ACPX_DISPOSABLE_RUNTIME_OWNERS = new Set([
   ACPX_DISCOVERY_OWNER,
   ACPX_RUNTIME_EXECUTION_OWNER,
@@ -163,7 +161,6 @@ const ALLOWED_ACPX_RUNTIME_IMPORTS = new Map<string, ReadonlySet<string>>([
       "AcpSessionStore",
     ]),
   ],
-  [ACPX_EXECUTION_TARGET_OWNER, new Set(["AcpAgentRegistry"])],
   [
     ACPX_RUNTIME_EXECUTION_OWNER,
     new Set([
@@ -691,7 +688,7 @@ function canonicalOwnershipViolations(repositoryRoot: string): string[] {
     ),
     ...requireFileTokens(
       repositoryRoot,
-      "packages/adapter-utils/src/acp-subprocess/agent-registry.ts",
+      "packages/adapter-utils/src/acpx-runtime/agent-registry.ts",
       [
         "createAgentRegistry",
         "AcpAgentRegistry",
@@ -700,7 +697,7 @@ function canonicalOwnershipViolations(repositoryRoot: string): string[] {
     ),
     ...requireFileTokens(
       repositoryRoot,
-      "packages/adapter-utils/src/acp-subprocess/correlation.ts",
+      "packages/adapter-utils/src/acpx-runtime/correlation.ts",
       ["acp-session/v1", "AcpSessionCorrelation", "sessionId"],
     ),
   ];

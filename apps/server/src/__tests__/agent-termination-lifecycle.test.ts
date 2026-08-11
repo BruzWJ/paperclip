@@ -95,18 +95,15 @@ function cancellationRecorder() {
     fence: { refIds: ["suspended-ref"], correlationIds: [] },
     requests: [{ runId: "suspended-run" }],
   }));
-  const reconcileCancel = vi.fn(async () => undefined);
-  const reconcileSuspend = vi.fn(async () => undefined);
+  const reconcile = vi.fn(async () => undefined);
   return {
     cancel,
     suspend,
-    reconcileCancel,
-    reconcileSuspend,
+    reconcile,
     service: {
       requestAgentCancellationsInTransaction: cancel,
-      reconcileRequestedAgentCancellations: reconcileCancel,
+      reconcileRequestedCancellations: reconcile,
       requestAgentSuspensionsInTransaction: suspend,
-      reconcileRequestedAgentSuspensions: reconcileSuspend,
     } as AgentLifecycleCancellationService,
   };
 }
@@ -243,8 +240,7 @@ describe("canonical agent termination lifecycle", () => {
     });
 
     expect(result).toMatchObject({ id: targetId, status: "terminated" });
-    expect(cancellation.reconcileCancel).toHaveBeenCalledTimes(1);
-    expect(cancellation.reconcileSuspend).toHaveBeenCalledTimes(1);
+    expect(cancellation.reconcile).toHaveBeenCalledTimes(2);
     expect(dispatchRef).toHaveBeenCalledWith("creator-ref");
     expect(dependencies.monthlySpend).toHaveBeenCalledWith(companyId, [targetId]);
     expect(harness.remaining("select")).toBe(0);

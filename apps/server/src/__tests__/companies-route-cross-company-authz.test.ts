@@ -252,8 +252,8 @@ describe.sequential("company route cross-company authorization", () => {
       request: (app: express.Express) => request(app).delete(`/api/companies/${companyBId}`),
     },
     {
-      label: "POST /api/companies/:companyId/export",
-      request: (app: express.Express) => request(app).post(`/api/companies/${companyBId}/export`).send(exportRequest),
+      label: "POST /api/companies/:companyId/exports",
+      request: (app: express.Express) => request(app).post(`/api/companies/${companyBId}/exports`).send(exportRequest),
     },
     {
       label: "POST /api/companies/:companyId/exports/preview",
@@ -290,7 +290,7 @@ describe.sequential("company route cross-company authorization", () => {
       await request(app).patch(`/api/companies/${companyAId}/branding`).send({ brandColor: "#abcdef" }),
       await request(app).post(`/api/companies/${companyAId}/archive`).send({}),
       await request(app).delete(`/api/companies/${companyAId}`),
-      await request(app).post(`/api/companies/${companyAId}/export`).send(exportRequest),
+      await request(app).post(`/api/companies/${companyAId}/exports`).send(exportRequest),
       await request(app).post(`/api/companies/${companyAId}/exports/preview`).send(exportRequest),
       await request(app).post(`/api/companies/${companyAId}/imports/preview`).send(importRequest(companyAId)),
       await request(app).post(`/api/companies/${companyAId}/imports/apply`).send(importRequest(companyAId)),
@@ -334,7 +334,7 @@ describe.sequential("company route cross-company authorization", () => {
     await request(memberApp).patch(`/api/companies/${companyBId}/branding`).send({ brandColor: "#abcdef" }).expect(200);
     await request(memberApp).post(`/api/companies/${companyBId}/archive`).send({}).expect(200);
     await request(memberApp).delete(`/api/companies/${companyBId}`).expect(200);
-    await request(memberApp).post(`/api/companies/${companyBId}/export`).send(exportRequest).expect(200);
+    await request(memberApp).post(`/api/companies/${companyBId}/exports`).send(exportRequest).expect(200);
     await request(memberApp).post(`/api/companies/${companyBId}/exports/preview`).send(exportRequest).expect(200);
     await request(memberApp).post(`/api/companies/${companyBId}/imports/preview`).send(importRequest()).expect(200);
     await request(memberApp).post(`/api/companies/${companyBId}/imports/apply`).send(importRequest()).expect(200);

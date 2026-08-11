@@ -38,7 +38,6 @@ const ownerCapability: PromptCapabilityBinding = {
   targetSessionCorrelationId: "correlation",
   effectiveContextExposureDigest: "b".repeat(64),
   effectiveToolsDigest: "c".repeat(64),
-  bootstrapToolGate: false,
   leaseId: "lease",
   leaseGeneration: 1,
   expiresAt: new Date("2026-07-25T01:00:00.000Z"),

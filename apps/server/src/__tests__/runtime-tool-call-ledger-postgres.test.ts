@@ -34,7 +34,6 @@ const capability: PromptCapabilityBinding = {
   targetSessionCorrelationId: "correlation-1",
   effectiveContextExposureDigest: "context-digest",
   effectiveToolsDigest: "tools-digest",
-  bootstrapToolGate: false,
   expiresAt: new Date("2026-08-01T13:00:00.000Z"),
   activatedAt: new Date("2026-08-01T11:00:00.000Z"),
   createdAt: new Date("2026-08-01T11:00:00.000Z"),
@@ -111,12 +110,12 @@ function toolCallRow(overrides: Record<string, unknown> = {}) {
 describe("runtime tool-call ledger", () => {
   it("claims a canonical identity and advances only the contiguous ingress high-water", async () => {
     const locked = capabilityRow();
-    const unclassified = {
+    const classified = {
       ingressOrdinal: 0,
-      classification: "unclassified",
+      classification: "non_mention",
     };
     const harness = createMockDb({
-      select: [[locked], [], [], [unclassified], [unclassified]],
+      select: [[locked], [], [], [classified], [classified]],
       insert: [[{ id: toolCallId }]],
       update: [[]],
     });
@@ -130,6 +129,7 @@ describe("runtime tool-call ledger", () => {
       callIdentity: { source: "jsonrpc", id: "call-0" },
       ingressOrdinal: 0,
       arguments: { b: 2, a: 1 },
+      classification: { classification: "non_mention" },
     })).resolves.toEqual({ state: "claimed", id: toolCallId });
 
     const valuesCall = harness.calls.find(
@@ -145,6 +145,9 @@ describe("runtime tool-call ledger", () => {
       callIdentityValue: "call-0",
       toolName: "read_issue_comments",
       argumentsDigest: digest('{"a":1,"b":2}'),
+      classification: "non_mention",
+      mentionTargetAgentId: null,
+      classifiedAt: now,
       status: "executing",
     });
     const capabilityUpdate = harness.calls.find(
@@ -152,7 +155,7 @@ describe("runtime tool-call ledger", () => {
     );
     expect(capabilityUpdate?.args[0]).toEqual({
       ingressHighWater: 0,
-      classificationHighWater: -1,
+      classificationHighWater: 0,
     });
   });
 
@@ -174,6 +177,7 @@ describe("runtime tool-call ledger", () => {
       callIdentity: { source: "jsonrpc", id: "call-0" },
       ingressOrdinal: 0,
       arguments: { a: 1, b: 2 },
+      classification: { classification: "non_mention" },
     })).resolves.toEqual({ state: "completed", result: { ok: true } });
 
     const driftDb = createMockDb({
@@ -188,6 +192,7 @@ describe("runtime tool-call ledger", () => {
       callIdentity: { source: "jsonrpc", id: "call-0" },
       ingressOrdinal: 1,
       arguments: { a: 1, b: 2 },
+      classification: { classification: "non_mention" },
     })).rejects.toBeInstanceOf(RuntimeToolCallIdentityConflict);
     expect(driftDb.calls.some((call) => call.operation === "insert")).toBe(false);
   });
@@ -388,21 +393,22 @@ describe("runtime tool-call ledger", () => {
       callIdentity: { source: "jsonrpc", id: "canonical-board-mention" },
       ingressOrdinal: 0,
       arguments: { message: "Need direction" },
+      classification: { classification: "non_mention" },
     })).resolves.toEqual({ state: "claimed", id: toolCallId });
   });
 
   it("admits a mention after an unfinished earlier tool call", async () => {
-    const unclassified = {
+    const classified = {
       ingressOrdinal: 1,
-      classification: "unclassified",
+      classification: "validated_mention",
     };
     const harness = createMockDb({
       select: [
         [capabilityRow({ ingressHighWater: 0, classificationHighWater: -1 })],
         [],
         [],
-        [unclassified],
-        [unclassified],
+        [classified],
+        [classified],
       ],
       insert: [[{ id: toolCallId }]],
       update: [[]],
@@ -417,21 +423,25 @@ describe("runtime tool-call ledger", () => {
       callIdentity: { source: "jsonrpc", id: "mention-after-tool" },
       ingressOrdinal: 1,
       arguments: {},
+      classification: {
+        classification: "validated_mention",
+        targetAgentId: mentionTarget,
+      },
     })).resolves.toEqual({ state: "claimed", id: toolCallId });
   });
 
   it("records an out-of-order mention without treating it as a turn boundary", async () => {
-    const unclassified = {
+    const classified = {
       ingressOrdinal: 1,
-      classification: "unclassified",
+      classification: "validated_mention",
     };
     const harness = createMockDb({
       select: [
         [capabilityRow()],
         [],
         [],
-        [unclassified],
-        [unclassified],
+        [classified],
+        [classified],
       ],
       insert: [[{ id: toolCallId }]],
     });
@@ -445,6 +455,10 @@ describe("runtime tool-call ledger", () => {
       callIdentity: { source: "jsonrpc", id: "out-of-order-mention" },
       ingressOrdinal: 1,
       arguments: {},
+      classification: {
+        classification: "validated_mention",
+        targetAgentId: mentionTarget,
+      },
     })).resolves.toEqual({ state: "claimed", id: toolCallId });
     expect(
       harness.calls.some(
@@ -462,13 +476,18 @@ describe("runtime tool-call ledger", () => {
       callIdentity: { source: "jsonrpc", id: "bad" },
       ingressOrdinal: -1,
       arguments: {},
+      classification: { classification: "non_mention" },
     })).rejects.toBeInstanceOf(RuntimeToolCallIdentityConflict);
-    await expect(ledger.classify({
+    await expect(ledger.claim({
       capability,
-      id: toolCallId,
+      descriptor: mentionDescriptor,
+      callIdentity: { source: "jsonrpc", id: "bad-mention" },
       ingressOrdinal: 0,
-      classification: "validated_mention",
-      targetAgentId: "",
+      arguments: {},
+      classification: {
+        classification: "validated_mention",
+        targetAgentId: "",
+      },
     })).rejects.toBeInstanceOf(RuntimeToolCallIdentityConflict);
     expect(harness.calls).toEqual([]);
   });

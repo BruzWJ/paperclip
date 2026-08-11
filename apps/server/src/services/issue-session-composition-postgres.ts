@@ -122,14 +122,7 @@ export function createPostgresIssueSessionCompositionRuntime(
     if (deliveryState === "synthetic_dispatchable") {
       return false;
     }
-    if (deliveryState === "user_dispatchable") return false;
-    const promoted = await inputs.promotePreparedInput(preparedScope(ref));
-    if (!promoted) {
-      throw new PostgresIssueSessionCompositionRejected(
-        "input-backed execution ref could not promote its bound Session input",
-      );
-    }
-    return true;
+    return inputs.promotePreparedInput(preparedScope(ref));
   }
 
   async function prepareAndNotifyPersistedRef(

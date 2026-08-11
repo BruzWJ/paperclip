@@ -108,7 +108,7 @@ import {
   createChildIssueSchema,
   // Better Auth user profile input
   updateCurrentUserProfileSchema,
-  // Company portability (legacy routes)
+  // Company portability
   companyPortabilityExportSchema,
   companyPortabilityPreviewSchema,
   companyPortabilityImportSchema,
@@ -541,7 +541,6 @@ const adapterImplementationIdentitySchema = z.object({
   adapterType: z.string().min(1),
   definitionVersion: z.literal("acpx-runtime/v1"),
   protocolVersion: z.literal(1),
-  origin: z.enum(["builtin", "external"]),
   packageName: z.string().min(1),
   packageVersion: z.string().min(1),
   buildIdentity: z.string().min(1),
@@ -622,8 +621,6 @@ const issueExecutionRunEnvelopeRecordSchema = z
       .enum(["succeeded", "interrupted", "failed", "cancelled", "timed_out"])
       .nullable(),
     terminalReasonCode: z.string().nullable(),
-    processExitCode: z.number().int().nullable(),
-    processSignal: z.string().nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   })
@@ -788,7 +785,6 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/companies",
   "POST /api/companies",
   "GET /api/companies/stats",
-  "GET /api/companies/issues",
   "GET /api/cli-auth/me",
   "POST /api/companies/{companyId}/invites",
   "GET /api/companies/{companyId}/invites",
@@ -912,7 +908,7 @@ const CREATED_OPERATIONS = new Set([
 ]);
 
 const ACCEPTED_OPERATIONS = new Set([
-  "POST /api/companies/import",
+  "POST /api/companies/imports",
   "POST /api/health/dev-server/restart",
   "POST /api/invites/{token}/accept",
 ]);
@@ -1204,23 +1200,6 @@ registry.registerPath({
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
-
-// ─── Teams Catalog ──────────────────────────────────────────────────────────
-
-for (const route of [
-  ["get", "/api/teams/catalog", "List catalog teams"],
-  ["get", "/api/teams/catalog/{catalogId}/files", "Get catalog team file"],
-  ["get", "/api/teams/catalog/{catalogId}", "Get catalog team"],
-  ["post", "/api/companies/{companyId}/teams/catalog/{catalogId}/preview", "Preview catalog team install"],
-  ["post", "/api/companies/{companyId}/teams/catalog/{catalogId}/install", "Install catalog team"],
-] as const) {
-  registerCurrentRoute({
-    method: route[0],
-    path: route[1],
-    tags: ["teams"],
-    summary: route[2],
-  });
-}
 
 // ─── Agents ──────────────────────────────────────────────────────────────────
 
@@ -3929,63 +3908,6 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: "post",
-  path: "/api/adapters/install",
-  tags: ["adapters"],
-  summary: "Retired: ACPX supplies the agent catalog",
-  responses: { 410: { description: "Install or authenticate an ACPX-compatible CLI instead." }, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "patch",
-  path: "/api/adapters/{type}",
-  tags: ["adapters"],
-  summary: "Retired: ACPX exclusively decides local agent availability",
-  request: { params: z.object({ type: z.string() }) },
-  responses: {
-    410: { description: "ACPX supplies availability; Paperclip cannot hide or enable agents." },
-    401: r.unauthorized,
-    403: r.forbidden,
-  },
-});
-
-registry.registerPath({
-  method: "patch",
-  path: "/api/adapters/{type}/override",
-  tags: ["adapters"],
-  summary: "Retired: ACPX has no Paperclip override layer",
-  request: { params: z.object({ type: z.string() }) },
-  responses: { 410: { description: "ACPX supplies the current catalog." }, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "delete",
-  path: "/api/adapters/{type}",
-  tags: ["adapters"],
-  summary: "Retired: ACPX supplies the agent catalog",
-  request: { params: z.object({ type: z.string() }) },
-  responses: { 410: { description: "ACPX supplies the current catalog." }, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/adapters/{type}/reload",
-  tags: ["adapters"],
-  summary: "Retired: ACPX supplies the agent catalog",
-  request: { params: z.object({ type: z.string() }) },
-  responses: { 410: { description: "ACPX supplies the current catalog." }, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/adapters/{type}/reinstall",
-  tags: ["adapters"],
-  summary: "Retired: ACPX supplies the agent catalog",
-  request: { params: z.object({ type: z.string() }) },
-  responses: { 410: { description: "ACPX supplies the current catalog." }, 401: r.unauthorized },
-});
-
-registry.registerPath({
   method: "get",
   path: "/api/adapters/{type}/config-schema",
   tags: ["adapters"],
@@ -4286,15 +4208,7 @@ registry.registerPath({
   responses: { 200: { description: "Plain text icon list" }, 401: r.unauthorized },
 });
 
-// ─── Issues (legacy / misc) ───────────────────────────────────────────────────
-
-registry.registerPath({
-  method: "get",
-  path: "/api/issues",
-  tags: ["issues"],
-  summary: "Legacy — returns error directing to /api/companies/{companyId}/issues",
-  responses: { 400: r.badRequest },
-});
+// ─── Issue comment reads ──────────────────────────────────────────────────────
 
 registry.registerPath({
   method: "get",
@@ -4344,42 +4258,22 @@ registry.registerPath({
   responses: { 200: { description: "PNG image" }, 401: r.unauthorized },
 });
 
-// ─── Company portability (legacy routes) ─────────────────────────────────────
-
-registry.registerPath({
-  method: "get",
-  path: "/api/companies/issues",
-  tags: ["companies"],
-  summary: "Legacy — returns error directing to correct issues path",
-  responses: { 400: r.badRequest },
-});
+// ─── Company portability ─────────────────────────────────────────────────────
 
 registry.registerPath({
   method: "post",
-  path: "/api/companies/{companyId}/export",
+  path: "/api/companies/imports/preview",
   tags: ["companies"],
-  summary: "Export a company (legacy singular form)",
-  request: {
-    params: z.object({ companyId: z.string() }),
-    body: jsonBody(companyPortabilityExportSchema),
-  },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/companies/import/preview",
-  tags: ["companies"],
-  summary: "Preview a company import (legacy route)",
+  summary: "Preview a new-company import",
   request: { body: jsonBody(companyPortabilityPreviewSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "post",
-  path: "/api/companies/import",
+  path: "/api/companies/imports",
   tags: ["companies"],
-  summary: "Apply a company import (legacy route)",
+  summary: "Apply a new-company import",
   request: { body: jsonBody(companyPortabilityImportSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });

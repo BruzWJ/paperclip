@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { IssueSessionDbTransaction } from "./event-store.js";
 import {
-  prepareIssueSessionLiveEvent,
-  issueSessionEventsAsNdjson,
   publishIssueSessionEventInTx,
   publishIssueSessionFinalCommentInTx,
   redactIssueSessionPublicationValue,
@@ -337,78 +335,4 @@ describe("Issue Session durable publication boundary", () => {
     ).rejects.toThrow("database reached");
   });
 
-  it("redacts and schema-validates live-only deltas without persisting them", () => {
-    const event = prepareIssueSessionLiveEvent({
-      type: "session.next.tool.input.delta",
-      data: {
-        sessionID: "ses_publication_boundary_test",
-        assistantMessageID: "msg_publication_boundary_test",
-        callID: "call_1",
-        timestamp: 1,
-        delta: "--api-key sk-abcdefghijklmnopqrst",
-      },
-    });
-    expect(event).toMatchObject({
-      type: "session.next.tool.input.delta",
-      data: {
-        delta: "--api-key ***REDACTED***",
-      },
-    });
-
-    expect(() =>
-      prepareIssueSessionLiveEvent({
-        type: "session.next.text.delta",
-        data: {
-          sessionID: "ses_publication_boundary_test",
-          assistantMessageID: "msg_publication_boundary_test",
-          textID: "text_1",
-          timestamp: 1,
-          delta: "safe",
-          unknown: true,
-        },
-      }),
-    ).toThrow("unknown or non-canonical shape");
-  });
-
-  it("renders retained run-log reads only from canonical Session events", () => {
-    const content = issueSessionEventsAsNdjson([
-      {
-        id: "evt_publication_boundary_test",
-        companyId: "11111111-1111-4111-8111-111111111111",
-        issueId: "22222222-2222-4222-8222-222222222222",
-        sessionId: "ses_publication_boundary_test",
-        seq: 1,
-        type: "session.next.context.updated.1",
-        data: {
-          sessionID: "ses_publication_boundary_test",
-          messageID: "msg_publication_boundary_test",
-          timestamp: 1,
-          text: "***REDACTED***",
-        },
-        runId: "33333333-3333-4333-8333-333333333333",
-        ownershipEpoch: 1,
-        agentId: null,
-        adapterConfigRevisionId: null,
-        sourceKind: "test",
-        sourceId: "source",
-        immutableSourceKey: "source",
-        sourceRecordId: "source",
-        sourceIdentityDigest: "a".repeat(64),
-        createdAt: new Date(1),
-      },
-    ]);
-    const row = JSON.parse(content.trim()) as {
-      stream: string;
-      seq: number;
-      chunk: string;
-    };
-    expect(row.stream).toBe("system");
-    expect(row.seq).toBe(1);
-    expect(JSON.parse(row.chunk)).toMatchObject({
-      type: "session.next.context.updated",
-      data: { text: "***REDACTED***" },
-    });
-    expect(content).not.toContain("local_file");
-    expect(content).not.toContain(".ndjson");
-  });
 });

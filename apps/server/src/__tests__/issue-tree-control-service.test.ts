@@ -6,9 +6,8 @@ const serviceMocks = vi.hoisted(() => ({
   recordNamedBoardLifecycleCommandInTransaction: vi.fn(async () => undefined),
   resolveCurrentIssueOwnerRunLinkages: vi.fn(async () => new Map()),
   requestRunningIssueInterruptionsInTransaction: vi.fn(),
-  reconcileRequestedRunningIssueInterruptions: vi.fn(),
+  reconcileRequestedCancellations: vi.fn(),
   requestScopeCancellationsInTransaction: vi.fn(),
-  reconcileRequestedScopeCancellations: vi.fn(),
 }));
 
 vi.mock("../services/issue-board-lifecycle-command.js", () => ({
@@ -139,8 +138,7 @@ describe("issueTreeControlService without a database process", () => {
       fence: { refIds: [], correlationIds: [] },
       requests: [],
     });
-    serviceMocks.reconcileRequestedRunningIssueInterruptions.mockResolvedValue([]);
-    serviceMocks.reconcileRequestedScopeCancellations.mockResolvedValue([]);
+    serviceMocks.reconcileRequestedCancellations.mockResolvedValue([]);
   });
 
   it("previews a subtree, terminal skips, and active execution without mutations", async () => {
@@ -275,12 +273,10 @@ describe("issueTreeControlService without a database process", () => {
       issueExecutionCancellation: {
         requestRunningIssueInterruptionsInTransaction:
           serviceMocks.requestRunningIssueInterruptionsInTransaction,
-        reconcileRequestedRunningIssueInterruptions:
-          serviceMocks.reconcileRequestedRunningIssueInterruptions,
+        reconcileRequestedCancellations:
+          serviceMocks.reconcileRequestedCancellations,
         requestScopeCancellationsInTransaction:
           serviceMocks.requestScopeCancellationsInTransaction,
-        reconcileRequestedScopeCancellations:
-          serviceMocks.reconcileRequestedScopeCancellations,
       },
     }).createHold(
       companyId,
@@ -322,7 +318,7 @@ describe("issueTreeControlService without a database process", () => {
           reason: "active_subtree_pause_hold",
         }),
       );
-    expect(serviceMocks.reconcileRequestedRunningIssueInterruptions)
+    expect(serviceMocks.reconcileRequestedCancellations)
       .toHaveBeenCalledOnce();
     expect(harness.remaining("select")).toBe(0);
     expect(harness.remaining("insert")).toBe(0);
@@ -460,12 +456,10 @@ describe("issueTreeControlService without a database process", () => {
       issueExecutionCancellation: {
         requestRunningIssueInterruptionsInTransaction:
           serviceMocks.requestRunningIssueInterruptionsInTransaction,
-        reconcileRequestedRunningIssueInterruptions:
-          serviceMocks.reconcileRequestedRunningIssueInterruptions,
+        reconcileRequestedCancellations:
+          serviceMocks.reconcileRequestedCancellations,
         requestScopeCancellationsInTransaction:
           serviceMocks.requestScopeCancellationsInTransaction,
-        reconcileRequestedScopeCancellations:
-          serviceMocks.reconcileRequestedScopeCancellations,
       },
     })
       .createHold(companyId, rootIssueId, {
@@ -494,7 +488,7 @@ describe("issueTreeControlService without a database process", () => {
           reason: "issue_tree_cancelled",
         }),
       );
-    expect(serviceMocks.reconcileRequestedScopeCancellations)
+    expect(serviceMocks.reconcileRequestedCancellations)
       .toHaveBeenCalledOnce();
     expect(harness.calls.findIndex((call) => call.operation === "execute"))
       .toBeLessThan(harness.calls.findIndex((call) => call.operation === "select"));

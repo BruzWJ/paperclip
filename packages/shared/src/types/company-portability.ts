@@ -9,7 +9,6 @@ import type {
   PaperclipActionKey,
 } from "../issue-runtime.js";
 import type { IssueCommentMetadata, IssueCommentPresentation } from "./issue.js";
-import type { CompanySkillChannel } from "../validators/company-skill-pins.js";
 import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
 export interface CompanyPortabilityInclude {
@@ -133,7 +132,6 @@ export interface CompanyPortabilityAgentManifestEntry {
     adapterType: string;
     adapterConfig: Record<string, unknown>;
     runtimeConfig: Record<string, unknown>;
-    skillChannel: CompanySkillChannel;
   };
   contextGrants: Record<AgentContextGrantKey, boolean>;
   actionGrants: Record<PaperclipActionKey, boolean>;
@@ -290,7 +288,6 @@ export interface CompanyPortabilityPreviewResult {
 export interface CompanyPortabilityAdapterOverride {
   adapterType: string;
   adapterConfig: Record<string, unknown>;
-  skillChannel: CompanySkillChannel;
 }
 
 export interface CompanyPortabilityImportRequest extends CompanyPortabilityPreviewRequest {

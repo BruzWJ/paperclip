@@ -825,7 +825,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
             id: `project-${projects.size + 1}`,
             companyId,
             urlKey: declaration.projectKey,
-            goalId: null,
             goalIds: [],
             goals: [],
             name: declaration.displayName,

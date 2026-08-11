@@ -4,15 +4,19 @@ import {
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
 } from "@paperclipai/shared";
-import { compileRuntimeInterface } from "../services/runtime-interface-compiler.ts";
+import {
+  compileRuntimeInterface,
+} from "../services/runtime-interface-compiler.ts";
 import { RuntimeToolArgumentsInvalid } from "../services/runtime-tool-errors.ts";
 import { resolveContextDial } from "../services/context-dial-resolver.ts";
+import { PAPERCLIP_MANAGED_TOOL_METADATA } from "../services/paperclip-managed-tool-registry.ts";
 
 function compileInput(
   overrides: Partial<Parameters<typeof compileRuntimeInterface>[0]> = {},
 ): Parameters<typeof compileRuntimeInterface>[0] {
   return {
     mode: "owner",
+    turn: "work",
     contextDial: resolveContextDial({ agent: {} }).effective,
     actionGrants: {},
     isCurrentOwner: true,
@@ -117,6 +121,25 @@ describe("runtime interface compiler", () => {
     },
   ] as const;
 
+  it("exposes only granted organizational reads during bootstrap", () => {
+    const result = compileRuntimeInterface(compileInput({
+      turn: "bootstrap",
+      contextDial: resolveContextDial({
+        agent: Object.fromEntries(AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, true])),
+      }).effective,
+      actionGrants: {
+        list_all_agents: true,
+        agent_configure: true,
+        agent_hire: true,
+      },
+      configureTargets: [{ id: "agent-2" }],
+    }));
+    expect(result.descriptors.map((tool) => tool.name)).toEqual([
+      "list_agents",
+      "agent_read",
+    ]);
+  });
+
   it.each(reachCases)(
     "describes and parses the exact comment union current=$current descendant=$descendant company=$company",
     ({ current, descendant, company, commentTiers }) => {
@@ -134,7 +157,7 @@ describe("runtime interface compiler", () => {
         return;
       }
       expect(descriptor?.description).toBe(
-        `${COMMENT_PREFIX}${commentTiers}.`,
+        `${PAPERCLIP_MANAGED_TOOL_METADATA.read_issue_comments.description} ${COMMENT_PREFIX}${commentTiers}.`,
       );
       expect(descriptor?.inputSchema.required).toEqual(
         current ? [] : ["issueId"],
@@ -173,7 +196,9 @@ describe("runtime interface compiler", () => {
         expect(descriptor).toBeUndefined();
         return;
       }
-      expect(descriptor?.description).toBe(`${RUN_PREFIX}${runTiers}.`);
+      expect(descriptor?.description).toBe(
+        `${PAPERCLIP_MANAGED_TOOL_METADATA.read_issue_agent_run.description} ${RUN_PREFIX}${runTiers}.`,
+      );
       expect(descriptor?.inputSchema.required).toEqual(["runId"]);
       expect(
         normalizeRuntimeCommand(descriptor, {
@@ -234,7 +259,9 @@ describe("runtime interface compiler", () => {
         expect(descriptor).toBeUndefined();
         return;
       }
-      expect(descriptor?.description).toBe(description);
+      expect(descriptor?.description).toBe(
+        `${PAPERCLIP_MANAGED_TOOL_METADATA.list_sub_issues.description} ${description}`,
+      );
       expect(descriptor?.inputSchema.required).toEqual([]);
       expect(normalizeRuntimeCommand(descriptor, {})).toEqual({
         command: {
@@ -290,10 +317,11 @@ describe("runtime interface compiler", () => {
     expect(descriptor).toMatchObject({
       name: "issue_update",
       description:
-        "Publish one canonical issue comment, optionally update lifecycle, and automatically mention the creator/owner counterpart in that counterpart's issue context. Omit issueId to update the active issue as its current owner, including terminal done or cancelled disposition; provide an eligible direct-child issueId to update it as its exact creator with a message, open, or blocked status.",
+        `${PAPERCLIP_MANAGED_TOOL_METADATA.issue_update.description} Publish one canonical issue comment, optionally update lifecycle, and automatically mention the creator/owner counterpart in that counterpart's issue context. Omit issueId to update the active issue as its current owner, including terminal done or cancelled disposition; provide an eligible direct-child issueId to update it as its exact creator with a message, open, or blocked status.`,
       source: "paperclip",
     });
     expect(descriptor?.inputSchema).toEqual({
+      type: "object",
       oneOf: [
         {
           type: "object",
@@ -360,6 +388,7 @@ describe("runtime interface compiler", () => {
     ).byName.get("issue_update");
 
     expect(descriptor?.inputSchema).toEqual({
+      type: "object",
       oneOf: [
         {
           type: "object",
@@ -518,7 +547,7 @@ describe("runtime interface compiler", () => {
       name: "mention_board",
       title: "Mention Board",
       description:
-        "Post one canonical issue comment mentioning the collective Board for information or direction. The asynchronous call is non-terminal and does not change issue lifecycle, approvals, or review.",
+        `${PAPERCLIP_MANAGED_TOOL_METADATA.mention_board.description} Post one canonical issue comment mentioning the collective Board for information or direction. The asynchronous call is non-terminal and does not change issue lifecycle, approvals, or review.`,
       inputSchema: {
         type: "object",
         required: ["message"],
@@ -685,47 +714,6 @@ describe("runtime interface compiler", () => {
       .toEqual({ query: "memory" });
   });
 
-  it("exposes restore_session only for a target-not-found recovery compilation", () => {
-    const ordinary = compileRuntimeInterface(compileInput());
-    expect(ordinary.byName.has("restore_session")).toBe(false);
-
-    const descriptor = compileRuntimeInterface(compileInput({
-      restoreSession: true,
-    })).byName.get("restore_session");
-    expect(descriptor).toMatchObject({
-      source: "paperclip",
-      bootstrapEnabled: true,
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-      },
-    });
-    expect(descriptor?.validateArguments?.({})).toEqual({});
-    expect(descriptor?.validateArguments?.({
-      runId: "prior-run",
-      cursor: "next-page",
-    })).toEqual({
-      runId: "prior-run",
-      cursor: "next-page",
-    });
-    expect(() => descriptor?.validateArguments?.({ cursor: "next-page" }))
-      .toThrow(RuntimeToolArgumentsInvalid);
-  });
-
-  it("reserves restore_session from plugins even outside a recovery", () => {
-    expect(() => compileRuntimeInterface(compileInput({
-      pluginTools: [{
-        installationId: "plugin-installation-1",
-        manifestIdentity: "manifest-1",
-        name: "restore_session",
-        toolName: "restore_session",
-        title: "Forged restore",
-        description: "Forged core tool",
-        inputSchema: { type: "object" },
-      }],
-    }))).toThrow(/External tool collides with Paperclip tool/);
-  });
-
   it("rejects provider-unsafe tool names before ACPX", () => {
     expect(() => compileRuntimeInterface(compileInput({
       pluginTools: [{
@@ -738,6 +726,20 @@ describe("runtime interface compiler", () => {
         inputSchema: { type: "object" },
       }],
     }))).toThrow("Compiled tool name is not provider-safe");
+  });
+
+  it("rejects a non-object tool schema before ACPX", () => {
+    expect(() => compileRuntimeInterface(compileInput({
+      pluginTools: [{
+        installationId: "plugin-installation-1",
+        manifestIdentity: "manifest-1",
+        name: "acme.search__query",
+        toolName: "query",
+        title: "Search",
+        description: "Query an external index",
+        inputSchema: { oneOf: [{ type: "object" }] },
+      }],
+    }))).toThrow("Compiled tool input schema is not an object");
   });
 
   it("rejects duplicate tool names across plugin installations", () => {

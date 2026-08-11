@@ -376,6 +376,7 @@ export interface ProjectedPaperclipManagedToolDescriptor {
   description: string;
   inputSchema: JsonSchema;
   source: "paperclip";
+  availability: "work" | "both";
   normalizeRuntimeCommand(
     payload: unknown,
     scope: PaperclipRuntimeCommandScope,
@@ -384,7 +385,7 @@ export interface ProjectedPaperclipManagedToolDescriptor {
 
 interface RuntimeProjection<Name extends PaperclipManagedToolName> {
   inputSchema: JsonSchema;
-  description?: string;
+  details?: string;
   normalize(
     payload: unknown,
     scope: PaperclipRuntimeCommandScope,
@@ -409,6 +410,7 @@ function runtimeJsonSchema(schema: z.ZodTypeAny): JsonSchema {
         (option as Record<string, unknown>).type === "object"
       )
     ) {
+      record.type = "object";
       record.oneOf = record.anyOf;
       delete record.anyOf;
     }
@@ -437,7 +439,7 @@ function runtimeArguments<T>(schema: z.ZodType<T>, payload: unknown): T {
 
 function projection<Name extends PaperclipManagedToolName, Payload>(input: {
   schema: z.ZodType<Payload>;
-  description?: string;
+  details?: string;
   normalize(
     payload: Payload,
     scope: PaperclipRuntimeCommandScope,
@@ -445,7 +447,7 @@ function projection<Name extends PaperclipManagedToolName, Payload>(input: {
 }): RuntimeProjection<Name> {
   return {
     inputSchema: runtimeJsonSchema(input.schema),
-    ...(input.description ? { description: input.description } : {}),
+    ...(input.details ? { details: input.details } : {}),
     normalize(payload, scope) {
       return input.normalize(runtimeArguments(input.schema, payload), scope);
     },
@@ -499,7 +501,7 @@ function projectRuntimeListCompanyIssues(
       filters: issueFiltersSchema.optional(),
       cursor: runtimeCursor,
     }).strict(),
-    description:
+    details:
       "Available only with the company-issue listing grant. Lists one bounded page of top-level issues in this run's company; it never returns descendants, another company's issues, or control-plane configuration.",
     normalize: (payload, scope) => ({
       name: "list_company_issues",
@@ -522,7 +524,7 @@ function projectRuntimeListSubIssues(
       issueId: z.string().min(1).optional(),
       cursor: runtimeCursor,
     }).strict(),
-    description: `Lists one bounded page of direct children. Omit issueId to list the active issue's direct children. ${explicitTarget}`,
+    details: `Lists one bounded page of direct children. Omit issueId to list the active issue's direct children. ${explicitTarget}`,
     normalize: (payload, scope) => ({
       name: "list_sub_issues",
       companyId: scope.companyId,
@@ -545,7 +547,7 @@ function projectRuntimeReadIssueComments(
   }).strict();
   return projection({
     schema,
-    description: retrievalReachDescription({
+    details: retrievalReachDescription({
       prefix:
         "Reads one chronological bounded page of first-class Session comments.",
       reach: policy.comments,
@@ -567,7 +569,7 @@ function projectRuntimeReadIssueAgentRun(
   if (!policy.runs.enabled) return null;
   return projection({
     schema: z.object({ runId: z.string().min(1), cursor: runtimeCursor }).strict(),
-    description: retrievalReachDescription({
+    details: retrievalReachDescription({
       prefix:
         "Reads the delivered source message(s) and bounded provider-safe detailed turns for exactly one run selected by required runId.",
       reach: policy.runs,
@@ -615,7 +617,7 @@ function projectRuntimeIssueCreate(
       priority: z.enum(["critical", "high", "medium", "low"]).optional(),
       owner: ownerSchema(input.issueCreateDirectChildren),
     }).strict(),
-    description:
+    details:
       "Create one direct child of the active issue and canonically mention its explicit invokable owner with the immutable request.",
     normalize(payload, scope) {
       return {
@@ -667,7 +669,7 @@ function projectRuntimeIssueAssign(
   }));
   return projection({
     schema,
-    description:
+    details:
       "Reassign one nonterminal direct child created by this exact issue execution and canonically mention its new owner with the issue request.",
     normalize(payload: { issueId: string; owner: { kind: "self" } | { kind: "agent"; agentId: string } }, scope) {
       if (!targets.has(payload.issueId)) {
@@ -721,7 +723,7 @@ function projectRuntimeIssueUpdate(
   if (forms.length === 0) return null;
   return projection({
     schema: unionSchema(forms),
-    description:
+    details:
       "Publish one canonical issue comment, optionally update lifecycle, and automatically mention the creator/owner counterpart in that counterpart's issue context. Omit issueId to update the active issue as its current owner, including terminal done or cancelled disposition; provide an eligible direct-child issueId to update it as its exact creator with a message, open, or blocked status.",
     normalize(payload: {
       issueId?: string;
@@ -754,7 +756,7 @@ function projectRuntimeMentionAgent(
       agentId: agentIdChoice(input.mentionTargets),
       message: z.string().min(1),
     }).strict(),
-    description:
+    details:
       "Post one canonical issue comment mentioning an authorized agent on this same issue. The asynchronous call is non-terminal and gives the recipient no owner or creator lifecycle authority.",
     normalize: (payload, scope) => ({
       name: "mention_agent",
@@ -771,7 +773,7 @@ function projectRuntimeMentionBoard(
   if (input.actionGrants.mention_board !== true) return null;
   return projection({
     schema: z.object({ message: z.string().min(1) }).strict(),
-    description:
+    details:
       "Post one canonical issue comment mentioning the collective Board for information or direction. The asynchronous call is non-terminal and does not change issue lifecycle, approvals, or review.",
     normalize: (payload, scope) => ({
       name: "mention_board",
@@ -793,7 +795,7 @@ function projectRuntimeListAgents(
   }
   return projection({
     schema: z.object({ agentId: z.string().min(1).optional() }).strict(),
-    description:
+    details:
       "List agents in this run's company with their name, title, id, capabilities, reporting parent, and status. Terminated agents are excluded. Omit agentId to list all agents. Provide an agentId to list only that agent and its entire reporting subtree (children, grandchildren, etc.).",
     normalize: (payload, scope) => ({
       name: "list_agents",
@@ -809,7 +811,7 @@ function projectRuntimeAgentRead(
   if (input.actionGrants.agent_configure !== true) return null;
   return projection({
     schema: z.object({ agentId: z.string().min(1) }).strict(),
-    description:
+    details:
       "Read one agent's runtime identity, grants, and status by agentId. Requires the agent_configure action grant but performs no mutation. The target agent must be in the same company and not terminated.",
     normalize: (payload, scope) => ({
       name: "agent_read",
@@ -825,7 +827,7 @@ function projectRuntimeAgentHire(
   if (input.actionGrants.agent_hire !== true) return null;
   return projection({
     schema: runtimeAgentHireConfigurationSchema,
-    description:
+    details:
       "Create one ordinary direct-report agent. Provider, adapter, budget, lifecycle, and operational fields are not accepted.",
     normalize: (configuration, scope) => ({
       name: "agent_hire",
@@ -849,7 +851,7 @@ function projectRuntimeAgentConfigure(
   );
   const result = projection({
     schema,
-    description:
+    details:
       "Update authorized runtime-agent identity, context cells, and grants only.",
     normalize(parsed, scope) {
       const { agentId, ...configuration } = parsed;
@@ -896,9 +898,15 @@ export function projectPaperclipManagedTools(
     return [{
       name,
       title: metadata.title,
-      description: projected.description ?? metadata.description,
+      description: projected.details
+        ? `${metadata.description} ${projected.details}`
+        : metadata.description,
       inputSchema: projected.inputSchema,
       source: "paperclip" as const,
+      availability:
+        metadata.readOnly && !isPaperclipContextToolName(name)
+          ? "both" as const
+          : "work" as const,
       normalizeRuntimeCommand(payload, scope) {
         const command = projected.normalize(payload, scope);
         return {

@@ -129,8 +129,6 @@ const RUN_ENVELOPE_COLUMNS = [
   "finishedAt",
   "terminalClassification",
   "terminalReasonCode",
-  "processExitCode",
-  "processSignal",
   "createdAt",
   "updatedAt",
 ] as const;

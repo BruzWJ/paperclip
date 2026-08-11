@@ -29,7 +29,6 @@ const serializedIsolationSuites = new Set([
   "apps/server/src/__tests__/approval-routes-idempotency.test.ts",
   "apps/server/src/__tests__/assets.test.ts",
   "apps/server/src/__tests__/authz-company-access.test.ts",
-  "apps/server/src/__tests__/companies-route-path-guard.test.ts",
   "apps/server/src/__tests__/company-portability.test.ts",
   "apps/server/src/__tests__/costs-service.test.ts",
   "apps/server/src/__tests__/express5-auth-wildcard.test.ts",
@@ -298,6 +297,16 @@ function runVitest(repoRoot, args, label) {
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
+}
+
+function ensurePluginBuildDependencies(repoRoot) {
+  const result = spawnSync(
+    process.execPath,
+    [path.join(repoRoot, "scripts", "ensure-plugin-build-deps.mjs")],
+    { cwd: repoRoot, stdio: "inherit" },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
 function standaloneDependenciesReady(repoRoot, project) {
@@ -603,6 +612,8 @@ export function main(argv = process.argv.slice(2)) {
     );
     return;
   }
+
+  ensurePluginBuildDependencies(repoRoot);
 
   if (options.mode === generalModeName || options.mode === allModeName) {
     if (options.group) {

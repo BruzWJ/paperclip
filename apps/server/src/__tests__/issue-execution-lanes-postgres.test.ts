@@ -92,10 +92,6 @@ function capability(
   } as never;
 }
 
-function attempt(sessionOperation = "new") {
-  return { sessionOperation } as never;
-}
-
 function repositoryOptions(db: ReturnType<typeof createMockDb>["db"]) {
   return {
     database: db,
@@ -105,16 +101,181 @@ function repositoryOptions(db: ReturnType<typeof createMockDb>["db"]) {
       transitionRunStatus: vi.fn(),
       attachAttempt: vi.fn(),
       detachAttempt: vi.fn(),
+      detachCancellation: vi.fn(),
     } as never,
     compiler: { resolve: vi.fn() } as never,
     finalizer: {
       finalize: vi.fn(),
-      finalizeInTransaction: vi.fn(),
+      finalizeInTransaction: vi.fn(async () => ({ autoCaptureRefId: null })),
     } as never,
     now: () => now,
     idFactory: () => "00000000-0000-4000-8000-000000000809",
     leaseTtlMs: 60_000,
     pluginDomainEvents: { publish: async () => undefined },
+  };
+}
+
+function expiredAuthorityCancellationFixture(overrides: {
+  leaseExpiresAt?: Date;
+  cancellationAttemptId?: string;
+} = {}) {
+  const ref = persistedRef({
+    laneOrdinal: 6,
+    previousOwnershipEpoch: null,
+  });
+  const nextRef = persistedRef({
+    id: "00000000-0000-4000-8000-000000000821",
+    laneOrdinal: 7,
+    previousOwnershipEpoch: null,
+  });
+  const runId = "00000000-0000-4000-8000-000000000811";
+  const attemptId = "00000000-0000-4000-8000-000000000812";
+  const leaseId = "00000000-0000-4000-8000-000000000813";
+  const cancellationId = "00000000-0000-4000-8000-000000000814";
+  const capabilityConnectionId =
+    "00000000-0000-4000-8000-000000000815";
+  const workspaceId = "00000000-0000-4000-8000-000000000816";
+  const createdAt = new Date(now.getTime() - 60_000);
+  const updatedAt = new Date(now.getTime() - 30_000);
+  const issueIdentity = { companyId: ref.companyId, issueId: ref.issueId };
+  const runIdentity = { ...issueIdentity, runId };
+  const run = {
+    ...issueIdentity,
+    id: runId, sessionId: ref.sessionId,
+    executionScopeId: ref.executionScopeId,
+    kind: "productive", status: "running",
+    ownershipEpoch: ref.ownershipEpoch, targetAgentId: ref.targetAgentId,
+    adapterConfigRevisionId: ref.adapterConfigRevisionId,
+    executionWorkspaceBindingId: workspaceId, executionMode: "owner",
+    issueExecutionAuthorityId: ref.issueExecutionAuthorityId,
+    consultExecutionId: null, parentRunId: null, retryOfRunId: null,
+    currentAttemptId: attemptId, currentLeaseId: leaseId,
+    cancellationIntentId: cancellationId, terminalFinalizationId: null,
+    startedAt: createdAt, finishedAt: null,
+    terminalClassification: null, terminalReasonCode: null,
+    createdAt, updatedAt,
+  };
+  const attempt = {
+    ...runIdentity,
+    id: attemptId, sessionId: ref.sessionId,
+    runKind: "productive", promptKind: "base", sessionOperation: "resume",
+    refId: ref.id, refOrdinal: 0, segmentOrdinal: 0,
+    steeringSegmentOrdinal: null, attemptGeneration: 1,
+    state: "running", startedAt: createdAt, finishedAt: null, createdAt,
+  };
+  const lease = {
+    ...runIdentity,
+    id: leaseId, attemptId, leaseGeneration: 1,
+    workerId: "worker-old", state: "active",
+    acquiredAt: createdAt, renewedAt: updatedAt,
+    expiresAt: overrides.leaseExpiresAt ?? new Date(now.getTime() - 1),
+    releasedAt: null, createdAt,
+  };
+  const cancellation = {
+    ...runIdentity,
+    id: cancellationId,
+    attemptId: overrides.cancellationAttemptId ?? attemptId,
+    leaseId, reasonKind: "authority", actorKind: "system",
+    actorUserId: null, actorAgentId: null, state: "acknowledged",
+    requestedAt: new Date(now.getTime() - 20_000),
+    acknowledgedAt: new Date(now.getTime() - 19_000),
+    nativeCancellationSettledAt: null, completedAt: null,
+    failedAt: null, failureCode: null,
+    createdAt: new Date(now.getTime() - 20_000),
+  };
+  const runRef = {
+    ...runIdentity,
+    sessionId: ref.sessionId, refId: ref.id, refOrdinal: 0,
+    admissionOrder: ref.laneOrdinal, batchDigest: "batch-digest",
+    inputId: ref.inputId, promptTransmissionPhase: "transmitted",
+    outcome: null, outcomeReferenceId: null, protocolSettlementState: null,
+    accountingId: null, costEventId: null, settlementVersion: 0,
+    attemptId, capabilityConnectionId, capabilityGeneration: 1,
+    settledAt: null, createdAt,
+  };
+  const capability = {
+    ...runIdentity,
+    capabilityConnectionId, capabilityGeneration: 1,
+    runBatchDigest: runRef.batchDigest,
+    refId: ref.id, refOrdinal: 0, segmentOrdinal: 0,
+    attemptId, leaseId, leaseGeneration: 1,
+    workerProcessIdentity: "worker-process",
+    ownershipEpoch: ref.ownershipEpoch, targetAgentId: ref.targetAgentId,
+    laneKind: "owner", executionMode: "owner",
+    issueExecutionAuthorityId: ref.issueExecutionAuthorityId,
+    consultExecutionId: null, adapterConfigIdentity: ref.adapterConfigRevisionId,
+    workspaceIdentity: workspaceId, targetSessionCorrelationId: null,
+    effectiveContextExposureDigest: "context-digest", effectiveToolsDigest: "tools-digest",
+    bearerHash: "bearer-hash", ingressHighWater: -1,
+    classificationHighWater: -1, state: "active",
+    expiresAt: new Date(now.getTime() - 10_000),
+    activatedAt: new Date(now.getTime() - 50_000),
+    revocationReason: null, revokedAt: null, createdAt,
+  };
+  return {
+    ref, nextRef, run, attempt, lease, cancellation, runRef, capability,
+    lane: {
+      ...issueIdentity,
+      ownershipEpoch: ref.ownershipEpoch, targetAgentId: ref.targetAgentId,
+      nextOrdinal: 8, activeOrdinal: ref.laneOrdinal,
+      activeLeaseGeneration: 1, activeLeaseId: leaseId,
+      createdAt, updatedAt,
+    },
+    control: { runId, currentRefId: ref.id, currentOrdinal: 0, currentSegmentOrdinal: 0 },
+  };
+}
+
+type ExpiredAuthorityCancellationState = ReturnType<typeof expiredAuthorityCancellationFixture>;
+
+function expiredRecoverySelects(
+  state: ExpiredAuthorityCancellationState,
+  terminal = false,
+) {
+  const rows = [
+    [{ leaseId: state.lease.id, runId: state.run.id, ref: state.ref }],
+    [{ id: state.ref.companyId }],
+    [{ id: state.ref.issueId }],
+    [{ id: state.ref.sessionId }],
+    [state.lane],
+    [{ run: state.run }],
+    [state.cancellation],
+    [state.control],
+    [{ row: state.runRef, ref: state.ref }],
+    [state.attempt],
+    [state.lease],
+  ];
+  return terminal ? [...rows, [state.capability], [], [state.nextRef]] : rows;
+}
+
+function expiredRecoveryUpdates(state: ExpiredAuthorityCancellationState) {
+  return [
+    [{ capabilityConnectionId: state.capability.capabilityConnectionId }],
+    [{ runId: state.run.id }],
+    [{ id: state.attempt.id }],
+    [{ id: state.lease.id }],
+    [{ id: state.cancellation.id }],
+    [{ id: state.ref.id }],
+    [{ id: state.ref.historyViewId }],
+    [{ runId: state.run.id }],
+    [{ companyId: state.ref.companyId }],
+  ];
+}
+
+function expiredRecoveryHarness(
+  overrides: Parameters<typeof expiredAuthorityCancellationFixture>[0] = {},
+  terminal = false,
+) {
+  const state = expiredAuthorityCancellationFixture(overrides);
+  const harness = createMockDb({
+    select: expiredRecoverySelects(state, terminal),
+    ...(terminal ? { update: expiredRecoveryUpdates(state) } : {}),
+  });
+  const options = repositoryOptions(harness.db);
+  return {
+    state,
+    harness,
+    options,
+    repository: createPostgresIssueExecutionDispatcherRepository(options),
   };
 }
 
@@ -226,20 +387,10 @@ describe("issue-execution target lanes", () => {
     });
   });
 
-  it("reuses exact target-not-found and pre-send retry decisions", () => {
-    expect(classifyExpiredPromptClosure({
-      owner: owner(),
-      capability: capability("target_not_found"),
-      attempt: attempt("resume"),
-    })).toEqual({
-      kind: "retry",
-      reason: "target_not_found_new_session",
-      retryAt: now,
-    });
+  it("preserves the one fresh-session pre-send retry", () => {
     expect(classifyExpiredPromptClosure({
       owner: owner(),
       capability: capability("pre_send_retry"),
-      attempt: attempt("new"),
     })).toEqual({
       kind: "retry",
       reason: "transport_transient",
@@ -254,7 +405,6 @@ describe("issue-execution target lanes", () => {
         protocolSettlementState: "not_sent",
       }),
       capability: capability("pre_send_failure"),
-      attempt: attempt(),
     })).toEqual({
       kind: "terminal",
       outcome: "failed",
@@ -270,7 +420,6 @@ describe("issue-execution target lanes", () => {
       capability: capability("prompt_failed_incomplete", {
         activatedAt: new Date(now.getTime() - 1),
       }),
-      attempt: attempt(),
     })).toEqual({
       kind: "terminal",
       outcome: "failed",
@@ -286,7 +435,6 @@ describe("issue-execution target lanes", () => {
       capability: capability("prompt_cancelled_incomplete", {
         activatedAt: new Date(now.getTime() - 1),
       }),
-      attempt: attempt(),
     })).toEqual({
       kind: "terminal",
       outcome: "cancelled",
@@ -306,7 +454,6 @@ describe("issue-execution target lanes", () => {
         activatedAt: new Date(now.getTime() - 1),
         targetSessionCorrelationId: "correlation",
       }),
-      attempt: attempt(),
     })).toEqual({
       kind: "terminal",
       outcome: "succeeded",
@@ -320,7 +467,6 @@ describe("issue-execution target lanes", () => {
         protocolSettlementState: "incomplete",
       }),
       capability: capability("protocol_settled"),
-      attempt: attempt(),
     })).toThrow(PostgresIssueExecutionDispatchRejected);
   });
 
@@ -371,6 +517,86 @@ describe("issue-execution target lanes", () => {
       leaseState: "completed",
       leaseExpiresAt: null,
     });
+    expect(harness.remaining("select")).toBe(0);
+  });
+
+  it("atomically closes an expired minted authority cancellation and releases the next FIFO ref", async () => {
+    const { state, harness, options, repository } = expiredRecoveryHarness({}, true);
+
+    await expect(repository.recoverExpiredLeases({ now, limit: 1 }))
+      .resolves.toEqual({ refIds: [state.nextRef.id] });
+
+    expect(options.runService.detachCancellation).toHaveBeenCalledWith(
+      harness.db,
+      expect.objectContaining({
+        runId: state.run.id,
+        expectedCancellationIntentId: state.cancellation.id,
+      }),
+    );
+    expect(options.runService.detachAttempt).toHaveBeenCalledWith(
+      harness.db,
+      expect.objectContaining({
+        runId: state.run.id,
+        expectedAttemptId: state.attempt.id,
+        expectedLeaseId: state.lease.id,
+      }),
+    );
+    expect(options.finalizer.finalizeInTransaction).toHaveBeenCalledWith(
+      harness.db,
+      expect.objectContaining({
+        runId: state.run.id,
+        status: "cancelled",
+        terminalReasonCode: "authority_cancellation",
+      }),
+    );
+    const updatedValues = harness.calls
+      .filter((call) => call.operation === "update" && call.method === "set")
+      .map((call) => call.args[0]);
+    expect(updatedValues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        state: "revoked",
+        revocationReason: "lease_expired",
+      }),
+      expect.objectContaining({
+        outcome: "ambiguous",
+        protocolSettlementState: "incomplete",
+      }),
+      expect.objectContaining({ state: "cancelled", finishedAt: now }),
+      expect.objectContaining({ state: "revoked", releasedAt: now }),
+      expect.objectContaining({ state: "completed", completedAt: now }),
+      expect.objectContaining({
+        activeOrdinal: null,
+        activeLeaseGeneration: null,
+        activeLeaseId: null,
+      }),
+    ]));
+    expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.remaining("update")).toBe(0);
+  });
+
+  it.each([
+    {
+      name: "does not touch a cancellation-bound run before its exact lease expires",
+      overrides: { leaseExpiresAt: new Date(now.getTime() + 1) },
+      error: null,
+    },
+    {
+      name: "rejects an expired cancellation whose attempt identity crossed the current run",
+      overrides: {
+        cancellationAttemptId: "00000000-0000-4000-8000-000000000899",
+      },
+      error: "expired authority crossed its canonical prompt identity",
+    },
+  ])("$name", async ({ overrides, error }) => {
+    const { harness, options, repository } = expiredRecoveryHarness(overrides);
+    const recovery = expect(repository.recoverExpiredLeases({ now, limit: 1 }));
+    if (error === null) await recovery.resolves.toEqual({ refIds: [] });
+    else await recovery.rejects.toThrow(error);
+    expect(options.runService.detachCancellation).not.toHaveBeenCalled();
+    expect(options.runService.detachAttempt).not.toHaveBeenCalled();
+    expect(options.finalizer.finalizeInTransaction).not.toHaveBeenCalled();
+    expect(harness.calls.some((call) => call.operation === "update")).toBe(false);
     expect(harness.remaining("select")).toBe(0);
   });
 

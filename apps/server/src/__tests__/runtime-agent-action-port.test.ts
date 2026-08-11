@@ -37,7 +37,6 @@ const capability = {
   companyId: "company-1",
   targetAgentId: "10000000-0000-4000-8000-000000000001",
   runId: "run-1",
-  bootstrapToolGate: false,
 } as PromptCapabilityBinding;
 
 function actionAuthority(invocationId: string): AgentRunToolAuthority {
@@ -96,7 +95,6 @@ function replayingExecutor(
       ? { state: "completed" as const, result: completedResult }
       : { state: "claimed" as const, id: "ledger-call-1" }),
     registerTerminalInvalid: vi.fn(async () => undefined),
-    classify: vi.fn(async () => undefined),
     commitMentionAction: vi.fn(),
     complete: vi.fn(async ({ result }: { result: unknown }) => {
       completedResult = result;
@@ -124,11 +122,6 @@ function replayingExecutor(
     },
   } as unknown as PaperclipManagedToolRouter;
   const gateway = createRuntimeToolGateway({
-    retrievalScope: {
-      async resolve() {
-        throw new Error("retrieval is not used by agent actions");
-      },
-    },
     managedTools,
     pluginTools: {} as never,
     callLedger: callLedger as never,
@@ -138,8 +131,9 @@ function replayingExecutor(
     name: "agent_hire" | "agent_configure",
     arguments_: Record<string, unknown>,
   ) {
-    const descriptor = compileRuntimeInterface({
+    const compileInput = {
       mode: "owner",
+      turn: "work",
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: { agent_hire: true, agent_configure: true },
       isCurrentOwner: true,
@@ -152,11 +146,17 @@ function replayingExecutor(
         { id: TARGET_AGENT_ID },
       ],
       pluginTools: [],
-    }).byName.get(name);
+    } as const;
+    const descriptor = compileRuntimeInterface(compileInput).byName.get(name);
     if (!descriptor) throw new Error(`Missing compiled tool ${name}`);
     return gateway.execute({
       capability,
       descriptor,
+      runtimeScope: {
+        companyId: capability.companyId,
+        activeIssueId: capability.issueId,
+        dial: compileInput.contextDial,
+      },
       arguments: arguments_,
       callIdentity: { source: "jsonrpc", id: "provider-call-1" },
       ingressOrdinal: 0,

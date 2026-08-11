@@ -58,8 +58,6 @@ export const projectCodebaseSchema = z.object({
 }).strict();
 
 const projectFields = {
-  /** @deprecated Use goalIds instead */
-  goalId: z.string().uuid().optional().nullable(),
   goalIds: z.array(z.string().uuid()).optional(),
   name: z.string().min(1),
   description: z.string().optional().nullable(),
@@ -75,10 +73,10 @@ const projectFields = {
 export const createProjectSchema = z.object({
   ...projectFields,
   codebase: projectCodebaseInputSchema.optional(),
-});
+}).strict();
 
 export type CreateProject = z.infer<typeof createProjectSchema>;
 
-export const updateProjectSchema = z.object(projectFields).partial();
+export const updateProjectSchema = z.object(projectFields).partial().strict();
 
 export type UpdateProject = z.infer<typeof updateProjectSchema>;

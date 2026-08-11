@@ -57,12 +57,19 @@ export function createTargetLaneRunCoordinator<Scope, Key>(options: {
       } finally {
         if (active.get(key) === entry) active.delete(key);
         if (entry.pendingDrain && !entry.stopping && !active.has(key)) {
-          start(entry.scope, false);
+          observeDetached(start(entry.scope, false));
         }
       }
     })();
     return entry;
   };
+
+  function observeDetached(entry: Entry<Scope>): void {
+    void entry.promise.catch(() => {
+      // A notified drain has no direct waiter. Persisted retry/terminal state
+      // remains the recovery authority; reconciliation may notify it again.
+    });
+  }
 
   const run = async (scope: Scope): Promise<void> => {
     const key = options.keyOf(scope);
@@ -91,10 +98,7 @@ export function createTargetLaneRunCoordinator<Scope, Key>(options: {
         existing.pendingDrain = true;
         return;
       }
-      void start(scope, false).promise.catch(() => {
-        // A notified drain has no direct waiter. Persisted retry/terminal state
-        // remains the recovery authority; the reconciliation loop may notify it.
-      });
+      observeDetached(start(scope, false));
     },
     async interrupt(scope) {
       const key = options.keyOf(scope);

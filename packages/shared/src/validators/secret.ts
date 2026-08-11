@@ -33,9 +33,7 @@ export const envBindingUserSecretRefSchema = z.object({
   allowMissingOverride: z.boolean().optional().default(false),
 });
 
-// Backward-compatible union that accepts legacy inline values.
 export const envBindingSchema = z.union([
-  z.string(),
   envBindingPlainSchema,
   envBindingSecretRefSchema,
   envBindingUserSecretRefSchema,

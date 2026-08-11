@@ -12,7 +12,6 @@ import {
   agentRuntimeConfigSchema,
 } from "./agent.js";
 import {
-  companySkillChannelSchema,
   companySkillPinsSchema,
 } from "./company-skill-pins.js";
 
@@ -149,7 +148,6 @@ export const agentAdapterRevisionConfigurationSchema = z
     adapterConfig: adapterConfigSchema,
     runtimeConfig: agentRuntimeConfigSchema,
     companySkillPins: companySkillPinsSchema,
-    skillChannel: companySkillChannelSchema,
   })
   .strict();
 

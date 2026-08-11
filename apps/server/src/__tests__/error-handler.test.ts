@@ -42,7 +42,7 @@ describe("errorHandler", () => {
     const req = {
       ...makeReq(),
       method: "POST",
-      originalUrl: "/api/companies/import",
+      originalUrl: "/api/companies/imports",
       actor: testBoardSessionActor({
         userId: "user-1",
       }),

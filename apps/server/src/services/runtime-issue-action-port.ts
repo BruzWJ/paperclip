@@ -44,6 +44,7 @@ import {
   type IssueSessionProjectedCommentSource,
 } from "./issue-session/admission.js";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
+import { admitIssueExecutionInTransaction } from "./issue-execution-initial-start-admission.js";
 import { persistCanonicalIssueAggregateInTx } from "./canonical-issue-aggregate.js";
 import { type AgentRunNonAgentActionPort } from "./runtime-agent-action-port.js";
 import type {
@@ -88,7 +89,6 @@ import {
 import {
   resolvePluginPermittedIssueOwnerCatalogInTransaction,
 } from "./plugin-issue-authorization.js";
-import { recordIssueLivenessActionInTransaction } from "./issue-liveness-reconciliation.js";
 import {
   paperclipEnvelopeHasBody,
   renderPaperclipManagedToolPrompt,
@@ -219,7 +219,7 @@ async function withRuntimeWorkspaceReservationErrors<T>(
 export type RuntimeIssueScopeCancellationPort = Pick<
   IssueExecutionCancellationService,
   | "requestScopeCancellationsInTransaction"
-  | "reconcileRequestedScopeCancellations"
+  | "reconcileRequestedCancellations"
 >;
 
 export interface PostgresRuntimeIssueActionServiceOptions {
@@ -845,7 +845,6 @@ async function lockRuntimeActionAuthority(
   options: {
     requireOwner: boolean;
     additionalLaneTargetAgentId?: string;
-    hierarchyAlreadyLocked?: boolean;
   },
 ): Promise<AuthorizedRuntimeAction> {
   if (options.requireOwner && capability.executionMode !== "owner") {
@@ -855,14 +854,12 @@ async function lockRuntimeActionAuthority(
     );
   }
 
-  if (!options.hierarchyAlreadyLocked) {
-    await lockRuntimeActionHierarchy(tx, capability, now, {
-      additionalLaneTargetAgentId: options.additionalLaneTargetAgentId,
-    });
-  }
-  // Run transitions own their attempt and lease projections. Locking the
-  // canonical run closes that race; the capability lock below rechecks the
-  // exact generation and database-clock expiry.
+  await lockRuntimeActionHierarchy(tx, capability, now, {
+    additionalLaneTargetAgentId: options.additionalLaneTargetAgentId,
+  });
+  // Run transitions own their attempt and lease projections. The canonical
+  // hierarchy/Session lock above matches every lifecycle producer; the run
+  // and capability locks below recheck the exact prompt authority.
   await lockRuntimeActionRun(tx, capability);
   try {
     await lockActivePromptCapabilityBinding(tx, capability, now);
@@ -1808,7 +1805,11 @@ async function admitAgentTextInTransaction(
   tx: IssueSessionDbTransaction,
   input: DispatchingExecutionSourceInput,
 ) {
-  const admission = await sessionAdmission.admitExecutionSource(input, tx);
+  const admission = await admitIssueExecutionInTransaction({
+    sessionAdmission,
+    transaction: tx,
+    work: input,
+  });
   if (!admission.ref || (input.comment && !admission.comment)) {
     throw new RuntimeIssueActionConflict(
       "Canonical agent mention did not reserve its ref and comment",
@@ -1943,10 +1944,6 @@ export async function mentionBoardInTransaction(
       "Canonical Board mention was retried with different immutable arguments",
     );
   }
-  await recordIssueLivenessActionInTransaction(
-    tx,
-    `issue_board_mention:${mention.id}`,
-  );
   return { ...admission, boardMention: mention };
 }
 
@@ -1973,17 +1970,17 @@ export async function admitCounterpartIssueUpdate(
         message?: never;
       }
     | {
-        sourceKind: "termination_recovery";
+        sourceKind: "issue_update";
         prompt?: never;
         message: string;
       }
   ),
 ) {
   const counterpart = input.counterpart ?? {};
-  const sourceKind = input.sourceKind;
-  const exactMessage = input.sourceKind === "termination_recovery"
-    ? input.message
-    : renderPaperclipManagedToolPrompt(input.prompt);
+  const sourceKind = "issue_update" as const;
+  const exactMessage = input.message === undefined
+    ? renderPaperclipManagedToolPrompt(input.prompt)
+    : input.message;
   const selfTarget =
     input.target.kind === "agent" &&
     sameIssueAgentTarget(input.sourceAgentTarget, input.target.target);
@@ -2014,15 +2011,15 @@ export async function admitCounterpartIssueUpdate(
       comment: input.comment,
       idempotencyKey: input.immutableSourceKey,
     };
-    if (input.sourceKind === "termination_recovery") {
+    if (input.message !== undefined) {
       if (input.actor.kind !== "system") {
         throw new RuntimeIssueActionConflict(
-          "Termination recovery requires a system actor",
+          "System recovery issue updates require a system actor",
         );
       }
       return admitAgentTextInTransaction(sessionAdmission, tx, {
         ...dispatchScope,
-        sourceKind: "termination_recovery",
+        sourceKind: "issue_update",
         actor: input.actor,
         exactText: input.message,
       });
@@ -2490,10 +2487,6 @@ export function createIssueFormCommitRuntime(
                 now,
               })
           : null;
-      await recordIssueLivenessActionInTransaction(
-        tx,
-        `issue_update:${update.id}`,
-      );
       return {
         issue: updatedIssue,
         update,
@@ -2509,7 +2502,7 @@ export function createIssueFormCommitRuntime(
     }
     if (committed.cancellations) {
       void options.issueExecutionCancellation
-        .reconcileRequestedScopeCancellations(committed.cancellations)
+        .reconcileRequestedCancellations(committed.cancellations)
         .catch(() => {
           // The durable cancellation-intent reconciler retries this signal.
         });
@@ -2950,10 +2943,6 @@ export function createIssueFormCommitRuntime(
           "Issue lifecycle changed during creator update",
         );
       }
-      await recordIssueLivenessActionInTransaction(
-        tx,
-        `issue_update:${update.id}`,
-      );
       return {
         issue: updatedIssue,
         update,
@@ -3489,10 +3478,30 @@ export function createPostgresRuntimeIssueActionService(
             "issue_create did not persist its creator edge",
           );
         }
-        const admission = await mentionAgentInTransaction(
+        const assignmentPrompt = {
+          toolName: "issue_create",
+          arguments: {
+            request: input.request,
+            ...(input.title === undefined ? {} : { title: input.title }),
+            ...(input.priority === undefined
+              ? {}
+              : { priority: input.priority }),
+            owner: input.owner,
+          },
+          context: {
+            issue: created,
+            from: messageAgent(
+              authorized.companyAgents,
+              input.capability.targetAgentId,
+            ),
+            owner: messageAgent(authorized.companyAgents, targetAgentId),
+            status: "open",
+          },
+        } satisfies PaperclipManagedToolPrompt<"issue_create">;
+        const admission = await admitIssueExecutionInTransaction({
           sessionAdmission,
-          tx,
-          {
+          transaction: tx,
+          work: {
             companyId: created.companyId,
             issueId: created.id,
             sessionId,
@@ -3510,26 +3519,7 @@ export function createPostgresRuntimeIssueActionService(
             actor: executionActorForCapability(input.capability),
             immutableSourceKey: key,
             sourceRecordId: created.id,
-            prompt: {
-              toolName: "issue_create",
-              arguments: {
-                request: input.request,
-                ...(input.title === undefined ? {} : { title: input.title }),
-                ...(input.priority === undefined
-                  ? {}
-                  : { priority: input.priority }),
-                owner: input.owner,
-              },
-              context: {
-                issue: created,
-                from: messageAgent(
-                  authorized.companyAgents,
-                  input.capability.targetAgentId,
-                ),
-                owner: messageAgent(authorized.companyAgents, targetAgentId),
-                status: "open",
-              },
-            },
+            exactText: renderPaperclipManagedToolPrompt(assignmentPrompt),
             comment: {
               author: {
                 kind: "agent",
@@ -3543,7 +3533,7 @@ export function createPostgresRuntimeIssueActionService(
             },
             idempotencyKey: key,
           },
-        );
+        });
         if (!admission.ref) {
           throw new RuntimeIssueActionConflict(
             "issue_create did not reserve an owner execution ref",
@@ -3874,7 +3864,7 @@ export function createPostgresRuntimeIssueActionService(
       });
       if (committed.cancellations) {
         await options.issueExecutionCancellation
-          .reconcileRequestedScopeCancellations(
+          .reconcileRequestedCancellations(
             committed.cancellations,
           );
       }
@@ -4213,9 +4203,26 @@ export function createPostgresRuntimeIssueActionService(
       )}:tool-call:${input.runInterfaceToolCallId}:ingress:${input.ingressOrdinal}`;
       const committed = await db.transaction(async (tx) => {
           const now = clock();
-          await lockRuntimeActionHierarchy(tx, input.capability, now, {
-            additionalLaneTargetAgentId: input.targetAgentId,
-          });
+          const authorized = await lockRuntimeActionAuthority(
+            tx,
+            input.capability,
+            "mention_agent",
+            now,
+            {
+              requireOwner: false,
+              additionalLaneTargetAgentId: input.targetAgentId,
+            },
+          );
+          if (
+            !authorized.catalog.mentionTargets.some(
+              (candidate) => candidate.id === input.targetAgentId,
+            )
+          ) {
+            throw new RuntimeIssueActionDenied(
+              "Mention target is no longer in the current reach catalog",
+              "mention_catalog_changed",
+            );
+          }
           const priorEvent = await tx
             .select()
             .from(issueSessionEvents)
@@ -4298,27 +4305,6 @@ export function createPostgresRuntimeIssueActionService(
             });
           }
 
-          const authorized = await lockRuntimeActionAuthority(
-            tx,
-            input.capability,
-            "mention_agent",
-            now,
-            {
-              requireOwner: false,
-              additionalLaneTargetAgentId: input.targetAgentId,
-              hierarchyAlreadyLocked: true,
-            },
-          );
-          if (
-            !authorized.catalog.mentionTargets.some(
-              (candidate) => candidate.id === input.targetAgentId,
-            )
-          ) {
-            throw new RuntimeIssueActionDenied(
-              "Mention target is no longer in the current reach catalog",
-              "mention_catalog_changed",
-            );
-          }
           const targetRevisionId = await assertTargetAdapterRevision(
             tx,
             input.capability.companyId,
@@ -4432,10 +4418,6 @@ export function createPostgresRuntimeIssueActionService(
               "Mention did not reserve its canonical ref and comment",
             );
           }
-          await recordIssueLivenessActionInTransaction(
-            tx,
-            `issue_execution_ref:${admission.ref.id}`,
-          );
           return input.commitMentionAction(tx, {
             accepted: true,
             consultExecutionId: consult.id,

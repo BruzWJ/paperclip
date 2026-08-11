@@ -26,7 +26,7 @@ import {
 import type { StorageService } from "../storage/types.js";
 import type { OrdinaryIssueRuntime } from "../services/ordinary-issue-runtime.js";
 import { assertBoard, assertCompanyAccess, assertInstanceAdmin } from "./authz.js";
-import { COMPANY_IMPORT_ROUTE_PATH } from "./company-import-paths.js";
+import { COMPANY_IMPORTS_ROUTE_PATH } from "./company-import-paths.js";
 
 export function companyRoutes(
   db: Db,
@@ -114,13 +114,6 @@ export function companyRoutes(
     res.json(filtered);
   });
 
-  // Common malformed path when companyId is empty in "/api/companies/{companyId}/issues".
-  router.get("/issues", (_req, res) => {
-    res.status(400).json({
-      error: "Missing companyId in path. Use /api/companies/{companyId}/issues.",
-    });
-  });
-
   router.get("/:companyId/artifacts", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -193,15 +186,7 @@ export function companyRoutes(
     res.json(company);
   });
 
-  router.post("/:companyId/export", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertBoardCompanyManagement(req, companyId);
-    const body = companyPortabilityExportSchema.parse(req.body);
-    const result = await portability.exportBundle(companyId, body);
-    res.json(result);
-  });
-
-  router.post("/import/preview", async (req, res) => {
+  router.post("/imports/preview", async (req, res) => {
     assertBoard(req);
     const body = companyPortabilityPreviewSchema.parse(req.body);
     assertImportTargetAccess(req, body.target);
@@ -209,7 +194,7 @@ export function companyRoutes(
     res.json(preview);
   });
 
-  router.post(COMPANY_IMPORT_ROUTE_PATH, async (req, res) => {
+  router.post(COMPANY_IMPORTS_ROUTE_PATH, async (req, res) => {
     assertBoard(req);
     const rawImportBody: unknown = req.body;
     const importBody = companyPortabilityImportSchema.parse(rawImportBody);

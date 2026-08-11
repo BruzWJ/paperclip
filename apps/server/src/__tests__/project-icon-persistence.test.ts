@@ -16,7 +16,6 @@ function projectRow(input: {
   return {
     id: randomUUID(),
     companyId: input.companyId,
-    goalId: null,
     name: input.name,
     description: null,
     status: "backlog",
@@ -86,7 +85,6 @@ describe("project icon persistence", () => {
     expect(valuesCall?.args[0]).toMatchObject({
       companyId,
       name,
-      goalId: null,
       ...createInput,
     });
     expect(remaining("select")).toBe(0);

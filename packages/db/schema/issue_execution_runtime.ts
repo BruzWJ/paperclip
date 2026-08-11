@@ -363,9 +363,7 @@ export const issueExecutionRefs = pgTable(
         'routine_dispatch',
         'issue_update',
         'consult_mention',
-        'system_nudge',
-        'termination_recovery',
-        'agent_liveness_followup'
+        'system_nudge'
       )`,
     ),
     check(

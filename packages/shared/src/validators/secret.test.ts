@@ -5,6 +5,7 @@ import {
   createUserSecretValueSchema,
   createSecretProviderConfigSchema,
   createSecretSchema,
+  envBindingSchema,
   envBindingUserSecretRefSchema,
   remoteSecretImportPreviewSchema,
   remoteSecretImportSchema,
@@ -18,6 +19,14 @@ import {
 } from "./secret.js";
 
 describe("secret validators", () => {
+  it("requires explicit environment binding objects", () => {
+    expect(envBindingSchema.safeParse("plaintext").success).toBe(false);
+    expect(envBindingSchema.parse({ type: "plain", value: "plaintext" })).toEqual({
+      type: "plain",
+      value: "plaintext",
+    });
+  });
+
   it("defaults user secret refs to required and no missing override", () => {
     expect(
       envBindingUserSecretRefSchema.parse({

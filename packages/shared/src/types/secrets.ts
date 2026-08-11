@@ -47,8 +47,7 @@ export interface EnvUserSecretRefBinding {
   allowMissingOverride?: boolean;
 }
 
-// Backward-compatible: legacy plaintext string values are still accepted.
-export type EnvBinding = string | EnvPlainBinding | EnvSecretRefBinding | EnvUserSecretRefBinding;
+export type EnvBinding = EnvPlainBinding | EnvSecretRefBinding | EnvUserSecretRefBinding;
 
 export type AgentEnvConfig = Record<string, EnvBinding>;
 

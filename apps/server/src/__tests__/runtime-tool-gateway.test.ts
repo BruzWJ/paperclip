@@ -45,7 +45,6 @@ const capability: PromptCapabilityBinding = {
   targetSessionCorrelationId: "correlation",
   effectiveContextExposureDigest: "b".repeat(64),
   effectiveToolsDigest: "c".repeat(64),
-  bootstrapToolGate: false,
   leaseId: "lease",
   leaseGeneration: 1,
   expiresAt: new Date("2026-07-25T01:00:00.000Z"),
@@ -59,6 +58,7 @@ function paperclipDescriptor(
 ): CompiledRunToolDescriptor {
   const descriptor = compileRuntimeInterface({
     mode: "owner",
+    turn: "work",
     contextDial: resolveContextDial({
       agent: { read_issue_comments: true },
     }).effective,
@@ -82,7 +82,6 @@ function setup(options: {
   agentDial?: Parameters<typeof resolveContextDial>[0]["agent"];
   enableRunTrace?: boolean;
   replayedPluginResult?: { value: unknown };
-  restoreSessionResult?: unknown;
 } = {}) {
   const mentionTransaction = {} as never;
   const issueUpdate = vi.fn(async () => ({ ok: true }));
@@ -108,9 +107,6 @@ function setup(options: {
       data: { opaqueRunContext: await input.mintPluginRunContext() },
     }),
   );
-  const restoreSession = vi.fn(async () => (
-    options.restoreSessionResult ?? { turns: [], nextCursor: null }
-  ));
   const readCanonicalRunTrace = vi.fn(
     async ({ runId }: { runId: string }) => ({
       runId,
@@ -132,7 +128,16 @@ function setup(options: {
       nextCursor: null,
     }),
   );
-  const classify = vi.fn(async () => undefined);
+  const claim = vi.fn(async () => {
+    if (options.replayedPluginResult) {
+      return {
+        state: "completed" as const,
+        result: options.replayedPluginResult.value,
+      };
+    }
+    return { state: "claimed" as const, id: "ledger-call-1" };
+  });
+  const registerTerminalInvalid = vi.fn(async () => undefined);
   const commitMentionAction = vi.fn(
     async (input: { result: unknown }) => input.result,
   );
@@ -205,52 +210,43 @@ function setup(options: {
       }
     },
   } as unknown as PaperclipManagedToolRouter;
-  const executor = createRuntimeToolGateway({
-    retrievalScope: {
-      async resolve() {
-        return {
-          companyId: "company",
-          activeIssueId: "issue",
-          dial: resolveContextDial({
-            agent:
-              options.agentDial ??
-              { read_issue_comments: true },
-          }).effective,
-        };
-      },
-    },
-    restoreSession: { restore: restoreSession } as never,
+  const runtimeScope = {
+    companyId: "company",
+    activeIssueId: "issue",
+    dial: resolveContextDial({
+      agent: options.agentDial ?? { read_issue_comments: true },
+    }).effective,
+  };
+  const runtimeGateway = createRuntimeToolGateway({
     managedTools,
     pluginTools: {
       execute: executePlugin,
     },
     callLedger: {
-      async claim() {
-        if (options.replayedPluginResult) {
-          return {
-            state: "completed" as const,
-            result: options.replayedPluginResult.value,
-          };
-        }
-        return { state: "claimed", id: "ledger-call-1" };
-      },
-      async registerTerminalInvalid() {},
-      classify,
+      claim,
+      registerTerminalInvalid,
       commitMentionAction,
       async complete() {},
       async fail() {},
     },
   });
+  const executor = {
+    execute(
+      input: Omit<Parameters<typeof runtimeGateway.execute>[0], "runtimeScope">,
+    ) {
+      return runtimeGateway.execute({ ...input, runtimeScope });
+    },
+  };
   return {
     executor,
     issueUpdate,
     agentConfigure,
     mentionAgent,
     mentionBoard,
-    classify,
+    claim,
+    registerTerminalInvalid,
     commitMentionAction,
     executePlugin,
-    restoreSession,
     readCanonicalRunTrace,
     mentionTransaction,
   };
@@ -418,6 +414,7 @@ describe("runtime plugin tool port", () => {
       inputSchema: {},
       source: "plugin" as const,
       pluginInstallationId: "plugin-installation",
+      pluginManifestIdentity: "manifest-1",
       pluginToolName: "lookup",
     };
     const valid = setup({
@@ -482,7 +479,7 @@ describe("runtime tool gateway", () => {
     descriptor,
     message,
   }) => {
-    const { executor } = setup();
+    const { executor, claim, registerTerminalInvalid } = setup();
     await expect(executor.execute({
       capability,
       descriptor,
@@ -495,13 +492,16 @@ describe("runtime tool gateway", () => {
       code: "runtime_interface_conflict",
       message,
     } satisfies Partial<RuntimeInterfaceConflict>);
+    expect(claim).not.toHaveBeenCalled();
+    expect(registerTerminalInvalid).toHaveBeenCalledOnce();
   });
 
   it("routes retrieval through the effective issue scope", async () => {
     const { executor } = setup();
     await expect(
       executor.execute({
-        capability,        descriptor: readComments,
+        capability,
+        descriptor: readComments,
         arguments: {},
         callIdentity: { source: "provider", id: "call-1" },
         ingressOrdinal: 0,
@@ -510,41 +510,6 @@ describe("runtime tool gateway", () => {
     ).resolves.toMatchObject({
       source: "paperclip",
       value: { items: [{ body: "visible" }] },
-    });
-  });
-
-  it("routes restore_session only through its dedicated recovery reader", async () => {
-    const restored = { runs: [{ runId: "prior-run", turns: [] }] };
-    const { executor, restoreSession } = setup({
-      restoreSessionResult: restored,
-    });
-    const descriptor = compileRuntimeInterface({
-      mode: "owner",
-      contextDial: resolveContextDial({ agent: {} }).effective,
-      actionGrants: {},
-      isCurrentOwner: true,
-      issueCreateDirectChildren: [],
-      issueAssignTargets: [],
-      creatorUpdateTargets: [],
-      mentionTargets: [],
-      configureTargets: [],
-      pluginTools: [],
-      restoreSession: true,
-    }).byName.get("restore_session")!;
-
-    await expect(executor.execute({
-      capability,
-      descriptor,
-      arguments: { runId: "prior-run", cursor: "run-trace-cursor" },
-      callIdentity: { source: "provider", id: "restore-page-2" },
-      ingressOrdinal: 0,
-      mintPluginRunContext,
-    })).resolves.toEqual({ source: "paperclip", value: restored });
-
-    expect(restoreSession).toHaveBeenCalledWith({
-      capability,
-      runId: "prior-run",
-      cursor: "run-trace-cursor",
     });
   });
 
@@ -643,10 +608,16 @@ describe("runtime tool gateway", () => {
   });
 
   it("rejects invalid plugin arguments before minting context or calling the worker", async () => {
-    const { executor, executePlugin } = setup();
+    const {
+      executor,
+      executePlugin,
+      claim,
+      registerTerminalInvalid,
+    } = setup();
     const mintRunContext = vi.fn(async () => "opaque");
     const descriptor = compileRuntimeInterface({
       mode: "owner",
+      turn: "work",
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: {},
       isCurrentOwner: true,
@@ -679,6 +650,8 @@ describe("runtime tool gateway", () => {
       ingressOrdinal: 0,
       mintPluginRunContext: mintRunContext,
     })).rejects.toThrow(RuntimeToolArgumentsInvalid);
+    expect(claim).not.toHaveBeenCalled();
+    expect(registerTerminalInvalid).toHaveBeenCalledOnce();
     expect(mintRunContext).not.toHaveBeenCalled();
     expect(executePlugin).not.toHaveBeenCalled();
   });
@@ -687,11 +660,12 @@ describe("runtime tool gateway", () => {
     const {
       executor,
       mentionAgent,
-      classify,
+      claim,
       commitMentionAction,
     } = setup();
     const descriptor = compileRuntimeInterface({
       mode: "owner",
+      turn: "work",
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: {},
       isCurrentOwner: true,
@@ -714,13 +688,12 @@ describe("runtime tool gateway", () => {
       mintPluginRunContext,
     });
 
-    expect(classify).toHaveBeenCalledWith({
-      capability,
-      id: "ledger-call-1",
-      ingressOrdinal: 7,
-      classification: "validated_mention",
-      targetAgentId: "mentioned-agent",
-    });
+    expect(claim).toHaveBeenCalledWith(expect.objectContaining({
+      classification: {
+        classification: "validated_mention",
+        targetAgentId: "mentioned-agent",
+      },
+    }));
     const mention = mentionAgent.mock.calls[0]![0];
     expect(mention).toEqual(expect.objectContaining({
       command: expect.objectContaining({
@@ -747,9 +720,10 @@ describe("runtime tool gateway", () => {
   });
 
   it("routes a Board request as a non-mention ledger action", async () => {
-    const { executor, mentionBoard, classify, commitMentionAction } = setup();
+    const { executor, mentionBoard, claim, commitMentionAction } = setup();
     const descriptor = compileRuntimeInterface({
       mode: "owner",
+      turn: "work",
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: { mention_board: true },
       isCurrentOwner: true,
@@ -775,12 +749,9 @@ describe("runtime tool gateway", () => {
       value: { requested: true },
     });
 
-    expect(classify).toHaveBeenCalledWith({
-      capability,
-      id: "ledger-call-1",
-      ingressOrdinal: 8,
-      classification: "non_mention",
-    });
+    expect(claim).toHaveBeenCalledWith(expect.objectContaining({
+      classification: { classification: "non_mention" },
+    }));
     expect(mentionBoard).toHaveBeenCalledWith(expect.objectContaining({
       command: expect.objectContaining({ name: "mention_board" }),
       authority: expect.objectContaining({
@@ -803,7 +774,7 @@ describe("runtime tool gateway", () => {
   });
 
   it("rejects broad or malformed retrieval arguments", async () => {
-    const { executor } = setup();
+    const { executor, claim, registerTerminalInvalid } = setup();
     await expect(
       executor.execute({
         capability,        descriptor: readComments,
@@ -813,12 +784,15 @@ describe("runtime tool gateway", () => {
         mintPluginRunContext,
       }),
     ).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
+    expect(claim).not.toHaveBeenCalled();
+    expect(registerTerminalInvalid).toHaveBeenCalledOnce();
   });
 
   it("enforces the dynamically compiled configure catalog before dispatch", async () => {
     const { executor, agentConfigure } = setup();
     const descriptor = compileRuntimeInterface({
       mode: "owner",
+      turn: "work",
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: { agent_configure: true },
       isCurrentOwner: true,

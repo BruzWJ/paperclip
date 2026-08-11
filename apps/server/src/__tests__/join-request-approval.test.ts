@@ -127,7 +127,6 @@ describe("join request approval", () => {
       companyId: fixture.companyId,
       requestId: fixture.requestId,
       actor: fixture.boardActor,
-      skillChannel: "operator_native",
     });
 
     expect(approved).toMatchObject({
@@ -152,7 +151,6 @@ describe("join request approval", () => {
       configuration: expect.objectContaining({
         adapterType: "codex",
         adapterConfig: { model: "gpt-5.6" },
-        skillChannel: "operator_native",
       }),
     }));
     expect(approvalMocks.ensureMembership).toHaveBeenCalledWith(
@@ -176,7 +174,6 @@ describe("join request approval", () => {
       companyId: fixture.companyId,
       requestId: fixture.requestId,
       actor: fixture.boardActor,
-      skillChannel: "operator_native",
     })).resolves.toMatchObject({ createdAgentId: fixture.createdAgentId });
 
     expect(harness.remaining("select")).toBe(0);

@@ -6,7 +6,6 @@ import {
   issueExecutionAttempts,
   issueExecutionCancellationIntents,
   issueExecutionLeases,
-  issueExecutionProcessFacts,
   issueExecutionPromptCapabilities,
   issueExecutionPromptSegments,
   issueExecutionRefs,
@@ -14,7 +13,6 @@ import {
   issueExecutionRunRefs,
   issueExecutionSessions,
   issueExecutionWorkspaceBindings,
-  issueSessionEvents,
   issueSessionInputs,
   issueSessionMessages,
   issues,
@@ -24,30 +22,27 @@ import {
   agentAdapterAcpConfigurationSchema,
   IssueSession,
 } from "@paperclipai/shared";
-import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { settleAcpPromptInTransaction } from "./acp-prompt-settlement.js";
 import type { BudgetEnforcementScope } from "./budgets.js";
 import { contextDialDigest } from "./context-dial-resolver.js";
-import {
-  fenceCompanySkillMaterializationReferenceInTransaction,
-  resolveCompanySkillMaterializationRevisionInTransaction,
-} from "./company-skill-materialization-lifecycle.js";
+import { preserveCorrelationAfterNonProtocolClosure } from "./issue-execution-correlation-retention.js";
 import {
   IssueExecutionPromptAuthorityLost,
 } from "./issue-execution-attempt-executor.js";
+import { classifyOrderedExecutionScopePair } from "./issue-execution-initial-request-pair.js";
+import { renderAgentInstructionBootstrap } from "./issue-execution-initial-start-admission.js";
 import { localExecutionCorrelationFingerprint } from "./local-execution-correlation.js";
 import type {
   IssueExecutionAttemptLease,
   IssueExecutionPromptCapabilityIdentity,
-  IssueExecutionPromptClosure,
   IssueExecutionPromptCycleRepository,
   IssueExecutionPromptIdentity,
-  IssueExecutionSubprocessObservation,
   ResolvedIssueExecutionPrompt,
 } from "./issue-execution-attempt-executor.js";
 import type { IssueExecutionRunService } from "./issue-execution-run-service.js";
-import { recordIssueLivenessActionInTransaction } from "./issue-liveness-reconciliation.js";
 import {
+  lockIssueSessionProjectionRoot,
   reserveIssueSessionEventSequence,
   reserveIssueSessionMessageId,
   type IssueSessionDbTransaction,
@@ -67,7 +62,6 @@ export interface PostgresIssueExecutionPromptCycleOptions {
   readonly runService: Pick<IssueExecutionRunService, "lockRun">;
   readonly compiler: Pick<PostgresPromptCapabilityCompiler, "resolve">;
   readonly capabilityEndpoint: string;
-  readonly now?: () => Date;
   readonly idFactory?: () => string;
   readonly capabilityTtlMs?: number;
   readonly leaseTtlMs?: number;
@@ -87,7 +81,23 @@ export class PostgresIssueExecutionPromptCycleRejected extends Error {
 
 type AttemptRow = typeof issueExecutionAttempts.$inferSelect;
 type LeaseRow = typeof issueExecutionLeases.$inferSelect;
+type RefRow = typeof issueExecutionRefs.$inferSelect;
 type CorrelationRow = typeof issueExecutionSessions.$inferSelect;
+
+type InitialPromptCycleResolution =
+  | { readonly kind: "singleton"; readonly instructionless: boolean }
+  | { readonly kind: "new" }
+  | { readonly kind: "bootstrap_unavailable" }
+  | { readonly kind: "invalid" }
+  | {
+      readonly kind: "bootstrap_resume";
+      readonly correlation: CorrelationRow;
+      readonly predecessor: {
+        readonly runId: string;
+        readonly refId: string;
+        readonly refOrdinal: number;
+      };
+    };
 
 function reject(message: string): never {
   throw new PostgresIssueExecutionPromptCycleRejected(message);
@@ -132,11 +142,12 @@ async function transactionClockTimestamp(
   label: string,
 ): Promise<Date> {
   const rows = Array.from(
-    await transaction.execute(sql<{ timestamp: Date }>`
-      select clock_timestamp() as "timestamp"
+    await transaction.execute(sql<{ timestampMs: number }>`
+      select (extract(epoch from clock_timestamp()) * 1000)::double precision
+        as "timestampMs"
     `),
   );
-  return validDate(rows[0]?.timestamp, label);
+  return validDate(new Date(Number(rows[0]?.timestampMs)), label);
 }
 
 function boundedReason(value: string, fallback: string): string {
@@ -178,14 +189,6 @@ function sourceTextFromPrompt(value: unknown): string {
     reject("steering input contains a non-text provider prompt");
   }
   return prompt.text;
-}
-
-function bootstrapInstruction(value: string | null): string | null {
-  // The board validator permits intentional leading/trailing whitespace in a
-  // board-authored instruction/role text. Only a direct database write
-  // containing no content is normalized away here; it must not create a
-  // meaningless ACP turn.
-  return value !== null && value.trim().length > 0 ? value : null;
 }
 
 function scopeFromCorrelationRow(row: CorrelationRow): AcpCorrelationScope {
@@ -304,6 +307,147 @@ async function selectCurrentCorrelation(
         .for("update");
   if (rows.length > 1) reject("native correlation logical key is ambiguous");
   return rows[0] ?? null;
+}
+
+/** @internal Sole ordered-scope classifier and bootstrap-handoff resolver. */
+export async function resolveInitialPromptCycleInTransaction(
+  transaction: IssueSessionDbTransaction,
+  input: {
+    readonly currentRef: RefRow;
+    readonly executionWorkspaceBindingId: string;
+  },
+): Promise<InitialPromptCycleResolution> {
+  const current = input.currentRef;
+  const grouped = await transaction
+    .select()
+    .from(issueExecutionRefs)
+    .where(
+      and(
+        eq(issueExecutionRefs.companyId, current.companyId),
+        eq(issueExecutionRefs.issueId, current.issueId),
+        eq(issueExecutionRefs.sessionId, current.sessionId),
+        eq(issueExecutionRefs.executionScopeId, current.executionScopeId),
+        eq(issueExecutionRefs.executionLineageId, current.executionLineageId),
+      ),
+    )
+    .orderBy(asc(issueExecutionRefs.laneOrdinal))
+    .limit(3)
+    .for("update");
+  const pair = classifyOrderedExecutionScopePair(grouped);
+  if (!pair) {
+    if (grouped.length !== 1 || grouped[0]?.id !== current.id) {
+      return { kind: "invalid" };
+    }
+    const target = await transaction.select({ instruction: agents.instruction })
+      .from(agents).where(and(
+        eq(agents.companyId, current.companyId),
+        eq(agents.id, current.targetAgentId),
+      )).limit(2).for("share");
+    return target.length === 1
+      ? {
+          kind: "singleton",
+          instructionless:
+            renderAgentInstructionBootstrap(target[0]!.instruction) === null,
+        }
+      : { kind: "invalid" };
+  }
+  if (pair.instruction.id === current.id) return { kind: "new" };
+  if (pair.work.id !== current.id) return { kind: "invalid" };
+  const predecessor = pair.instruction;
+  if (predecessor.disposition !== "terminal") return { kind: "invalid" };
+  const rows = await transaction
+    .select({
+      runId: issueExecutionRunRefs.runId,
+      refOrdinal: issueExecutionRunRefs.refOrdinal,
+      outcome: issueExecutionRunRefs.outcome,
+      protocolSettlementState: issueExecutionRunRefs.protocolSettlementState,
+      correlation: issueExecutionSessions,
+    })
+    .from(issueExecutionRunRefs)
+    .leftJoin(
+      issueExecutionSessions,
+      and(
+        eq(
+          issueExecutionSessions.lastProtocolSettledRunId,
+          issueExecutionRunRefs.runId,
+        ),
+        eq(issueExecutionSessions.lastProtocolSettledRefId, predecessor.id),
+        eq(
+          issueExecutionSessions.lastProtocolSettledRefOrdinal,
+          issueExecutionRunRefs.refOrdinal,
+        ),
+        eq(issueExecutionSessions.lastProtocolSettledSegmentOrdinal, 0),
+        eq(issueExecutionSessions.companyId, current.companyId),
+        eq(issueExecutionSessions.issueId, current.issueId),
+        eq(issueExecutionSessions.ownershipEpoch, current.ownershipEpoch),
+        eq(issueExecutionSessions.targetAgentId, current.targetAgentId),
+        eq(
+          issueExecutionSessions.adapterConfigIdentity,
+          current.adapterConfigRevisionId,
+        ),
+        eq(
+          issueExecutionSessions.workspaceIdentity,
+          input.executionWorkspaceBindingId,
+        ),
+        eq(
+          issueExecutionSessions.targetFingerprint,
+          localExecutionCorrelationFingerprint(current.adapterConfigRevisionId),
+        ),
+        inArray(issueExecutionSessions.state, ["eligible", "current"]),
+      ),
+    )
+    .where(
+      and(
+        eq(issueExecutionRunRefs.refId, predecessor.id),
+        inArray(issueExecutionRunRefs.protocolSettlementState, [
+          "settled",
+          "incomplete",
+        ]),
+      ),
+    )
+    .limit(2)
+    .for("update", { of: issueExecutionRunRefs });
+  const terminalRows = rows.filter(
+    (row) => row.protocolSettlementState !== "not_sent",
+  );
+  if (terminalRows.length !== 1) return { kind: "invalid" };
+  const {
+    correlation,
+    refOrdinal,
+    runId,
+    outcome,
+    protocolSettlementState,
+  } = terminalRows[0]!;
+  if (
+    protocolSettlementState !== "settled" ||
+    (outcome !== "succeeded" && outcome !== "refused")
+  ) {
+    return { kind: "bootstrap_unavailable" };
+  }
+  if (!correlation) return { kind: "invalid" };
+  const exactCarry = correlation.purpose === "carry" &&
+    correlation.state === "eligible" &&
+    correlation.laneKind === current.mode &&
+    correlation.runId === null &&
+    correlation.currentRefId === null &&
+    correlation.currentRefOrdinal === null &&
+    correlation.currentSegmentOrdinal === null &&
+    correlation.authorizedContextExposureDigest !== null;
+  const exactActiveRun = correlation.purpose === "active_run_steering" &&
+    correlation.state === "current" &&
+    correlation.laneKind === null &&
+    correlation.runId === runId &&
+    correlation.currentRefId === predecessor.id &&
+    correlation.currentRefOrdinal === refOrdinal &&
+    correlation.currentSegmentOrdinal === 0 &&
+    correlation.authorizedContextExposureDigest === null;
+  return exactCarry || exactActiveRun
+    ? {
+        kind: "bootstrap_resume",
+        correlation,
+        predecessor: { runId, refId: predecessor.id, refOrdinal },
+      }
+    : { kind: "invalid" };
 }
 
 async function selectSteeringResumeSourceCorrelation(
@@ -659,12 +803,56 @@ async function supersedeCorrelation(
     );
 }
 
-async function settleNonProtocolPrompt(
+async function recordNativeCancellationSettlement(
   transaction: IssueSessionDbTransaction,
   prompt: IssueExecutionPromptIdentity,
+  at: Date,
+): Promise<boolean> {
+  const changed = await transaction
+    .update(issueExecutionCancellationIntents)
+    .set({ nativeCancellationSettledAt: at })
+    .where(
+      and(
+        eq(issueExecutionCancellationIntents.companyId, prompt.companyId),
+        eq(issueExecutionCancellationIntents.issueId, prompt.issueId),
+        eq(issueExecutionCancellationIntents.runId, prompt.runId),
+        eq(issueExecutionCancellationIntents.attemptId, prompt.attemptId),
+        eq(issueExecutionCancellationIntents.leaseId, prompt.leaseId),
+        inArray(issueExecutionCancellationIntents.state, [
+          "requested",
+          "acknowledged",
+        ]),
+        sql`${issueExecutionCancellationIntents.nativeCancellationSettledAt} is null`,
+      ),
+    )
+    .returning({ id: issueExecutionCancellationIntents.id });
+  if (changed.length > 1) {
+    reject("native ACPX cancellation matched multiple active intents");
+  }
+  return changed.length === 1;
+}
+
+type NonProtocolPromptOwner = Pick<
+  IssueExecutionPromptIdentity,
+  | "promptKind"
+  | "runId"
+  | "refId"
+  | "refOrdinal"
+  | "segmentOrdinal"
+  | "attemptId"
+>;
+
+/** @internal Sole base/steering owner settlement for a non-protocol closure. */
+export async function settleNonProtocolPromptInTransaction(
+  transaction: IssueSessionDbTransaction,
+  prompt: NonProtocolPromptOwner,
   input: {
     readonly state: "not_sent" | "incomplete";
-    readonly outcome: "released_unsent" | "failed" | "cancelled";
+    readonly outcome:
+      | "released_unsent"
+      | "ambiguous"
+      | "failed"
+      | "cancelled";
     readonly referenceId: string;
     readonly at: Date;
   },
@@ -860,7 +1048,6 @@ function terminalOutcome(
 export function createPostgresIssueExecutionPromptCycleRepository(
   options: PostgresIssueExecutionPromptCycleOptions,
 ): IssueExecutionPromptCycleRepository {
-  const now = options.now ?? (() => new Date());
   const idFactory = options.idFactory ?? randomUUID;
   const capabilityTtlMs =
     options.capabilityTtlMs ?? DEFAULT_CAPABILITY_TTL_MS;
@@ -1000,16 +1187,6 @@ export function createPostgresIssueExecutionPromptCycleRepository(
             ),
           )
           .limit(2);
-        const agentRows = await transaction
-          .select({ instruction: agents.instruction })
-          .from(agents)
-          .where(
-            and(
-              eq(agents.companyId, identity.companyId),
-              eq(agents.id, identity.targetAgentId),
-            ),
-          )
-          .limit(2);
         const workspaceRows = await transaction
           .select()
           .from(issueExecutionWorkspaceBindings)
@@ -1032,10 +1209,6 @@ export function createPostgresIssueExecutionPromptCycleRepository(
         const member = exactlyOne(memberRows, "current prompt lost its run-ref member");
         const source = exactlyOne(sourceRows, "current prompt lost its immutable ref");
         const revision = exactlyOne(revisionRows, "current prompt lost its adapter revision");
-        const targetAgent = exactlyOne(
-          agentRows,
-          "current prompt lost its target agent",
-        );
         const workspace = exactlyOne(workspaceRows, "current prompt lost its workspace binding");
         if (
           source.companyId !== identity.companyId ||
@@ -1187,16 +1360,6 @@ export function createPostgresIssueExecutionPromptCycleRepository(
         const acpConfiguration = agentAdapterAcpConfigurationSchema.parse(
           revision.acpConfiguration,
         );
-        const companySkillLaunchChannel = (
-          await resolveCompanySkillMaterializationRevisionInTransaction(
-            transaction,
-            {
-              companyId: identity.companyId,
-              agentId: identity.targetAgentId,
-              adapterConfigRevisionId: identity.adapterConfigRevisionId,
-            },
-          )
-        ).launchChannel;
         const compileInput = await options.compiler.resolve(
           promptCompileScope(completeIdentity),
         );
@@ -1212,13 +1375,36 @@ export function createPostgresIssueExecutionPromptCycleRepository(
         const targetFingerprint = localExecutionCorrelationFingerprint(
           identity.adapterConfigRevisionId,
         );
-        const selectedCorrelation = attempt.sessionOperation === "resume"
-          ? await selectCurrentCorrelation(transaction, {
-              identity: completeIdentity,
-              carryContext: true,
-              effectiveContextExposureDigest,
-              targetFingerprint,
+        const initialCycle = attempt.promptKind === "base"
+          ? await resolveInitialPromptCycleInTransaction(transaction, {
+              currentRef: source,
+              executionWorkspaceBindingId:
+                identity.executionWorkspaceBindingId,
             })
+          : null;
+        const operationMatchesCycle = initialCycle === null ||
+          (attempt.sessionOperation === "new"
+            ? initialCycle.kind === "new" ||
+              (initialCycle.kind === "singleton" &&
+                initialCycle.instructionless)
+            : attempt.sessionOperation === "resume"
+              ? initialCycle.kind === "bootstrap_resume" ||
+                initialCycle.kind === "singleton"
+              : false);
+        if (initialCycle?.kind === "invalid" ||
+          initialCycle?.kind === "bootstrap_unavailable" ||
+          !operationMatchesCycle) {
+          reject("initial prompt cycle no longer matches the frozen session operation");
+        }
+        const selectedCorrelation = attempt.sessionOperation === "resume"
+          ? initialCycle?.kind === "bootstrap_resume"
+            ? initialCycle.correlation
+            : await selectCurrentCorrelation(transaction, {
+                identity: completeIdentity,
+                carryContext: true,
+                effectiveContextExposureDigest,
+                targetFingerprint,
+              })
           : attempt.sessionOperation === "steer_resume"
             ? steeringResumeSourceCorrelationId === null
               ? reject("steering resume lost its immutable source correlation")
@@ -1275,26 +1461,24 @@ export function createPostgresIssueExecutionPromptCycleRepository(
             };
         return Object.freeze({
           identity: completeIdentity,
+          turn: compileInput.turn,
           sessionOperation: attempt.sessionOperation,
           sourceMessageId,
           sourceMessageSeq,
           sourceText,
-          bootstrapInstruction:
-            attempt.sessionOperation === "new"
-              ? bootstrapInstruction(targetAgent.instruction)
-              : null,
-          restoreSession: compileInput.restoreSession === true,
           contextAccess: Object.freeze({ ...compileInput.contextDial }),
           carryContext,
           storedCorrelation: selectedCorrelation
             ? storedCorrelation(selectedCorrelation)
+            : null,
+          bootstrapPredecessor: initialCycle?.kind === "bootstrap_resume"
+            ? initialCycle.predecessor
             : null,
           activationCorrelationScope,
           effectiveContextExposureDigest,
           carrySourceExposureDigest,
           effectiveToolsDigest,
           acpConfiguration,
-          companySkills: companySkillLaunchChannel,
           target: {
             companyId: identity.companyId,
             issueId: identity.issueId,
@@ -1308,9 +1492,6 @@ export function createPostgresIssueExecutionPromptCycleRepository(
             localWorkspaceCwd: workspace.absoluteCwd,
             targetAdditionalDirectories: Object.freeze([]),
           },
-          timeoutSec: null,
-          runtimeRootDir: null,
-          localProcessSandbox: null,
           leaseRenewalIntervalMs,
         });
       });
@@ -1451,6 +1632,7 @@ export function createPostgresIssueExecutionPromptCycleRepository(
         promptCompileScope(prompt.identity),
       );
       if (
+        compileInput.turn !== prompt.turn ||
         contextDialDigest(compileInput.contextDial) !==
           prompt.effectiveContextExposureDigest ||
         runtimeInterfaceDigest(compileInput) !== prompt.effectiveToolsDigest
@@ -1613,15 +1795,6 @@ export function createPostgresIssueExecutionPromptCycleRepository(
         ) {
           reject("capability is not pending exact prompt activation");
         }
-        await fenceCompanySkillMaterializationReferenceInTransaction(
-          transaction,
-          {
-            companyId: prompt.identity.companyId,
-            agentId: prompt.identity.targetAgentId,
-            adapterConfigRevisionId:
-              prompt.identity.adapterConfigRevisionId,
-          },
-        );
         const old = await selectCurrentCorrelation(transaction, {
           identity: prompt.identity,
           carryContext: prompt.carryContext,
@@ -1792,15 +1965,8 @@ export function createPostgresIssueExecutionPromptCycleRepository(
             )
             .returning({
               runId: issueExecutionPromptSegments.runId,
-              sourceInputId: issueExecutionPromptSegments.sourceInputId,
             });
           if (updated.length !== 1) reject("steering activation lost its segment");
-          if (updated[0]!.sourceInputId === null) {
-            await recordIssueLivenessActionInTransaction(
-              transaction,
-              `issue_execution_prompt_segment:${prompt.identity.runId}:${prompt.identity.refId}:${prompt.identity.segmentOrdinal}`,
-            );
-          }
         }
       });
     },
@@ -1872,54 +2038,16 @@ export function createPostgresIssueExecutionPromptCycleRepository(
       });
     },
 
-    async recordSubprocessStarted(input) {
-      await options.database.transaction(async (transaction) => {
-        const { lease } = await assertCurrentAttempt(
-          transaction,
-          options.runService,
-          input.prompt.identity,
-        );
-        const capability = await lockCapability(
-          transaction,
-          input.prompt.identity,
-          input.capability,
-        );
-        const timestamp = await transactionClockTimestamp(
-          transaction,
-          "subprocess start time",
-        );
-        if (
-          lease.expiresAt <= timestamp ||
-          capability.state !== "pending_setup" ||
-          capability.expiresAt <= timestamp ||
-          input.processId < 1 ||
-          input.processGroupId < 1 ||
-          input.supervisorLocator.trim().length === 0
-        ) {
-          reject("subprocess start crossed capability or process identity");
-        }
-        await transaction.insert(issueExecutionProcessFacts).values({
-          companyId: input.prompt.identity.companyId,
-          issueId: input.prompt.identity.issueId,
-          runId: input.prompt.identity.runId,
-          attemptId: input.prompt.identity.attemptId,
-          leaseId: input.prompt.identity.leaseId,
-          processId: input.processId,
-          processGroupId: input.processGroupId,
-          supervisorLocator: input.supervisorLocator,
-          state: "running",
-          startedAt: timestamp,
-          settledAt: null,
-          exitCode: null,
-          exitSignal: null,
-          createdAt: timestamp,
-        });
-      });
-    },
-
     async closePrompt({ prompt, capability, outcome }) {
       let budgetScopes: readonly BudgetEnforcementScope[] = Object.freeze([]);
       const result = await options.database.transaction(async (transaction) => {
+        // Closure may publish the assistant boundary. Lock its FK parents and
+        // Session checkpoint before revalidating the run and capability.
+        await lockIssueSessionProjectionRoot(transaction, {
+          companyId: prompt.identity.companyId,
+          issueId: prompt.identity.issueId,
+          sessionId: prompt.identity.sessionId,
+        });
         const { lease } = await assertCurrentAttempt(
           transaction,
           options.runService,
@@ -1934,45 +2062,45 @@ export function createPostgresIssueExecutionPromptCycleRepository(
           transaction,
           "prompt closure time",
         );
+        const nativeCancellation = outcome.kind === "cancelled";
+        const preserveCorrelation =
+          preserveCorrelationAfterNonProtocolClosure({
+            turn: prompt.turn,
+            carryContext: prompt.carryContext,
+          });
+        if (
+          (outcome.kind === "cancelled" &&
+            outcome.settlement !== null &&
+            outcome.settlement.stopReason !== "cancelled") ||
+          (outcome.kind === "settled" &&
+            outcome.settlement.stopReason === "cancelled")
+        ) {
+          reject("prompt cancellation closure disagrees with ACPX result status");
+        }
+        const steeringCancellationCapability =
+          currentCapability.state === "revoked" &&
+          currentCapability.revocationReason === "active_run_steering" &&
+          currentCapability.revokedAt !== null &&
+          nativeCancellation;
         if (
           lease.expiresAt <= timestamp ||
           (currentCapability.state !== "pending_setup" &&
-            currentCapability.state !== "active") ||
+            currentCapability.state !== "active" &&
+            !steeringCancellationCapability) ||
           currentCapability.expiresAt <= timestamp
         ) {
           reject("prompt closure requires one live capability generation");
         }
-        if (outcome.kind === "target_not_found") {
+        const protocolSettlement = outcome.kind === "settled"
+          ? outcome.settlement
+          : outcome.kind === "cancelled"
+            ? outcome.settlement
+            : null;
+        if (protocolSettlement !== null) {
           if (
-            prompt.sessionOperation !== "resume" &&
-            prompt.sessionOperation !== "steer_resume"
+            currentCapability.state !== "active" &&
+            !steeringCancellationCapability
           ) {
-            reject("target_not_found is valid only for a frozen resume operation");
-          }
-          await revokeCapability(
-            transaction,
-            prompt.identity,
-            capability,
-            "target_not_found",
-            timestamp,
-          );
-          await supersedeCorrelation(
-            transaction,
-            prompt.storedCorrelation?.id ?? null,
-            "target_not_found",
-            timestamp,
-          );
-          return {
-            kind: "dispatch" as const,
-            result: {
-              kind: "retry" as const,
-              reason: "target_not_found_new_session" as const,
-              retryAt: timestamp,
-            },
-          };
-        }
-        if (outcome.kind === "settled") {
-          if (currentCapability.state !== "active") {
             reject("protocol settlement requires an active capability");
           }
           const assistantMessageId = await ensureAssistantStarted(
@@ -2019,7 +2147,7 @@ export function createPostgresIssueExecutionPromptCycleRepository(
               adapterConfigRevisionId:
                 prompt.identity.adapterConfigRevisionId,
             },
-            settlement: outcome.settlement,
+            settlement: protocolSettlement,
             promptSettlementReferenceId: settlementReferenceId,
             terminalUsageReference:
               `acp-prompt:${prompt.identity.attemptId}:terminal-usage`,
@@ -2034,33 +2162,25 @@ export function createPostgresIssueExecutionPromptCycleRepository(
             settledAt: timestamp,
           });
           budgetScopes = settled.budgetSuspensionScopes;
-          if (
-            outcome.settlement.stopReason === "cancelled" &&
-            !outcome.cancellationNotificationFailed
-          ) {
-            await transaction
-              .update(issueExecutionCancellationIntents)
-              .set({ sessionCancelSentAt: timestamp })
-              .where(
-                and(
-                  eq(
-                    issueExecutionCancellationIntents.attemptId,
-                    prompt.identity.attemptId,
-                  ),
-                  eq(issueExecutionCancellationIntents.state, "acknowledged"),
-                  sql`${issueExecutionCancellationIntents.sessionCancelSentAt} is null`,
-                ),
-              );
+          if (nativeCancellation) {
+            const recordedCancellation = await recordNativeCancellationSettlement(
+              transaction,
+              prompt.identity,
+              timestamp,
+            );
+            if (steeringCancellationCapability && !recordedCancellation) {
+              reject("steering cancellation lost its exact active intent");
+            }
           }
-          await revokeCapability(
-            transaction,
-            prompt.identity,
-            capability,
-            outcome.cancellationNotificationFailed
-              ? "protocol_settled_cancel_notification_failed"
-              : "protocol_settled",
-            timestamp,
-          );
+          if (!steeringCancellationCapability) {
+            await revokeCapability(
+              transaction,
+              prompt.identity,
+              capability,
+              "protocol_settled",
+              timestamp,
+            );
+          }
           const finalText = await terminalAssistantText(
             transaction,
             prompt.identity,
@@ -2070,17 +2190,71 @@ export function createPostgresIssueExecutionPromptCycleRepository(
             kind: "dispatch" as const,
             result: {
               kind: "terminal" as const,
-              outcome: terminalOutcome(outcome.settlement.stopReason),
-              reason: outcome.settlement.stopReason,
+              outcome: terminalOutcome(protocolSettlement.stopReason),
+              reason: protocolSettlement.stopReason,
               finalText,
             },
           };
+        }
+        if (outcome.kind === "cancelled") {
+          if (
+            currentCapability.state !== "active" &&
+            !steeringCancellationCapability
+          ) {
+            reject("native cancellation has no exact active capability");
+          }
+          await settleNonProtocolPromptInTransaction(transaction, prompt.identity, {
+            state: "incomplete",
+            outcome: "cancelled",
+            referenceId: deterministicUuid(
+              "paperclip-acp-prompt-incomplete",
+              prompt.identity.attemptId,
+            ),
+            at: timestamp,
+          });
+          const recordedCancellation = await recordNativeCancellationSettlement(
+            transaction,
+            prompt.identity,
+            timestamp,
+          );
+          if (steeringCancellationCapability && !recordedCancellation) {
+            reject("steering cancellation lost its exact active intent");
+          }
+          if (!steeringCancellationCapability) {
+            await revokeCapability(
+              transaction,
+              prompt.identity,
+              capability,
+              "prompt_cancelled_incomplete",
+              timestamp,
+            );
+            if (!preserveCorrelation) {
+              await supersedeCorrelation(
+                transaction,
+                currentCapability.targetSessionCorrelationId,
+                "prompt_cancelled_incomplete",
+                timestamp,
+              );
+            }
+          }
+          return {
+            kind: "dispatch" as const,
+            result: {
+              kind: "terminal" as const,
+              outcome: "cancelled" as const,
+              reason: "cancelled",
+            },
+          };
+        }
+        if (outcome.kind !== "error") {
+          reject("protocol settlement closure did not commit");
         }
         const correlationId = currentCapability.targetSessionCorrelationId;
         if (!outcome.promptTransmitted) {
           const retryable =
             outcome.failure === "runtime" &&
-            currentCapability.state === "pending_setup";
+            currentCapability.state === "pending_setup" &&
+            prompt.sessionOperation === "new";
           await revokeCapability(
             transaction,
             prompt.identity,
@@ -2098,13 +2272,15 @@ export function createPostgresIssueExecutionPromptCycleRepository(
               },
             };
           }
-          await supersedeCorrelation(
-            transaction,
-            correlationId,
-            "pre_send_failure",
-            timestamp,
-          );
-          await settleNonProtocolPrompt(transaction, prompt.identity, {
+          if (!preserveCorrelation) {
+            await supersedeCorrelation(
+              transaction,
+              prompt.storedCorrelation?.id ?? correlationId,
+              "pre_send_failure",
+              timestamp,
+            );
+          }
+          await settleNonProtocolPromptInTransaction(transaction, prompt.identity, {
             state: "not_sent",
             outcome: "released_unsent",
             referenceId: deterministicUuid(
@@ -2125,10 +2301,9 @@ export function createPostgresIssueExecutionPromptCycleRepository(
         if (currentCapability.state !== "active") {
           reject("post-send failure has no active exact capability");
         }
-        const cancelled = outcome.message.includes("cancel");
-        await settleNonProtocolPrompt(transaction, prompt.identity, {
+        await settleNonProtocolPromptInTransaction(transaction, prompt.identity, {
           state: "incomplete",
-          outcome: cancelled ? "cancelled" : "failed",
+          outcome: "failed",
           referenceId: deterministicUuid(
             "paperclip-acp-prompt-incomplete",
             prompt.identity.attemptId,
@@ -2139,20 +2314,22 @@ export function createPostgresIssueExecutionPromptCycleRepository(
           transaction,
           prompt.identity,
           capability,
-          cancelled ? "prompt_cancelled_incomplete" : "prompt_failed_incomplete",
+          "prompt_failed_incomplete",
           timestamp,
         );
-        await supersedeCorrelation(
-          transaction,
-          correlationId,
-          cancelled ? "prompt_cancelled_incomplete" : "prompt_failed_incomplete",
-          timestamp,
-        );
+        if (!preserveCorrelation) {
+          await supersedeCorrelation(
+            transaction,
+            correlationId,
+            "prompt_failed_incomplete",
+            timestamp,
+          );
+        }
         return {
           kind: "dispatch" as const,
           result: {
             kind: "terminal" as const,
-            outcome: cancelled ? "cancelled" as const : "failed" as const,
+            outcome: "failed" as const,
             reason: boundedReason(outcome.message, "post_send_incomplete"),
           },
         };
@@ -2163,106 +2340,6 @@ export function createPostgresIssueExecutionPromptCycleRepository(
       return result;
     },
 
-    async recordSubprocessTeardown({ prompt, observation }) {
-      await options.database.transaction(async (transaction) => {
-        const timestamp = validDate(now(), "subprocess teardown time");
-        const rows = await transaction
-          .select()
-          .from(issueExecutionProcessFacts)
-          .where(
-            and(
-              eq(issueExecutionProcessFacts.runId, prompt.identity.runId),
-              eq(issueExecutionProcessFacts.attemptId, prompt.identity.attemptId),
-              eq(issueExecutionProcessFacts.leaseId, prompt.identity.leaseId),
-            ),
-          )
-          .limit(2)
-          .for("update");
-        // A subprocess can be reaped after spawn but before its process fact
-        // commits (invalid PID, lost prompt authority, or an ambiguous commit
-        // failure). With no durable fact there is nothing to settle.
-        if (rows.length === 0) return;
-        const process = exactlyOne(rows, "subprocess teardown lost its process fact");
-        if (!["starting", "running"].includes(process.state)) {
-          if (["exited", "terminated", "lost"].includes(process.state)) return;
-          reject("subprocess fact has an invalid teardown state");
-        }
-        const terminal = processTerminalColumns(observation, timestamp);
-        const changed = await transaction
-          .update(issueExecutionProcessFacts)
-          .set(terminal)
-          .where(
-            and(
-              eq(issueExecutionProcessFacts.id, process.id),
-              inArray(issueExecutionProcessFacts.state, ["starting", "running"]),
-            ),
-          )
-          .returning({ id: issueExecutionProcessFacts.id });
-        if (changed.length !== 1) reject("subprocess teardown lost its monotonic state");
-      });
-    },
-
-    async recordProtocolViolation({ prompt, capability }) {
-      await options.database.transaction(async (transaction) => {
-        const { lease } = await assertCurrentAttempt(
-          transaction,
-          options.runService,
-          prompt.identity,
-        );
-        const current = await lockCapability(
-          transaction,
-          prompt.identity,
-          capability,
-        );
-        const timestamp = await transactionClockTimestamp(
-          transaction,
-          "protocol violation time",
-        );
-        if (
-          lease.expiresAt <= timestamp ||
-          (current.state !== "pending_setup" && current.state !== "active") ||
-          current.expiresAt <= timestamp
-        ) {
-          reject("protocol violation crossed an inactive capability");
-        }
-      });
-    },
   };
   return Object.freeze(repository);
-}
-
-function processTerminalColumns(
-  observation: IssueExecutionSubprocessObservation,
-  at: Date,
-) {
-  if (observation.teardown.kind !== "reaped") {
-    return {
-      state: "lost" as const,
-      settledAt: at,
-      exitCode: null,
-      exitSignal: null,
-    };
-  }
-  if (observation.teardown.signal) {
-    return {
-      state: "terminated" as const,
-      settledAt: at,
-      exitCode: null,
-      exitSignal: observation.teardown.signal,
-    };
-  }
-  if (observation.teardown.exitCode !== null) {
-    return {
-      state: "exited" as const,
-      settledAt: at,
-      exitCode: observation.teardown.exitCode,
-      exitSignal: null,
-    };
-  }
-  return {
-    state: "lost" as const,
-    settledAt: at,
-    exitCode: null,
-    exitSignal: null,
-  };
 }

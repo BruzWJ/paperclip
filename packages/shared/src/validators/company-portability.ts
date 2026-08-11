@@ -17,7 +17,6 @@ import { routineVariableSchema } from "./routine.js";
 import {
   agentRuntimeConfigSchema,
 } from "./agent.js";
-import { companySkillChannelSchema } from "./company-skill-pins.js";
 import { budgetCurrencySchema, moneyAmountSchema } from "../money.js";
 
 export const portabilityIncludeSchema = z
@@ -180,7 +179,6 @@ export const portabilityAgentManifestEntrySchema = z.object({
     adapterType: z.string().min(1),
     adapterConfig: portabilityAgentAdapterConfigSchema,
     runtimeConfig: portabilityAgentRuntimeConfigSchema,
-    skillChannel: companySkillChannelSchema,
   }).strict(),
   contextGrants: exactBooleanMap(AGENT_CONTEXT_GRANT_KEYS),
   actionGrants: exactBooleanMap(PAPERCLIP_ACTION_KEYS),
@@ -358,7 +356,6 @@ export type CompanyPortabilityExport = z.infer<typeof companyPortabilityExportSc
 export const portabilityAdapterOverrideSchema = z.object({
   adapterType: z.string().min(1),
   adapterConfig: portabilityAgentAdapterConfigSchema,
-  skillChannel: companySkillChannelSchema,
 }).strict();
 
 export const companyPortabilityPreviewSchema = z.object({

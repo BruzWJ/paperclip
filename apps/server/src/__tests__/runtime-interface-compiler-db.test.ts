@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { issueExecutionRefs, type Db } from "@paperclipai/db";
 import {
   AGENT_CONTEXT_GRANT_KEYS,
   type PaperclipPluginManifestV1,
@@ -7,6 +8,7 @@ import type { PromptCapabilityCompileScope } from "../services/prompt-capability
 import {
   buildRuntimeInterfaceCompileInput,
   readyPluginTools,
+  resolveRuntimeToolTurn,
   type RuntimeInterfaceCompilerSnapshot,
 } from "../services/runtime-interface-compiler-db.ts";
 import { compileRuntimeInterface } from "../services/runtime-interface-compiler.ts";
@@ -43,6 +45,7 @@ function snapshot(
 ): RuntimeInterfaceCompilerSnapshot {
   return {
     capability: capability(),
+    turn: "work",
     issue: {
       companyId: "company",
       ownerKind: "agent",
@@ -200,6 +203,74 @@ function snapshot(
 }
 
 describe("Postgres runtime-interface compile snapshot", () => {
+  it("derives the bootstrap turn only from an exact ordered scope", async () => {
+    const ref = (overrides: Record<string, unknown> = {}) => ({
+      id: "instruction",
+      companyId: "company",
+      issueId: "issue",
+      sessionId: "session",
+      ownershipEpoch: 1,
+      previousOwnershipEpoch: null,
+      executionScopeId: "scope",
+      executionLineageId: "lineage",
+      mode: "owner",
+      sourceKind: "system_nudge",
+      sourceRecordId: "issue",
+      messageKind: "user",
+      targetAgentId: "owner",
+      laneOrdinal: 0,
+      issueExecutionAuthorityId: "authority",
+      consultExecutionId: null,
+      adapterConfigRevisionId: "revision",
+      contextEpoch: 0,
+      counterpartIssueId: null,
+      counterpartAuthorityId: null,
+      counterpartOwnershipEpoch: null,
+      consultCallerRefId: null,
+      consultChainToken: null,
+      ...overrides,
+    }) as typeof issueExecutionRefs.$inferSelect;
+    const instruction = ref();
+    const work = ref({ id: "work", messageKind: "user", laneOrdinal: 1 });
+    const db = (responses: readonly (readonly unknown[])[]) => {
+      let read = 0;
+      return {
+        select() {
+          const rows = responses[read++] ?? [];
+          const builder = {
+            from() { return builder; },
+            where() { return builder; },
+            orderBy() { return builder; },
+            limit() { return Promise.resolve(rows); },
+          };
+          return builder;
+        },
+      } as unknown as Db;
+    };
+    const compileScope = capability({
+      ownershipEpoch: 1,
+      refId: instruction.id,
+    });
+
+    await expect(
+      resolveRuntimeToolTurn(
+        db([[instruction], [instruction, work]]),
+        compileScope,
+      ),
+    ).resolves.toBe("bootstrap");
+    await expect(
+      resolveRuntimeToolTurn(db([[instruction], [instruction]]), compileScope),
+    ).resolves.toBe("work");
+    const lateInstruction = ref({ laneOrdinal: 1 });
+    const lateWork = ref({ id: "work", messageKind: "user", laneOrdinal: 3 });
+    await expect(
+      resolveRuntimeToolTurn(
+        db([[lateInstruction], [lateInstruction, lateWork]]),
+        compileScope,
+      ),
+    ).rejects.toThrow("lost its exact ordered pair");
+  });
+
   it("admits only authorized tools from an exact ready-plugin manifest", () => {
     const manifest: PaperclipPluginManifestV1 = {
       id: "acme.search",
@@ -297,21 +368,6 @@ describe("Postgres runtime-interface compile snapshot", () => {
     ]);
     expect(compiled.configureTargets[0]).not.toHaveProperty("title");
     expect(compiled.configureTargets[0]).not.toHaveProperty("reportsTo");
-  });
-
-  it("exposes recovery restoration only when the target has an instruction bootstrap", () => {
-    const base = snapshot({ restoreSession: true });
-    expect(buildRuntimeInterfaceCompileInput(base).restoreSession).toBe(false);
-
-    const instructed = {
-      ...base,
-      agents: base.agents.map((agent) =>
-        agent.id === "owner"
-          ? { ...agent, instruction: "Restore the role context." }
-          : agent,
-      ),
-    } satisfies RuntimeInterfaceCompilerSnapshot;
-    expect(buildRuntimeInterfaceCompileInput(instructed).restoreSession).toBe(true);
   });
 
   it("does not inherit creator lifecycle catalogs through a consult", () => {

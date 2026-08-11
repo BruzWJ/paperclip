@@ -10,7 +10,6 @@ import {
   issueExecutionHistoryViews,
   issueExecutionLanes,
   issueExecutionLeases,
-  issueExecutionProcessFacts,
   issueExecutionPromptCapabilities,
   issueExecutionPromptSegments,
   issueExecutionRefs,
@@ -39,7 +38,6 @@ import {
   inArray,
   isNotNull,
   isNull,
-  lt,
   lte,
   ne,
   notInArray,
@@ -47,11 +45,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { contextDialDigest } from "./context-dial-resolver.js";
-import {
-  collectCompanySkillMaterializationIfUnreferencedInTransaction,
-  fenceCompanySkillMaterializationReferenceInTransaction,
-  type ReapedCompanySkillMaterialization,
-} from "./company-skill-materialization-lifecycle.js";
+import { preserveCorrelationAfterNonProtocolClosure } from "./issue-execution-correlation-retention.js";
 import type {
   IssueExecutionDispatcherRepository,
   IssueExecutionRetry,
@@ -78,7 +72,14 @@ import {
 import { createIssueSessionAdmissionService } from "./issue-session/admission.js";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 import { issueSessionMessageFromRow } from "./issue-session/projector.js";
-import type { PostgresPromptCapabilityCompiler } from "./runtime-interface-compiler-db.js";
+import {
+  resolveRuntimeToolTurn,
+  type PostgresPromptCapabilityCompiler,
+} from "./runtime-interface-compiler-db.js";
+import {
+  resolveInitialPromptCycleInTransaction,
+  settleNonProtocolPromptInTransaction,
+} from "./issue-execution-prompt-cycle-postgres.js";
 import {
   isIssueExecutionRefDeliveryEligible,
   issueExecutionRefDeliveryEligibilitySql,
@@ -102,6 +103,8 @@ export type PersistedIssueExecutionRefRow =
 type RefRow = PersistedIssueExecutionRefRow;
 type RunRow = IssueExecutionRunEnvelope;
 type AttemptRow = typeof issueExecutionAttempts.$inferSelect;
+type CancellationIntentRow =
+  typeof issueExecutionCancellationIntents.$inferSelect;
 type PromptCapabilityRow =
   typeof issueExecutionPromptCapabilities.$inferSelect;
 type BasePromptOwnerRow = typeof issueExecutionRunRefs.$inferSelect;
@@ -176,6 +179,7 @@ export interface PostgresIssueExecutionDispatcherRepositoryOptions {
     | "transitionRunStatus"
     | "attachAttempt"
     | "detachAttempt"
+    | "detachCancellation"
   >;
   readonly compiler: Pick<PostgresPromptCapabilityCompiler, "resolve">;
   readonly finalizer: Pick<
@@ -259,9 +263,8 @@ type ExpiredPromptClosureDecision =
 export function classifyExpiredPromptClosure(input: {
   readonly owner: PromptOwnerRow;
   readonly capability: PromptCapabilityRow | null;
-  readonly attempt: AttemptRow;
 }): ExpiredPromptClosureDecision {
-  const { owner, capability, attempt } = input;
+  const { owner, capability } = input;
   if (capability === null) {
     if (owner.protocolSettlementState !== null) {
       reject("settled expired prompt lost its exact capability decision");
@@ -286,20 +289,6 @@ export function classifyExpiredPromptClosure(input: {
   }
 
   switch (capability.revocationReason) {
-    case "target_not_found":
-      if (
-        owner.protocolSettlementState !== null ||
-        owner.promptTransmissionPhase !== "not_transmitted" ||
-        (attempt.sessionOperation !== "resume" &&
-          attempt.sessionOperation !== "steer_resume")
-      ) {
-        reject("target-not-found restart crossed its frozen resume prompt");
-      }
-      return {
-        kind: "retry",
-        reason: "target_not_found_new_session",
-        retryAt: capability.revokedAt,
-      };
     case "pre_send_retry":
       if (
         owner.protocolSettlementState !== null ||
@@ -357,7 +346,6 @@ export function classifyExpiredPromptClosure(input: {
         protocolSettled: false,
       };
     case "protocol_settled":
-    case "protocol_settled_cancel_notification_failed":
       if (
         owner.protocolSettlementState !== "settled" ||
         owner.promptTransmissionPhase !== "transmitted" ||
@@ -372,6 +360,24 @@ export function classifyExpiredPromptClosure(input: {
         outcome: owner.outcome === "cancelled" ? "cancelled" : "succeeded",
         reason: capability.revocationReason,
         protocolSettled: true,
+      };
+    case "active_run_steering":
+      if (owner.protocolSettlementState === null) {
+        return { kind: "open" };
+      }
+      if (
+        owner.promptTransmissionPhase !== "transmitted" ||
+        owner.outcome !== "cancelled" ||
+        (owner.protocolSettlementState !== "settled" &&
+          owner.protocolSettlementState !== "incomplete")
+      ) {
+        reject("steering-revoked prompt has an invalid cancellation closure");
+      }
+      return {
+        kind: "terminal",
+        outcome: "cancelled",
+        reason: "active_run_steering",
+        protocolSettled: owner.protocolSettlementState === "settled",
       };
     default:
       reject("revoked expired prompt has no canonical recovery decision");
@@ -813,13 +819,14 @@ async function compileCarryContext(
   };
 }
 
-async function selectSessionOperation(
+/** @internal Freezes the sole ACPX session operation for one exact prompt. */
+export async function selectSessionOperation(
   transaction: IssueSessionDbTransaction,
   compiler: Pick<PostgresPromptCapabilityCompiler, "resolve">,
   input: {
     readonly run: RunRow;
     readonly promptKind: "base" | "steering";
-    readonly refId: string;
+    readonly ref: RefRow;
     readonly refOrdinal: number;
     readonly segmentOrdinal: number;
   },
@@ -854,7 +861,7 @@ async function selectSessionOperation(
             eq(issueExecutionPromptSegments.companyId, run.companyId),
             eq(issueExecutionPromptSegments.issueId, run.issueId),
             eq(issueExecutionPromptSegments.runId, run.runId),
-            eq(issueExecutionPromptSegments.refId, input.refId),
+            eq(issueExecutionPromptSegments.refId, input.ref.id),
             eq(issueExecutionPromptSegments.refOrdinal, input.refOrdinal),
             eq(
               issueExecutionPromptSegments.segmentOrdinal,
@@ -895,45 +902,61 @@ async function selectSessionOperation(
       source.state === "current" &&
       source.laneKind === null &&
       source.runId === run.runId &&
-      source.currentRefId === input.refId &&
+      source.currentRefId === input.ref.id &&
       source.currentRefOrdinal === input.refOrdinal &&
       source.currentSegmentOrdinal === input.segmentOrdinal - 1 &&
       source.authorizedContextExposureDigest === null;
     if (exactCarrySource || exactActiveRunSource) return "steer_resume";
-    return "new";
+    reject("steering attempt lost its exact native resume source");
   }
-  if (!carryContext) return "new";
-  const eligible = await transaction
-    .select({ id: issueExecutionSessions.id })
-    .from(issueExecutionSessions)
-    .where(
-      and(
-        common,
-        eq(issueExecutionSessions.purpose, "carry"),
-        eq(issueExecutionSessions.state, "eligible"),
-        eq(issueExecutionSessions.laneKind, run.executionMode),
-        eq(
-          issueExecutionSessions.authorizedContextExposureDigest,
-          exposureDigest,
+  const initialCycle = await resolveInitialPromptCycleInTransaction(
+    transaction,
+    {
+      currentRef: input.ref,
+      executionWorkspaceBindingId: run.executionWorkspaceBindingId,
+    },
+  );
+  if (initialCycle.kind === "invalid") {
+    reject("bootstrap predecessor lost its exact settled native correlation");
+  }
+  if (initialCycle.kind === "new") return "new";
+  if (initialCycle.kind === "bootstrap_resume") return "resume";
+  if (initialCycle.kind === "bootstrap_unavailable") {
+    reject("ordered session-start work lost its exact bootstrap correlation");
+  }
+  const eligible = carryContext
+    ? await transaction
+      .select({ id: issueExecutionSessions.id })
+      .from(issueExecutionSessions)
+      .where(
+        and(
+          common,
+          eq(issueExecutionSessions.purpose, "carry"),
+          eq(issueExecutionSessions.state, "eligible"),
+          eq(issueExecutionSessions.laneKind, run.executionMode),
+          eq(
+            issueExecutionSessions.authorizedContextExposureDigest,
+            exposureDigest,
+          ),
         ),
-      ),
-    )
-    .limit(2)
-    .for("update");
+      )
+      .limit(2)
+      .for("update")
+    : [];
   if (eligible.length > 1) reject("carry target session is ambiguous");
   if (eligible.length === 1) {
     return "resume";
   }
-  return "new";
+  if (initialCycle.kind === "singleton" && initialCycle.instructionless) {
+    return "new";
+  }
+  reject("instructed work lost its exact carry or ordered session start");
 }
 
 async function assertRefDispatchable(
   transaction: IssueSessionDbTransaction,
   ref: RefRow,
 ): Promise<void> {
-  if (ref.sourceKind === "agent_liveness_followup") {
-    reject("legacy liveness follow-up refs are retired");
-  }
   const [companyRows, issueRows, sessionRows, viewRows, lifecycleRows] =
     await Promise.all([
       transaction
@@ -1078,18 +1101,10 @@ async function createRunningLease(
     readonly workerId: string;
     readonly at: Date;
     readonly laneClaim: LockedLaneLeaseClaim;
-    readonly pendingAttempt?: AttemptRow;
+  readonly pendingAttempt?: AttemptRow;
   },
 ): Promise<LeasedIssueExecutionRef> {
   const first = exactlyOne(input.refs.slice(0, 1), "run has no current ref");
-  await fenceCompanySkillMaterializationReferenceInTransaction(
-    transaction,
-    {
-      companyId: input.run.companyId,
-      agentId: input.run.targetAgentId,
-      adapterConfigRevisionId: input.run.adapterConfigRevisionId,
-    },
-  );
   const control = exactlyOne(
     await transaction
       .select()
@@ -1135,7 +1150,7 @@ async function createRunningLease(
     await selectSessionOperation(transaction, options.compiler, {
       run: input.run,
       promptKind,
-      refId: first.id,
+      ref: first,
       refOrdinal: control.currentOrdinal,
       segmentOrdinal: control.currentSegmentOrdinal,
     });
@@ -1843,47 +1858,6 @@ async function completeTerminalPromptInTransaction(
   };
 }
 
-async function createTargetNotFoundSuccessorAttempt(
-  transaction: IssueSessionDbTransaction,
-  input: {
-    readonly run: RunRow;
-    readonly predecessor: AttemptRow;
-    readonly at: Date;
-    readonly idFactory: () => string;
-  },
-): Promise<void> {
-  await fenceCompanySkillMaterializationReferenceInTransaction(transaction, {
-    companyId: input.run.companyId,
-    agentId: input.run.targetAgentId,
-    adapterConfigRevisionId: input.run.adapterConfigRevisionId,
-  });
-  exactlyOne(
-    await transaction
-      .insert(issueExecutionAttempts)
-      .values({
-        id: input.idFactory(),
-        companyId: input.predecessor.companyId,
-        issueId: input.predecessor.issueId,
-        sessionId: input.predecessor.sessionId,
-        runId: input.predecessor.runId,
-        runKind: input.predecessor.runKind,
-        promptKind: input.predecessor.promptKind,
-        sessionOperation: "new",
-        refId: input.predecessor.refId,
-        refOrdinal: input.predecessor.refOrdinal,
-        segmentOrdinal: input.predecessor.segmentOrdinal,
-        steeringSegmentOrdinal: input.predecessor.steeringSegmentOrdinal,
-        attemptGeneration: input.predecessor.attemptGeneration + 1,
-        state: "pending",
-        startedAt: null,
-        finishedAt: null,
-        createdAt: input.at,
-      })
-      .returning({ id: issueExecutionAttempts.id }),
-    "target-not-found retry could not create its successor generation",
-  );
-}
-
 export function createPostgresIssueExecutionDispatcherRepository(
   options: PostgresIssueExecutionDispatcherRepositoryOptions,
 ): IssueExecutionDispatcherRepository & {
@@ -1952,16 +1926,32 @@ export function createPostgresIssueExecutionDispatcherRepository(
     run: RunRow,
     at: Date,
   ): Promise<ExpiredRunRecovery> {
-    if (run.currentAttemptId === null && run.currentLeaseId === null) {
+    if (run.currentAttemptId === null || run.currentLeaseId === null) {
       return { kind: "current", run };
     }
-    if (
-      run.currentAttemptId === null ||
-      run.currentLeaseId === null ||
-      run.cancellationIntentId !== null
-    ) {
-      return { kind: "current", run };
-    }
+    const cancellation = run.cancellationIntentId === null
+      ? null
+      : exactlyOne(
+          await transaction
+            .select()
+            .from(issueExecutionCancellationIntents)
+            .where(
+              eq(
+                issueExecutionCancellationIntents.id,
+                run.cancellationIntentId,
+              ),
+            )
+            .limit(2)
+            .for("update"),
+          "expired run lost its attached cancellation intent",
+        );
+    const steeringCancellation = cancellation?.reasonKind === "steering"
+      ? cancellation
+      : null;
+    const nonSteeringCancellation =
+      cancellation !== null && cancellation.reasonKind !== "steering"
+        ? cancellation
+        : null;
     const control = exactlyOne(
       await transaction
         .select()
@@ -2055,6 +2045,34 @@ export function createPostgresIssueExecutionDispatcherRepository(
     if (lease.state !== "active" || lease.expiresAt > at) {
       return { kind: "current", run };
     }
+    const pendingSteeringSegment = steeringCancellation === null
+      ? null
+      : exactlyOne(
+          await transaction
+            .select()
+            .from(issueExecutionPromptSegments)
+            .where(
+              and(
+                eq(issueExecutionPromptSegments.runId, run.runId),
+                eq(issueExecutionPromptSegments.refId, control.currentRefId),
+                eq(
+                  issueExecutionPromptSegments.refOrdinal,
+                  control.currentOrdinal,
+                ),
+                eq(
+                  issueExecutionPromptSegments.segmentOrdinal,
+                  control.currentSegmentOrdinal + 1,
+                ),
+                eq(
+                  issueExecutionPromptSegments.cancellationIntentId,
+                  steeringCancellation.id,
+                ),
+              ),
+            )
+            .limit(2)
+            .for("update"),
+          "expired steering cancellation lost its positive segment",
+        );
     if (
       attempt.companyId !== run.companyId ||
       attempt.issueId !== run.issueId ||
@@ -2069,6 +2087,20 @@ export function createPostgresIssueExecutionDispatcherRepository(
       lease.issueId !== run.issueId ||
       lease.runId !== run.runId ||
       lease.attemptId !== attempt.id ||
+      (cancellation !== null &&
+        (cancellation.companyId !== run.companyId ||
+          cancellation.issueId !== run.issueId ||
+          cancellation.runId !== run.runId ||
+          cancellation.attemptId !== attempt.id ||
+          cancellation.leaseId !== lease.id ||
+          (cancellation.state !== "requested" &&
+            cancellation.state !== "acknowledged"))) ||
+      (steeringCancellation !== null &&
+        (
+          pendingSteeringSegment === null ||
+          pendingSteeringSegment.protocolSettlementState !== null ||
+          (pendingSteeringSegment.steeringState !== "requested" &&
+            pendingSteeringSegment.steeringState !== "sent"))) ||
       member.ref.companyId !== run.companyId ||
       member.ref.issueId !== run.issueId ||
       member.ref.sessionId !== run.sessionId ||
@@ -2098,6 +2130,14 @@ export function createPostgresIssueExecutionDispatcherRepository(
     ) {
       reject("expired authority crossed its canonical prompt identity");
     }
+    const nonProtocolPromptOwner = {
+      promptKind: attempt.promptKind,
+      runId: run.runId,
+      refId: member.ref.id,
+      refOrdinal: member.row.refOrdinal,
+      segmentOrdinal: control.currentSegmentOrdinal,
+      attemptId: attempt.id,
+    } as const;
 
     const capabilities = await transaction
       .select()
@@ -2155,11 +2195,26 @@ export function createPostgresIssueExecutionDispatcherRepository(
     ) {
       reject("expired prompt capability crossed its exact run authority");
     }
+    // Cancellation reconciliation owns only prompts that never minted an ACPX
+    // capability. Once minted, expired-lease recovery must close that exact
+    // prompt and cancellation in the same transaction.
+    if (nonSteeringCancellation !== null && capability === null) {
+      return { kind: "current", run };
+    }
     const closureDecision = classifyExpiredPromptClosure({
       owner: promptOwner,
       capability,
-      attempt,
     });
+    const promptTransmitted =
+      promptOwner.promptTransmissionPhase === "transmitted";
+    if (steeringCancellation !== null && closureDecision.kind === "retry") {
+      reject("steering cancellation cannot own a retry prompt closure");
+    }
+    const steeringCancellationRecovery = steeringCancellation === null
+      ? null
+      : closureDecision.kind === "open" && promptTransmitted
+        ? "fail_run"
+        : "continue_source";
     let consultChainRemainsLive = false;
     if (run.executionMode === "consult") {
       try {
@@ -2180,7 +2235,19 @@ export function createPostgresIssueExecutionDispatcherRepository(
           .filter((id): id is string => id !== null),
       ),
     ];
-    if (closureDecision.kind === "open") {
+    const capabilityAlreadyRevokedForSteering =
+      capability?.state === "revoked" &&
+      capability.revocationReason === "active_run_steering";
+    if (
+      steeringCancellation !== null &&
+      !capabilityAlreadyRevokedForSteering
+    ) {
+      reject("expired steering cancellation lost its revoked capability");
+    }
+    if (
+      closureDecision.kind === "open" &&
+      !capabilityAlreadyRevokedForSteering
+    ) {
       const revoked = await transaction
         .update(issueExecutionPromptCapabilities)
         .set({
@@ -2207,49 +2274,40 @@ export function createPostgresIssueExecutionDispatcherRepository(
         reject("expired attempt could not revoke its open prompt capability");
       }
     }
-    const processRows = await transaction
-      .select()
-      .from(issueExecutionProcessFacts)
-      .where(
-        and(
-          eq(issueExecutionProcessFacts.runId, run.runId),
-          eq(issueExecutionProcessFacts.attemptId, attempt.id),
-          eq(issueExecutionProcessFacts.leaseId, lease.id),
-        ),
-      )
-      .limit(2)
-      .for("update");
-    if (processRows.length > 1) {
-      reject("expired attempt has more than one subprocess fact");
-    }
     if (
-      processRows[0] &&
-      ["starting", "running"].includes(processRows[0].state)
+      (nonSteeringCancellation !== null &&
+        closureDecision.kind !== "terminal") ||
+      (steeringCancellationRecovery === "continue_source" &&
+        closureDecision.kind === "open")
     ) {
-      exactlyOne(
-        await transaction
-          .update(issueExecutionProcessFacts)
-          .set({ state: "lost", settledAt: at })
-          .where(
-            and(
-              eq(issueExecutionProcessFacts.id, processRows[0].id),
-              inArray(issueExecutionProcessFacts.state, [
-                "starting",
-                "running",
-              ]),
-            ),
-          )
-          .returning({ id: issueExecutionProcessFacts.id }),
-        "expired attempt could not mark its subprocess lost",
+      const incomplete = nonSteeringCancellation !== null && promptTransmitted;
+      await settleNonProtocolPromptInTransaction(
+        transaction,
+        nonProtocolPromptOwner,
+        incomplete
+          ? {
+              state: "incomplete",
+              outcome: "ambiguous",
+              referenceId: idFactory(),
+              at,
+            }
+          : {
+              state: "not_sent",
+              outcome: "released_unsent",
+              referenceId: idFactory(),
+              at,
+            },
       );
     }
-    const attemptTerminalState = closureDecision.kind === "terminal"
-      ? closureDecision.outcome === "succeeded"
-        ? "settled" as const
-        : closureDecision.outcome === "cancelled"
-          ? "cancelled" as const
-          : "failed" as const
-      : "failed" as const;
+    const attemptTerminalState = nonSteeringCancellation !== null
+      ? "cancelled" as const
+      : closureDecision.kind === "terminal"
+        ? closureDecision.outcome === "succeeded"
+          ? "settled" as const
+          : closureDecision.outcome === "cancelled"
+            ? "cancelled" as const
+            : "failed" as const
+        : "failed" as const;
     exactlyOne(
       await transaction
         .update(issueExecutionAttempts)
@@ -2266,7 +2324,10 @@ export function createPostgresIssueExecutionDispatcherRepository(
     exactlyOne(
       await transaction
         .update(issueExecutionLeases)
-        .set({ state: "expired", releasedAt: at })
+        .set({
+          state: nonSteeringCancellation === null ? "expired" : "revoked",
+          releasedAt: at,
+        })
         .where(
           and(
             eq(issueExecutionLeases.id, lease.id),
@@ -2279,6 +2340,124 @@ export function createPostgresIssueExecutionDispatcherRepository(
         .returning({ id: issueExecutionLeases.id }),
       "expired lease lost its exact compare-and-set fence",
     );
+    const completeCancellation = async (
+      intent: CancellationIntentRow,
+    ): Promise<void> => {
+      const steering = intent.reasonKind === "steering";
+      exactlyOne(
+        await transaction
+          .update(issueExecutionCancellationIntents)
+          .set({
+            state: "completed",
+            acknowledgedAt: intent.acknowledgedAt ?? at,
+            completedAt: at,
+          })
+          .where(
+            and(
+              eq(issueExecutionCancellationIntents.id, intent.id),
+              eq(issueExecutionCancellationIntents.companyId, run.companyId),
+              eq(issueExecutionCancellationIntents.issueId, run.issueId),
+              eq(issueExecutionCancellationIntents.runId, run.runId),
+              eq(issueExecutionCancellationIntents.attemptId, attempt.id),
+              eq(issueExecutionCancellationIntents.leaseId, lease.id),
+              steering
+                ? eq(issueExecutionCancellationIntents.reasonKind, "steering")
+                : ne(issueExecutionCancellationIntents.reasonKind, "steering"),
+              inArray(issueExecutionCancellationIntents.state, [
+                "requested",
+                "acknowledged",
+              ]),
+              steering
+                ? isNull(
+                    issueExecutionCancellationIntents.nativeCancellationSettledAt,
+                  )
+                : undefined,
+              isNull(issueExecutionCancellationIntents.completedAt),
+              isNull(issueExecutionCancellationIntents.failedAt),
+              isNull(issueExecutionCancellationIntents.failureCode),
+            ),
+          )
+          .returning({ id: issueExecutionCancellationIntents.id }),
+        steering
+          ? "expired transmitted steering orphan could not complete its request"
+          : "expired cancellation could not complete its exact intent",
+      );
+      await options.runService.detachCancellation(transaction, {
+        companyId: run.companyId,
+        issueId: run.issueId,
+        runId: run.runId,
+        expectedCancellationIntentId: intent.id,
+        at,
+      });
+    };
+    if (steeringCancellationRecovery === "continue_source") {
+      // The old prompt is now durably closed and the exact attempt/lease is
+      // terminal, but the run attachment and positive segment remain owned by
+      // the steering intent. The source continuation performs the sole rebind.
+      return { kind: "current", run };
+    }
+    if (steeringCancellationRecovery === "fail_run") {
+      if (cancellation === null || pendingSteeringSegment === null) {
+        reject("expired transmitted steering orphan lost its durable request");
+      }
+      exactlyOne(
+        await transaction
+          .update(issueExecutionPromptSegments)
+          .set({
+            steeringState: "protocol_settled",
+            outcome: "released_unsent",
+            outcomeReferenceId: idFactory(),
+            protocolSettlementState: "not_sent",
+            settlementVersion: 1,
+            settledAt: at,
+          })
+          .where(
+            and(
+              eq(
+                issueExecutionPromptSegments.companyId,
+                pendingSteeringSegment.companyId,
+              ),
+              eq(
+                issueExecutionPromptSegments.issueId,
+                pendingSteeringSegment.issueId,
+              ),
+              eq(issueExecutionPromptSegments.runId, run.runId),
+              eq(issueExecutionPromptSegments.refId, member.ref.id),
+              eq(
+                issueExecutionPromptSegments.refOrdinal,
+                member.row.refOrdinal,
+              ),
+              eq(
+                issueExecutionPromptSegments.segmentOrdinal,
+                pendingSteeringSegment.segmentOrdinal,
+              ),
+              eq(
+                issueExecutionPromptSegments.cancellationIntentId,
+                cancellation.id,
+              ),
+              inArray(issueExecutionPromptSegments.steeringState, [
+                "requested",
+                "sent",
+              ]),
+              eq(
+                issueExecutionPromptSegments.promptTransmissionPhase,
+                "not_transmitted",
+              ),
+              isNull(issueExecutionPromptSegments.attemptId),
+              isNull(issueExecutionPromptSegments.capabilityConnectionId),
+              isNull(issueExecutionPromptSegments.capabilityGeneration),
+              isNull(issueExecutionPromptSegments.protocolSettlementState),
+            ),
+          )
+          .returning({ runId: issueExecutionPromptSegments.runId }),
+        "expired transmitted steering orphan could not release its request",
+      );
+    }
+    const cancellationToComplete = nonSteeringCancellation ??
+      (steeringCancellationRecovery === "fail_run" ? cancellation : null);
+    if (cancellationToComplete !== null) {
+      await completeCancellation(cancellationToComplete);
+    }
     await options.runService.detachAttempt(transaction, {
       companyId: run.companyId,
       issueId: run.issueId,
@@ -2304,7 +2483,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
           .update(issueConsultExecutions)
           .set({
             state: "revoked",
-            closeReason: "process_loss_chain_not_live",
+            closeReason: "worker_loss_chain_not_live",
             closedAt: at,
           })
           .where(
@@ -2318,70 +2497,26 @@ export function createPostgresIssueExecutionDispatcherRepository(
       );
     };
 
-    if (closureDecision.kind === "retry") {
+    if (
+      nonSteeringCancellation === null &&
+      closureDecision.kind === "retry"
+    ) {
       if (abandonedConsult) {
-        const released = segment === null
-          ? await transaction
-              .update(issueExecutionRunRefs)
-              .set({
-                outcome: "released_unsent",
-                outcomeReferenceId: idFactory(),
-                protocolSettlementState: "not_sent",
-                settlementVersion: 1,
-                settledAt: at,
-              })
-              .where(
-                and(
-                  eq(issueExecutionRunRefs.runId, run.runId),
-                  eq(issueExecutionRunRefs.refId, member.ref.id),
-                  eq(issueExecutionRunRefs.refOrdinal, member.row.refOrdinal),
-                  eq(
-                    issueExecutionRunRefs.promptTransmissionPhase,
-                    "not_transmitted",
-                  ),
-                  isNull(issueExecutionRunRefs.protocolSettlementState),
-                ),
-              )
-              .returning({ runId: issueExecutionRunRefs.runId })
-          : await transaction
-              .update(issueExecutionPromptSegments)
-              .set({
-                steeringState: "protocol_settled",
-                outcome: "released_unsent",
-                outcomeReferenceId: idFactory(),
-                protocolSettlementState: "not_sent",
-                settlementVersion: 1,
-                settledAt: at,
-              })
-              .where(
-                and(
-                  eq(issueExecutionPromptSegments.runId, run.runId),
-                  eq(issueExecutionPromptSegments.refId, member.ref.id),
-                  eq(
-                    issueExecutionPromptSegments.refOrdinal,
-                    member.row.refOrdinal,
-                  ),
-                  eq(
-                    issueExecutionPromptSegments.segmentOrdinal,
-                    segment.segmentOrdinal,
-                  ),
-                  eq(
-                    issueExecutionPromptSegments.promptTransmissionPhase,
-                    "not_transmitted",
-                  ),
-                  isNull(issueExecutionPromptSegments.protocolSettlementState),
-                ),
-              )
-              .returning({ runId: issueExecutionPromptSegments.runId });
-        exactlyOne(
-          released,
-          "abandoned consult retry could not release its unsent prompt",
+        await settleNonProtocolPromptInTransaction(
+          transaction,
+          nonProtocolPromptOwner,
+          {
+            state: "not_sent",
+            outcome: "released_unsent",
+            referenceId: idFactory(),
+            at,
+          },
         );
         await revokeAbandonedConsult();
         const terminal = {
           kind: "terminal" as const,
           outcome: "failed" as const,
-          reason: "process_loss_chain_not_live",
+          reason: "worker_loss_chain_not_live",
           finalText: null,
         };
         const completed = await completeTerminalPromptInTransaction(
@@ -2405,25 +2540,16 @@ export function createPostgresIssueExecutionDispatcherRepository(
           terminal,
         };
       }
-      if (closureDecision.reason === "target_not_found_new_session") {
-        await createTargetNotFoundSuccessorAttempt(transaction, {
-          run,
-          predecessor: attempt,
-          at,
-          idFactory,
-        });
-      } else {
-        await scheduleIssueExecutionAttemptRetryInTransaction(transaction, {
-          id: idFactory(),
-          companyId: run.companyId,
-          issueId: run.issueId,
-          runId: run.runId,
-          predecessorAttemptId: attempt.id,
-          reasonCode: closureDecision.reason,
-          retryAt: closureDecision.retryAt,
-          at,
-        });
-      }
+      await scheduleIssueExecutionAttemptRetryInTransaction(transaction, {
+        id: idFactory(),
+        companyId: run.companyId,
+        issueId: run.issueId,
+        runId: run.runId,
+        predecessorAttemptId: attempt.id,
+        reasonCode: closureDecision.reason,
+        retryAt: closureDecision.retryAt,
+        at,
+      });
       return {
         kind: "retry_same_run",
         run: await options.runService.lockRun(transaction, {
@@ -2434,7 +2560,10 @@ export function createPostgresIssueExecutionDispatcherRepository(
       };
     }
 
-    if (closureDecision.kind === "terminal") {
+    if (
+      nonSteeringCancellation === null &&
+      closureDecision.kind === "terminal"
+    ) {
       const protocol = closureDecision.protocolSettled
         ? await loadRecoveredProtocolSettlement(transaction, {
             run,
@@ -2478,30 +2607,100 @@ export function createPostgresIssueExecutionDispatcherRepository(
       };
     }
 
-    const promptTransmitted =
-      (segment ?? member.row).promptTransmissionPhase === "transmitted";
-    const supersedeActivatedCorrelation =
-      promptTransmitted || attempt.sessionOperation === "new";
-    if (correlationIds.length > 0 && supersedeActivatedCorrelation) {
-      const superseded = await transaction
-        .update(issueExecutionSessions)
-        .set({
-          state: "superseded",
-          supersessionReason: promptTransmitted
-            ? "prompt_failed_incomplete"
-            : "lease_expired_before_prompt",
-          supersededAt: at,
+    if (
+      closureDecision.kind !== "terminal" &&
+      correlationIds.length > 0
+    ) {
+      const correlations = await transaction
+        .select({
+          id: issueExecutionSessions.id,
+          purpose: issueExecutionSessions.purpose,
+          state: issueExecutionSessions.state,
         })
-        .where(
-          and(
-            inArray(issueExecutionSessions.id, correlationIds),
-            inArray(issueExecutionSessions.state, ["eligible", "current"]),
-          ),
+        .from(issueExecutionSessions)
+        .where(inArray(issueExecutionSessions.id, correlationIds))
+        .for("update");
+      if (
+        correlations.length !== correlationIds.length ||
+        correlations.some(
+          (correlation) =>
+            correlation.state !== "eligible" &&
+            correlation.state !== "current",
         )
-        .returning({ id: issueExecutionSessions.id });
-      if (superseded.length !== correlationIds.length) {
+      ) {
         reject("expired attempt lost its exact activated correlation fence");
       }
+      const turn = await resolveRuntimeToolTurn(
+        transaction as unknown as Db,
+        {
+          companyId: run.companyId,
+          issueId: run.issueId,
+          ownershipEpoch: run.ownershipEpoch,
+          targetAgentId: run.targetAgentId,
+          executionMode: run.executionMode,
+          issueExecutionAuthorityId: run.issueExecutionAuthorityId,
+          consultExecutionId: run.consultExecutionId,
+          refId: member.ref.id,
+        },
+      );
+      const preserveCorrelation =
+        preserveCorrelationAfterNonProtocolClosure({
+          turn,
+          carryContext: correlations.every(
+            (correlation) => correlation.purpose === "carry",
+          ),
+        });
+      if (!preserveCorrelation) {
+        const superseded = await transaction
+          .update(issueExecutionSessions)
+          .set({
+            state: "superseded",
+            supersessionReason: promptTransmitted
+              ? "prompt_failed_incomplete"
+              : "lease_expired_before_prompt",
+            supersededAt: at,
+          })
+          .where(
+            and(
+              inArray(issueExecutionSessions.id, correlationIds),
+              inArray(issueExecutionSessions.state, ["eligible", "current"]),
+            ),
+          )
+          .returning({ id: issueExecutionSessions.id });
+        if (superseded.length !== correlationIds.length) {
+          reject("expired attempt lost its exact activated correlation fence");
+        }
+      }
+    }
+    if (nonSteeringCancellation !== null) {
+      await revokeAbandonedConsult();
+      const cancellationReason =
+        `${nonSteeringCancellation.reasonKind}_cancellation`;
+      const completed = await completeTerminalPromptInTransaction(
+        transaction,
+        options,
+        {
+          lease: recoveredLease,
+          attempt,
+          outcome: "cancelled",
+          reason: cancellationReason,
+          at,
+          idFactory,
+        },
+      );
+      if (completed.finalization === null) {
+        reject("expired cancellation unexpectedly retained a batch successor");
+      }
+      return {
+        kind: "released_run",
+        retryRun: null,
+        terminal: {
+          kind: "terminal",
+          outcome: "cancelled",
+          reason: cancellationReason,
+          finalText: null,
+        },
+      };
     }
     if (
       !promptTransmitted &&
@@ -2604,62 +2803,15 @@ export function createPostgresIssueExecutionDispatcherRepository(
 
     let exactReleasedRetryRefs: readonly RefRow[] = Object.freeze([]);
     if (promptTransmitted) {
-      const settled = segment === null
-        ? await transaction
-            .update(issueExecutionRunRefs)
-            .set({
-              outcome: "ambiguous",
-              outcomeReferenceId: idFactory(),
-              protocolSettlementState: "incomplete",
-              settlementVersion: 1,
-              settledAt: at,
-            })
-            .where(
-              and(
-                eq(issueExecutionRunRefs.runId, run.runId),
-                eq(issueExecutionRunRefs.refId, member.ref.id),
-                eq(
-                  issueExecutionRunRefs.refOrdinal,
-                  member.row.refOrdinal,
-                ),
-                eq(issueExecutionRunRefs.promptTransmissionPhase, "transmitted"),
-                isNull(issueExecutionRunRefs.protocolSettlementState),
-              ),
-            )
-            .returning({ runId: issueExecutionRunRefs.runId })
-        : await transaction
-            .update(issueExecutionPromptSegments)
-            .set({
-              steeringState: "protocol_settled",
-              outcome: "ambiguous",
-              outcomeReferenceId: idFactory(),
-              protocolSettlementState: "incomplete",
-              settlementVersion: 1,
-              settledAt: at,
-            })
-            .where(
-              and(
-                eq(issueExecutionPromptSegments.runId, run.runId),
-                eq(issueExecutionPromptSegments.refId, member.ref.id),
-                eq(
-                  issueExecutionPromptSegments.refOrdinal,
-                  member.row.refOrdinal,
-                ),
-                eq(
-                  issueExecutionPromptSegments.segmentOrdinal,
-                  segment.segmentOrdinal,
-                ),
-                eq(
-                  issueExecutionPromptSegments.promptTransmissionPhase,
-                  "transmitted",
-                ),
-                isNull(issueExecutionPromptSegments.protocolSettlementState),
-              ),
-            )
-            .returning({ runId: issueExecutionPromptSegments.runId });
-      exactlyOne(
-        settled,
-        "expired transmitted prompt could not settle as ambiguous",
+      await settleNonProtocolPromptInTransaction(
+        transaction,
+        nonProtocolPromptOwner,
+        {
+          state: "incomplete",
+          outcome: "ambiguous",
+          referenceId: idFactory(),
+          at,
+        },
       );
       await transaction
         .update(issueExecutionRefs)
@@ -2809,8 +2961,8 @@ export function createPostgresIssueExecutionDispatcherRepository(
       runId: run.runId,
       status: "failed",
       terminalReasonCode: promptTransmitted
-        ? "process_loss_after_prompt"
-        : "process_loss_before_prompt",
+        ? "worker_loss_after_prompt"
+        : "worker_loss_before_prompt",
       finishedAt: at,
     });
     await clearExactLaneClaim(transaction, {
@@ -2842,8 +2994,8 @@ export function createPostgresIssueExecutionDispatcherRepository(
         kind: "terminal",
         outcome: "failed",
         reason: promptTransmitted
-          ? "process_loss_after_prompt"
-          : "process_loss_before_prompt",
+          ? "worker_loss_after_prompt"
+          : "worker_loss_before_prompt",
         finalText: null,
       },
     };
@@ -3684,7 +3836,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
         .where(
           and(
             eq(issueExecutionRefs.disposition, "active"),
-            ne(issueExecutionRefs.sourceKind, "agent_liveness_followup"),
             issueExecutionRefDeliveryEligibilitySql("dispatch"),
             inArray(issueExecutionHistoryViews.state, ["empty", "current"]),
             eq(issueSessions.integrityState, "ready"),
@@ -3868,7 +4019,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
       lease: LeasedIssueExecutionRef;
       reason: IssueExecutionRetry["reason"];
       retryAt: Date;
-      materialization: ReapedCompanySkillMaterialization | null;
     }) {
       const at = validDate(now(), "retry settlement time");
       await options.database.transaction(async (transaction) => {
@@ -3880,38 +4030,16 @@ export function createPostgresIssueExecutionDispatcherRepository(
         }
         await assertLeaseLaneClaim(transaction, input.lease, at);
         await releaseAttempt(transaction, options, input.lease, "failed", at, true);
-        if (input.reason === "target_not_found_new_session") {
-          const predecessor = exactlyOne(
-            await transaction
-              .select()
-              .from(issueExecutionAttempts)
-              .where(eq(issueExecutionAttempts.id, input.lease.attemptId))
-              .limit(2)
-              .for("update"),
-            "target-not-found retry lost its predecessor",
-          );
-          await createTargetNotFoundSuccessorAttempt(transaction, {
-            run,
-            predecessor,
-            at,
-            idFactory,
-          });
-        } else {
-          await scheduleIssueExecutionAttemptRetryInTransaction(transaction, {
-            id: idFactory(),
-            companyId: input.lease.ref.companyId,
-            issueId: input.lease.ref.issueId,
-            runId: input.lease.runId,
-            predecessorAttemptId: input.lease.attemptId,
-            reasonCode: input.reason,
-            retryAt: validDate(input.retryAt, "retry due time"),
-            at,
-          });
-        }
-        await collectCompanySkillMaterializationIfUnreferencedInTransaction(
-          transaction,
-          input.materialization,
-        );
+        await scheduleIssueExecutionAttemptRetryInTransaction(transaction, {
+          id: idFactory(),
+          companyId: input.lease.ref.companyId,
+          issueId: input.lease.ref.issueId,
+          runId: input.lease.runId,
+          predecessorAttemptId: input.lease.attemptId,
+          reasonCode: input.reason,
+          retryAt: validDate(input.retryAt, "retry due time"),
+          at,
+        });
       });
     },
 
@@ -3920,7 +4048,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
       outcome: IssueExecutionTerminal["outcome"];
       reason: string | null;
       finishedAt: Date;
-      materialization: ReapedCompanySkillMaterialization | null;
     }) {
       const at = validDate(input.finishedAt, "attempt terminal time");
       const settlement = await options.database.transaction(async (transaction) => {
@@ -3984,10 +4111,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
             },
           );
         }
-        await collectCompanySkillMaterializationIfUnreferencedInTransaction(
-          transaction,
-          input.materialization,
-        );
         return completed;
       });
       if (settlement.finalization) {

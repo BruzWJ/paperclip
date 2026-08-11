@@ -515,13 +515,13 @@ export function approvalService(
     });
     if (committed.cancellationRequests) {
       await options.issueExecutionCancellation
-        .reconcileRequestedAgentCancellations(
+        .reconcileRequestedCancellations(
           committed.cancellationRequests,
         );
     }
     if (committed.suspensionRequests) {
       await options.issueExecutionCancellation
-        .reconcileRequestedAgentSuspensions(committed.suspensionRequests);
+        .reconcileRequestedCancellations(committed.suspensionRequests);
     }
     for (const refId of committed.dispatchRefIds) {
       await options.dispatchRef(refId);

@@ -39,14 +39,7 @@ export { issueReferenceService } from "./issue-references.js";
 export { activityService, type ActivityFilters } from "./activity.js";
 export { workTimelineService, normalizeTimelineWindow } from "./work-timeline.js";
 export { attentionService } from "./attention.js";
-export type {
-  WorkTimelineActor,
-  WorkTimelineEdge,
-  WorkTimelineEvent,
-  WorkTimelineQuery,
-  WorkTimelineResult,
-  WorkTimelineSpan,
-} from "./work-timeline.js";
+export type { WorkTimelineQuery } from "./work-timeline.js";
 export { approvalService } from "./approvals.js";
 export { budgetService } from "./budgets.js";
 export { secretService } from "./secrets.js";
@@ -80,7 +73,6 @@ export {
 } from "./plugin-catalog.js";
 
 export { companyPortabilityService } from "./company-portability.js";
-export { teamsCatalogService } from "./teams-catalog.js";
 export { executionWorkspaceService } from "./execution-workspaces.js";
 export {
   buildRuntimeInterfaceCompileInput,
@@ -106,7 +98,6 @@ export {
   type PromptCapabilityCompileScope,
   type PromptCapabilityGateway,
   type PromptCapabilityGatewayRepository,
-  type PromptCapabilityIngressAuthenticationResult,
   type PromptCapabilityIngressBinding,
 } from "./prompt-capability-gateway.js";
 export {
@@ -125,7 +116,6 @@ export {
   type IssueExecutionPromptCapabilityIdentity,
   type IssueExecutionPromptCycleRepository,
   type IssueExecutionPromptIdentity,
-  type IssueExecutionSubprocessObservation,
   type MintedIssueExecutionPromptCapability,
   type ResolvedIssueExecutionPrompt,
 } from "./issue-execution-attempt-executor.js";
@@ -168,31 +158,12 @@ export {
   type IssueExecutionGatewayRevocationIdentity,
 } from "./issue-execution-finalization.js";
 export {
-  attachIssueLivenessFollowupRunInTransaction,
-  classifyIssueLivenessFollowupWithoutAction,
-  createIssueLivenessReconciliationService,
-  decideIssueLivenessActionSettlement,
-  ISSUE_LIVENESS_FOLLOWUP_TEXT,
-  IssueLivenessReconciliationRejected,
-  recordIssueLivenessActionInTransaction,
-  shouldClaimIssueLivenessFrontier,
-  type IssueLivenessActionReference,
-  type IssueLivenessActionSettlement,
-  type IssueLivenessFinalizationIdentity,
-  type IssueLivenessPostCommitPort,
-  type IssueLivenessPostCommitWork,
-  type IssueLivenessReconciliationService,
-} from "./issue-liveness-reconciliation.js";
-export {
   createIssueExecutionCancellationService,
   type IssueExecutionAuthorityFenceResult,
   type IssueExecutionCancellationActor,
   type IssueExecutionCancellationResult,
   type IssueExecutionCancellationService,
   type IssueExecutionCancellationServiceOptions,
-  type ReleasedAgentSuspensions,
-  type ReleasedBudgetScopeSuspension,
-  type RequestedAgentSuspensions,
   type RequestedAgentRunCancellations,
   type RequestedBudgetScopeSuspension,
   type RequestedRunCancellation,
@@ -227,7 +198,7 @@ export {
   type AcpSessionCorrelationProtector,
   type NativeCorrelationService,
   type ProtectedAcpSessionCorrelation,
-  type ResolvedAcpSessionStart,
+  type ResolvedAcpSessionResume,
   type StoredAcpSessionCorrelation,
 } from "./native-correlation.js";
 export {
@@ -264,7 +235,6 @@ export {
 } from "./context-retrieval.js";
 export {
   createRuntimeToolGateway,
-  type RuntimeRetrievalScopeResolver,
 } from "./runtime-tool-gateway.js";
 export {
   agentRunManagedActionInvocation,
@@ -352,11 +322,4 @@ export { workProductService } from "./work-products.js";
 export { logActivity, type LogActivityInput } from "./activity-log.js";
 
 export { publishLiveEvent, subscribeCompanyLiveEvents } from "./live-events.js";
-export {
-  IssueExecutionLivePlanViolation,
-  publishIssueExecutionLivePlan,
-  type CurrentAcpPromptIdentity,
-  type IssueExecutionPlanPublicationRedactor,
-  type RoutedAcpPromptIdentity,
-} from "./issue-execution-plan-live.js";
 export { createStorageServiceFromConfig, getStorageService } from "../storage/index.js";

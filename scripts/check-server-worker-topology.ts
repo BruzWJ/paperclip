@@ -17,30 +17,15 @@ const SOURCE_ROOTS = [
   "packages/adapters",
 ] as const;
 
-/**
- * These owners prove that Paperclip has one ACPX runtime execution path while
- * ACPX supplies all locally available agent metadata at runtime.
- */
+/** These owners prove that Paperclip has one server/worker execution path. */
 const REQUIRED_OWNERS = [
-  "apps/server/src/adapters/acpx-catalog.ts",
-  "apps/server/src/adapters/registry.ts",
   "apps/server/src/services/local-execution-orchestrator.ts",
   "apps/server/src/services/issue-execution-attempt-executor.ts",
   "apps/server/src/services/issue-execution-postgres.ts",
   "apps/server/src/services/issue-execution-provider-configuration.ts",
   "apps/server/src/index.ts",
-  "packages/adapter-utils/package.json",
-  "packages/adapter-utils/src/execution-target.ts",
   "packages/adapter-utils/src/types.ts",
   "packages/adapter-utils/src/server-adapter-contract.ts",
-  "packages/adapter-utils/src/acp-subprocess/agent-registry.ts",
-  "packages/adapter-utils/src/acp-subprocess/acpx-discovery.ts",
-  "packages/adapter-utils/src/acp-subprocess/acpx-runtime-execution.ts",
-  "packages/adapter-utils/src/acp-subprocess/acpx-runtime-invocation.ts",
-  "packages/adapter-utils/src/acp-subprocess/acpx-runtime-readiness.ts",
-  "packages/adapter-utils/src/acp-subprocess/contract.ts",
-  "packages/adapter-utils/src/acp-subprocess/events.ts",
-  "packages/adapter-utils/src/acp-subprocess/run-tools.ts",
 ] as const;
 
 const RETIRED_AI_PATHS = [
@@ -53,6 +38,25 @@ const RETIRED_AI_PATHS = [
   "apps/server/src/services/agent-execution/session-runner/to-provider-messages.ts",
   "apps/server/src/services/agent-execution/session-runner/native-events.ts",
   "apps/server/src/services/agent-execution/session-runner/output.ts",
+] as const;
+
+/** ACPX owns provider launch and process confinement; these former raw owners
+ * must not be recreated beside the public runtime bridge. */
+const RETIRED_RAW_EXECUTION_UTILITY_PATHS = [
+  "packages/adapter-utils/src/execution-target.ts",
+  "packages/adapter-utils/src/server-utils.ts",
+  "packages/adapter-utils/src/local-process-sandbox.ts",
+] as const;
+
+const RETIRED_RAW_EXECUTION_UTILITY_SYMBOLS = [
+  "AdapterExecutionTarget",
+  "LocalProcessSandboxOptions",
+  "buildLocalProcessSandboxSpawnTarget",
+  "runChildProcess",
+  "runAdapterExecutionTargetProcess",
+  "runAdapterExecutionTargetShellCommand",
+  "resolveAdapterExecutionTargetExecutable",
+  "sanitizeInheritedProviderChildEnv",
 ] as const;
 
 /** Paperclip must not retain an independent catalog of agent names or models. */
@@ -83,41 +87,24 @@ const DEFERRED_MACHINE_RUNTIME_SYMBOLS = [
   "runtimeDevicePairing",
 ] as const;
 
-/** Dependency versions are implementation pins, never an agent catalog. */
-const EXACT_ADAPTER_DEPENDENCIES = Object.freeze({
-  "@agentclientprotocol/sdk": "1.3.0",
-  acpx: "0.13.0",
-});
-
-const STATIC_AGENT_CATALOG_MARKERS = [
+const RETIRED_PAPERCLIP_CATALOG_MARKERS = [
   "APPROVED_ACP_LAUNCHES",
   "BUILTIN_ADAPTER_CATALOG",
   "resolveApprovedAcpLaunch",
   "listApprovedAcpLaunchNames",
+  "RegisterServerAdapterOptions",
+  "registerServerAdapter",
+  "unregisterServerAdapter",
+  "waitForExternalAdapters",
+  "listServerAdapterImplementations",
+  "listEnabledServerAdapters",
+  "setOverridePaused",
+  "isOverridePaused",
+  "getPausedOverrides",
+  "findActiveServerAdapter",
+  "findSelectableServerAdapter(",
+  "requireServerAdapter",
 ] as const;
-
-/**
- * The legacy raw ACP subprocess bridge may remain private fixture support in
- * adapter-utils, but production server code must never import or invoke it.
- * ACPX is the only runtime owner for live Paperclip attempts.
- */
-const RAW_ACP_INVOCATION_SYMBOLS = [
-  "executeAcpSubprocessPrompt",
-  "prepareAcpExecutionTargetSubprocess",
-  "spawnPreparedAcpSubprocess",
-  "createInitializeOnlyClient",
-  "PaperclipAcpClient",
-  "AcpSubprocess",
-  "AcpSubprocessLaunch",
-  "AcpSubprocessStarter",
-  "AcpSubprocessHostLaunch",
-  "resolveAcpRegistryLaunch",
-  "sameAcpRegistryLaunch",
-  "AcpRegistryLaunch",
-] as const;
-
-const RAW_ACP_INVOCATION_MODULE =
-  /["'][^"']*acp-subprocess\/(?:agent-registry|client|execution-target|process)(?:\.js)?["']/;
 
 export interface ServerWorkerTopologyFile {
   readonly path: string;
@@ -142,46 +129,6 @@ function isTestOrFixturePath(value: string): boolean {
 
 function count(source: string, expression: RegExp): number {
   return [...source.matchAll(expression)].length;
-}
-
-function productionRawInvocationImport(
-  path: string,
-  source: string,
-): string | null {
-  if (!path.startsWith("apps/server/src/") || isTestOrFixturePath(path)) {
-    return null;
-  }
-  if (RAW_ACP_INVOCATION_MODULE.test(source)) {
-    return "legacy raw ACP subprocess module import";
-  }
-  for (const symbol of RAW_ACP_INVOCATION_SYMBOLS) {
-    const importExpression = new RegExp(
-      `\\bimport\\s+(?:type\\s+)?\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+["'][^"']+["']`,
-      "s",
-    );
-    if (importExpression.test(source)) {
-      return `legacy raw ACP invocation import ${symbol}`;
-    }
-  }
-  return null;
-}
-
-function parseManifest(
-  path: string,
-  source: string,
-  add: (path: string, message: string) => void,
-): Record<string, unknown> | null {
-  try {
-    const value = JSON.parse(source) as unknown;
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      add(path, "package manifest must be a JSON object");
-      return null;
-    }
-    return value as Record<string, unknown>;
-  } catch {
-    add(path, "package manifest is not valid JSON");
-    return null;
-  }
 }
 
 function requireMarkers(input: {
@@ -231,6 +178,11 @@ export function scanServerWorkerTopology(
       add(path, "retired alternate AI execution owner still exists");
     }
   }
+  for (const path of RETIRED_RAW_EXECUTION_UTILITY_PATHS) {
+    if (files.has(path)) {
+      add(path, "retired raw provider-process utility owner still exists");
+    }
+  }
   for (const path of RETIRED_STATIC_AGENT_CATALOG_PATHS) {
     if (files.has(path)) {
       add(path, "retired Paperclip-owned agent catalog remains");
@@ -249,79 +201,17 @@ export function scanServerWorkerTopology(
         add(path, `deferred connected-machine runtime seam remains: ${symbol}`);
       }
     }
-    for (const marker of STATIC_AGENT_CATALOG_MARKERS) {
+    for (const marker of RETIRED_PAPERCLIP_CATALOG_MARKERS) {
       if (source.includes(marker)) {
-        add(path, `Paperclip-owned static agent catalog seam remains: ${marker}`);
+        add(path, `retired Paperclip adapter catalog seam remains: ${marker}`);
       }
     }
-    const rawInvocationImport = productionRawInvocationImport(path, source);
-    if (rawInvocationImport) {
-      add(path, `production ACPX runtime boundary forbids ${rawInvocationImport}`);
-    }
-    if (path.startsWith("apps/server/src/") && source.includes("resolveAcpRegistryLaunch")) {
-      add(path, "production ACPX runtime boundary must not resolve a launch argv");
+    for (const symbol of RETIRED_RAW_EXECUTION_UTILITY_SYMBOLS) {
+      if (new RegExp(`\\b${symbol}\\b`).test(source)) {
+        add(path, `retired raw provider-process utility remains: ${symbol}`);
+      }
     }
   }
-
-  const registryPath = "packages/adapter-utils/src/acp-subprocess/agent-registry.ts";
-  requireMarkers({
-    path: registryPath,
-    source: required(registryPath),
-    markers: [
-      "createAgentRegistry",
-      "listAcpRegistryAgentNames",
-      "assertAcpRegistryAgentName",
-      "candidateRegistry.list()",
-    ],
-    add,
-    contract: "dynamic ACPX registry bridge",
-  });
-
-  const discoveryPath = "packages/adapter-utils/src/acp-subprocess/acpx-discovery.ts";
-  requireMarkers({
-    path: discoveryPath,
-    source: required(discoveryPath),
-    markers: [
-      "listAcpxAgentNames",
-      "probeAcpxAgent",
-      "createAcpRuntime",
-      "ensureSession",
-      "configOptions",
-    ],
-    add,
-    contract: "local ACPX compatibility probe",
-  });
-
-  const catalogPath = "apps/server/src/adapters/acpx-catalog.ts";
-  requireMarkers({
-    path: catalogPath,
-    source: required(catalogPath),
-    markers: [
-      "discoverLocalAcpxAdapterCatalog",
-      "acpxDiscoveryToServerAdapter",
-      "listLocallyAvailableAcpRegistryAgentNames",
-      "probeAcpxAgent",
-      "configOptions",
-      "limits: null",
-    ],
-    add,
-    contract: "ACPX-supplied dynamic adapter catalog",
-  });
-
-  const adapterRegistryPath = "apps/server/src/adapters/registry.ts";
-  requireMarkers({
-    path: adapterRegistryPath,
-    source: required(adapterRegistryPath),
-    markers: [
-      "discoverLocalAcpxAdapterCatalog",
-      "refreshAcpxAdapters",
-      "assertAcpRegistryAgentName",
-      "registerServerAdapter",
-      "exclusively by ACPX",
-    ],
-    add,
-    contract: "dynamic ACPX adapter registry",
-  });
 
   const typesPath = "packages/adapter-utils/src/types.ts";
   requireMarkers({
@@ -330,50 +220,11 @@ export function scanServerWorkerTopology(
     markers: [
       "export interface ServerAdapterModule",
       "readonly type: string",
-      "readonly definition: AcpSubprocessAdapterDefinition",
+      "readonly definition: AcpxAdapterDefinition",
     ],
     add,
     contract: "closed declarative adapter ABI",
   });
-
-  const adapterManifestPath = "packages/adapter-utils/package.json";
-  const adapterManifest = parseManifest(
-    adapterManifestPath,
-    required(adapterManifestPath),
-    add,
-  );
-  if (adapterManifest) {
-    const dependencies = adapterManifest.dependencies;
-    const bundled = adapterManifest.bundleDependencies;
-    for (const [name, version] of Object.entries(EXACT_ADAPTER_DEPENDENCIES)) {
-      if (
-        !dependencies ||
-        typeof dependencies !== "object" ||
-        Array.isArray(dependencies) ||
-        (dependencies as Record<string, unknown>)[name] !== version
-      ) {
-        add(adapterManifestPath, `${name} must be pinned exactly to ${version}`);
-      }
-      if (!Array.isArray(bundled) || !bundled.includes(name)) {
-        add(adapterManifestPath, `${name} must ship with adapter-utils`);
-      }
-    }
-    const selectedFrontend = dependencies &&
-      typeof dependencies === "object" &&
-      !Array.isArray(dependencies)
-      ? Object.keys(dependencies).find(
-          (name) =>
-            name.startsWith("@agentclientprotocol/") &&
-            name !== "@agentclientprotocol/sdk",
-        )
-      : undefined;
-    if (selectedFrontend) {
-      add(
-        adapterManifestPath,
-        `adapter-utils must not bundle a Paperclip-selected ACP frontend: ${selectedFrontend}`,
-      );
-    }
-  }
 
   const executorPath =
     "apps/server/src/services/issue-execution-attempt-executor.ts";
@@ -382,80 +233,21 @@ export function scanServerWorkerTopology(
     path: executorPath,
     source: executor,
     markers: [
-      "executeAcpxRuntimePrompt",
       "executeAcpxOneShotPrompt",
       "prepareAcpxRuntimeInvocation",
       "createPaperclipRunToolsMcpServer",
-      "sessionCorrelations.resolveStart",
+      "sessionCorrelations.resolveResume",
       'promptKind: "base" | "steering"',
-      "recordSubprocessTeardown",
     ],
     add,
     contract: "canonical ACPX attempt executor",
   });
-  if (count(executor, /executeAcpxRuntimePrompt/g) < 2) {
-    add(
-      executorPath,
-      "canonical ACPX attempt executor must export and use the common runtime lifecycle",
-    );
-  }
   if (count(executor, /executeAcpxOneShotPrompt/g) < 2) {
     add(
       executorPath,
       "canonical ACPX attempt executor must invoke ACPX one-shot prompt execution",
     );
   }
-
-  requireMarkers({
-    path: "packages/adapter-utils/src/acp-subprocess/acpx-runtime-execution.ts",
-    source: required(
-      "packages/adapter-utils/src/acp-subprocess/acpx-runtime-execution.ts",
-    ),
-    markers: [
-      "executeAcpxOneShotPrompt",
-      "createAcpRuntime",
-      "createRuntimeStore",
-      "ensureSession",
-      "startTurn",
-      "await runtime.setConfigOption?.({",
-      "cancel",
-      "close",
-      "assertAcpRegistryAgentName",
-    ],
-    add,
-    contract: "disposable ACPX one-shot execution bridge",
-  });
-  requireMarkers({
-    path: "packages/adapter-utils/src/acp-subprocess/acpx-runtime-invocation.ts",
-    source: required(
-      "packages/adapter-utils/src/acp-subprocess/acpx-runtime-invocation.ts",
-    ),
-    markers: [
-      "prepareAcpxRuntimeInvocation",
-      "requireLocalTarget",
-      "materializeAdapterExecutionTargetTextFiles",
-      "operator_native",
-    ],
-    add,
-    contract: "ACPX-only local invocation preparation",
-  });
-  requireMarkers({
-    path: "packages/adapter-utils/src/acp-subprocess/acpx-runtime-readiness.ts",
-    source: required(
-      "packages/adapter-utils/src/acp-subprocess/acpx-runtime-readiness.ts",
-    ),
-    markers: [
-      "probeAcpxRuntimeReadiness",
-      "createAcpRuntime",
-      "createRuntimeStore",
-      "ensureSession",
-      "getStatus",
-      "await runtime.setConfigOption!({",
-      "close",
-    ],
-    add,
-    contract: "disposable ACPX readiness bridge",
-  });
 
   const providerConfigurationPath =
     "apps/server/src/services/issue-execution-provider-configuration.ts";
@@ -500,16 +292,6 @@ export function scanServerWorkerTopology(
     add,
     contract: "invariant local execution orchestrator",
   });
-  const targetPath =
-    "packages/adapter-utils/src/execution-target.ts";
-  requireMarkers({
-    path: targetPath,
-    source: required(targetPath),
-    markers: ["AdapterExecutionTarget", 'readonly kind: "local"'],
-    add,
-    contract: "local-only adapter execution target",
-  });
-
   const assemblyPath = "apps/server/src/index.ts";
   requireMarkers({
     path: assemblyPath,
@@ -556,12 +338,6 @@ export function listServerWorkerTopologyFiles(
   const files: ServerWorkerTopologyFile[] = [];
   for (const root of SOURCE_ROOTS) {
     walk(resolve(repositoryRoot, root), repositoryRoot, files);
-  }
-  for (const path of ["packages/adapter-utils/package.json"] as const) {
-    const absolute = resolve(repositoryRoot, path);
-    if (existsSync(absolute)) {
-      files.push({ path, source: readFileSync(absolute, "utf8") });
-    }
   }
   return files.sort((left, right) => left.path.localeCompare(right.path));
 }

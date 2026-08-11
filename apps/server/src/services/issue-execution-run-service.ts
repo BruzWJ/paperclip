@@ -17,7 +17,6 @@ import {
   issueExecutionFinalizationUpdateDependencies,
   issueExecutionFinalizations,
   issueExecutionLeases,
-  issueExecutionProcessFacts,
   issueExecutionPromptCapabilities,
   issueExecutionPromptSegments,
   issueExecutionRefs,
@@ -38,7 +37,6 @@ import {
   type IssueExecutionFinalizationPromptDependency,
   type IssueExecutionFinalizationUpdateDependency,
   type IssueExecutionLease,
-  type IssueExecutionProcessFact,
   type IssueExecutionPromptSegment,
   type IssueExecutionRunControl,
   type IssueExecutionRunLivenessFactRow,
@@ -59,7 +57,6 @@ import {
   inArray,
   isNotNull,
   isNull,
-  ne,
   or,
   sql,
   type SQL,
@@ -205,8 +202,6 @@ export interface IssueExecutionRunEnvelope extends IssueExecutionRunIdentity {
     | IssueExecutionRunTerminalClassification
     | null;
   readonly terminalReasonCode: string | null;
-  readonly processExitCode: number | null;
-  readonly processSignal: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -385,8 +380,6 @@ export interface JoinedIssueExecutionRunDetail {
   readonly retrySchedules:
     BoundedIssueExecutionRunRecords<IssueExecutionAttemptRetrySchedule>;
   readonly leases: BoundedIssueExecutionRunRecords<IssueExecutionLease>;
-  readonly processFacts:
-    BoundedIssueExecutionRunRecords<IssueExecutionProcessFact>;
   readonly cancellations:
     BoundedIssueExecutionRunRecords<IssueExecutionCancellationIntent>;
   readonly accounting: BoundedIssueExecutionRunRecords<
@@ -543,9 +536,7 @@ function assertRunEnvelopeInvariant(run: IssueExecutionRunEnvelope): void {
     (run.finishedAt !== null ||
       run.terminalFinalizationId !== null ||
       run.terminalClassification !== null ||
-      run.terminalReasonCode !== null ||
-      run.processExitCode !== null ||
-      run.processSignal !== null)
+      run.terminalReasonCode !== null)
   ) {
     throw new IssueExecutionRunInvariantViolation(
       "active run contains terminal facts",
@@ -554,25 +545,6 @@ function assertRunEnvelopeInvariant(run: IssueExecutionRunEnvelope): void {
   if (run.status === "running" && run.startedAt === null) {
     throw new IssueExecutionRunInvariantViolation(
       "running run requires its start time",
-    );
-  }
-  if (
-    run.processExitCode !== null &&
-    (run.processSignal !== null ||
-      !Number.isSafeInteger(run.processExitCode) ||
-      run.processExitCode < 0 ||
-      run.processExitCode > 255)
-  ) {
-    throw new IssueExecutionRunInvariantViolation(
-      "run process exit classification is invalid",
-    );
-  }
-  if (
-    run.processSignal !== null &&
-    (run.processExitCode !== null || !/^SIG[A-Z0-9]+$/.test(run.processSignal))
-  ) {
-    throw new IssueExecutionRunInvariantViolation(
-      "run process signal classification is invalid",
     );
   }
   assertDate(run.createdAt, "run creation time");
@@ -612,8 +584,6 @@ function projectRunEnvelope(
     finishedAt: row.finishedAt,
     terminalClassification: row.terminalClassification,
     terminalReasonCode: row.terminalReasonCode,
-    processExitCode: row.processExitCode,
-    processSignal: row.processSignal,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -701,7 +671,6 @@ export async function lockResumedAgentSteeringLivenessSourceInTransaction(
         eq(issueComments.companyId, issueExecutionRuns.companyId),
         eq(issueComments.issueId, issueExecutionRuns.issueId),
         eq(issueComments.authorType, "agent"),
-        eq(issueSessionEvents.sourceKind, "agent_active_run_steering"),
       ),
     )
     .limit(2)
@@ -762,7 +731,6 @@ async function listResumedAgentSteeringLivenessActionsInTransaction(
               input.committedAfter,
             ),
         eq(issueComments.authorType, "agent"),
-        eq(issueSessionEvents.sourceKind, "agent_active_run_steering"),
       ),
     )
     .orderBy(
@@ -1058,37 +1026,6 @@ export function terminalFinalizedIssueExecutionRunExistsSql(
       and ${issueExecutionRuns.id} = ${runId}
       and ${issueExecutionRuns.terminalFinalizationId} is not null
   )`;
-}
-
-/**
- * Ordered prior-run enumeration for one exact recovered agent session. The
- * recovery layer owns eligibility and trace restoration; this service owns
- * the run-table query and its tenancy/scope fence.
- */
-export async function listPriorIssueExecutionRunIdsForAgent(
-  database: Db,
-  input: IssueExecutionRunIdentity & {
-    readonly sessionId: string;
-    readonly targetAgentId: string;
-  },
-): Promise<readonly string[]> {
-  assertRunIdentity(input);
-  assertExactRunIdentifier(input.sessionId, "session id");
-  assertExactRunIdentifier(input.targetAgentId, "target agent id");
-  const rows = await database
-    .select({ id: issueExecutionRuns.id })
-    .from(issueExecutionRuns)
-    .where(
-      and(
-        eq(issueExecutionRuns.companyId, input.companyId),
-        eq(issueExecutionRuns.issueId, input.issueId),
-        eq(issueExecutionRuns.sessionId, input.sessionId),
-        eq(issueExecutionRuns.targetAgentId, input.targetAgentId),
-        ne(issueExecutionRuns.id, input.runId),
-      ),
-    )
-    .orderBy(asc(issueExecutionRuns.createdAt), asc(issueExecutionRuns.id));
-  return Object.freeze(rows.map((row) => row.id));
 }
 
 /**
@@ -1585,55 +1522,6 @@ export async function readBlockedActiveIssueExecutionRefIds(
 }
 
 /**
- * Canonical run-owner query used by exact-key target materialization GC.
- * The immutable adapter revision already owns the physical target and selected
- * skill set, so these three identities are the complete active-attempt scope.
- */
-export async function hasActiveIssueExecutionAttemptForMaterializationInTransaction(
-  transaction: IssueSessionDbTransaction,
-  input: {
-    readonly companyId: string;
-    readonly targetAgentId: string;
-    readonly adapterConfigRevisionId: string;
-  },
-): Promise<boolean> {
-  assertExactRunIdentifier(input.companyId, "company id");
-  assertExactRunIdentifier(input.targetAgentId, "target agent id");
-  assertExactRunIdentifier(
-    input.adapterConfigRevisionId,
-    "adapter configuration revision id",
-  );
-  const rows = await transaction
-    .select({ id: issueExecutionAttempts.id })
-    .from(issueExecutionAttempts)
-    .innerJoin(
-      issueExecutionRuns,
-      and(
-        eq(issueExecutionRuns.id, issueExecutionAttempts.runId),
-        eq(issueExecutionRuns.companyId, issueExecutionAttempts.companyId),
-        eq(issueExecutionRuns.issueId, issueExecutionAttempts.issueId),
-      ),
-    )
-    .where(
-      and(
-        eq(issueExecutionRuns.companyId, input.companyId),
-        eq(issueExecutionRuns.targetAgentId, input.targetAgentId),
-        eq(
-          issueExecutionRuns.adapterConfigRevisionId,
-          input.adapterConfigRevisionId,
-        ),
-        inArray(issueExecutionAttempts.state, [
-          "pending",
-          "leased",
-          "running",
-        ]),
-      ),
-    )
-    .limit(1);
-  return rows.length !== 0;
-}
-
-/**
  * Revoke prompt capabilities through the run owner when a session boundary
  * moves or reverts. Projectors never join the run root themselves.
  */
@@ -1958,7 +1846,7 @@ export async function createIssueExecutionRunInTransaction(
         messageKind: ref.messageKind,
         sourceMessageId: ref.sourceMessageId,
         admissionOrder: ref.laneOrdinal,
-        admissionVersion: ref.admittedSeq ?? ref.admissionHighWaterSeq,
+        admissionVersion: ref.admissionHighWaterSeq + 1,
       })),
     );
   }
@@ -2924,7 +2812,6 @@ async function readJoinedIssueExecutionRunDetail(
     attemptRows,
     retryScheduleRows,
     leaseRows,
-    processRows,
     cancellationRows,
     accountingRows,
     costRows,
@@ -3029,21 +2916,6 @@ async function readJoinedIssueExecutionRunDetail(
       .orderBy(
         asc(issueExecutionLeases.createdAt),
         asc(issueExecutionLeases.id),
-      )
-      .limit(input.limit + 1),
-    database
-      .select()
-      .from(issueExecutionProcessFacts)
-      .where(
-        and(
-          eq(issueExecutionProcessFacts.companyId, input.companyId),
-          eq(issueExecutionProcessFacts.issueId, input.issueId),
-          eq(issueExecutionProcessFacts.runId, input.runId),
-        ),
-      )
-      .orderBy(
-        asc(issueExecutionProcessFacts.createdAt),
-        asc(issueExecutionProcessFacts.id),
       )
       .limit(input.limit + 1),
     database
@@ -3282,7 +3154,6 @@ async function readJoinedIssueExecutionRunDetail(
     attempts: boundedRecords(attemptRows, input.limit),
     retrySchedules: boundedRecords(retryScheduleRows, input.limit),
     leases: boundedRecords(leaseRows, input.limit),
-    processFacts: boundedRecords(processRows, input.limit),
     cancellations: boundedRecords(cancellationRows, input.limit),
     accounting: boundedRecords(accountingRows, input.limit),
     costs: boundedRecords(costRows, input.limit),
@@ -3417,7 +3288,7 @@ export async function attachSteeringCancellationInTransaction(
 }
 
 /**
- * Clear only the settled/reaped P14 attempt and its exact cancellation pointer
+ * Clear only the settled P14 attempt and its exact cancellation pointer
  * before the positive steering segment is rebound to a new attempt.
  */
 export async function clearSteeringCancellationAndAttemptInTransaction(
@@ -3463,7 +3334,7 @@ export async function clearSteeringCancellationAndAttemptInTransaction(
 
 /**
  * Re-lock the same active envelope after the cancellation transaction has
- * reaped and detached its old prompt attempt. This is the final lifecycle
+ * settled and detached its old prompt attempt. This is the final lifecycle
  * fence before a persisted positive segment becomes resumable.
  */
 export async function lockReboundSteeringRunInTransaction(
@@ -3585,7 +3456,12 @@ export interface ReboundIssueExecutionSteering {
 
 export type IssueExecutionSteeringCancellationSettlement =
   | {
-      readonly kind: "settled_and_reaped";
+      readonly kind: "settled";
+      readonly cancellationIntentId: string;
+    }
+  | {
+      /** The exact old prompt is still open; durable recovery may retry. */
+      readonly kind: "pending";
       readonly cancellationIntentId: string;
     }
   | {
@@ -3625,7 +3501,17 @@ export type ContinuedPendingIssueExecutionSteering =
   | {
       readonly kind: "already_settled";
       readonly result: IssueExecutionSteeringResult;
+    }
+  | {
+      /** The source remains durably requested and will be retried by recovery. */
+      readonly kind: "still_pending";
     };
+
+export interface RecoverableIssueExecutionSteeringSource {
+  readonly companyId: string;
+  readonly issueId: string;
+  readonly sourceCommentId: string;
+}
 
 /**
  * Transactional DB owner for P14. `requestInTransaction` locks the exact run,
@@ -3661,6 +3547,9 @@ export interface IssueExecutionSteeringRepository {
     readonly issueId: string;
     readonly sourceCommentId: string;
   }): Promise<PendingIssueExecutionSteeringForSource>;
+  listRecoverableSources(
+    limit: number,
+  ): Promise<readonly RecoverableIssueExecutionSteeringSource[]>;
 }
 
 export interface IssueExecutionSteeringCancellationPort {
@@ -3789,14 +3678,17 @@ export interface IssueExecutionRunService {
     transaction: IssueSessionDbTransaction,
     input: RequestIssueExecutionSteeringInput,
   ): Promise<RequestedIssueExecutionSteering>;
-  continueSteering(
-    request: RequestedIssueExecutionSteering,
-  ): Promise<ReboundIssueExecutionSteering>;
   continuePendingSteeringForSource(input: {
     readonly companyId: string;
     readonly issueId: string;
     readonly sourceCommentId: string;
   }): Promise<ContinuedPendingIssueExecutionSteering>;
+  reconcilePendingSteering(limit?: number): Promise<{
+    readonly discovered: number;
+    readonly continued: number;
+    readonly pending: number;
+    readonly sourceCommentIds: readonly string[];
+  }>;
 }
 
 export class IssueExecutionSteeringRejected extends Error {
@@ -3890,7 +3782,7 @@ function sameReboundIdentity(
 /**
  * Canonical P14 orchestration. The comment/source and requested segment commit
  * first; the worker then signals the exact in-memory attempt, waits for the
- * old prompt's unambiguous protocol settlement and process reap, rebinds the
+ * old prompt's unambiguous protocol settlement, rebinds the
  * positive segment, and only then schedules its ACP continuation. It never
  * creates another Paperclip run and never builds context itself.
  */
@@ -3907,7 +3799,7 @@ export function createIssueExecutionRunService(options: {
 }): IssueExecutionRunService {
   async function continueRequestedSteering(
     request: RequestedIssueExecutionSteering,
-  ): Promise<ReboundIssueExecutionSteering> {
+  ): Promise<ReboundIssueExecutionSteering | null> {
     const continuationIdentity = {
       companyId: request.companyId,
       issueId: request.issueId,
@@ -3925,57 +3817,105 @@ export function createIssueExecutionRunService(options: {
         continuationIdentity,
       );
     }
-    const failContinuation = (reason: string) => {
-      options.steeringResults.publish({
-        ...continuationIdentity,
-        outcome: "failed",
-        response: "",
-        reason,
-      });
-    };
-    try {
-      // A false signal is not itself failure: the old prompt may have settled
-      // naturally between the transaction and the post-commit signal.
-      const delivered =
-        options.cancellation.signalAttemptCancellation(request.cancellation);
-      await options.repository.recordCancellationSignal({
+    // A false signal is not itself failure: the old prompt may have settled
+    // naturally between the transaction and the post-commit signal.
+    const delivered =
+      options.cancellation.signalAttemptCancellation(request.cancellation);
+    await options.repository.recordCancellationSignal({
+      request,
+      delivered,
+    });
+    const settlement =
+      await options.repository.awaitCancellationSettlement(request);
+    if (settlement.kind === "pending") return null;
+    if (settlement.kind === "ambiguous") {
+      await options.repository.markAmbiguous({
         request,
-        delivered,
+        reason: settlement.reason,
       });
-      const settlement =
-        await options.repository.awaitCancellationSettlement(request);
-      if (settlement.kind === "ambiguous") {
-        await options.repository.markAmbiguous({
-          request,
-          reason: settlement.reason,
-        });
-        throw new IssueExecutionSteeringRejected(
-          "The selected run's current prompt did not settle unambiguously",
-          "cancellation_ambiguous",
-        );
-      }
-      const rebound = await options.repository.rebindAfterCancellation(request);
-      if (!sameReboundIdentity(request, rebound)) {
-        await options.repository.markAmbiguous({
-          request,
-          reason: "steering rebound crossed the requested run segment",
-        });
-        throw new IssueExecutionSteeringRejected(
-          "Steering rebound crossed the requested run segment",
-          "rebound_identity_mismatch",
-        );
-      }
-      await options.repository.markResumeReady(rebound);
-      await options.resume.resumeSteering(rebound);
-      return rebound;
-    } catch (error) {
-      failContinuation(
-        error instanceof Error
-          ? error.message
-          : "Steering continuation failed",
+      throw new IssueExecutionSteeringRejected(
+        "The selected run's current prompt did not settle unambiguously",
+        "cancellation_ambiguous",
       );
+    }
+    const rebound = await options.repository.rebindAfterCancellation(request);
+    if (!sameReboundIdentity(request, rebound)) {
+      await options.repository.markAmbiguous({
+        request,
+        reason: "steering rebound crossed the requested run segment",
+      });
+      throw new IssueExecutionSteeringRejected(
+        "Steering rebound crossed the requested run segment",
+        "rebound_identity_mismatch",
+      );
+    }
+    await options.repository.markResumeReady(rebound);
+    await options.resume.resumeSteering(rebound);
+    return rebound;
+  }
+
+  function publishContinuationFailure(
+    identity: {
+      readonly companyId: string;
+      readonly issueId: string;
+      readonly runId: string;
+      readonly refId: string;
+      readonly refOrdinal: number;
+      readonly segmentOrdinal: number;
+    },
+    error: unknown,
+  ): void {
+    options.steeringResults.publish({
+      companyId: identity.companyId,
+      issueId: identity.issueId,
+      runId: identity.runId,
+      refId: identity.refId,
+      refOrdinal: identity.refOrdinal,
+      segmentOrdinal: identity.segmentOrdinal,
+      outcome: "failed",
+      response: "",
+      reason: error instanceof Error
+        ? error.message
+        : "Steering continuation failed",
+    });
+  }
+
+  async function continueReboundForSource(
+    source: RecoverableIssueExecutionSteeringSource,
+    rebound: ReboundIssueExecutionSteering,
+  ): Promise<ContinuedPendingIssueExecutionSteering> {
+    try {
+      await options.repository.markResumeReady(rebound);
+    } catch (error) {
+      const latest = await options.repository.findPendingForSource(source);
+      if (latest.kind === "resumed") return { kind: "already_resumed" };
+      if (latest.kind === "terminal") {
+        return { kind: "already_settled", result: latest.result };
+      }
       throw error;
     }
+    await options.resume.resumeSteering(rebound);
+    return { kind: "continued_rebound", rebound };
+  }
+
+  async function readConvergedSteeringSource(
+    source: RecoverableIssueExecutionSteeringSource,
+  ): Promise<ContinuedPendingIssueExecutionSteering | null> {
+    const latest = await options.repository.findPendingForSource(source);
+    if (latest.kind === "resumed") return { kind: "already_resumed" };
+    if (latest.kind === "terminal") {
+      return { kind: "already_settled", result: latest.result };
+    }
+    if (latest.kind === "rebound") {
+      return continueReboundForSource(source, latest.rebound);
+    }
+    if (latest.kind === "ambiguous") {
+      throw new IssueExecutionSteeringRejected(
+        latest.reason,
+        "persisted_ambiguous",
+      );
+    }
+    return null;
   }
 
   const service: IssueExecutionRunService = {
@@ -4210,10 +4150,6 @@ export function createIssueExecutionRunService(options: {
       return options.repository.requestInTransaction(transaction, input);
     },
 
-    continueSteering(request) {
-      return continueRequestedSteering(request);
-    },
-
     async continuePendingSteeringForSource(input) {
       exactIdentity(input.companyId, "company id");
       exactIdentity(input.issueId, "issue id");
@@ -4232,33 +4168,59 @@ export function createIssueExecutionRunService(options: {
         );
       }
       if (pending.kind === "requested") {
-        const rebound = await continueRequestedSteering(pending.request);
-        return { kind: "continued_requested", rebound };
+        try {
+          const rebound = await continueRequestedSteering(pending.request);
+          return rebound === null
+            ? { kind: "still_pending" }
+            : { kind: "continued_requested", rebound };
+        } catch (error) {
+          let failure: unknown = error;
+          if (
+            error instanceof IssueExecutionRunInvariantViolation ||
+            error instanceof IssueExecutionSteeringRejected
+          ) {
+            try {
+              const converged = await readConvergedSteeringSource(input);
+              if (converged !== null) return converged;
+            } catch (convergenceError) {
+              failure = convergenceError;
+            }
+          }
+          publishContinuationFailure(pending.request, failure);
+          throw failure;
+        }
       }
-      // A persisted rebound has already crossed cancellation settlement and
-      // process reap. Re-run the exact lifecycle fence idempotently before
+      // A persisted rebound has already crossed cancellation settlement.
+      // Re-run the exact lifecycle fence idempotently before
       // scheduling only that same-run segment.
       try {
-        await options.repository.markResumeReady(pending.rebound);
-        await options.resume.resumeSteering(pending.rebound);
-        return { kind: "continued_rebound", rebound: pending.rebound };
+        return await continueReboundForSource(input, pending.rebound);
       } catch (error) {
-        options.steeringResults.publish({
-          companyId: pending.rebound.companyId,
-          issueId: pending.rebound.issueId,
-          runId: pending.rebound.runId,
-          refId: pending.rebound.refId,
-          refOrdinal: pending.rebound.refOrdinal,
-          segmentOrdinal: pending.rebound.segmentOrdinal,
-          outcome: "failed",
-          response: "",
-          reason:
-            error instanceof Error
-              ? error.message
-              : "Steering continuation failed",
-        });
+        publishContinuationFailure(pending.rebound, error);
         throw error;
       }
+    },
+
+    async reconcilePendingSteering(limit = 100) {
+      const boundedLimit = Math.max(1, Math.min(1_000, Math.trunc(limit)));
+      const sources = await options.repository.listRecoverableSources(
+        boundedLimit,
+      );
+      let continued = 0;
+      let pending = 0;
+      for (const source of sources) {
+        const result = await service.continuePendingSteeringForSource(source);
+        if (result.kind === "still_pending") pending += 1;
+        else continued += 1;
+      }
+      return Object.freeze({
+        discovered: sources.length,
+        continued,
+        pending,
+        sourceCommentIds: Object.freeze(
+          sources.map((source) => source.sourceCommentId),
+        ),
+      });
     },
   };
   return Object.freeze(service);

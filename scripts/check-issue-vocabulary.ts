@@ -32,8 +32,6 @@ export const ISSUE_VOCABULARY_SCAN_OWNERS = Object.freeze([
   "packages/shared/src",
   "packages/plugins/sdk/src",
   "packages/plugins/sdk/README.md",
-  "packages/teams-catalog/catalog",
-  "packages/teams-catalog/generated",
   "packages/cli/src",
   "packages/cli/README.md",
   "apps/ui/src/api",

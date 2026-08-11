@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   acknowledgeCompanyCancellationIntentsInTx,
   archiveCompanySessionGraphInTx,
-  completeCompanyCancellationIntentInTx,
+  reconcileCompanyCancellationIntentInTx,
   purgeCompanySessionGraphInTx,
   reactivateCompanySessionGraphInTx,
 } from "../services/issue-session-lifecycle.js";
@@ -222,45 +222,55 @@ describe("canonical company Session lifecycle without a database process", () =>
     expect(harness.calls).toEqual([]);
   });
 
-  it("requires a native-session cancellation signal for a running attempt", async () => {
+  it("waits when an expired running attempt minted an ACPX capability", async () => {
     const intentId = "00000000-0000-4000-8000-000000000020";
     const attemptId = "00000000-0000-4000-8000-000000000021";
+    const leaseId = "00000000-0000-4000-8000-000000000023";
+    const runId = "00000000-0000-4000-8000-000000000022";
     const intent = {
       id: intentId,
       companyId,
       issueId,
-      runId: "00000000-0000-4000-8000-000000000022",
+      runId,
       attemptId,
-      leaseId: null,
-      processFactId: null,
+      leaseId,
       state: "acknowledged",
+      nativeCancellationSettledAt: null,
     };
     const harness = createMockDb({
       execute: [[], []],
       select: [
         [intent],
         [intent],
-        [],
         [{ id: attemptId, state: "running" }],
+        [{
+          id: leaseId,
+          state: "active",
+          expiredAtDatabaseClock: true,
+        }],
+        [{ capabilityConnectionId: "00000000-0000-4000-8000-000000000024" }],
       ],
     });
+    runMocks.lockIssueExecutionRunInTransaction.mockResolvedValueOnce({
+      runId,
+      status: "running",
+      cancellationIntentId: intentId,
+      currentAttemptId: attemptId,
+      currentLeaseId: leaseId,
+    });
 
-    await expect(completeCompanyCancellationIntentInTx(
+    await expect(reconcileCompanyCancellationIntentInTx(
       harness.db as never,
       {
         intentId,
-        proof: {
-          inMemoryExecutionAbsent: true,
-          nativeSessionCancellation: "not_required",
-        },
         now,
       },
-    )).rejects.toBeInstanceOf(IssueSessionLifecycleConflict);
+    )).resolves.toBeNull();
     expect(harness.calls.some((call) => call.operation === "update"))
       .toBe(false);
   });
 
-  it("completes exact attempt ownership and advances hard delete to purge-ready", async () => {
+  it("completes an expired attempt that never minted an ACPX capability", async () => {
     const intentId = "00000000-0000-4000-8000-000000000030";
     const attemptId = "00000000-0000-4000-8000-000000000031";
     const leaseId = "00000000-0000-4000-8000-000000000032";
@@ -273,14 +283,12 @@ describe("canonical company Session lifecycle without a database process", () =>
       runId,
       attemptId,
       leaseId,
-      processFactId: null,
       state: "acknowledged",
-      sessionCancelSentAt: null,
+      nativeCancellationSettledAt: null,
     };
     const completed = {
       ...intent,
       state: "completed",
-      sessionCancelSentAt: now,
       completedAt: now,
     };
     const attempt = { id: attemptId, state: "running" };
@@ -295,53 +303,53 @@ describe("canonical company Session lifecycle without a database process", () =>
         runId,
         attemptId,
         leaseId,
-        processFactId: null,
       }],
       runs: [],
     });
-    const purgeReady = {
-      ...cancelling,
-      status: "purge_ready",
-      purgeReadyAt: now,
-    };
     const harness = createMockDb({
       execute: [[], []],
       select: [
         [intent],
         [intent],
-        [cancelling],
         [attempt],
-        [completed],
+        [{
+          id: leaseId,
+          state: "active",
+          expiredAtDatabaseClock: true,
+        }],
+        [],
+        [cancelling],
       ],
-      update: [[], [], [completed], [purgeReady]],
+      update: [[], [], [completed]],
     });
-    runMocks.lockIssueExecutionRunInTransaction
+    runMocks.lockIssueExecutionRunInTransaction.mockResolvedValueOnce({
+      runId,
+      status: "running",
+      cancellationIntentId: intentId,
+      currentAttemptId: attemptId,
+      currentLeaseId: leaseId,
+    });
+    runMocks.detachIssueExecutionRunCancellationInTransaction
       .mockResolvedValueOnce({
+        runId,
         status: "running",
-        cancellationIntentId: intentId,
-        currentAttemptId: attemptId,
-        currentLeaseId: leaseId,
-      })
-      .mockResolvedValueOnce({
-        status: "cancelled",
         cancellationIntentId: null,
         currentAttemptId: attemptId,
         currentLeaseId: leaseId,
       });
 
-    const result = await completeCompanyCancellationIntentInTx(
+    const result = await reconcileCompanyCancellationIntentInTx(
       harness.db as never,
       {
         intentId,
-        proof: {
-          inMemoryExecutionAbsent: true,
-          nativeSessionCancellation: "sent",
-        },
         now,
       },
     );
 
-    expect(result).toEqual({ intent: completed, operation: purgeReady });
+    expect(result).toEqual({
+      intent: completed,
+      operation: cancelling,
+    });
     expect(runMocks.detachIssueExecutionRunCancellationInTransaction)
       .toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
         runId,
@@ -362,8 +370,8 @@ describe("canonical company Session lifecycle without a database process", () =>
       operation: "hard_delete",
       status: "purge_ready",
     });
-    const safetyChecks = Array.from({ length: 10 }, () => [] as unknown[]);
-    safetyChecks[8] = [{
+    const safetyChecks = Array.from({ length: 9 }, () => [] as unknown[]);
+    safetyChecks[7] = [{
       leaseId: "00000000-0000-4000-8000-000000000040",
     }];
     const harness = createMockDb({
@@ -389,9 +397,9 @@ describe("canonical company Session lifecycle without a database process", () =>
       sessionIds: [sessionId, childSessionId],
       issueIds: [issueId, childIssueId],
     });
-    const emptySafetyChecks = Array.from({ length: 10 }, () => []);
+    const emptySafetyChecks = Array.from({ length: 9 }, () => []);
     const deleteResults = [
-      ...Array.from({ length: 46 }, () => []),
+      ...Array.from({ length: 45 }, () => []),
       [{ id: companyId }],
     ];
     const harness = createMockDb({

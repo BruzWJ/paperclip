@@ -93,7 +93,6 @@ function buildProject(overrides: Record<string, unknown> = {}) {
     id: "project-1",
     companyId: "company-1",
     urlKey: "project-1",
-    goalId: null,
     goalIds: [],
     goals: [],
     name: "Project",

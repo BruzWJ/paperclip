@@ -500,12 +500,18 @@ describe("issue validators", () => {
   it("accepts an opaque operator-supplied CODEX_HOME without importing it into Paperclip state", () => {
     const parsed = adapterConfigSchema.parse({
       env: {
-        CODEX_HOME: "/operator/native/codex-home",
+        CODEX_HOME: {
+          type: "plain",
+          value: "/operator/native/codex-home",
+        },
       },
     });
 
     expect(parsed.env).toEqual({
-      CODEX_HOME: "/operator/native/codex-home",
+      CODEX_HOME: {
+        type: "plain",
+        value: "/operator/native/codex-home",
+      },
     });
   });
 

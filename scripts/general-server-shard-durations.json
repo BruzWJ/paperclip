@@ -92,8 +92,6 @@
     "apps/server/src/__tests__/source-trust.test.ts": 2204,
     "apps/server/src/__tests__/static-index-html.test.ts": 28,
     "apps/server/src/__tests__/storage-local-provider.test.ts": 23,
-    "apps/server/src/__tests__/teams-catalog-install-no-overrides.test.ts": 2995,
-    "apps/server/src/__tests__/teams-catalog-service.test.ts": 75,
     "apps/server/src/__tests__/telemetry-client-flush.test.ts": 12,
     "apps/server/src/__tests__/trust-preset-resolver.test.ts": 10,
     "apps/server/src/__tests__/trust-proxy.test.ts": 11,

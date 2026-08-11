@@ -4,7 +4,6 @@ import {
   type ExecuteToolParams,
   type ToolResult,
 } from "@paperclipai/plugin-sdk";
-import type { ContextRetrievalScope } from "./context-retrieval.js";
 import {
   isPaperclipManagedToolName,
   type RuntimePaperclipManagedToolCall,
@@ -16,10 +15,7 @@ import type {
 import {
   RuntimeInterfaceConflict,
 } from "./runtime-tool-errors.js";
-import type {
-  CompiledRunToolDescriptor,
-  RestoreSessionArguments,
-} from "./runtime-interface-compiler.js";
+import type { CompiledRunToolDescriptor } from "./runtime-interface-compiler.js";
 import type {
   PromptCapabilityBinding,
   PromptCapabilityCallIdentity,
@@ -31,14 +27,6 @@ import {
   type RuntimeToolCallLedger,
 } from "./runtime-tool-call-ledger.js";
 import type { PluginWorkerManager } from "./plugin-worker-manager.js";
-
-type RecoverySessionHistoryReader = ReturnType<
-  typeof import("./recovery-session-history.js").createRecoverySessionHistoryReader
->;
-
-export interface RuntimeRetrievalScopeResolver {
-  resolve(capability: PromptCapabilityBinding): Promise<ContextRetrievalScope>;
-}
 
 export interface RuntimePluginToolPort {
   execute(input: {
@@ -145,8 +133,6 @@ function agentRunAuthority(input: {
  * crosses the same router as Board MCP below this boundary.
  */
 export function createRuntimeToolGateway(options: {
-  retrievalScope: RuntimeRetrievalScopeResolver;
-  restoreSession?: RecoverySessionHistoryReader;
   managedTools: PaperclipManagedToolRouter;
   pluginTools: RuntimePluginToolPort;
   callLedger: RuntimeToolCallLedger;
@@ -173,17 +159,73 @@ export function createRuntimeToolGateway(options: {
     async execute({
       capability,
       descriptor,
+      runtimeScope,
       arguments: args,
       callIdentity,
       ingressOrdinal,
       mintPluginRunContext,
     }) {
+      const normalize = () => {
+        if (descriptor.source === "plugin") {
+          if (
+            !descriptor.pluginInstallationId ||
+            !descriptor.pluginManifestIdentity ||
+            !descriptor.pluginToolName
+          ) {
+            throw new RuntimeInterfaceConflict(
+              "Plugin tool is missing its immutable installation binding",
+            );
+          }
+          return {
+            kind: "plugin" as const,
+            toolName: descriptor.pluginToolName,
+            pluginInstallationId: descriptor.pluginInstallationId,
+            pluginManifestIdentity: descriptor.pluginManifestIdentity,
+            arguments: descriptor.validateArguments
+              ? descriptor.validateArguments(args)
+              : args,
+          };
+        }
+        return {
+          kind: "paperclip" as const,
+          call: prepareRuntimePaperclipManagedToolCall({
+            descriptor,
+            arguments: args,
+            scope: capability,
+          }),
+        };
+      };
+      let normalized: ReturnType<typeof normalize>;
+      try {
+        normalized = normalize();
+      } catch (error) {
+        await options.callLedger.registerTerminalInvalid({
+          capability,
+          descriptor,
+          callIdentity,
+          ingressOrdinal,
+          arguments: args,
+          error,
+        });
+        throw error;
+      }
+      const ledgerMetadata = normalized.kind === "paperclip"
+        ? normalized.call.ledger
+        : { kind: "non_mention" as const };
       const claim = await options.callLedger.claim({
         capability,
         descriptor,
         callIdentity,
         ingressOrdinal,
         arguments: args,
+        classification:
+          ledgerMetadata.kind === "mention" &&
+            ledgerMetadata.targetAgentId !== null
+            ? {
+                classification: "validated_mention",
+                targetAgentId: ledgerMetadata.targetAgentId,
+              }
+            : { classification: "non_mention" },
       });
       if (claim.state === "completed") {
         return {
@@ -220,71 +262,22 @@ export function createRuntimeToolGateway(options: {
       }
 
       try {
-        const prepared =
-          descriptor.source === "paperclip" && descriptor.name !== "restore_session"
-            ? prepareRuntimePaperclipManagedToolCall({
-                descriptor,
-                arguments: args,
-                scope: capability,
-              })
-            : null;
-        const validatedArguments = prepared === null
-          ? descriptor.validateArguments
-            ? descriptor.validateArguments(args)
-            : args
-          : undefined;
-        const ledgerMetadata = prepared?.ledger ?? { kind: "non_mention" as const };
-        await options.callLedger.classify(
-          ledgerMetadata.kind === "mention" &&
-            ledgerMetadata.targetAgentId !== null
-            ? {
-                capability,
-                id: claim.id,
-                ingressOrdinal,
-                classification: "validated_mention",
-                targetAgentId: ledgerMetadata.targetAgentId,
-              }
-            : {
-                capability,
-                id: claim.id,
-                ingressOrdinal,
-                classification: "non_mention",
-              },
-        );
-
         let result: unknown;
         let mentionActionCommitted = false;
-        if (descriptor.name === "restore_session") {
-          if (!options.restoreSession) {
-            throw new RuntimeInterfaceConflict("restore_session reader is unavailable");
-          }
-          result = await options.restoreSession.restore({
-            capability,
-            ...(validatedArguments as RestoreSessionArguments),
-          });
-        } else if (descriptor.source === "plugin") {
-          if (
-            !descriptor.pluginInstallationId ||
-            !descriptor.pluginManifestIdentity ||
-            !descriptor.pluginToolName
-          ) {
-            throw new RuntimeInterfaceConflict(
-              "Plugin tool is missing its immutable installation binding",
-            );
-          }
+        if (normalized.kind === "plugin") {
           result = await options.pluginTools.execute({
             capability,
-            toolName: descriptor.pluginToolName,
-            pluginInstallationId: descriptor.pluginInstallationId,
-            pluginManifestIdentity: descriptor.pluginManifestIdentity,
-            arguments: validatedArguments,
+            toolName: normalized.toolName,
+            pluginInstallationId: normalized.pluginInstallationId,
+            pluginManifestIdentity: normalized.pluginManifestIdentity,
+            arguments: normalized.arguments,
             mintPluginRunContext: () => mintPluginRunContext({
               runInterfaceToolCallId: claim.id,
-              pluginInstallationId: descriptor.pluginInstallationId!,
-              pluginManifestIdentity: descriptor.pluginManifestIdentity!,
+              pluginInstallationId: normalized.pluginInstallationId,
+              pluginManifestIdentity: normalized.pluginManifestIdentity,
             }),
           });
-        } else if (prepared) {
+        } else {
           const authority = agentRunAuthority({
             capability,
             callIdentity,
@@ -310,15 +303,11 @@ export function createRuntimeToolGateway(options: {
             },
           });
           result = await options.managedTools.routeExecution(
-            prepared.command,
+            normalized.call.command,
             {
               authority,
-              resolveRuntimeScope: () => options.retrievalScope.resolve(capability),
+              resolveRuntimeScope: async () => runtimeScope,
             },
-          );
-        } else {
-          throw new RuntimeInterfaceConflict(
-            `Unknown Paperclip action ${descriptor.name}`,
           );
         }
 

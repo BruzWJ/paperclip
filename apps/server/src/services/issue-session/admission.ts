@@ -35,6 +35,7 @@ import {
 } from "drizzle-orm";
 import { evaluateAgentInvokability } from "../agent-invokability.js";
 import { readIssueExecutionRun } from "../issue-execution-run-service.js";
+import { classifyOrderedExecutionScopePair } from "../issue-execution-initial-request-pair.js";
 import type { IssueSessionCommentProjectionInput } from "./projector.js";
 import {
   canonicalIssueSessionJson,
@@ -136,9 +137,9 @@ type SystemExecutionActor = Extract<
 
 /**
  * Closed source/actor contract for every Session source that can cause
- * provider work. Source kind and immutable actor provenance jointly determine
- * its V2 message kind; a producer cannot select user/synthetic/system or an
- * admission branch independently.
+ * provider work. Source kind and immutable actor provenance determine its
+ * ordinary V2 message kind; the admission service alone recognizes the exact
+ * initial-request pair and lowers its instruction member as synthetic.
  */
 export type IssueSessionExecutionSource =
   | {
@@ -169,19 +170,12 @@ export type IssueSessionExecutionSource =
       actor: AgentExecutionActor;
     }
   | {
-      sourceKind:
-        | "system_nudge"
-        | "termination_recovery"
-        | "agent_liveness_followup";
+      sourceKind: "system_nudge";
       actor: SystemExecutionActor;
     }
   | {
-      sourceKind: "human_active_run_steering";
+      sourceKind: "human_comment";
       actor: UserOrBoardExecutionActor;
-    }
-  | {
-      sourceKind: "agent_active_run_steering";
-      actor: AgentExecutionActor;
     };
 
 type IssueSessionAgentCommentAuthor = Extract<
@@ -242,8 +236,7 @@ export type DispatchingExecutionSourceInput =
       Exclude<
         IssueSessionExecutionSource,
         | { sourceKind: "issue_reassignment" }
-        | { sourceKind: "human_active_run_steering" }
-        | { sourceKind: "agent_active_run_steering" }
+        | { sourceKind: "human_comment" }
       > & {
       previousOwnershipEpoch?: never;
     });
@@ -255,7 +248,10 @@ export interface DispatchingExecutionSourceBatch {
    * gives those refs one execution scope and lineage.
   */
   batchKey: string;
-  sources: readonly DispatchingExecutionSourceInput[];
+  sources: readonly [
+    DispatchingExecutionSourceInput,
+    DispatchingExecutionSourceInput,
+  ];
 }
 
 export interface NonDispatchUserComment
@@ -283,35 +279,18 @@ export type SteeringComment = IssueSessionSourceIdentity & {
   companyId: string;
   issueId: string;
   sessionId: string;
-} & (
-  | (Extract<
-      IssueSessionExecutionSource,
-      { sourceKind: "human_active_run_steering" }
-    > & {
-      sourceKind: "human_active_run_steering";
-      comment: {
-        author: Extract<IssueSessionCommentAuthor, { kind: "user" }>;
-        producingRun: null;
-        replyToCommentId?: string | null;
-        steeringSegment?: null;
-      };
-    })
-  | (Extract<
-      IssueSessionExecutionSource,
-      { sourceKind: "agent_active_run_steering" }
-    > & {
-      sourceKind: "agent_active_run_steering";
-      comment: {
-        author: IssueSessionAgentCommentAuthor;
-        producingRun: {
-          runId: string;
-          adapterConfigRevisionId: string;
-        };
-        replyToCommentId?: string | null;
-        steeringSegment?: null;
-      };
-    })
-);
+} & Extract<
+  IssueSessionExecutionSource,
+  { sourceKind: "human_comment" }
+> & {
+  sourceKind: "human_comment";
+  comment: {
+    author: Extract<IssueSessionCommentAuthor, { kind: "user" }>;
+    producingRun: null;
+    replyToCommentId?: string | null;
+    steeringSegment?: null;
+  };
+};
 
 export interface NonDispatchControlNotice
   extends IssueSessionSourceIdentity {
@@ -637,8 +616,9 @@ function assertExecutionSourceActorPair(
   }
   assertExecutionActor(source.actor);
   switch (source.sourceKind) {
-    case "issue_request":
     case "issue_update":
+      return;
+    case "issue_request":
       return;
     case "issue_reassignment":
       if (
@@ -651,19 +631,16 @@ function assertExecutionSourceActorPair(
       break;
     case "issue_reopen":
     case "human_comment_mention":
-    case "human_active_run_steering":
+    case "human_comment":
       if (source.actor.kind === "user/board") return;
       break;
     case "routine_dispatch":
       if (source.actor.kind === "routine") return;
       break;
     case "consult_mention":
-    case "agent_active_run_steering":
       if (source.actor.kind === "agent-execution") return;
       break;
     case "system_nudge":
-    case "termination_recovery":
-    case "agent_liveness_followup":
       if (source.actor.kind === "system") return;
       break;
     default:
@@ -679,22 +656,21 @@ function assertExecutionSourceActorPair(
 }
 
 /**
- * Sole lowering from immutable source provenance to the V2 Session kind used
- * for provider-bound work. `system` is intentionally absent: it belongs only
- * to explicit provider-free control notices and can never back an execution
- * ref.
+ * Default lowering from immutable source provenance to the V2 Session kind.
+ * Ordered pair admission lowers its first member separately.
  */
 export function v2MessageKindForExecutionSource(
   source: IssueSessionExecutionSource,
 ): "user" | "synthetic" {
   assertExecutionSourceActorPair(source);
   switch (source.sourceKind) {
-    case "issue_request":
     case "issue_reassignment":
     case "issue_reopen":
     case "human_comment_mention":
     case "routine_dispatch":
-    case "human_active_run_steering":
+    case "human_comment":
+      return "user";
+    case "issue_request":
       return "user";
     case "issue_update":
       return source.actor.kind === "user/board"
@@ -702,9 +678,6 @@ export function v2MessageKindForExecutionSource(
         : "synthetic";
     case "consult_mention":
     case "system_nudge":
-    case "termination_recovery":
-    case "agent_liveness_followup":
-    case "agent_active_run_steering":
       return "synthetic";
     default:
       return assertNever(source, "execution source");
@@ -956,8 +929,8 @@ function assertProjectedCommentSourceShape(
 
 function assertExecutionSourceCommentProvenance(
   input: DispatchingExecutionSourceInput | SteeringComment,
+  messageKind = v2MessageKindForExecutionSource(input),
 ): void {
-  const messageKind = v2MessageKindForExecutionSource(input);
   if (!input.comment) {
     if (messageKind === "user") {
       throw new IssueSessionLifecycleConflict(
@@ -999,6 +972,40 @@ function assertExecutionSourceCommentProvenance(
       },
     );
   }
+}
+
+function assertDispatchingExecutionSource(
+  input: DispatchingExecutionSourceInput,
+  messageKind = v2MessageKindForExecutionSource(input),
+): "user" | "synthetic" {
+  assertSourceIdentity(input);
+  assertExecutionSourceCommentProvenance(input, messageKind);
+  previousOwnershipEpochForDispatchSource(input);
+  return messageKind;
+}
+
+type GroupedDispatchingExecutionSourceInput =
+  DispatchingExecutionSourceInput &
+  Required<Pick<
+    DispatchExecutionScope,
+    "executionScopeId" | "executionLineageId"
+  >>;
+
+/** @internal Admission lowering for an already-normalized execution batch. */
+export function resolveDispatchingExecutionBatchMessageKinds(
+  sources: readonly GroupedDispatchingExecutionSourceInput[],
+): readonly ("user" | "synthetic")[] {
+  if (sources.length !== 2) {
+    throw new IssueSessionLifecycleConflict(
+      "Dispatching execution-source pair must contain two ordered sources",
+    );
+  }
+  const messageKinds = sources.map(v2MessageKindForExecutionSource);
+  messageKinds[0] = "synthetic";
+  sources.forEach((source, index) => {
+    assertDispatchingExecutionSource(source, messageKinds[index]!);
+  });
+  return messageKinds;
 }
 
 type ProjectedCommentProducerScope = {
@@ -2426,20 +2433,11 @@ export function createIssueSessionAdmissionService(
   const clock = options.clock ?? (() => new Date());
   const hooks = options.hooks ?? {};
 
-  function assertDispatchingExecutionSource(
-    input: DispatchingExecutionSourceInput,
-  ): "user" | "synthetic" {
-    assertSourceIdentity(input);
-    assertExecutionSourceCommentProvenance(input);
-    previousOwnershipEpochForDispatchSource(input);
-    return v2MessageKindForExecutionSource(input);
-  }
-
   async function admitExecutionSourceInTx(
     transaction: IssueSessionDbTransaction,
     input: DispatchingExecutionSourceInput,
+    messageKind: "user" | "synthetic",
   ): Promise<IssueSessionAdmissionResult> {
-    const messageKind = assertDispatchingExecutionSource(input);
     await assertProjectedCommentProducer(
       transaction,
       input,
@@ -2498,10 +2496,10 @@ export function createIssueSessionAdmissionService(
 
   return {
     admitExecutionSource(input, dbTransaction) {
-      assertDispatchingExecutionSource(input);
+      const messageKind = assertDispatchingExecutionSource(input);
       const operation = async (transaction: IssueSessionDbTransaction) => {
         await lockCompanyLifecycle(transaction, input.companyId);
-        return admitExecutionSourceInTx(transaction, input);
+        return admitExecutionSourceInTx(transaction, input, messageKind);
       };
       return dbTransaction
         ? operation(dbTransaction)
@@ -2513,14 +2511,6 @@ export function createIssueSessionAdmissionService(
         throw new IssueSessionLifecycleConflict(
           "Dispatching execution-source batch key must be non-empty",
         );
-      }
-      if (input.sources.length === 0) {
-        throw new IssueSessionLifecycleConflict(
-          "Dispatching execution-source batch must contain at least one source",
-        );
-      }
-      for (const source of input.sources) {
-        assertDispatchingExecutionSource(source);
       }
       const first = input.sources[0]!;
       const targetScope = {
@@ -2584,7 +2574,7 @@ export function createIssueSessionAdmissionService(
         "counterpart-execution-scope",
         groupingKey,
       );
-      const executionLineageId = deterministicUuid(
+      const executionLineageId = first.executionLineageId ?? deterministicUuid(
         "counterpart-execution-lineage",
         groupingKey,
       );
@@ -2605,15 +2595,24 @@ export function createIssueSessionAdmissionService(
           executionLineageId,
         };
       });
+      const messageKinds = resolveDispatchingExecutionBatchMessageKinds(grouped);
       const operation = async (transaction: IssueSessionDbTransaction) => {
         await lockCompanyLifecycle(transaction, first.companyId);
         const results: IssueSessionAdmissionResult[] = [];
-        for (const source of grouped) {
+        for (const [index, source] of grouped.entries()) {
           results.push(
             await admitExecutionSourceInTx(
               transaction,
               source,
+              messageKinds[index]!,
             ),
+          );
+        }
+        if (classifyOrderedExecutionScopePair(
+          results.flatMap((result) => result.ref ? [result.ref] : []),
+        ) === null) {
+          throw new IssueSessionLifecycleConflict(
+            "Execution-source pair did not persist one exact ordered scope",
           );
         }
         return results;

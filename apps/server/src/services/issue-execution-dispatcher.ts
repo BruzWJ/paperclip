@@ -4,9 +4,6 @@ import type {
 } from "@paperclipai/shared";
 import { createTargetLaneRunCoordinator } from "./agent-execution/session-runner/coordinator.js";
 import type {
-  ReapedCompanySkillMaterialization,
-} from "./company-skill-materialization-lifecycle.js";
-import type {
   IssueExecutionSteeringResultBroker,
 } from "./issue-execution-steering-results.js";
 
@@ -55,11 +52,7 @@ export interface IssueExecutionAttemptCancellationSignal {
 
 export interface IssueExecutionRetry {
   kind: "retry";
-  reason:
-    | "process_loss"
-    | "transport_transient"
-    | "provider_quota"
-    | "target_not_found_new_session";
+  reason: "transport_transient";
   retryAt: Date;
 }
 
@@ -125,14 +118,12 @@ export interface IssueExecutionDispatcherRepository {
     lease: LeasedIssueExecutionRef;
     reason: IssueExecutionRetry["reason"];
     retryAt: Date;
-    materialization: ReapedCompanySkillMaterialization | null;
   }): Promise<void>;
   markTerminal(input: {
     lease: LeasedIssueExecutionRef;
     outcome: IssueExecutionTerminal["outcome"];
     reason: string | null;
     finishedAt: Date;
-    materialization: ReapedCompanySkillMaterialization | null;
   }): Promise<IssueExecutionLaneSettlement>;
 }
 
@@ -140,10 +131,7 @@ export interface IssueExecutionAttemptExecutor {
   execute(
     lease: LeasedIssueExecutionRef,
     signal: AbortSignal,
-    settle: (input: {
-      readonly result: IssueExecutionDispatchResult;
-      readonly materialization: ReapedCompanySkillMaterialization | null;
-    }) => Promise<void>,
+    settle: (result: IssueExecutionDispatchResult) => Promise<void>,
   ): Promise<IssueExecutionDispatchResult>;
 }
 
@@ -308,14 +296,13 @@ export function createIssueExecutionDispatcher(options: {
           const result = await options.executor.execute(
             lease,
             controller.signal,
-            async ({ result: settled, materialization }) => {
+            async (settled) => {
               await options.repository.assertLeaseCurrent(lease);
               if (settled.kind === "retry") {
                 await options.repository.markRetryable({
                   lease,
                   reason: settled.reason,
                   retryAt: settled.retryAt,
-                  materialization,
                 });
                 return;
               }
@@ -324,7 +311,6 @@ export function createIssueExecutionDispatcher(options: {
                 outcome: settled.outcome,
                 reason: settled.reason,
                 finishedAt: now(),
-                materialization,
               });
             },
           );
@@ -342,11 +328,6 @@ export function createIssueExecutionDispatcher(options: {
             });
           }
           if (result.kind === "retry") {
-            // A target-not-found resume probe is an already-closed pre-send
-            // predecessor. Its monotonic fresh-session successor remains in
-            // this target-lane drain; all backoff retries wait for their persisted
-            // due time and a later scheduler notification.
-            if (result.reason === "target_not_found_new_session") continue;
             return;
           }
         } finally {
@@ -488,7 +469,7 @@ export function createIssueExecutionDispatcher(options: {
     /**
      * Exact, read-only worker-local presence check used by the durable
      * cancellation reconciler. Dispatcher lease identity remains independent
-     * from the provider command executionId (`runId`).
+     * from ACPX's opaque runtime state.
      */
     isAttemptActive(
       input: IssueExecutionAttemptCancellationSignal,

@@ -16,7 +16,7 @@ type AttemptSettlement = Parameters<
 async function settleResult<T extends Awaited<
   ReturnType<IssueExecutionAttemptExecutor["execute"]>
 >>(settle: AttemptSettlement, result: T): Promise<T> {
-  await settle({ result, materialization: null });
+  await settle(result);
   return result;
 }
 

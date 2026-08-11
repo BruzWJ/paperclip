@@ -6,6 +6,7 @@ import {
   type RuntimeInterfaceCompileInput,
   type RuntimeToolSource,
 } from "./runtime-interface-compiler.js";
+import type { ContextRetrievalScope } from "./context-retrieval.js";
 import { RuntimeToolUnavailable } from "./runtime-tool-errors.js";
 
 const PROMPT_CAPABILITY_BEARER_PREFIX = "pc_run_v1_";
@@ -31,10 +32,7 @@ export interface PromptCapabilityCompileScope {
   readonly executionMode: IssueExecutionRefMode;
   readonly issueExecutionAuthorityId: string | null;
   readonly consultExecutionId: string | null;
-  /**
-   * Exact prompt identity used only to derive recovery availability. Generic
-   * compilation callers omit it; it is never persisted as a separate mode.
-   */
+  /** Exact prompt identity; refId selects its bootstrap or work projection. */
   readonly sessionId?: string;
   readonly runId?: string;
   readonly attemptId?: string;
@@ -43,7 +41,8 @@ export interface PromptCapabilityCompileScope {
   readonly segmentOrdinal?: number;
 }
 
-export interface PromptCapabilityBinding
+/** One exact setup-or-active prompt capability generation. */
+export interface PromptCapabilityIngressBinding
   extends PromptCapabilityCompileScope {
   readonly capabilityConnectionId: string;
   readonly capabilityGeneration: number;
@@ -60,33 +59,19 @@ export interface PromptCapabilityBinding
   readonly laneKind: IssueExecutionRefMode;
   readonly adapterConfigIdentity: string;
   readonly workspaceIdentity: string;
-  readonly targetSessionCorrelationId: string;
+  readonly targetSessionCorrelationId: string | null;
   readonly effectiveContextExposureDigest: string;
   readonly effectiveToolsDigest: string;
-  /**
-   * Derived from the exact source prompt while this binding is authenticated.
-   * It is deliberately not a persisted capability property or identity fact.
-   */
-  readonly bootstrapToolGate: boolean;
   readonly expiresAt: Date;
-  readonly activatedAt: Date;
+  readonly activatedAt: Date | null;
   readonly createdAt: Date;
 }
 
-/**
- * Minimal authenticated bearer projection used only to ledger and reject an
- * ingress operation before prompt setup has activated the executable binding.
- */
-export interface PromptCapabilityIngressBinding {
-  readonly companyId: string;
-  readonly capabilityConnectionId: string;
-  readonly capabilityGeneration: number;
-  readonly runId: string;
-  readonly refId: string;
-  readonly refOrdinal: number;
-  readonly segmentOrdinal: number;
-  readonly issueId: string;
-  readonly targetAgentId: string;
+/** The same canonical binding after its exact provider session is active. */
+export interface PromptCapabilityBinding
+  extends PromptCapabilityIngressBinding {
+  readonly targetSessionCorrelationId: string;
+  readonly activatedAt: Date;
 }
 
 /** Stable, non-secret identity of one canonical capability generation. */
@@ -110,11 +95,6 @@ export interface PromptCapabilityPluginContext {
 }
 
 export type PromptCapabilityAuthenticationResult =
-  | { readonly kind: "authenticated"; readonly capability: PromptCapabilityBinding }
-  | { readonly kind: "inactive" }
-  | { readonly kind: "authority_invalid"; readonly reason: string };
-
-export type PromptCapabilityIngressAuthenticationResult =
   | {
       readonly kind: "authenticated";
       readonly capability: PromptCapabilityIngressBinding;
@@ -123,10 +103,6 @@ export type PromptCapabilityIngressAuthenticationResult =
   | { readonly kind: "authority_invalid"; readonly reason: string };
 
 export interface PromptCapabilityGatewayRepository {
-  authenticateIngressBearerHash(
-    bearerHash: string,
-    at: Date,
-  ): Promise<PromptCapabilityIngressAuthenticationResult>;
   authenticateBearerHash(
     bearerHash: string,
     at: Date,
@@ -136,7 +112,7 @@ export interface PromptCapabilityGatewayRepository {
     at: Date,
   ): Promise<PromptCapabilityAuthenticationResult>;
   resolveCompileInput(
-    capability: PromptCapabilityBinding,
+    capability: PromptCapabilityCompileScope,
   ): Promise<RuntimeInterfaceCompileInput>;
   createPluginRunContext(input: {
     capability: PromptCapabilityBinding;
@@ -168,6 +144,7 @@ export interface PromptCapabilityToolExecutor {
   execute(input: {
     capability: PromptCapabilityBinding;
     descriptor: CompiledRunToolDescriptor;
+    runtimeScope: ContextRetrievalScope;
     arguments: unknown;
     callIdentity: PromptCapabilityCallIdentity;
     ingressOrdinal: number;
@@ -259,12 +236,26 @@ function assertPluginRunContextHandle(handle: string): void {
 
 function authenticated(
   result: PromptCapabilityAuthenticationResult,
-): PromptCapabilityBinding {
+): PromptCapabilityIngressBinding {
   if (result.kind === "authenticated") return result.capability;
   if (result.kind === "authority_invalid") {
     throw new PromptCapabilityAuthorityError(result.reason);
   }
   throw new PromptCapabilityAuthenticationError();
+}
+
+function activeCapability(
+  capability: PromptCapabilityIngressBinding,
+): PromptCapabilityBinding {
+  if (
+    capability.activatedAt !== null &&
+    capability.targetSessionCorrelationId !== null
+  ) {
+    return capability as PromptCapabilityBinding;
+  }
+  throw new PromptCapabilityAuthenticationError(
+    "Prompt capability setup is not active",
+  );
 }
 
 function assertIngressOrdinal(ingressOrdinal: number): void {
@@ -284,7 +275,7 @@ export function createPromptCapabilityGateway(options: {
 
   async function authenticate(
     bearer: string,
-  ): Promise<PromptCapabilityBinding> {
+  ): Promise<PromptCapabilityIngressBinding> {
     assertPromptCapabilityCredential(bearer);
     const result = await options.repository.authenticateBearerHash(
       sha256(bearer),
@@ -293,25 +284,12 @@ export function createPromptCapabilityGateway(options: {
     return authenticated(result);
   }
 
-  async function authenticateIngress(
-    bearer: string,
-  ): Promise<PromptCapabilityIngressBinding> {
-    assertPromptCapabilityCredential(bearer);
-    const result = await options.repository.authenticateIngressBearerHash(
-      sha256(bearer),
-      now(),
-    );
-    if (result.kind === "authenticated") return result.capability;
-    if (result.kind === "authority_invalid") {
-      throw new PromptCapabilityAuthorityError(result.reason);
-    }
-    throw new PromptCapabilityAuthenticationError();
-  }
-
   async function requireStillAuthoritative(
     capability: PromptCapabilityBinding,
   ): Promise<PromptCapabilityBinding> {
-    return authenticated(await options.repository.revalidate(capability, now()));
+    return activeCapability(
+      authenticated(await options.repository.revalidate(capability, now())),
+    );
   }
 
   async function mintPluginRunContext(input: {
@@ -340,8 +318,8 @@ export function createPromptCapabilityGateway(options: {
       const capability = await authenticate(bearer);
       const compileInput =
         await options.repository.resolveCompileInput(capability);
+      await authenticate(bearer);
       const compiled = compileRuntimeInterface(compileInput);
-      await requireStillAuthoritative(capability);
       return compiled.descriptors;
     },
 
@@ -353,13 +331,13 @@ export function createPromptCapabilityGateway(options: {
       ingressOrdinal: number;
     }): Promise<PromptCapabilityToolExecutionResult> {
       assertIngressOrdinal(input.ingressOrdinal);
-      const capability = await authenticate(input.bearer);
+      const capability = activeCapability(await authenticate(input.bearer));
       const compileInput =
         await options.repository.resolveCompileInput(capability);
+      const current = await requireStillAuthoritative(capability);
       const compiled = compileRuntimeInterface(compileInput);
       const descriptor = compiled.byName.get(input.toolName);
       if (!descriptor) {
-        const current = await requireStillAuthoritative(capability);
         const unavailable = new RuntimeToolUnavailable(input.toolName);
         await options.executor.registerTerminalInvalid({
           capability: current,
@@ -371,43 +349,14 @@ export function createPromptCapabilityGateway(options: {
         });
         throw unavailable;
       }
-      const current = await requireStillAuthoritative(capability);
-      if (
-        descriptor.name === "restore_session" &&
-        !current.bootstrapToolGate
-      ) {
-        const unavailable = new RuntimeToolUnavailable(
-          input.toolName,
-          `Tool is unavailable outside recovery bootstrap: ${input.toolName}`,
-        );
-        await options.executor.registerTerminalInvalid({
-          capability: current,
-          descriptor,
-          arguments: input.arguments,
-          callIdentity: input.callIdentity,
-          ingressOrdinal: input.ingressOrdinal,
-          error: unavailable,
-        });
-        throw unavailable;
-      }
-      if (current.bootstrapToolGate && descriptor.bootstrapEnabled !== true) {
-        const unavailable = new RuntimeToolUnavailable(
-          input.toolName,
-          `Tool is unavailable during instruction bootstrap: ${input.toolName}`,
-        );
-        await options.executor.registerTerminalInvalid({
-          capability: current,
-          descriptor,
-          arguments: input.arguments,
-          callIdentity: input.callIdentity,
-          ingressOrdinal: input.ingressOrdinal,
-          error: unavailable,
-        });
-        throw unavailable;
-      }
       const result = await options.executor.execute({
         capability: current,
         descriptor,
+        runtimeScope: {
+          companyId: current.companyId,
+          activeIssueId: current.issueId,
+          dial: compileInput.contextDial,
+        },
         arguments: input.arguments,
         callIdentity: input.callIdentity,
         ingressOrdinal: input.ingressOrdinal,
@@ -426,7 +375,7 @@ export function createPromptCapabilityGateway(options: {
       error: unknown;
     }): Promise<void> {
       assertIngressOrdinal(input.ingressOrdinal);
-      const capability = await authenticateIngress(input.bearer);
+      const capability = await authenticate(input.bearer);
       await options.executor.registerTerminalInvalid({
         capability,
         descriptor: {

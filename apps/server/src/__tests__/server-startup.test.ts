@@ -162,7 +162,14 @@ vi.mock("../services/index.js", () => ({
     })),
   })),
   createPostgresIssueExecutionProductionRuntime: vi.fn(() => ({
-    runService: {},
+    runService: {
+      reconcilePendingSteering: vi.fn(async () => ({
+        discovered: 0,
+        continued: 0,
+        pending: 0,
+        sourceCommentIds: [],
+      })),
+    },
     promptCapabilities: {
       gateway: {},
       pluginRunIssueContextReader: {},

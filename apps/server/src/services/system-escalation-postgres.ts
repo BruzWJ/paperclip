@@ -27,6 +27,7 @@ import {
   type IssueSessionAdmissionService,
 } from "./issue-session/admission.js";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
+import { admitIssueExecutionInTransaction } from "./issue-execution-initial-start-admission.js";
 import { persistCanonicalIssueAggregateInTx } from "./canonical-issue-aggregate.js";
 import {
   IssueExecutionWorkspaceReservationRejected,
@@ -898,8 +899,10 @@ export async function ensureSystemEscalationInTransaction(
 
   let dispatchRefId: string | null = null;
   if (selectedAgent && authorityId) {
-    const admitted = await sessions.admitExecutionSource(
-      {
+    const admitted = await admitIssueExecutionInTransaction({
+      sessionAdmission: sessions,
+      transaction: tx,
+      work: {
         companyId: input.companyId,
         issueId: escalationIssue.id,
         sessionId,
@@ -925,8 +928,7 @@ export async function ensureSystemEscalationInTransaction(
         },
         idempotencyKey: identity.id,
       },
-      tx,
-    );
+    });
     dispatchRefId = admitted.ref?.id ?? null;
     if (!dispatchRefId) {
       throw new PostgresSystemEscalationConflict(

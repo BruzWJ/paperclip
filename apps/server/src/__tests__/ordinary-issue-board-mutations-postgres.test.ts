@@ -13,10 +13,9 @@ const mocks = vi.hoisted(() => ({
     commitCreatorFormUpdate: vi.fn(),
   },
   resolveInvokableOwner: vi.fn(),
-  recordLiveness: vi.fn(),
   dispatchRef: vi.fn(),
   requestSteering: vi.fn(),
-  continueSteering: vi.fn(),
+  continuePendingSteeringForSource: vi.fn(),
   requestCancellations: vi.fn(),
   reconcileCancellations: vi.fn(),
 }));
@@ -50,19 +49,6 @@ vi.mock("../services/agent-invokability.js", async (importActual) => {
     resolveInvokableIssueOwnerInTransaction: mocks.resolveInvokableOwner,
   };
 });
-
-vi.mock(
-  "../services/issue-liveness-reconciliation.js",
-  async (importActual) => {
-    const actual = await importActual<
-      typeof import("../services/issue-liveness-reconciliation.js")
-    >();
-    return {
-      ...actual,
-      recordIssueLivenessActionInTransaction: mocks.recordLiveness,
-    };
-  },
-);
 
 import {
   createOrdinaryIssueRuntime,
@@ -100,11 +86,11 @@ function createRuntime(harness: MockDbHarness) {
     clock: () => NOW,
     issueExecutionRunService: {
       requestSteeringInTransaction: mocks.requestSteering,
-      continuePendingSteeringForSource: mocks.continueSteering,
+      continuePendingSteeringForSource: mocks.continuePendingSteeringForSource,
     },
     issueExecutionCancellation: {
       requestScopeCancellationsInTransaction: mocks.requestCancellations,
-      reconcileRequestedScopeCancellations: mocks.reconcileCancellations,
+      reconcileRequestedCancellations: mocks.reconcileCancellations,
     },
     dispatchRef: mocks.dispatchRef,
   });
@@ -135,10 +121,9 @@ beforeEach(() => {
   mocks.resolveInvokableOwner.mockResolvedValue({
     revisionId: "revision-owner",
   });
-  mocks.recordLiveness.mockResolvedValue(undefined);
   mocks.dispatchRef.mockResolvedValue(undefined);
   mocks.requestSteering.mockResolvedValue(undefined);
-  mocks.continueSteering.mockResolvedValue(undefined);
+  mocks.continuePendingSteeringForSource.mockResolvedValue(undefined);
   mocks.requestCancellations.mockResolvedValue(null);
   mocks.reconcileCancellations.mockResolvedValue(undefined);
 });
@@ -425,6 +410,93 @@ describe("ordinary issue board mutations without a database", () => {
     );
     expect(mocks.sessions.admitExecutionSource).not.toHaveBeenCalled();
     expect(mocks.dispatchRef).not.toHaveBeenCalled();
+  });
+
+  it("locks the Session before requesting steering for a reply's run", async () => {
+    const order: string[] = [];
+    const issue = {
+      id: ISSUE_ID,
+      companyId: COMPANY_ID,
+      lifecycleStatus: "open",
+      ownershipEpoch: 1,
+      ownerKind: "agent",
+      ownerAgentId: "owner-agent",
+    };
+    const replyParent = {
+      id: "comment-parent",
+      companyId: COMPANY_ID,
+      issueId: ISSUE_ID,
+      runId: "run-parent",
+      authorAgentId: "agent-parent",
+    };
+    const comment = { id: "comment-steering", issueId: ISSUE_ID };
+    mocks.sessions.admitSteeringComment.mockImplementationOnce(async () => {
+      order.push("admit-steering");
+      return {
+        comment,
+        input: { id: "input-steering" },
+        ref: null,
+        source: { messageId: "message-steering" },
+      };
+    });
+    mocks.requestSteering.mockImplementationOnce(async () => {
+      order.push("request-steering");
+      return undefined;
+    });
+    const harness = createMockDb({
+      execute: [[]],
+      select: [
+        () => {
+          order.push("read-command");
+          return [];
+        },
+        () => {
+          order.push("lock-issue");
+          return [issue];
+        },
+        () => {
+          order.push("lock-session");
+          return [sessionState()];
+        },
+        () => {
+          order.push("revalidate-reply");
+          return [replyParent];
+        },
+      ],
+      insert: [[{ id: "steering-command", commentId: comment.id }]],
+    });
+
+    await createRuntime(harness).userComment({
+      companyId: COMPANY_ID,
+      issueId: ISSUE_ID,
+      actorUserId: "commenter",
+      message: "  Steer this exact run.  ",
+      idempotencyKey: "comment-key-steering",
+      replyToCommentId: replyParent.id,
+    });
+
+    expect(order).toEqual([
+      "read-command",
+      "lock-issue",
+      "lock-session",
+      "revalidate-reply",
+      "admit-steering",
+      "request-steering",
+    ]);
+    expect(mocks.requestSteering).toHaveBeenCalledWith(
+      harness.db,
+      expect.objectContaining({
+        companyId: COMPANY_ID,
+        issueId: ISSUE_ID,
+        runId: replyParent.runId,
+        targetAgentId: replyParent.authorAgentId,
+      }),
+    );
+    expect(mocks.continuePendingSteeringForSource).toHaveBeenCalledWith({
+      companyId: COMPANY_ID,
+      issueId: ISSUE_ID,
+      sourceCommentId: comment.id,
+    });
   });
 
   it("dispatches only an explicit mention of the exact current owner epoch", async () => {

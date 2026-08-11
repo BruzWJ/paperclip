@@ -3,16 +3,14 @@ import {
   ACP_SESSION_CORRELATION_ENVELOPE_VERSION,
   ACP_SESSION_CORRELATION_KIND,
   createAcpSessionCorrelation,
-  type AcpPromptExecutionResult,
-} from "@paperclipai/adapter-utils/acp-subprocess";
+  type AcpxOneShotPromptInput,
+  type AcpxOneShotPromptResult,
+} from "@paperclipai/adapter-utils/acpx-runtime";
 import {
   createIssueExecutionAttemptExecutor,
-  executeAcpxRuntimePrompt,
   IssueExecutionPromptAuthorityLost,
-  type AcpxRuntimePromptExecutionInput,
   type IssueExecutionPromptClosure,
   type IssueExecutionPromptCycleRepository,
-  type IssueExecutionSubprocessObservation,
   type ResolvedIssueExecutionPrompt,
 } from "../services/issue-execution-attempt-executor.js";
 import {
@@ -30,16 +28,18 @@ const acpxFixture = vi.hoisted(() =>
   Object.freeze({
     agentName: "fixture-agent",
     executeAcpxOneShotPrompt: vi.fn(),
+    prepareAcpxRuntimeInvocation: vi.fn(),
   }),
 );
 
-vi.mock("@paperclipai/adapter-utils/acp-subprocess", async (importOriginal) => {
+vi.mock("@paperclipai/adapter-utils/acpx-runtime", async (importOriginal) => {
   const actual = await importOriginal<
-    typeof import("@paperclipai/adapter-utils/acp-subprocess")
+    typeof import("@paperclipai/adapter-utils/acpx-runtime")
   >();
   return {
     ...actual,
     executeAcpxOneShotPrompt: acpxFixture.executeAcpxOneShotPrompt,
+    prepareAcpxRuntimeInvocation: acpxFixture.prepareAcpxRuntimeInvocation,
   };
 });
 
@@ -104,11 +104,11 @@ function storedCorrelation(input: {
 
 function resolvedPrompt(input: {
   carryContext: boolean;
+  turn?: ResolvedIssueExecutionPrompt["turn"];
   promptKind?: "base" | "steering";
   stored?: StoredAcpSessionCorrelation | null;
   sessionOperation?: ResolvedIssueExecutionPrompt["sessionOperation"];
-  bootstrapInstruction?: string | null;
-  restoreSession?: boolean;
+  bootstrapPredecessor?: ResolvedIssueExecutionPrompt["bootstrapPredecessor"];
   laneKind?: "owner" | "consult";
   leaseRenewalIntervalMs?: number;
 }): ResolvedIssueExecutionPrompt {
@@ -148,12 +148,11 @@ function resolvedPrompt(input: {
       adapterConfigRevisionId: "revision-1",
       executionWorkspaceBindingId: "workspace-1",
     },
+    turn: input.turn ?? "work",
     sessionOperation,
     sourceMessageId: "source-message-1",
     sourceMessageSeq: 7,
     sourceText: "exact source message",
-    bootstrapInstruction: input.bootstrapInstruction ?? null,
-    restoreSession: input.restoreSession,
     contextAccess: {
       carry_context: input.carryContext,
       read_issue_comments: true,
@@ -167,6 +166,7 @@ function resolvedPrompt(input: {
     },
     carryContext: input.carryContext,
     storedCorrelation: stored,
+    bootstrapPredecessor: input.bootstrapPredecessor ?? null,
     activationCorrelationScope: correlationScope({
       carryContext: input.carryContext,
       currentSegmentOrdinal: promptKind === "base" ? 0 : 1,
@@ -190,9 +190,7 @@ function resolvedPrompt(input: {
       },
       workspaceSelector: { kind: "issue_execution_workspace" },
       companySkillPins: [],
-      skillChannel: "operator_native",
     },
-    companySkills: { channel: "operator_native" },
     target: {
       companyId: "company-1",
       issueId: "issue-1",
@@ -215,7 +213,6 @@ function resolvedPrompt(input: {
         },
         workspaceSelector: { kind: "issue_execution_workspace" },
         companySkillPins: [],
-        skillChannel: "operator_native",
       },
       hostCwd: "/workspace",
       localWorkspaceCwd: "/workspace",
@@ -261,32 +258,24 @@ function waitForGateOrAbort(
   });
 }
 
-function settledResult(
-  closureError: unknown | null = null,
-  stderr = "",
-): AcpPromptExecutionResult {
+function settledResult(size = 200_000): AcpxOneShotPromptResult {
   return {
-    kind: "settled",
+    kind: "completed",
     sessionId: "opaque-acp-session",
     settlement: {
       kind: "protocol_settled",
       stopReason: "end_turn",
-      occupancy: { used: 42, size: 200_000, cost: null },
+      occupancy: { used: 42, size, cost: null },
     },
-    cancellationNotificationError: null,
-    closureError,
-    teardown: { kind: "not_started" },
-    stderr,
   };
 }
 
 function createHarness(input: {
   prompt: ResolvedIssueExecutionPrompt;
-  targetNotFoundOnFirstResume?: boolean;
+  resumeFailureBeforeTransmission?: Error;
+  nativeCancellation?: "with_occupancy" | "without_occupancy";
   occupancySize?: number;
   prepareFailureMessage?: string;
-  resultStderr?: string;
-  authenticationRequired?: boolean;
   targetRedactor?: (value: string) => string;
   executePromptGate?: Promise<void>;
   renewPromptAuthority?: (
@@ -296,25 +285,21 @@ function createHarness(input: {
   beforePrompt?: PluginBeforePromptDispatcher["dispatch"];
   executePromptFailureAfterTransmission?: Error;
   closePromptFailure?: Error;
-  teardownFailure?: Error;
+  cleanupFailure?: Error;
   targetReleaseFailure?: Error;
 }) {
   const order: string[] = [];
-  const starts: AcpxRuntimePromptExecutionInput["request"]["start"][] = [];
+  const starts: AcpxOneShotPromptInput["start"][] = [];
   const messages: string[] = [];
-  const launches: AcpxRuntimePromptExecutionInput[] = [];
+  const launches: AcpxOneShotPromptInput[] = [];
   const invocationFileSets: Array<readonly { fileName: string; contents: string }[]> = [];
-  const companySkillChannels: unknown[] = [];
   const protectedValues: ProtectedAcpSessionCorrelation[] = [];
   const closures: IssueExecutionPromptClosure[] = [];
-  const observations: IssueExecutionSubprocessObservation[] = [];
-  const teardownCapabilities: unknown[] = [];
   const eventBoundaries: unknown[] = [];
   const renewedPrompts: ResolvedIssueExecutionPrompt[] = [];
   const disposeCalls: number[] = [];
   const executionStarted = deferred();
   let capabilityGeneration = 0;
-  let executionCount = 0;
 
   const repository: IssueExecutionPromptCycleRepository = {
     async resolve() {
@@ -341,34 +326,18 @@ function createHarness(input: {
     async beginPromptTransmission() {
       order.push(`transmit:${capabilityGeneration}`);
     },
-    async recordSubprocessStarted() {},
     async closePrompt({ outcome }) {
       closures.push(outcome);
       order.push(`close:${outcome.kind}:${capabilityGeneration}`);
       if (input.closePromptFailure) throw input.closePromptFailure;
-      return outcome.kind === "target_not_found"
-        ? {
-            kind: "dispatch",
-            result: {
-              kind: "retry",
-              reason: "target_not_found_new_session",
-              retryAt: new Date("2026-01-01T00:00:00.000Z"),
-            },
-          }
-        : {
-            kind: "dispatch",
-            result: outcome.kind === "settled"
-              ? { kind: "terminal", outcome: "succeeded", reason: null }
-              : { kind: "terminal", outcome: "failed", reason: outcome.message },
-          };
-    },
-    async recordSubprocessTeardown({ capability, observation }) {
-      teardownCapabilities.push(capability);
-      observations.push(observation);
-      order.push(`teardown:${capabilityGeneration}`);
-    },
-    async recordProtocolViolation({ message }) {
-      order.push(`violation:${message}`);
+      return {
+        kind: "dispatch",
+        result: outcome.kind === "settled"
+          ? { kind: "terminal", outcome: "succeeded", reason: null }
+          : outcome.kind === "cancelled"
+            ? { kind: "terminal", outcome: "cancelled", reason: "cancelled" }
+            : { kind: "terminal", outcome: "failed", reason: outcome.message },
+      };
     },
   };
 
@@ -387,6 +356,63 @@ function createHarness(input: {
         return createAcpSessionCorrelation("opaque-resume-session");
       },
     },
+  });
+
+  acpxFixture.prepareAcpxRuntimeInvocation.mockImplementation(async (targetInput) => {
+    invocationFileSets.push(targetInput.invocationFiles ?? []);
+    if (input.prepareFailureMessage) throw new Error(input.prepareFailureMessage);
+    return {
+      targetCwd: targetInput.targetCwd, targetNodeExecutable: "/target/bin/node",
+      invocationFilePaths: {
+        "run-tools-proxy.mjs": "/runtime/run-tools-proxy.mjs",
+        "run-tools.json": "/runtime/run-tools.json",
+      },
+      async cleanup() {
+        order.push(`dispose:${capabilityGeneration}`); disposeCalls.push(capabilityGeneration);
+      },
+    };
+  });
+  acpxFixture.executeAcpxOneShotPrompt.mockImplementation(async (execution) => {
+    executionStarted.resolve(); launches.push(execution); starts.push(execution.start);
+    if (execution.signal?.aborted) throw execution.signal.reason;
+    if (input.executePromptGate) {
+      await waitForGateOrAbort(input.executePromptGate, execution.signal);
+    }
+    if (input.resumeFailureBeforeTransmission && execution.start.kind === "resume") {
+      return {
+        kind: "error" as const, phase: "session_setup" as const,
+        promptTransmitted: false,
+        cause: input.resumeFailureBeforeTransmission,
+      };
+    }
+    await execution.activatePrompt?.({ sessionId: "opaque-acp-session" });
+    await execution.beginPromptTransmission?.({ sessionId: "opaque-acp-session" });
+    messages.push(execution.message);
+    if (input.nativeCancellation) {
+      const settlement = input.nativeCancellation === "with_occupancy"
+        ? {
+            kind: "protocol_settled" as const, stopReason: "cancelled" as const,
+            occupancy: { used: 42, size: 200_000, cost: null },
+          }
+        : null;
+      return {
+        kind: "cancelled" as const, sessionId: "opaque-acp-session",
+        settlement,
+      };
+    }
+    if (input.executePromptFailureAfterTransmission) throw input.executePromptFailureAfterTransmission;
+    await execution.onSessionEvent?.({
+      kind: "message_chunk", channel: "assistant",
+      content: { type: "text", text: "done" },
+    });
+    return input.cleanupFailure
+      ? {
+          kind: "error" as const,
+          phase: "prompt" as const,
+          promptTransmitted: true,
+          cause: input.cleanupFailure,
+        }
+      : settledResult(input.occupancySize);
   });
 
   const executor = createIssueExecutionAttemptExecutor({
@@ -427,116 +453,6 @@ function createHarness(input: {
         };
       },
     },
-    async prepareTarget(targetInput) {
-      invocationFileSets.push(targetInput.invocationFiles ?? []);
-      companySkillChannels.push(targetInput.companySkills);
-      if (input.prepareFailureMessage) {
-        throw new Error(input.prepareFailureMessage);
-      }
-      return {
-        targetCwd: targetInput.targetCwd,
-        targetNodeExecutable: "/target/bin/node",
-        invocationFilePaths: {
-          "run-tools-proxy.mjs": "/runtime/run-tools-proxy.mjs",
-          "run-tools.json": "/runtime/run-tools.json",
-        },
-        selectedCompanySkillMaterialization: null,
-        async disposeBeforeStart() {
-          order.push(`dispose:${capabilityGeneration}`);
-          disposeCalls.push(capabilityGeneration);
-        },
-      };
-    },
-    async executePrompt(execution) {
-      executionCount += 1;
-      executionStarted.resolve();
-      launches.push(execution);
-      starts.push(execution.request.start);
-      if (execution.signal.aborted) throw execution.signal.reason;
-      if (input.executePromptGate) {
-        await waitForGateOrAbort(input.executePromptGate, execution.signal);
-      }
-      if (input.authenticationRequired) {
-        const cause = new Error("provider details must not persist");
-        await execution.closePrompt({
-          kind: "error",
-          failure: "authentication_required",
-          phase: "session_setup",
-          promptTransmitted: false,
-          cause,
-        });
-        return {
-          kind: "error",
-          failure: "authentication_required",
-          phase: "session_setup",
-          promptTransmitted: false,
-          cause,
-          closureError: null,
-          teardown: { kind: "not_started" },
-          stderr: "",
-        };
-      }
-      if (
-        input.targetNotFoundOnFirstResume &&
-        executionCount === 1 &&
-        execution.request.start.kind === "resume"
-      ) {
-        await execution.closePrompt({ kind: "target_not_found" });
-        return {
-          kind: "target_not_found",
-          closureError: null,
-          teardown: { kind: "not_started" },
-          stderr: "",
-        };
-      }
-      await execution.activatePrompt({ sessionId: "opaque-acp-session" });
-      if (execution.bootstrapPrompt) {
-        order.push(`bootstrap:${capabilityGeneration}`);
-      }
-      messages.push(execution.request.message);
-      await execution.beginPromptTransmission({ sessionId: "opaque-acp-session" });
-      if (input.executePromptFailureAfterTransmission) {
-        throw input.executePromptFailureAfterTransmission;
-      }
-      await execution.onSessionEvent({
-        kind: "message_chunk",
-        channel: "assistant",
-        content: { type: "text", text: "done" },
-      });
-      await execution.closePrompt({
-        kind: "settled",
-        sessionId: "opaque-acp-session",
-        settlement: {
-          kind: "protocol_settled",
-          stopReason: "end_turn",
-          occupancy: {
-            used: 42,
-            size: input.occupancySize ?? 200_000,
-            cost: null,
-          },
-        },
-        cancellationNotificationError: null,
-      });
-      const result = settledResult(null, input.resultStderr);
-      if (input.teardownFailure) {
-        return {
-          ...result,
-          teardown: { kind: "failed", cause: input.teardownFailure },
-        };
-      }
-      return input.occupancySize === undefined
-        ? result
-        : {
-            ...result,
-            settlement: {
-              ...result.settlement,
-              occupancy: {
-                ...result.settlement.occupancy,
-                size: input.occupancySize,
-              },
-            },
-          };
-    },
   });
 
   return {
@@ -546,11 +462,8 @@ function createHarness(input: {
     messages,
     launches,
     invocationFileSets,
-    companySkillChannels,
     protectedValues,
     closures,
-    observations,
-    teardownCapabilities,
     eventBoundaries,
     renewedPrompts,
     disposeCalls,
@@ -586,306 +499,6 @@ function executeAttempt(
 }
 
 describe("canonical productive/consult ACP attempt executor", () => {
-  it("delegates the actual provider turn and generic reasoning configuration to ACPX", async () => {
-    const trace: string[] = [];
-    const closePrompt = vi.fn(async (
-      outcome: Parameters<AcpxRuntimePromptExecutionInput["closePrompt"]>[0],
-    ) => {
-      trace.push(`close:${outcome.kind}`);
-    });
-    acpxFixture.executeAcpxOneShotPrompt.mockReset();
-    acpxFixture.executeAcpxOneShotPrompt.mockImplementation(async (input: {
-      readonly configSelections: readonly { configId: string; value: string }[];
-      readonly start: { kind: "new" } | { kind: "resume"; sessionId: string };
-      readonly permissionMode: string;
-      readonly nonInteractivePermissions: string;
-      readonly activatePrompt?: (value: { sessionId: string }) => Promise<void>;
-      readonly beginPromptTransmission?: (value: { sessionId: string }) => Promise<void>;
-    }) => {
-      expect(input.start).toEqual({ kind: "resume", sessionId: "provider-session-1" });
-      expect(input.permissionMode).toBe("approve-all");
-      expect(input.nonInteractivePermissions).toBe("fail");
-      expect(input.configSelections).toEqual([
-        { configId: "fast_mode", value: "true" },
-        { configId: "model", value: "gpt-5.6" },
-        { configId: "reasoning_effort", value: "high" },
-      ]);
-      await input.activatePrompt?.({ sessionId: "provider-session-2" });
-      await input.beginPromptTransmission?.({ sessionId: "provider-session-2" });
-      return {
-        kind: "completed" as const,
-        sessionId: "provider-session-2",
-        turnResult: { status: "completed" as const, stopReason: "end_turn" as const },
-        settlement: {
-          kind: "protocol_settled" as const,
-          stopReason: "end_turn" as const,
-          occupancy: { used: 12, size: 128, cost: null },
-        },
-        cleanup: { stateRemoved: true, errors: [] },
-      };
-    });
-    const result = await executeAcpxRuntimePrompt({
-      cwd: "/workspace",
-      registryCwd: process.cwd(),
-      agentName: acpxFixture.agentName,
-      configSelections: [
-        { configId: "fast_mode", value: true },
-        { configId: "model", value: "gpt-5.6" },
-        { configId: "reasoning_effort", value: "high" },
-      ],
-      mcpServers: [],
-      request: {
-        start: { kind: "resume", sessionId: "provider-session-1" },
-        message: "Use the selected reasoning effort",
-      },
-      signal: new AbortController().signal,
-      activatePrompt: async ({ sessionId }) => {
-        trace.push(`activate:${sessionId}`);
-      },
-      beginPromptTransmission: async ({ sessionId }) => {
-        trace.push(`transmit:${sessionId}`);
-      },
-      releasePreparedResources: async () => {
-        trace.push("release-prepared");
-      },
-      closePrompt: closePrompt as AcpxRuntimePromptExecutionInput["closePrompt"],
-      redactStderr: (value) => value,
-      onSessionEvent: async () => {},
-      validatePromptEvents: async () => {
-        trace.push("validate-events");
-      },
-    });
-
-    expect(trace).toEqual([
-      "activate:provider-session-2",
-      "transmit:provider-session-2",
-      "validate-events",
-      "release-prepared",
-      "close:settled",
-    ]);
-    expect(result).toMatchObject({
-      kind: "settled",
-      sessionId: "provider-session-2",
-      teardown: { kind: "not_started" },
-      stderr: "",
-    });
-  });
-
-  it("fails the durable attempt if ACPX cannot remove its private runtime state", async () => {
-    const closePrompt = vi.fn(async () => {});
-    acpxFixture.executeAcpxOneShotPrompt.mockReset();
-    acpxFixture.executeAcpxOneShotPrompt.mockImplementation(async (input: {
-      readonly beginPromptTransmission?: (value: { sessionId: string }) => Promise<void>;
-    }) => {
-      await input.beginPromptTransmission?.({ sessionId: "provider-session-2" });
-      return {
-        kind: "completed" as const,
-        sessionId: "provider-session-2",
-        turnResult: { status: "completed" as const, stopReason: "end_turn" as const },
-        settlement: {
-          kind: "protocol_settled" as const,
-          stopReason: "end_turn" as const,
-          occupancy: { used: 12, size: 128, cost: null },
-        },
-        cleanup: { stateRemoved: false, errors: [new Error("remove failed")] },
-      };
-    });
-
-    const result = await executeAcpxRuntimePrompt({
-      cwd: "/workspace",
-      agentName: acpxFixture.agentName,
-      configSelections: [],
-      mcpServers: [],
-      request: { start: { kind: "new" }, message: "do the work" },
-      signal: new AbortController().signal,
-      activatePrompt: async () => {},
-      beginPromptTransmission: async () => {},
-      releasePreparedResources: async () => {},
-      closePrompt,
-      redactStderr: (value) => value,
-      onSessionEvent: async () => {},
-    });
-
-    expect(result).toMatchObject({
-      kind: "error",
-      phase: "prompt",
-      promptTransmitted: true,
-      teardown: { kind: "failed" },
-    });
-    expect(closePrompt).toHaveBeenCalledWith(expect.objectContaining({
-      kind: "error",
-      promptTransmitted: true,
-    }));
-  });
-
-  it("keeps a bootstrap-only ACPX failure in canonical task setup", async () => {
-    const closePrompt = vi.fn(async () => {});
-    const beginPromptTransmission = vi.fn(async () => {});
-    const bootstrapFailure = new Error("bootstrap provider failure");
-    acpxFixture.executeAcpxOneShotPrompt.mockReset();
-    acpxFixture.executeAcpxOneShotPrompt.mockResolvedValue({
-      kind: "failed",
-      sessionId: "provider-session-2",
-      turnResult: { status: "failed", error: bootstrapFailure },
-      cleanup: { stateRemoved: true, errors: [] },
-    });
-
-    const result = await executeAcpxRuntimePrompt({
-      cwd: "/workspace",
-      agentName: acpxFixture.agentName,
-      configSelections: [],
-      mcpServers: [],
-      request: { start: { kind: "new" }, message: "do the work" },
-      bootstrapPrompt: {
-        message: "adopt the reviewer role",
-      },
-      signal: new AbortController().signal,
-      activatePrompt: async () => {},
-      beginPromptTransmission,
-      releasePreparedResources: async () => {},
-      closePrompt,
-      redactStderr: (value) => value,
-      onSessionEvent: async () => {},
-    });
-
-    expect(beginPromptTransmission).not.toHaveBeenCalled();
-    expect(result).toMatchObject({
-      kind: "error",
-      phase: "session_setup",
-      promptTransmitted: false,
-    });
-    expect(closePrompt).toHaveBeenCalledWith(expect.objectContaining({
-      kind: "error",
-      phase: "session_setup",
-      promptTransmitted: false,
-    }));
-  });
-
-  it("propagates a missing resumed ACPX session to the fresh-session successor", async () => {
-    const closePrompt = vi.fn(async () => {});
-    const beginPromptTransmission = vi.fn(async () => {});
-    acpxFixture.executeAcpxOneShotPrompt.mockReset();
-    acpxFixture.executeAcpxOneShotPrompt.mockResolvedValue({
-      kind: "target_not_found",
-      cleanup: { stateRemoved: true, errors: [] },
-    });
-
-    const result = await executeAcpxRuntimePrompt({
-      cwd: "/workspace",
-      agentName: acpxFixture.agentName,
-      configSelections: [],
-      mcpServers: [],
-      request: {
-        start: { kind: "resume", sessionId: "missing-provider-session" },
-        message: "continue the issue",
-      },
-      signal: new AbortController().signal,
-      activatePrompt: async () => {},
-      beginPromptTransmission,
-      releasePreparedResources: async () => {},
-      closePrompt,
-      redactStderr: (value) => value,
-      onSessionEvent: async () => {},
-    });
-
-    expect(beginPromptTransmission).not.toHaveBeenCalled();
-    expect(closePrompt).toHaveBeenCalledWith({ kind: "target_not_found" });
-    expect(result).toEqual({
-      kind: "target_not_found",
-      closureError: null,
-      teardown: { kind: "not_started" },
-      stderr: "",
-    });
-  });
-
-  it("reports ACPX runtime-close cleanup errors as failed teardown", async () => {
-    acpxFixture.executeAcpxOneShotPrompt.mockReset();
-    acpxFixture.executeAcpxOneShotPrompt.mockImplementation(async (input: {
-      readonly beginPromptTransmission?: (value: { sessionId: string }) => Promise<void>;
-    }) => {
-      await input.beginPromptTransmission?.({ sessionId: "provider-session-2" });
-      return {
-        kind: "completed" as const,
-        sessionId: "provider-session-2",
-        turnResult: { status: "completed" as const, stopReason: "end_turn" as const },
-        settlement: {
-          kind: "protocol_settled" as const,
-          stopReason: "end_turn" as const,
-          occupancy: { used: 12, size: 128, cost: null },
-        },
-        cleanup: { stateRemoved: true, errors: [new Error("close failed")] },
-      };
-    });
-
-    const result = await executeAcpxRuntimePrompt({
-      cwd: "/workspace",
-      agentName: acpxFixture.agentName,
-      configSelections: [],
-      mcpServers: [],
-      request: { start: { kind: "new" }, message: "do the work" },
-      signal: new AbortController().signal,
-      activatePrompt: async () => {},
-      beginPromptTransmission: async () => {},
-      closePrompt: async () => {},
-      redactStderr: (value) => value,
-      onSessionEvent: async () => {},
-    });
-
-    expect(result).toMatchObject({
-      kind: "settled",
-      teardown: { kind: "failed" },
-    });
-  });
-
-  it("reports request-scoped resource cleanup errors as failed teardown", async () => {
-    acpxFixture.executeAcpxOneShotPrompt.mockReset();
-    acpxFixture.executeAcpxOneShotPrompt.mockImplementation(async (input: {
-      readonly beginPromptTransmission?: (value: { sessionId: string }) => Promise<void>;
-    }) => {
-      await input.beginPromptTransmission?.({ sessionId: "provider-session-2" });
-      return {
-        kind: "completed" as const,
-        sessionId: "provider-session-2",
-        turnResult: { status: "completed" as const, stopReason: "end_turn" as const },
-        settlement: {
-          kind: "protocol_settled" as const,
-          stopReason: "end_turn" as const,
-          occupancy: { used: 12, size: 128, cost: null },
-        },
-        cleanup: { stateRemoved: true, errors: [] },
-      };
-    });
-    const closePrompt = vi.fn(async () => {});
-
-    const result = await executeAcpxRuntimePrompt({
-      cwd: "/workspace",
-      agentName: acpxFixture.agentName,
-      configSelections: [],
-      mcpServers: [],
-      request: { start: { kind: "new" }, message: "do the work" },
-      signal: new AbortController().signal,
-      activatePrompt: async () => {},
-      beginPromptTransmission: async () => {},
-      releasePreparedResources: async () => {
-        throw new Error("request files remained");
-      },
-      closePrompt,
-      redactStderr: (value) => value,
-      onSessionEvent: async () => {},
-    });
-
-    expect(result).toMatchObject({
-      kind: "error",
-      phase: "prompt",
-      promptTransmitted: true,
-      teardown: { kind: "failed" },
-    });
-    expect(closePrompt).toHaveBeenCalledWith(expect.objectContaining({
-      kind: "error",
-      promptTransmitted: true,
-    }));
-  });
-
   it("runs the blocking plugin barrier before capability mint and sends its outbound composition", async () => {
     const prompt = resolvedPrompt({ carryContext: false });
     const beforePrompt = vi.fn(async (
@@ -932,60 +545,6 @@ describe("canonical productive/consult ACP attempt executor", () => {
     expect(harness.renewedPrompts.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("sends a configured role bootstrap before the normal work turn", async () => {
-    const prompt = resolvedPrompt({
-      carryContext: false,
-      bootstrapInstruction: "You are the release engineer.",
-    });
-    const beforePrompt = vi.fn(async (
-      input: Parameters<PluginBeforePromptDispatcher["dispatch"]>[0],
-    ) => `Plugin prelude\n\n${input.sourceText}`);
-    const harness = createHarness({ prompt, beforePrompt });
-
-    await expect(executeAttempt(harness, prompt)).resolves.toMatchObject({
-      kind: "terminal",
-      outcome: "succeeded",
-    });
-
-    const launch = harness.launches[0]!;
-    expect(launch.bootstrapPrompt?.message).toBe(
-      "You are the release engineer.\n\nNo work yet. Use enabled tools if needed, then end turn.",
-    );
-    expect(launch.bootstrapPrompt?.message).not.toContain(prompt.sourceText);
-    expect(beforePrompt).toHaveBeenCalledOnce();
-    expect(harness.order.indexOf("beforePrompt")).toBeLessThan(
-      harness.order.indexOf("bootstrap:1"),
-    );
-    expect(harness.order.indexOf("bootstrap:1")).toBeLessThan(
-      harness.order.indexOf("transmit:1"),
-    );
-    expect(harness.messages).toEqual([
-      `Plugin prelude\n\n${prompt.sourceText}`,
-    ]);
-    expect(launch.mcpServers).toHaveLength(1);
-  });
-
-  it("restores history during recovery bootstrap before sending the unchanged trigger", async () => {
-    const prompt = resolvedPrompt({
-      carryContext: false,
-      bootstrapInstruction: "You are the release engineer.",
-      restoreSession: true,
-    });
-    const harness = createHarness({ prompt });
-
-    await expect(executeAttempt(harness, prompt)).resolves.toMatchObject({
-      kind: "terminal",
-      outcome: "succeeded",
-    });
-
-    const launch = harness.launches[0]!;
-    expect(launch.bootstrapPrompt?.message).toBe(
-      "You are the release engineer.\n\nContinuation. Call restore_session, then end turn.",
-    );
-    expect(launch.bootstrapPrompt?.message).not.toContain(prompt.sourceText);
-    expect(harness.messages).toEqual([prompt.sourceText]);
-  });
-
   it("fails closed before target acquisition when a before-prompt hook fails", async () => {
     const prompt = resolvedPrompt({ carryContext: false });
     const hookFailure = new Error("plugin synchronization failed");
@@ -1002,7 +561,7 @@ describe("canonical productive/consult ACP attempt executor", () => {
     expect(harness.closures).toEqual([]);
   });
 
-  it("uses exact-message session/new and steering-only retention for false carry", async () => {
+  it("uses exact-message new for a proven initial false-carry start", async () => {
     const prompt = resolvedPrompt({ carryContext: false });
     const harness = createHarness({ prompt });
 
@@ -1011,14 +570,13 @@ describe("canonical productive/consult ACP attempt executor", () => {
     ).resolves.toEqual({ kind: "terminal", outcome: "succeeded", reason: null });
 
     expect(harness.starts).toEqual([{ kind: "new" }]);
-    expect(harness.companySkillChannels).toEqual([
-      { channel: "operator_native" },
-    ]);
     expect(harness.messages).toEqual([prompt.sourceText]);
     expect(harness.launches[0]).toMatchObject({
       cwd: "/workspace",
       agentName: acpxFixture.agentName,
       configSelections: [{ configId: "model", value: "model-1" }],
+      permissionMode: "approve-all",
+      nonInteractivePermissions: "fail",
     });
     expect(harness.launches[0]!.mcpServers).toHaveLength(1);
     expect(harness.launches[0]!.mcpServers[0]).toMatchObject({
@@ -1033,8 +591,8 @@ describe("canonical productive/consult ACP attempt executor", () => {
       "activate:1",
       "transmit:1",
       "event:message_chunk",
+      "dispose:1",
       "close:settled:1",
-      "teardown:1",
       "release:false",
     ]);
     const secretFile = harness.invocationFileSets[0]!.find(
@@ -1055,34 +613,17 @@ describe("canonical productive/consult ACP attempt executor", () => {
     );
   });
 
-  it("rejects a legacy isolated skills-home revision before invoking ACPX", async () => {
-    const base = resolvedPrompt({ carryContext: false });
-    const acpConfiguration = {
-      ...base.acpConfiguration,
-      skillChannel: "isolated_skills_home" as const,
-    };
-    const prompt: ResolvedIssueExecutionPrompt = {
-      ...base,
-      acpConfiguration,
-      companySkills: {
-        channel: "isolated_skills_home",
-        identity: {
-          companyId: base.identity.companyId,
-          agentId: base.identity.targetAgentId,
-          executionTargetIdentity: targetFingerprint,
-          adapterConfigRevisionId: base.identity.adapterConfigRevisionId,
-        },
-        entries: [],
-      },
-      target: { ...base.target, acpConfiguration },
-    };
+  it("allows an exact frozen new operation without a correlation", async () => {
+    const prompt = resolvedPrompt({
+      carryContext: true,
+      stored: null,
+    });
     const harness = createHarness({ prompt });
 
-    await expect(executeAttempt(harness, prompt)).rejects.toThrow(
-      "operator_native skills",
-    );
-    expect(harness.launches).toEqual([]);
-    expect(harness.order).toEqual([]);
+    await executeAttempt(harness, prompt);
+
+    expect(harness.starts).toEqual([{ kind: "new" }]);
+    expect(harness.messages).toEqual([prompt.sourceText]);
   });
 
   it("resumes an exact eligible true-carry correlation without Paperclip history", async () => {
@@ -1099,6 +640,15 @@ describe("canonical productive/consult ACP attempt executor", () => {
     ]);
     expect(harness.messages).toEqual([prompt.sourceText]);
     expect(prompt.activationCorrelationScope.purpose).toBe("carry");
+  });
+
+  it("resumes the exact bootstrap predecessor before false-carry work", async () => {
+    const prompt = resolvedPrompt({ carryContext: false, sessionOperation: "resume", stored: storedCorrelation({ purpose: "active_run_steering" }),
+      bootstrapPredecessor: { runId: "run-1", refId: "ref-1", refOrdinal: 0 } });
+    const harness = createHarness({ prompt });
+    await executeAttempt(harness, prompt);
+    expect(harness.starts).toEqual([{ kind: "resume", sessionId: "opaque-resume-session" }]);
+    expect(harness.messages).toEqual([prompt.sourceText]);
   });
 
   it.each([
@@ -1150,31 +700,35 @@ describe("canonical productive/consult ACP attempt executor", () => {
     expect(harness.order).toEqual([]);
   });
 
-  it("starts a new session with the exact source when a true-carry mapping is missing", async () => {
-    const prompt = resolvedPrompt({ carryContext: true, stored: null });
+  it("rejects a later true-carry prompt whose mapping is missing", async () => {
+    const prompt = resolvedPrompt({
+      carryContext: true,
+      stored: null,
+      sessionOperation: "resume",
+    });
     const harness = createHarness({ prompt });
 
-    await executeAttempt(harness, prompt);
-
-    expect(harness.starts).toEqual([{ kind: "new" }]);
-    expect(harness.messages).toEqual([prompt.sourceText]);
-    expect(harness.invocationFileSets).toHaveLength(1);
+    await expect(executeAttempt(harness, prompt)).rejects.toThrow(
+      "ACP session operation crossed carry policy or stored correlation",
+    );
+    expect(harness.starts).toEqual([]);
+    expect(harness.invocationFileSets).toHaveLength(0);
   });
 
-  it("returns a target-not-found successor retry from ACPX", async () => {
+  it("fails a frozen resume setup without retrying or starting a new session", async () => {
     const prompt = resolvedPrompt({
       carryContext: true,
       stored: storedCorrelation({ purpose: "carry" }),
     });
     const harness = createHarness({
       prompt,
-      targetNotFoundOnFirstResume: true,
+      resumeFailureBeforeTransmission: new Error("resume setup failed"),
     });
 
     await expect(executeAttempt(harness, prompt)).resolves.toEqual({
-      kind: "retry",
-      reason: "target_not_found_new_session",
-      retryAt: new Date("2026-01-01T00:00:00.000Z"),
+      kind: "terminal",
+      outcome: "failed",
+      reason: "ACP execution failed during session_setup",
     });
 
     expect(harness.starts).toEqual([
@@ -1182,27 +736,27 @@ describe("canonical productive/consult ACP attempt executor", () => {
     ]);
     expect(harness.messages).toEqual([]);
     expect(harness.invocationFileSets).toHaveLength(1);
-    expect(harness.order).toContain("close:target_not_found:1");
+    expect(harness.order).toContain("close:error:1");
     expect(harness.order).not.toContain("mint:2");
     expect(harness.order.at(-1)).toBe("release:true");
   });
 
-  it("runs the target-not-found successor in exactly one new ACP lifecycle", async () => {
-    const prompt = resolvedPrompt({
-      carryContext: true,
-      stored: null,
-      sessionOperation: "new",
-    });
-    const harness = createHarness({ prompt });
-
-    await executeAttempt(harness, prompt);
-
+  it("persists ACPX-native cancellation through the typed closure", async () => {
+    const prompt = resolvedPrompt({ carryContext: false });
+    const harness = createHarness({ prompt, nativeCancellation: "without_occupancy" });
+    await expect(executeAttempt(harness, prompt)).resolves.toEqual({ kind: "terminal", outcome: "cancelled", reason: "cancelled" });
+    expect(harness.closures).toEqual([{ kind: "cancelled", settlement: null }]);
     expect(harness.starts).toEqual([{ kind: "new" }]);
-    expect(harness.messages).toEqual([prompt.sourceText]);
-    expect(harness.invocationFileSets).toHaveLength(1);
+    expect(harness.order).toContain("close:cancelled:1");
+    const accounted = createHarness({ prompt, nativeCancellation: "with_occupancy" });
+    await executeAttempt(accounted, prompt);
+    expect(accounted.closures).toMatchObject([{
+      kind: "cancelled",
+      settlement: { stopReason: "cancelled", occupancy: { used: 42, size: 200_000, cost: null } },
+    }]);
   });
 
-  it("uses exact-new when false-carry steering lost its active target", async () => {
+  it("rejects false-carry steering that lost its active target", async () => {
     const prompt = resolvedPrompt({
       carryContext: false,
       promptKind: "steering",
@@ -1210,13 +764,13 @@ describe("canonical productive/consult ACP attempt executor", () => {
     });
     const harness = createHarness({ prompt });
 
-    await executeAttempt(harness, prompt);
-
-    expect(harness.starts).toEqual([{ kind: "new" }]);
-    expect(harness.messages).toEqual([prompt.sourceText]);
+    await expect(executeAttempt(harness, prompt)).rejects.toThrow(
+      "ACP session operation crossed carry policy or stored correlation",
+    );
+    expect(harness.starts).toEqual([]);
   });
 
-  it("uses exact-new when true-carry steering lost its pinned source", async () => {
+  it("rejects true-carry steering that lost its pinned source", async () => {
     const prompt = resolvedPrompt({
       carryContext: true,
       promptKind: "steering",
@@ -1224,11 +778,10 @@ describe("canonical productive/consult ACP attempt executor", () => {
     });
     const harness = createHarness({ prompt });
 
-    await executeAttempt(harness, prompt);
-
-    expect(prompt.sessionOperation).toBe("new");
-    expect(harness.starts).toEqual([{ kind: "new" }]);
-    expect(harness.messages).toEqual([prompt.sourceText]);
+    await expect(executeAttempt(harness, prompt)).rejects.toThrow(
+      "ACP session operation crossed carry policy or stored correlation",
+    );
+    expect(harness.starts).toEqual([]);
   });
 
   it("rejects a terminal occupancy size that differs from the immutable revision", async () => {
@@ -1267,62 +820,34 @@ describe("canonical productive/consult ACP attempt executor", () => {
         message: "ACP execution failed during session_setup",
       },
     ]);
-    expect(harness.observations).toEqual([
-      expect.objectContaining({
-        resultKind: "error",
-        promptTransmitted: false,
-        teardown: { kind: "not_started" },
-      }),
-    ]);
-    expect(JSON.stringify(harness.observations)).not.toContain(
-      "secret-bearer-1",
-    );
     expect(harness.order).toEqual([
       "mint:1",
       "close:error:1",
-      "teardown:1",
       "release:true",
     ]);
   });
 
-  it("never records a Paperclip provider PID when ACPX owns the provider process", async () => {
+  it("terminalizes failed ACPX cleanup through the same closure path", async () => {
     const prompt = resolvedPrompt({ carryContext: false });
-    const harness = createHarness({ prompt });
-
-    await expect(executeAttempt(harness, prompt)).resolves.toMatchObject({
-      kind: "terminal",
-      outcome: "succeeded",
-    });
-
-    expect(harness.observations).toEqual([
-      expect.objectContaining({
-        resultKind: "settled",
-        teardown: { kind: "not_started" },
-      }),
-    ]);
-  });
-
-  it("does not settle a run when ACPX reports failed teardown", async () => {
-    const prompt = resolvedPrompt({ carryContext: false });
-    const teardownFailure = new Error("provider process was not reaped");
-    const harness = createHarness({ prompt, teardownFailure });
+    const cleanupFailure = new Error("ACPX cleanup failed");
+    const harness = createHarness({ prompt, cleanupFailure });
     const settle = vi.fn();
 
-    const failure = await executeAttempt(harness, prompt, settle).then(
-      () => null,
-      (error: unknown) => error,
-    );
-
-    expect(failure).toBeInstanceOf(AggregateError);
-    expect((failure as AggregateError).errors).toContain(teardownFailure);
-    expect(settle).not.toHaveBeenCalled();
+    await expect(executeAttempt(harness, prompt, settle)).resolves.toMatchObject({
+      kind: "terminal",
+      outcome: "failed",
+    });
+    expect(settle).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "terminal",
+      outcome: "failed",
+    }));
     expect(harness.order).toEqual([
       "mint:1",
       "activate:1",
       "transmit:1",
       "event:message_chunk",
-      "close:settled:1",
-      "teardown:1",
+      "dispose:1",
+      "close:error:1",
       "release:true",
     ]);
   });
@@ -1339,11 +864,7 @@ describe("canonical productive/consult ACP attempt executor", () => {
       outcome: "succeeded",
     });
 
-    expect(harness.order.slice(-3)).toEqual([
-      "teardown:1",
-      "release:false",
-      "settle",
-    ]);
+    expect(harness.order.slice(-2)).toEqual(["release:false", "settle"]);
     expect(settle).toHaveBeenCalledTimes(1);
   });
 
@@ -1358,7 +879,7 @@ describe("canonical productive/consult ACP attempt executor", () => {
     );
 
     expect(settle).not.toHaveBeenCalled();
-    expect(harness.order.slice(-2)).toEqual(["teardown:1", "release:false"]);
+    expect(harness.order.at(-1)).toBe("release:false");
   });
 
   it("preserves ACPX setup and durable closure failures after fencing closure first", async () => {
@@ -1384,7 +905,6 @@ describe("canonical productive/consult ACP attempt executor", () => {
     expect(harness.order).toEqual([
       "mint:1",
       "close:error:1",
-      "teardown:1",
       "release:true",
     ]);
   });
@@ -1402,9 +922,8 @@ describe("canonical productive/consult ACP attempt executor", () => {
     expect(harness.disposeCalls).toEqual([1]);
     expect(harness.order).toEqual([
       "mint:1",
-      "close:error:1",
       "dispose:1",
-      "teardown:1",
+      "close:error:1",
       "release:true",
     ]);
   });
@@ -1432,36 +951,9 @@ describe("canonical productive/consult ACP attempt executor", () => {
       "mint:1",
       "activate:1",
       "transmit:1",
-      "close:error:1",
       "dispose:1",
-      "teardown:1",
+      "close:error:1",
       "release:true",
-    ]);
-  });
-
-  it("never passes an opaque ACP session id or bearer to teardown storage", async () => {
-    const prompt = resolvedPrompt({ carryContext: false });
-    const harness = createHarness({
-      prompt,
-      resultStderr: "opaque-acp-session secret-bearer-1",
-    });
-
-    await executeAttempt(harness, prompt);
-
-    expect(harness.observations).toEqual([
-      expect.objectContaining({
-        resultKind: "settled",
-        stderr: "[REDACTED] [REDACTED]",
-      }),
-    ]);
-    const persisted = JSON.stringify(harness.observations);
-    expect(persisted).not.toContain("opaque-acp-session");
-    expect(persisted).not.toContain("secret-bearer-1");
-    expect(harness.teardownCapabilities).toEqual([
-      {
-        capabilityConnectionId: "capability-1",
-        capabilityGeneration: 1,
-      },
     ]);
   });
 
@@ -1482,57 +974,6 @@ describe("canonical productive/consult ACP attempt executor", () => {
       "stored ACP correlation crossed the canonical prompt or generation",
     );
     expect(harness.starts).toEqual([]);
-  });
-
-  it("classifies native CLI authentication without persisting provider details", async () => {
-    const prompt = resolvedPrompt({ carryContext: false });
-    const harness = createHarness({ prompt, authenticationRequired: true });
-
-    await expect(
-      executeAttempt(harness, prompt),
-    ).resolves.toMatchObject({ kind: "terminal", outcome: "failed" });
-
-    expect(harness.closures).toEqual([
-      {
-        kind: "error",
-        failure: "authentication_required",
-        phase: "session_setup",
-        promptTransmitted: false,
-        message:
-          "The configured ACP CLI requires its native login; authenticate that CLI outside Paperclip and retry",
-      },
-    ]);
-    expect(JSON.stringify(harness.closures)).not.toContain(
-      "provider details must not persist",
-    );
-    expect(JSON.stringify(harness.closures)).not.toContain("must-not-persist");
-  });
-
-  it("fails closed when the execution-target redactor throws", async () => {
-    const prompt = resolvedPrompt({ carryContext: false });
-    const harness = createHarness({
-      prompt,
-      resultStderr: "provider-native-secret",
-      targetRedactor() {
-        throw new Error("redactor unavailable");
-      },
-    });
-
-    await expect(
-      executeAttempt(harness, prompt),
-    ).resolves.toEqual({
-      kind: "terminal",
-      outcome: "succeeded",
-      reason: null,
-    });
-    expect(harness.observations).toEqual([
-      expect.objectContaining({
-        stderr: "[ACP runtime redaction failed]",
-      }),
-    ]);
-    expect(JSON.stringify(harness.observations)).not.toContain(
-      "provider-native-secret",
-    );
   });
 
   it.each(["owner", "consult"] as const)(
@@ -1721,12 +1162,9 @@ describe("canonical productive/consult ACP attempt executor", () => {
       expect(harness.renewedPrompts).toEqual([prompt, prompt, prompt]);
       expect(settle).toHaveBeenCalledOnce();
       expect(settle).toHaveBeenCalledWith({
-        result: {
-          kind: "terminal",
-          outcome: "failed",
-          reason: "ACP execution failed during session_setup",
-        },
-        materialization: null,
+        kind: "terminal",
+        outcome: "failed",
+        reason: "ACP execution failed during session_setup",
       });
       expect(harness.order.at(-1)).toBe("release:true");
       expect(vi.getTimerCount()).toBe(0);

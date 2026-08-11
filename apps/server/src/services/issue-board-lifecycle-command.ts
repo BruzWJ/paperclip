@@ -5,7 +5,6 @@ import {
 import type { IssueBoardLifecycleCommandSubtype } from "@paperclipai/shared";
 import { and, eq } from "drizzle-orm";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
-import { recordIssueLivenessActionInTransaction } from "./issue-liveness-reconciliation.js";
 
 export interface NamedBoardLifecycleAffectedIssue {
   readonly id: string;
@@ -108,10 +107,6 @@ export async function recordNamedBoardLifecycleCommandInTransaction(
       throw new Error("Board lifecycle command source was not persisted");
     }
     assertExistingCommand(row, input, issue);
-    await recordIssueLivenessActionInTransaction(
-      tx,
-      `issue_board_lifecycle_command:${row.id}`,
-    );
     rows.push(row);
   }
   return rows;

@@ -138,6 +138,13 @@ type RuntimeToolCallClaim =
     }
   | { state: "executing" };
 
+export type RuntimeToolCallClaimClassification =
+  | { readonly classification: "non_mention" }
+  | {
+      readonly classification: "validated_mention";
+      readonly targetAgentId: string;
+    };
+
 function promptIdentityParts(
   callIdentity: PromptCapabilityCallIdentity,
 ): RuntimeToolCallIdentityParts {
@@ -196,6 +203,7 @@ export interface RuntimeToolCallLedger {
     callIdentity: PromptCapabilityCallIdentity;
     ingressOrdinal: number;
     arguments: unknown;
+    classification: RuntimeToolCallClaimClassification;
   }): Promise<RuntimeToolCallClaim>;
   registerTerminalInvalid(input: {
     capability: PromptCapabilityIngressBinding;
@@ -205,21 +213,6 @@ export interface RuntimeToolCallLedger {
     arguments: unknown;
     error: unknown;
   }): Promise<void>;
-  classify(input:
-    | {
-        capability: PromptCapabilityBinding;
-        id: string;
-        ingressOrdinal: number;
-        classification: "non_mention";
-      }
-    | {
-        capability: PromptCapabilityBinding;
-        id: string;
-        ingressOrdinal: number;
-        classification: "validated_mention";
-        targetAgentId: string;
-      }
-  ): Promise<void>;
   commitMentionAction<T>(input: {
     transaction: RuntimeToolCallTransaction;
     capability: PromptCapabilityBinding;
@@ -375,6 +368,7 @@ export function createRuntimeToolCallLedger(
     identity: RuntimeToolCallIdentityParts;
     ingressOrdinal: number;
     arguments: unknown;
+    classification: RuntimeToolCallClaimClassification | null;
   }): Promise<RuntimeToolCallClaim> {
     const digest = argumentsDigest(input.arguments);
     const identityRow = await input.tx
@@ -450,6 +444,7 @@ export function createRuntimeToolCallLedger(
       );
     }
 
+    const classifiedAt = input.classification === null ? null : now();
     const inserted = await input.tx
       .insert(runInterfaceToolCalls)
       .values({
@@ -466,6 +461,19 @@ export function createRuntimeToolCallLedger(
         pluginInstallationId:
           input.binding.pluginInstallationId ?? null,
         argumentsDigest: digest,
+        ...(input.classification === null
+          ? {}
+          : input.classification.classification === "validated_mention"
+            ? {
+                classification: "validated_mention" as const,
+                mentionTargetAgentId: input.classification.targetAgentId,
+                classifiedAt,
+              }
+            : {
+                classification: "non_mention" as const,
+                mentionTargetAgentId: null,
+                classifiedAt,
+              }),
         status: "executing",
       })
       .returning({ id: runInterfaceToolCalls.id })
@@ -476,84 +484,6 @@ export function createRuntimeToolCallLedger(
       input.lockedCapability,
     );
     return { state: "claimed", id: inserted.id };
-  }
-
-  async function markClassification(input:
-    | {
-        capability: PromptCapabilityBinding;
-        id: string;
-        ingressOrdinal: number;
-        classification: "non_mention";
-      }
-    | {
-        capability: PromptCapabilityBinding;
-        id: string;
-        ingressOrdinal: number;
-        classification: "validated_mention";
-        targetAgentId: string;
-      }
-  ): Promise<void> {
-    assertIngressOrdinal(input.ingressOrdinal);
-    if (
-      input.classification === "validated_mention"
-      && input.targetAgentId.length === 0
-    ) {
-      throw new RuntimeToolCallIdentityConflict(
-        "Validated mention classification requires its target agent",
-      );
-    }
-    await db.transaction(async (tx) => {
-      const lockedCapability = await lockCapability(tx, input.capability);
-      const row = await tx
-        .select()
-        .from(runInterfaceToolCalls)
-        .where(
-          and(
-            scopeWhere(input.capability),
-            eq(runInterfaceToolCalls.id, input.id),
-          ),
-        )
-        .limit(1)
-        .for("update")
-        .then((rows) => rows[0] ?? null);
-      if (!row || row.ingressOrdinal !== input.ingressOrdinal) {
-        throw new RuntimeToolCallIdentityConflict(
-          "Tool-call classification did not match its immutable ledger identity",
-        );
-      }
-      if (row.classification !== "unclassified") {
-        const same = row.classification === input.classification
-          && (
-            input.classification === "non_mention"
-            || row.mentionTargetAgentId === input.targetAgentId
-          );
-        if (!same) {
-          throw new RuntimeToolCallIdentityConflict(
-            "Tool-call classification is immutable",
-          );
-        }
-        return;
-      }
-      const at = now();
-      await tx
-        .update(runInterfaceToolCalls)
-        .set(
-          input.classification === "validated_mention"
-            ? {
-                classification: "validated_mention",
-                mentionTargetAgentId: input.targetAgentId,
-                classifiedAt: at,
-                updatedAt: at,
-              }
-            : {
-                classification: "non_mention",
-                classifiedAt: at,
-                updatedAt: at,
-              },
-        )
-        .where(eq(runInterfaceToolCalls.id, row.id));
-      await advanceHighWaters(tx, input.capability, lockedCapability);
-    });
   }
 
   async function failCall(input: {
@@ -605,6 +535,14 @@ export function createRuntimeToolCallLedger(
   return {
     async claim(input) {
       assertIngressOrdinal(input.ingressOrdinal);
+      if (
+        input.classification.classification === "validated_mention"
+        && input.classification.targetAgentId.length === 0
+      ) {
+        throw new RuntimeToolCallIdentityConflict(
+          "Validated mention classification requires its target agent",
+        );
+      }
       return db.transaction(async (tx) => {
         const lockedCapability = await lockCapability(tx, input.capability);
         return claimLocked({
@@ -615,6 +553,7 @@ export function createRuntimeToolCallLedger(
           identity: promptIdentityParts(input.callIdentity),
           ingressOrdinal: input.ingressOrdinal,
           arguments: input.arguments,
+          classification: input.classification,
         });
       });
     },
@@ -637,6 +576,7 @@ export function createRuntimeToolCallLedger(
             : ingressIdentityParts(input.ingressOrdinal),
           ingressOrdinal: input.ingressOrdinal,
           arguments: input.arguments,
+          classification: null,
         });
         if (claim.state === "failed") return;
         if (claim.state !== "claimed" && claim.state !== "executing") {
@@ -683,8 +623,6 @@ export function createRuntimeToolCallLedger(
         await advanceHighWaters(tx, input.capability, lockedCapability);
       });
     },
-
-    classify: markClassification,
 
     async commitMentionAction(input) {
       assertIngressOrdinal(input.ingressOrdinal);

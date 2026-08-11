@@ -52,7 +52,7 @@ import {
   pausePluginManagedAgentsIntoTriageInTransaction,
 } from "./plugin-managed-agents.js";
 import type { AgentSuspensionService } from "./agents.js";
-import type { RequestedAgentSuspensions } from "./issue-execution-cancellation.js";
+import type { RequestedAgentRunCancellations } from "./issue-execution-cancellation.js";
 import { createIssueSessionAdmissionService } from "./issue-session/admission.js";
 import { terminalizePluginCreatorEdgesInTransaction } from "./system-escalation-postgres.js";
 import { validatePluginInstanceConfig } from "./plugin-config-validator.js";
@@ -328,7 +328,7 @@ export function pluginLifecycleManager(
   ): Promise<{
     previousStatus: PluginStatus;
     plugin: PluginRecord;
-    suspensionRequests: RequestedAgentSuspensions[];
+    suspensionRequests: RequestedAgentRunCancellations[];
     dispatchRefIds: string[];
   } | null> {
     const committed = await db.transaction(async (tx) => {
@@ -414,7 +414,7 @@ export function pluginLifecycleManager(
     for (const suspensionRequests of committed.suspensionRequests) {
       try {
         await issueExecutionCancellation
-          .reconcileRequestedAgentSuspensions(suspensionRequests);
+          .reconcileRequestedCancellations(suspensionRequests);
       } catch (error) {
         deferredRecoveryErrors.push(error);
       }

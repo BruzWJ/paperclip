@@ -193,7 +193,6 @@ describe("company portability declarative ACP configuration", () => {
         adapterType: "codex",
         adapterConfig: { model: "gpt-5.6", ...adapterConfig },
         runtimeConfig,
-        skillChannel: "operator_native",
       },
       contextGrants: falseMap(AGENT_CONTEXT_GRANT_KEYS),
       actionGrants: falseMap(PAPERCLIP_ACTION_KEYS),
@@ -214,7 +213,6 @@ describe("company portability declarative ACP configuration", () => {
       portabilityAdapterOverrideSchema.parse({
         adapterType: "codex",
         adapterConfig: { model: "gpt-5.6" },
-        skillChannel: "operator_native",
       }).adapterConfig,
     ).toEqual({ model: "gpt-5.6" });
   });
@@ -273,7 +271,6 @@ describe("company portability declarative ACP configuration", () => {
         portabilityAdapterOverrideSchema.safeParse({
           adapterType: "codex",
           adapterConfig,
-          skillChannel: "operator_native",
         }).success,
       ).toBe(false);
     }

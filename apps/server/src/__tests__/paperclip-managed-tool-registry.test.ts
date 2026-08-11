@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AGENT_CONTEXT_GRANT_KEYS } from "@paperclipai/shared";
+import { ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import {
   PAPERCLIP_CONTEXT_TOOL_NAMES,
   PAPERCLIP_MANAGED_TOOL_METADATA,
@@ -37,6 +38,10 @@ describe("Paperclip managed-tool registry", () => {
     for (const descriptor of descriptors) {
       const name = descriptor.name as keyof typeof PAPERCLIP_MANAGED_TOOL_METADATA;
       expect(descriptor.title).toBe(PAPERCLIP_MANAGED_TOOL_METADATA[name].title);
+      expect(descriptor.description.startsWith(
+        PAPERCLIP_MANAGED_TOOL_METADATA[name].description,
+      )).toBe(true);
+      expect(descriptor.availability).toBe("work");
     }
   });
 
@@ -71,6 +76,7 @@ describe("Paperclip managed-tool registry", () => {
   it("uses canonical metadata for the ACPX action projection too", () => {
     const compiled = compileRuntimeInterface({
       mode: "owner",
+      turn: "work",
       contextDial: fullContextDial,
       actionGrants: {
         issue_create: true,
@@ -106,6 +112,20 @@ describe("Paperclip managed-tool registry", () => {
       expect(compiled.byName.get(name)?.title).toBe(
         PAPERCLIP_MANAGED_TOOL_METADATA[name].title,
       );
+      expect(compiled.byName.get(name)?.description?.startsWith(
+        PAPERCLIP_MANAGED_TOOL_METADATA[name].description,
+      )).toBe(true);
+      expect(compiled.byName.get(name)?.availability).toBe(
+        name === "list_agents" || name === "agent_read" ? "both" : "work",
+      );
     }
+    expect(ListToolsResultSchema.safeParse({
+      tools: compiled.descriptors.map((descriptor) => ({
+        name: descriptor.name,
+        title: descriptor.title,
+        description: descriptor.description,
+        inputSchema: descriptor.inputSchema,
+      })),
+    }).success).toBe(true);
   });
 });

@@ -109,8 +109,6 @@ export const issueExecutionRuns = pgTable(
       IssueExecutionRunTerminalClassification
     >(),
     terminalReasonCode: text("terminal_reason_code"),
-    processExitCode: integer("process_exit_code"),
-    processSignal: text("process_signal"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -180,8 +178,6 @@ export const issueExecutionRuns = pgTable(
         and ${table.terminalClassification} is null
         and ${table.terminalReasonCode} is null
         and ${table.terminalFinalizationId} is null
-        and ${table.processExitCode} is null
-        and ${table.processSignal} is null
       ) or (
         ${table.status} in (
           'succeeded',
@@ -210,23 +206,6 @@ export const issueExecutionRuns = pgTable(
           ${table.finishedAt} is null
           or ${table.startedAt} is null
           or ${table.finishedAt} >= ${table.startedAt}
-        )`,
-    ),
-    check(
-      "issue_execution_runs_process_exit_check",
-      sql`${table.processExitCode} is null
-        or ${table.processExitCode} between 0 and 255
-        and not (
-          ${table.processExitCode} is not null
-          and ${table.processSignal} is not null
-        )`,
-    ),
-    check(
-      "issue_execution_runs_process_signal_check",
-      sql`${table.processSignal} is null
-        or (
-          length(${table.processSignal}) between 1 and 32
-          and ${table.processSignal} ~ '^SIG[A-Z0-9]+$'
         )`,
     ),
     foreignKey({
@@ -1189,8 +1168,7 @@ export const issueExecutionAttempts = pgTable(
 
 /**
  * Typed owner for a delayed pre-send successor attempt. Retry timing and
- * reason never leak onto the closed run envelope. target_not_found restart
- * is immediate and therefore never creates one of these rows.
+ * reason never leak onto the closed run envelope.
  */
 export const issueExecutionAttemptRetrySchedules = pgTable(
   "issue_execution_attempt_retry_schedules",
@@ -1398,133 +1376,6 @@ export const issueExecutionLeases = pgTable(
 );
 
 /**
- * Subprocess and process-group supervision facts. Output bytes and provider
- * events remain exclusively in the canonical Session projection.
- */
-export const issueExecutionProcessFacts = pgTable(
-  "issue_execution_process_facts",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    companyId: uuid("company_id").notNull(),
-    issueId: uuid("issue_id").notNull(),
-    runId: uuid("run_id").notNull(),
-    attemptId: uuid("attempt_id").notNull(),
-    leaseId: uuid("lease_id").notNull(),
-    processId: integer("process_id").notNull(),
-    processGroupId: integer("process_group_id").notNull(),
-    supervisorLocator: text("supervisor_locator").notNull(),
-    state: text("state")
-      .$type<"starting" | "running" | "exited" | "terminated" | "lost">()
-      .notNull()
-      .default("starting"),
-    startedAt: timestamp("started_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    settledAt: timestamp("settled_at", { withTimezone: true }),
-    exitCode: integer("exit_code"),
-    exitSignal: text("exit_signal"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    check(
-      "issue_execution_process_facts_identity_check",
-      sql`${table.processId} > 0
-        and ${table.processGroupId} > 0
-        and length(btrim(${table.supervisorLocator})) between 1 and 500`,
-    ),
-    check(
-      "issue_execution_process_facts_state_check",
-      sql`${table.state} in ('starting', 'running', 'exited', 'terminated', 'lost')`,
-    ),
-    check(
-      "issue_execution_process_facts_terminal_check",
-      sql`(
-        ${table.state} in ('starting', 'running')
-        and ${table.settledAt} is null
-        and ${table.exitCode} is null
-        and ${table.exitSignal} is null
-      ) or (
-        ${table.state} in ('exited', 'terminated')
-        and ${table.settledAt} is not null
-        and (
-          (
-            ${table.exitCode} is not null
-            and ${table.exitCode} between 0 and 255
-            and ${table.exitSignal} is null
-          ) or (
-            ${table.exitCode} is null
-            and ${table.exitSignal} is not null
-            and length(${table.exitSignal}) between 1 and 32
-            and ${table.exitSignal} ~ '^SIG[A-Z0-9]+$'
-          )
-        )
-      ) or (
-        ${table.state} = 'lost'
-        and ${table.settledAt} is not null
-        and ${table.exitCode} is null
-        and ${table.exitSignal} is null
-      )`,
-    ),
-    check(
-      "issue_execution_process_facts_time_check",
-      sql`${table.startedAt} >= ${table.createdAt}
-        and (
-          ${table.settledAt} is null
-          or ${table.settledAt} >= ${table.startedAt}
-        )`,
-    ),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.runId,
-        table.attemptId,
-      ],
-      foreignColumns: [
-        issueExecutionAttempts.companyId,
-        issueExecutionAttempts.issueId,
-        issueExecutionAttempts.runId,
-        issueExecutionAttempts.id,
-      ],
-      name: "issue_execution_process_facts_attempt_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.runId,
-        table.attemptId,
-        table.leaseId,
-      ],
-      foreignColumns: [
-        issueExecutionLeases.companyId,
-        issueExecutionLeases.issueId,
-        issueExecutionLeases.runId,
-        issueExecutionLeases.attemptId,
-        issueExecutionLeases.id,
-      ],
-      name: "issue_execution_process_facts_lease_fk",
-    }).onDelete("cascade"),
-    unique("issue_execution_process_facts_attempt_uq").on(table.attemptId),
-    unique("issue_execution_process_facts_lease_uq").on(table.leaseId),
-    unique("issue_execution_process_facts_scope_id_uq").on(
-      table.companyId,
-      table.issueId,
-      table.runId,
-      table.attemptId,
-      table.id,
-    ),
-    index("issue_execution_process_facts_state_idx").on(
-      table.companyId,
-      table.state,
-      table.startedAt,
-    ),
-  ],
-);
-
-/**
  * One typed stop intent for an exact prompt attempt. The attempt is the sole
  * prompt-identity owner, so cancellation never copies a run/ref/segment union.
  */
@@ -1537,14 +1388,12 @@ export const issueExecutionCancellationIntents = pgTable(
     runId: uuid("run_id").notNull(),
     attemptId: uuid("attempt_id").notNull(),
     leaseId: uuid("lease_id"),
-    processFactId: uuid("process_fact_id"),
     reasonKind: text("reason_kind")
       .$type<
         | "lifecycle"
         | "authority"
         | "timeout"
         | "lease_expired"
-        | "process_policy"
         | "steering"
       >()
       .notNull(),
@@ -1563,14 +1412,7 @@ export const issueExecutionCancellationIntents = pgTable(
       .notNull()
       .defaultNow(),
     acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
-    sessionCancelSentAt: timestamp("session_cancel_sent_at", {
-      withTimezone: true,
-    }),
-    processTerminationRequestedAt: timestamp(
-      "process_termination_requested_at",
-      { withTimezone: true },
-    ),
-    processTerminatedAt: timestamp("process_terminated_at", {
+    nativeCancellationSettledAt: timestamp("native_cancellation_settled_at", {
       withTimezone: true,
     }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -1588,7 +1430,6 @@ export const issueExecutionCancellationIntents = pgTable(
         'authority',
         'timeout',
         'lease_expired',
-        'process_policy',
         'steering'
       )`,
     ),
@@ -1641,26 +1482,6 @@ export const issueExecutionCancellationIntents = pgTable(
       )`,
     ),
     check(
-      "issue_execution_cancellation_intents_process_check",
-      sql`(
-        ${table.processFactId} is null
-        and ${table.processTerminationRequestedAt} is null
-        and ${table.processTerminatedAt} is null
-      ) or (
-        ${table.processFactId} is not null
-        and ${table.leaseId} is not null
-        and ${table.processTerminationRequestedAt} is not null
-        and (
-          ${table.processTerminatedAt} is null
-          or ${table.processTerminatedAt} >= ${table.processTerminationRequestedAt}
-        )
-        and (
-          ${table.state} <> 'completed'
-          or ${table.processTerminatedAt} is not null
-        )
-      )`,
-    ),
-    check(
       "issue_execution_cancellation_intents_time_check",
       sql`${table.requestedAt} >= ${table.createdAt}
         and (
@@ -1668,8 +1489,8 @@ export const issueExecutionCancellationIntents = pgTable(
           or ${table.acknowledgedAt} >= ${table.requestedAt}
         )
         and (
-          ${table.sessionCancelSentAt} is null
-          or ${table.sessionCancelSentAt} >= ${table.requestedAt}
+          ${table.nativeCancellationSettledAt} is null
+          or ${table.nativeCancellationSettledAt} >= ${table.requestedAt}
         )
         and (
           ${table.completedAt} is null
@@ -1711,23 +1532,6 @@ export const issueExecutionCancellationIntents = pgTable(
         issueExecutionLeases.id,
       ],
       name: "issue_execution_cancellation_intents_lease_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.runId,
-        table.attemptId,
-        table.processFactId,
-      ],
-      foreignColumns: [
-        issueExecutionProcessFacts.companyId,
-        issueExecutionProcessFacts.issueId,
-        issueExecutionProcessFacts.runId,
-        issueExecutionProcessFacts.attemptId,
-        issueExecutionProcessFacts.id,
-      ],
-      name: "issue_execution_cancellation_intents_process_fk",
     }).onDelete("cascade"),
     foreignKey({
       columns: [table.companyId, table.actorAgentId],
@@ -2103,10 +1907,6 @@ export type NewIssueExecutionAttemptRetrySchedule =
   typeof issueExecutionAttemptRetrySchedules.$inferInsert;
 export type IssueExecutionLease = typeof issueExecutionLeases.$inferSelect;
 export type NewIssueExecutionLease = typeof issueExecutionLeases.$inferInsert;
-export type IssueExecutionProcessFact =
-  typeof issueExecutionProcessFacts.$inferSelect;
-export type NewIssueExecutionProcessFact =
-  typeof issueExecutionProcessFacts.$inferInsert;
 export type IssueExecutionCancellationIntent =
   typeof issueExecutionCancellationIntents.$inferSelect;
 export type NewIssueExecutionCancellationIntent =

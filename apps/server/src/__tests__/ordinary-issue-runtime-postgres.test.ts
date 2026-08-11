@@ -9,6 +9,7 @@ import { createMockDb } from "./helpers/mock-db.js";
 const mocks = vi.hoisted(() => ({
   resolveOwner: vi.fn(),
   admitExecutionSource: vi.fn(),
+  admitExecutionSourceBatch: vi.fn(),
   persistAggregate: vi.fn(),
   createIssueFormCommitRuntime: vi.fn(() => ({})),
 }));
@@ -22,6 +23,7 @@ vi.mock("../services/issue-session/admission.js", async (importActual) => ({
   ...(await importActual<typeof import("../services/issue-session/admission.js")>()),
   createIssueSessionAdmissionService: vi.fn(() => ({
     admitExecutionSource: mocks.admitExecutionSource,
+    admitExecutionSourceBatch: mocks.admitExecutionSourceBatch,
   })),
 }));
 
@@ -89,7 +91,7 @@ function options(dispatchRef = vi.fn(async () => undefined)) {
     },
     issueExecutionCancellation: {
       requestScopeCancellationsInTransaction: vi.fn(),
-      reconcileRequestedScopeCancellations: vi.fn(),
+      reconcileRequestedCancellations: vi.fn(),
     },
   };
 }
@@ -107,13 +109,20 @@ function createInput(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function freshCreateDb() {
+function freshCreateDb(instruction: string | null = null) {
   return createMockDb({
     execute: [[], []],
     select: [
       [],
       [company],
       [{ value: 2 }],
+      [{ instruction }],
+      [{ companyId, ownerKind: "agent", ownerAgentId, ownershipEpoch: 1,
+        workMode: "parallel", harnessKind: null, originKind: "manual",
+        executionPolicy: null }],
+      [{ id: "00000000-0000-4000-8000-000000000209" }],
+      [],
+      [],
     ],
     update: [[]],
   });
@@ -240,6 +249,50 @@ describe("ordinary issue runtime ingress", () => {
       }),
     );
     expect(dispatchRef).toHaveBeenCalledTimes(1);
+    expect(dispatchRef).toHaveBeenCalledWith(refId);
+  });
+
+  it("prepends an instructed owner through the ordinary execution queue", async () => {
+    const bootstrapRef = { ...ref, id: "00000000-0000-4000-8000-000000000208" };
+    mocks.resolveOwner.mockResolvedValueOnce({
+      owner: { ...owner, instruction: "You are the engineering lead." },
+      revision,
+      revisionId,
+    });
+    mocks.admitExecutionSourceBatch.mockResolvedValueOnce([
+      { ref: bootstrapRef },
+      { ref },
+    ]);
+    const dispatchRef = vi.fn(async () => undefined);
+    const harness = freshCreateDb("You are the engineering lead.");
+
+    await createOrdinaryIssueRuntime(harness.db, options(dispatchRef)).create(
+      createInput(),
+    );
+
+    expect(mocks.admitExecutionSource).not.toHaveBeenCalled();
+    expect(mocks.admitExecutionSourceBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sources: [
+          expect.objectContaining({
+            sourceKind: "issue_request",
+            actor: {
+              kind: "system",
+              sourceKind: "issue_request",
+              sourceId: issueId,
+            },
+            sourceRecordId: issueId,
+            exactText:
+              "You are the engineering lead.\n\nThis is your role bootstrap turn, not issue work. Do not inspect the filesystem, workspace, repository, home directory, environment, global configuration, or provider configuration, and do not use provider-local tools. If you need organizational or company context, use only the Paperclip-managed tools available in this turn. Briefly acknowledge the role and end the turn; the issue request will arrive as a separate queued turn.",
+          }),
+          expect.objectContaining({
+            sourceKind: "issue_request",
+            exactText: "Preserve these exact bytes.\n",
+          }),
+        ],
+      }),
+      harness.db,
+    );
     expect(dispatchRef).toHaveBeenCalledWith(refId);
   });
 

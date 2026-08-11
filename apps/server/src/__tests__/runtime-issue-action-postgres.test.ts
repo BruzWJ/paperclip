@@ -41,7 +41,6 @@ const capability: PromptCapabilityBinding = {
   targetSessionCorrelationId: "correlation-1",
   effectiveContextExposureDigest: "context-digest",
   effectiveToolsDigest: "tools-digest",
-  bootstrapToolGate: false,
   expiresAt: new Date("2026-08-02T13:00:00.000Z"),
   activatedAt: new Date("2026-08-02T12:00:00.000Z"),
   createdAt: new Date("2026-08-02T12:00:00.000Z"),
@@ -275,7 +274,7 @@ describe("runtime issue action contracts", () => {
       dispatchPersistedRef: vi.fn(async () => undefined),
       issueExecutionCancellation: {
         requestScopeCancellationsInTransaction: vi.fn(),
-        reconcileRequestedScopeCancellations: vi.fn(),
+        reconcileRequestedCancellations: vi.fn(),
       },
     });
     const humanAuthority = {
@@ -328,7 +327,7 @@ describe("runtime issue action contracts", () => {
       dispatchPersistedRef: vi.fn(async () => undefined),
       issueExecutionCancellation: {
         requestScopeCancellationsInTransaction: vi.fn(),
-        reconcileRequestedScopeCancellations: vi.fn(),
+        reconcileRequestedCancellations: vi.fn(),
       },
     });
     const withdrawalAuthority = {
@@ -385,7 +384,7 @@ describe("runtime issue action contracts", () => {
         dispatchPersistedRef: vi.fn(async () => undefined),
         issueExecutionCancellation: {
           requestScopeCancellationsInTransaction: vi.fn(),
-          reconcileRequestedScopeCancellations: vi.fn(),
+          reconcileRequestedCancellations: vi.fn(),
         },
       });
 
@@ -407,73 +406,92 @@ describe("runtime issue action contracts", () => {
     },
   );
 
-  it("rejects a pre-cancel capability after the issue is restored", async () => {
-    const harness = createMockDb({
-      execute: [[], []],
-      insert: [[]],
-      select: [
-        [{ id: capability.companyId }],
-        [{
-          id: capability.issueId,
-          lifecycleStatus: "open",
-          executionPaused: false,
-        }],
-        [{ id: capability.sessionId }],
-        [{ id: capability.targetAgentId }],
-        [{ targetAgentId: capability.targetAgentId }],
-        [{
-          id: capability.runId,
-          companyId: capability.companyId,
-          issueId: capability.issueId,
-          sessionId: capability.sessionId,
-          executionScopeId: "00000000-0000-4000-8000-00000000070b",
-          kind: "productive",
-          status: "running",
-          ownershipEpoch: capability.ownershipEpoch,
-          targetAgentId: capability.targetAgentId,
-          executionMode: capability.executionMode,
-          issueExecutionAuthorityId: capability.issueExecutionAuthorityId,
-          consultExecutionId: capability.consultExecutionId,
-          parentRunId: null,
-          retryOfRunId: null,
-          adapterConfigRevisionId: capability.adapterConfigIdentity,
-          executionWorkspaceBindingId: capability.workspaceIdentity,
-          currentAttemptId: capability.attemptId,
-          currentLeaseId: capability.leaseId,
-          cancellationIntentId: "00000000-0000-4000-8000-000000000712",
-          terminalFinalizationId: null,
-          startedAt: new Date("2026-08-02T12:00:00.000Z"),
-          finishedAt: null,
-          terminalClassification: null,
-          terminalReasonCode: null,
-          processExitCode: null,
-          processSignal: null,
-          createdAt: new Date("2026-08-02T12:00:00.000Z"),
-          updatedAt: new Date("2026-08-02T12:00:00.000Z"),
-        }],
-      ],
-    });
-    const runtime = createPostgresRuntimeIssueActionService(harness.db, {
-      clock: () => new Date("2026-08-02T12:30:00.000Z"),
-      dispatchPersistedRef: vi.fn(async () => undefined),
-      issueExecutionCancellation: {
-        requestScopeCancellationsInTransaction: vi.fn(),
-        reconcileRequestedScopeCancellations: vi.fn(),
-      },
-    });
+  it.each(["mention_board", "mention_agent"] as const)(
+    "rejects a pre-cancel capability before %s replay or admission",
+    async (action) => {
+      const harness = createMockDb({
+        execute: [[], []],
+        insert: [[]],
+        select: [
+          [{ id: capability.companyId }],
+          [{
+            id: capability.issueId,
+            lifecycleStatus: "open",
+            executionPaused: false,
+          }],
+          [{ id: capability.sessionId }],
+          [{ id: capability.targetAgentId }],
+          [{ targetAgentId: capability.targetAgentId }],
+          [{
+            id: capability.runId,
+            companyId: capability.companyId,
+            issueId: capability.issueId,
+            sessionId: capability.sessionId,
+            executionScopeId: "00000000-0000-4000-8000-00000000070b",
+            kind: "productive",
+            status: "running",
+            ownershipEpoch: capability.ownershipEpoch,
+            targetAgentId: capability.targetAgentId,
+            executionMode: capability.executionMode,
+            issueExecutionAuthorityId: capability.issueExecutionAuthorityId,
+            consultExecutionId: capability.consultExecutionId,
+            parentRunId: null,
+            retryOfRunId: null,
+            adapterConfigRevisionId: capability.adapterConfigIdentity,
+            executionWorkspaceBindingId: capability.workspaceIdentity,
+            currentAttemptId: capability.attemptId,
+            currentLeaseId: capability.leaseId,
+            cancellationIntentId:
+              "00000000-0000-4000-8000-000000000712",
+            terminalFinalizationId: null,
+            startedAt: new Date("2026-08-02T12:00:00.000Z"),
+            finishedAt: null,
+            terminalClassification: null,
+            terminalReasonCode: null,
+            processExitCode: null,
+            processSignal: null,
+            createdAt: new Date("2026-08-02T12:00:00.000Z"),
+            updatedAt: new Date("2026-08-02T12:00:00.000Z"),
+          }],
+        ],
+      });
+      const runtime = createPostgresRuntimeIssueActionService(harness.db, {
+        clock: () => new Date("2026-08-02T12:30:00.000Z"),
+        dispatchPersistedRef: vi.fn(async () => undefined),
+        issueExecutionCancellation: {
+          requestScopeCancellationsInTransaction: vi.fn(),
+          reconcileRequestedCancellations: vi.fn(),
+        },
+      });
 
-    await expect(runtime.mentionBoard({
-      capability,
-      invocationId: "mutation-fence-cancelled-run",
-      runInterfaceToolCallId: "00000000-0000-4000-8000-000000000713",
-      ingressOrdinal: 0,
-        commitMentionAction: vi.fn(),
-      message: "Do not revive this call",
-    })).rejects.toMatchObject<Partial<RuntimeIssueActionDenied>>({
-      reason: "run_scope_changed",
-    });
-    expect(harness.remaining("execute")).toBe(0);
-    expect(harness.remaining("insert")).toBe(0);
-    expect(harness.remaining("select")).toBe(0);
-  });
+      const invocation = action === "mention_agent"
+        ? runtime.mention({
+            capability,
+            invocationId: "mutation-fence-cancelled-run",
+            runInterfaceToolCallId:
+              "00000000-0000-4000-8000-000000000713",
+            ingressOrdinal: 0,
+            commitMentionAction: vi.fn(),
+            targetAgentId: capability.targetAgentId,
+            message: "Do not revive this call",
+          })
+        : runtime.mentionBoard({
+            capability,
+            invocationId: "mutation-fence-cancelled-run",
+            runInterfaceToolCallId:
+              "00000000-0000-4000-8000-000000000713",
+            ingressOrdinal: 0,
+            commitMentionAction: vi.fn(),
+            message: "Do not revive this call",
+          });
+      await expect(invocation).rejects.toMatchObject<
+        Partial<RuntimeIssueActionDenied>
+      >({
+        reason: "run_scope_changed",
+      });
+      expect(harness.remaining("execute")).toBe(0);
+      expect(harness.remaining("insert")).toBe(0);
+      expect(harness.remaining("select")).toBe(0);
+    },
+  );
 });

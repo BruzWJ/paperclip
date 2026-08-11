@@ -1,9 +1,11 @@
 import {
+  companies,
   issueSessionEventSequences,
   issueSessionEvents,
   issueSessionMessageIdAllocators,
   issueSessionMessageIdReservations,
   issueSessions,
+  issues,
   type Db,
 } from "@paperclipai/db";
 import {
@@ -15,7 +17,6 @@ import {
 } from "@paperclipai/shared/issue-session";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
-  canonicalIssueSessionJson,
   decodeStoredIssueSessionEvent,
   IssueSessionInvariantError,
   IssueSessionLifecycleConflict,
@@ -335,6 +336,46 @@ export async function readProjectedIssueSessionSequence(
     );
   }
   return Number(rows[0].projectedEventSeq);
+}
+
+/**
+ * Locks the foreign-key parents and Session projection checkpoint in their
+ * canonical aggregate order. Projection updates issue_sessions, whose FK
+ * checks otherwise acquire parent locks after the Session row and can invert
+ * issue actions that already own company/issue before waiting on Session.
+ */
+export async function lockIssueSessionProjectionRoot(
+  transaction: IssueSessionDbTransaction,
+  scope: IssueSessionScope,
+): Promise<number> {
+  const companyRows = Array.from(
+    await transaction.execute(sql<{ id: string }>`
+      SELECT ${companies.id} AS id
+      FROM ${companies}
+      WHERE ${companies.id} = ${scope.companyId}
+      FOR KEY SHARE
+    `),
+  );
+  if (companyRows.length !== 1) {
+    throw new IssueSessionInvariantError(
+      `Company ${scope.companyId} is missing its Session projection root`,
+    );
+  }
+  const issueRows = Array.from(
+    await transaction.execute(sql<{ id: string }>`
+      SELECT ${issues.id} AS id
+      FROM ${issues}
+      WHERE ${issues.companyId} = ${scope.companyId}
+        AND ${issues.id} = ${scope.issueId}
+      FOR NO KEY UPDATE
+    `),
+  );
+  if (issueRows.length !== 1) {
+    throw new IssueSessionInvariantError(
+      `Issue ${scope.issueId} is missing its Session projection root`,
+    );
+  }
+  return readProjectedIssueSessionSequence(transaction, scope.sessionId);
 }
 
 export async function commitProjectedIssueSessionSequence(

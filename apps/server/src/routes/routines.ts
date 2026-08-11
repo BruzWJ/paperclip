@@ -1,4 +1,4 @@
-import { Router, type Request } from "express";
+import { Router, type Request, type Response } from "express";
 import type { Db } from "@paperclipai/db";
 import {
   createRoutineSchema,
@@ -25,7 +25,6 @@ import {
   assertCompanyAccess,
   getAccessibleResource,
   getBoardUserId,
-  hasCompanyAccess,
 } from "./authz.js";
 import { forbidden } from "../errors.js";
 import { getTelemetryClient } from "../telemetry.js";
@@ -105,9 +104,19 @@ export function routineRoutes(
     assertCompanyAccess(req, companyId);
   }
 
-  async function assertCanManageExistingRoutine(req: Request, routineId: string) {
-    const routine = await svc.get(routineId);
-    if (!routine || !hasCompanyAccess(req, routine.companyId)) return null;
+  async function getManageableRoutine(
+    req: Request,
+    res: Response,
+    routineId: string,
+    notFoundMessage = "Routine not found",
+  ) {
+    const routine = await getAccessibleResource(
+      req,
+      res,
+      svc.get(routineId),
+      notFoundMessage,
+    );
+    if (!routine) return null;
     assertBoard(req);
     assertCompanyAccess(req, routine.companyId);
     return routine;
@@ -187,21 +196,15 @@ export function routineRoutes(
   });
 
   router.get("/routines/:id/revisions", async (req, res) => {
-    const routine = await assertCanManageExistingRoutine(req, req.params.id as string);
-    if (!routine) {
-      res.status(404).json({ error: "Routine not found" });
-      return;
-    }
+    const routine = await getManageableRoutine(req, res, req.params.id as string);
+    if (!routine) return;
     const revisions = await svc.listRevisions(routine.id);
     res.json(revisions);
   });
 
   router.get("/routines/:id/description/annotations", async (req, res) => {
-    const routine = await assertCanManageExistingRoutine(req, req.params.id as string);
-    if (!routine) {
-      res.status(404).json({ error: "Routine not found" });
-      return;
-    }
+    const routine = await getManageableRoutine(req, res, req.params.id as string);
+    if (!routine) return;
     const status = req.query.status === "resolved" || req.query.status === "all" ? req.query.status : "open";
     const threads = await documentAnnotationsSvc.listThreadsForRoutineDocument(routine.id, routineDocumentKey, {
       status,
@@ -211,11 +214,8 @@ export function routineRoutes(
   });
 
   router.get("/routines/:id/description/annotations/:threadId", async (req, res) => {
-    const routine = await assertCanManageExistingRoutine(req, req.params.id as string);
-    if (!routine) {
-      res.status(404).json({ error: "Routine not found" });
-      return;
-    }
+    const routine = await getManageableRoutine(req, res, req.params.id as string);
+    if (!routine) return;
     const thread = await documentAnnotationsSvc.getThreadForRoutineDocument(
       routine.id,
       routineDocumentKey,
@@ -232,11 +232,8 @@ export function routineRoutes(
     "/routines/:id/description/annotations",
     validate(createDocumentAnnotationThreadSchema),
     async (req, res) => {
-      const routine = await assertCanManageExistingRoutine(req, req.params.id as string);
-      if (!routine) {
-        res.status(404).json({ error: "Routine not found" });
-        return;
-      }
+      const routine = await getManageableRoutine(req, res, req.params.id as string);
+      if (!routine) return;
       const annotationActor = annotationActorInput(req);
       const thread = await documentAnnotationsSvc.createRoutineThread(
         routine.id,
@@ -270,11 +267,8 @@ export function routineRoutes(
     "/routines/:id/description/annotations/:threadId/comments",
     validate(createDocumentAnnotationCommentSchema),
     async (req, res) => {
-      const routine = await assertCanManageExistingRoutine(req, req.params.id as string);
-      if (!routine) {
-        res.status(404).json({ error: "Routine not found" });
-        return;
-      }
+      const routine = await getManageableRoutine(req, res, req.params.id as string);
+      if (!routine) return;
       const annotationActor = annotationActorInput(req);
       const comment = await documentAnnotationsSvc.addRoutineComment(
         routine.id,
@@ -306,11 +300,8 @@ export function routineRoutes(
     "/routines/:id/description/annotations/:threadId",
     validate(updateDocumentAnnotationThreadSchema),
     async (req, res) => {
-      const routine = await assertCanManageExistingRoutine(req, req.params.id as string);
-      if (!routine) {
-        res.status(404).json({ error: "Routine not found" });
-        return;
-      }
+      const routine = await getManageableRoutine(req, res, req.params.id as string);
+      if (!routine) return;
       const annotationActor = annotationActorInput(req);
       const thread = await documentAnnotationsSvc.updateRoutineThread(
         routine.id,
@@ -341,11 +332,8 @@ export function routineRoutes(
   );
 
   router.patch("/routines/:id", validate(updateRoutineSchema), async (req, res) => {
-    const routine = await assertCanManageExistingRoutine(req, req.params.id as string);
-    if (!routine) {
-      res.status(404).json({ error: "Routine not found" });
-      return;
-    }
+    const routine = await getManageableRoutine(req, res, req.params.id as string);
+    if (!routine) return;
     const assigneeWillChange =
       req.body.assigneeAgentId !== undefined &&
       req.body.assigneeAgentId !== routine.assigneeAgentId;
@@ -387,11 +375,8 @@ export function routineRoutes(
   });
 
   router.post("/routines/:id/revisions/:revisionId/restore", async (req, res) => {
-    const routine = await assertCanManageExistingRoutine(req, req.params.id as string);
-    if (!routine) {
-      res.status(404).json({ error: "Routine not found" });
-      return;
-    }
+    const routine = await getManageableRoutine(req, res, req.params.id as string);
+    if (!routine) return;
     await assertBoardRoutineAuthority(req, routine.companyId);
     const result = await svc.restoreRevision(routine.id, req.params.revisionId as string, {
       type: "user",
@@ -425,11 +410,8 @@ export function routineRoutes(
   });
 
   router.post("/routines/:id/triggers", validate(createRoutineTriggerSchema), async (req, res) => {
-    const routine = await assertCanManageExistingRoutine(req, req.params.id as string);
-    if (!routine) {
-      res.status(404).json({ error: "Routine not found" });
-      return;
-    }
+    const routine = await getManageableRoutine(req, res, req.params.id as string);
+    if (!routine) return;
     await assertBoardRoutineAuthority(req, routine.companyId);
     const created = await svc.createTrigger(routine.id, req.body, {
       type: "user",
@@ -461,11 +443,13 @@ export function routineRoutes(
       res.status(404).json({ error: "Routine trigger not found" });
       return;
     }
-    const routine = await assertCanManageExistingRoutine(req, trigger.routineId);
-    if (!routine) {
-      res.status(404).json({ error: "Routine trigger not found" });
-      return;
-    }
+    const routine = await getManageableRoutine(
+      req,
+      res,
+      trigger.routineId,
+      "Routine trigger not found",
+    );
+    if (!routine) return;
     await assertBoardRoutineAuthority(req, routine.companyId);
     const updated = await svc.updateTrigger(trigger.id, req.body, {
       type: "user",
@@ -499,11 +483,13 @@ export function routineRoutes(
       res.status(404).json({ error: "Routine trigger not found" });
       return;
     }
-    const routine = await assertCanManageExistingRoutine(req, trigger.routineId);
-    if (!routine) {
-      res.status(404).json({ error: "Routine trigger not found" });
-      return;
-    }
+    const routine = await getManageableRoutine(
+      req,
+      res,
+      trigger.routineId,
+      "Routine trigger not found",
+    );
+    if (!routine) return;
     const deleted = await svc.deleteTrigger(trigger.id, {
       type: "user",
       userId: getBoardUserId(req),
@@ -539,11 +525,13 @@ export function routineRoutes(
         res.status(404).json({ error: "Routine trigger not found" });
         return;
       }
-      const routine = await assertCanManageExistingRoutine(req, trigger.routineId);
-      if (!routine) {
-        res.status(404).json({ error: "Routine trigger not found" });
-        return;
-      }
+      const routine = await getManageableRoutine(
+        req,
+        res,
+        trigger.routineId,
+        "Routine trigger not found",
+      );
+      if (!routine) return;
       const rotated = await svc.rotateTriggerSecret(trigger.id, {
         type: "user",
         userId: getBoardUserId(req),
@@ -570,11 +558,8 @@ export function routineRoutes(
   );
 
   router.post("/routines/:id/run", validate(runRoutineSchema), async (req, res) => {
-    const routine = await assertCanManageExistingRoutine(req, req.params.id as string);
-    if (!routine) {
-      res.status(404).json({ error: "Routine not found" });
-      return;
-    }
+    const routine = await getManageableRoutine(req, res, req.params.id as string);
+    if (!routine) return;
     await assertBoardRoutineAuthority(req, routine.companyId);
     const run = await svc.runRoutine(routine.id, req.body, {
       type: "user",

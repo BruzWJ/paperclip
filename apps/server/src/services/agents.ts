@@ -38,7 +38,6 @@ import type {
   IssueExecutionCancellationActor,
   IssueExecutionCancellationService,
   RequestedAgentRunCancellations,
-  RequestedAgentSuspensions,
 } from "./issue-execution-cancellation.js";
 
 export type AgentLifecycleTransaction =
@@ -48,31 +47,21 @@ export interface AgentTerminationCommit {
   tombstone: typeof agents.$inferSelect;
   dispatchRefIds: string[];
   cancellationRequests: RequestedAgentRunCancellations | null;
-  suspensionRequests: RequestedAgentSuspensions | null;
+  suspensionRequests: RequestedAgentRunCancellations | null;
 }
 
 export type AgentLifecycleCancellationService = Pick<
   IssueExecutionCancellationService,
   | "requestAgentCancellationsInTransaction"
-  | "reconcileRequestedAgentCancellations"
+  | "reconcileRequestedCancellations"
   | "requestAgentSuspensionsInTransaction"
-  | "reconcileRequestedAgentSuspensions"
 >;
 
 export type AgentSuspensionService = Pick<
   IssueExecutionCancellationService,
   | "requestAgentSuspensionsInTransaction"
-  | "reconcileRequestedAgentSuspensions"
+  | "reconcileRequestedCancellations"
 >;
-
-export type AgentResumptionService = Pick<
-  IssueExecutionCancellationService,
-  "releaseAgentSuspensionsInTransaction"
->;
-
-export type AgentControlLifecycleService =
-  & AgentSuspensionService
-  & AgentResumptionService;
 
 export interface AgentSuspensionPostCommit {
   issueExecutionCancellation: AgentSuspensionService;
@@ -256,7 +245,7 @@ async function admitOwnedIssueTerminationRecoveryInTransaction(
           issueId: issue.id,
           agentId: input.agentId,
         },
-        sourceKind: "termination_recovery",
+        sourceKind: "issue_update",
         immutableSourceKey: recoveryKey,
         sourceRecordId: updateId,
         message: exactText,
@@ -713,11 +702,11 @@ export function agentService(db: Db) {
       });
       if (!committed) return null;
       await postCommit.issueExecutionCancellation
-        .reconcileRequestedAgentSuspensions(committed.suspensionRequests);
+        .reconcileRequestedCancellations(committed.suspensionRequests);
       return getById(committed.agentId);
     },
 
-    resume: async (id: string, resumption: AgentResumptionService) => {
+    resume: async (id: string) => {
       const updatedId = await db.transaction(async (tx) => {
         const companyId = await tx
           .select({ companyId: agents.companyId })
@@ -805,11 +794,6 @@ export function agentService(db: Db) {
         if (!updated) {
           throw conflict("Agent resume lost its locked lifecycle transition");
         }
-        await resumption.releaseAgentSuspensionsInTransaction(tx, {
-          companyId: existing.companyId,
-          agentIds: [existing.id],
-          now,
-        });
         return updated.id;
       });
       return updatedId ? getById(updatedId) : null;
@@ -864,13 +848,13 @@ export function agentService(db: Db) {
       });
       if (committed?.cancellationRequests) {
         await postCommit.issueExecutionCancellation
-          .reconcileRequestedAgentCancellations(
+          .reconcileRequestedCancellations(
             committed.cancellationRequests,
           );
       }
       if (committed?.suspensionRequests) {
         await postCommit.issueExecutionCancellation
-          .reconcileRequestedAgentSuspensions(
+          .reconcileRequestedCancellations(
             committed.suspensionRequests,
           );
       }

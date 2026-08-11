@@ -14,28 +14,16 @@ import {
   transitionIssueExecutionRunStatusInTransaction,
   type IssueExecutionRunEnvelope,
 } from "./issue-execution-run-service.js";
-import {
-  fenceCompanySkillMaterializationReferenceInTransaction,
-} from "./company-skill-materialization-lifecycle.js";
 
 type IssueExecutionDbTransaction =
   Parameters<Parameters<Db["transaction"]>[0]>[0];
-
-export const ISSUE_EXECUTION_SCHEDULED_RETRY_REASONS = [
-  "process_loss",
-  "transport_transient",
-  "provider_quota",
-] as const;
-
-export type IssueExecutionScheduledRetryReason =
-  (typeof ISSUE_EXECUTION_SCHEDULED_RETRY_REASONS)[number];
 
 export interface ScheduleIssueExecutionAttemptRetryInput {
   readonly companyId: string;
   readonly issueId: string;
   readonly runId: string;
   readonly predecessorAttemptId: string;
-  readonly reasonCode: IssueExecutionScheduledRetryReason;
+  readonly reasonCode: "transport_transient";
   readonly retryAt: Date;
   readonly at: Date;
 }
@@ -103,7 +91,7 @@ function validateScheduleInput(
   exactDate(input.at, "retry creation time");
   exactDate(input.retryAt, "retry due time");
   if (
-    !ISSUE_EXECUTION_SCHEDULED_RETRY_REASONS.includes(input.reasonCode) ||
+    input.reasonCode !== "transport_transient" ||
     input.retryAt < input.at
   ) {
     throw new IssueExecutionAttemptRetryScheduleRejected(
@@ -350,6 +338,7 @@ export async function claimIssueExecutionAttemptRetryInTransaction(
     schedule.successorAttemptId !== null ||
     schedule.claimedAt !== null ||
     schedule.cancelledAt !== null ||
+    schedule.reasonCode !== "transport_transient" ||
     schedule.retryAt > input.at ||
     predecessor.state !== "failed" ||
     predecessor.finishedAt === null
@@ -378,14 +367,6 @@ export async function claimIssueExecutionAttemptRetryInTransaction(
     );
   }
   await input.revalidate({ transaction, run, predecessor, schedule, at: input.at });
-  await fenceCompanySkillMaterializationReferenceInTransaction(
-    transaction,
-    {
-      companyId: run.companyId,
-      agentId: run.targetAgentId,
-      adapterConfigRevisionId: run.adapterConfigRevisionId,
-    },
-  );
 
   const successor = exactlyOne(
     await transaction

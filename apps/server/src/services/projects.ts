@@ -340,15 +340,6 @@ async function syncGoalLinks(db: Db, projectId: string, companyId: string, goalI
   }
 }
 
-/** Resolve goalIds from input, handling the legacy goalId field. */
-function resolveGoalIds(data: { goalIds?: string[]; goalId?: string | null }): string[] | undefined {
-  if (data.goalIds !== undefined) return data.goalIds;
-  if (data.goalId !== undefined) {
-    return data.goalId ? [data.goalId] : [];
-  }
-  return undefined;
-}
-
 function readNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -407,7 +398,6 @@ export function projectService(db: Db) {
     data: Omit<typeof projects.$inferInsert, "companyId"> & { goalIds?: string[] },
   ): Promise<InternalProject> => {
     const { goalIds: inputGoalIds, ...projectData } = data;
-    const ids = resolveGoalIds({ goalIds: inputGoalIds, goalId: projectData.goalId });
 
     // Note: color is intentionally NOT auto-assigned. New projects default to
     // `color = null` (neutral gray) unless an explicit color is supplied. See PAP-68.
@@ -418,17 +408,14 @@ export function projectService(db: Db) {
       .where(eq(projects.companyId, companyId));
     projectData.name = resolveProjectNameForUniqueShortname(projectData.name, existingProjects);
 
-    // Also write goalId to the legacy column (first goal or null)
-    const legacyGoalId = ids && ids.length > 0 ? ids[0] : projectData.goalId ?? null;
-
     const row = await db
       .insert(projects)
-      .values({ ...projectData, goalId: legacyGoalId, companyId })
+      .values({ ...projectData, companyId })
       .returning()
       .then((rows) => rows[0]);
 
-    if (ids && ids.length > 0) {
-      await syncGoalLinks(db, row.id, companyId, ids);
+    if (inputGoalIds && inputGoalIds.length > 0) {
+      await syncGoalLinks(db, row.id, companyId, inputGoalIds);
     }
 
     const [withGoals] = await attachGoals(db, [row]);
@@ -648,7 +635,6 @@ export function projectService(db: Db) {
       data: Partial<typeof projects.$inferInsert> & { goalIds?: string[] },
     ): Promise<InternalProject | null> => {
       const { goalIds: inputGoalIds, ...projectData } = data;
-      const ids = resolveGoalIds({ goalIds: inputGoalIds, goalId: projectData.goalId });
       const existingProject = await db
         .select({ id: projects.id, companyId: projects.companyId, name: projects.name })
         .from(projects)
@@ -670,14 +656,10 @@ export function projectService(db: Db) {
         }
       }
 
-      // Keep legacy goalId column in sync
       const updates: Partial<typeof projects.$inferInsert> = {
         ...projectData,
         updatedAt: new Date(),
       };
-      if (ids !== undefined) {
-        updates.goalId = ids.length > 0 ? ids[0] : null;
-      }
 
       const row = await db
         .update(projects)
@@ -687,8 +669,8 @@ export function projectService(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (!row) return null;
 
-      if (ids !== undefined) {
-        await syncGoalLinks(db, id, row.companyId, ids);
+      if (inputGoalIds !== undefined) {
+        await syncGoalLinks(db, id, row.companyId, inputGoalIds);
       }
 
       const [withGoals] = await attachGoals(db, [row]);

@@ -18,6 +18,9 @@ interface JsonRpcRequest {
   params?: unknown;
 }
 
+const RUN_TOOLS_INSTRUCTIONS =
+  "Paperclip-managed tools exposed by this server are already available in your tool catalog; invoke them directly without a separate discovery step. Use them for Paperclip company, issue, project, and agent state or mutations, and never substitute repository, catalog, or configuration-file edits for Paperclip actions.";
+
 function bearer(req: Request): string {
   const authorization = req.header("authorization")?.trim() ?? "";
   const match = /^Bearer\s+(.+)$/i.exec(authorization);
@@ -55,12 +58,32 @@ function callParams(value: unknown): {
     !isRecord(value) ||
     typeof value.name !== "string" ||
     value.name.length === 0 ||
-    Object.keys(value).some((key) => key !== "name" && key !== "arguments")
+    Object.keys(value).some(
+      (key) => key !== "name" && key !== "arguments" && key !== "_meta",
+    )
   ) {
     throw new Error("Invalid tools/call parameters");
   }
+  if (value._meta !== undefined) {
+    if (!isRecord(value._meta)) {
+      throw new Error("Invalid tools/call request metadata");
+    }
+    const progressToken = value._meta.progressToken;
+    if (
+      progressToken !== undefined &&
+      typeof progressToken !== "string" &&
+      (
+        typeof progressToken !== "number" ||
+        !Number.isFinite(progressToken)
+      )
+    ) {
+      throw new Error("Invalid tools/call progress token");
+    }
+  }
   return {
     name: value.name,
+    // MCP request metadata belongs to the transport envelope. It neither
+    // changes the managed-tool arguments nor participates in their digest.
     arguments: value.arguments ?? {},
   };
 }
@@ -207,6 +230,7 @@ export function runToolsRoutes(gateway: PromptCapabilityGateway) {
           result: {
             protocolVersion: "2025-03-26",
             capabilities: { tools: {} },
+            instructions: RUN_TOOLS_INSTRUCTIONS,
             serverInfo: {
               name: "paperclip.run-tools",
               version: "1",

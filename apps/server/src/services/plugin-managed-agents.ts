@@ -36,7 +36,6 @@ import {
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 import type {
   RequestedAgentRunCancellations,
-  RequestedAgentSuspensions,
 } from "./issue-execution-cancellation.js";
 import { lockCompanyAgentGraph } from "./agent-org-graph-lock.js";
 
@@ -94,7 +93,7 @@ interface PausePluginManagedAgentsIntoTriageInput {
 
 interface PausePluginManagedAgentsIntoTriageResult {
   triagePausedAgentIds: string[];
-  suspensionRequests: RequestedAgentSuspensions[];
+  suspensionRequests: RequestedAgentRunCancellations[];
 }
 
 export async function getPluginManagedAgentBinding(
@@ -421,7 +420,7 @@ export async function terminatePluginManagedAgentFromBoard(
         terminatedBinding: null,
         dispatchRefIds: [] as string[],
         cancellationRequests: [] as RequestedAgentRunCancellations[],
-        suspensionRequests: [] as RequestedAgentSuspensions[],
+        suspensionRequests: [] as RequestedAgentRunCancellations[],
       };
     }
 
@@ -486,11 +485,11 @@ export async function terminatePluginManagedAgentFromBoard(
   });
   for (const cancellationRequests of committed.cancellationRequests) {
     await postCommit.issueExecutionCancellation
-      .reconcileRequestedAgentCancellations(cancellationRequests);
+      .reconcileRequestedCancellations(cancellationRequests);
   }
   for (const suspensionRequests of committed.suspensionRequests) {
     await postCommit.issueExecutionCancellation
-      .reconcileRequestedAgentSuspensions(suspensionRequests);
+      .reconcileRequestedCancellations(suspensionRequests);
   }
   for (const refId of committed.dispatchRefIds) {
     await postCommit.dispatchRef(refId);
@@ -554,7 +553,7 @@ export async function pausePluginManagedAgentsIntoTriageInTransaction(
       )
       .for("update");
     const triagePausedAgentIds: string[] = [];
-    const suspensionRequests: RequestedAgentSuspensions[] = [];
+    const suspensionRequests: RequestedAgentRunCancellations[] = [];
 
     for (const binding of bindings) {
       if (binding.pluginKey !== input.pluginKey) {

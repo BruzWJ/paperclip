@@ -24,6 +24,7 @@ import {
   PromptCapabilityAuthorityError,
   type PromptCapabilityBinding,
   type PromptCapabilityGatewayRepository,
+  type PromptCapabilityIngressBinding,
   type PromptCapabilityToolExecutor,
 } from "./prompt-capability-gateway.js";
 import {
@@ -31,6 +32,12 @@ import {
   lockActivePromptCapabilityBinding,
 } from "./prompt-capability-gateway-postgres.js";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
+import type {
+  PaperclipManagedToolCommand,
+} from "./paperclip-managed-tool-registry.js";
+import type {
+  PaperclipManagedToolRouteContext,
+} from "./paperclip-managed-tool-router.js";
 import type { RuntimeInterfaceCompileInput } from "./runtime-interface-compiler.js";
 import {
   createRuntimePluginToolPort,
@@ -64,18 +71,20 @@ const capability: PromptCapabilityBinding = Object.freeze({
   targetSessionCorrelationId: "00000000-0000-4000-8000-00000000000d",
   effectiveContextExposureDigest: "b".repeat(64),
   effectiveToolsDigest: "c".repeat(64),
-  bootstrapToolGate: false,
   expiresAt: new Date("2026-07-31T12:05:00.000Z"),
   activatedAt: new Date("2026-07-31T11:59:00.000Z"),
   createdAt: new Date("2026-07-31T11:58:00.000Z"),
 });
 
-function capabilityLockTransaction(row: unknown, databaseTime = now) {
+function capabilityLockTransaction(
+  row: unknown,
+  databaseTime = now,
+) {
   const selectedTables: unknown[] = [];
   const lockedTables: unknown[] = [];
   const transaction = {
     async execute() {
-      return [{ timestamp: databaseTime }];
+      return [{ timestampMs: databaseTime.getTime() }];
     },
     select() {
       let table: unknown;
@@ -104,19 +113,19 @@ function capabilityLockTransaction(row: unknown, databaseTime = now) {
 
 function persistedCapabilityRow(input: {
   expiresAt: Date;
-  state?: "active" | "revoked";
+  state?: "pending_setup" | "active" | "revoked";
 }) {
-  const {
-    bootstrapToolGate: _bootstrapToolGate,
-    ...persistentCapability
-  } = capability;
+  const state = input.state ?? "active";
   return {
-    ...persistentCapability,
-    state: input.state ?? "active",
+    ...capability,
+    state,
+    targetSessionCorrelationId:
+      state === "pending_setup" ? null : capability.targetSessionCorrelationId,
     expiresAt: input.expiresAt,
+    activatedAt: state === "pending_setup" ? null : capability.activatedAt,
     bearerHash: "d".repeat(64),
-    revocationReason: input.state === "revoked" ? "fixture" : null,
-    revokedAt: input.state === "revoked" ? now : null,
+    revocationReason: state === "revoked" ? "fixture" : null,
+    revokedAt: state === "revoked" ? now : null,
   };
 }
 
@@ -126,9 +135,6 @@ function gatewayAuthorityRows(
     lifecycleStatus?: "open" | "blocked" | "done" | "cancelled";
     executionPaused?: boolean;
   } = {},
-  sourcePromptTransmissionPhase:
-    | "not_transmitted"
-    | "transmitted" = "transmitted",
 ) {
   return new Map<unknown, readonly unknown[]>([
     [issueExecutionPromptCapabilities, [row]],
@@ -178,9 +184,6 @@ function gatewayAuthorityRows(
         protocolSettlementState: null,
         capabilityConnectionId: row.capabilityConnectionId,
         capabilityGeneration: row.capabilityGeneration,
-        promptTransmissionPhase: row.segmentOrdinal === 0
-          ? sourcePromptTransmissionPhase
-          : "transmitted",
       }],
     ],
     ...(row.segmentOrdinal === 0
@@ -196,7 +199,6 @@ function gatewayAuthorityRows(
             capabilityGeneration: row.capabilityGeneration,
             protocolSettlementState: null,
             steeringState: "resumed",
-            promptTransmissionPhase: sourcePromptTransmissionPhase,
           }],
         ]] as const),
     [
@@ -277,18 +279,11 @@ function postgresGatewayRepository(
   row: ReturnType<typeof persistedCapabilityRow>,
   databaseTime = now,
   issueState: Parameters<typeof gatewayAuthorityRows>[1] = {},
-  sourcePromptTransmissionPhase:
-    | "not_transmitted"
-    | "transmitted" = "transmitted",
 ) {
-  const rowsByTable = gatewayAuthorityRows(
-    row,
-    issueState,
-    sourcePromptTransmissionPhase,
-  );
+  const rowsByTable = gatewayAuthorityRows(row, issueState);
   const database: Record<string, unknown> = {
     async execute() {
-      return [{ timestamp: databaseTime }];
+      return [{ timestampMs: databaseTime.getTime() }];
     },
     select() {
       let table: unknown;
@@ -351,6 +346,7 @@ function postgresGatewayRepository(
 function compileInput(): RuntimeInterfaceCompileInput {
   return {
     mode: "owner" as const,
+    turn: "work",
     contextDial: resolveContextDial({ agent: {} }).effective,
     actionGrants: {},
     isCurrentOwner: true,
@@ -365,12 +361,8 @@ function compileInput(): RuntimeInterfaceCompileInput {
 
 function setup(
   compile = compileInput(),
-  binding: PromptCapabilityBinding = capability,
+  binding: PromptCapabilityIngressBinding = capability,
 ) {
-  const authenticateIngressBearerHash = vi.fn(async () => ({
-    kind: "authenticated" as const,
-    capability: binding,
-  }));
   const authenticateBearerHash = vi.fn(async () => ({
     kind: "authenticated" as const,
     capability: binding,
@@ -380,7 +372,6 @@ function setup(
     capability: binding,
   }));
   const repository: PromptCapabilityGatewayRepository = {
-    authenticateIngressBearerHash,
     authenticateBearerHash,
     revalidate,
     resolveCompileInput: vi.fn(async () => compile),
@@ -392,7 +383,6 @@ function setup(
     input: Parameters<PromptCapabilityToolExecutor["execute"]>[0],
   ) => ({ source: "paperclip" as const, value: { accepted: true } }));
   return {
-    authenticateIngressBearerHash,
     authenticateBearerHash,
     execute,
     registerTerminalInvalid,
@@ -463,7 +453,6 @@ function composedPluginToolRuntime() {
     createPluginRunContext,
   } as unknown as PromptCapabilityGatewayRepository;
   const runtimeToolGateway = createRuntimeToolGateway({
-    retrievalScope: {} as never,
     managedTools: {} as never,
     pluginTools: createRuntimePluginToolPort({ getWorker } as never),
     callLedger: {
@@ -471,7 +460,6 @@ function composedPluginToolRuntime() {
         state: "claimed" as const,
         id: "plugin-call-1",
       })),
-      classify: vi.fn(async () => undefined),
       complete: vi.fn(async () => undefined),
       fail: vi.fn(async () => undefined),
     } as never,
@@ -576,19 +564,23 @@ describe("prompt-capability gateway", () => {
     },
   );
 
-  it("authenticates only the SHA-256 hash and recompiles before list/call", async () => {
-    const runtime = setup();
+  it("authenticates setup discovery by hash while keeping calls active-only", async () => {
+    const runtime = setup(compileInput(), {
+      ...capability,
+      targetSessionCorrelationId: null,
+      activatedAt: null,
+    });
     const bearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(7));
 
     const tools = await runtime.gateway.listTools(bearer);
     expect(tools.map((tool) => tool.name)).toContain("issue_update");
-    await runtime.gateway.callTool({
+    await expect(runtime.gateway.callTool({
       bearer,
       toolName: "issue_update",
       arguments: { message: "progress" },
       callIdentity: { source: "jsonrpc", id: 7 },
       ingressOrdinal: 0,
-    });
+    })).rejects.toBeInstanceOf(PromptCapabilityAuthenticationError);
 
     expect(runtime.authenticateBearerHash).toHaveBeenCalledWith(
       createHash("sha256").update(bearer, "utf8").digest("hex"),
@@ -597,10 +589,9 @@ describe("prompt-capability gateway", () => {
     expect(runtime.authenticateBearerHash.mock.calls.flat()).not.toContain(
       bearer,
     );
-    expect(runtime.revalidate).toHaveBeenCalledTimes(2);
-    expect(runtime.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ capability }),
-    );
+    expect(runtime.authenticateBearerHash).toHaveBeenCalledTimes(3);
+    expect(runtime.revalidate).not.toHaveBeenCalled();
+    expect(runtime.execute).not.toHaveBeenCalled();
   });
 
   it("executes a canonical board mention through the action port", async () => {
@@ -627,13 +618,77 @@ describe("prompt-capability gateway", () => {
     }));
   });
 
-  it("keeps one tool catalogue while limiting bootstrap calls to opted-in plugin tools", async () => {
-    const bootstrapCapability: PromptCapabilityBinding = {
-      ...capability,
-      bootstrapToolGate: true,
+  it("uses one compiled snapshot for descriptor and context scope", async () => {
+    const bearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(9));
+    const compiledDial = resolveContextDial({
+      agent: { read_issue_comments: true },
+    }).effective;
+    const driftedDial = resolveContextDial({ agent: {} }).effective;
+    const resolveCompileInput = vi.fn()
+      .mockResolvedValueOnce({ ...compileInput(), contextDial: compiledDial })
+      .mockResolvedValue({ ...compileInput(), contextDial: driftedDial });
+    const authenticated = vi.fn(async () => ({
+      kind: "authenticated" as const,
+      capability,
+    }));
+    const repository: PromptCapabilityGatewayRepository = {
+      authenticateBearerHash: authenticated,
+      revalidate: authenticated,
+      resolveCompileInput,
+      createPluginRunContext: vi.fn(async () => undefined),
+      resolvePluginRunContextHash: vi.fn(async () => null),
     };
+    const observedScopes: unknown[] = [];
+    const managedTools = {
+      async routeExecution(
+        _command: PaperclipManagedToolCommand,
+        context: PaperclipManagedToolRouteContext,
+      ) {
+        observedScopes.push(await context.resolveRuntimeScope!());
+        return { items: [] };
+      },
+    };
+    const runtimeToolGateway = createRuntimeToolGateway({
+      managedTools,
+      pluginTools: {} as never,
+      callLedger: {
+        claim: vi.fn(async () => ({
+          state: "claimed" as const,
+          id: "context-call-1",
+        })),
+        complete: vi.fn(async () => undefined),
+        fail: vi.fn(async () => undefined),
+      } as never,
+    });
+    const gateway = createPromptCapabilityGateway({
+      repository,
+      executor: runtimeToolGateway,
+      now: () => now,
+    });
+
+    await expect(gateway.callTool({
+      bearer,
+      toolName: "read_issue_comments",
+      arguments: {},
+      callIdentity: { source: "jsonrpc", id: "context-call" },
+      ingressOrdinal: 0,
+    })).resolves.toEqual({ source: "paperclip", value: { items: [] } });
+
+    expect(resolveCompileInput).toHaveBeenCalledOnce();
+    expect(observedScopes).toEqual([{
+      companyId: capability.companyId,
+      activeIssueId: capability.issueId,
+      dial: compiledDial,
+    }]);
+    expect(observedScopes).not.toContainEqual(expect.objectContaining({
+      dial: driftedDial,
+    }));
+  });
+
+  it("uses the compiled bootstrap turn for discovery and calls", async () => {
     const runtime = setup({
       ...compileInput(),
+      turn: "bootstrap",
       pluginTools: [{
         installationId: "memory-plugin",
         manifestIdentity: "memory-v1",
@@ -644,14 +699,13 @@ describe("prompt-capability gateway", () => {
         inputSchema: { type: "object" },
         bootstrapEnabled: true,
       }],
-    }, bootstrapCapability);
+    });
     const bearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(10));
 
     const names = (await runtime.gateway.listTools(bearer)).map(
       (tool) => tool.name,
     );
-    expect(names).toContain("issue_update");
-    expect(names).toContain("memory.read_company_agent_memory");
+    expect(names).toEqual(["memory.read_company_agent_memory"]);
 
     await expect(runtime.gateway.callTool({
       bearer,
@@ -661,12 +715,13 @@ describe("prompt-capability gateway", () => {
       ingressOrdinal: 0,
     })).rejects.toMatchObject({
       code: "runtime_tool_unavailable",
-      message: "Tool is unavailable during instruction bootstrap: issue_update",
+      message:
+        "Tool is not available for the current issue execution: issue_update",
     });
     expect(runtime.execute).not.toHaveBeenCalled();
     expect(runtime.registerTerminalInvalid).toHaveBeenCalledWith(
       expect.objectContaining({
-        capability: bootstrapCapability,
+        capability,
         descriptor: expect.objectContaining({ name: "issue_update" }),
       }),
     );
@@ -682,64 +737,12 @@ describe("prompt-capability gateway", () => {
       value: { accepted: true },
     });
     expect(runtime.execute).toHaveBeenCalledWith(expect.objectContaining({
-      capability: bootstrapCapability,
+      capability,
       descriptor: expect.objectContaining({
         name: "memory.read_company_agent_memory",
-        bootstrapEnabled: true,
+        availability: "both",
       }),
     }));
-  });
-
-  it("keeps restore_session listed for a recovery handle but permits it only during bootstrap", async () => {
-    const compile = { ...compileInput(), restoreSession: true };
-    const bootstrapCapability: PromptCapabilityBinding = {
-      ...capability,
-      bootstrapToolGate: true,
-    };
-    const bootstrap = setup(compile, bootstrapCapability);
-    const bootstrapBearer = mintPromptCapabilityBearer(
-      new Uint8Array(32).fill(14),
-    );
-
-    expect(
-      (await bootstrap.gateway.listTools(bootstrapBearer)).map((tool) => tool.name),
-    ).toContain("restore_session");
-    await expect(bootstrap.gateway.callTool({
-      bearer: bootstrapBearer,
-      toolName: "restore_session",
-      arguments: {},
-      callIdentity: { source: "jsonrpc", id: "restore-bootstrap" },
-      ingressOrdinal: 0,
-    })).resolves.toEqual({
-      source: "paperclip",
-      value: { accepted: true },
-    });
-    expect(bootstrap.execute).toHaveBeenCalledWith(expect.objectContaining({
-      descriptor: expect.objectContaining({
-        name: "restore_session",
-        bootstrapEnabled: true,
-      }),
-    }));
-
-    const work = setup(compile, {
-      ...capability,
-      bootstrapToolGate: false,
-    });
-    const workBearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(15));
-    expect(
-      (await work.gateway.listTools(workBearer)).map((tool) => tool.name),
-    ).toContain("restore_session");
-    await expect(work.gateway.callTool({
-      bearer: workBearer,
-      toolName: "restore_session",
-      arguments: {},
-      callIdentity: { source: "jsonrpc", id: "restore-work" },
-      ingressOrdinal: 0,
-    })).rejects.toMatchObject({
-      code: "runtime_tool_unavailable",
-      message: "Tool is unavailable outside recovery bootstrap: restore_session",
-    });
-    expect(work.execute).not.toHaveBeenCalled();
   });
 
   it("rejects every credential class other than a prompt capability", async () => {
@@ -791,73 +794,19 @@ describe("prompt-capability gateway", () => {
     });
   });
 
-  it.each([
-    {
-      label: "a base prompt before transmission",
-      segmentOrdinal: 0,
-      sourcePromptTransmissionPhase: "not_transmitted" as const,
-      bootstrapToolGate: true,
-    },
-    {
-      label: "a base prompt after transmission",
-      segmentOrdinal: 0,
-      sourcePromptTransmissionPhase: "transmitted" as const,
-      bootstrapToolGate: false,
-    },
-    {
-      label: "a steering prompt before transmission",
-      segmentOrdinal: 1,
-      sourcePromptTransmissionPhase: "not_transmitted" as const,
-      bootstrapToolGate: true,
-    },
-    {
-      label: "a steering prompt after transmission",
-      segmentOrdinal: 1,
-      sourcePromptTransmissionPhase: "transmitted" as const,
-      bootstrapToolGate: false,
-    },
-  ])(
-    "derives the transient bootstrap tool gate from $label",
-    async ({
-      segmentOrdinal,
-      sourcePromptTransmissionPhase,
-      bootstrapToolGate,
-    }) => {
-      const row = {
-        ...persistedCapabilityRow({
-          expiresAt: new Date("2026-07-31T12:10:00.000Z"),
-        }),
-        segmentOrdinal,
-      };
-      const sourceBinding: PromptCapabilityBinding = {
-        ...capability,
-        segmentOrdinal,
-        // This value is intentionally stale: revalidation derives it again
-        // and ignores it when comparing durable binding identity.
-        bootstrapToolGate: false,
-      };
-      const repository = postgresGatewayRepository(
-        row,
-        now,
-        {},
-        sourcePromptTransmissionPhase,
-      );
+  it("authenticates the same capability generation while setup is pending", async () => {
+    const row = persistedCapabilityRow({
+      state: "pending_setup",
+      expiresAt: new Date("2026-07-31T12:10:00.000Z"),
+    });
 
-      await expect(
-        repository.revalidate(
-          sourceBinding,
-          new Date("2026-07-31T12:06:00.000Z"),
-        ),
-      ).resolves.toEqual({
-        kind: "authenticated",
-        capability: {
-          ...sourceBinding,
-          bootstrapToolGate,
-          expiresAt: row.expiresAt,
-        },
-      });
-    },
-  );
+    await expect(
+      postgresGatewayRepository(row).authenticateBearerHash(row.bearerHash, now),
+    ).resolves.toMatchObject({
+      kind: "authenticated",
+      capability: { activatedAt: null, sessionId: capability.sessionId },
+    });
+  });
 
   it.each([
     {

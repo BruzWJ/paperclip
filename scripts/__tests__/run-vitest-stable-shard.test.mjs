@@ -47,7 +47,6 @@ function dryRunJson(args) {
 
 const SHARD_COUNT = 3;
 const REQUIRED_ADDED_PROJECT_PATHS = [
-  "packages/teams-catalog",
   "packages/plugins/examples/plugin-authoring-smoke-example",
   "packages/plugins/examples/plugin-orchestration-smoke-example",
 ];
@@ -318,7 +317,7 @@ test("a serialized suite never leaks into the general-server shards", () => {
   }
 });
 
-test("execution, Session, liveness, prompt/ACP, and PostgreSQL suites are structurally serialized", () => {
+test("execution, Session, prompt/ACP, and PostgreSQL suites are structurally serialized", () => {
   const allServerTests = walkFiles(path.join(repoRoot, "apps", "server", "src"))
     .map((file) => path.relative(repoRoot, file).split(path.sep).join("/"))
     .filter((file) => file.endsWith(".test.ts"))
@@ -339,7 +338,6 @@ test("execution, Session, liveness, prompt/ACP, and PostgreSQL suites are struct
   const representatives = [
     "apps/server/src/services/issue-execution-run-service.test.ts",
     "apps/server/src/services/issue-session/publication.test.ts",
-    "apps/server/src/services/issue-liveness-reconciliation.test.ts",
     "apps/server/src/services/acp-prompt-settlement.test.ts",
     "apps/server/src/services/prompt-capability-gateway.test.ts",
     "apps/server/src/__tests__/ordinary-issue-runtime-postgres.test.ts",

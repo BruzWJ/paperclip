@@ -12,7 +12,6 @@ import {
   reserveIssueExecutionWorkspaceBinding,
   type ReserveIssueExecutionWorkspaceBindingInput,
 } from "./execution-workspaces.js";
-import { recordIssueLivenessActionInTransaction } from "./issue-liveness-reconciliation.js";
 import { syncIssue } from "./issue-references.js";
 
 type IssueInsert = typeof issues.$inferInsert;
@@ -516,13 +515,6 @@ export async function persistCanonicalIssueAggregateInTx(
       issueId: created.id,
       createdAt: input.session.now,
     });
-  }
-
-  if (created.parentId !== null) {
-    await recordIssueLivenessActionInTransaction(
-      tx,
-      `issue:${created.id}`,
-    );
   }
 
   return {

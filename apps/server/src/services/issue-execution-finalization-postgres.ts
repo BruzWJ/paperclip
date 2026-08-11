@@ -18,7 +18,6 @@ import {
   issueExecutionRunControls,
   issueExecutionRunLivenessFacts,
   issueExecutionRunRefs,
-  issueExecutionRuns,
   issueSessionEvents,
   issueSessionMessages,
   issueUpdates,
@@ -538,7 +537,10 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
     }
 
     const consult = await transaction
-      .select({ sourceRunId: issueConsultExecutions.sourceRunId })
+      .select({
+        issueId: issueConsultExecutions.issueId,
+        sourceRunId: issueConsultExecutions.sourceRunId,
+      })
       .from(issueConsultExecutions)
       .where(eq(issueConsultExecutions.id, run.consultExecutionId))
       .limit(1)
@@ -546,21 +548,11 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
       .then((rows) => rows[0] ?? null);
     if (!consult) return null;
 
-    const sourceRun = await transaction
-      .select({
-        targetAgentId: issueExecutionRuns.targetAgentId,
-        adapterConfigRevisionId: issueExecutionRuns.adapterConfigRevisionId,
-      })
-      .from(issueExecutionRuns)
-      .where(
-        and(
-          eq(issueExecutionRuns.id, consult.sourceRunId),
-          eq(issueExecutionRuns.companyId, input.companyId),
-        ),
-      )
-      .limit(1)
-      .then((rows) => rows[0] ?? null);
-    if (!sourceRun) return null;
+    const sourceRun = await options.runService.lockRun(transaction, {
+      companyId: input.companyId,
+      issueId: consult.issueId,
+      runId: consult.sourceRunId,
+    });
 
     const finishingRef = await transaction
       .select({

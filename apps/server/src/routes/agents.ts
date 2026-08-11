@@ -29,7 +29,7 @@ import {
   createRuntimeAgentConfigurationService,
 } from "../services/index.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
-import { assertBoard, assertCompanyAccess, getAccessibleResource, hasCompanyAccess } from "./authz.js";
+import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import type { OrdinaryIssueRuntime } from "../services/ordinary-issue-runtime.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
@@ -62,7 +62,6 @@ import type { IssueExecutionCancellationService } from "../services/issue-execut
 import { resolveInvokableIssueOwnerCatalogFromDb } from "../services/agent-invokability.js";
 import {
   createAdapterConfigurationDraftTestService,
-  type AdapterConfigurationDraftTestService,
 } from "../services/adapter-configuration-draft-test.js";
 
 export function agentRoutes(
@@ -70,15 +69,12 @@ export function agentRoutes(
   options: {
     pluginWorkerManager?: PluginWorkerManager;
     issueSessionStore?: IssueSessionStore;
-    adapterConfigurationDraftTest?: AdapterConfigurationDraftTestService;
     ordinaryIssues: OrdinaryIssueRuntime;
     issueExecutionCancellation: Pick<
       IssueExecutionCancellationService,
       | "requestAgentCancellationsInTransaction"
-      | "reconcileRequestedAgentCancellations"
+      | "reconcileRequestedCancellations"
       | "requestAgentSuspensionsInTransaction"
-      | "reconcileRequestedAgentSuspensions"
-      | "releaseAgentSuspensionsInTransaction"
     >;
   },
 ) {
@@ -100,7 +96,6 @@ export function agentRoutes(
     createAgentOperationalConfigurationService(db);
   const companyModelCatalog = createCompanyModelCatalog();
   const adapterConfigurationDraftTest =
-    options.adapterConfigurationDraftTest ??
     createAdapterConfigurationDraftTestService();
 
   function rethrowRuntimeAgentConfigurationError(error: unknown): never {
@@ -162,10 +157,6 @@ export function agentRoutes(
     return { membership, grants };
   }
 
-  function toPublicAgent<T extends object>(agent: T): T {
-    return agent;
-  }
-
   async function buildAgentDetail(
     agent: NonNullable<Awaited<ReturnType<typeof svc.getById>>>,
     options?: { restricted?: boolean },
@@ -184,7 +175,7 @@ export function agentRoutes(
     return {
       ...(options?.restricted
         ? redactForRestrictedAgentView(agent)
-        : toPublicAgent(agent)),
+        : agent),
       chainOfCommand,
       access: accessState,
       pluginManagement,
@@ -270,9 +261,6 @@ export function agentRoutes(
   }
 
   async function assertCanUpdateAgent(req: Request, targetAgent: { id: string; companyId: string }) {
-    if (!hasCompanyAccess(req, targetAgent.companyId)) {
-      throw notFound("Agent not found");
-    }
     assertBoard(req);
     assertCompanyAccess(req, targetAgent.companyId);
     const decision = await access.decide({
@@ -286,9 +274,6 @@ export function agentRoutes(
   }
 
   async function assertCanReadAgent(req: Request, targetAgent: { id: string; companyId: string }) {
-    if (!hasCompanyAccess(req, targetAgent.companyId)) {
-      throw notFound("Agent not found");
-    }
     assertBoard(req);
     assertCompanyAccess(req, targetAgent.companyId);
     await assertCanReadConfigurations(req, targetAgent.companyId);
@@ -343,7 +328,7 @@ export function agentRoutes(
   function redactForRestrictedAgentView(agent: Awaited<ReturnType<typeof svc.getById>>) {
     if (!agent) return null;
     return {
-      ...toPublicAgent(agent),
+      ...agent,
       adapterConfig: agent.adapterConfig === null ? null : {},
       runtimeConfig: {},
     };
@@ -500,7 +485,7 @@ export function agentRoutes(
     const result = await filterAgentsForActor(req, await svc.list(companyId));
     const canReadConfigs = await actorCanReadConfigurationsForCompany(req, companyId);
     if (canReadConfigs) {
-      res.json(result.map((agent) => toPublicAgent(agent)));
+      res.json(result);
       return;
     }
     res.json(result.map((agent) => redactForRestrictedAgentView(agent)));
@@ -677,7 +662,7 @@ export function agentRoutes(
         }
 
         res.status(result.retried ? 200 : 201).json({
-          agent: toPublicAgent(agent),
+          agent: agent,
           configuration: result.configuration,
           auditId: result.auditId,
           retried: result.retried,
@@ -857,7 +842,6 @@ export function agentRoutes(
       res.json(
         agentCompanySkillPinsResponseSchema.parse({
           entries: result.entries,
-          skillChannel: result.skillChannel,
         }),
       );
     },
@@ -959,7 +943,7 @@ export function agentRoutes(
         },
       });
 
-      res.json(toPublicAgent(result.agent));
+      res.json(result.agent);
     },
   );
 
@@ -1017,7 +1001,7 @@ export function agentRoutes(
         entityId: terminated.id,
         details: { requestedAction: "pause" },
       });
-      res.json(toPublicAgent(terminated));
+      res.json(terminated);
       return;
     }
     await assertNotPluginManagedTriage(existing);
@@ -1039,7 +1023,7 @@ export function agentRoutes(
       entityId: agent.id,
     });
 
-    res.json(toPublicAgent(agent));
+    res.json(agent);
   });
 
   router.post("/agents/:id/resume", async (req, res) => {
@@ -1050,10 +1034,7 @@ export function agentRoutes(
       return;
     }
     await assertNotPluginManagedTriage(existing);
-    const agent = await svc.resume(
-      id,
-      options.issueExecutionCancellation,
-    );
+    const agent = await svc.resume(id);
     if (!agent) {
       res.status(404).json({ error: "Agent not found" });
       return;
@@ -1068,7 +1049,7 @@ export function agentRoutes(
       entityId: agent.id,
     });
 
-    res.json(toPublicAgent(agent));
+    res.json(agent);
   });
 
   router.post("/agents/:id/clear-error", async (req, res) => {
@@ -1100,7 +1081,7 @@ export function agentRoutes(
       entityId: agent.id,
     });
 
-    res.json(toPublicAgent(agent));
+    res.json(agent);
   });
 
   router.post("/agents/:id/terminate", async (req, res) => {
@@ -1150,7 +1131,7 @@ export function agentRoutes(
       return;
     }
 
-    res.json(toPublicAgent(agent));
+    res.json(agent);
   });
 
   router.post(
@@ -1170,7 +1151,7 @@ export function agentRoutes(
       const agent = await svc.getById(existing.id);
       if (!agent) throw notFound("Agent not found after adoption");
       res.json({
-        agent: toPublicAgent(agent),
+        agent: agent,
         pluginManagement,
       });
     },

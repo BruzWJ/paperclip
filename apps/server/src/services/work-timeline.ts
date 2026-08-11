@@ -12,8 +12,6 @@ import {
 } from "@paperclipai/db";
 import { visibleIssueCondition } from "./issue-visibility.js";
 
-// DTO types are shared with the UI via @paperclipai/shared so both sides consume
-// one contract. Re-exported here for back-compat with existing server imports.
 import type {
   TimelineActorType,
   WorkTimelineActor,
@@ -28,17 +26,6 @@ import {
   type IssueExecutionRunEnvelope,
   type IssueExecutionRunListCursor,
 } from "./issue-execution-run-service.js";
-
-export type {
-  TimelineActorType,
-  TimelineEventKind,
-  TimelineEdgeKind,
-  WorkTimelineActor,
-  WorkTimelineSpan,
-  WorkTimelineEvent,
-  WorkTimelineEdge,
-  WorkTimelineResult,
-} from "@paperclipai/shared";
 
 export interface WorkTimelineQuery {
   companyId: string;

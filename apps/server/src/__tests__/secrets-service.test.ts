@@ -659,7 +659,7 @@ describe("secretService", () => {
       { targetType: "agent", targetId: agentId },
       {
         API_KEY: { type: "secret_ref", secretId, version: "latest" },
-        PLAIN_VALUE: "visible",
+        PLAIN_VALUE: { type: "plain", value: "visible" },
       },
       { actor: SYSTEM_ACTOR },
     )).resolves.toEqual([{
@@ -1253,10 +1253,10 @@ describe("secretService", () => {
     const service = secretService(harness.db);
 
     await expect(service.normalizeEnvBindingsForPersistence(companyId, {
-      OPENAI_API_KEY: "plaintext-key",
+      OPENAI_API_KEY: { type: "plain", value: "plaintext-key" },
     }, { strictMode: true })).rejects.toMatchObject({ status: 422 });
     await expect(service.normalizeEnvBindingsForPersistence(companyId, {
-      SAFE_VALUE: "***REDACTED***",
+      SAFE_VALUE: { type: "plain", value: "***REDACTED***" },
     })).rejects.toMatchObject({ status: 422 });
     expect(harness.calls).toEqual([]);
   });

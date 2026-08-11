@@ -1,4 +1,4 @@
-import { Router, type Request, type RequestHandler } from "express";
+import { Router, type Request, type RequestHandler, type Response } from "express";
 import type { Db } from "@paperclipai/db";
 import {
   addApprovalCommentSchema,
@@ -19,7 +19,6 @@ import {
   assertCompanyAccess,
   getAccessibleResource,
   getBoardUserId,
-  hasCompanyAccess,
 } from "./authz.js";
 import { redactEventPayload } from "../redaction.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
@@ -61,13 +60,8 @@ export function approvalRoutes(
   const access = accessService(db);
   const issueApprovalsSvc = issueApprovalService(db);
 
-  async function requireApprovalAccess(req: Request, id: string) {
-    const approval = await svc.getById(id);
-    if (!approval || !hasCompanyAccess(req, approval.companyId)) {
-      return null;
-    }
-    assertCompanyAccess(req, approval.companyId);
-    return approval;
+  async function requireApprovalAccess(req: Request, res: Response, id: string) {
+    return getAccessibleResource(req, res, svc.getById(id), "Approval not found");
   }
 
   async function assertApprovalAccessAllowed(req: Request, res: any, companyId: string) {
@@ -150,10 +144,7 @@ export function approvalRoutes(
   router.post("/approvals/:id/approve", validate(resolveApprovalSchema), async (req, res) => {
     assertBoard(req);
     const id = req.params.id as string;
-    if (!(await requireApprovalAccess(req, id))) {
-      res.status(404).json({ error: "Approval not found" });
-      return;
-    }
+    if (!(await requireApprovalAccess(req, res, id))) return;
     const decidedByUserId = getBoardUserId(req);
     const { approval, applied } = await svc.approve(id, decidedByUserId, req.body.decisionNote);
 
@@ -184,10 +175,7 @@ export function approvalRoutes(
   router.post("/approvals/:id/reject", validate(resolveApprovalSchema), async (req, res) => {
     assertBoard(req);
     const id = req.params.id as string;
-    if (!(await requireApprovalAccess(req, id))) {
-      res.status(404).json({ error: "Approval not found" });
-      return;
-    }
+    if (!(await requireApprovalAccess(req, res, id))) return;
     const decidedByUserId = getBoardUserId(req);
     const { approval, applied } = await svc.reject(id, decidedByUserId, req.body.decisionNote);
 
@@ -212,10 +200,7 @@ export function approvalRoutes(
     async (req, res) => {
       assertBoard(req);
       const id = req.params.id as string;
-      if (!(await requireApprovalAccess(req, id))) {
-        res.status(404).json({ error: "Approval not found" });
-        return;
-      }
+      if (!(await requireApprovalAccess(req, res, id))) return;
       const decidedByUserId = getBoardUserId(req);
       const approval = await svc.requestRevision(id, decidedByUserId, req.body.decisionNote);
 

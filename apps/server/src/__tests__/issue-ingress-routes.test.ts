@@ -32,7 +32,6 @@ function createApp(input: {
     issueIngressRoutes({
       ordinaryIssues: {
         create: input.create,
-        dispatchDirectEvent: vi.fn(),
       } as never,
       getIssueById: mockGetById,
     }),

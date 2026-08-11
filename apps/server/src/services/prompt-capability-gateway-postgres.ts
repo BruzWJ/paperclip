@@ -25,6 +25,7 @@ import {
   PromptCapabilityAuthorityError,
   type PromptCapabilityAuthenticationResult,
   type PromptCapabilityBinding,
+  type PromptCapabilityCompileScope,
   type PromptCapabilityGatewayRepository,
 } from "./prompt-capability-gateway.js";
 import type {
@@ -37,7 +38,7 @@ import { pluginManifestIdentity } from "./plugin-manifest-identity.js";
 
 interface PromptCapabilityCompiler {
   resolve(
-    capability: PromptCapabilityBinding,
+    capability: PromptCapabilityCompileScope,
   ): Promise<RuntimeInterfaceCompileInput>;
 }
 
@@ -48,11 +49,12 @@ async function transactionClockTimestamp(
   transaction: IssueSessionDbTransaction,
 ): Promise<Date> {
   const rows = Array.from(
-    await transaction.execute(sql<{ timestamp: Date }>`
-      select clock_timestamp() as "timestamp"
+    await transaction.execute(sql<{ timestampMs: number }>`
+      select (extract(epoch from clock_timestamp()) * 1000)::double precision
+        as "timestampMs"
     `),
   );
-  const timestamp = rows[0]?.timestamp;
+  const timestamp = new Date(Number(rows[0]?.timestampMs));
   if (!(timestamp instanceof Date) || !Number.isFinite(timestamp.getTime())) {
     throw new PromptCapabilityAuthorityError("database_clock_invalid");
   }
@@ -99,6 +101,25 @@ function sameBinding(
     left.effectiveToolsDigest === right.effectiveToolsDigest &&
     left.activatedAt.getTime() === right.activatedAt.getTime() &&
     left.createdAt.getTime() === right.createdAt.getTime();
+}
+
+function runMatchesCapability(
+  run: NonNullable<Awaited<ReturnType<IssueExecutionRunService["readRun"]>>>,
+  row: PromptCapabilityRow,
+): boolean {
+  return run.status === "running" &&
+    run.sessionId.length > 0 &&
+    run.ownershipEpoch === row.ownershipEpoch &&
+    run.targetAgentId === row.targetAgentId &&
+    run.executionMode === row.executionMode &&
+    run.issueExecutionAuthorityId === row.issueExecutionAuthorityId &&
+    run.consultExecutionId === row.consultExecutionId &&
+    run.adapterConfigRevisionId === row.adapterConfigIdentity &&
+    run.executionWorkspaceBindingId === row.workspaceIdentity &&
+    run.currentAttemptId === row.attemptId &&
+    run.currentLeaseId === row.leaseId &&
+    run.cancellationIntentId === null &&
+    run.terminalFinalizationId === null;
 }
 
 function rowMatchesBinding(
@@ -176,12 +197,10 @@ export async function lockActivePromptCapabilityBinding(
   }
 }
 
-function projectBinding(input: {
-  row: PromptCapabilityRow;
-  sessionId: string;
-  bootstrapToolGate: boolean;
-}): PromptCapabilityBinding | null {
-  const { row } = input;
+function projectBinding(
+  row: PromptCapabilityRow,
+  sessionId: string,
+): PromptCapabilityBinding | null {
   if (
     row.state !== "active" ||
     row.targetSessionCorrelationId === null ||
@@ -191,6 +210,13 @@ function projectBinding(input: {
   ) {
     return null;
   }
+  return projectIngressBinding(row, sessionId) as PromptCapabilityBinding;
+}
+
+function projectIngressBinding(
+  row: PromptCapabilityRow,
+  sessionId: string,
+) {
   return Object.freeze({
     companyId: row.companyId,
     capabilityConnectionId: row.capabilityConnectionId,
@@ -205,7 +231,7 @@ function projectBinding(input: {
     leaseGeneration: row.leaseGeneration,
     workerProcessIdentity: row.workerProcessIdentity,
     issueId: row.issueId,
-    sessionId: input.sessionId,
+    sessionId,
     ownershipEpoch: row.ownershipEpoch,
     targetAgentId: row.targetAgentId,
     laneKind: row.laneKind,
@@ -217,24 +243,9 @@ function projectBinding(input: {
     targetSessionCorrelationId: row.targetSessionCorrelationId,
     effectiveContextExposureDigest: row.effectiveContextExposureDigest,
     effectiveToolsDigest: row.effectiveToolsDigest,
-    bootstrapToolGate: input.bootstrapToolGate,
     expiresAt: row.expiresAt,
     activatedAt: row.activatedAt,
     createdAt: row.createdAt,
-  });
-}
-
-function projectIngressBinding(row: PromptCapabilityRow) {
-  return Object.freeze({
-    companyId: row.companyId,
-    capabilityConnectionId: row.capabilityConnectionId,
-    capabilityGeneration: row.capabilityGeneration,
-    runId: row.runId,
-    refId: row.refId,
-    refOrdinal: row.refOrdinal,
-    segmentOrdinal: row.segmentOrdinal,
-    issueId: row.issueId,
-    targetAgentId: row.targetAgentId,
   });
 }
 
@@ -265,21 +276,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
       runId: row.runId,
     });
     if (!run) return invalid("run_not_found");
-    if (
-      run.status !== "running" ||
-      run.sessionId.length === 0 ||
-      run.ownershipEpoch !== row.ownershipEpoch ||
-      run.targetAgentId !== row.targetAgentId ||
-      run.executionMode !== row.executionMode ||
-      run.issueExecutionAuthorityId !== row.issueExecutionAuthorityId ||
-      run.consultExecutionId !== row.consultExecutionId ||
-      run.adapterConfigRevisionId !== row.adapterConfigIdentity ||
-      run.executionWorkspaceBindingId !== row.workspaceIdentity ||
-      run.currentAttemptId !== row.attemptId ||
-      run.currentLeaseId !== row.leaseId ||
-      run.cancellationIntentId !== null ||
-      run.terminalFinalizationId !== null
-    ) {
+    if (!runMatchesCapability(run, row)) {
       return invalid("run_scope_changed");
     }
 
@@ -607,14 +604,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
       return invalid("native_correlation_changed");
     }
 
-    const sourcePromptTransmissionPhase = row.segmentOrdinal === 0
-      ? member.promptTransmissionPhase
-      : segment?.promptTransmissionPhase;
-    const capability = projectBinding({
-      row,
-      sessionId: run.sessionId,
-      bootstrapToolGate: sourcePromptTransmissionPhase === "not_transmitted",
-    });
+    const capability = projectBinding(row, run.sessionId);
     return capability
       ? { kind: "authenticated", capability }
       : inactive();
@@ -650,7 +640,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
   }
 
   return {
-    async authenticateIngressBearerHash(bearerHash, _at) {
+    async authenticateBearerHash(bearerHash, _at) {
       const locked = await db.transaction(async (transaction) => {
         const row = await transaction
           .select()
@@ -659,10 +649,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
             and(
               eq(issueExecutionPromptCapabilities.bearerHash, bearerHash),
               or(
-                eq(
-                  issueExecutionPromptCapabilities.state,
-                  "pending_setup",
-                ),
+                eq(issueExecutionPromptCapabilities.state, "pending_setup"),
                 eq(issueExecutionPromptCapabilities.state, "active"),
               ),
             ),
@@ -674,35 +661,21 @@ export function createPostgresPromptCapabilityGatewayRepository(
         return row && row.expiresAt > at ? { row, at } : null;
       });
       if (!locked) return inactive();
-      const { row, at } = locked;
-      if (row.state === "active") {
-        const result = await validateRow(row, at);
-        if (result.kind !== "authenticated") return result;
+      if (locked.row.state === "active") {
+        return validateRow(locked.row, locked.at);
       }
-      return {
-        kind: "authenticated" as const,
-        capability: projectIngressBinding(row),
-      };
-    },
-
-    async authenticateBearerHash(bearerHash, _at) {
-      const locked = await db.transaction(async (transaction) => {
-        const row = await transaction
-          .select()
-          .from(issueExecutionPromptCapabilities)
-          .where(
-            and(
-              eq(issueExecutionPromptCapabilities.bearerHash, bearerHash),
-              eq(issueExecutionPromptCapabilities.state, "active"),
-            ),
-          )
-          .limit(1)
-          .for("update")
-          .then((rows) => rows[0] ?? null);
-        const at = await transactionClockTimestamp(transaction);
-        return row && row.expiresAt > at ? { row, at } : null;
+      const run = await runService.readRun({
+        companyId: locked.row.companyId,
+        issueId: locked.row.issueId,
+        runId: locked.row.runId,
       });
-      return locked ? validateRow(locked.row, locked.at) : inactive();
+      if (!run) return invalid("run_not_found");
+      return runMatchesCapability(run, locked.row)
+        ? {
+            kind: "authenticated" as const,
+            capability: projectIngressBinding(locked.row, run.sessionId),
+          }
+        : invalid("run_scope_changed");
     },
 
     async revalidate(capability, _at) {
@@ -713,7 +686,14 @@ export function createPostgresPromptCapabilityGatewayRepository(
       if (!locked) return inactive();
       const result = await validateRow(locked.row, locked.at);
       if (result.kind !== "authenticated") return result;
-      return sameBinding(capability, result.capability)
+      if (
+        result.capability.activatedAt === null ||
+        result.capability.targetSessionCorrelationId === null
+      ) {
+        return inactive();
+      }
+      const current = result.capability as PromptCapabilityBinding;
+      return sameBinding(capability, current)
         ? result
         : invalid("capability_generation_changed");
     },
@@ -845,7 +825,13 @@ export function createPostgresPromptCapabilityGatewayRepository(
       });
       if (!locked) return null;
       const result = await validateRow(locked.row, locked.at);
-      if (result.kind !== "authenticated") return null;
+      if (
+        result.kind !== "authenticated" ||
+        result.capability.activatedAt === null ||
+        result.capability.targetSessionCorrelationId === null
+      ) {
+        return null;
+      }
       const call = await db
         .select({
           id: runInterfaceToolCalls.id,
@@ -913,7 +899,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
           );
       }
       return {
-        capability: result.capability,
+        capability: result.capability as PromptCapabilityBinding,
         runInterfaceToolCallId: child.runInterfaceToolCallId,
         pluginInstallationId: child.pluginInstallationId,
       };

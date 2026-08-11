@@ -220,10 +220,10 @@ export async function startServer(): Promise<StartedServer> {
           return runtime.issueExecutionCancellation
             .requestScopeCancellationsInTransaction(transaction, input);
         },
-        async reconcileRequestedScopeCancellations(requested) {
+        async reconcileRequestedCancellations(requested) {
           const runtime = await causalRuntimeStartup.ready;
           return runtime.issueExecutionCancellation
-            .reconcileRequestedScopeCancellations(requested);
+            .reconcileRequestedCancellations(requested);
         },
       },
     }),
@@ -454,12 +454,18 @@ export async function startServer(): Promise<StartedServer> {
     );
     const dispatchable =
       await issueExecution.dispatcher.reconcilePersistedRefs();
+    // Expired-attempt recovery above establishes the attempt/lease settlement
+    // fence. Feed only then-recoverable durable steering sources back through
+    // their one canonical continuation path.
+    const steering =
+      await issueExecution.runService.reconcilePendingSteering();
     if (
       cancellations.length > 0 ||
       escalations.terminalized > 0 ||
       escalations.ensured > 0 ||
       prepared.discovered > 0 ||
-      dispatchable.discovered > 0
+      dispatchable.discovered > 0 ||
+      steering.discovered > 0
     ) {
       logger.info(
         {
@@ -467,20 +473,13 @@ export async function startServer(): Promise<StartedServer> {
           systemEscalations: escalations,
           prepared,
           dispatchable,
+          steering,
         },
         "persisted issue-execution recovery reconciled refs",
       );
     }
   };
 
-  const startupCancellations =
-    await issueExecution.cancellation.reconcilePending();
-  if (startupCancellations.length > 0) {
-    logger.warn(
-      { cancellations: startupCancellations },
-      "reconciled durable issue-execution cancellations before recovery",
-    );
-  }
   const startupIssueExecutionRecovery =
     reconcilePersistedIssueExecutions().catch((err) => {
       logger.error(

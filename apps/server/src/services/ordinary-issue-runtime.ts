@@ -38,6 +38,7 @@ import {
   InvokableIssueOwnerRejected,
   resolveInvokableIssueOwnerInTransaction,
 } from "./agent-invokability.js";
+import { admitIssueExecutionInTransaction } from "./issue-execution-initial-start-admission.js";
 import {
   createIssueSessionAdmissionService,
   type IssueSessionAdmissionResult,
@@ -75,7 +76,6 @@ import type {
   IssueExecutionCancellationService,
   RequestedScopedRunCancellations,
 } from "./issue-execution-cancellation.js";
-import { recordIssueLivenessActionInTransaction } from "./issue-liveness-reconciliation.js";
 
 type IssueRow = typeof issues.$inferSelect;
 type CreatorEdgeRow = typeof issueCreatorEdgeReceivability.$inferSelect;
@@ -292,19 +292,6 @@ export interface OrdinaryIssueUserCommentInput {
   replyToCommentId?: string | null;
 }
 
-export interface OrdinaryIssueDirectEventInput {
-  companyId: string;
-  issueId: string;
-  message: string;
-  sourceKind: Extract<
-    IssueExecutionRefSourceKind,
-    "system_nudge" | "termination_recovery"
-  >;
-  /** Immutable recovery or liveness record that caused this delivery. */
-  sourceRecordId: string;
-  idempotencyKey: string;
-}
-
 export interface OrdinaryIssueReassignInput {
   companyId: string;
   issueId: string;
@@ -354,12 +341,13 @@ export interface OrdinaryIssueRuntimeOptions {
   clock?: () => Date;
   issueExecutionRunService: Pick<
     IssueExecutionRunService,
-    "requestSteeringInTransaction" | "continuePendingSteeringForSource"
+    | "requestSteeringInTransaction"
+    | "continuePendingSteeringForSource"
   >;
   issueExecutionCancellation: Pick<
     IssueExecutionCancellationService,
     | "requestScopeCancellationsInTransaction"
-    | "reconcileRequestedScopeCancellations"
+    | "reconcileRequestedCancellations"
   >;
   /**
    * The only execution trigger exposed to causal producers. Implementations
@@ -1434,8 +1422,10 @@ export function createOrdinaryIssueRuntime(
       createdAt: now,
     });
     await insertCreatorEdge(tx, reassigned, session.id, now);
-    const admission = await sessions.admitExecutionSource(
-      {
+    const admission = await admitIssueExecutionInTransaction({
+      sessionAdmission: sessions,
+      transaction: tx,
+      work: {
         companyId: issue.companyId,
         issueId: issue.id,
         sessionId: session.id,
@@ -1457,18 +1447,13 @@ export function createOrdinaryIssueRuntime(
         comment: input.comment,
         idempotencyKey: input.idempotencyKey,
       },
-      tx,
-    );
+    });
     if (!admission.ref) {
       throw new OrdinaryIssueRuntimeRejected(
         "Reassignment did not persist an owner execution ref",
         "reassignment_ref_missing",
       );
     }
-    await recordIssueLivenessActionInTransaction(
-      tx,
-      `issue_execution_ref:${admission.ref.id}`,
-    );
     return {
       issue: reassigned,
       ref: admission.ref,
@@ -1726,27 +1711,32 @@ export function createOrdinaryIssueRuntime(
         }
         const sessionRoot = aggregate.sessionRoot;
         const executionSource = executionSourceForOrdinaryCreate(input);
-        const admission = await sessions.admitExecutionSource(
-          {
-            companyId: created.companyId,
-            issueId: created.id,
-            sessionId,
-            ownershipEpoch: 1,
-            targetAgentId: owner.id,
-            issueExecutionAuthorityId: authorityId,
-            consultExecutionId: null,
-            adapterConfigRevisionId: revisionId,
-            contextEpoch: sessionRoot.contextEpoch.generation,
-            mode: "owner",
-            ...executionSource,
-            immutableSourceKey: key,
-            sourceRecordId: created.id,
-            exactText: input.request,
-            comment: projectedCommentSource(input.creator),
-            idempotencyKey: key,
-          },
-          tx,
-        );
+        const scope = {
+          companyId: created.companyId,
+          issueId: created.id,
+          sessionId,
+          ownershipEpoch: 1,
+          targetAgentId: owner.id,
+          issueExecutionAuthorityId: authorityId,
+          consultExecutionId: null,
+          adapterConfigRevisionId: revisionId,
+          contextEpoch: sessionRoot.contextEpoch.generation,
+          mode: "owner" as const,
+        };
+        const work = {
+          ...scope,
+          ...executionSource,
+          immutableSourceKey: key,
+          sourceRecordId: created.id,
+          exactText: input.request,
+          comment: projectedCommentSource(input.creator),
+          idempotencyKey: key,
+        };
+        const admission = await admitIssueExecutionInTransaction({
+          sessionAdmission: sessions,
+          transaction: tx,
+          work,
+        });
         if (!admission.ref) {
           throw new OrdinaryIssueRuntimeRejected(
             "Initial owner execution ref was not persisted",
@@ -2234,10 +2224,6 @@ export function createOrdinaryIssueRuntime(
             "board_reopen_audit_missing",
           );
         }
-        await recordIssueLivenessActionInTransaction(
-          tx,
-          `issue_board_reopen_command:${command.id}`,
-        );
         const escalation =
           edge.state === "terminal" && reopened.creatorKind !== "system"
             ? await ensureSystemEscalationInTransaction(
@@ -2288,7 +2274,7 @@ export function createOrdinaryIssueRuntime(
       });
       if (result.cancellations) {
         void options.issueExecutionCancellation
-          .reconcileRequestedScopeCancellations(result.cancellations)
+          .reconcileRequestedCancellations(result.cancellations)
           .catch(() => {
             // The committed lifecycle fence keeps the prior refs ineligible.
           });
@@ -2587,7 +2573,7 @@ export function createOrdinaryIssueRuntime(
               companyId: input.companyId,
               issueId: issue.id,
               sessionId: session.id,
-              sourceKind: "human_active_run_steering",
+              sourceKind: "human_comment",
               actor: { kind: "user/board", userId: actorUserId },
               immutableSourceKey: sourceKey,
               sourceRecordId: commandId,
@@ -2678,10 +2664,6 @@ export function createOrdinaryIssueRuntime(
             "board_comment_audit_missing",
           );
         }
-        await recordIssueLivenessActionInTransaction(
-          tx,
-          `issue_board_user_comment:${command.id}`,
-        );
         return {
           issue,
           comment: admission.comment,
@@ -2896,7 +2878,7 @@ export function createOrdinaryIssueRuntime(
       });
       if (result.cancellations) {
         await options.issueExecutionCancellation
-          .reconcileRequestedScopeCancellations(
+          .reconcileRequestedCancellations(
             result.cancellations,
           );
       }
@@ -3053,7 +3035,7 @@ export function createOrdinaryIssueRuntime(
       });
       if (result.cancellations) {
         await options.issueExecutionCancellation
-          .reconcileRequestedScopeCancellations(
+          .reconcileRequestedCancellations(
             result.cancellations,
           );
       }
@@ -3305,10 +3287,6 @@ export function createOrdinaryIssueRuntime(
             "withdrawal_self_assignment_command_missing",
           );
         }
-        await recordIssueLivenessActionInTransaction(
-          tx,
-          `issue_creator_withdrawal_command:${command.id}`,
-        );
         await tx.insert(activityLog).values({
           id: auditId,
           companyId: input.companyId,
@@ -3340,7 +3318,7 @@ export function createOrdinaryIssueRuntime(
       });
       if (committed.cancellations) {
         await options.issueExecutionCancellation
-          .reconcileRequestedScopeCancellations(
+          .reconcileRequestedCancellations(
             committed.cancellations,
           );
       }
@@ -3762,10 +3740,6 @@ export function createOrdinaryIssueRuntime(
             "plugin_withdrawal_command_missing",
           );
         }
-        await recordIssueLivenessActionInTransaction(
-          tx,
-          `issue_creator_withdrawal_command:${command.id}`,
-        );
         return {
           kind: "accepted",
           operationId,
@@ -3785,7 +3759,7 @@ export function createOrdinaryIssueRuntime(
       }
       if (outcome.cancellations) {
         await options.issueExecutionCancellation
-          .reconcileRequestedScopeCancellations(
+          .reconcileRequestedCancellations(
             outcome.cancellations,
           );
       }
@@ -3799,127 +3773,6 @@ export function createOrdinaryIssueRuntime(
       };
     },
 
-    async dispatchDirectEvent(input: OrdinaryIssueDirectEventInput) {
-      const message = nonBlankPreservingBytes(input.message, "message");
-      const sourceRecordId = nonEmpty(
-        input.sourceRecordId,
-        "sourceRecordId",
-      );
-      const idempotencyKey = nonEmpty(
-        input.idempotencyKey,
-        "idempotencyKey",
-      );
-      const result = await db.transaction(async (tx) => {
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtextextended(${`${input.companyId}:${input.issueId}`}, 0))`,
-        );
-        const issue = await tx
-          .select()
-          .from(issues)
-          .where(
-            and(
-              eq(issues.companyId, input.companyId),
-              eq(issues.id, input.issueId),
-            ),
-          )
-          .for("update")
-          .then((rows) => rows[0] ?? null);
-        if (
-          !issue ||
-          !issue.ownershipEpoch ||
-          issue.ownerKind !== "agent" ||
-          !issue.ownerAgentId ||
-          !issue.lifecycleStatus ||
-          !NONTERMINAL.has(issue.lifecycleStatus)
-        ) {
-          throw new OrdinaryIssueRuntimeRejected(
-            "Direct events require a nonterminal agent-owned issue",
-            "direct_event_target_invalid",
-          );
-        }
-        const sessionState = await lockIssueSessionState(
-          tx,
-          input.companyId,
-          issue.id,
-        );
-        if (!sessionState) {
-          throw new OrdinaryIssueRuntimeRejected(
-            "Direct-event target Session is missing",
-            "direct_event_session_missing",
-          );
-        }
-        const { session, contextGeneration } = sessionState;
-        const { revisionId } = await resolveOrdinaryIssueOwner(
-          tx,
-          input.companyId,
-          issue.ownerAgentId,
-        );
-        const authority = await tx
-          .select()
-          .from(issueExecutionAuthorities)
-          .where(
-            and(
-              eq(issueExecutionAuthorities.companyId, input.companyId),
-              eq(issueExecutionAuthorities.issueId, issue.id),
-              eq(
-                issueExecutionAuthorities.ownershipEpoch,
-                issue.ownershipEpoch,
-              ),
-              eq(
-                issueExecutionAuthorities.agentId,
-                issue.ownerAgentId,
-              ),
-              eq(issueExecutionAuthorities.state, "current"),
-            ),
-          )
-          .for("update")
-          .then((rows) => rows[0] ?? null);
-        if (!authority) {
-          throw new OrdinaryIssueRuntimeRejected(
-            "Direct-event target authority is missing",
-            "direct_event_authority_missing",
-          );
-        }
-        const admission = await sessions.admitExecutionSource(
-          {
-            companyId: input.companyId,
-            issueId: issue.id,
-            sessionId: session.id,
-            ownershipEpoch: issue.ownershipEpoch,
-            targetAgentId: issue.ownerAgentId,
-            issueExecutionAuthorityId: authority.id,
-            consultExecutionId: null,
-            adapterConfigRevisionId: revisionId,
-            contextEpoch: contextGeneration,
-            mode: "owner",
-            sourceKind: input.sourceKind,
-            actor: {
-              kind: "system",
-              sourceKind: input.sourceKind,
-              sourceId: sourceRecordId,
-            },
-            immutableSourceKey: idempotencyKey,
-            sourceRecordId,
-            exactText: message,
-            comment: {
-              author: { kind: "system", source: "control" },
-              producingRun: null,
-            },
-            idempotencyKey,
-          },
-          tx,
-        );
-        if (!admission.ref) {
-          throw new OrdinaryIssueRuntimeRejected(
-            "Direct event did not persist an execution ref",
-            "direct_event_ref_missing",
-          );
-        }
-        return { issue, ref: admission.ref, retried: admission.retried };
-      });
-      await dispatch(result.ref.id);
-      return result;
-    },
   };
 }
 

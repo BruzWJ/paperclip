@@ -59,7 +59,6 @@ import {
   ROUTINE_TRIGGER_KINDS,
   ROUTINE_TRIGGER_SIGNING_MODES,
   agentAdapterAcpConfigurationSchema,
-  companySkillChannelSchema,
   decodeIssueDisposition,
   deriveProjectUrlKey,
   envConfigSchema,
@@ -119,6 +118,7 @@ import {
 import {
   createIssueSessionAdmissionService,
 } from "./issue-session/admission.js";
+import { admitIssueExecutionInTransaction } from "./issue-execution-initial-start-admission.js";
 
 /** Build OrgNode tree from manifest agent list (slug + reportsToSlug). */
 function buildOrgTreeFromManifest(agents: CompanyPortabilityManifest["agents"]): OrgNode[] {
@@ -537,22 +537,6 @@ function extractPortableProjectEnvInputs(
         portability,
       });
       continue;
-    }
-
-    if (typeof binding === "string") {
-      const portability = isAbsoluteCommand(binding) ? "system_dependent" : "portable";
-      if (portability === "system_dependent") {
-        warnings.push(`Project ${projectSlug} env ${key} default was exported as system-dependent.`);
-      }
-      inputs.push({
-        key,
-        description: `Optional default for ${key} on project ${projectSlug}`,
-        projectSlug,
-        kind: isSensitiveEnvKey(key) ? "secret" : "plain",
-        requirement: "optional",
-        defaultValue: isSensitiveEnvKey(key) ? "" : binding,
-        portability,
-      });
     }
   }
 
@@ -1062,10 +1046,10 @@ async function createPortableCanonicalIssue(
     );
     const admission =
       input.lifecycleStatus === "open"
-        ? await createIssueSessionAdmissionService(
-            db,
-          ).admitExecutionSource(
-            {
+        ? await admitIssueExecutionInTransaction({
+            sessionAdmission: createIssueSessionAdmissionService(db),
+            transaction: tx,
+            work: {
               companyId: aggregate.issue.companyId,
               issueId: aggregate.issue.id,
               sessionId,
@@ -1094,8 +1078,7 @@ async function createPortableCanonicalIssue(
               },
               idempotencyKey: aggregateKey,
             },
-            tx,
-          )
+          })
         : null;
     if (input.lifecycleStatus === "open" && !admission?.ref) {
       throw unprocessable(
@@ -1308,23 +1291,6 @@ function normalizeRoutineExtension(value: unknown): CompanyPortabilityIssueRouti
     triggers,
   };
   return stripEmptyValues(routine) ? routine : null;
-}
-
-function buildRoutineManifestFromLiveRoutine(routine: RoutineLike): CompanyPortabilityIssueRoutineManifestEntry {
-  return {
-    concurrencyPolicy: routine.concurrencyPolicy,
-    catchUpPolicy: routine.catchUpPolicy,
-    variables: routine.variables,
-    triggers: routine.triggers.map((trigger) => ({
-      kind: trigger.kind,
-      label: trigger.label ?? null,
-      enabled: Boolean(trigger.enabled),
-      cronExpression: trigger.kind === "schedule" ? trigger.cronExpression ?? null : null,
-      timezone: trigger.kind === "schedule" ? trigger.timezone ?? null : null,
-      signingMode: trigger.kind === "webhook" ? trigger.signingMode ?? null : null,
-      replayWindowSec: trigger.kind === "webhook" ? trigger.replayWindowSec ?? null : null,
-    })),
-  };
 }
 
 function clonePortableRecord(value: unknown) {
@@ -2636,7 +2602,6 @@ function buildManifestFromPackageFiles(
         "adapterType",
         "adapterConfig",
         "runtimeConfig",
-        "skillChannel",
       ],
       `Agent ${slug} adapterRevision`,
     );
@@ -2673,14 +2638,6 @@ function buildManifestFromPackageFiles(
         `Agent ${slug} adapterRevision.runtimeConfig must be an object`,
       );
     }
-    const skillChannel = companySkillChannelSchema.safeParse(
-      rawAdapterRevision.skillChannel,
-    );
-    if (!skillChannel.success) {
-      throw unprocessable(
-        `Agent ${slug} adapterRevision.skillChannel must be isolated_skills_home or operator_native`,
-      );
-    }
     const extensionPermissionGrants = normalizePortablePermissionGrants(extension.permissionGrants);
     const title = asString(frontmatter.title);
 
@@ -2704,7 +2661,6 @@ function buildManifestFromPackageFiles(
         runtimeConfig: {
           ...rawAdapterRevision.runtimeConfig,
         },
-        skillChannel: skillChannel.data,
       },
       contextGrants: parseExactPortableBooleanMap(
         extension.contextGrants,
@@ -3711,7 +3667,6 @@ export function companyPortabilityService(
             adapterType,
             adapterConfig: portableAdapterConfig,
             runtimeConfig: portableRuntimeConfig,
-            skillChannel: currentAcpConfiguration.skillChannel,
           },
           contextGrants: materializePortableBooleanMap(
             AGENT_CONTEXT_GRANT_KEYS,
@@ -4831,7 +4786,6 @@ export function companyPortabilityService(
                       .runtimeConfig,
                   ),
                 companySkillPins: importedPins,
-                skillChannel: adapterOverride.skillChannel,
               },
               actor: secretMutationActor,
             });

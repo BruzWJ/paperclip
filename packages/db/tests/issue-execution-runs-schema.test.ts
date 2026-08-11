@@ -8,7 +8,6 @@ import {
   issueExecutionCancellationIntents,
   issueExecutionFinalizations,
   issueExecutionLeases,
-  issueExecutionProcessFacts,
   issueExecutionPromptSegments,
   issueExecutionRunControls,
   issueExecutionRunLivenessFacts,
@@ -70,8 +69,6 @@ describe("canonical issue execution run schema", () => {
       "finished_at",
       "terminal_classification",
       "terminal_reason_code",
-      "process_exit_code",
-      "process_signal",
       "created_at",
       "updated_at",
     ]);
@@ -283,6 +280,22 @@ describe("canonical issue execution run schema", () => {
     expect(refs.uniqueConstraints.map((key) => key.getName())).toContain(
       "issue_execution_refs_lane_ordinal_uq",
     );
+    const sourceKindShape = checkSql(
+      issueExecutionRefs,
+      "issue_execution_refs_source_kind_check",
+    );
+    expect(
+      [...sourceKindShape.matchAll(/'([^']+)'/g)].map((match) => match[1]),
+    ).toEqual([
+      "issue_request",
+      "issue_reassignment",
+      "issue_reopen",
+      "human_comment_mention",
+      "routine_dispatch",
+      "issue_update",
+      "consult_mention",
+      "system_nudge",
+    ]);
     const sourceShape = checkSql(
       issueExecutionRefs,
       "issue_execution_refs_message_input_shape_check",
@@ -463,9 +476,8 @@ describe("canonical issue execution run schema", () => {
     expect(columnNames(issueExecutionRuns)).not.toContain("retry_at");
   });
 
-  it("owns one lease and one process group for each prompt attempt", () => {
+  it("owns one lease for each prompt attempt", () => {
     const leases = getTableConfig(issueExecutionLeases);
-    const processes = getTableConfig(issueExecutionProcessFacts);
 
     expect(leases.name).toBe("issue_execution_leases");
     expect(leases.foreignKeys.map((key) => key.getName())).toContain(
@@ -473,29 +485,6 @@ describe("canonical issue execution run schema", () => {
     );
     expect(leases.uniqueConstraints.map((key) => key.getName())).toContain(
       "issue_execution_leases_attempt_uq",
-    );
-
-    expect(processes.name).toBe("issue_execution_process_facts");
-    expect(columnNames(issueExecutionProcessFacts)).not.toEqual(
-      expect.arrayContaining([
-        "stdout",
-        "stderr",
-        "output",
-        "payload",
-        "result",
-      ]),
-    );
-    expect(processes.foreignKeys.map((key) => key.getName())).toEqual(
-      expect.arrayContaining([
-        "issue_execution_process_facts_attempt_fk",
-        "issue_execution_process_facts_lease_fk",
-      ]),
-    );
-    expect(processes.uniqueConstraints.map((key) => key.getName())).toEqual(
-      expect.arrayContaining([
-        "issue_execution_process_facts_attempt_uq",
-        "issue_execution_process_facts_lease_uq",
-      ]),
     );
   });
 
@@ -511,7 +500,6 @@ describe("canonical issue execution run schema", () => {
       "run_id",
       "attempt_id",
       "lease_id",
-      "process_fact_id",
       "reason_kind",
       "actor_kind",
       "actor_user_id",
@@ -519,9 +507,7 @@ describe("canonical issue execution run schema", () => {
       "state",
       "requested_at",
       "acknowledged_at",
-      "session_cancel_sent_at",
-      "process_termination_requested_at",
-      "process_terminated_at",
+      "native_cancellation_settled_at",
       "completed_at",
       "failed_at",
       "failure_code",
@@ -543,7 +529,6 @@ describe("canonical issue execution run schema", () => {
       expect.arrayContaining([
         "issue_execution_cancellation_intents_attempt_fk",
         "issue_execution_cancellation_intents_lease_fk",
-        "issue_execution_cancellation_intents_process_fk",
       ]),
     );
     expect(config.uniqueConstraints.map((key) => key.getName())).toContain(

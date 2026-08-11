@@ -142,12 +142,6 @@ export function assertIssueSessionRunProgressProjection(
   }
 }
 
-const LIVE_ONLY_SESSION_EVENT_TYPES = new Set([
-  IssueSession.Event.Text.Delta.type,
-  IssueSession.Event.Reasoning.Delta.type,
-  IssueSession.Event.Tool.Input.Delta.type,
-]);
-
 const DURABLE_SESSION_EVENT_VERSIONS = new Map<string, number>([
   ["session.next.agent.switched", 1],
   ["session.next.model.switched", 1],
@@ -208,12 +202,6 @@ export function assertDurableIssueSessionEvent(
   ) {
     throw new IssueSessionLifecycleConflict(
       "Durable Session events cannot carry event-level metadata",
-      { eventType: event.type },
-    );
-  }
-  if (LIVE_ONLY_SESSION_EVENT_TYPES.has(event.type as never)) {
-    throw new IssueSessionLifecycleConflict(
-      "Live-only Session deltas cannot enter durable persistence",
       { eventType: event.type },
     );
   }

@@ -1,9 +1,7 @@
 /**
  * Canonical, closed vocabulary for the issue-execution runtime.
  *
- * This module is intentionally independent from the legacy issue and agent
- * contracts. Runtime cutover code imports these atoms directly; legacy
- * workflow/status contracts are removed only at the fenced cutover.
+ * Services import these atoms directly so execution state has one vocabulary.
  */
 
 export const AGENT_CONTEXT_GRANT_KEYS = [
@@ -278,36 +276,10 @@ export const ISSUE_EXECUTION_REF_SOURCE_KINDS = [
   "issue_update",
   "consult_mention",
   "system_nudge",
-  "termination_recovery",
-  "agent_liveness_followup",
 ] as const;
 
 export type IssueExecutionRefSourceKind =
   (typeof ISSUE_EXECUTION_REF_SOURCE_KINDS)[number];
-
-export const AGENT_LIVENESS_ACTION_KINDS = [
-  "authenticated_human_comment",
-  "issue_create_child",
-  "mention_agent",
-  "mention_board",
-  "issue_assign",
-  "issue_update",
-  "creator_withdrawal",
-  "board_lifecycle_command",
-  "board_reopen",
-] as const;
-
-export type AgentLivenessActionKind =
-  (typeof AGENT_LIVENESS_ACTION_KINDS)[number];
-
-export const AGENT_LIVENESS_ATTENTION_REASONS = [
-  "agent_no_action",
-  "agent_followup_failed",
-  "agent_unavailable",
-] as const;
-
-export type AgentLivenessAttentionReason =
-  (typeof AGENT_LIVENESS_ATTENTION_REASONS)[number];
 
 /**
  * Immutable actor branch for the canonical creator-withdrawal command. Agent

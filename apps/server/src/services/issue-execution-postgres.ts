@@ -80,7 +80,7 @@ export interface PostgresIssueExecutionProductionRuntime {
 
 /**
  * Sole production assembly for issue execution. Every provider prompt is a
- * fresh ACP subprocess attempt; PostgreSQL owns the run/control/attempt/lease,
+ * fresh ACPX runtime attempt; PostgreSQL owns the run/control/attempt/lease,
  * capability, target-session correlation, Session projection, and settlement.
  */
 export function createPostgresIssueExecutionProductionRuntime(
@@ -177,7 +177,6 @@ export function createPostgresIssueExecutionProductionRuntime(
     compiler: promptCapabilities.compiler,
     capabilityEndpoint: options.capabilityEndpoint,
     leaseTtlMs: options.leaseTtlMs,
-    now,
     idFactory,
     async suspendBudgetScopes(scopes) {
       if (!cancellation) {

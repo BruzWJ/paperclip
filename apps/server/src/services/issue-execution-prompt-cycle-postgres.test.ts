@@ -3,7 +3,9 @@ import {
   issueExecutionAttempts,
   issueExecutionLeases,
   issueExecutionPromptCapabilities,
+  issueExecutionRefs,
   issueExecutionRunControls,
+  issueExecutionRunRefs,
   issueExecutionSessions,
   issues,
   type Db,
@@ -24,6 +26,7 @@ import {
   createPostgresIssueExecutionPromptCycleRepository,
   nextCorrelationGeneration,
   PostgresIssueExecutionPromptCycleRejected,
+  resolveInitialPromptCycleInTransaction,
 } from "./issue-execution-prompt-cycle-postgres.js";
 import type { IssueExecutionRunEnvelope } from "./issue-execution-run-service.js";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
@@ -72,7 +75,7 @@ function selectTransaction(
       const value =
         clockTimestamps[Math.min(clockRead, clockTimestamps.length - 1)];
       clockRead += 1;
-      return [{ timestamp: value }];
+      return [{ timestampMs: value.getTime() }];
     },
     select() {
       let table: unknown;
@@ -83,6 +86,12 @@ function selectTransaction(
           return builder;
         },
         where() {
+          return builder;
+        },
+        innerJoin() {
+          return builder;
+        },
+        leftJoin() {
           return builder;
         },
         orderBy() {
@@ -100,6 +109,78 @@ function selectTransaction(
     },
   } as unknown as IssueSessionDbTransaction;
 }
+
+function executionRef(
+  overrides: Record<string, unknown> = {},
+): typeof issueExecutionRefs.$inferSelect {
+  const identity = promptIdentity();
+  return {
+    id: "00000000-0000-4000-8000-000000000013",
+    companyId: identity.companyId, issueId: identity.issueId,
+    sessionId: identity.sessionId, ownershipEpoch: identity.ownershipEpoch,
+    previousOwnershipEpoch: null,
+    executionScopeId: identity.executionScopeId,
+    executionLineageId: "00000000-0000-4000-8000-000000000014",
+    mode: identity.laneKind, sourceKind: "issue_request",
+    sourceRecordId: identity.issueId, messageKind: "user",
+    targetAgentId: identity.targetAgentId, laneOrdinal: 1,
+    issueExecutionAuthorityId: identity.issueExecutionAuthorityId,
+    consultExecutionId: identity.consultExecutionId,
+    adapterConfigRevisionId: identity.adapterConfigRevisionId,
+    contextEpoch: 0, counterpartIssueId: null,
+    counterpartAuthorityId: null, counterpartOwnershipEpoch: null,
+    consultCallerRefId: null, consultChainToken: null,
+    disposition: "active",
+    ...overrides,
+  } as unknown as typeof issueExecutionRefs.$inferSelect;
+}
+
+async function resolveBootstrapCycle(outcome: "succeeded" | "failed") {
+  const predecessor = executionRef({
+    id: "00000000-0000-4000-8000-000000000015",
+    ownershipEpoch: 1, messageKind: "synthetic", laneOrdinal: 0,
+    disposition: "terminal",
+  });
+  const current = executionRef({ ownershipEpoch: 1 });
+  const runId = "00000000-0000-4000-8000-000000000016";
+  const correlation = outcome === "succeeded"
+    ? {
+        purpose: "active_run_steering", state: "current", laneKind: null,
+        runId, currentRefId: predecessor.id, currentRefOrdinal: 0,
+        currentSegmentOrdinal: 0, authorizedContextExposureDigest: null,
+      }
+    : null;
+  const transaction = selectTransaction(new Map<unknown, readonly unknown[]>([
+    [issueExecutionRefs, [predecessor, current]],
+    [issueExecutionRunRefs, [{
+      runId, refOrdinal: 0, outcome,
+      protocolSettlementState: outcome === "succeeded" ? "settled" : "incomplete",
+      correlation,
+    }]],
+  ]));
+  return {
+    predecessor,
+    correlation,
+    result: await resolveInitialPromptCycleInTransaction(transaction, {
+      currentRef: current,
+      executionWorkspaceBindingId: promptIdentity().executionWorkspaceBindingId,
+    }),
+  };
+}
+
+describe("bootstrap native-session handoff", () => {
+  it.each(["succeeded", "failed"] as const)("resolves a %s bootstrap once", async (outcome) => {
+    const { predecessor, correlation, result } = await resolveBootstrapCycle(outcome);
+    expect(result).toEqual(outcome === "succeeded"
+      ? {
+          kind: "bootstrap_resume", correlation,
+          predecessor: {
+            runId: correlation!.runId, refId: predecessor.id, refOrdinal: 0,
+          },
+        }
+      : { kind: "bootstrap_unavailable" });
+  });
+});
 
 interface CapturedUpdate {
   readonly table: unknown;
@@ -185,8 +266,6 @@ function runEnvelope(
     finishedAt: null,
     terminalClassification: null,
     terminalReasonCode: null,
-    processExitCode: null,
-    processSignal: null,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -318,7 +397,6 @@ function renewalRepository(input: {
         }),
       },
       capabilityEndpoint: "http://127.0.0.1:3210/",
-      now: () => timestamp,
       leaseTtlMs: 120_000,
       capabilityTtlMs: 30_000,
     }),
@@ -394,7 +472,6 @@ describe("Postgres issue-execution prompt-cycle continuity fence", () => {
         }),
       },
       capabilityEndpoint: "http://127.0.0.1:3210/",
-      now: () => timestamp,
     });
     const prompt = {
       identity,
@@ -455,6 +532,52 @@ describe("Postgres issue-execution prompt-cycle continuity fence", () => {
   });
 });
 
+describe("Postgres prompt closure lock order", () => {
+  it("locks company, issue, and Session before the canonical run", async () => {
+    const order: string[] = [];
+    const stop = new Error("stop after observing run lock");
+    let rootLock = 0;
+    const transaction = {
+      execute: vi.fn(async () => {
+        rootLock += 1;
+        if (rootLock === 1) {
+          order.push("company");
+          return [{ id: promptIdentity().companyId }];
+        }
+        if (rootLock === 2) {
+          order.push("issue");
+          return [{ id: promptIdentity().issueId }];
+        }
+        order.push("session");
+        return [{ projectedEventSeq: 0 }];
+      }),
+    } as unknown as IssueSessionDbTransaction;
+    const repository = createPostgresIssueExecutionPromptCycleRepository({
+      database: {
+        transaction: vi.fn(
+          async (work: (tx: IssueSessionDbTransaction) => unknown) =>
+            work(transaction),
+        ),
+      } as unknown as Db,
+      runService: {
+        lockRun: vi.fn(async () => {
+          order.push("run");
+          throw stop;
+        }),
+      },
+      compiler: { resolve: vi.fn() } as never,
+      capabilityEndpoint: "http://127.0.0.1:3210/",
+    });
+
+    await expect(repository.closePrompt({
+      prompt: { identity: promptIdentity() } as ResolvedIssueExecutionPrompt,
+      capability: {} as never,
+      outcome: {} as never,
+    })).rejects.toBe(stop);
+    expect(order).toEqual(["company", "issue", "session", "run"]);
+  });
+});
+
 describe("Postgres issue-execution prompt authority renewal", () => {
   it("awaits each canonical row lock before requesting the next lock", async () => {
     const identity = promptIdentity();
@@ -467,7 +590,7 @@ describe("Postgres issue-execution prompt authority renewal", () => {
     ]);
     const transaction = {
       async execute() {
-        return [{ timestamp }];
+        return [{ timestampMs: timestamp.getTime() }];
       },
       select() {
         let table: unknown;

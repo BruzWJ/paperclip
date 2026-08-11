@@ -63,7 +63,7 @@ let installationDeleted: boolean;
 
 function createLifecycle(
   loader: Partial<PluginLoader>,
-  reconcileRequestedAgentSuspensions = vi.fn().mockResolvedValue(undefined),
+  reconcileRequestedCancellations = vi.fn().mockResolvedValue(undefined),
 ) {
   const db = {
     transaction: vi.fn(async (operation: (tx: unknown) => Promise<unknown>) =>
@@ -74,7 +74,7 @@ function createLifecycle(
     loader: loader as PluginLoader,
     dispatchRef: async () => undefined,
     issueExecutionCancellation: {
-      reconcileRequestedAgentSuspensions,
+      reconcileRequestedCancellations,
     } as never,
   });
 }

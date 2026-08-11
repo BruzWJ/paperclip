@@ -73,7 +73,6 @@ export const PRODUCTION_BOUNDARY_GATE_STEPS = Object.freeze([
   tsxScript("check:ai-cost-currency-cutover", "scripts/check-ai-cost-currency-cutover.ts"),
   tsxScript("check:ai-accounting-boundary", "scripts/check-ai-accounting-boundary.ts"),
   tsxScript("check:run-progress-comment-contract", "scripts/check-run-progress-comment-contract.ts"),
-  tsxScript("check:issue-liveness-boundary", "scripts/check-issue-liveness-boundary.ts"),
   tsxScript("check:acp-registry-admission", "scripts/check-acp-registry-admission.ts"),
   tsxScript("check:canonical-human-auth", "scripts/check-canonical-human-auth.ts"),
 ]);
@@ -113,7 +112,6 @@ export const PRODUCTION_BOUNDARY_SELF_TEST_STEPS = Object.freeze([
   tsxTest("test:ai-cost-currency-cutover-gate", "scripts/check-ai-cost-currency-cutover.test.ts"),
   tsxTest("test:ai-accounting-boundary-gate", "scripts/check-ai-accounting-boundary.test.ts"),
   tsxTest("test:run-progress-comment-contract-gate", "scripts/check-run-progress-comment-contract.test.ts"),
-  tsxTest("test:issue-liveness-boundary-gate", "scripts/check-issue-liveness-boundary.test.ts"),
   tsxTest("test:acp-registry-admission-gate", "scripts/check-acp-registry-admission.test.ts"),
 ]);
 

@@ -47,15 +47,12 @@ export {
   type UpdateResourceMembership,
 } from "./resource-memberships.js";
 export {
-  COMPANY_SKILL_CHANNELS,
-  companySkillChannelSchema,
   companySkillPinSchema,
   companySkillPinsSchema,
   agentCompanySkillPinsUpdateSchema,
   agentCompanySkillPinsResponseSchema,
   parseCompanySkillPins,
   type CompanySkillPin,
-  type CompanySkillChannel,
   type AgentCompanySkillPinsUpdate,
   type AgentCompanySkillPinsResponse,
 } from "./company-skill-pins.js";
@@ -162,27 +159,6 @@ export {
   type MoveFolderItem,
   type EnsureMySkillFolder,
 } from "./folder.js";
-export {
-  catalogTeamKindSchema,
-  catalogTeamTrustLevelSchema,
-  catalogTeamCompatibilitySchema,
-  catalogTeamFileKindSchema,
-  catalogTeamSkillRequirementTypeSchema,
-  catalogTeamSkillRequirementSchema,
-  catalogTeamEnvInputSummarySchema,
-  catalogTeamSourceRefSchema,
-  catalogTeamFileSchema,
-  catalogTeamSchema,
-  catalogTeamListQuerySchema,
-  catalogTeamFileDetailSchema,
-  catalogTeamSourcePolicySchema,
-  catalogTeamPreviewSchema,
-  catalogTeamInstallSchema,
-  catalogTeamSkillPreparationSchema,
-  type CatalogTeamListQuery,
-  type CatalogTeamPreview,
-  type CatalogTeamInstall,
-} from "./teams-catalog.js";
 export {
   portabilityIncludeSchema,
   portabilityEnvInputSchema,

@@ -55,7 +55,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "packages/adapter-utils/src/acp-subprocess/agent-registry.ts",
+    "packages/adapter-utils/src/acpx-runtime/agent-registry.ts",
     [
       'import { createAgentRegistry, type AcpAgentRegistry } from "acpx/runtime";',
       "export function assertAcpRegistryAgentName(registry: AcpAgentRegistry) {",
@@ -65,7 +65,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "packages/adapter-utils/src/acp-subprocess/correlation.ts",
+    "packages/adapter-utils/src/acpx-runtime/correlation.ts",
     [
       'export const kind = "acp-session/v1";',
       "export interface AcpSessionCorrelation {",
@@ -105,7 +105,7 @@ test("accepts the canonical accounting, dynamic ACPX discovery, and opaque-corre
   );
   write(
     root,
-    "packages/adapter-utils/src/acp-subprocess/acpx-discovery.ts",
+    "packages/adapter-utils/src/acpx-runtime/acpx-discovery.ts",
     [
       'import { createAcpRuntime, createRuntimeStore, type AcpRuntimeHandle } from "acpx/runtime";',
       "export async function probe() {",
@@ -117,7 +117,7 @@ test("accepts the canonical accounting, dynamic ACPX discovery, and opaque-corre
   );
   write(
     root,
-    "packages/adapter-utils/src/acp-subprocess/acpx-runtime-execution.ts",
+    "packages/adapter-utils/src/acpx-runtime/acpx-runtime-execution.ts",
     [
       'import { createAcpRuntime, createRuntimeStore, type AcpRuntimeOptions } from "acpx/runtime";',
       "export async function execute() {",
@@ -129,7 +129,7 @@ test("accepts the canonical accounting, dynamic ACPX discovery, and opaque-corre
   );
   write(
     root,
-    "packages/adapter-utils/src/acp-subprocess/acpx-runtime-readiness.ts",
+    "packages/adapter-utils/src/acpx-runtime/acpx-runtime-readiness.ts",
     [
       'import { createAcpRuntime, createRuntimeStore, type AcpRuntimeOptions } from "acpx/runtime";',
       "export async function probe() {",
@@ -175,7 +175,7 @@ test("rejects each ACPX state symbol only inside the ACPX runtime graph", () => 
 test("rejects aliased access to an ACPX stateful runtime export", () => {
   const violations = scanCrossIssueMemoryRemovalFiles([
     {
-      path: "packages/adapter-utils/src/acp-subprocess/runtime-wrapper.ts",
+      path: "packages/adapter-utils/src/acpx-runtime/runtime-wrapper.ts",
       source:
         'import { createFileSessionStore as makeStore } from "acpx/runtime";\nexport const store = makeStore();',
     },

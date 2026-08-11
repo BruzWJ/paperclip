@@ -1,10 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
   ISSUE_BOARD_REOPEN_DISPATCH_KINDS,
+  ISSUE_EXECUTION_REF_SOURCE_KINDS,
   PAPERCLIP_ACTION_KEYS,
   PAPERCLIP_RUNTIME_ACTION_KEYS,
   type IssueBoardReopenDispatch,
 } from "./issue-runtime.js";
+
+describe("issue execution source taxonomy", () => {
+  it("contains only durable execution causes, not recovery implementations", () => {
+    expect(ISSUE_EXECUTION_REF_SOURCE_KINDS).toEqual([
+      "issue_request",
+      "issue_reassignment",
+      "issue_reopen",
+      "human_comment_mention",
+      "routine_dispatch",
+      "issue_update",
+      "consult_mention",
+      "system_nudge",
+    ]);
+  });
+});
 
 describe("canonical board reopen dispatch contract", () => {
   it("contains only the exact provider and provider-free branches", () => {

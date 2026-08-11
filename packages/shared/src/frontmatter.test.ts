@@ -17,7 +17,6 @@ import {
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const skillMarkdownSearchRoots = [
   "packages/skills-catalog/catalog",
-  "packages/teams-catalog/catalog",
   "packages/adapters/example/skills",
   "skills",
 ];

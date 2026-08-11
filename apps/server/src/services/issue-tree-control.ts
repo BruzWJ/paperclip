@@ -80,9 +80,8 @@ type RestoreTreeStatusResult = TreeStatusUpdateResult & {
 export type IssueTreeCancellationPort = Pick<
   IssueExecutionCancellationService,
   | "requestRunningIssueInterruptionsInTransaction"
-  | "reconcileRequestedRunningIssueInterruptions"
+  | "reconcileRequestedCancellations"
   | "requestScopeCancellationsInTransaction"
-  | "reconcileRequestedScopeCancellations"
 >;
 
 const DEFAULT_RELEASE_POLICY: IssueTreeHoldReleasePolicy = { strategy: "manual" };
@@ -925,14 +924,14 @@ export function issueTreeControlService(
     if (options.issueExecutionCancellation) {
       for (const requested of applied.pauseInterruptions) {
         void options.issueExecutionCancellation
-          .reconcileRequestedRunningIssueInterruptions(requested)
+          .reconcileRequestedCancellations(requested)
           .catch(() => {
             // The durable cancellation intent remains restart-reconcilable.
           });
       }
       for (const requested of applied.cancelCancellations) {
         void options.issueExecutionCancellation
-          .reconcileRequestedScopeCancellations(requested)
+          .reconcileRequestedCancellations(requested)
           .catch(() => {
             // The durable cancellation intent remains restart-reconcilable.
           });
