@@ -218,7 +218,7 @@ describe("paperclipai company import/export HTTP boundary", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      `${API_BASE}/api/companies/${COMPANY_ID}/export`,
+      `${API_BASE}/api/companies/${COMPANY_ID}/exports`,
     );
     expect(parseRequestBody(fetchMock.mock.calls[0]!)).toEqual({
       include: INCLUDE_ALL,
@@ -266,8 +266,8 @@ describe("paperclipai company import/export HTTP boundary", () => {
     ]);
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      `${API_BASE}/api/companies/import/preview`,
-      `${API_BASE}/api/companies/import`,
+      `${API_BASE}/api/companies/imports/preview`,
+      `${API_BASE}/api/companies/imports`,
     ]);
     const previewPayload = parseRequestBody(fetchMock.mock.calls[0]!);
     const applyPayload = parseRequestBody(fetchMock.mock.calls[1]!);

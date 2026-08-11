@@ -18,8 +18,7 @@ import type {
   AdapterModelProfileDefinition,
   AdapterModelProfileKey,
 } from "@paperclipai/adapter-utils";
-import { isUuidLike, normalizeAgentUrlKey } from "@paperclipai/shared";
-import { ApiError, api } from "./client";
+import { api } from "./client";
 
 export type { AdapterModelProfileKey };
 export type AdapterModelProfile = AdapterModelProfileDefinition;
@@ -74,32 +73,8 @@ export const agentsApi = {
       `/companies/${encodeURIComponent(companyId)}/issue-owner-catalog`,
     ),
   org: (companyId: string) => api.get<OrgNode[]>(`/companies/${companyId}/org`),
-  get: async (id: string, companyId?: string) => {
-    try {
-      return await api.get<AgentDetail>(agentPath(id, companyId));
-    } catch (error) {
-      // Backward-compat fallback: if backend shortname lookup reports ambiguity,
-      // resolve using company agent list while ignoring terminated agents.
-      if (
-        !(error instanceof ApiError) ||
-        error.status !== 409 ||
-        !companyId ||
-        isUuidLike(id)
-      ) {
-        throw error;
-      }
-
-      const urlKey = normalizeAgentUrlKey(id);
-      if (!urlKey) throw error;
-
-      const agents = await api.get<Agent[]>(`/companies/${companyId}/agents`);
-      const matches = agents.filter(
-        (agent) => agent.status !== "terminated" && normalizeAgentUrlKey(agent.urlKey) === urlKey,
-      );
-      if (matches.length !== 1) throw error;
-      return api.get<AgentDetail>(agentPath(matches[0]!.id, companyId));
-    }
-  },
+  get: (id: string, companyId?: string) =>
+    api.get<AgentDetail>(agentPath(id, companyId)),
   getRuntimeConfiguration: (id: string, companyId?: string) =>
     api.get<RuntimeAgentConfigurationSnapshot>(
       agentPath(id, companyId, "/runtime-configuration"),

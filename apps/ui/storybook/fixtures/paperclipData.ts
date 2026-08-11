@@ -297,7 +297,6 @@ function createProject(overrides: Partial<Project> = {}): Project {
     id,
     companyId: "company-storybook",
     urlKey: "board-ui",
-    goalId: "goal-company",
     goalIds: ["goal-company", "goal-board-ux"],
     goals: storybookGoals
       .filter((goal) => goal.id === "goal-company" || goal.id === "goal-board-ux")
@@ -350,7 +349,6 @@ export const storybookProjects: Project[] = [
     description: "Preserved for audit after the import workflow moved into company packages.",
     status: "cancelled",
     leadAgentId: null,
-    goalId: "goal-archived-import",
     goalIds: ["goal-archived-import"],
     goals: [{ id: "goal-archived-import", title: "Retire old import wizard" }],
     color: "#64748b",
@@ -679,8 +677,6 @@ export function createIssueExecutionRun(
     finishedAt: null,
     terminalClassification: null,
     terminalReasonCode: null,
-    processExitCode: null,
-    processSignal: null,
     createdAt,
     updatedAt: createdAt,
     ...overrides,
@@ -961,20 +957,20 @@ export const storybookDashboardSummary: DashboardSummary = {
   },
   runActivity: [
     { date: "2026-04-07", succeeded: 4, failed: 0, recovered: 0, other: 1, total: 5, failedByErrorCode: {} },
-    { date: "2026-04-08", succeeded: 5, failed: 1, recovered: 0, other: 0, total: 6, failedByErrorCode: { provider_quota: 1 } },
+    { date: "2026-04-08", succeeded: 5, failed: 1, recovered: 0, other: 0, total: 6, failedByErrorCode: { transport_transient: 1 } },
     { date: "2026-04-09", succeeded: 3, failed: 0, recovered: 0, other: 1, total: 4, failedByErrorCode: {} },
     { date: "2026-04-10", succeeded: 6, failed: 0, recovered: 0, other: 0, total: 6, failedByErrorCode: {} },
     { date: "2026-04-11", succeeded: 4, failed: 1, recovered: 0, other: 0, total: 5, failedByErrorCode: { workspace_validation_failed: 1 } },
     { date: "2026-04-12", succeeded: 2, failed: 0, recovered: 0, other: 1, total: 3, failedByErrorCode: {} },
     { date: "2026-04-13", succeeded: 5, failed: 0, recovered: 0, other: 1, total: 6, failedByErrorCode: {} },
-    { date: "2026-04-14", succeeded: 6, failed: 1, recovered: 0, other: 0, total: 7, failedByErrorCode: { provider_quota: 1 } },
+    { date: "2026-04-14", succeeded: 6, failed: 1, recovered: 0, other: 0, total: 7, failedByErrorCode: { transport_transient: 1 } },
     { date: "2026-04-15", succeeded: 4, failed: 0, recovered: 0, other: 1, total: 5, failedByErrorCode: {} },
     { date: "2026-04-16", succeeded: 7, failed: 0, recovered: 0, other: 0, total: 7, failedByErrorCode: {} },
     { date: "2026-04-17", succeeded: 6, failed: 1, recovered: 0, other: 0, total: 7, failedByErrorCode: { workspace_validation_failed: 1 } },
     { date: "2026-04-18", succeeded: 3, failed: 0, recovered: 0, other: 1, total: 4, failedByErrorCode: {} },
-    // Restart-burst spike: many process_lost kills, most recovered on retry.
-    { date: "2026-04-19", succeeded: 5, failed: 2, recovered: 6, other: 1, total: 14, failedByErrorCode: { process_lost: 2 } },
-    { date: "2026-04-20", succeeded: 4, failed: 1, recovered: 3, other: 2, total: 10, failedByErrorCode: { process_lost: 1 } },
+    // Worker-loss spike: most interrupted runs recovered on retry.
+    { date: "2026-04-19", succeeded: 5, failed: 2, recovered: 6, other: 1, total: 14, failedByErrorCode: { worker_loss_after_prompt: 2 } },
+    { date: "2026-04-20", succeeded: 4, failed: 1, recovered: 3, other: 2, total: 10, failedByErrorCode: { worker_loss_after_prompt: 1 } },
   ],
 };
 

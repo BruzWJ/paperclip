@@ -60,12 +60,10 @@ interface CompanyImportOptions extends BaseClientOptions {
   agents?: string;
   collision?: CompanyCollisionMode;
   ref?: string;
-  paperclipUrl?: string;
   yes?: boolean;
   dryRun?: boolean;
   adapterOverride?: string[];
   adapterConfig?: string[];
-  skillChannel?: string[];
 }
 
 const DEFAULT_EXPORT_INCLUDE: CompanyPortabilityInclude = {
@@ -712,7 +710,7 @@ export function resolveCompanyImportApiPath(input: {
       : apiPath`/api/companies/${companyId}/imports/apply`;
   }
 
-  return input.dryRun ? "/api/companies/import/preview" : "/api/companies/import";
+  return input.dryRun ? "/api/companies/imports/preview" : "/api/companies/imports";
 }
 
 export function buildCompanyDashboardUrl(apiBase: string, issuePrefix: string): string {
@@ -1213,7 +1211,7 @@ export function registerCompanyCommands(program: Command): void {
           const ctx = resolveCommandContext(opts);
           const include = parseInclude(opts.include);
           const exported = await ctx.api.post<CompanyPortabilityExportResult>(
-            apiPath`/api/companies/${companyId}/export`,
+            apiPath`/api/companies/${companyId}/exports`,
             {
               include,
               skills: parseCsvValues(opts.skills),
@@ -1262,17 +1260,12 @@ export function registerCompanyCommands(program: Command): void {
       .option("--agents <list>", "Comma-separated agent slugs to import, or all", "all")
       .option("--collision <mode>", "Collision strategy: rename | skip | replace", "rename")
       .option("--ref <value>", "Git ref to use for GitHub imports (branch, tag, or commit)")
-      .option("--paperclip-url <url>", "Alias for --api-base on this command")
       .option("--adapter-override <slug=type>", "Explicit adapter type for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--adapter-config <slug=json>", "Explicit adapter config JSON object for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
-      .option("--skill-channel <slug=channel>", "Exact company-skill channel (isolated_skills_home or operator_native) for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--yes", "Accept default selection and skip the pre-import confirmation prompt", false)
       .option("--dry-run", "Run preview only without applying", false)
       .action(async (fromPathOrUrl: string, opts: CompanyImportOptions) => {
         try {
-          if (!opts.apiBase?.trim() && opts.paperclipUrl?.trim()) {
-            opts.apiBase = opts.paperclipUrl.trim();
-          }
           const ctx = resolveCommandContext(opts);
           const interactiveView = isInteractiveTerminal() && !ctx.json;
           const from = fromPathOrUrl.trim();
@@ -1289,7 +1282,6 @@ export function registerCompanyCommands(program: Command): void {
           const adapterOverrides = parseExplicitAdapterOverrides(
             opts.adapterOverride,
             opts.adapterConfig,
-            opts.skillChannel,
           );
 
           const inferredTarget = opts.target ?? (opts.companyId || ctx.companyId ? "existing" : "new");

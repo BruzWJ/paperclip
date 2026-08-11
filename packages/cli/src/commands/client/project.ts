@@ -20,7 +20,6 @@ interface ProjectCreateOptions extends BaseClientOptions {
   name: string;
   description?: string;
   status?: string;
-  goalId?: string;
   goalIds?: string;
   leadAgentId?: string;
   targetDate?: string;
@@ -31,7 +30,6 @@ interface ProjectUpdateOptions extends BaseClientOptions {
   name?: string;
   description?: string;
   status?: string;
-  goalId?: string;
   goalIds?: string;
   leadAgentId?: string;
   targetDate?: string;
@@ -107,7 +105,6 @@ export function registerProjectCommands(program: Command): void {
       .requiredOption("--name <name>", "Project name")
       .option("--description <text>", "Project description")
       .option("--status <status>", "Project status")
-      .option("--goal-id <id>", "Deprecated single goal ID")
       .option("--goal-ids <csv>", "Comma-separated goal IDs")
       .option("--lead-agent-id <id>", "Lead agent ID")
       .option("--target-date <date>", "Target date")
@@ -119,7 +116,6 @@ export function registerProjectCommands(program: Command): void {
             name: opts.name,
             description: opts.description,
             status: opts.status,
-            goalId: parseNullableString(opts.goalId),
             goalIds: parseCsv(opts.goalIds),
             leadAgentId: parseNullableString(opts.leadAgentId),
             targetDate: parseNullableString(opts.targetDate),
@@ -143,7 +139,6 @@ export function registerProjectCommands(program: Command): void {
       .option("--name <name>", "Project name")
       .option("--description <text|null>", "Project description")
       .option("--status <status>", "Project status")
-      .option("--goal-id <id|null>", "Deprecated single goal ID")
       .option("--goal-ids <csv>", "Comma-separated goal IDs")
       .option("--lead-agent-id <id|null>", "Lead agent ID")
       .option("--target-date <date|null>", "Target date")
@@ -156,7 +151,6 @@ export function registerProjectCommands(program: Command): void {
             name: opts.name,
             description: parseNullableString(opts.description),
             status: opts.status,
-            goalId: parseNullableString(opts.goalId),
             goalIds: opts.goalIds === undefined ? undefined : parseCsv(opts.goalIds),
             leadAgentId: parseNullableString(opts.leadAgentId),
             targetDate: parseNullableString(opts.targetDate),

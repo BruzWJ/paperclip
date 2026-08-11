@@ -1643,7 +1643,6 @@ span.paperclip-project-mention-chip {
   --sz-70px: 70px; /* Extracted from apps/ui/src/pages/Secrets.tsx (min-h-[70px]). */
   --sz-calc-41: min(520px,calc(100vw - 2rem)); /* Extracted from apps/ui/src/pages/Secrets.tsx (w-[min(520px,calc(100vw-2rem))]). */
   --sz-calc-42: min(80vh,34rem); /* Extracted from apps/ui/src/pages/Secrets.tsx (max-h-[min(80vh,34rem)]). */
-  --sz-14rem: 14rem; /* Extracted from apps/ui/src/pages/TeamCatalog.tsx (max-w-[14rem]). */
   --rad-3: 3px; /* Shared focus-ring width. */
   --rad-4: 4px; /* Extracted from apps/ui/src/components/IssueChatThread.tsx (rounded-br-[4px]). */
   --rad-2: 2px; /* Extracted from apps/ui/src/components/SidebarCompanyMenu.tsx (ring-[2px]). */
@@ -1745,7 +1744,6 @@ span.paperclip-project-mention-chip {
   --gtc-52: minmax(0,1.4fr) minmax(220px,0.8fr); /* Extracted from apps/ui/src/pages/PluginSettings.tsx (grid-cols-[minmax(0,1.4fr)_minmax(220px,0.8fr)]). */
   --gtc-54: minmax(12rem,2.4fr) minmax(5.25rem,0.75fr) minmax(7rem,1fr) minmax(5rem,0.7fr) 2.75rem; /* Extracted from apps/ui/src/pages/Secrets.tsx (grid-cols-[minmax(12rem,2.4fr)_minmax(5.25rem,0.75fr)_minmax(7rem,1fr)_minmax(5rem,0.7fr)_2.75rem]). */
   --gtc-55: 8rem minmax(0,1fr); /* Extracted from apps/ui/src/pages/Secrets.tsx (grid-cols-[8rem_minmax(0,1fr)]). */
-  --gtc-56: minmax(0,1fr) minmax(14rem,18rem); /* Extracted from apps/ui/src/pages/TeamCatalog.tsx (grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)]). */
   --gtc-57: repeat(14,minmax(0,1fr)); /* Extracted from apps/ui/src/pages/UserProfile.tsx (grid-cols-[repeat(14,minmax(0,1fr))]). */
   --gtc-58: auto 1fr auto; /* Extracted from apps/ui/src/pages/UserProfile.tsx (grid-cols-[auto_1fr_auto]). */
   --gtc-59: 8rem 1fr;

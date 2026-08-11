@@ -149,7 +149,6 @@ describe("agent control-plane commands", () => {
       adapterConfig: { model: "gpt-5.6" },
       runtimeConfig: {},
       companySkillPins: [],
-      skillChannel: "operator_native",
     };
     await run([
       "agent",

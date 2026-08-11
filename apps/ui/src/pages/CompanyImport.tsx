@@ -6,7 +6,6 @@ import type {
   CompanyPortabilityPreviewResult,
   CompanyPortabilitySource,
   CompanyPortabilityAdapterOverride,
-  CompanySkillChannel,
 } from "@paperclipai/shared";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -33,10 +32,11 @@ import {
 import { Field } from "../components/agent-config-primitives";
 import { defaultCreateValues } from "../components/agent-config-defaults";
 import { getUIAdapter, listUIAdapters } from "../adapters";
-import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
+import { useAdapterCatalogSyncState } from "../adapters/use-adapter-catalog";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import {
   type FileTreeNode,
+  type FileTreeTone,
   type FrontmatterData,
   buildFileTree,
   countFiles,
@@ -172,10 +172,6 @@ function renderImportFileExtra(node: FileTreeNode, checked: boolean, renameMap: 
       {actionBadge}
     </span>
   );
-}
-
-function importFileRowClassName(_node: FileTreeNode, checked: boolean) {
-  return !checked ? "opacity-50" : undefined;
 }
 
 // ── Preview pane ──────────────────────────────────────────────────────
@@ -524,7 +520,6 @@ interface AdapterPickerItem {
 function AdapterPickerList({
   agents,
   adapterOverrides,
-  skillChannels,
   expandedSlugs,
   configValues,
   onChangeAdapter,
@@ -533,14 +528,13 @@ function AdapterPickerList({
 }: {
   agents: AdapterPickerItem[];
   adapterOverrides: Record<string, string>;
-  skillChannels: Record<string, CompanySkillChannel | undefined>;
   expandedSlugs: Set<string>;
   configValues: Record<string, CreateConfigValues>;
   onChangeAdapter: (slug: string, adapterType: string) => void;
   onToggleExpand: (slug: string) => void;
   onChangeConfig: (slug: string, patch: Partial<CreateConfigValues>) => void;
 }) {
-  const admittedAdapters = useAdapterCatalogSync();
+  const { adapters: admittedAdapters } = useAdapterCatalogSyncState();
   const adapterOptions = useMemo(
     () => listUIAdapters().map((adapter) => ({
       value: adapter.type,
@@ -562,8 +556,6 @@ function AdapterPickerList({
         <div className="divide-y divide-border">
           {agents.map((agent) => {
             const selectedType = adapterOverrides[agent.slug] ?? "";
-            const skillChannel = skillChannels[agent.slug]
-              ?? (selectedType ? "operator_native" : "");
             const isExpanded = expandedSlugs.has(agent.slug);
             const vals = configValues[agent.slug] ?? { ...defaultCreateValues, adapterType: selectedType };
             return (
@@ -698,9 +690,6 @@ export function CompanyImport() {
 
   // Adapter override state
   const [adapterOverrides, setAdapterOverrides] = useState<Record<string, string>>({});
-  const [skillChannels, setSkillChannels] = useState<
-    Record<string, CompanySkillChannel | undefined>
-  >({});
   const [adapterExpandedSlugs, setAdapterExpandedSlugs] = useState<Set<string>>(new Set());
   const [adapterConfigValues, setAdapterConfigValues] = useState<Record<string, CreateConfigValues>>({});
 
@@ -768,7 +757,6 @@ export function CompanyImport() {
         // Source package adapter bytes are descriptive only. Target runtime
         // authority starts empty and must be selected explicitly.
         setAdapterOverrides({});
-        setSkillChannels({});
         setAdapterExpandedSlugs(new Set());
         setAdapterConfigValues({});
       }
@@ -907,6 +895,15 @@ export function CompanyImport() {
     [importPreview, actionMap],
   );
 
+  const fileTones = useMemo(() => {
+    if (!importPreview) return {};
+    const tones: Record<string, FileTreeTone> = {};
+    for (const path of Object.keys(importPreview.files)) {
+      if (!checkedFiles.has(path)) tones[path] = "muted";
+    }
+    return tones;
+  }, [checkedFiles, importPreview]);
+
   const conflicts = useMemo(
     () => (importPreview ? buildConflictList(importPreview) : []),
     [importPreview],
@@ -1032,10 +1029,6 @@ export function CompanyImport() {
       delete next[slug];
       return next;
     });
-    setSkillChannels((prev) => ({
-      ...prev,
-      [slug]: "operator_native",
-    }));
   }
 
   function handleAdapterToggleExpand(slug: string) {
@@ -1077,19 +1070,12 @@ export function CompanyImport() {
       const selectedType = adapterOverrides[agent.slug];
       if (!selectedType) continue;
       const configVals = adapterConfigValues[agent.slug];
-      const skillChannel = skillChannels[agent.slug];
-      if (!skillChannel) {
-        throw new Error(
-          `Select an exact skill channel for imported agent ${agent.slug}.`,
-        );
-      }
       const uiAdapter = getUIAdapter(selectedType);
       const override: CompanyPortabilityAdapterOverride = {
         adapterType: selectedType,
         adapterConfig: configVals
           ? uiAdapter.buildAdapterConfig(configVals)
           : {},
-        skillChannel,
       };
       overrides[agent.slug] = override;
     }
@@ -1298,7 +1284,6 @@ export function CompanyImport() {
           <AdapterPickerList
             agents={adapterAgents}
             adapterOverrides={adapterOverrides}
-            skillChannels={skillChannels}
             expandedSlugs={adapterExpandedSlugs}
             configValues={adapterConfigValues}
             onChangeAdapter={handleAdapterChange}
@@ -1357,7 +1342,7 @@ export function CompanyImport() {
                   onSelectFile={setSelectedFile}
                   onToggleCheck={handleToggleCheck}
                   renderFileExtra={(node, checked) => renderImportFileExtra(node, checked, renameMap)}
-                  fileRowClassName={importFileRowClassName}
+                  fileTones={fileTones}
                   wrapLabels={false}
                 />
               </div>

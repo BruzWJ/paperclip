@@ -69,9 +69,6 @@ function isUserSecretRef(
 export function rowsFromValue(value: Record<string, EnvBinding> | null | undefined): EnvRow[] {
   if (!value || typeof value !== "object") return [];
   return Object.entries(value).map(([name, binding]) => {
-    if (typeof binding === "string") {
-      return { ...emptyRow(), name, textValue: binding };
-    }
     if (isSecretRef(binding)) {
       const version: SecretVersionSelector = typeof binding.version === "number" ? binding.version : "latest";
       return {

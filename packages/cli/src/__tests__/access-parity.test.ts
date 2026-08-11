@@ -45,7 +45,7 @@ describe("access parity commands", () => {
     await run(["invite", "revoke", INVITE_ID]);
     await run(["invite", "show", "token-1"]);
     await run(["invite", "accept", "token-1"]);
-    await run(["join", "list", "--company-id", COMPANY_ID, "--status", "pending"]);
+    await run(["join", "list", "--company-id", COMPANY_ID, "--status", "pending_approval"]);
     await run(["join", "approve", JOIN_ID, "--company-id", COMPANY_ID]);
     await run(["join", "reject", JOIN_ID, "--company-id", COMPANY_ID]);
     await run(["member", "list", "--company-id", COMPANY_ID]);

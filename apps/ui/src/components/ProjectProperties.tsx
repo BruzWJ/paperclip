@@ -301,11 +301,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     },
   });
 
-  const linkedGoalIds = project.goalIds.length > 0
-    ? project.goalIds
-    : project.goalId
-      ? [project.goalId]
-      : [];
+  const linkedGoalIds = project.goalIds;
 
   const linkedGoals = project.goals.length > 0
     ? project.goals

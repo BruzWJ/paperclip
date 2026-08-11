@@ -21,7 +21,7 @@ import { filterAgentSkills } from "./agent-skill-filter";
 import { buildAgentSkillSourceMeta } from "./agent-skill-source";
 
 const MATERIALIZATION_NOTE =
-  "Selected company skills are exposed as workspace content for the next issue execution. They are never injected into the conversation or granted runtime authority.";
+  "Selected company skill pins apply to the next issue execution. The local CLI owns native skill discovery; selections grant no runtime authority.";
 
 export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?: string }) {
   const queryClient = useQueryClient();

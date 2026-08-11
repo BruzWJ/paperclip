@@ -1553,6 +1553,7 @@ export function IssuesList({
     if (viewState.viewMode !== "list") return;
     const nextIssueIds = filtered.map((issue) => issue.id).join("|");
     const previousIssueIds = renderedIssueIdsRef.current;
+    if (nextIssueIds === previousIssueIds) return;
     renderedIssueIdsRef.current = nextIssueIds;
 
     setRenderedIssueRowLimit((current) => {

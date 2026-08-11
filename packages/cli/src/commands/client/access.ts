@@ -136,14 +136,13 @@ export function registerAccessCommands(program: Command): void {
       .command("list")
       .description("List join requests")
       .option("-C, --company-id <id>", "Company ID")
-      .option("--status <status>", "Filter by status (pending_approval, approved, rejected; pending alias accepted)")
+      .option("--status <status>", "Filter by status (pending_approval, approved, rejected)")
       .option("--request-type <type>", "Filter by request type")
       .action(async (opts: QueryOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
           const params = new URLSearchParams();
-          const status = normalizeJoinStatus(opts.status);
-          if (status) params.set("status", status);
+          if (opts.status) params.set("status", opts.status);
           if (opts.requestType) params.set("requestType", opts.requestType);
           const query = params.toString();
           printOutput(await ctx.api.get(`${apiPath`/api/companies/${ctx.companyId}/join-requests`}${query ? `?${query}` : ""}`), { json: ctx.json });
@@ -261,11 +260,6 @@ function addWhoamiCommand(parent: Command): void {
         }
       }),
   );
-}
-
-function normalizeJoinStatus(status: string | undefined): string | undefined {
-  if (status === "pending") return "pending_approval";
-  return status;
 }
 
 function addSimpleGet(parent: Command, name: string, description: string, path: string): void {

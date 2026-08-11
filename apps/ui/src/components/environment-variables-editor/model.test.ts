@@ -70,9 +70,8 @@ describe("rowsFromValue", () => {
     expect(rowsFromValue({})).toEqual([]);
   });
 
-  it("maps legacy string, plain, secret_ref, and user_secret_ref bindings", () => {
+  it("maps plain, secret_ref, and user_secret_ref bindings", () => {
     const rows = rowsFromValue({
-      LEGACY: "raw",
       PLAIN: { type: "plain", value: "v" },
       REF: { type: "secret_ref", secretId: "s1", version: 2 },
       REF_LATEST: { type: "secret_ref", secretId: "s2" },
@@ -89,7 +88,6 @@ describe("rowsFromValue", () => {
         version: r.version,
       })),
     ).toEqual([
-      { name: "LEGACY", source: "text", textValue: "raw", secretId: "", userSecretKey: "", required: true, version: "latest" },
       { name: "PLAIN", source: "text", textValue: "v", secretId: "", userSecretKey: "", required: true, version: "latest" },
       { name: "REF", source: "secret", textValue: "", secretId: "s1", userSecretKey: "", required: true, version: 2 },
       { name: "REF_LATEST", source: "secret", textValue: "", secretId: "s2", userSecretKey: "", required: true, version: "latest" },

@@ -1125,7 +1125,6 @@ function normalizeEnv(env: RoutineEnvConfig | null): Record<string, EnvBinding> 
 }
 
 function envBindingKind(binding: EnvBinding): "plain" | "secret_ref" {
-  if (typeof binding === "string") return "plain";
   if (binding && typeof binding === "object" && "type" in binding && binding.type === "secret_ref") {
     return "secret_ref";
   }
@@ -1133,7 +1132,6 @@ function envBindingKind(binding: EnvBinding): "plain" | "secret_ref" {
 }
 
 function asSecretRef(binding: EnvBinding): EnvSecretRefBinding | null {
-  if (typeof binding === "string") return null;
   if (binding && typeof binding === "object" && "type" in binding && binding.type === "secret_ref") {
     return binding;
   }

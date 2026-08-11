@@ -56,7 +56,7 @@ export const companiesApi = {
   ) =>
     api.post<CompanyPortabilityExportPreviewResult>(`/companies/${companyId}/exports/preview`, data),
   importPreview: (data: CompanyPortabilityPreviewRequest) =>
-    api.post<CompanyPortabilityPreviewResult>("/companies/import/preview", data),
+    api.post<CompanyPortabilityPreviewResult>("/companies/imports/preview", data),
   importBundle: (data: CompanyPortabilityImportRequest) =>
-    api.post<CompanyPortabilityImportResult>("/companies/import", data),
+    api.post<CompanyPortabilityImportResult>("/companies/imports", data),
 };

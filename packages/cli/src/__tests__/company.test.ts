@@ -157,7 +157,6 @@ function interactiveImportPreview(): CompanyPortabilityPreviewResult {
             adapterType: "codex",
             adapterConfig: { model: "gpt-5.6" },
             runtimeConfig: {},
-            skillChannel: "operator_native",
           },
           contextGrants: allFalse(AGENT_CONTEXT_GRANT_KEYS),
           actionGrants: allFalse(PAPERCLIP_ACTION_KEYS),
@@ -289,7 +288,6 @@ describe("company CLI commands", () => {
       lead: {
         adapterType: "codex",
         adapterConfig: { model: "gpt-5.6" },
-        skillChannel: "operator_native",
       },
     };
 
@@ -313,8 +311,6 @@ describe("company CLI commands", () => {
       "lead=codex",
       "--adapter-config",
       'lead={"model":"gpt-5.6"}',
-      "--skill-channel",
-      "lead=operator_native",
       "--api-base",
       "http://paperclip.test",
       "--api-key",
@@ -372,14 +368,14 @@ describe("resolveCompanyImportApiPath", () => {
         dryRun: true,
         targetMode: "new_company",
       }),
-    ).toBe("/api/companies/import/preview");
+    ).toBe("/api/companies/imports/preview");
 
     expect(
       resolveCompanyImportApiPath({
         dryRun: false,
         targetMode: "new_company",
       }),
-    ).toBe("/api/companies/import");
+    ).toBe("/api/companies/imports");
   });
 
   it("throws when an existing-company import is missing a company id", () => {
@@ -521,7 +517,6 @@ describe("renderCompanyImportPreview", () => {
               adapterType: "codex",
               adapterConfig: { model: "gpt-5.6" },
               runtimeConfig: {},
-              skillChannel: "operator_native",
             },
             contextGrants: allFalse(AGENT_CONTEXT_GRANT_KEYS),
             actionGrants: allFalse(PAPERCLIP_ACTION_KEYS),
@@ -738,7 +733,6 @@ describe("import selection catalog", () => {
               adapterType: "codex",
               adapterConfig: { model: "gpt-5.6" },
               runtimeConfig: {},
-              skillChannel: "operator_native",
             },
             contextGrants: allFalse(AGENT_CONTEXT_GRANT_KEYS),
             actionGrants: allFalse(PAPERCLIP_ACTION_KEYS),

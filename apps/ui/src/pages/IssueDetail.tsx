@@ -118,7 +118,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from "@/components/ui/avatar";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -426,12 +426,10 @@ function IssueAttributionByline({
   if (!owner && !originator) return null;
 
   return (
-    <TooltipProvider>
-      <AvatarGroup className="-space-x-1.5" aria-label="Task people" data-testid="issue-attribution-avatar-stack">
-        {owner ? <AttributionAvatar label="Owner" actor={owner} /> : null}
-        {originator ? <AttributionAvatar label="Originating" actor={originator} via={originatorVia} /> : null}
-      </AvatarGroup>
-    </TooltipProvider>
+    <AvatarGroup className="-space-x-1.5" aria-label="Task people" data-testid="issue-attribution-avatar-stack">
+      {owner ? <AttributionAvatar label="Owner" actor={owner} /> : null}
+      {originator ? <AttributionAvatar label="Originating" actor={originator} via={originatorVia} /> : null}
+    </AvatarGroup>
   );
 }
 
@@ -2161,7 +2159,6 @@ export function IssueDetail() {
         hasActiveRun={resolvedHasActiveRun}
       />
     );
-    return () => closePanel();
   }, [
     closePanel,
     handleIssuePropertiesUpdate,
@@ -2172,6 +2169,10 @@ export function IssueDetail() {
     panelIssue,
     resolvedHasActiveRun,
   ]);
+
+  useEffect(() => {
+    return () => closePanel();
+  }, [closePanel]);
 
   const goToInboxShortcutArmedRef = useRef(false);
   const goToInboxShortcutTimeoutRef = useRef<number | null>(null);

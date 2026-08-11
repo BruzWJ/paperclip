@@ -565,7 +565,7 @@
       "runId": "9eb8e7ba-53b5-4d22-8f8d-cbba6a5c5bb5",
       "issueId": "9ae0377a-8040-4221-9376-4ae64270e3b4",
       "issueIdentifier": "PAP-12440",
-      "issueTitle": "Defect (Minor): teams-catalog install is not atomic — mid-import failure can orphan skills/agents",
+      "issueTitle": "Defect (Minor): bulk import is not atomic — mid-import failure can orphan skills/agents",
       "start": "2026-07-02T15:27:39.339Z",
       "end": "2026-07-02T15:37:04.236Z",
       "status": "succeeded",

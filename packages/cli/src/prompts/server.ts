@@ -31,7 +31,7 @@ export async function promptServer(opts?: {
       {
         value: "lan" as const,
         label: "Private network",
-        hint: "Broad private bind for LAN, VPN, or legacy --tailscale-auth style access",
+        hint: "Broad private bind for LAN or VPN access",
       },
       {
         value: "tailnet" as const,

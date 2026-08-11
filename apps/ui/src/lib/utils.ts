@@ -3,8 +3,6 @@ import { twMerge } from "tailwind-merge";
 import {
   deriveAgentUrlKey,
   deriveProjectUrlKey,
-  hasNonAsciiContent,
-  normalizeProjectUrlKey,
   serializeMoneyAmount,
 } from "@paperclipai/shared";
 import type { BudgetCurrency, MoneyAmount } from "@paperclipai/shared";
@@ -140,10 +138,7 @@ export function agentUrl(agent: { id: string; urlKey?: string | null; name?: str
 
 /** Build a project route reference, falling back to UUID when the derived key is ambiguous. */
 export function projectRouteRef(project: { id: string; urlKey?: string | null; name?: string | null }): string {
-  const key = project.urlKey ?? deriveProjectUrlKey(project.name, project.id);
-  // Guard for rolling deploys or legacy data where the server returned a bare slug without UUID suffix.
-  if (key === normalizeProjectUrlKey(project.name) && hasNonAsciiContent(project.name)) return project.id;
-  return key;
+  return project.urlKey ?? deriveProjectUrlKey(project.name, project.id);
 }
 
 /** Build a project URL using the short URL key when available. */

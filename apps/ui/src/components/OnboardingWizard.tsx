@@ -17,7 +17,7 @@ import { cn } from "../lib/utils";
 import { getUIAdapter } from "../adapters";
 import { listUIAdapters } from "../adapters";
 import { isVisualAdapterChoice } from "../adapters/metadata";
-import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
+import { useAdapterCatalogSyncState } from "../adapters/use-adapter-catalog";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import { defaultCreateValues } from "./agent-config-defaults";
 import { AgentConfigForm } from "./AgentConfigForm";
@@ -33,7 +33,6 @@ import { buildNewAgentControlPlanePayloads } from "../lib/new-agent-control-plan
 import {
   companySkillPinSchema,
   parseCompanySkillPins,
-  type CompanySkillChannel,
   type CompanySkillPin,
 } from "@paperclipai/shared";
 import { useStructuralAdapterConfiguration } from "../adapters/use-structural-adapter-configuration";
@@ -156,14 +155,6 @@ function loadSavedCompanySkillPins(
   }
 }
 
-function loadSavedCompanySkillChannel(
-  _saved: Record<string, unknown> | null,
-): CompanySkillChannel {
-  // The packaged local runtime supports only the operator-native channel.
-  // Ignore old browser drafts instead of preserving an invalid creation value.
-  return "operator_native";
-}
-
 function loadSavedState(): Record<string, unknown> | null {
   try {
     const raw = localStorage.getItem(ONBOARDING_STORAGE_KEY);
@@ -206,7 +197,9 @@ export function OnboardingWizard() {
   // Fetch the admitted catalog only when the wizard is visible. The wizard is
   // mounted globally, including on /auth, where protected adapter routes are
   // expected to reject signed-out browsers.
-  const admittedAdapters = useAdapterCatalogSync({ enabled: effectiveOnboardingOpen });
+  const { adapters: admittedAdapters } = useAdapterCatalogSyncState({
+    enabled: effectiveOnboardingOpen,
+  });
 
   const initialStep = effectiveOnboardingOptions.initialStep ?? 0;
   const existingCompanyId = effectiveOnboardingOptions.companyId;
@@ -249,9 +242,6 @@ export function OnboardingWizard() {
     );
   const [companySkillPins, setCompanySkillPins] = useState<CompanySkillPin[]>(
     () => loadSavedCompanySkillPins(saved),
-  );
-  const [skillChannel, setSkillChannel] = useState<CompanySkillChannel>(
-    () => loadSavedCompanySkillChannel(saved),
   );
   const [initialTaskTitle, setInitialTaskTitle] = useState(
     (saved?.initialTaskTitle as string) ?? "",
@@ -330,7 +320,7 @@ export function OnboardingWizard() {
     const state = {
       step, companyName, companyGoal, missionPath, missionConfirmed,
       q1, q2, q3, q4, agentName, agentTitle, agentCapabilities,
-      runtimeAccess, companySkillPins, skillChannel, initialTaskTitle, initialTaskRequest,
+      runtimeAccess, companySkillPins, initialTaskTitle, initialTaskRequest,
       agentCreateIdempotencyKey, adapterType,
       adapterConfigValues: configValues,
       createdCompanyId, createdCompanyPrefix, createdAgentId,
@@ -341,7 +331,7 @@ export function OnboardingWizard() {
   }, [
     effectiveOnboardingOpen, step, companyName, companyGoal, missionPath, missionConfirmed,
     q1, q2, q3, q4, agentName, agentTitle, agentCapabilities,
-    runtimeAccess, companySkillPins, skillChannel, initialTaskTitle, initialTaskRequest,
+    runtimeAccess, companySkillPins, initialTaskTitle, initialTaskRequest,
     agentCreateIdempotencyKey, adapterType, configValues,
     createdCompanyId, createdCompanyPrefix, createdAgentId,
     createdCompanyGoalId, createdProjectId, createdIssueRef,
@@ -411,7 +401,6 @@ export function OnboardingWizard() {
     setAgentCapabilities("");
     setRuntimeAccess(createEmptyRuntimeAgentConfigurationValues());
     setCompanySkillPins([]);
-    setSkillChannel("operator_native");
     setInitialTaskTitle("");
     setInitialTaskRequest("");
     setAgentCreateIdempotencyKey(crypto.randomUUID());
@@ -572,7 +561,6 @@ export function OnboardingWizard() {
         configValues,
         adapterConfig: adapterConfigResolution.config,
         companySkillPins,
-        skillChannel,
       });
       const created = await agentsApi.createRuntimeAgent(
         createdCompanyId,
@@ -1161,16 +1149,6 @@ export function OnboardingWizard() {
                         Select exact immutable skill versions for this agent.
                         Skills provide content only and grant no authority.
                       </p>
-                    </div>
-                    <div className="grid gap-1.5 text-sm">
-                      <span className="font-medium">Skill channel</span>
-                      <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
-                        Operator-managed native skills
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        The local CLI uses its native skill handling.
-                        Paperclip performs no isolated skill-home materialization.
-                      </span>
                     </div>
                     {availableCompanySkills.length === 0 ? (
                       <p className="text-xs text-muted-foreground">

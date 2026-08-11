@@ -46,9 +46,7 @@ function normalizedEnvEntries(
   for (const [rawName, binding] of Object.entries(value)) {
     const name = rawName.trim();
     if (!name) continue;
-    if (typeof binding === "string") {
-      byName.set(name, { type: "plain", value: binding });
-    } else if (binding?.type === "secret_ref") {
+    if (binding.type === "secret_ref") {
       const secretId = typeof binding.secretId === "string" ? binding.secretId : "";
       if (!secretId) continue; // incomplete ref — never emitted by the editor
       byName.set(name, {
@@ -56,7 +54,7 @@ function normalizedEnvEntries(
         secretId,
         version: typeof binding.version === "number" ? binding.version : "latest",
       });
-    } else if (binding?.type === "user_secret_ref") {
+    } else if (binding.type === "user_secret_ref") {
       const key = typeof binding.key === "string" ? binding.key.trim() : "";
       if (!key) continue; // incomplete ref — never emitted by the editor
       byName.set(name, {
@@ -65,10 +63,8 @@ function normalizedEnvEntries(
         version: typeof binding.version === "number" ? binding.version : "latest",
         required: binding.required !== false,
       });
-    } else if (binding?.type === "plain") {
+    } else if (binding.type === "plain") {
       byName.set(name, { type: "plain", value: typeof binding.value === "string" ? binding.value : "" });
-    } else {
-      byName.set(name, { type: "plain", value: "" });
     }
   }
   return [...byName.entries()].sort(([left], [right]) => left.localeCompare(right));

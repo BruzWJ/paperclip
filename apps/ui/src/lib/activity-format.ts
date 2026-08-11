@@ -40,8 +40,6 @@ const ACTIVITY_ROW_VERBS: Record<string, string> = {
   "agent.error_cleared": "cleared error on",
   "agent.terminated": "terminated",
   "agent.budget_updated": "updated budget for",
-  "issue.execution_fresh_session_requested":
-    "requested a fresh execution session for",
   "approval.created": "requested approval",
   "approval.approved": "approved",
   "approval.rejected": "rejected",

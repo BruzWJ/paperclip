@@ -5,7 +5,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
@@ -26,12 +25,6 @@ import { ACTIVE_ISSUE_EXECUTION_RUN_STATUSES } from "../api/runs";
 import { toCompanyRelativePath } from "../lib/company-routes";
 import { useLocation } from "../lib/router";
 import { buildSameOriginWebSocketUrl } from "../lib/websocket-url";
-import {
-  createIssueExecutionLivePlanStore,
-  type IssueExecutionLivePlanSnapshot,
-  type IssueExecutionLivePlanStore,
-  type VisibleActiveIssueExecutionPrompt,
-} from "../lib/issue-execution-live-plan";
 
 const TOAST_COOLDOWN_WINDOW_MS = 10_000;
 const TOAST_COOLDOWN_MAX = 3;
@@ -55,16 +48,6 @@ interface LiveEventSubscription {
 }
 
 const LiveEventSubscriptionContext = createContext<LiveEventSubscription | null>(null);
-
-interface IssueExecutionLivePlanContextValue {
-  store: IssueExecutionLivePlanStore;
-}
-
-const IssueExecutionLivePlanContext =
-  createContext<IssueExecutionLivePlanContextValue | null>(null);
-
-const subscribeToNothing = () => () => undefined;
-const readNoLivePlan = () => null;
 
 function dispatchLiveEventToSubscribers(
   subscribers: Set<CompanyLiveEventHandler>,
@@ -103,43 +86,6 @@ export function useCompanyLiveEvent(handler: CompanyLiveEventHandler): void {
       handlerRef.current(event);
     });
   }, [subscription]);
-}
-
-/**
- * Observe the disposable plan for one exact visible prompt. Passing null is
- * the terminal/not-active state and clears the view; no plan is hydrated from
- * REST, query data, Session history, or a reconnect.
- */
-export function useIssueExecutionLivePlan(
-  prompt: VisibleActiveIssueExecutionPrompt | null,
-): IssueExecutionLivePlanSnapshot | null {
-  const context = useContext(IssueExecutionLivePlanContext);
-  const store = context?.store ?? null;
-  const snapshot = useSyncExternalStore(
-    store?.subscribe ?? subscribeToNothing,
-    store?.getSnapshot ?? readNoLivePlan,
-    readNoLivePlan,
-  );
-
-  useEffect(() => {
-    if (!store) return;
-    if (!prompt) {
-      store.clearVisibility();
-      return;
-    }
-    return store.registerVisiblePrompt(prompt);
-  }, [
-    store,
-    prompt?.companyId,
-    prompt?.issueId,
-    prompt?.runId,
-    prompt?.refId,
-    prompt?.runOrdinal,
-    prompt?.segmentOrdinal,
-    prompt?.promptActive,
-  ]);
-
-  return snapshot;
 }
 
 function readString(value: unknown): string | null {
@@ -846,10 +792,6 @@ function handleLiveEvent(
 ) {
   if (event.companyId !== expectedCompanyId) return;
 
-  // Stable ACP plans are consumed only by the exact visible-prompt store.
-  // They never trigger cache invalidation, toasts, or durable query reads.
-  if (event.type === "issue.execution.plan.live") return;
-
   const nameOf = (id: string) => resolveAgentName(queryClient, expectedCompanyId, id);
   const payload = event.payload ?? {};
 
@@ -930,7 +872,6 @@ export const __liveUpdatesTestUtils = {
   buildAgentStatusToast,
   closeSocketQuietly,
   dispatchLiveEventToSubscribers,
-  IssueExecutionLivePlanContext,
   LiveEventSubscriptionContext,
   refreshVisibleIssueCommentGroups,
   invalidateActivityQueries,
@@ -963,7 +904,6 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
     agentId: null,
   });
   const subscribersRef = useRef<Set<CompanyLiveEventHandler>>(new Set());
-  const livePlanStore = useMemo(createIssueExecutionLivePlanStore, []);
   const subscribe = useCallback((handler: CompanyLiveEventHandler) => {
     subscribersRef.current.add(handler);
     return () => {
@@ -984,8 +924,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     pathnameRef.current = location.pathname;
-    livePlanStore.clearPlan();
-  }, [livePlanStore, location.pathname]);
+  }, [location.pathname]);
 
   useEffect(() => {
     currentActorRef.current = {
@@ -1021,9 +960,6 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
 
     const connect = () => {
       if (closed) return;
-      // A new socket can follow a apps/server/process restart whose in-process id
-      // sequence begins again. The disposable view and watermark both reset.
-      livePlanStore.resetConnection();
       const url = buildSameOriginWebSocketUrl(
         `/api/companies/${encodeURIComponent(liveCompanyId)}/events/ws`,
       );
@@ -1038,7 +974,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
         if (reconnectAttempt > 0) {
           gateRef.current.suppressUntil = Date.now() + RECONNECT_SUPPRESS_MS;
           // Durable run state is reconstructed through canonical list/detail
-          // reads after a transport gap; disposable plan state stays cleared.
+          // reads after a transport gap.
           queryClient.invalidateQueries({
             predicate: (query) =>
               query.queryKey[0] === "runs" ||
@@ -1054,18 +990,13 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
 
         try {
           const parsed = JSON.parse(raw) as LiveEvent;
-          livePlanStore.acceptEvent(parsed);
           handleLiveEvent(coalescingClient, liveCompanyId, pathnameRef.current, parsed, pushToast, gateRef.current, {
             userId: currentActorRef.current.userId,
             agentId: currentActorRef.current.agentId,
           });
           // Fan the raw event out to component subscribers after cache
-          // handling so any reader sees fresh query data. Disposable plans
-          // stay inside their exact validated visible-prompt store rather than
-          // entering the generic subscriber surface.
-          if (parsed.type !== "issue.execution.plan.live") {
-            dispatchLiveEventToSubscribers(subscribersRef.current, liveCompanyId, parsed);
-          }
+          // handling so any reader sees fresh query data.
+          dispatchLiveEventToSubscribers(subscribersRef.current, liveCompanyId, parsed);
         } catch {
           // Ignore non-JSON payloads.
         }
@@ -1079,7 +1010,6 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
       nextSocket.onclose = () => {
         if (socket !== nextSocket) return;
         socket = null;
-        livePlanStore.resetConnection();
         if (closed) return;
         scheduleReconnect();
       };
@@ -1096,21 +1026,13 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
       clearReconnect();
       const activeSocket = socket;
       socket = null;
-      livePlanStore.resetConnection();
       closeSocketQuietly(activeSocket, "provider_unmount");
     };
-  }, [coalescingClient, liveCompanyId, pushToast, canConnectSocket, socketAuthKey, livePlanStore]);
-
-  const livePlanContextValue = useMemo<IssueExecutionLivePlanContextValue>(
-    () => ({ store: livePlanStore }),
-    [livePlanStore],
-  );
+  }, [coalescingClient, liveCompanyId, pushToast, canConnectSocket, socketAuthKey]);
 
   return (
-    <IssueExecutionLivePlanContext.Provider value={livePlanContextValue}>
-      <LiveEventSubscriptionContext.Provider value={subscriptionValue}>
-        {children}
-      </LiveEventSubscriptionContext.Provider>
-    </IssueExecutionLivePlanContext.Provider>
+    <LiveEventSubscriptionContext.Provider value={subscriptionValue}>
+      {children}
+    </LiveEventSubscriptionContext.Provider>
   );
 }

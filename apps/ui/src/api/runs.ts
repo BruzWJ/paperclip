@@ -156,24 +156,6 @@ export interface IssueExecutionLeaseRecord {
   createdAt: string;
 }
 
-export interface IssueExecutionProcessFactRecord {
-  id: string;
-  companyId: string;
-  issueId: string;
-  runId: string;
-  attemptId: string;
-  leaseId: string;
-  processId: number;
-  processGroupId: number;
-  supervisorLocator: string;
-  state: "starting" | "running" | "exited" | "terminated" | "lost";
-  startedAt: string;
-  settledAt: string | null;
-  exitCode: number | null;
-  exitSignal: string | null;
-  createdAt: string;
-}
-
 export interface IssueExecutionCancellationRecord {
   id: string;
   companyId: string;
@@ -181,17 +163,14 @@ export interface IssueExecutionCancellationRecord {
   runId: string;
   attemptId: string;
   leaseId: string | null;
-  processFactId: string | null;
-  reasonKind: "lifecycle" | "authority" | "timeout" | "lease_expired" | "process_policy" | "steering";
+  reasonKind: "lifecycle" | "authority" | "timeout" | "lease_expired" | "steering";
   actorKind: "system" | "user" | "agent";
   actorUserId: string | null;
   actorAgentId: string | null;
   state: "requested" | "acknowledged" | "completed" | "failed";
   requestedAt: string;
   acknowledgedAt: string | null;
-  sessionCancelSentAt: string | null;
-  processTerminationRequestedAt: string | null;
-  processTerminatedAt: string | null;
+  nativeCancellationSettledAt: string | null;
   completedAt: string | null;
   failedAt: string | null;
   failureCode: string | null;
@@ -280,7 +259,6 @@ export interface IssueExecutionRunJoinedDetail {
   attempts: BoundedRunRecords<IssueExecutionAttemptRecord>;
   retrySchedules: BoundedRunRecords<IssueExecutionAttemptRetryScheduleRecord>;
   leases: BoundedRunRecords<IssueExecutionLeaseRecord>;
-  processFacts: BoundedRunRecords<IssueExecutionProcessFactRecord>;
   cancellations: BoundedRunRecords<IssueExecutionCancellationRecord>;
   accounting: BoundedRunRecords<AcpPromptAccountingRecord>;
   costs: BoundedRunRecords<CostEvent>;

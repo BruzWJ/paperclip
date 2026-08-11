@@ -404,7 +404,6 @@ interface IssueChatThreadProps {
   onWorkModeChange?: (workMode: IssueWorkMode) => Promise<void> | void;
   showComposer?: boolean;
   showJumpToLatest?: boolean;
-  autoScrollToLatestOnInitialLoad?: boolean;
   autoScrollToHashOnInitialLoad?: boolean;
   emptyMessage?: string;
   footer?: ReactNode;
@@ -3836,7 +3835,6 @@ export function IssueChatThread({
   composerHint = null,
   showComposer = true,
   showJumpToLatest,
-  autoScrollToLatestOnInitialLoad = false,
   autoScrollToHashOnInitialLoad = false,
   emptyMessage,
   footer,
@@ -3867,7 +3865,6 @@ export function IssueChatThread({
   const preserveComposerViewportRef = useRef(false);
   const pendingSubmitScrollRef = useRef(false);
   const lastUserMessageIdRef = useRef<string | null>(null);
-  const didInitialLatestScrollRef = useRef(false);
   const spacerBaselineAnchorRef = useRef<string | null>(null);
   const spacerInitialReserveRef = useRef(0);
   const latestSettleTimeoutsRef = useRef<number[]>([]);
@@ -4135,34 +4132,6 @@ export function IssueChatThread({
     messages,
     useVirtualizedThread,
   ]);
-
-  // Optional legacy behavior: callers may explicitly request landing on the
-  // latest comment. The shared default stays off so ordinary page loads keep
-  // the user's initial viewport stable.
-  useEffect(() => {
-    if (didInitialLatestScrollRef.current) return;
-    if (!autoScrollToLatestOnInitialLoad) return;
-    if (variant !== "full") return;
-    if (messages.length === 0) return;
-    const hash =
-      location.hash ||
-      (typeof window !== "undefined" ? window.location.hash : "");
-    if (
-      hash.startsWith("#comment-") ||
-      hash.startsWith("#activity-") ||
-      hash.startsWith("#run-")
-    ) {
-      didInitialLatestScrollRef.current = true;
-      return;
-    }
-    didInitialLatestScrollRef.current = true;
-    // Defer a frame so the virtualizer/DOM has mounted its initial rows before
-    // we resolve and scroll to the latest comment's anchor.
-    const frame = requestAnimationFrame(() =>
-      scrollToLatestCommentWithSettle(latestMessagesRef.current),
-    );
-    return () => cancelAnimationFrame(frame);
-  }, [autoScrollToLatestOnInitialLoad, messages, variant, location.hash]);
 
   function jumpToLatestFallback() {
     if (useVirtualizedThread) {

@@ -48,7 +48,7 @@ export function ThemeToggle({ className, variant = "icon", onAfterToggle }: Them
       <button
         type="button"
         className={cn(
-          "flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-accent/60",
+          "flex w-full items-start gap-3 rounded-sm px-3 py-3 text-left transition-colors hover:bg-accent/60",
           className,
         )}
         onClick={handleClick}

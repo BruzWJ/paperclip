@@ -69,7 +69,6 @@ const ACTION_TIER: Record<string, EventTier> = {
   "issue.document_deleted": 3,
   "issue.document_updated": 2,
   "agent.budget_updated": 3,
-  "issue.execution_fresh_session_requested": 2,
   "agent.terminated": 2,
   "company.created": 3,
   "company.updated": 3,
@@ -384,12 +383,6 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
     return map;
   }, [issues]);
 
-  const entityStatusMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.boardPresentationStatus);
-    return map;
-  }, [issues]);
-
   // Filter, tier, sort events
   const processedItems = useMemo(() => {
     const events = (activity ?? [])
@@ -498,7 +491,6 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
               agentMap={agentMap}
               entityNameMap={entityNameMap}
               entityTitleMap={entityTitleMap}
-              entityStatusMap={entityStatusMap}
             />
           </div>
         </div>
@@ -515,7 +507,6 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
             agentMap={agentMap}
             entityNameMap={entityNameMap}
             entityTitleMap={entityTitleMap}
-            entityStatusMap={entityStatusMap}
             isMuted
           />
         </div>

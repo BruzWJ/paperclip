@@ -38,11 +38,11 @@ describe("issue-reference", () => {
   });
 
   it("normalizes bare identifiers, relative issue paths, and issue scheme links into internal links", () => {
-    expect(parseIssueReferenceFromHref("pap-1271")).toEqual({
+    expect(parseIssueReferenceFromHref("pap-1271", new Set(["PAP"]))).toEqual({
       issuePathId: "PAP-1271",
       href: "/issues/PAP-1271",
     });
-    expect(parseIssueReferenceFromHref("pc1a2-7")).toEqual({
+    expect(parseIssueReferenceFromHref("pc1a2-7", new Set(["PC1A2"]))).toEqual({
       issuePathId: "PC1A2-7",
       href: "/issues/PC1A2-7",
     });
@@ -61,7 +61,7 @@ describe("issue-reference", () => {
   });
 
   it("normalizes exact inline-code-like issue identifiers", () => {
-    expect(parseIssueReferenceFromHref("PAP-1271")).toEqual({
+    expect(parseIssueReferenceFromHref("PAP-1271", new Set(["PAP"]))).toEqual({
       issuePathId: "PAP-1271",
       href: "/issues/PAP-1271",
     });
@@ -96,19 +96,12 @@ describe("issue-reference", () => {
       expect(parseIssueReferenceFromHref("JIRA-456", new Set(["PAP"]))).toBeNull();
     });
 
-    it("stays permissive when no prefix set is supplied", () => {
-      expect(parseIssueReferenceFromHref("FOO-1")).toEqual({
-        issuePathId: "FOO-1",
-        href: "/issues/FOO-1",
-      });
-    });
-
-    it("stays permissive when the prefix set is empty", () => {
-      expect(parseIssueReferenceFromHref("FOO-1", new Set())).toEqual({
-        issuePathId: "FOO-1",
-        href: "/issues/FOO-1",
-      });
-    });
+    it.each([undefined, new Set<string>()])(
+      "does not guess a bare identifier without company prefixes",
+      (prefixes) => {
+        expect(parseIssueReferenceFromHref("FOO-1", prefixes)).toBeNull();
+      },
+    );
 
     it("never gates explicit issue:// scheme references", () => {
       expect(parseIssueReferenceFromHref("issue://ACME-9", new Set(["PAP"]))).toEqual({
@@ -138,12 +131,12 @@ describe("issue-reference", () => {
       ]);
     });
 
-    it("links every identifier when no prefixes are supplied (legacy permissive)", () => {
+    it("leaves bare identifiers untouched when no prefixes are supplied", () => {
       const tree = paragraph("See PAP-1 and JIRA-2.");
       remarkLinkIssueReferences()(tree);
 
       const links = paragraphChildren(tree).filter((node) => node.type === "link");
-      expect(links.map((node) => node.url)).toEqual(["/issues/PAP-1", "/issues/JIRA-2"]);
+      expect(links).toEqual([]);
     });
   });
 });

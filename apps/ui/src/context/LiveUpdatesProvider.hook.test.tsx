@@ -7,18 +7,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   __liveUpdatesTestUtils,
   useCompanyLiveEvent,
-  useIssueExecutionLivePlan,
   type CompanyLiveEventHandler,
 } from "./LiveUpdatesProvider";
-import {
-  createIssueExecutionLivePlanStore,
-  type VisibleActiveIssueExecutionPrompt,
-} from "../lib/issue-execution-live-plan";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const {
-  IssueExecutionLivePlanContext,
   LiveEventSubscriptionContext,
   dispatchLiveEventToSubscribers,
 } = __liveUpdatesTestUtils;
@@ -126,97 +120,5 @@ describe("useCompanyLiveEvent", () => {
         root!.render(<Consumer />);
       }),
     ).not.toThrow();
-  });
-});
-
-describe("useIssueExecutionLivePlan", () => {
-  let container: HTMLDivElement;
-  let root: Root | null = null;
-
-  const prompt: VisibleActiveIssueExecutionPrompt = {
-    companyId: "company-1",
-    issueId: "issue-1",
-    runId: "run-1",
-    refId: "ref-1",
-    runOrdinal: 1,
-    segmentOrdinal: 0,
-    promptActive: true,
-  };
-
-  beforeEach(() => {
-    container = document.createElement("div");
-    document.body.appendChild(container);
-  });
-
-  afterEach(() => {
-    act(() => root?.unmount());
-    root = null;
-    container.remove();
-  });
-
-  it("renders only the registered prompt replacement and clears at terminal", () => {
-    const store = createIssueExecutionLivePlanStore();
-
-    function Consumer({
-      visible,
-    }: {
-      visible: VisibleActiveIssueExecutionPrompt | null;
-    }) {
-      const livePlan = useIssueExecutionLivePlan(visible);
-      return (
-        <output>
-          {livePlan === null
-            ? "not-seen"
-            : JSON.stringify(livePlan.replacement)}
-        </output>
-      );
-    }
-
-    const render = (visible: VisibleActiveIssueExecutionPrompt | null) => {
-      root ??= createRoot(container);
-      act(() => {
-        root!.render(
-          <IssueExecutionLivePlanContext.Provider value={{ store }}>
-            <Consumer visible={visible} />
-          </IssueExecutionLivePlanContext.Provider>,
-        );
-      });
-    };
-
-    render(prompt);
-    expect(container.textContent).toBe("not-seen");
-
-    act(() => {
-      store.acceptEvent({
-        id: 1,
-        companyId: prompt.companyId,
-        type: "issue.execution.plan.live",
-        createdAt: "2026-07-31T00:00:00.000Z",
-        payload: {
-          companyId: prompt.companyId,
-          issueId: prompt.issueId,
-          runId: prompt.runId,
-          refId: prompt.refId,
-          runOrdinal: prompt.runOrdinal,
-          segmentOrdinal: prompt.segmentOrdinal,
-          replacement: [],
-        },
-      });
-    });
-    expect(container.textContent).toBe("[]");
-
-    render(null);
-    expect(container.textContent).toBe("not-seen");
-  });
-
-  it("has no fallback or hydrated state outside the provider", () => {
-    function Consumer() {
-      const livePlan = useIssueExecutionLivePlan(prompt);
-      return <output>{livePlan === null ? "not-seen" : "unexpected"}</output>;
-    }
-
-    root = createRoot(container);
-    act(() => root!.render(<Consumer />));
-    expect(container.textContent).toBe("not-seen");
   });
 });

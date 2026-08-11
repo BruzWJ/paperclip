@@ -114,8 +114,7 @@ export function GoalDetail() {
   const linkedProjects = (allProjects ?? []).filter((p) => {
     if (!goalId) return false;
     if (p.goalIds.includes(goalId)) return true;
-    if (p.goals.some((goalRef) => goalRef.id === goalId)) return true;
-    return p.goalId === goalId;
+    return p.goals.some((goalRef) => goalRef.id === goalId);
   });
 
   useEffect(() => {

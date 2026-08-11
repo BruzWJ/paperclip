@@ -541,8 +541,7 @@ export function IssueProperties({
     <TooltipProvider>
       <Tooltip open={monitorDetailsOpen} onOpenChange={setMonitorDetailsOpen}>
       <TooltipTrigger asChild>
-        <button
-          type="button"
+        <span
           className="inline-flex min-w-0 items-start gap-1.5 border-0 bg-transparent p-0 text-left font-inherit text-inherit"
           data-testid="monitor-row-trigger"
           onClick={() => setMonitorDetailsOpen(false)}
@@ -556,7 +555,7 @@ export function IssueProperties({
               <span className="text-xs text-muted-foreground">{monitorSecondary}</span>
             ) : null}
           </span>
-        </button>
+        </span>
       </TooltipTrigger>
       {monitorNextCheckAt ? (
         <TooltipContent

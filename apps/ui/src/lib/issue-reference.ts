@@ -48,15 +48,10 @@ export function parseIssueReferenceFromHref(
 
   if (!BARE_ISSUE_IDENTIFIER_RE.test(trimmed)) return null;
   const normalized = trimmed.toUpperCase();
-  // Only auto-link a bare IDENT-123 token when its prefix belongs to a known
-  // company. An empty or omitted set means "prefixes unknown" -> stay permissive
-  // (preserves behavior during initial load and in provider-less render
-  // surfaces). The issue:// scheme and /issues/ path forms handled above are
-  // never gated -- they are deliberate references, not accidental foreign keys.
-  if (knownPrefixes && knownPrefixes.size > 0) {
-    const prefix = normalized.split("-")[0];
-    if (!prefix || !knownPrefixes.has(prefix)) return null;
-  }
+  // Bare tokens require an exact company prefix. The explicit issue:// and
+  // /issues/ forms above remain deliberate references in provider-less views.
+  const prefix = normalized.split("-")[0];
+  if (!prefix || !knownPrefixes?.has(prefix)) return null;
   return {
     issuePathId: normalized,
     href: `/issues/${encodeURIComponent(normalized)}`,
@@ -163,16 +158,15 @@ export interface RemarkLinkIssueReferencesOptions {
    * Company issue prefixes that are eligible for auto-linking. When provided
    * and non-empty, a bare IDENT-123 token only becomes an issue link if its
    * prefix is in this set -- this keeps foreign tracker keys (e.g. a Jira
-   * "TREE-604") from linking to non-existent Paperclip issues. Omit or pass an
-   * empty list to keep the legacy permissive behavior (link any IDENT-123).
+   * "TREE-604") from linking to non-existent Paperclip issues.
    */
   knownPrefixes?: string[];
 }
 
 export function remarkLinkIssueReferences(options?: RemarkLinkIssueReferencesOptions) {
-  const knownPrefixes = options?.knownPrefixes && options.knownPrefixes.length > 0
-    ? new Set(options.knownPrefixes.map((prefix) => prefix.toUpperCase()))
-    : undefined;
+  const knownPrefixes = new Set(
+    (options?.knownPrefixes ?? []).map((prefix) => prefix.toUpperCase()),
+  );
   return (tree: MarkdownNode) => {
     rewriteMarkdownTree(tree, knownPrefixes);
   };

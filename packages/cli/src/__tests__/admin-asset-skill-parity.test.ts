@@ -82,7 +82,6 @@ describe("admin, asset, and skill parity commands", () => {
 
     await run(["adapter", "list"]);
     await run(["adapter", "get", agentType]);
-    await run(["adapter", "update", agentType, "--payload-json", "{\"disabled\":true}"]);
     await run(["adapter", "config-schema", agentType]);
     await run(["adapter", "models", agentType, "--company-id", COMPANY_ID]);
     await run(["adapter", "model-profiles", agentType, "--company-id", COMPANY_ID]);
@@ -90,7 +89,6 @@ describe("admin, asset, and skill parity commands", () => {
     expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
       ["GET", "http://localhost:3100/api/adapters"],
       ["GET", `http://localhost:3100/api/adapters/${agentType}`],
-      ["PATCH", `http://localhost:3100/api/adapters/${agentType}`],
       ["GET", `http://localhost:3100/api/adapters/${agentType}/config-schema`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/adapters/${agentType}/models`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/adapters/${agentType}/model-profiles`],

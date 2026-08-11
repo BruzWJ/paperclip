@@ -209,7 +209,7 @@ export function registerAgentCommands(program: Command): void {
       .argument("<agentId>", "Agent ID")
       .requiredOption(
         "--payload-json <json>",
-        "Adapter revision JSON with explicit adapterType, adapterConfig, runtimeConfig, companySkillPins, and skillChannel",
+        "Adapter revision JSON with explicit adapterType, adapterConfig, runtimeConfig, and companySkillPins",
       )
       .action(async (agentId: string, opts: AgentJsonPayloadOptions) => {
         try {

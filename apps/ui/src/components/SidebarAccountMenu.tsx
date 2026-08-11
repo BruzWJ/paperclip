@@ -76,11 +76,11 @@ function MenuAction({
   external = false,
 }: MenuActionProps) {
   const className =
-    "flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-accent/60";
+    "flex w-full items-start gap-3 rounded-sm px-3 py-3 text-left transition-colors hover:bg-accent/60";
 
   const content = (
     <>
-      <span className="mt-0.5 rounded-lg border border-border bg-background/70 p-2 text-muted-foreground">
+      <span className="mt-0.5 rounded-sm border border-border bg-background/70 p-2 text-muted-foreground">
         <Icon className="size-4" />
       </span>
       <span className="min-w-0 flex-1">
@@ -187,12 +187,11 @@ export function SidebarAccountMenu({
           side="top"
           align="start"
           sideOffset={10}
-          className="w-(--sz-277px) max-w-(--sz-calc-24) overflow-hidden rounded-t-2xl rounded-b-none border-border p-0 shadow-2xl"
+          className="w-(--sz-277px) max-w-(--sz-calc-24) overflow-hidden rounded-md border-border p-0 shadow-2xl"
         >
-          <div className="h-24 bg-(image:--gradient-extract-25)" />
-          <div className="-mt-8 px-4 pb-4">
+          <div className="p-2">
             <div className="flex items-start gap-3">
-              <div className="rounded-2xl border-4 border-popover bg-popover p-0.5 shadow-sm">
+              <div className="rounded-sm border-4 border-popover bg-popover p-0.5 shadow-sm">
                 <Avatar size="lg">
                   {session?.user.image ? (
                     <AvatarImage src={session.user.image} alt={displayName} />
@@ -256,7 +255,7 @@ export function SidebarAccountMenu({
               <button
                 type="button"
                 className={cn(
-                  "flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-destructive/10",
+                  "flex w-full items-start gap-3 rounded-sm px-3 py-3 text-left transition-colors hover:bg-destructive/10",
                   signOutMutation.isPending && "cursor-not-allowed opacity-60",
                 )}
                 onClick={() => signOutMutation.mutate()}

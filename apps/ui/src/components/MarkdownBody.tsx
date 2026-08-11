@@ -597,15 +597,14 @@ function MarkdownBodyImpl({
   onImageClick,
 }: MarkdownBodyProps) {
   const { theme } = useTheme();
-  // Read company prefixes non-throwingly: MarkdownBody renders in surfaces that
-  // may lack a CompanyProvider. A null context (or no companies yet) leaves
-  // knownPrefixes undefined, which keeps issue auto-linking permissive.
+  // MarkdownBody also renders outside CompanyProvider; those surfaces have no
+  // authority to auto-link bare issue identifiers.
   const company = useOptionalCompany();
   const companies = company?.companies;
   // Stable identity so it can feed the memoized remark plugins without
   // re-creating them (and forcing a full markdown re-parse) every render.
   const knownPrefixes = useMemo(
-    () => (companies?.length ? companies.map((c) => c.issuePrefix) : undefined),
+    () => companies?.map((c) => c.issuePrefix) ?? [],
     [companies],
   );
   // react-markdown treats the values of `components` as component *types* and

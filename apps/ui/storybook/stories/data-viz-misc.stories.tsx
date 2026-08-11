@@ -112,7 +112,7 @@ function makeRun(
 const activityRuns: IssueExecutionRunEnvelopeRecord[] = [
   makeRun({ id: "run-chart-1", createdAt: daysAgo(13).toISOString(), startedAt: daysAgo(13).toISOString() }),
   makeRun({ id: "run-chart-2", createdAt: daysAgo(10).toISOString(), startedAt: daysAgo(10).toISOString() }),
-  makeRun({ id: "run-chart-3", status: "failed", terminalClassification: "failed", terminalReasonCode: "process_exit", createdAt: daysAgo(10).toISOString(), startedAt: daysAgo(10, 15).toISOString(), processExitCode: 1 }),
+  makeRun({ id: "run-chart-3", status: "failed", terminalClassification: "failed", terminalReasonCode: "process_exit", createdAt: daysAgo(10).toISOString(), startedAt: daysAgo(10, 15).toISOString() }),
   makeRun({ id: "run-chart-4", status: "running", terminalClassification: null, terminalFinalizationId: null, currentAttemptId: "attempt-run-chart-4", currentLeaseId: "lease-run-chart-4", createdAt: daysAgo(7).toISOString(), startedAt: daysAgo(7).toISOString(), finishedAt: null }),
   makeRun({ id: "run-chart-5", createdAt: daysAgo(5).toISOString(), startedAt: daysAgo(5).toISOString() }),
   makeRun({ id: "run-chart-6", status: "timed_out", terminalClassification: "timed_out", terminalReasonCode: "timeout", createdAt: daysAgo(3).toISOString(), startedAt: daysAgo(3).toISOString() }),

@@ -1450,11 +1450,6 @@ function RunDetail({ run: initialRun }: { run: IssueExecutionRunEnvelopeRecord }
             {run.terminalReasonCode.replace(/_/g, " ")}
           </p>
         ) : null}
-        {run.processExitCode !== null || run.processSignal !== null ? (
-          <p className="text-xs text-muted-foreground">
-            Process settled by {run.processSignal ?? "exit " + String(run.processExitCode)}
-          </p>
-        ) : null}
       </div>
 
       {isLoading && !detail ? (

@@ -42,8 +42,8 @@ export function StatusBadge({ status, label }: { status: string; label?: string 
 
 /**
  * Agent status chip — bordered chip recoloured from the editable
- * `--status-agent-*` base hue via the `.status-chip` color-mix helper. `active`
- * renders as "idle" (alias for dead code).
+ * `--status-agent-*` base hue via the `.status-chip` color-mix helper. The
+ * provider-facing `active` state is presented to operators as "idle".
  */
 export function AgentStatusBadge({ status }: { status: string }) {
   const cssVar = agentStatusVar[status] ?? agentStatusVarDefault;

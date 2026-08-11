@@ -247,8 +247,6 @@ export type FileTreeProps = {
   fileTones?: Record<string, FileTreeTone | undefined>;
   /** Internal-only escape hatch for current host call sites that need richer row content. */
   renderFileExtra?: (node: FileTreeNode, checked: boolean) => ReactNode;
-  /** @deprecated Use fileTones for public surfaces. Kept for compatibility with host-only callers. */
-  fileRowClassName?: (node: FileTreeNode, checked: boolean) => string | undefined;
   showCheckboxes?: boolean;
   /** Allow long file and directory names to wrap instead of forcing horizontal overflow. */
   wrapLabels?: boolean;
@@ -269,7 +267,6 @@ export function FileTree({
   fileBadges,
   fileTones,
   renderFileExtra,
-  fileRowClassName,
   showCheckboxes = true,
   wrapLabels = true,
   loading = false,
@@ -400,7 +397,6 @@ export function FileTree({
         const { allChecked, someChecked } = checkboxState(node, effectiveCheckedFiles);
         const badge = fileBadges?.[node.path];
         const tone = fileTones?.[node.path] ?? "default";
-        const extraClassName = node.kind === "file" ? fileRowClassName?.(node, allChecked) : undefined;
         const FileIcon = node.kind === "file" ? fileIcon(node.name) : null;
         const isSelected = node.kind === "file" && node.path === selectedFile;
 
@@ -417,7 +413,6 @@ export function FileTree({
               TREE_ROW_HEIGHT_CLASS,
               isSelected && "text-foreground bg-accent/20",
               fileTreeToneClass[tone],
-              extraClassName,
             )}
             style={{
               paddingInlineStart: `${TREE_BASE_INDENT + depth * TREE_STEP_INDENT - 8}px`,

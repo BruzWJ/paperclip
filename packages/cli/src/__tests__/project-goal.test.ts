@@ -83,6 +83,17 @@ describe("project and goal commands", () => {
     expect(fetchMock.mock.calls[1]?.[1]?.method).toBe("PATCH");
   });
 
+  it("does not register the retired singular project goal option", async () => {
+    await expect(createProgram().parseAsync([
+      "project", "create",
+      "--company-id", COMPANY_ID,
+      "--name", "Launch Site",
+      "--goal-id", GOAL_ID,
+    ], { from: "user" })).rejects.toMatchObject({
+      code: "commander.unknownOption",
+    });
+  });
+
   it("lists and deletes projects", async () => {
     const fetchMock = vi
       .fn()

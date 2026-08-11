@@ -22,7 +22,6 @@ function buildPayload(instruction?: string) {
     configValues,
     adapterConfig: {},
     companySkillPins: [],
-    skillChannel: "operator_native",
   });
 }
 
