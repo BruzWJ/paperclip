@@ -5,8 +5,8 @@ import {
 } from "../lib/company-page-memory";
 
 const companies = [
-  { id: "for", issuePrefix: "FOR" },
-  { id: "pap", issuePrefix: "PAP" },
+  { id: "for", taskPrefix: "FOR" },
+  { id: "pap", taskPrefix: "PAP" },
 ];
 
 describe("getRememberedPathOwnerCompanyId", () => {
@@ -14,7 +14,7 @@ describe("getRememberedPathOwnerCompanyId", () => {
     expect(
       getRememberedPathOwnerCompanyId({
         companies,
-        pathname: "/FOR/issues/FOR-1",
+        pathname: "/FOR/tasks/FOR-1",
         fallbackCompanyId: "pap",
       }),
     ).toBe("for");
@@ -24,7 +24,7 @@ describe("getRememberedPathOwnerCompanyId", () => {
     expect(
       getRememberedPathOwnerCompanyId({
         companies: [],
-        pathname: "/FOR/issues/FOR-1",
+        pathname: "/FOR/tasks/FOR-1",
         fallbackCompanyId: "pap",
       }),
     ).toBeNull();
@@ -52,19 +52,19 @@ describe("getRememberedPathOwnerCompanyId", () => {
 });
 
 describe("sanitizeRememberedPathForCompany", () => {
-  it("keeps remembered issue paths that belong to the target company", () => {
+  it("keeps remembered task paths that belong to the target company", () => {
     expect(
       sanitizeRememberedPathForCompany({
-        path: "/issues/PAP-12",
+        path: "/tasks/PAP-12",
         companyPrefix: "PAP",
       }),
-    ).toBe("/issues/PAP-12");
+    ).toBe("/tasks/PAP-12");
   });
 
-  it("falls back to dashboard for remembered issue identifiers from another company", () => {
+  it("falls back to dashboard for remembered task identifiers from another company", () => {
     expect(
       sanitizeRememberedPathForCompany({
-        path: "/issues/FOR-1",
+        path: "/tasks/FOR-1",
         companyPrefix: "PAP",
       }),
     ).toBe("/dashboard");

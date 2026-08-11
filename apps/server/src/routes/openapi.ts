@@ -11,26 +11,26 @@ import {
   agentOperationalConfigurationUpdateSchema,
   runtimeAgentCreateConfigurationSchema,
   runtimeAgentUpdateConfigurationSchema,
-  // Issue
-  createIssueSchema,
-  updateIssueTitleSchema,
-  updateIssueExecutionPolicySchema,
-  decideIssueExecutionStageSchema,
-  reassignIssueSchema,
-  commitIssueCreatorFormSchema,
-  commitIssueOwnerFormSchema,
-  selfAssignIssueWithdrawalSchema,
-  reopenIssueSchema,
-  createIssueLabelSchema,
-  createIssueUserCommentSchema,
-  boardIssueCommentSchema,
-  boardIssueCommentGroupPageSchema,
-  boardIssueCommentThreadPageSchema,
-  linkIssueApprovalSchema,
-  createIssueWorkProductSchema,
-  updateIssueWorkProductSchema,
-  upsertIssueDocumentSchema,
-  restoreIssueDocumentRevisionSchema,
+  // Task
+  createTaskSchema,
+  updateTaskTitleSchema,
+  updateTaskExecutionPolicySchema,
+  decideTaskExecutionStageSchema,
+  reassignTaskSchema,
+  commitTaskCreatorFormSchema,
+  commitTaskOwnerFormSchema,
+  selfAssignTaskWithdrawalSchema,
+  reopenTaskSchema,
+  createTaskLabelSchema,
+  createTaskUserCommentSchema,
+  boardTaskCommentSchema,
+  boardTaskCommentGroupPageSchema,
+  boardTaskCommentThreadPageSchema,
+  linkTaskApprovalSchema,
+  createTaskWorkProductSchema,
+  updateTaskWorkProductSchema,
+  upsertTaskDocumentSchema,
+  restoreTaskDocumentRevisionSchema,
   // Project
   createProjectSchema,
   projectCodebaseSchema,
@@ -83,7 +83,7 @@ import {
   budgetCurrencySchema,
   ACP_COST_UNAVAILABLE_REASONS,
   ACP_COST_CURSOR_STATES,
-  ISSUE_EXECUTION_RUN_KINDS,
+  TASK_EXECUTION_RUN_KINDS,
   adapterRuntimeReadinessSchema,
   // Sidebar
   upsertSidebarOrderPreferenceSchema,
@@ -101,11 +101,11 @@ import {
   evaluateSkillPolicySchema,
   replaceSkillPolicySchema,
   updateInboxAgentPolicySchema,
-  // Issue tree
-  createIssueTreeHoldSchema,
-  previewIssueTreeControlSchema,
-  releaseIssueTreeHoldSchema,
-  createChildIssueSchema,
+  // Task tree
+  createTaskTreeHoldSchema,
+  previewTaskTreeControlSchema,
+  releaseTaskTreeHoldSchema,
+  createChildTaskSchema,
   // Better Auth user profile input
   updateCurrentUserProfileSchema,
   // Company portability
@@ -580,19 +580,19 @@ const publicAgentAdapterRevisionCreateResponseSchema = z.object({
   appended: z.boolean(),
 }).strict();
 
-const issueExecutionRunKindSchema = z.enum([
+const taskExecutionRunKindSchema = z.enum([
   "productive",
   "consult",
 ]);
 
-const issueExecutionRunEnvelopeRecordSchema = z
+const taskExecutionRunEnvelopeRecordSchema = z
   .object({
     id: z.string().uuid(),
     companyId: z.string().uuid(),
-    issueId: z.string().uuid(),
+    taskId: z.string().uuid(),
     sessionId: z.string().uuid(),
     executionScopeId: z.string().uuid(),
-    kind: issueExecutionRunKindSchema,
+    kind: taskExecutionRunKindSchema,
     status: z.enum([
       "queued",
       "scheduled_retry",
@@ -607,7 +607,7 @@ const issueExecutionRunEnvelopeRecordSchema = z
     targetAgentId: z.string().uuid(),
     adapterConfigRevisionId: z.string().uuid(),
     executionMode: z.enum(["owner", "consult"]),
-    issueExecutionAuthorityId: z.string().uuid().nullable(),
+    taskExecutionAuthorityId: z.string().uuid().nullable(),
     consultExecutionId: z.string().uuid().nullable(),
     parentRunId: z.string().uuid().nullable(),
     retryOfRunId: z.string().uuid().nullable(),
@@ -632,7 +632,7 @@ const workTimelineQuerySchema = z.object({
   userId: z.string().optional(),
   goalId: z.string().uuid().optional(),
   projectId: z.string().uuid().optional(),
-  issueId: z.string().uuid().optional(),
+  taskId: z.string().uuid().optional(),
   limit: z.string().optional(),
   offset: z.string().optional(),
 }).strict();
@@ -647,10 +647,10 @@ const workTimelineResponseSchema = z.object({
   spans: z.array(z.object({
     actorId: z.string(),
     runId: z.string(),
-    kind: issueExecutionRunKindSchema,
-    issueId: z.string(),
-    issueIdentifier: z.string().nullable(),
-    issueTitle: z.string().nullable(),
+    kind: taskExecutionRunKindSchema,
+    taskId: z.string(),
+    taskIdentifier: z.string().nullable(),
+    taskTitle: z.string().nullable(),
     start: z.string(),
     end: z.string().nullable(),
     status: z.enum([
@@ -668,20 +668,20 @@ const workTimelineResponseSchema = z.object({
   events: z.array(z.object({
     actorId: z.string(),
     kind: z.enum(["created", "commented", "approved", "delegated", "assigned"]),
-    issueId: z.string(),
+    taskId: z.string(),
     at: z.string(),
   }).strict()),
   edges: z.array(z.object({
     fromActorId: z.string(),
     toActorId: z.string(),
-    issueId: z.string(),
+    taskId: z.string(),
     at: z.string(),
     kind: z.enum(["delegation", "assignment", "mention"]),
   }).strict()),
   pagination: z.object({
     limit: z.number().int().positive(),
     offset: z.number().int().nonnegative(),
-    totalIssues: z.number().int().nonnegative(),
+    totalTasks: z.number().int().nonnegative(),
     hasMore: z.boolean(),
   }).strict(),
   window: z.object({
@@ -880,17 +880,17 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/finance-events",
   "POST /api/companies/{companyId}/secret-provider-configs",
   "POST /api/companies/{companyId}/labels",
-  "POST /api/issues/{id}/documents/{key}/annotations",
-  "POST /api/issues/{id}/documents/{key}/annotations/{threadId}/comments",
+  "POST /api/tasks/{id}/documents/{key}/annotations",
+  "POST /api/tasks/{id}/documents/{key}/annotations/{threadId}/comments",
   "POST /api/routines/{id}/description/annotations",
   "POST /api/routines/{id}/description/annotations/{threadId}/comments",
-  "POST /api/issues/{id}/work-products",
-  "POST /api/issues/{id}/low-trust/promotions",
-  "POST /api/issues/{id}/approvals",
-  "POST /api/companies/{companyId}/issues",
-  "POST /api/issues/{id}/children",
-  "POST /api/issues/{id}/comments",
-  "POST /api/companies/{companyId}/issues/{issueId}/attachments",
+  "POST /api/tasks/{id}/work-products",
+  "POST /api/tasks/{id}/low-trust/promotions",
+  "POST /api/tasks/{id}/approvals",
+  "POST /api/companies/{companyId}/tasks",
+  "POST /api/tasks/{id}/children",
+  "POST /api/tasks/{id}/comments",
+  "POST /api/companies/{companyId}/tasks/{taskId}/attachments",
   "POST /api/companies/{companyId}/projects",
   "POST /api/companies/{companyId}/routines",
   "POST /api/companies/{companyId}/folders",
@@ -1214,10 +1214,10 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/companies/{companyId}/issue-owner-catalog",
+  path: "/api/companies/{companyId}/task-owner-catalog",
   tags: ["agents"],
   summary:
-    "List control-plane-eligible agents with current revisions for issue ownership",
+    "List control-plane-eligible agents with current revisions for task ownership",
   request: { params: z.object({ companyId: z.string() }) },
   responses: {
     200: r.ok(z.array(z.object({
@@ -1242,11 +1242,11 @@ registry.registerPath({
   },
   responses: {
     200: r.ok(z.object({
-      comment: boardIssueCommentSchema,
+      comment: boardTaskCommentSchema,
       retried: z.boolean(),
     }).strict()),
     201: r.ok(z.object({
-      comment: boardIssueCommentSchema,
+      comment: boardTaskCommentSchema,
       retried: z.boolean(),
     }).strict()),
     400: r.badRequest,
@@ -1541,14 +1541,14 @@ registry.registerPath({
   },
 });
 
-// ─── Issues ──────────────────────────────────────────────────────────────────
+// ─── Tasks ──────────────────────────────────────────────────────────────────
 
 registry.registerPath({
   method: "get",
-  path: "/api/companies/{companyId}/issues",
-  tags: ["issues"],
-  summary: "List issues in a company",
-  description: "Use `view=compact` for the compact board issue-list row contract. The default response is the canonical full issue-list contract.",
+  path: "/api/companies/{companyId}/tasks",
+  tags: ["tasks"],
+  summary: "List tasks in a company",
+  description: "Use `view=compact` for the compact board task-list row contract. The default response is the canonical full task-list contract.",
   request: {
     params: z.object({ companyId: z.string() }),
     query: z.object({ view: z.enum(["compact"]).optional() }).passthrough(),
@@ -1558,12 +1558,12 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/companies/{companyId}/issues",
-  tags: ["issues"],
-  summary: "Create an issue",
+  path: "/api/companies/{companyId}/tasks",
+  tags: ["tasks"],
+  summary: "Create a task",
   request: {
     params: z.object({ companyId: z.string() }),
-    body: jsonBody(createIssueSchema),
+    body: jsonBody(createTaskSchema),
   },
   responses: {
     200: r.ok(),
@@ -1578,21 +1578,21 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}",
-  tags: ["issues"],
-  summary: "Get an issue",
+  path: "/api/tasks/{id}",
+  tags: ["tasks"],
+  summary: "Get a task",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
 });
 
 registry.registerPath({
   method: "patch",
-  path: "/api/issues/{id}",
-  tags: ["issues"],
-  summary: "Update board-editable issue title metadata",
+  path: "/api/tasks/{id}",
+  tags: ["tasks"],
+  summary: "Update board-editable task title metadata",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(updateIssueTitleSchema),
+    body: jsonBody(updateTaskTitleSchema),
   },
   responses: {
     200: r.ok(),
@@ -1605,12 +1605,12 @@ registry.registerPath({
 
 registry.registerPath({
   method: "put",
-  path: "/api/issues/{id}/execution-policy",
-  tags: ["issues"],
-  summary: "Configure the board-owned execution policy for an issue",
+  path: "/api/tasks/{id}/execution-policy",
+  tags: ["tasks"],
+  summary: "Configure the board-owned execution policy for a task",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(updateIssueExecutionPolicySchema),
+    body: jsonBody(updateTaskExecutionPolicySchema),
   },
   responses: {
     200: r.ok(),
@@ -1625,12 +1625,12 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/execution-policy/decisions",
-  tags: ["issues"],
+  path: "/api/tasks/{id}/execution-policy/decisions",
+  tags: ["tasks"],
   summary: "Append a decision for the active board execution-policy stage",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(decideIssueExecutionStageSchema),
+    body: jsonBody(decideTaskExecutionStageSchema),
   },
   responses: {
     200: r.ok(),
@@ -1646,12 +1646,12 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/reassign",
-  tags: ["issues"],
-  summary: "Reassign an issue through the separately audited board entrance",
+  path: "/api/tasks/{id}/reassign",
+  tags: ["tasks"],
+  summary: "Reassign a task through the separately audited board entrance",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(reassignIssueSchema),
+    body: jsonBody(reassignTaskSchema),
   },
   responses: {
     200: r.ok(),
@@ -1666,12 +1666,12 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/creator-reassign",
-  tags: ["issues"],
-  summary: "Reassign an issue as its immutable named-user creator",
+  path: "/api/tasks/{id}/creator-reassign",
+  tags: ["tasks"],
+  summary: "Reassign a task as its immutable named-user creator",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(reassignIssueSchema),
+    body: jsonBody(reassignTaskSchema),
   },
   responses: {
     200: r.ok(),
@@ -1686,13 +1686,13 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/withdrawal-self-assignment",
-  tags: ["issues"],
+  path: "/api/tasks/{id}/withdrawal-self-assignment",
+  tags: ["tasks"],
   summary:
     "Let the immutable named-user creator self-assign for cancellation only",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(selfAssignIssueWithdrawalSchema),
+    body: jsonBody(selfAssignTaskWithdrawalSchema),
   },
   responses: {
     200: r.ok(),
@@ -1707,11 +1707,11 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/issue-creator-form-updates",
-  tags: ["issues"],
+  path: "/api/task-creator-form-updates",
+  tags: ["tasks"],
   summary: "Commit an exact authenticated named-creator form update",
   request: {
-    body: jsonBody(commitIssueCreatorFormSchema),
+    body: jsonBody(commitTaskCreatorFormSchema),
   },
   responses: {
     201: r.ok(),
@@ -1726,12 +1726,12 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/issue-owner-form-updates",
-  tags: ["issues"],
+  path: "/api/task-owner-form-updates",
+  tags: ["tasks"],
   summary:
     "Commit a documented human escalation or withdrawal owner form update",
   request: {
-    body: jsonBody(commitIssueOwnerFormSchema),
+    body: jsonBody(commitTaskOwnerFormSchema),
   },
   responses: {
     201: r.ok(),
@@ -1746,12 +1746,12 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/reopen",
-  tags: ["issues"],
-  summary: "Reopen a terminal issue through the audited board command",
+  path: "/api/tasks/{id}/reopen",
+  tags: ["tasks"],
+  summary: "Reopen a terminal task through the audited board command",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(reopenIssueSchema),
+    body: jsonBody(reopenTaskSchema),
   },
   responses: {
     200: r.ok(),
@@ -1766,21 +1766,21 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/work-products",
-  tags: ["issues"],
-  summary: "List issue work products",
+  path: "/api/tasks/{id}/work-products",
+  tags: ["tasks"],
+  summary: "List task work products",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/work-products",
-  tags: ["issues"],
-  summary: "Create an issue work product",
+  path: "/api/tasks/{id}/work-products",
+  tags: ["tasks"],
+  summary: "Create a task work product",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(createIssueWorkProductSchema),
+    body: jsonBody(createTaskWorkProductSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
@@ -1788,11 +1788,11 @@ registry.registerPath({
 registry.registerPath({
   method: "patch",
   path: "/api/work-products/{id}",
-  tags: ["issues"],
+  tags: ["tasks"],
   summary: "Update a work product",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(updateIssueWorkProductSchema),
+    body: jsonBody(updateTaskWorkProductSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
@@ -1800,7 +1800,7 @@ registry.registerPath({
 registry.registerPath({
   method: "delete",
   path: "/api/work-products/{id}",
-  tags: ["issues"],
+  tags: ["tasks"],
   summary: "Delete a work product",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
@@ -1808,69 +1808,69 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/documents",
-  tags: ["issues"],
-  summary: "List issue documents",
+  path: "/api/tasks/{id}/documents",
+  tags: ["tasks"],
+  summary: "List task documents",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/documents/{key}",
-  tags: ["issues"],
-  summary: "Get an issue document",
+  path: "/api/tasks/{id}/documents/{key}",
+  tags: ["tasks"],
+  summary: "Get a task document",
   request: { params: z.object({ id: z.string(), key: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
 });
 
 registry.registerPath({
   method: "put",
-  path: "/api/issues/{id}/documents/{key}",
-  tags: ["issues"],
-  summary: "Upsert an issue document",
+  path: "/api/tasks/{id}/documents/{key}",
+  tags: ["tasks"],
+  summary: "Upsert a task document",
   request: {
     params: z.object({ id: z.string(), key: z.string() }),
-    body: jsonBody(upsertIssueDocumentSchema),
+    body: jsonBody(upsertTaskDocumentSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "delete",
-  path: "/api/issues/{id}/documents/{key}",
-  tags: ["issues"],
-  summary: "Delete an issue document",
+  path: "/api/tasks/{id}/documents/{key}",
+  tags: ["tasks"],
+  summary: "Delete a task document",
   request: { params: z.object({ id: z.string(), key: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/documents/{key}/revisions",
-  tags: ["issues"],
-  summary: "List issue document revisions",
+  path: "/api/tasks/{id}/documents/{key}/revisions",
+  tags: ["tasks"],
+  summary: "List task document revisions",
   request: { params: z.object({ id: z.string(), key: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/documents/{key}/revisions/{revisionId}/restore",
-  tags: ["issues"],
+  path: "/api/tasks/{id}/documents/{key}/revisions/{revisionId}/restore",
+  tags: ["tasks"],
   summary: "Restore a document revision",
   request: {
     params: z.object({ id: z.string(), key: z.string(), revisionId: z.string() }),
-    body: jsonBody(restoreIssueDocumentRevisionSchema),
+    body: jsonBody(restoreTaskDocumentRevisionSchema),
   },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/comments",
-  tags: ["issues"],
-  summary: "Page root-grouped issue comments",
+  path: "/api/tasks/{id}/comments",
+  tags: ["tasks"],
+  summary: "Page root-grouped task comments",
   request: {
     params: z.object({ id: z.string() }),
     query: z.object({
@@ -1879,17 +1879,17 @@ registry.registerPath({
       entryLimit: z.coerce.number().int().min(1).max(500).optional(),
     }).strict(),
   },
-  responses: { 200: r.ok(boardIssueCommentGroupPageSchema), 401: r.unauthorized },
+  responses: { 200: r.ok(boardTaskCommentGroupPageSchema), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/comments",
-  tags: ["issues"],
+  path: "/api/tasks/{id}/comments",
+  tags: ["tasks"],
   summary: "Add a typed user comment with an optional explicit current-owner mention",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(createIssueUserCommentSchema),
+    body: jsonBody(createTaskUserCommentSchema),
   },
   responses: {
     200: r.ok(),
@@ -1904,57 +1904,57 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/approvals",
-  tags: ["issues"],
-  summary: "List issue approvals",
+  path: "/api/tasks/{id}/approvals",
+  tags: ["tasks"],
+  summary: "List task approvals",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/approvals",
-  tags: ["issues"],
-  summary: "Link an approval to an issue",
+  path: "/api/tasks/{id}/approvals",
+  tags: ["tasks"],
+  summary: "Link an approval to a task",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(linkIssueApprovalSchema),
+    body: jsonBody(linkTaskApprovalSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "delete",
-  path: "/api/issues/{id}/approvals/{approvalId}",
-  tags: ["issues"],
-  summary: "Unlink an approval from an issue",
+  path: "/api/tasks/{id}/approvals/{approvalId}",
+  tags: ["tasks"],
+  summary: "Unlink an approval from a task",
   request: { params: z.object({ id: z.string(), approvalId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/read",
-  tags: ["issues"],
-  summary: "Mark an issue as read",
+  path: "/api/tasks/{id}/read",
+  tags: ["tasks"],
+  summary: "Mark a task as read",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "delete",
-  path: "/api/issues/{id}/read",
-  tags: ["issues"],
-  summary: "Mark an issue as unread",
+  path: "/api/tasks/{id}/read",
+  tags: ["tasks"],
+  summary: "Mark a task as unread",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/inbox-archive",
-  tags: ["issues"],
-  summary: "Archive issue from inbox",
+  path: "/api/tasks/{id}/inbox-archive",
+  tags: ["tasks"],
+  summary: "Archive task from inbox",
   request: {
     params: z.object({ id: z.string() }),
     body: jsonBody(z.object({ userId: z.string().min(1).optional() })),
@@ -1964,9 +1964,9 @@ registry.registerPath({
 
 registry.registerPath({
   method: "delete",
-  path: "/api/issues/{id}/inbox-archive",
-  tags: ["issues"],
-  summary: "Un-archive issue from inbox",
+  path: "/api/tasks/{id}/inbox-archive",
+  tags: ["tasks"],
+  summary: "Un-archive task from inbox",
   request: {
     params: z.object({ id: z.string() }),
     body: jsonBody(z.object({ userId: z.string().min(1).optional() })),
@@ -1976,9 +1976,9 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/attachments",
-  tags: ["issues"],
-  summary: "List issue attachments",
+  path: "/api/tasks/{id}/attachments",
+  tags: ["tasks"],
+  summary: "List task attachments",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
@@ -1986,7 +1986,7 @@ registry.registerPath({
 registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/labels",
-  tags: ["issues"],
+  tags: ["tasks"],
   summary: "List labels in a company",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
@@ -1995,11 +1995,11 @@ registry.registerPath({
 registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/labels",
-  tags: ["issues"],
+  tags: ["tasks"],
   summary: "Create a label",
   request: {
     params: z.object({ companyId: z.string() }),
-    body: jsonBody(createIssueLabelSchema),
+    body: jsonBody(createTaskLabelSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
@@ -2007,7 +2007,7 @@ registry.registerPath({
 registry.registerPath({
   method: "delete",
   path: "/api/labels/{labelId}",
-  tags: ["issues"],
+  tags: ["tasks"],
   summary: "Delete a label",
   request: { params: z.object({ labelId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
@@ -2484,9 +2484,9 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/approvals/{id}/issues",
+  path: "/api/approvals/{id}/tasks",
   tags: ["approvals"],
-  summary: "List issues linked to an approval",
+  summary: "List tasks linked to an approval",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
@@ -2601,9 +2601,9 @@ const costByProjectResponseSchema = z.array(z.object({
   unpricedPromptCount: z.number().int().nonnegative(),
 }).strict());
 
-const issueCostSummaryResponseSchema = z.object({
-  issueId: z.string().uuid(),
-  issueCount: z.number().int().nonnegative(),
+const taskCostSummaryResponseSchema = z.object({
+  taskId: z.string().uuid(),
+  taskCount: z.number().int().nonnegative(),
   includeDescendants: z.boolean(),
   budgetCurrency: budgetCurrencySchema,
   knownCostAmount: moneyAmountSchema,
@@ -2617,10 +2617,10 @@ const canonicalCostEventResponseSchema = z.object({
   id: z.string().uuid(),
   accountingId: z.string().uuid(),
   companyId: z.string().uuid(),
-  issueId: z.string().uuid(),
+  taskId: z.string().uuid(),
   agentId: z.string().uuid(),
   runId: z.string().uuid(),
-  runKind: z.enum(ISSUE_EXECUTION_RUN_KINDS),
+  runKind: z.enum(TASK_EXECUTION_RUN_KINDS),
   promptKind: z.enum(["base", "steering"]),
   refId: z.string().uuid().nullable(),
   runOrdinal: z.number().int().nonnegative().nullable(),
@@ -2890,18 +2890,18 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/activity",
+  path: "/api/tasks/{id}/activity",
   tags: ["activity"],
-  summary: "List activity for an issue",
+  summary: "List activity for a task",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/runs",
+  path: "/api/tasks/{id}/runs",
   tags: ["runs"],
-  summary: "List canonical issue execution run envelopes for an issue",
+  summary: "List canonical task execution run envelopes for a task",
   request: {
     params: z.object({ id: z.string() }),
     query: z
@@ -2916,7 +2916,7 @@ registry.registerPath({
     200: r.ok(
       z
         .object({
-          items: z.array(issueExecutionRunEnvelopeRecordSchema),
+          items: z.array(taskExecutionRunEnvelopeRecordSchema),
           nextCursor: z.string().nullable(),
         })
         .strict(),
@@ -3344,13 +3344,13 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
 });
 
-// ─── Issue execution runs ────────────────────────────────────────────────────
+// ─── Task execution runs ────────────────────────────────────────────────────
 
 registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/runs",
   tags: ["runs"],
-  summary: "List canonical issue execution run envelopes",
+  summary: "List canonical task execution run envelopes",
   request: {
     params: z.object({ companyId: z.string().uuid() }),
     query: z
@@ -3366,7 +3366,7 @@ registry.registerPath({
     200: r.ok(
       z
         .object({
-          items: z.array(issueExecutionRunEnvelopeRecordSchema),
+          items: z.array(taskExecutionRunEnvelopeRecordSchema),
           nextCursor: z.string().nullable(),
         })
         .strict(),
@@ -3381,7 +3381,7 @@ registry.registerPath({
   method: "get",
   path: "/api/runs/{runId}",
   tags: ["runs"],
-  summary: "Get the bounded joined detail for an issue execution run",
+  summary: "Get the bounded joined detail for a task execution run",
   request: {
     params: z.object({ runId: z.string().uuid() }),
     query: z
@@ -3393,7 +3393,7 @@ registry.registerPath({
   responses: {
     200: r.ok(
       z
-        .object({ run: issueExecutionRunEnvelopeRecordSchema })
+        .object({ run: taskExecutionRunEnvelopeRecordSchema })
         .passthrough(),
     ),
     401: r.unauthorized,
@@ -3420,14 +3420,14 @@ registry.registerPath({
   },
 });
 
-// ─── Issue tree ──────────────────────────────────────────────────────────────
+// ─── Task tree ──────────────────────────────────────────────────────────────
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/children",
-  tags: ["issues"],
-  summary: "Create child issues",
-  request: { params: z.object({ id: z.string() }), body: jsonBody(createChildIssueSchema) },
+  path: "/api/tasks/{id}/children",
+  tags: ["tasks"],
+  summary: "Create child tasks",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(createChildTaskSchema) },
   responses: {
     200: r.ok(),
     201: r.ok(),
@@ -3442,63 +3442,63 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/tree-control/state",
-  tags: ["issues"],
-  summary: "Get issue tree control state",
+  path: "/api/tasks/{id}/tree-control/state",
+  tags: ["tasks"],
+  summary: "Get task tree control state",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/tree-control/preview",
-  tags: ["issues"],
-  summary: "Preview issue tree control changes",
+  path: "/api/tasks/{id}/tree-control/preview",
+  tags: ["tasks"],
+  summary: "Preview task tree control changes",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(previewIssueTreeControlSchema),
+    body: jsonBody(previewTaskTreeControlSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/tree-holds",
-  tags: ["issues"],
-  summary: "List issue tree holds",
+  path: "/api/tasks/{id}/tree-holds",
+  tags: ["tasks"],
+  summary: "List task tree holds",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/tree-holds",
-  tags: ["issues"],
-  summary: "Create an issue tree hold",
+  path: "/api/tasks/{id}/tree-holds",
+  tags: ["tasks"],
+  summary: "Create a task tree hold",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(createIssueTreeHoldSchema),
+    body: jsonBody(createTaskTreeHoldSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/tree-holds/{holdId}",
-  tags: ["issues"],
-  summary: "Get an issue tree hold",
+  path: "/api/tasks/{id}/tree-holds/{holdId}",
+  tags: ["tasks"],
+  summary: "Get a task tree hold",
   request: { params: z.object({ id: z.string(), holdId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
 });
 
 registry.registerPath({
   method: "post",
-  path: "/api/issues/{id}/tree-holds/{holdId}/release",
-  tags: ["issues"],
-  summary: "Release an issue tree hold",
+  path: "/api/tasks/{id}/tree-holds/{holdId}/release",
+  tags: ["tasks"],
+  summary: "Release a task tree hold",
   request: {
     params: z.object({ id: z.string(), holdId: z.string() }),
-    body: jsonBody(releaseIssueTreeHoldSchema),
+    body: jsonBody(releaseTaskTreeHoldSchema),
   },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
@@ -3507,10 +3507,10 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/companies/{companyId}/issues/{issueId}/attachments",
+  path: "/api/companies/{companyId}/tasks/{taskId}/attachments",
   tags: ["assets"],
-  summary: "Upload an attachment to an issue",
-  request: { params: z.object({ companyId: z.string(), issueId: z.string() }) },
+  summary: "Upload an attachment to a task",
+  request: { params: z.object({ companyId: z.string(), taskId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
@@ -4208,21 +4208,21 @@ registry.registerPath({
   responses: { 200: { description: "Plain text icon list" }, 401: r.unauthorized },
 });
 
-// ─── Issue comment reads ──────────────────────────────────────────────────────
+// ─── Task comment reads ──────────────────────────────────────────────────────
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/comments/{commentId}",
-  tags: ["issues"],
-  summary: "Get a single issue comment",
+  path: "/api/tasks/{id}/comments/{commentId}",
+  tags: ["tasks"],
+  summary: "Get a single task comment",
   request: { params: z.object({ id: z.string(), commentId: z.string() }) },
-  responses: { 200: r.ok(boardIssueCommentSchema), 401: r.unauthorized, 404: r.notFound },
+  responses: { 200: r.ok(boardTaskCommentSchema), 401: r.unauthorized, 404: r.notFound },
 });
 
 registry.registerPath({
   method: "get",
-  path: "/api/issues/{id}/comments/{rootCommentId}/thread",
-  tags: ["issues"],
+  path: "/api/tasks/{id}/comments/{rootCommentId}/thread",
+  tags: ["tasks"],
   summary: "Page one root comment group",
   request: {
     params: z.object({ id: z.string(), rootCommentId: z.string().uuid() }),
@@ -4232,7 +4232,7 @@ registry.registerPath({
     }).strict(),
   },
   responses: {
-    200: r.ok(boardIssueCommentThreadPageSchema),
+    200: r.ok(boardTaskCommentThreadPageSchema),
     401: r.unauthorized,
     404: r.notFound,
   },
@@ -4434,7 +4434,7 @@ registerCurrentRoute({
 for (const route of [
   ["get", "/api/companies/{companyId}/search", "Search company data"],
   ["get", "/api/companies/{companyId}/search/extract", "Extract company search matches"],
-  ["get", "/api/companies/{companyId}/issues/count", "Count issues in a company"],
+  ["get", "/api/companies/{companyId}/tasks/count", "Count tasks in a company"],
 ] as const) {
   registerCurrentRoute({
     method: route[0],
@@ -4501,14 +4501,14 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
-  path: "/api/issues/{id}/cost-summary",
+  path: "/api/tasks/{id}/cost-summary",
   tags: ["costs"],
-  summary: "Get issue cost summary",
+  summary: "Get task cost summary",
   query: z.object({
     excludeRoot: z.enum(["true", "false", "1", "0"]).optional(),
   }).strict(),
   responses: {
-    200: r.ok(issueCostSummaryResponseSchema),
+    200: r.ok(taskCostSummaryResponseSchema),
     400: r.badRequest,
     401: r.unauthorized,
     404: r.notFound,
@@ -4619,23 +4619,23 @@ for (const route of [
 }
 
 for (const route of [
-  ["get", "/api/issues/{id}/documents/{key}/annotations", "List document annotation threads"],
-  ["get", "/api/issues/{id}/documents/{key}/annotations/{threadId}", "Get a document annotation thread"],
-  ["post", "/api/issues/{id}/documents/{key}/lock", "Lock an issue document"],
-  ["post", "/api/issues/{id}/documents/{key}/unlock", "Unlock an issue document"],
+  ["get", "/api/tasks/{id}/documents/{key}/annotations", "List document annotation threads"],
+  ["get", "/api/tasks/{id}/documents/{key}/annotations/{threadId}", "Get a document annotation thread"],
+  ["post", "/api/tasks/{id}/documents/{key}/lock", "Lock a task document"],
+  ["post", "/api/tasks/{id}/documents/{key}/unlock", "Unlock a task document"],
 ] as const) {
   registerCurrentRoute({
     method: route[0],
     path: route[1],
-    tags: ["issues"],
+    tags: ["tasks"],
     summary: route[2],
   });
 }
 
 registerCurrentRoute({
   method: "post",
-  path: "/api/issues/{id}/documents/{key}/annotations",
-  tags: ["issues"],
+  path: "/api/tasks/{id}/documents/{key}/annotations",
+  tags: ["tasks"],
   summary: "Create a document annotation thread",
   body: createDocumentAnnotationThreadSchema,
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
@@ -4643,8 +4643,8 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "post",
-  path: "/api/issues/{id}/documents/{key}/annotations/{threadId}/comments",
-  tags: ["issues"],
+  path: "/api/tasks/{id}/documents/{key}/annotations/{threadId}/comments",
+  tags: ["tasks"],
   summary: "Add a document annotation comment",
   body: createDocumentAnnotationCommentSchema,
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
@@ -4652,11 +4652,11 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "post",
-  path: "/api/issues/{id}/low-trust/promotions",
-  tags: ["issues"],
+  path: "/api/tasks/{id}/low-trust/promotions",
+  tags: ["tasks"],
   summary: "Promote quarantined low-trust output",
   body: z.object({
-    sourceArtifactKind: z.enum(["comment", "document", "work_product", "issue"]),
+    sourceArtifactKind: z.enum(["comment", "document", "work_product", "task"]),
     sourceArtifactId: z.string().uuid(),
     title: z.string().trim().min(1).max(200),
     summary: z.string().trim().min(1).max(8_000),
@@ -4666,8 +4666,8 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "patch",
-  path: "/api/issues/{id}/documents/{key}/annotations/{threadId}",
-  tags: ["issues"],
+  path: "/api/tasks/{id}/documents/{key}/annotations/{threadId}",
+  tags: ["tasks"],
   summary: "Update a document annotation thread",
   body: updateDocumentAnnotationThreadSchema,
 });
@@ -4712,16 +4712,16 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
-  path: "/api/issues/{id}/diagnostics/blockers",
-  tags: ["issues"],
-  summary: "Get blocker diagnostics for an issue",
+  path: "/api/tasks/{id}/diagnostics/blockers",
+  tags: ["tasks"],
+  summary: "Get blocker diagnostics for a task",
 });
 
 registerCurrentRoute({
   method: "get",
-  path: "/api/issues/{id}/diagnostics/subtree",
-  tags: ["issues"],
-  summary: "Get bounded subtree blocker diagnostics for an issue",
+  path: "/api/tasks/{id}/diagnostics/subtree",
+  tags: ["tasks"],
+  summary: "Get bounded subtree blocker diagnostics for a task",
 });
 
 for (const route of [

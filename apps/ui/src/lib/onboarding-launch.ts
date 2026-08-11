@@ -44,7 +44,7 @@ export function selectReusableOnboardingProject<T extends Pick<Project, "name" |
   );
 }
 
-export function buildOnboardingIssuePayload(input: {
+export function buildOnboardingTaskPayload(input: {
   title: string;
   request: string;
   ownerAgentId: string;
@@ -53,7 +53,7 @@ export function buildOnboardingIssuePayload(input: {
 }) {
   const title = input.title.trim();
   if (input.request.trim().length === 0) {
-    throw new Error("The first issue request must contain non-whitespace text");
+    throw new Error("The first task request must contain non-whitespace text");
   }
   return {
     ...(title ? { title } : {}),

@@ -27,7 +27,7 @@ import { nextCronFires, previewFirePolicies } from "../../lib/cron-fires";
 import { timeAgo } from "../../lib/timeAgo";
 import { EmptyState } from "../EmptyState";
 import { InlineEntitySelector } from "../InlineEntitySelector";
-import { DocumentAnnotationsCountChip, IssueDocumentAnnotations } from "../IssueDocumentAnnotations";
+import { DocumentAnnotationsCountChip, TaskDocumentAnnotations } from "../TaskDocumentAnnotations";
 import { AgentIcon } from "../AgentIconPicker";
 import { MarkdownEditor } from "../MarkdownEditor";
 import { ScheduleEditor, getScheduleCronValidation } from "../ScheduleEditor";
@@ -227,7 +227,7 @@ export function OverviewSection({
         <div className="flex items-center justify-end">
           {routine.descriptionDocument ? (
             <DocumentAnnotationsCountChip
-              issueId={routine.id}
+              taskId={routine.id}
               docKey="description"
               target={{ kind: "routine", routineId: routine.id, documentKey: "description" }}
               panelOpen={descriptionAnnotationsOpen}
@@ -242,8 +242,8 @@ export function OverviewSection({
           disabled={saveRoutine.isPending}
         >
         {routine.descriptionDocument ? (
-          <IssueDocumentAnnotations
-            issueId={routine.id}
+          <TaskDocumentAnnotations
+            taskId={routine.id}
             doc={routine.descriptionDocument}
             target={{ kind: "routine", routineId: routine.id, documentKey: "description" }}
             bodyMarkdown={editDraft.description}
@@ -269,7 +269,7 @@ export function OverviewSection({
                 }
               }}
             />
-          </IssueDocumentAnnotations>
+          </TaskDocumentAnnotations>
         ) : (
           <MarkdownEditor
             ref={descriptionEditorRef}

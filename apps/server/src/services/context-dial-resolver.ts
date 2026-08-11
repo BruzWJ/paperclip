@@ -16,10 +16,10 @@ export interface ResolveContextDialInput {
    */
   agent: ContextAttenuationMask;
   /**
-   * The active owner of an issue always receives the current-issue and
-   * sub-issue retrieval cells. Company-level cells remain the agent's grants.
+   * The active owner of a task always receives the current-task and
+   * sub-task retrieval cells. Company-level cells remain the agent's grants.
    */
-  issueOwner?: boolean;
+  taskOwner?: boolean;
   /**
    * Execution-mode policy is false-only. Missing keys preserve the prior tier.
    */
@@ -49,15 +49,15 @@ export interface ContextRetrievalReachPolicy {
 }
 
 export interface ContextRetrievalPolicy {
-  listCompanyIssues: boolean;
-  listSubIssues: {
+  listCompanyTasks: boolean;
+  listSubTasks: {
     enabled: boolean;
     omittedActive: boolean;
     explicit: ContextRetrievalReachPolicy;
   };
   comments: ContextRetrievalReachPolicy & {
     enabled: boolean;
-    issueIdRequired: boolean;
+    taskIdRequired: boolean;
   };
   runs: ContextRetrievalReachPolicy & {
     enabled: boolean;
@@ -72,39 +72,39 @@ const ALL_TRUE = Object.freeze(
   Object.fromEntries(AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, true])),
 ) as ContextDial;
 
-const ISSUE_OWNER_CONTEXT_GRANT_KEYS = new Set<AgentContextGrantKey>([
+const TASK_OWNER_CONTEXT_GRANT_KEYS = new Set<AgentContextGrantKey>([
   "carry_context",
-  "read_issue_comments",
-  "read_issue_agent_run",
-  "list_sub_issues",
-  "read_sub_issue_comments",
-  "read_sub_issue_agent_run",
+  "read_task_comments",
+  "read_task_agent_run",
+  "list_sub_tasks",
+  "read_sub_task_comments",
+  "read_sub_task_agent_run",
 ]);
 
 const PRESET_STAMPS: Readonly<Record<ContextAccessPreset, ContextDial>> =
   Object.freeze({
     heads_down: ALL_FALSE,
-    focused: dialFromEnabled(["carry_context", "read_issue_comments"]),
+    focused: dialFromEnabled(["carry_context", "read_task_comments"]),
     supervisor: dialFromEnabled([
       "carry_context",
-      "read_issue_comments",
-      "list_sub_issues",
-      "read_sub_issue_comments",
+      "read_task_comments",
+      "list_sub_tasks",
+      "read_sub_task_comments",
     ]),
     investigator: dialFromEnabled([
       "carry_context",
-      "read_issue_comments",
-      "list_sub_issues",
-      "read_sub_issue_comments",
-      "read_issue_agent_run",
+      "read_task_comments",
+      "list_sub_tasks",
+      "read_sub_task_comments",
+      "read_task_agent_run",
     ]),
     situational: dialFromEnabled([
       "carry_context",
-      "read_issue_comments",
-      "list_sub_issues",
-      "read_sub_issue_comments",
-      "read_issue_agent_run",
-      "list_company_issues",
+      "read_task_comments",
+      "list_sub_tasks",
+      "read_sub_task_comments",
+      "read_task_agent_run",
+      "list_company_tasks",
     ]),
   });
 
@@ -136,12 +136,12 @@ function normalizeFalseOnlyMask(
   ) as ContextDial;
 }
 
-function withIssueOwnerBaseline(agent: ContextDial): ContextDial {
+function withTaskOwnerBaseline(agent: ContextDial): ContextDial {
   return Object.freeze(
     Object.fromEntries(
       AGENT_CONTEXT_GRANT_KEYS.map((key) => [
         key,
-        ISSUE_OWNER_CONTEXT_GRANT_KEYS.has(key) ? true : agent[key],
+        TASK_OWNER_CONTEXT_GRANT_KEYS.has(key) ? true : agent[key],
       ]),
     ),
   ) as ContextDial;
@@ -169,14 +169,14 @@ export function contextDialDigest(dial: ContextDial): string {
  * Resolves the only model-context authorization matrix.
  *
  * Each cell is independent:
- *   effective = (agent ∪ issue-owner current/sub-issue baseline) ∧ executionMode
+ *   effective = (agent ∪ task-owner current/sub-task baseline) ∧ executionMode
  */
 export function resolveContextDial(
   input: ResolveContextDialInput,
 ): ResolvedContextDial {
   const agent = normalizeAgentGrants(input.agent);
-  const ownerBaseline = input.issueOwner === true
-    ? withIssueOwnerBaseline(agent)
+  const ownerBaseline = input.taskOwner === true
+    ? withTaskOwnerBaseline(agent)
     : agent;
   const executionMode = normalizeFalseOnlyMask(input.executionMode);
   const effective = andDials(ownerBaseline, executionMode);
@@ -200,45 +200,45 @@ export function stampContextAccessPreset(preset: ContextAccessPreset): ContextDi
 export function resolveFreshCompositionDepth(
   dial: ContextDial,
 ): FreshCompositionDepth {
-  if (dial.read_issue_agent_run) return "turns";
-  if (dial.read_issue_comments) return "thread";
+  if (dial.read_task_agent_run) return "turns";
+  if (dial.read_task_comments) return "thread";
   return null;
 }
 
 export function resolveContextRetrievalPolicy(
   dial: ContextDial,
 ): ContextRetrievalPolicy {
-  const listSubIssuesEnabled =
-    dial.list_sub_issues || dial.list_company_issues;
+  const listSubTasksEnabled =
+    dial.list_sub_tasks || dial.list_company_tasks;
   const comments = {
-    active: dial.read_issue_comments,
-    descendant: dial.read_sub_issue_comments,
-    company: dial.read_company_issue_comments,
+    active: dial.read_task_comments,
+    descendant: dial.read_sub_task_comments,
+    company: dial.read_company_task_comments,
   };
   const runs = {
-    active: dial.read_issue_agent_run,
-    descendant: dial.read_sub_issue_agent_run,
-    company: dial.read_company_issue_agent_run,
+    active: dial.read_task_agent_run,
+    descendant: dial.read_sub_task_agent_run,
+    company: dial.read_company_task_agent_run,
   };
 
   return {
-    listCompanyIssues: dial.list_company_issues,
-    listSubIssues: {
-      enabled: listSubIssuesEnabled,
-      omittedActive: listSubIssuesEnabled,
+    listCompanyTasks: dial.list_company_tasks,
+    listSubTasks: {
+      enabled: listSubTasksEnabled,
+      omittedActive: listSubTasksEnabled,
       explicit: {
-        // Sub-issue reach is proper-descendant-only. The active issue becomes
+        // Sub-task reach is proper-descendant-only. The active task becomes
         // a valid explicit target only through the company-wide tier.
-        active: dial.list_company_issues,
-        descendant: dial.list_sub_issues,
-        company: dial.list_company_issues,
+        active: dial.list_company_tasks,
+        descendant: dial.list_sub_tasks,
+        company: dial.list_company_tasks,
       },
     },
     comments: {
       ...comments,
       enabled:
         comments.active || comments.descendant || comments.company,
-      issueIdRequired: !comments.active,
+      taskIdRequired: !comments.active,
     },
     runs: {
       ...runs,

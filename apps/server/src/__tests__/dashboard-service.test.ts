@@ -8,8 +8,8 @@ const mocks = vi.hoisted(() => ({
   budgetOverview: vi.fn(),
 }));
 
-vi.mock("../services/issue-execution-run-service.js", () => ({
-  listIssueExecutionRunsForActivity: mocks.listRuns,
+vi.mock("../services/task-execution-run-service.js", () => ({
+  listTaskExecutionRunsForActivity: mocks.listRuns,
 }));
 
 vi.mock("../services/costs.js", () => ({

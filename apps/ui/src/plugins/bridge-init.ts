@@ -27,16 +27,16 @@ import {
 } from "@/components/FileTree";
 import { AgentIcon } from "@/components/AgentIconPicker";
 import { InlineEntitySelector, type InlineEntityOption } from "@/components/InlineEntitySelector";
-import { IssuesList as HostIssuesList } from "@/components/IssuesList";
+import { TasksList as HostTasksList } from "@/components/TasksList";
 import { ManagedRoutinesList as HostManagedRoutinesList } from "@/components/ManagedRoutinesList";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { agentsApi } from "@/api/agents";
 import { authApi } from "@/api/auth";
-import { ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, runsApi } from "@/api/runs";
-import { issuesApi } from "@/api/issues";
+import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "@/api/runs";
+import { tasksApi } from "@/api/tasks";
 import { projectsApi } from "@/api/projects";
-import { collectLiveIssueIds } from "@/lib/liveIssueIds";
+import { collectLiveTaskIds } from "@/lib/liveTaskIds";
 import { useProjectOrder } from "@/hooks/useProjectOrder";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "@/hooks/useSharedPolling";
 import { queryKeys } from "@/lib/queryKeys";
@@ -45,8 +45,8 @@ import type {
   DataTableProps,
   FileTreePathCollection,
   FileTreeProps,
-  IssuesListFilters,
-  IssuesListProps,
+  TasksListFilters,
+  TasksListProps,
   JsonTreeProps,
   KeyValueListProps,
   MarkdownBlockProps,
@@ -110,34 +110,34 @@ function PluginSdkMarkdownEditor(props: MarkdownEditorProps) {
   return createElement(MarkdownEditor, props);
 }
 
-function compactIssueFilters(filters: IssuesListFilters): IssuesListFilters {
+function compactTaskFilters(filters: TasksListFilters): TasksListFilters {
   return Object.fromEntries(
     Object.entries(filters).filter(([, value]) =>
       value !== undefined && value !== null && value !== "" && value !== false,
     ),
-  ) as IssuesListFilters;
+  ) as TasksListFilters;
 }
 
-function PluginSdkIssuesList({
+function PluginSdkTasksList({
   companyId,
   projectId = null,
   filters,
-  viewStateKey = "paperclip:plugin-issues-view",
+  viewStateKey = "paperclip:plugin-tasks-view",
   initialSearch,
-  createIssueLabel,
-  searchWithinLoadedIssues = true,
-}: IssuesListProps) {
-  const issueFilters = useMemo(
-    () => compactIssueFilters({
+  createTaskLabel,
+  searchWithinLoadedTasks = true,
+}: TasksListProps) {
+  const taskFilters = useMemo(
+    () => compactTaskFilters({
       ...(filters ?? {}),
       projectId: filters?.projectId ?? projectId ?? undefined,
     }),
     [filters, projectId],
   );
-  const resolvedProjectId = issueFilters.projectId ?? projectId ?? null;
-  const issuesQueryKey = useMemo(
-    () => ["plugins", "sdk-ui", "issues-list", companyId ?? "__no-company__", issueFilters] as const,
-    [companyId, issueFilters],
+  const resolvedProjectId = taskFilters.projectId ?? projectId ?? null;
+  const tasksQueryKey = useMemo(
+    () => ["plugins", "sdk-ui", "tasks-list", companyId ?? "__no-company__", taskFilters] as const,
+    [companyId, taskFilters],
   );
 
   const { data: agents } = useQuery({
@@ -150,7 +150,7 @@ function PluginSdkIssuesList({
     queryFn: () => projectsApi.list(companyId!),
     enabled: !!companyId,
   });
-  const activeRunsQueryKey = queryKeys.runs(companyId ?? "__no-company__", { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES });
+  const activeRunsQueryKey = queryKeys.runs(companyId ?? "__no-company__", { status: ACTIVE_TASK_EXECUTION_RUN_STATUSES });
   const sharedActiveRuns = useSharedPollingQuery({
     companyId,
     resourceKey: "active-runs",
@@ -162,16 +162,16 @@ function PluginSdkIssuesList({
   });
   const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
     queryKey: activeRunsQueryKey,
-    queryFn: () => runsApi.listForCompany(companyId!, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, limit: 200 }),
+    queryFn: () => runsApi.listForCompany(companyId!, { status: ACTIVE_TASK_EXECUTION_RUN_STATUSES, limit: 200 }),
     enabled: sharedActiveRuns.enabled,
     refetchInterval: sharedActiveRuns.refetchInterval,
   });
   usePublishSharedQueryData(sharedActiveRuns, activeRunPage, activeRunsUpdatedAt);
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(activeRunPage?.items), [activeRunPage]);
+  const liveTaskIds = useMemo(() => collectLiveTaskIds(activeRunPage?.items), [activeRunPage]);
 
-  const { data: issues, isLoading, error } = useQuery({
-    queryKey: issuesQueryKey,
-    queryFn: () => issuesApi.list(companyId!, issueFilters),
+  const { data: tasks, isLoading, error } = useQuery({
+    queryKey: tasksQueryKey,
+    queryFn: () => tasksApi.list(companyId!, taskFilters),
     enabled: !!companyId,
   });
 
@@ -179,18 +179,18 @@ function PluginSdkIssuesList({
     return createElement("div", { className: "text-sm text-muted-foreground" }, "Select a company to view tasks.");
   }
 
-  return createElement(HostIssuesList, {
-    issues: issues ?? [],
+  return createElement(HostTasksList, {
+    tasks: tasks ?? [],
     isLoading,
     error: error as Error | null,
     agents,
     projects,
-    liveIssueIds,
+    liveTaskIds,
     projectId: resolvedProjectId ?? undefined,
     viewStateKey,
     initialSearch,
-    createIssueLabel,
-    searchWithinLoadedIssues,
+    createTaskLabel,
+    searchWithinLoadedTasks,
   });
 }
 
@@ -507,7 +507,7 @@ export function initPluginBridge(
       ErrorBoundary: PluginSdkErrorBoundary,
       MarkdownEditor: PluginSdkMarkdownEditor,
       FileTree: PluginSdkFileTree,
-      IssuesList: PluginSdkIssuesList,
+      TasksList: PluginSdkTasksList,
       OwnerPicker: PluginSdkOwnerPicker,
       ProjectPicker: PluginSdkProjectPicker,
       ManagedRoutinesList: HostManagedRoutinesList,

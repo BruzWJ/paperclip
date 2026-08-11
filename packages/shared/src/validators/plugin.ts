@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addValidationDetail } from "../validation-details.js";
 import {
   PLUGIN_STATUSES,
   PLUGIN_CATEGORIES,
@@ -16,13 +17,13 @@ import {
   PLUGIN_DATABASE_CORE_READ_TABLES,
   PLUGIN_API_ROUTE_METHODS,
   PLUGIN_LOG_LEVELS,
-  ISSUE_PRIORITIES,
+  TASK_PRIORITIES,
   ROUTINE_CATCH_UP_POLICIES,
   ROUTINE_CONCURRENCY_POLICIES,
   ROUTINE_STATUSES,
   ROUTINE_TRIGGER_KINDS,
   ROUTINE_TRIGGER_SIGNING_MODES,
-  ISSUE_SURFACE_VISIBILITIES,
+  TASK_SURFACE_VISIBILITIES,
   MCP_TOOL_NAME_MAX_LENGTH,
   isMcpToolName,
   pluginAgentToolName,
@@ -196,7 +197,7 @@ const UI_SLOT_CAPABILITIES: Record<PluginUiSlotType, PluginCapability> = {
   projectSidebarItem: "ui.sidebar.register",
   page: "ui.page.register",
   detailTab: "ui.detailTab.register",
-  issueDetailView: "ui.detailTab.register",
+  taskDetailView: "ui.detailTab.register",
   dashboardWidget: "ui.dashboardWidget.register",
   globalToolbarButton: "ui.action.register",
   toolbarButton: "ui.action.register",
@@ -354,7 +355,7 @@ export const pluginManagedRoutineDeclarationSchema = z.object({
   projectRef: pluginManagedResourceRefSchema.extend({ resourceKind: z.literal("project") }).nullable().optional(),
   goalId: z.string().uuid().nullable().optional(),
   status: z.enum(ROUTINE_STATUSES).optional(),
-  priority: z.enum(ISSUE_PRIORITIES).optional(),
+  priority: z.enum(TASK_PRIORITIES).optional(),
   concurrencyPolicy: z.enum(ROUTINE_CONCURRENCY_POLICIES).optional(),
   catchUpPolicy: z.enum(ROUTINE_CATCH_UP_POLICIES).optional(),
   variables: z.array(routineVariableSchema).min(1).optional(),
@@ -367,8 +368,8 @@ export const pluginManagedRoutineDeclarationSchema = z.object({
     signingMode: z.enum(ROUTINE_TRIGGER_SIGNING_MODES).optional().nullable(),
     replayWindowSec: z.number().int().min(30).max(86_400).optional().nullable(),
   }).strict()).min(1).max(20).optional(),
-  issueTemplate: z.object({
-    surfaceVisibility: z.enum(ISSUE_SURFACE_VISIBILITIES).optional(),
+  taskTemplate: z.object({
+    surfaceVisibility: z.enum(TASK_SURFACE_VISIBILITIES).optional(),
     originId: z.string().trim().max(255).nullable().optional(),
     billingCode: z.string().trim().max(200).nullable().optional(),
   }).strict().optional(),
@@ -417,8 +418,7 @@ export const pluginManagedSkillDeclarationSchema = z.object({
   const paths = (value.files ?? []).map((file) => file.path);
   const duplicates = paths.filter((path, index) => paths.indexOf(path) !== index);
   if (duplicates.length > 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: `Duplicate managed skill file paths: ${[...new Set(duplicates)].join(", ")}`,
       path: ["files"],
     });
@@ -448,20 +448,19 @@ export const pluginUiSlotDeclarationSchema = z.object({
     PLUGIN_ENTITY_SCOPED_UI_SLOT_TYPES.some((type) => type === value.type)
     && (!value.entityTypes || value.entityTypes.length === 0)
   ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: `${value.type} slots require at least one entityType`,
       path: ["entityTypes"],
     });
   }
   const allowedEntityTypes = value.type === "detailTab"
     ? PLUGIN_UI_SLOT_ENTITY_TYPES
-    : value.type === "issueDetailView"
-      ? ["issue"] as const
+    : value.type === "taskDetailView"
+      ? ["task"] as const
       : value.type === "projectSidebarItem"
         ? ["project"] as const
         : value.type === "toolbarButton"
-          ? ["project", "issue"] as const
+          ? ["project", "task"] as const
           : null;
   if (
     allowedEntityTypes
@@ -469,15 +468,13 @@ export const pluginUiSlotDeclarationSchema = z.object({
       !(allowedEntityTypes as readonly string[]).includes(entityType)
     )
   ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: `${value.type} supports only these mounted entityTypes: ${allowedEntityTypes.join(", ")}`,
       path: ["entityTypes"],
     });
   }
   if (!allowedEntityTypes && value.entityTypes) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "entityTypes is only supported for entity-scoped slots",
       path: ["entityTypes"],
     });
@@ -486,15 +483,13 @@ export const pluginUiSlotDeclarationSchema = z.object({
     || value.type === "routeSidebar"
     || value.type === "companySettingsPage";
   if (value.routePath && !routedSlot) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "routePath is only supported for page, routeSidebar, and companySettingsPage slots",
       path: ["routePath"],
     });
   }
   if (routedSlot && !value.routePath) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: `${value.type} slots require routePath`,
       path: ["routePath"],
     });
@@ -504,8 +499,7 @@ export const pluginUiSlotDeclarationSchema = z.object({
     && value.routePath
     && PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS.includes(value.routePath as (typeof PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS)[number])
   ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: `routePath "${value.routePath}" is reserved by the host`,
       path: ["routePath"],
     });
@@ -515,8 +509,7 @@ export const pluginUiSlotDeclarationSchema = z.object({
     && value.routePath
     && PLUGIN_RESERVED_COMPANY_SETTINGS_ROUTE_SEGMENTS.includes(value.routePath as (typeof PLUGIN_RESERVED_COMPANY_SETTINGS_ROUTE_SEGMENTS)[number])
   ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: `company settings routePath "${value.routePath}" is reserved by the host`,
       path: ["routePath"],
     });
@@ -536,16 +529,14 @@ export const pluginLauncherActionDeclarationSchema = z.object({
   params: z.record(z.string(), z.unknown()).optional(),
 }).strict().superRefine((value, ctx) => {
   if (value.type !== "performAction" && value.params) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "params is supported only for performAction launchers",
       path: ["params"],
     });
   }
 
   if (value.type === "performAction" && value.target.includes("/")) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "performAction launchers must target an action key, not a route or URL",
       path: ["target"],
     });
@@ -555,16 +546,14 @@ export const pluginLauncherActionDeclarationSchema = z.object({
     value.type === "navigate"
     && (/^[a-z][a-z\d+.-]*:/i.test(value.target) || value.target.startsWith("//"))
   ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "navigate launchers must target a Paperclip route, not an absolute URL",
       path: ["target"],
     });
   }
 
   if (value.type === "deepLink" && !/^https?:\/\//.test(value.target)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "deepLink launchers must target an absolute HTTP(S) URL",
       path: ["target"],
     });
@@ -598,16 +587,14 @@ export const pluginLauncherDeclarationSchema = z.object({
     )
     && (!value.entityTypes || value.entityTypes.length === 0)
   ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: `${value.placementZone} launchers require at least one entityType`,
       path: ["entityTypes"],
     });
   }
 
   if (value.placementZone !== "toolbarButton" && value.entityTypes) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "entityTypes is only supported for entity-scoped launcher placements",
       path: ["entityTypes"],
     });
@@ -615,11 +602,10 @@ export const pluginLauncherDeclarationSchema = z.object({
 
   if (
     value.placementZone === "toolbarButton"
-    && value.entityTypes?.some((entityType) => entityType !== "project" && entityType !== "issue")
+    && value.entityTypes?.some((entityType) => entityType !== "project" && entityType !== "task")
   ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "toolbarButton launchers support only these mounted entityTypes: project, issue",
+    addValidationDetail(ctx, {
+      message: "toolbarButton launchers support only these mounted entityTypes: project, task",
       path: ["entityTypes"],
     });
   }
@@ -629,16 +615,14 @@ export const pluginLauncherDeclarationSchema = z.object({
     || value.action.type === "openPopover";
 
   if (!opensOverlay && value.render) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "render metadata is supported only for overlay launchers",
       path: ["render"],
     });
   }
 
   if (opensOverlay && !value.render) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: `${value.action.type} launchers require render metadata`,
       path: ["render"],
     });
@@ -680,23 +664,21 @@ export const pluginApiRouteDeclarationSchema = z.object({
   companyResolution: z.discriminatedUnion("from", [
     z.object({ from: z.literal("body"), key: z.string().min(1) }).strict(),
     z.object({ from: z.literal("query"), key: z.string().min(1) }).strict(),
-    z.object({ from: z.literal("issue"), param: z.string().min(1) }).strict(),
+    z.object({ from: z.literal("task"), param: z.string().min(1) }).strict(),
   ]),
 }).strict().superRefine((route, ctx) => {
   if (route.method === "GET" && route.companyResolution.from === "body") {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "GET routes cannot resolve company access from a request body",
       path: ["companyResolution", "from"],
     });
   }
   if (
-    route.companyResolution.from === "issue"
+    route.companyResolution.from === "task"
     && !route.path.split("/").includes(`:${route.companyResolution.param}`)
   ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "issue companyResolution.param must name a path parameter declared by path",
+    addValidationDetail(ctx, {
+      message: "task companyResolution.param must name a path parameter declared by path",
       path: ["companyResolution", "param"],
     });
   }
@@ -799,8 +781,7 @@ export const pluginManifestV1Schema = z.object({
     manifest.instanceConfigSchema
     && containsSecretRefFormat(manifest.instanceConfigSchema)
   ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "instanceConfigSchema must store plugin credentials as ordinary configuration values",
       path: ["instanceConfigSchema"],
     });
@@ -812,15 +793,13 @@ export const pluginManifestV1Schema = z.object({
   const hasUiSlots = (manifest.ui?.slots?.length ?? 0) > 0;
   const hasUiLaunchers = (manifest.ui?.launchers?.length ?? 0) > 0;
   if ((hasUiSlots || hasUiLaunchers) && !manifest.entrypoints.ui) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "entrypoints.ui is required when ui.slots or ui.launchers are declared",
       path: ["entrypoints", "ui"],
     });
   }
   if (manifest.entrypoints.ui && !hasUiSlots && !hasUiLaunchers) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "entrypoints.ui requires at least one ui slot or launcher",
       path: ["entrypoints", "ui"],
     });
@@ -830,8 +809,7 @@ export const pluginManifestV1Schema = z.object({
     (category, index) => manifest.categories.indexOf(category) !== index,
   );
   if (duplicateCategories.length > 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: `Duplicate plugin categories: ${[...new Set(duplicateCategories)].join(", ")}`,
       path: ["categories"],
     });
@@ -841,8 +819,7 @@ export const pluginManifestV1Schema = z.object({
     (capability, index) => manifest.capabilities.indexOf(capability) !== index,
   );
   if (duplicateCapabilities.length > 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: `Duplicate plugin capabilities: ${[...new Set(duplicateCapabilities)].join(", ")}`,
       path: ["capabilities"],
     });
@@ -856,8 +833,7 @@ export const pluginManifestV1Schema = z.object({
   // tools require agent.tools.register (PLUGIN_SPEC.md §11)
   if (manifest.tools && manifest.tools.length > 0) {
     if (!manifest.capabilities.includes("agent.tools.register")) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "Capability 'agent.tools.register' is required when tools are declared",
         path: ["capabilities"],
       });
@@ -868,8 +844,7 @@ export const pluginManifestV1Schema = z.object({
     manifest.capabilities.includes("http.private-network")
     && !manifest.capabilities.includes("http.outbound")
   ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "Capability 'http.outbound' is required when 'http.private-network' is declared",
       path: ["capabilities"],
     });
@@ -877,8 +852,7 @@ export const pluginManifestV1Schema = z.object({
 
   if (manifest.agents && manifest.agents.length > 0) {
     if (!manifest.capabilities.includes("agents.managed")) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "Capability 'agents.managed' is required when managed agents are declared",
         path: ["capabilities"],
       });
@@ -887,8 +861,7 @@ export const pluginManifestV1Schema = z.object({
 
   if (manifest.projects && manifest.projects.length > 0) {
     if (!manifest.capabilities.includes("projects.managed")) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "Capability 'projects.managed' is required when managed projects are declared",
         path: ["capabilities"],
       });
@@ -897,8 +870,7 @@ export const pluginManifestV1Schema = z.object({
 
   if (manifest.routines && manifest.routines.length > 0) {
     if (!manifest.capabilities.includes("routines.managed")) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "Capability 'routines.managed' is required when managed routines are declared",
         path: ["capabilities"],
       });
@@ -907,8 +879,7 @@ export const pluginManifestV1Schema = z.object({
 
   if (manifest.skills && manifest.skills.length > 0) {
     if (!manifest.capabilities.includes("skills.managed")) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "Capability 'skills.managed' is required when managed skills are declared",
         path: ["capabilities"],
       });
@@ -917,8 +888,7 @@ export const pluginManifestV1Schema = z.object({
 
   if (manifest.localFolders && manifest.localFolders.length > 0) {
     if (!manifest.capabilities.includes("local.folders")) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "Capability 'local.folders' is required when local folders are declared",
         path: ["capabilities"],
       });
@@ -928,8 +898,7 @@ export const pluginManifestV1Schema = z.object({
   // jobs require jobs.schedule (PLUGIN_SPEC.md §17)
   if (manifest.jobs && manifest.jobs.length > 0) {
     if (!manifest.capabilities.includes("jobs.schedule")) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "Capability 'jobs.schedule' is required when jobs are declared",
         path: ["capabilities"],
       });
@@ -939,8 +908,7 @@ export const pluginManifestV1Schema = z.object({
   // webhooks require webhooks.receive (PLUGIN_SPEC.md §18)
   if (manifest.webhooks && manifest.webhooks.length > 0) {
     if (!manifest.capabilities.includes("webhooks.receive")) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "Capability 'webhooks.receive' is required when webhooks are declared",
         path: ["capabilities"],
       });
@@ -949,8 +917,7 @@ export const pluginManifestV1Schema = z.object({
 
   if (manifest.apiRoutes && manifest.apiRoutes.length > 0) {
     if (!manifest.capabilities.includes("api.routes.register")) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "Capability 'api.routes.register' is required when apiRoutes are declared",
         path: ["capabilities"],
       });
@@ -968,8 +935,7 @@ export const pluginManifestV1Schema = z.object({
   }
   for (const capability of requiredUiCapabilities) {
     if (!manifest.capabilities.includes(capability)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Capability '${capability}' is required by the declared UI slots or launchers`,
         path: ["capabilities"],
       });
@@ -983,8 +949,7 @@ export const pluginManifestV1Schema = z.object({
     ] as const;
     for (const capability of requiredCapabilities) {
       if (!manifest.capabilities.includes(capability)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+        addValidationDetail(ctx, {
           message: `Capability '${capability}' is required when database migrations are declared`,
           path: ["capabilities"],
         });
@@ -994,8 +959,7 @@ export const pluginManifestV1Schema = z.object({
     const coreReadTables = manifest.database.coreReadTables ?? [];
     const duplicates = coreReadTables.filter((table, i) => coreReadTables.indexOf(table) !== i);
     if (duplicates.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Duplicate database coreReadTables: ${[...new Set(duplicates)].join(", ")}`,
         path: ["database", "coreReadTables"],
       });
@@ -1011,8 +975,7 @@ export const pluginManifestV1Schema = z.object({
     const jobKeys = manifest.jobs.map((j) => j.jobKey);
     const duplicates = jobKeys.filter((key, i) => jobKeys.indexOf(key) !== i);
     if (duplicates.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Duplicate job keys: ${[...new Set(duplicates)].join(", ")}`,
         path: ["jobs"],
       });
@@ -1024,8 +987,7 @@ export const pluginManifestV1Schema = z.object({
     const endpointKeys = manifest.webhooks.map((w) => w.endpointKey);
     const duplicates = endpointKeys.filter((key, i) => endpointKeys.indexOf(key) !== i);
     if (duplicates.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Duplicate webhook endpoint keys: ${[...new Set(duplicates)].join(", ")}`,
         path: ["webhooks"],
       });
@@ -1036,8 +998,7 @@ export const pluginManifestV1Schema = z.object({
     const routeKeys = manifest.apiRoutes.map((route) => route.routeKey);
     const duplicateKeys = routeKeys.filter((key, i) => routeKeys.indexOf(key) !== i);
     if (duplicateKeys.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Duplicate api route keys: ${[...new Set(duplicateKeys)].join(", ")}`,
         path: ["apiRoutes"],
       });
@@ -1045,8 +1006,7 @@ export const pluginManifestV1Schema = z.object({
     const routeSignatures = manifest.apiRoutes.map((route) => `${route.method} ${route.path}`);
     const duplicateRoutes = routeSignatures.filter((sig, i) => routeSignatures.indexOf(sig) !== i);
     if (duplicateRoutes.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Duplicate api routes: ${[...new Set(duplicateRoutes)].join(", ")}`,
         path: ["apiRoutes"],
       });
@@ -1058,16 +1018,14 @@ export const pluginManifestV1Schema = z.object({
     const toolNames = manifest.tools.map((t) => t.name);
     const duplicates = toolNames.filter((name, i) => toolNames.indexOf(name) !== i);
     if (duplicates.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Duplicate tool names: ${[...new Set(duplicates)].join(", ")}`,
         path: ["tools"],
       });
     }
     for (const [index, tool] of manifest.tools.entries()) {
       if (!isMcpToolName(pluginAgentToolName(manifest.id, tool.name))) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+        addValidationDetail(ctx, {
           message: `Provider-visible plugin tool name must satisfy the MCP name contract and not exceed ${MCP_TOOL_NAME_MAX_LENGTH} characters`,
           path: ["tools", index, "name"],
         });
@@ -1079,8 +1037,7 @@ export const pluginManifestV1Schema = z.object({
     const folderKeys = manifest.localFolders.map((folder) => folder.folderKey);
     const duplicates = folderKeys.filter((key, i) => folderKeys.indexOf(key) !== i);
     if (duplicates.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Duplicate local folder keys: ${[...new Set(duplicates)].join(", ")}`,
         path: ["localFolders"],
       });
@@ -1091,8 +1048,7 @@ export const pluginManifestV1Schema = z.object({
     const agentKeys = manifest.agents.map((agent) => agent.agentKey);
     const duplicates = agentKeys.filter((key, i) => agentKeys.indexOf(key) !== i);
     if (duplicates.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Duplicate managed agent keys: ${[...new Set(duplicates)].join(", ")}`,
         path: ["agents"],
       });
@@ -1103,8 +1059,7 @@ export const pluginManifestV1Schema = z.object({
     const projectKeys = manifest.projects.map((project) => project.projectKey);
     const duplicates = projectKeys.filter((key, i) => projectKeys.indexOf(key) !== i);
     if (duplicates.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Duplicate managed project keys: ${[...new Set(duplicates)].join(", ")}`,
         path: ["projects"],
       });
@@ -1115,8 +1070,7 @@ export const pluginManifestV1Schema = z.object({
     const routineKeys = manifest.routines.map((routine) => routine.routineKey);
     const duplicates = routineKeys.filter((key, i) => routineKeys.indexOf(key) !== i);
     if (duplicates.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Duplicate managed routine keys: ${[...new Set(duplicates)].join(", ")}`,
         path: ["routines"],
       });
@@ -1127,8 +1081,7 @@ export const pluginManifestV1Schema = z.object({
     const skillKeys = manifest.skills.map((skill) => skill.skillKey);
     const duplicates = skillKeys.filter((key, i) => skillKeys.indexOf(key) !== i);
     if (duplicates.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Duplicate managed skill keys: ${[...new Set(duplicates)].join(", ")}`,
         path: ["skills"],
       });
@@ -1142,8 +1095,7 @@ export const pluginManifestV1Schema = z.object({
       const slotIds = slots.map((s) => s.id);
       const duplicates = slotIds.filter((id, i) => slotIds.indexOf(id) !== i);
       if (duplicates.length > 0) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+        addValidationDetail(ctx, {
           message: `Duplicate UI slot ids: ${[...new Set(duplicates)].join(", ")}`,
           path: ["ui", "slots"],
         });
@@ -1157,8 +1109,7 @@ export const pluginManifestV1Schema = z.object({
           (routePath, index) => routePaths.indexOf(routePath) !== index,
         );
         if (duplicatePaths.length > 0) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+          addValidationDetail(ctx, {
             message: `Duplicate ${routeType} routePath values: ${[...new Set(duplicatePaths)].join(", ")}`,
             path: ["ui", "slots"],
           });
@@ -1174,8 +1125,7 @@ export const pluginManifestV1Schema = z.object({
           (slot) => slot.type === "routeSidebar" && slot.routePath === sidebar.routePath,
         );
         if (matchingPages.length !== 1 || matchingSidebars.length !== 1) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+          addValidationDetail(ctx, {
             message: "routeSidebar must be the sole sidebar paired with one page of the same routePath",
             path: ["ui", "slots", index, "routePath"],
           });
@@ -1190,8 +1140,7 @@ export const pluginManifestV1Schema = z.object({
     const launcherIds = allLaunchers.map((launcher) => launcher.id);
     const duplicates = launcherIds.filter((id, i) => launcherIds.indexOf(id) !== i);
     if (duplicates.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Duplicate launcher ids: ${[...new Set(duplicates)].join(", ")}`,
         path: ["ui", "launchers"],
       });

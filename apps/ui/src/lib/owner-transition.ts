@@ -177,9 +177,9 @@ function parseOwnerAgentValue(value: string): string | null {
 export interface ComposerOwnerPreviewInput {
   /** Current agent-owner picker value, encoded as "agent:<id>". */
   ownerTarget: string;
-  /** The issue's current agent-owner value in the same encoding. */
+  /** The task's current agent-owner value in the same encoding. */
   currentOwnerValue: string;
-  /** Whether an agent run is currently in flight on this issue. */
+  /** Whether an agent run is currently in flight on this task. */
   hasActiveRun: boolean;
   /** Whether the comment body contains a structured agent mention. */
   bodyHasAgentMention: boolean;
@@ -317,7 +317,7 @@ export type PauseAffectsBucketKey =
   | "queued_runs"
   | "inactive";
 
-export interface PauseAffectsIssueLike {
+export interface PauseAffectsTaskLike {
   activeRun: { status: "queued" | "running" } | null;
   skipped?: boolean;
 }
@@ -332,8 +332,8 @@ export interface PauseAffectsBucket {
 
 export interface PauseAffectsSummary {
   buckets: PauseAffectsBucket[];
-  /** Total non-skipped issues the operation affects. */
-  affectedIssueCount: number;
+  /** Total non-skipped tasks the operation affects. */
+  affectedTaskCount: number;
   /** True when no run is live or queued — there is nothing to interrupt. */
   nothingLive: boolean;
 }
@@ -351,25 +351,25 @@ const PAUSE_BUCKET_DETAIL: Record<PauseAffectsBucketKey, string> = {
 };
 
 /**
- * Partition the issues an operation affects into the disjoint buckets the
- * pause dialog summarises. Each non-skipped issue lands in exactly one bucket:
+ * Partition the tasks an operation affects into the disjoint buckets the
+ * pause dialog summarises. Each non-skipped task lands in exactly one bucket:
  * a live run, a queued run, or inactive work.
  */
 export function computePauseAffectsSummary(
-  issues: readonly PauseAffectsIssueLike[],
+  tasks: readonly PauseAffectsTaskLike[],
 ): PauseAffectsSummary {
   const counts: Record<PauseAffectsBucketKey, number> = {
     live_runs: 0,
     queued_runs: 0,
     inactive: 0,
   };
-  let affectedIssueCount = 0;
+  let affectedTaskCount = 0;
 
-  for (const issue of issues) {
-    if (issue.skipped) continue;
-    affectedIssueCount += 1;
-    if (issue.activeRun?.status === "running") counts.live_runs += 1;
-    else if (issue.activeRun?.status === "queued") counts.queued_runs += 1;
+  for (const task of tasks) {
+    if (task.skipped) continue;
+    affectedTaskCount += 1;
+    if (task.activeRun?.status === "running") counts.live_runs += 1;
+    else if (task.activeRun?.status === "queued") counts.queued_runs += 1;
     else counts.inactive += 1;
   }
 
@@ -386,7 +386,7 @@ export function computePauseAffectsSummary(
       count: counts[key],
       detail: PAUSE_BUCKET_DETAIL[key],
     })),
-    affectedIssueCount,
+    affectedTaskCount,
     nothingLive: counts.live_runs === 0 && counts.queued_runs === 0,
   };
 }

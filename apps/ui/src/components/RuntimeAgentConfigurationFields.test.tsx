@@ -46,7 +46,7 @@ describe("RuntimeAgentConfigurationFields", () => {
     expect(
       createEmptyRuntimeAgentConfigurationValues().actionGrants,
     ).toEqual({
-      issue_create: false,
+      task_create: false,
       mention_board: false,
       agent_hire: false,
       agent_configure: false,
@@ -68,11 +68,11 @@ describe("RuntimeAgentConfigurationFields", () => {
     expect(matrix!.querySelectorAll('[aria-label$=": blocked"]')).toHaveLength(
       9,
     );
-    expect(container.textContent).not.toContain("Carry current-issue session");
-    expect(container.textContent).not.toContain("Current issue · comments");
+    expect(container.textContent).not.toContain("Carry current-task session");
+    expect(container.textContent).not.toContain("Current task · comments");
 
     const currentContent = matrix!.querySelector<HTMLButtonElement>(
-      '[aria-label="Current issue Content: blocked"]',
+      '[aria-label="Current task Content: blocked"]',
     );
     expect(currentContent).not.toBeNull();
     act(() => currentContent!.click());
@@ -91,19 +91,19 @@ describe("RuntimeAgentConfigurationFields", () => {
 
     expect(container.textContent).toContain("Can mention Board");
     expect(container.textContent).toContain(
-      "Post a canonical issue comment to the collective Board.",
+      "Post a canonical task comment to the collective Board.",
     );
   });
 
   it("combines direct-child creation and assignment and derives lifecycle access", () => {
     render();
 
-    expect(container.textContent).toContain("Create and assign issues");
+    expect(container.textContent).toContain("Create and assign tasks");
     expect(container.textContent).toContain(
-      "Create direct child issues and reassign eligible direct children created by this execution.",
+      "Create direct child tasks and reassign eligible direct children created by this execution.",
     );
     expect(container.textContent).toContain(
-      "Issue updates are relationship-derived",
+      "Task updates are relationship-derived",
     );
     expect(container.textContent).toContain(
       "canonically mentions its counterpart automatically",
@@ -111,7 +111,7 @@ describe("RuntimeAgentConfigurationFields", () => {
     expect(container.textContent).toContain(
       "Terminal updates remain owner-only.",
     );
-    expect(container.textContent).not.toContain("Assign issues");
-    expect(container.textContent).not.toContain("Update issue lifecycle");
+    expect(container.textContent).not.toContain("Assign tasks");
+    expect(container.textContent).not.toContain("Update task lifecycle");
   });
 });

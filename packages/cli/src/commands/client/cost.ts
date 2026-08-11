@@ -42,13 +42,13 @@ export function registerCostCommands(program: Command): void {
 
   addCommonClientOptions(
     cost
-      .command("issue")
-      .description("Get cost summary for an issue")
-      .argument("<issueId>", "Issue ID")
-      .action(async (issueId: string, opts: BaseClientOptions) => {
+      .command("task")
+      .description("Get cost summary for a task")
+      .argument("<taskId>", "Task ID")
+      .action(async (taskId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const result = await ctx.api.get(apiPath`/api/issues/${issueId}/cost-summary`);
+          const result = await ctx.api.get(apiPath`/api/tasks/${taskId}/cost-summary`);
           printOutput(result, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);

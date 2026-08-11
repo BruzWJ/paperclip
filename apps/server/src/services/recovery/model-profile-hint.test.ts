@@ -6,8 +6,8 @@ import {
 
 describe("recovery model profile policy", () => {
   it("allows cheap only for status-only recovery and adds guard context", () => {
-    expect(withRecoveryModelProfileHint({ issueId: "issue-1" }, "status_only")).toEqual({
-      issueId: "issue-1",
+    expect(withRecoveryModelProfileHint({ taskId: "task-1" }, "status_only")).toEqual({
+      taskId: "task-1",
       recoveryIntent: "status_only",
       allowDeliverableWork: false,
       allowDocumentUpdates: false,
@@ -18,7 +18,7 @@ describe("recovery model profile policy", () => {
 
   it("scrubs inherited cheap hints from normal model source-work retries", () => {
     expect(withRecoveryModelProfileHint({
-      issueId: "issue-1",
+      taskId: "task-1",
       retryOfRunId: "run-1",
       modelProfile: "cheap",
       recoveryIntent: "status_only",
@@ -26,17 +26,17 @@ describe("recovery model profile policy", () => {
       allowDocumentUpdates: false,
       resumeRequiresNormalModel: true,
     }, "normal_model")).toEqual({
-      issueId: "issue-1",
+      taskId: "task-1",
       retryOfRunId: "run-1",
     });
   });
 
   it("can scrub copied downstream source-work contexts without applying a profile", () => {
     expect(scrubRecoveryModelProfileHints({
-      sourceIssueId: "source-issue",
+      sourceTaskId: "source-task",
       modelProfile: "cheap",
       paperclipModelProfile: { requested: "cheap" },
       allowDocumentUpdates: false,
-    })).toEqual({ sourceIssueId: "source-issue" });
+    })).toEqual({ sourceTaskId: "source-task" });
   });
 });

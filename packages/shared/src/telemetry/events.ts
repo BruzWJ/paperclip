@@ -88,15 +88,15 @@ export function trackSkillImported(
   });
 }
 
-export function trackAgentIssueCompleted(
+export function trackAgentTaskCompleted(
   client: TelemetryClient,
   dims: {
     agentId: string;
-    adapterType: RawDimension<EventDimensionsMap["agent.issue_completed"]["adapter_type"]>;
+    adapterType: RawDimension<EventDimensionsMap["agent.task_completed"]["adapter_type"]>;
     model?: string;
   },
 ): void {
-  client.track("agent.issue_completed", {
+  client.track("agent.task_completed", {
     agent_id: dims.agentId,
     adapter_type: asEventDimension(dims.adapterType),
     ...(dims.model ? { model: dims.model } : {}),

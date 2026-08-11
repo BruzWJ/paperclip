@@ -8,9 +8,9 @@ import { logger } from "../middleware/logger.js";
 import { getServerInfoSnapshot, type ServerInfoSnapshot } from "../server-info.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import {
-  listIssueExecutionRunsForActivity,
-  type IssueExecutionRunListCursor,
-} from "../services/issue-execution-run-service.js";
+  listTaskExecutionRunsForActivity,
+  type TaskExecutionRunListCursor,
+} from "../services/task-execution-run-service.js";
 import { serverVersion } from "../version.js";
 import { isBoardActor } from "../http/request-actor.js";
 import { assertBoard } from "./authz.js";
@@ -21,13 +21,13 @@ const ACTIVE_RUN_STATUSES = [
   "running",
 ] as const;
 
-async function countActiveIssueExecutionRuns(db: Db): Promise<number> {
+async function countActiveTaskExecutionRuns(db: Db): Promise<number> {
   const companyRows = await db.select({ id: companies.id }).from(companies);
   let total = 0;
   for (const company of companyRows) {
-    let cursor: IssueExecutionRunListCursor | null = null;
+    let cursor: TaskExecutionRunListCursor | null = null;
     do {
-      const page = await listIssueExecutionRunsForActivity(db, {
+      const page = await listTaskExecutionRunsForActivity(db, {
         companyId: company.id,
         statuses: ACTIVE_RUN_STATUSES,
         cursor,
@@ -171,7 +171,7 @@ export function healthRoutes(
     if (persistedDevServerStatus && typeof (db as { select?: unknown }).select === "function") {
       const [generalSettings, activeRunCount] = await Promise.all([
         instanceSettingsService(db).getGeneral(),
-        countActiveIssueExecutionRuns(db),
+        countActiveTaskExecutionRuns(db),
       ]);
 
       devServer = toDevServerHealthStatus(persistedDevServerStatus, {

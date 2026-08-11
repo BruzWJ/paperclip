@@ -2,8 +2,8 @@ import { index, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-c
 import { authUsers } from "./auth.js";
 import { companies } from "./companies.js";
 import { companySecrets } from "./company_secrets.js";
-import { issueExecutionRuns } from "./issue_execution_runs.js";
-import { issues } from "./issues.js";
+import { taskExecutionRuns } from "./task_execution_runs.js";
+import { tasks } from "./tasks.js";
 import { plugins } from "./plugins.js";
 import { userSecretDefinitions } from "./user_secret_definitions.js";
 
@@ -30,8 +30,8 @@ export const secretAccessEvents = pgTable(
     consumerType: text("consumer_type").notNull(),
     consumerId: text("consumer_id").notNull(),
     configPath: text("config_path"),
-    issueId: uuid("issue_id").references(() => issues.id, { onDelete: "set null" }),
-    runId: uuid("run_id").references(() => issueExecutionRuns.id, {
+    taskId: uuid("task_id").references(() => tasks.id, { onDelete: "set null" }),
+    runId: uuid("run_id").references(() => taskExecutionRuns.id, {
       onDelete: "set null",
     }),
     pluginId: uuid("plugin_id").references(() => plugins.id, { onDelete: "set null" }),

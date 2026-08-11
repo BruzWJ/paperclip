@@ -195,7 +195,7 @@ describe("POST /api/companies/:companyId/assets/images", () => {
     const res = await requestApp(app, (baseUrl) =>
       request(baseUrl)
         .post("/api/companies/company-1/assets/images")
-        .field("namespace", "issues/drafts")
+        .field("namespace", "tasks/drafts")
         .attach("file", Buffer.from("hello"), { filename: "note.txt", contentType: "text/plain" }),
     );
 

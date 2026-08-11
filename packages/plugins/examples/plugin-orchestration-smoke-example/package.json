@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "First-party smoke plugin for canonical plugin-created ordinary issues",
+  "description": "First-party smoke plugin for canonical plugin-created ordinary tasks",
   "scripts": {
     "prebuild": "pnpm --filter @paperclipai/plugin-sdk ensure-build-deps",
     "build": "node ./esbuild.config.mjs",

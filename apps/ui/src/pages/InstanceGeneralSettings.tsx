@@ -314,7 +314,7 @@ export function InstanceGeneralSettings() {
             </h2>
             <p className="max-w-2xl text-sm text-muted-foreground">
               Automatically request a dev-server restart after backend changes
-              once no issue executions are active. This is off by default.
+              once no task executions are active. This is off by default.
             </p>
           </div>
           <Switch

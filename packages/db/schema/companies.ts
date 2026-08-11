@@ -30,8 +30,8 @@ export const companies = pgTable(
     status: text("status").$type<CompanyStatus>().notNull().default("active"),
     pauseReason: text("pause_reason").$type<PauseReason>(),
     pausedAt: timestamp("paused_at", { withTimezone: true }),
-    issuePrefix: text("issue_prefix").notNull().default("PAP"),
-    issueCounter: integer("issue_counter").notNull().default(0),
+    taskPrefix: text("task_prefix").notNull().default("PAP"),
+    taskCounter: integer("task_counter").notNull().default(0),
     budgetCurrency: budgetCurrencyColumn("budget_currency").notNull(),
     budgetMonthlyAmount: moneyAmountColumn("budget_monthly_amount").notNull(),
     attachmentMaxBytes: integer("attachment_max_bytes")
@@ -88,7 +88,7 @@ export const companies = pgTable(
         ${table.sessionIntegrityState} <> 'ready'
       )`,
     ),
-    uniqueIndex("companies_issue_prefix_idx").on(table.issuePrefix),
+    uniqueIndex("companies_task_prefix_idx").on(table.taskPrefix),
     unique("companies_id_budget_currency_uq").on(
       table.id,
       table.budgetCurrency,

@@ -4,40 +4,40 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
-const issueId = "11111111-1111-4111-8111-111111111111";
+const taskId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
 const otherCompanyId = "33333333-3333-4333-8333-333333333333";
 
-const mockIssueService = vi.hoisted(() => ({
+const mockTaskService = vi.hoisted(() => ({
   getById: vi.fn(),
 }));
 const mockDocumentService = vi.hoisted(() => ({
-  getIssueDocumentByKey: vi.fn(),
-  upsertIssueDocument: vi.fn(),
+  getTaskDocumentByKey: vi.fn(),
+  upsertTaskDocument: vi.fn(),
 }));
 const mockAnnotationService = vi.hoisted(() => ({
-  listThreadsForIssueDocument: vi.fn(),
-  getThreadForIssueDocument: vi.fn(),
+  listThreadsForTaskDocument: vi.fn(),
+  getThreadForTaskDocument: vi.fn(),
   createThread: vi.fn(),
   addComment: vi.fn(),
   updateThread: vi.fn(),
   remapOpenThreadsForDocument: vi.fn(),
 }));
-const mockIssueReferenceService = vi.hoisted(() => ({
-  diffIssueReferenceSummary: vi.fn(() => ({
-    addedReferencedIssues: [],
-    removedReferencedIssues: [],
-    currentReferencedIssues: [],
+const mockTaskReferenceService = vi.hoisted(() => ({
+  diffTaskReferenceSummary: vi.fn(() => ({
+    addedReferencedTasks: [],
+    removedReferencedTasks: [],
+    currentReferencedTasks: [],
   })),
   emptySummary: vi.fn(() => ({ outbound: [], inbound: [] })),
-  listIssueReferenceSummary: vi.fn(async () => ({ outbound: [], inbound: [] })),
+  listTaskReferenceSummary: vi.fn(async () => ({ outbound: [], inbound: [] })),
 }));
 const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
 
 const documentPayload = {
   id: "document-1",
   companyId,
-  issueId,
+  taskId,
   key: "plan",
   title: "Plan",
   format: "markdown",
@@ -55,7 +55,7 @@ const documentPayload = {
 const annotationThread = {
   id: "55555555-5555-4555-8555-555555555555",
   companyId,
-  issueId,
+  taskId,
   documentId: "document-1",
   documentKey: "plan",
   status: "open",
@@ -89,7 +89,7 @@ const annotationComment = {
   id: "66666666-6666-4666-8666-666666666666",
   companyId,
   threadId: annotationThread.id,
-  issueId,
+  taskId,
   documentId: "document-1",
   body: "Please review PAP-1",
   authorType: "user",
@@ -114,10 +114,10 @@ function registerModuleMocks() {
     }),
     agentService: () => ({ getById: vi.fn(), list: vi.fn(async () => []) }),
     companySkillService: () => ({
-      completeTestRunForIssue: vi.fn(async () => null),
+      completeTestRunForTask: vi.fn(async () => null),
     }),
     companyService: () => ({ getById: vi.fn(async () => ({ id: companyId, attachmentMaxBytes: 10_000_000 })) }),
-    createOrdinaryIssueRuntime: () => ({}),
+    createOrdinaryTaskRuntime: () => ({}),
     documentAnnotationService: () => mockAnnotationService,
     documentService: () => mockDocumentService,
     executionWorkspaceService: () => ({}),
@@ -127,19 +127,19 @@ function registerModuleMocks() {
       getGeneral: vi.fn(async () => ({})),
       listCompanyIds: vi.fn(async () => [companyId]),
     }),
-    issueApprovalService: () => ({}),
-    issueReferenceService: () => mockIssueReferenceService,
-    issueService: () => mockIssueService,
+    taskApprovalService: () => ({}),
+    taskReferenceService: () => mockTaskReferenceService,
+    taskService: () => mockTaskService,
     logActivity: mockLogActivity,
     projectService: () => ({}),
-    routineService: () => ({ syncRunStatusForIssue: vi.fn(async () => undefined) }),
+    routineService: () => ({ syncRunStatusForTask: vi.fn(async () => undefined) }),
     workProductService: () => ({}),
   }));
 }
 
 async function createApp(actor: "board" | "agent" = "board", actorCompanyId = companyId) {
-  const [{ issueRoutes }, { errorHandler }] = await Promise.all([
-    vi.importActual<typeof import("../routes/issues.js")>("../routes/issues.js"),
+  const [{ taskRoutes }, { errorHandler }] = await Promise.all([
+    vi.importActual<typeof import("../routes/tasks.js")>("../routes/tasks.js"),
     vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
   ]);
   const app = express();
@@ -162,8 +162,8 @@ async function createApp(actor: "board" | "agent" = "board", actorCompanyId = co
   app.use("/api", denyGenericAgentRest("REST"));
   app.use(
     "/api",
-    issueRoutes({} as any, {} as any, {
-      ordinaryIssues: {} as never,
+    taskRoutes({} as any, {} as any, {
+      ordinaryTasks: {} as never,
     }),
   );
   app.use(errorHandler);
@@ -173,19 +173,19 @@ async function createApp(actor: "board" | "agent" = "board", actorCompanyId = co
 describe("document annotation routes", () => {
   beforeEach(() => {
     vi.resetModules();
-    vi.doUnmock("../routes/issues.js");
+    vi.doUnmock("../routes/tasks.js");
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
     vi.clearAllMocks();
-    mockIssueService.getById.mockResolvedValue({
-      id: issueId,
+    mockTaskService.getById.mockResolvedValue({
+      id: taskId,
       companyId,
       title: "Annotation API",
       status: "in_progress",
       ownerAgentId: null,
     });
-    mockDocumentService.getIssueDocumentByKey.mockResolvedValue(documentPayload);
-    mockDocumentService.upsertIssueDocument.mockResolvedValue({
+    mockDocumentService.getTaskDocumentByKey.mockResolvedValue(documentPayload);
+    mockDocumentService.upsertTaskDocument.mockResolvedValue({
       created: false,
       document: {
         ...documentPayload,
@@ -194,8 +194,8 @@ describe("document annotation routes", () => {
         latestRevisionNumber: 2,
       },
     });
-    mockAnnotationService.listThreadsForIssueDocument.mockImplementation(async (
-      _issueId: string,
+    mockAnnotationService.listThreadsForTaskDocument.mockImplementation(async (
+      _taskId: string,
       _key: string,
       options?: { includeComments?: boolean },
     ) => (
@@ -203,7 +203,7 @@ describe("document annotation routes", () => {
         ? [{ ...annotationThread, comments: [annotationComment] }]
         : [annotationThread]
     ));
-    mockAnnotationService.getThreadForIssueDocument.mockResolvedValue({ ...annotationThread, comments: [annotationComment] });
+    mockAnnotationService.getThreadForTaskDocument.mockResolvedValue({ ...annotationThread, comments: [annotationComment] });
     mockAnnotationService.createThread.mockResolvedValue({ ...annotationThread, comments: [annotationComment] });
     mockAnnotationService.addComment.mockResolvedValue(annotationComment);
     mockAnnotationService.updateThread.mockResolvedValue({ ...annotationThread, status: "resolved" });
@@ -212,12 +212,12 @@ describe("document annotation routes", () => {
 
   it("includes compact open annotations without comment bodies when a board read explicitly requests them", async () => {
     const res = await request(await createApp())
-      .get(`/api/issues/${issueId}/documents/plan?includeAnnotations=true`)
+      .get(`/api/tasks/${taskId}/documents/plan?includeAnnotations=true`)
       .expect(200);
 
     expect(res.body.annotations).toHaveLength(1);
     expect(res.body.annotations[0].comments).toBeUndefined();
-    expect(mockAnnotationService.listThreadsForIssueDocument).toHaveBeenCalledWith(issueId, "plan", {
+    expect(mockAnnotationService.listThreadsForTaskDocument).toHaveBeenCalledWith(taskId, "plan", {
       status: "open",
       includeComments: false,
     });
@@ -225,19 +225,19 @@ describe("document annotation routes", () => {
 
   it("includes annotation comment bodies on board document reads only when both expansions are requested", async () => {
     const res = await request(await createApp())
-      .get(`/api/issues/${issueId}/documents/plan?includeAnnotations=true&includeAnnotationComments=true`)
+      .get(`/api/tasks/${taskId}/documents/plan?includeAnnotations=true&includeAnnotationComments=true`)
       .expect(200);
 
     expect(res.body.annotations[0].comments[0].body).toBe("Please review PAP-1");
-    expect(mockAnnotationService.listThreadsForIssueDocument).toHaveBeenCalledWith(issueId, "plan", {
+    expect(mockAnnotationService.listThreadsForTaskDocument).toHaveBeenCalledWith(taskId, "plan", {
       status: "open",
       includeComments: true,
     });
   });
 
-  it("updates issue documents through the canonical document owner", async () => {
-    mockIssueService.getById.mockResolvedValue({
-      id: issueId,
+  it("updates task documents through the canonical document owner", async () => {
+    mockTaskService.getById.mockResolvedValue({
+      id: taskId,
       companyId,
       title: "Document API",
       status: "in_progress",
@@ -245,7 +245,7 @@ describe("document annotation routes", () => {
     });
 
     const res = await request(await createApp())
-      .put(`/api/issues/${issueId}/documents/plan`)
+      .put(`/api/tasks/${taskId}/documents/plan`)
       .send({
         title: "Plan",
         format: "markdown",
@@ -256,8 +256,8 @@ describe("document annotation routes", () => {
       .expect(200);
 
     expect(res.body.latestRevisionNumber).toBe(2);
-    expect(mockDocumentService.upsertIssueDocument).toHaveBeenCalledWith({
-      issueId,
+    expect(mockDocumentService.upsertTaskDocument).toHaveBeenCalledWith({
+      taskId,
       key: "plan",
       title: "Plan",
       format: "markdown",
@@ -268,13 +268,13 @@ describe("document annotation routes", () => {
       lockedDocumentStrategy: "conflict",
     });
     expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      action: "issue.document_updated",
+      action: "task.document_updated",
     }));
   });
 
   it("creates annotation threads through the canonical annotation owner and logs activity", async () => {
-    mockIssueService.getById.mockResolvedValue({
-      id: issueId,
+    mockTaskService.getById.mockResolvedValue({
+      id: taskId,
       companyId,
       title: "Annotation API",
       status: "todo",
@@ -282,7 +282,7 @@ describe("document annotation routes", () => {
     });
 
     const res = await request(await createApp())
-      .post(`/api/issues/${issueId}/documents/plan/annotations`)
+      .post(`/api/tasks/${taskId}/documents/plan/annotations`)
       .send({
         baseRevisionId: documentPayload.latestRevisionId,
         baseRevisionNumber: 1,
@@ -293,7 +293,7 @@ describe("document annotation routes", () => {
 
     expect(res.body.id).toBe(annotationThread.id);
     expect(mockAnnotationService.createThread).toHaveBeenCalledWith(
-      issueId,
+      taskId,
       "plan",
       expect.objectContaining({ body: "Please review PAP-1" }),
       expect.objectContaining({
@@ -303,7 +303,7 @@ describe("document annotation routes", () => {
       }),
     );
     expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      action: "issue.document_annotation_thread_created",
+      action: "task.document_annotation_thread_created",
       details: expect.objectContaining({
         key: "plan",
         documentKey: "plan",
@@ -311,9 +311,9 @@ describe("document annotation routes", () => {
     }));
   });
 
-  it("rejects agent annotation reads through the generic issue API", async () => {
+  it("rejects agent annotation reads through the generic task API", async () => {
     const response = await request(await createApp("agent", otherCompanyId))
-      .get(`/api/issues/${issueId}/documents/plan/annotations`)
+      .get(`/api/tasks/${taskId}/documents/plan/annotations`)
       .expect(403);
     expect(response.body).toEqual({
       error: "Agent credentials cannot access the generic REST API; use the run-scoped compiled interface",
@@ -322,8 +322,8 @@ describe("document annotation routes", () => {
   });
 
   it("adds annotation comments through the canonical annotation owner and resolves threads", async () => {
-    mockIssueService.getById.mockResolvedValue({
-      id: issueId,
+    mockTaskService.getById.mockResolvedValue({
+      id: taskId,
       companyId,
       title: "Annotation API",
       status: "todo",
@@ -331,11 +331,11 @@ describe("document annotation routes", () => {
     });
 
     await request(await createApp())
-      .post(`/api/issues/${issueId}/documents/plan/annotations/${annotationThread.id}/comments`)
+      .post(`/api/tasks/${taskId}/documents/plan/annotations/${annotationThread.id}/comments`)
       .send({ body: "Reply with PAP-2" })
       .expect(201);
     expect(mockAnnotationService.addComment).toHaveBeenCalledWith(
-      issueId,
+      taskId,
       "plan",
       annotationThread.id,
       { body: "Reply with PAP-2" },
@@ -346,7 +346,7 @@ describe("document annotation routes", () => {
       }),
     );
     expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      action: "issue.document_annotation_comment_added",
+      action: "task.document_annotation_comment_added",
       details: expect.objectContaining({
         key: "plan",
         documentKey: "plan",
@@ -354,12 +354,12 @@ describe("document annotation routes", () => {
     }));
 
     const resolved = await request(await createApp())
-      .patch(`/api/issues/${issueId}/documents/plan/annotations/${annotationThread.id}`)
+      .patch(`/api/tasks/${taskId}/documents/plan/annotations/${annotationThread.id}`)
       .send({ status: "resolved" })
       .expect(200);
     expect(resolved.body.status).toBe("resolved");
     expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      action: "issue.document_annotation_thread_resolved",
+      action: "task.document_annotation_thread_resolved",
       details: expect.objectContaining({
         key: "plan",
         documentKey: "plan",

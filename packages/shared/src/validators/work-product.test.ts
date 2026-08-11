@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { validationDetails } from "../validation-details.js";
 import { attachmentArtifactWorkProductMetadataSchema } from "./work-product.js";
 
 describe("attachmentArtifactWorkProductMetadataSchema", () => {
@@ -32,7 +33,7 @@ describe("attachmentArtifactWorkProductMetadataSchema", () => {
     if (parsed.success) {
       throw new Error("Expected invalid attachment artifact metadata");
     }
-    expect(parsed.error.issues.map((issue) => issue.path.join("."))).toEqual([
+    expect(validationDetails(parsed.error).map((detail) => detail.path.join("."))).toEqual([
       "contentPath",
       "openPath",
       "downloadPath",

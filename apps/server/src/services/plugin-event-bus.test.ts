@@ -7,13 +7,13 @@ describe("plugin event bus", () => {
     const scoped = bus.forPlugin("paperclip.example");
     const stale = vi.fn(async () => undefined);
     const current = vi.fn(async () => undefined);
-    scoped.subscribe("issue.board.comment.created", { companyId: "company" }, stale);
-    scoped.subscribe("issue.board.comment.created", { companyId: "company" }, current);
+    scoped.subscribe("task.board.comment.created", { companyId: "company" }, stale);
+    scoped.subscribe("task.board.comment.created", { companyId: "company" }, current);
 
     expect(bus.subscriptionCount("paperclip.example")).toBe(1);
     await bus.emit({
       eventId: "event",
-      eventType: "issue.board.comment.created",
+      eventType: "task.board.comment.created",
       occurredAt: "2026-08-05T00:00:00.000Z",
       companyId: "company",
       payload: {},
@@ -50,7 +50,7 @@ describe("plugin event bus", () => {
     ) => void;
     const handler = async () => undefined;
 
-    expect(() => subscribe("issue.*", handler)).toThrow("Unsupported plugin event subscription pattern");
+    expect(() => subscribe("task.*", handler)).toThrow("Unsupported plugin event subscription pattern");
     expect(() => subscribe("plugin.source.*.done", handler)).toThrow(
       'wildcards are supported only as a trailing ".*"',
     );
@@ -59,7 +59,7 @@ describe("plugin event bus", () => {
   it("rejects an agent filter for the board-comment core event", () => {
     const scoped = createPluginEventBus().forPlugin("paperclip.example");
     expect(() => scoped.subscribe(
-      "issue.board.comment.created",
+      "task.board.comment.created",
       { agentId: "agent" },
       async () => undefined,
     )).toThrow("agentId is not supported");

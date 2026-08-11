@@ -442,7 +442,7 @@ describe("TelemetryClient batched retry + backoff", () => {
     client.stop();
   });
 
-  // Issue 1 (PR #9946): a transient upstream 5xx on the primary endpoint must
+  // Case 1 (PR #9946): a transient upstream 5xx on the primary endpoint must
   // fall through to the healthy secondary endpoint instead of returning early.
   it("falls through to the secondary endpoint on a transient 5xx", async () => {
     const fetchMock = vi
@@ -464,7 +464,7 @@ describe("TelemetryClient batched retry + backoff", () => {
     client.stop();
   });
 
-  // Issue 1 (PR #9946): when every endpoint returns a transient 5xx the status
+  // Case 1 (PR #9946): when every endpoint returns a transient 5xx the status
   // is still surfaced as retryable (not swallowed).
   it("surfaces the transient status for retry when all endpoints 5xx", async () => {
     const fetchMock = vi
@@ -487,7 +487,7 @@ describe("TelemetryClient batched retry + backoff", () => {
     client.stop();
   });
 
-  // Issue 3 (PR #9946): an out-of-range `Retry-After` hint is clamped to
+  // Case 3 (PR #9946): an out-of-range `Retry-After` hint is clamped to
   // maxDelayMs rather than overflowing the timer range into a near-immediate
   // (Node-clamped ~1ms) retry.
   it("caps a large Retry-After hint at maxDelayMs", async () => {
@@ -566,7 +566,7 @@ describe("TelemetryClient bounded pending-retry store", () => {
     client.stop();
   });
 
-  // Issue 2 (PR #9946): a batch that is immediately evicted by the bound must
+  // Case 2 (PR #9946): a batch that is immediately evicted by the bound must
   // NOT leave a retry timer behind. With maxPendingRetryBatches: 0 every failed
   // batch is discarded on enqueue, so no timer should ever fire.
   it("schedules no retry timer for a batch evicted on enqueue (bound 0)", async () => {

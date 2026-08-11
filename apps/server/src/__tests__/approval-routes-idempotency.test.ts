@@ -15,8 +15,8 @@ const mockApprovalService = vi.hoisted(() => ({
   addComment: vi.fn(),
 }));
 
-const mockIssueApprovalService = vi.hoisted(() => ({
-  listIssuesForApproval: vi.fn(),
+const mockTaskApprovalService = vi.hoisted(() => ({
+  listTasksForApproval: vi.fn(),
   linkManyForApproval: vi.fn(),
 }));
 
@@ -36,7 +36,7 @@ function registerModuleMocks() {
   vi.doMock("../services/index.js", () => ({
     accessService: () => mockAccessService,
     approvalService: () => mockApprovalService,
-    issueApprovalService: () => mockIssueApprovalService,
+    taskApprovalService: () => mockTaskApprovalService,
     logActivity: mockLogActivity,
     secretService: () => mockSecretService,
   }));
@@ -57,7 +57,7 @@ async function createApp(actorOverrides: Record<string, unknown> = {}) {
     next();
   });
   app.use("/api", approvalRoutes(createRouteDb(), {
-    ordinaryIssues: {} as never,
+    ordinaryTasks: {} as never,
   }));
   app.use(errorHandler);
   return app;
@@ -86,7 +86,7 @@ async function createAgentApp(options: { runId?: string } = {}) {
   });
   app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", approvalRoutes(createRouteDb(), {
-    ordinaryIssues: {} as never,
+    ordinaryTasks: {} as never,
   }));
   app.use(errorHandler);
   return app;
@@ -119,8 +119,8 @@ describe("approval routes idempotent retries", () => {
     mockApprovalService.resubmit.mockReset();
     mockApprovalService.listComments.mockReset();
     mockApprovalService.addComment.mockReset();
-    mockIssueApprovalService.listIssuesForApproval.mockReset();
-    mockIssueApprovalService.linkManyForApproval.mockReset();
+    mockTaskApprovalService.listTasksForApproval.mockReset();
+    mockTaskApprovalService.linkManyForApproval.mockReset();
     mockSecretService.normalizeHireApprovalPayloadForPersistence.mockReset();
     mockLogActivity.mockReset();
     mockAccessService.decide.mockReset();
@@ -130,7 +130,7 @@ describe("approval routes idempotent retries", () => {
       reason: "allow_test",
       explanation: "Allowed by test mock.",
     });
-    mockIssueApprovalService.listIssuesForApproval.mockResolvedValue([{ id: "issue-1" }]);
+    mockTaskApprovalService.listTasksForApproval.mockResolvedValue([{ id: "task-1" }]);
     mockLogActivity.mockResolvedValue(undefined);
   });
 
@@ -144,7 +144,7 @@ describe("approval routes idempotent retries", () => {
       next();
     });
     app.use("/api", approvalRoutes(createRouteDb(), {
-      ordinaryIssues: {} as never,
+      ordinaryTasks: {} as never,
     }));
     app.post("/api/cli-auth/challenges", (_req, res) => res.status(204).end());
     app.use(errorHandler);
@@ -181,7 +181,7 @@ describe("approval routes idempotent retries", () => {
       .send({});
 
     expect(res.status).toBe(200);
-    expect(mockIssueApprovalService.listIssuesForApproval).not.toHaveBeenCalled();
+    expect(mockTaskApprovalService.listTasksForApproval).not.toHaveBeenCalled();
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
 

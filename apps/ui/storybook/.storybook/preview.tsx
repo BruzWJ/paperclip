@@ -18,7 +18,7 @@ import {
   storybookAuthSession,
   storybookCompanies,
   storybookDashboardSummary,
-  storybookIssues,
+  storybookTasks,
   storybookLiveRuns,
   storybookProjects,
   storybookSecretAccessEvents,
@@ -65,7 +65,7 @@ const storybookTimelineSample = withStorybookTimelineDetails(timelineSample as W
 
 // Install fetch monkeypatch eagerly so any module-load-time fetches (e.g. schema
 // caches in adapter config renderers) hit our fixtures before they reach the
-// network. Some renderers issue a fetch from useEffect on first paint, which
+// network. Some renderers task a fetch from useEffect on first paint, which
 // can otherwise race the StorybookProviders mount.
 installStorybookApiFixtures();
 
@@ -266,7 +266,7 @@ function installStorybookApiFixtures() {
                 spans: [],
                 events: [],
                 edges: [],
-                pagination: { limit: 100, offset: 0, totalIssues: 0, hasMore: false },
+                pagination: { limit: 100, offset: 0, totalTasks: 0, hasMore: false },
                 window: {
                   from: url.searchParams.get("from") ?? new Date(0).toISOString(),
                   to: url.searchParams.get("to") ?? new Date(0).toISOString(),
@@ -294,15 +294,15 @@ function installStorybookApiFixtures() {
       if (resource === "join-requests") {
         return Response.json([]);
       }
-      if (resource === "issues") {
+      if (resource === "tasks") {
         const query = url.searchParams.get("q")?.trim().toLowerCase();
-        const issues = companyId === "company-storybook" ? storybookIssues : [];
+        const tasks = companyId === "company-storybook" ? storybookTasks : [];
         return Response.json(
           query
-            ? issues.filter((issue) =>
-                `${issue.identifier ?? ""} ${issue.title} ${issue.description ?? ""}`.toLowerCase().includes(query),
+            ? tasks.filter((task) =>
+                `${task.identifier ?? ""} ${task.title} ${task.description ?? ""}`.toLowerCase().includes(query),
               )
-            : issues,
+            : tasks,
         );
       }
     }

@@ -1,6 +1,6 @@
 type OnboardingRouteCompany = {
   id: string;
-  issuePrefix: string;
+  taskPrefix: string;
 };
 
 export function isOnboardingPath(pathname: string): boolean {
@@ -33,7 +33,7 @@ export function resolveRouteOnboardingOptions(params: {
   const matchedCompany =
     companies.find(
       (company) =>
-        company.issuePrefix.toUpperCase() === companyPrefix.toUpperCase(),
+        company.taskPrefix.toUpperCase() === companyPrefix.toUpperCase(),
     ) ?? null;
 
   if (!matchedCompany) {

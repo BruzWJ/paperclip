@@ -1,6 +1,6 @@
-import type { IssuePriority, IssueStatus } from "../constants.js";
+import type { TaskPriority, TaskStatus } from "../constants.js";
 
-export const COMPANY_SEARCH_SCOPES = ["all", "issues", "comments", "documents", "artifacts", "agents", "projects"] as const;
+export const COMPANY_SEARCH_SCOPES = ["all", "tasks", "comments", "documents", "artifacts", "agents", "projects"] as const;
 export type CompanySearchScope = (typeof COMPANY_SEARCH_SCOPES)[number];
 
 export const COMPANY_SEARCH_SORTS = ["relevance", "updated", "created", "priority"] as const;
@@ -9,9 +9,9 @@ export type CompanySearchSort = (typeof COMPANY_SEARCH_SORTS)[number];
 export const COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS = ["24h", "7d", "30d", "90d"] as const;
 export type CompanySearchUpdatedWithinOption = (typeof COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS)[number];
 
-export type CompanySearchResultType = "issue" | "artifact" | "agent" | "project";
+export type CompanySearchResultType = "task" | "artifact" | "agent" | "project";
 export type CompanySearchCountType = CompanySearchResultType | "comment" | "document";
-export type CompanySearchIssueFilterKey =
+export type CompanySearchTaskFilterKey =
   | "status"
   | "ownerAgentId"
   | "ownerUserId"
@@ -33,12 +33,12 @@ export interface CompanySearchSnippet {
   highlights: CompanySearchHighlight[];
 }
 
-export interface CompanySearchIssueSummary {
+export interface CompanySearchTaskSummary {
   id: string;
   identifier: string | null;
   title: string | null;
-  boardPresentationStatus: IssueStatus;
-  priority: IssuePriority;
+  boardPresentationStatus: TaskStatus;
+  priority: TaskPriority;
   request: string;
   ownerAgentId: string | null;
   ownerUserId: string | null;
@@ -50,9 +50,9 @@ export interface CompanySearchArtifactSummary {
   id: string;
   source: "document" | "attachment" | "work_product";
   mediaKind: "image" | "video" | "text" | "document" | "file" | "empty";
-  issueId: string;
-  issueIdentifier: string;
-  issueTitle: string | null;
+  taskId: string;
+  taskIdentifier: string;
+  taskTitle: string | null;
   projectId: string | null;
   projectName: string | null;
   updatedAt: string;
@@ -68,15 +68,15 @@ export interface CompanySearchResult {
   sourceLabel: string | null;
   snippet: string | null;
   snippets: CompanySearchSnippet[];
-  issue?: CompanySearchIssueSummary;
+  task?: CompanySearchTaskSummary;
   artifact?: CompanySearchArtifactSummary;
   updatedAt: string | null;
   previewImageUrl: string | null;
 }
 
 export interface CompanySearchFilterOptionCounts {
-  status: Partial<Record<IssueStatus, number>>;
-  priority: Partial<Record<IssuePriority, number>>;
+  status: Partial<Record<TaskStatus, number>>;
+  priority: Partial<Record<TaskPriority, number>>;
   ownerAgentId: Record<string, number>;
   ownerUserId: Record<string, number>;
   projectId: Record<string, number>;
@@ -85,7 +85,7 @@ export interface CompanySearchFilterOptionCounts {
 }
 
 export interface CompanySearchZeroResultsLoosenSuggestion {
-  filter: CompanySearchIssueFilterKey;
+  filter: CompanySearchTaskFilterKey;
   values: string[];
   resultCount: number;
   additionalCount: number;
@@ -110,14 +110,14 @@ export interface CompanySearchResponse {
   hasMore: boolean;
 }
 
-export const COMPANY_SEARCH_EXTRACT_SCOPES = ["all", "issues", "comments", "documents"] as const;
+export const COMPANY_SEARCH_EXTRACT_SCOPES = ["all", "tasks", "comments", "documents"] as const;
 export type CompanySearchExtractScope = (typeof COMPANY_SEARCH_EXTRACT_SCOPES)[number];
 
 export const COMPANY_SEARCH_EXTRACT_KINDS = ["literal", "url"] as const;
 export type CompanySearchExtractKind = (typeof COMPANY_SEARCH_EXTRACT_KINDS)[number];
 
 export type CompanySearchExtractSourceRef =
-  | { type: "issue"; issueId: string }
+  | { type: "task"; taskId: string }
   | { type: "comment"; commentId: string }
   | { type: "document"; documentId: string; documentKey: string };
 
@@ -130,11 +130,11 @@ export interface CompanySearchExtractMatch {
   source: CompanySearchExtractSourceRef;
 }
 
-export interface CompanySearchExtractIssueResult {
-  issueId: string;
+export interface CompanySearchExtractTaskResult {
+  taskId: string;
   identifier: string | null;
   title: string | null;
-  boardPresentationStatus: IssueStatus;
+  boardPresentationStatus: TaskStatus;
   request: string;
   ownerAgentId: string | null;
   ownerUserId: string | null;
@@ -149,8 +149,8 @@ export interface CompanySearchExtractResponse {
   scope: CompanySearchExtractScope;
   limit: number;
   offset: number;
-  matchesPerIssue: number;
-  results: CompanySearchExtractIssueResult[];
+  matchesPerTask: number;
+  results: CompanySearchExtractTaskResult[];
   hasMore: boolean;
   truncated: boolean;
 }

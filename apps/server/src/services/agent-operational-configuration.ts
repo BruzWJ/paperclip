@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { agents, type Db } from "@paperclipai/db";
 import {
+  validationDetails,
   agentOperationalConfigurationUpdateSchema,
   type AgentOperationalConfigurationUpdateInput,
   type BudgetIncident,
@@ -43,7 +44,7 @@ export function createAgentOperationalConfigurationService(
           "Invalid agent operational configuration",
           {
             code: "invalid_agent_operational_configuration",
-            issues: parsed.error.issues,
+            diagnostics: validationDetails(parsed.error),
           },
         );
       }

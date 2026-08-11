@@ -149,7 +149,7 @@ export function isAllowedContentType(contentType: string): boolean {
 export const MAX_ATTACHMENT_BYTES =
   Number(process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES) || 10 * 1024 * 1024;
 
-export function normalizeIssueAttachmentMaxBytes(value: number | null | undefined): number {
+export function normalizeTaskAttachmentMaxBytes(value: number | null | undefined): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return Math.min(DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES, MAX_ATTACHMENT_BYTES);
   }

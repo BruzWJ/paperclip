@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addValidationDetail } from "../validation-details.js";
 import {
   BUDGET_INCIDENT_RESOLUTION_ACTIONS,
   BUDGET_SCOPE_TYPES,
@@ -33,8 +34,7 @@ export const resolveBudgetIncidentSchema = z
       value.action === "raise_budget_and_resume" &&
       value.limitAmount === undefined
     ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(context, {
         message: "limitAmount is required when raising a budget",
         path: ["limitAmount"],
       });

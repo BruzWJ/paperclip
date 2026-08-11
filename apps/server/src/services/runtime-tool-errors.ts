@@ -13,7 +13,7 @@ export class RuntimeToolUnavailable extends Error {
 
   constructor(readonly toolName: string, message?: string) {
     super(
-      message ?? `Tool is not available for the current issue execution: ${toolName}`,
+      message ?? `Tool is not available for the current task execution: ${toolName}`,
     );
     this.name = "RuntimeToolUnavailable";
   }

@@ -37,7 +37,7 @@ export interface AnnotationPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   target?: DocumentAnnotationTarget;
-  issueId?: string;
+  taskId?: string;
   documentKey: string;
   documentRevisionNumber: number;
   baseRevisionId: string | null;
@@ -110,9 +110,9 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
   const bodyTestId = props.isMobile ? "document-annotation-panel" : undefined;
   const annotationTarget = useMemo<DocumentAnnotationTarget>(() => {
     if (props.target) return props.target;
-    if (!props.issueId) throw new Error("Document annotation panel requires an annotation target.");
-    return { kind: "issue", issueId: props.issueId, documentKey: props.documentKey };
-  }, [props.documentKey, props.issueId, props.target]);
+    if (!props.taskId) throw new Error("Document annotation panel requires an annotation target.");
+    return { kind: "task", taskId: props.taskId, documentKey: props.documentKey };
+  }, [props.documentKey, props.taskId, props.target]);
 
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
@@ -147,7 +147,7 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
   const annotationsQueryKey = useMemo(
     () => annotationTarget.kind === "routine"
       ? queryKeys.routines.documentAnnotations(annotationTarget.routineId, annotationTarget.documentKey, "all")
-      : queryKeys.issues.documentAnnotations(annotationTarget.issueId, annotationTarget.documentKey, "all"),
+      : queryKeys.tasks.documentAnnotations(annotationTarget.taskId, annotationTarget.documentKey, "all"),
     [annotationTarget],
   );
 
@@ -161,9 +161,9 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
             && query.queryKey[2] === annotationTarget.routineId
             && query.queryKey[3] === annotationTarget.documentKey;
         }
-        return query.queryKey[0] === "issues"
+        return query.queryKey[0] === "tasks"
           && query.queryKey[1] === "document-annotations"
-          && query.queryKey[2] === annotationTarget.issueId
+          && query.queryKey[2] === annotationTarget.taskId
           && query.queryKey[3] === annotationTarget.documentKey;
       },
     });
@@ -735,7 +735,7 @@ function buildOptimisticComment(input: {
     id: optimisticId("optimistic-comment"),
     companyId: "",
     threadId: input.threadId,
-    issueId: input.target.kind === "issue" ? input.target.issueId : null,
+    taskId: input.target.kind === "task" ? input.target.taskId : null,
     routineId: input.target.kind === "routine" ? input.target.routineId : null,
     documentId: "",
     body: input.body,
@@ -743,7 +743,7 @@ function buildOptimisticComment(input: {
     authorAgentId: null,
     authorUserId: input.author.id,
     createdByRunId: null,
-    issueCommentId: null,
+    taskCommentId: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -773,7 +773,7 @@ function buildOptimisticThread(input: {
   // don't have to fabricate every backend-only column.
   return {
     id,
-    issueId: input.target.kind === "issue" ? input.target.issueId : null,
+    taskId: input.target.kind === "task" ? input.target.taskId : null,
     routineId: input.target.kind === "routine" ? input.target.routineId : null,
     documentKey: input.documentKey,
     status: "open",

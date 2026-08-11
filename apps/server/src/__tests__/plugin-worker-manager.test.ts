@@ -366,7 +366,7 @@ describe("plugin-worker-manager stderr failure context", () => {
 
   it.each([
     ["onEvent", "events.subscribe"],
-    ["issues.creatorCallback.deliver", "issues.create"],
+    ["tasks.creatorCallback.deliver", "tasks.create"],
   ] as const)("rejects %s without its manifest capability", async (method, capability) => {
     const handle = configuredWorker(TEST_MANIFEST, {
       extraSupportedMethods: [method],
@@ -939,8 +939,8 @@ describe("plugin-worker-manager stderr failure context", () => {
       context?: { rpcOperationId?: string },
     ) => ({
       operationId: context?.rpcOperationId,
-      issue: {
-        id: "issue-1",
+      task: {
+        id: "task-1",
         lifecycleStatus: "closed",
         boardPresentationStatus: "cancelled",
       },
@@ -957,7 +957,7 @@ describe("plugin-worker-manager stderr failure context", () => {
       databaseNamespace: null,
       onTerminalCrash: () => undefined,
       hostHandlers: completeHostHandlers({
-        "issues.withdraw": withdraw as never,
+        "tasks.withdraw": withdraw as never,
       }),
     });
 
@@ -975,19 +975,19 @@ describe("plugin-worker-manager stderr failure context", () => {
       expect(withdraw).toHaveBeenCalledTimes(3);
       expect(withdraw.mock.calls.map(([params]) => params)).toEqual([
         {
-          issueId: "issue-1",
+          taskId: "task-1",
           companyId: "company-1",
-          message: "Withdraw this exact issue.",
+          message: "Withdraw this exact task.",
         },
         {
-          issueId: "issue-1",
+          taskId: "task-1",
           companyId: "company-1",
-          message: "Withdraw this exact issue.",
+          message: "Withdraw this exact task.",
         },
         {
-          issueId: "issue-1",
+          taskId: "task-1",
           companyId: "company-1",
-          message: "Withdraw this exact issue.",
+          message: "Withdraw this exact task.",
         },
       ]);
       expect(result.operationIds[0]).toBe(result.operationIds[1]);

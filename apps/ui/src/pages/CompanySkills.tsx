@@ -1653,7 +1653,7 @@ function CatalogDetailPane({
         ) : !fileQuery.data ? (
           <div className="text-sm text-muted-foreground">Select a file to inspect.</div>
         ) : fileQuery.data.markdown ? (
-          <MarkdownBody softBreaks={false} linkIssueReferences={false}>{body}</MarkdownBody>
+          <MarkdownBody softBreaks={false} linkTaskReferences={false}>{body}</MarkdownBody>
         ) : (
           <pre className="overflow-x-auto whitespace-pre-wrap wrap-break-word border-0 bg-transparent p-0 font-mono text-sm text-foreground">
             <code>{fileQuery.data.content}</code>
@@ -2563,7 +2563,7 @@ export function SkillDetailPage({
               />
             )
           ) : file.markdown && viewMode === "preview" ? (
-            <MarkdownBody softBreaks={false} linkIssueReferences={false}>{body}</MarkdownBody>
+            <MarkdownBody softBreaks={false} linkTaskReferences={false}>{body}</MarkdownBody>
           ) : (
             <pre className="overflow-x-auto whitespace-pre-wrap wrap-break-word border-0 bg-transparent p-0 font-mono text-sm text-foreground">
               <code>{file.content}</code>
@@ -2582,7 +2582,7 @@ export function SkillDetailPage({
           {fileLoading ? (
             <PageSkeleton variant="detail" />
           ) : file?.markdown ? (
-            <MarkdownBody softBreaks={false} linkIssueReferences={false}>{body || skill.description || "No overview yet."}</MarkdownBody>
+            <MarkdownBody softBreaks={false} linkTaskReferences={false}>{body || skill.description || "No overview yet."}</MarkdownBody>
           ) : (
             <p className="text-sm text-muted-foreground">{skill.description ?? "No overview yet."}</p>
           )}

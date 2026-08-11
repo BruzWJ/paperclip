@@ -90,9 +90,9 @@ export function ClearErrorButton({
 
 /**
  * Shared agent action cluster used by both the agent detail header and the
- * agents list rows. Provider work starts only from an issue-execution source;
+ * agents list rows. Provider work starts only from a task-execution source;
  * this control therefore exposes configuration/lifecycle actions, not an
- * issueless invoke or an agent-wide session reset.
+ * taskless invoke or an agent-wide session reset.
  */
 export function AgentActionButtons({
   agent,
@@ -135,7 +135,7 @@ export function AgentActionButtons({
   className?: string;
 }) {
   const queryClient = useQueryClient();
-  const { openNewIssue } = useDialogActions();
+  const { openNewTask } = useDialogActions();
   const { pushToast } = useToastActions();
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
 
@@ -197,7 +197,7 @@ export function AgentActionButtons({
       <Button
         variant="outline"
         size={size}
-        onClick={() => openNewIssue({ ownerAgentId: agent.id })}
+        onClick={() => openNewTask({ ownerAgentId: agent.id })}
         disabled={assignAndRunDisabled || agentAction.isPending}
         title={workActionsDisabled ? workActionsDisabledReason : undefined}
       >

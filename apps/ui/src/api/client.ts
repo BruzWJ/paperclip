@@ -65,7 +65,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // --- In-tab request coalescing for identical safe GETs -----------------------
 //
-// Multiple callers issuing the same GET while one is in flight share a single
+// Multiple callers sending the same GET while one is in flight share a single
 // underlying fetch. Each caller keeps its own abort semantics: aborting one
 // caller only cancels the shared fetch when *every* caller has aborted.
 // Mutations are never coalesced.
@@ -91,7 +91,7 @@ function coalescedGet<T>(path: string, options?: RequestOptions): Promise<T> {
       headers: options?.headers,
     });
     const created: InflightGet = { promise, controller, refs: new Set() };
-    // Clear the shared entry once settled so later calls issue a fresh request.
+    // Clear the shared entry once settled so later calls start a fresh request.
     promise.then(
       () => {
         if (inflightGets.get(path) === created) inflightGets.delete(path);

@@ -11,9 +11,9 @@ import {
 } from "@paperclipai/shared";
 import { budgetsApi } from "../api/budgets";
 import { projectsApi } from "../api/projects";
-import { issuesApi } from "../api/issues";
+import { tasksApi } from "../api/tasks";
 import { agentsApi } from "../api/agents";
-import { ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, runsApi } from "../api/runs";
+import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "../api/runs";
 import { assetsApi } from "../api/assets";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
@@ -25,12 +25,12 @@ import { InlineEditor } from "../components/InlineEditor";
 import { StatusBadge } from "../components/StatusBadge";
 import { ProjectTile } from "../components/ProjectTile";
 import { BudgetPolicyCard } from "../components/BudgetPolicyCard";
-import { IssuesList } from "../components/IssuesList";
+import { TasksList } from "../components/TasksList";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
 import { MembershipAction } from "../components/MembershipAction";
 import { StarToggle } from "../components/StarToggle";
-import { collectLiveIssueIds } from "../lib/liveIssueIds";
+import { collectLiveTaskIds } from "../lib/liveTaskIds";
 import { projectRouteRef } from "../lib/utils";
 import { PROJECT_ICONS } from "../lib/project-icons";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
@@ -68,7 +68,7 @@ function resolveProjectTab(pathname: string, projectId: string): ProjectTab | nu
   if (tab === "overview") return "overview";
   if (tab === "configuration") return "configuration";
   if (tab === "budget") return "budget";
-  if (tab === "issues") return "list";
+  if (tab === "tasks") return "list";
   if (tab === "plugin-operations") return "plugin-operations";
   return null;
 }
@@ -229,9 +229,9 @@ function ProjectTilePicker({
   );
 }
 
-/* ── List (issues) tab content ── */
+/* ── List (tasks) tab content ── */
 
-function ProjectIssuesList({ projectId, companyId }: { projectId: string; companyId: string }) {
+function ProjectTasksList({ projectId, companyId }: { projectId: string; companyId: string }) {
   const queryClient = useQueryClient();
 
   const { data: agents } = useQuery({
@@ -240,19 +240,19 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
     enabled: !!companyId,
   });
 
-  const activeRunsQueryKey = queryKeys.runs(companyId, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES });
+  const activeRunsQueryKey = queryKeys.runs(companyId, { status: ACTIVE_TASK_EXECUTION_RUN_STATUSES });
   const sharedActiveRuns = useSharedPollingQuery({
     companyId,
     resourceKey: "active-runs",
     queryKey: activeRunsQueryKey,
     enabled: !!companyId,
-    // Event-sourced via LiveUpdatesProvider (issue 9627); no interval poll needed.
+    // Event-sourced via LiveUpdatesProvider (task 9627); no interval poll needed.
     refetchInterval: false,
     leaderOnly: true,
   });
   const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
     queryKey: activeRunsQueryKey,
-    queryFn: () => runsApi.listForCompany(companyId, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, limit: 200 }),
+    queryFn: () => runsApi.listForCompany(companyId, { status: ACTIVE_TASK_EXECUTION_RUN_STATUSES, limit: 200 }),
     enabled: sharedActiveRuns.enabled,
     refetchInterval: sharedActiveRuns.refetchInterval,
   });
@@ -263,24 +263,24 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
     enabled: !!companyId,
   });
 
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(activeRunPage?.items), [activeRunPage]);
+  const liveTaskIds = useMemo(() => collectLiveTaskIds(activeRunPage?.items), [activeRunPage]);
 
-  const { data: issues, isLoading, error } = useQuery({
-    queryKey: queryKeys.issues.listByProject(companyId, projectId),
-    queryFn: () => issuesApi.list(companyId, { projectId }),
+  const { data: tasks, isLoading, error } = useQuery({
+    queryKey: queryKeys.tasks.listByProject(companyId, projectId),
+    queryFn: () => tasksApi.list(companyId, { projectId }),
     enabled: !!companyId,
   });
 
   return (
-    <IssuesList
-      issues={issues ?? []}
+    <TasksList
+      tasks={tasks ?? []}
       isLoading={isLoading}
       error={error as Error | null}
       agents={agents}
       projects={projects}
-      liveIssueIds={liveIssueIds}
+      liveTaskIds={liveTaskIds}
       projectId={projectId}
-      viewStateKey="paperclip:project-issues-view"
+      viewStateKey="paperclip:project-tasks-view"
     />
   );
 }
@@ -307,39 +307,39 @@ function ProjectPluginOperationsList({
     queryFn: () => projectsApi.list(companyId),
     enabled: !!companyId,
   });
-  const activeRunsQueryKey = queryKeys.runs(companyId, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES });
+  const activeRunsQueryKey = queryKeys.runs(companyId, { status: ACTIVE_TASK_EXECUTION_RUN_STATUSES });
   const sharedActiveRuns = useSharedPollingQuery({
     companyId,
     resourceKey: "active-runs",
     queryKey: activeRunsQueryKey,
     enabled: !!companyId,
-    // Event-sourced via LiveUpdatesProvider (issue 9627); no interval poll needed.
+    // Event-sourced via LiveUpdatesProvider (task 9627); no interval poll needed.
     refetchInterval: false,
     leaderOnly: true,
   });
   const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
     queryKey: activeRunsQueryKey,
-    queryFn: () => runsApi.listForCompany(companyId, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, limit: 200 }),
+    queryFn: () => runsApi.listForCompany(companyId, { status: ACTIVE_TASK_EXECUTION_RUN_STATUSES, limit: 200 }),
     enabled: sharedActiveRuns.enabled,
     refetchInterval: sharedActiveRuns.refetchInterval,
   });
   usePublishSharedQueryData(sharedActiveRuns, activeRunPage, activeRunsUpdatedAt);
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(activeRunPage?.items), [activeRunPage]);
+  const liveTaskIds = useMemo(() => collectLiveTaskIds(activeRunPage?.items), [activeRunPage]);
 
-  const { data: issues, isLoading, error } = useQuery({
-    queryKey: queryKeys.issues.listPluginOperationsByProject(companyId, projectId, originKindPrefix),
-    queryFn: () => issuesApi.list(companyId, { projectId, originKindPrefix }),
+  const { data: tasks, isLoading, error } = useQuery({
+    queryKey: queryKeys.tasks.listPluginOperationsByProject(companyId, projectId, originKindPrefix),
+    queryFn: () => tasksApi.list(companyId, { projectId, originKindPrefix }),
     enabled: !!companyId && !!projectId,
   });
 
   return (
-    <IssuesList
-      issues={issues ?? []}
+    <TasksList
+      tasks={tasks ?? []}
       isLoading={isLoading}
       error={error as Error | null}
       agents={agents}
       projects={projects}
-      liveIssueIds={liveIssueIds}
+      liveTaskIds={liveTaskIds}
       projectId={projectId}
       viewStateKey={`paperclip:project-plugin-operations-view:${pluginKey}`}
     />
@@ -369,7 +369,7 @@ export function ProjectDetail() {
   const routeCompanyId = useMemo(() => {
     if (!companyPrefix) return null;
     const requestedPrefix = companyPrefix.toUpperCase();
-    return companies.find((company) => company.issuePrefix.toUpperCase() === requestedPrefix)?.id ?? null;
+    return companies.find((company) => company.taskPrefix.toUpperCase() === requestedPrefix)?.id ?? null;
   }, [companies, companyPrefix]);
   const lookupCompanyId = routeCompanyId ?? selectedCompanyId ?? undefined;
   const canFetchProject = routeProjectRef.length > 0 && (isUuidLike(routeProjectRef) || Boolean(lookupCompanyId));
@@ -502,10 +502,10 @@ export function ProjectDetail() {
     }
     if (activeTab === "list") {
       if (filter) {
-        navigate(`/projects/${canonicalProjectRef}/issues/${filter}`, { replace: true });
+        navigate(`/projects/${canonicalProjectRef}/tasks/${filter}`, { replace: true });
         return;
       }
-      navigate(`/projects/${canonicalProjectRef}/issues`, { replace: true });
+      navigate(`/projects/${canonicalProjectRef}/tasks`, { replace: true });
       return;
     }
     navigate(`/projects/${canonicalProjectRef}`, { replace: true });
@@ -620,10 +620,10 @@ export function ProjectDetail() {
   });
 
   if (pluginTabFromSearch && !pluginDetailSlotsLoading && !activePluginTab) {
-    return <Navigate to={`/projects/${canonicalProjectRef}/issues`} replace />;
+    return <Navigate to={`/projects/${canonicalProjectRef}/tasks`} replace />;
   }
 
-  // Redirect bare /projects/:id to cached tab or default /issues
+  // Redirect bare /projects/:id to cached tab or default /tasks
   if (routeProjectRef && activeTab === null) {
     let cachedTab: string | null = null;
     if (project?.id) {
@@ -644,7 +644,7 @@ export function ProjectDetail() {
     if (isProjectPluginTab(cachedTab)) {
       return <Navigate to={`/projects/${canonicalProjectRef}?tab=${encodeURIComponent(cachedTab)}`} replace />;
     }
-    return <Navigate to={`/projects/${canonicalProjectRef}/issues`} replace />;
+    return <Navigate to={`/projects/${canonicalProjectRef}/tasks`} replace />;
   }
 
   if (isLoading) return <PageSkeleton variant="detail" />;
@@ -678,7 +678,7 @@ export function ProjectDetail() {
     } else if (tab === "configuration") {
       navigate(`/projects/${canonicalProjectRef}/configuration`);
     } else {
-      navigate(`/projects/${canonicalProjectRef}/issues`);
+      navigate(`/projects/${canonicalProjectRef}/tasks`);
     }
   };
 
@@ -825,7 +825,7 @@ export function ProjectDetail() {
       )}
 
       {activeTab === "list" && project?.id && resolvedCompanyId && (
-        <ProjectIssuesList projectId={project.id} companyId={resolvedCompanyId} />
+        <ProjectTasksList projectId={project.id} companyId={resolvedCompanyId} />
       )}
 
       {activeTab === "plugin-operations" && project?.id && resolvedCompanyId && project.managedByPlugin && (

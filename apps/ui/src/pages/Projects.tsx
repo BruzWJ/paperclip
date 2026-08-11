@@ -223,9 +223,9 @@ export function Projects() {
                           <div className="flex items-center gap-3">
                             <span
                               className="hidden text-xs text-muted-foreground tabular-nums sm:inline"
-                              title={`${formatNumber(project.issueCount ?? 0)} task${(project.issueCount ?? 0) === 1 ? "" : "s"}`}
+                              title={`${formatNumber(project.taskCount ?? 0)} task${(project.taskCount ?? 0) === 1 ? "" : "s"}`}
                             >
-                              {formatNumber(project.issueCount ?? 0)} task{(project.issueCount ?? 0) === 1 ? "" : "s"}
+                              {formatNumber(project.taskCount ?? 0)} task{(project.taskCount ?? 0) === 1 ? "" : "s"}
                             </span>
                             {project.budget && selectedCompany && (
                               <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">

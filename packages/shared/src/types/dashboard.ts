@@ -34,7 +34,7 @@ export interface DashboardSummary {
     paused: number;
     error: number;
   };
-  issues: {
+  tasks: {
     open: number;
     inProgress: number;
     blocked: number;

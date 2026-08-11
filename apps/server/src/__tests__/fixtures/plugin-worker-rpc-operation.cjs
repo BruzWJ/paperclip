@@ -13,11 +13,11 @@ function sendWithdrawal(id) {
   send({
     jsonrpc: "2.0",
     id,
-    method: "issues.withdraw",
+    method: "tasks.withdraw",
     params: {
-      issueId: "issue-1",
+      taskId: "task-1",
       companyId: "company-1",
-      message: "Withdraw this exact issue.",
+      message: "Withdraw this exact task.",
     },
     ...(parentInvocationId
       ? { paperclipInvocationId: parentInvocationId }

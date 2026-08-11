@@ -4,7 +4,7 @@ import {
   PAPERCLIP_ACTION_KEYS,
   isMcpToolName,
   type AgentMentionReachGrantKey,
-  type IssueExecutionRefMode,
+  type TaskExecutionRefMode,
   type JsonSchema,
 } from "@paperclipai/shared";
 import {
@@ -87,7 +87,7 @@ export interface RuntimeInterfaceCompileInput
 }
 
 interface CompiledRuntimeInterfaceContract {
-  mode: IssueExecutionRefMode;
+  mode: TaskExecutionRefMode;
   descriptors: readonly CompiledRunToolDescriptor[];
 }
 

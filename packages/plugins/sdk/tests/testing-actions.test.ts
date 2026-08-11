@@ -35,12 +35,12 @@ const manifest = {
 
 const beforePromptInput = {
   companyId: "company-1",
-  issueId: "issue-1",
+  taskId: "task-1",
   sessionId: "session-1",
   runId: "run-1",
   agentId: "agent-1",
   projectId: null,
-  sourceText: "Continue the issue",
+  sourceText: "Continue the task",
   promptKind: "base",
   sessionOperation: "new",
   refId: "ref-1",
@@ -50,14 +50,14 @@ const beforePromptInput = {
   sourceMessageSeq: 12,
   contextAccess: {
     carry_context: false,
-    read_issue_comments: true,
-    read_issue_agent_run: false,
-    list_sub_issues: false,
-    read_sub_issue_comments: false,
-    read_sub_issue_agent_run: false,
-    list_company_issues: false,
-    read_company_issue_comments: false,
-    read_company_issue_agent_run: false,
+    read_task_comments: true,
+    read_task_agent_run: false,
+    list_sub_tasks: false,
+    read_sub_task_comments: false,
+    read_sub_task_agent_run: false,
+    list_company_tasks: false,
+    read_company_task_comments: false,
+    read_company_task_agent_run: false,
   },
   snapshotHighWaterSeq: 12,
 } satisfies PluginBeforePromptInput;
@@ -93,20 +93,20 @@ describe("createTestHarness plugin entity identity", () => {
 
     const first = await harness.ctx.entities.upsert({
       entityType: "summary",
-      scopeKind: "issue",
-      scopeId: "issue-1",
+      scopeKind: "task",
+      scopeId: "task-1",
       data: { revision: 1 },
     });
     const updated = await harness.ctx.entities.upsert({
       entityType: "summary",
-      scopeKind: "issue",
-      scopeId: "issue-1",
+      scopeKind: "task",
+      scopeId: "task-1",
       data: { revision: 2 },
     });
     const otherScope = await harness.ctx.entities.upsert({
       entityType: "summary",
-      scopeKind: "issue",
-      scopeId: "issue-2",
+      scopeKind: "task",
+      scopeId: "task-2",
       data: { revision: 1 },
     });
 
@@ -118,8 +118,8 @@ describe("createTestHarness plugin entity identity", () => {
     });
     expect(otherScope.id).not.toBe(first.id);
     await expect(harness.ctx.entities.list({
-      scopeKind: "issue",
-      scopeId: "issue-1",
+      scopeKind: "task",
+      scopeId: "task-1",
     })).resolves.toEqual([updated]);
   });
 });
@@ -256,12 +256,12 @@ describe("createTestHarness invite contract", () => {
   });
 });
 
-describe("createTestHarness issue control plane", () => {
-  it("exposes only canonical plugin issue operations and terminalizes a withdrawal", async () => {
+describe("createTestHarness task control plane", () => {
+  it("exposes only canonical plugin task operations and terminalizes a withdrawal", async () => {
     const harness = createTestHarness({
       manifest: {
         ...manifest,
-        capabilities: ["issues.read", "issues.create", "issues.update", "issues.withdraw"],
+        capabilities: ["tasks.read", "tasks.create", "tasks.update", "tasks.withdraw"],
       },
     });
     const now = new Date();
@@ -288,7 +288,7 @@ describe("createTestHarness issue control plane", () => {
     };
     harness.seed({ agents: [owner] });
 
-    expect(Object.keys(harness.ctx.issues).sort()).toEqual([
+    expect(Object.keys(harness.ctx.tasks).sort()).toEqual([
       "create",
       "get",
       "list",
@@ -297,12 +297,12 @@ describe("createTestHarness issue control plane", () => {
       "withdraw",
     ]);
 
-    await harness.ctx.issues.registerCreatorCallback(
+    await harness.ctx.tasks.registerCreatorCallback(
       { key: "release-files", version: "1" },
       (delivery) => ({ deliveryId: delivery.deliveryId, accepted: true }),
     );
 
-    const issue = await harness.ctx.issues.create({
+    const task = await harness.ctx.tasks.create({
       companyId: "company-1",
       title: "Pick files",
       request: "Choose the files for the release.",
@@ -311,12 +311,12 @@ describe("createTestHarness issue control plane", () => {
       callbackVersion: "1",
     });
 
-    await expect(harness.ctx.issues.update(
-      issue.id,
+    await expect(harness.ctx.tasks.update(
+      task.id,
       { kind: "message", message: "Use the release manifest." },
       "company-1",
     )).resolves.toMatchObject({
-      id: issue.id,
+      id: task.id,
       request: "Choose the files for the release.",
       lifecycleStatus: "open",
       ownerKind: "agent",
@@ -327,18 +327,18 @@ describe("createTestHarness issue control plane", () => {
       creatorCallbackVersion: "1",
     });
 
-    const withdrawal = await harness.ctx.issues.withdraw(
-      issue.id,
+    const withdrawal = await harness.ctx.tasks.withdraw(
+      task.id,
       "The release no longer needs this work.",
       "company-1",
     );
     expect(withdrawal).toMatchObject({
-      issue: { id: issue.id, lifecycleStatus: "cancelled" },
+      task: { id: task.id, lifecycleStatus: "cancelled" },
       retried: false,
     });
 
-    await expect(harness.ctx.issues.update(
-      issue.id,
+    await expect(harness.ctx.tasks.update(
+      task.id,
       { kind: "message", message: "Too late" },
       "company-1",
     )).rejects.toThrow("terminal");

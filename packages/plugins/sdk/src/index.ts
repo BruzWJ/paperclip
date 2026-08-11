@@ -13,8 +13,8 @@
  *   async setup(ctx) {
  *     await ctx.logger.info("Plugin starting up");
  *
- *     ctx.events.on("issue.board.comment.created", async (event) => {
- *       await ctx.logger.info("Issue created", { issueId: event.entityId });
+ *     ctx.events.on("task.board.comment.created", async (event) => {
+ *       await ctx.logger.info("Task created", { taskId: event.entityId });
  *     });
  *
  *     ctx.jobs.register("full-sync", async (job) => {
@@ -152,11 +152,11 @@ export type {
   PluginRoutinesClient,
   PluginSkillsClient,
   PluginCompaniesClient,
-  PluginIssuesClient,
+  PluginTasksClient,
   PluginContextAccess,
-  PluginIssueCreateInput,
-  PluginIssueUpdateInput,
-  PluginIssueWithdrawalResult,
+  PluginTaskCreateInput,
+  PluginTaskUpdateInput,
+  PluginTaskWithdrawalResult,
   PluginCreatorCallbackRegistration,
   PluginCreatorCallbackDelivery,
   PluginCreatorCallbackAcknowledgement,
@@ -193,14 +193,14 @@ export type {
   PluginBeforePromptInput,
   PluginBeforePromptResult,
   PluginRunContextHandle,
-  PluginRunIssueProjection,
-  PluginRunIssueCommentProjection,
+  PluginRunTaskProjection,
+  PluginRunTaskCommentProjection,
   ProviderSafeRunTrace,
   PluginRunPage,
-  PluginRunIssuesClient,
+  PluginRunTasksClient,
   PluginToolRunContext,
   PluginResolvedRunContext,
-  PluginRunIssueReach,
+  PluginRunTaskReach,
   PluginRuntimeClient,
   PluginRuntimeRecordsClient,
   PluginJsonValue,
@@ -218,9 +218,9 @@ export type {
   PluginEntityQuery,
   Company,
   Project,
-  Issue,
-  IssueComment,
-  IssueDocumentSummary,
+  Task,
+  TaskComment,
+  TaskDocumentSummary,
   Agent,
   Goal,
   PermissionKey,
@@ -229,7 +229,7 @@ export type {
   PluginDatabaseClient,
   HumanCompanyMembershipRole,
   MembershipStatus,
-  IssueExecutionSessionOperation,
+  TaskExecutionSessionOperation,
 } from "./types.js";
 
 // Manifest and constant types re-exported from @paperclipai/shared

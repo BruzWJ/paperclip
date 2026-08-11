@@ -3,7 +3,7 @@ import { buildProjectListMetricMaps } from "../services/projects.ts";
 
 describe("buildProjectListMetricMaps", () => {
   it("maps task counts by project, coercing string counts to numbers", () => {
-    const { issueCountByProjectId } = buildProjectListMetricMaps(
+    const { taskCountByProjectId } = buildProjectListMetricMaps(
       [
         { projectId: "p1", count: 24 },
         { projectId: "p2", count: 11 as unknown as number },
@@ -11,17 +11,17 @@ describe("buildProjectListMetricMaps", () => {
       [],
     );
 
-    expect(issueCountByProjectId.get("p1")).toBe(24);
-    expect(issueCountByProjectId.get("p2")).toBe(11);
+    expect(taskCountByProjectId.get("p1")).toBe(24);
+    expect(taskCountByProjectId.get("p2")).toBe(11);
   });
 
   it("ignores task-count rows with a null project id", () => {
-    const { issueCountByProjectId } = buildProjectListMetricMaps(
+    const { taskCountByProjectId } = buildProjectListMetricMaps(
       [{ projectId: null, count: 5 }],
       [],
     );
 
-    expect(issueCountByProjectId.size).toBe(0);
+    expect(taskCountByProjectId.size).toBe(0);
   });
 
   it("maps positive budgets with their window kind", () => {

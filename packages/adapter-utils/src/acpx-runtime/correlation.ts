@@ -1,5 +1,5 @@
 export const ACP_SESSION_CORRELATION_ENVELOPE_VERSION =
-  "issue-execution-native/v1" as const;
+  "task-execution-native/v1" as const;
 export const ACP_SESSION_CORRELATION_KIND = "acp-session/v1" as const;
 
 interface AcpSessionCorrelationPayload {

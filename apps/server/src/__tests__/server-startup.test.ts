@@ -95,8 +95,8 @@ function buildTestConfig(overrides: Record<string, unknown> = {}) {
     storageS3Endpoint: undefined,
     storageS3Prefix: "",
     storageS3ForcePathStyle: false,
-    issueExecutionSchedulerEnabled: false,
-    issueExecutionSchedulerIntervalMs: 30000,
+    taskExecutionSchedulerEnabled: false,
+    taskExecutionSchedulerIntervalMs: 30000,
     companyDeletionEnabled: false,
     ...overrides,
   };
@@ -116,7 +116,7 @@ vi.mock("@paperclipai/db", () => ({
   companies: {},
   companyMemberships: {},
   instanceUserRoles: {},
-  issueExecutionRuns: {},
+  taskExecutionRuns: {},
 }));
 
 vi.mock("../app.js", () => ({
@@ -144,14 +144,14 @@ vi.mock("../realtime/live-events-ws.js", () => ({
 
 vi.mock("../services/index.js", () => ({
   composeAgentRunManagedActionPort: vi.fn(() => ({})),
-  createIssueSessionStore: vi.fn(() => ({
-    id: "issue-session-store",
+  createTaskSessionStore: vi.fn(() => ({
+    id: "task-session-store",
   })),
-  createOrdinaryIssueRuntime: vi.fn(() => ({})),
+  createOrdinaryTaskRuntime: vi.fn(() => ({})),
   createPostgresSystemEscalationService: vi.fn(() => ({
     reconcile: vi.fn(async () => ({ terminalized: 0, ensured: 0 })),
   })),
-  createIssueExecutionCancellationService: vi.fn(() => ({
+  createTaskExecutionCancellationService: vi.fn(() => ({
     reconcileIntent: vi.fn(async () => "confirmed"),
     reconcilePending: vi.fn(async () => ({
       discovered: 0,
@@ -161,7 +161,7 @@ vi.mock("../services/index.js", () => ({
       intentIds: [],
     })),
   })),
-  createPostgresIssueExecutionProductionRuntime: vi.fn(() => ({
+  createPostgresTaskExecutionProductionRuntime: vi.fn(() => ({
     runService: {
       reconcilePendingSteering: vi.fn(async () => ({
         discovered: 0,
@@ -172,7 +172,7 @@ vi.mock("../services/index.js", () => ({
     },
     promptCapabilities: {
       gateway: {},
-      pluginRunIssueContextReader: {},
+      pluginRunTaskContextReader: {},
     },
     dispatcher: {
       reconcilePersistedRefs: vi.fn(async () => ({ discovered: 0 })),
@@ -184,20 +184,20 @@ vi.mock("../services/index.js", () => ({
     },
     executor: {},
   })),
-  createPostgresIssueSessionCompositionRuntime: vi.fn(() => ({
+  createPostgresTaskSessionCompositionRuntime: vi.fn(() => ({
     prepareAndNotifyPersistedRef: vi.fn(async () => undefined),
     preparePersistedRef: vi.fn(async () => undefined),
     reconcilePersistedRefs: vi.fn(async () => ({ discovered: 0 })),
   })),
   createPostgresRunInterfaceRuntime: vi.fn(() => ({
     sessionService: {},
-    pluginRunIssueContextReader: {},
+    pluginRunTaskContextReader: {},
   })),
-  createPostgresRuntimeIssueActionService: vi.fn(() => ({})),
+  createPostgresRuntimeTaskActionService: vi.fn(() => ({})),
   createRuntimeAgentActionPort: vi.fn((service) => service),
   createRuntimeAgentConfigurationService: vi.fn(() => ({})),
-  createRuntimeIssueActionPort: vi.fn((service) => service),
-  runIssueSessionCutoversOnStartup: vi.fn(async () => ({
+  createRuntimeTaskActionPort: vi.fn((service) => service),
+  runTaskSessionCutoversOnStartup: vi.fn(async () => ({
     applied: [],
     skipped: [],
     blockers: [],
@@ -288,10 +288,10 @@ describe("startServer scheduler wiring", () => {
     process.env.BETTER_AUTH_SECRET = "test-secret";
   });
 
-  it("keeps routine ticks active in the issue-execution scheduler", async () => {
+  it("keeps routine ticks active in the task-execution scheduler", async () => {
     loadConfigMock.mockReturnValue(buildTestConfig({
-      issueExecutionSchedulerEnabled: true,
-      issueExecutionSchedulerIntervalMs: 30000,
+      taskExecutionSchedulerEnabled: true,
+      taskExecutionSchedulerIntervalMs: 30000,
     }));
     const intervalCallbacks: Array<{
       callback: () => void;

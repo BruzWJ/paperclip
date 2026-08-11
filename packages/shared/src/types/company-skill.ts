@@ -1,5 +1,5 @@
-import type { IssueAttachment, IssueDocument } from "./issue.js";
-import type { IssueWorkProduct } from "./work-product.js";
+import type { TaskAttachment, TaskDocument } from "./task.js";
+import type { TaskWorkProduct } from "./work-product.js";
 import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
 export type CompanySkillSourceType = "local_path" | "github" | "url" | "catalog" | "skills_sh";
@@ -433,24 +433,24 @@ export interface CompanySkillTestRun {
   skillVersionId: string;
   agentId: string;
   agentConfigSnapshot: Record<string, unknown>;
-  issueId: string;
+  taskId: string;
   templateId: string | null;
   templateName: string | null;
   templateBody: string | null;
   renderedTemplateBody: string | null;
-  harnessIssueRequest: string;
+  harnessTaskRequest: string;
   status: CompanySkillTestRunStatus;
   outputDocumentKey: string;
   outputSnapshot: string;
   error: string | null;
   deletedAt: Date | null;
   supersededAt: Date | null;
-  harnessIssueExpiresAt: Date | null;
-  harnessIssueDeletedAt: Date | null;
+  harnessTaskExpiresAt: Date | null;
+  harnessTaskDeletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   cost: CompanySkillTestRunCostSummary;
-  issueExpired: boolean;
+  taskExpired: boolean;
 }
 
 export interface CompanySkillTestRunCreateRequest {
@@ -478,24 +478,24 @@ export interface CompanySkillTestRunListQuery {
 export type CompanySkillTestRunHarnessContentUnavailableReason = "expired" | "deleted" | "missing";
 
 /**
- * Rich renderable content hydrated from the run's own hidden harness issue.
- * When the harness issue has expired or been deleted, `available` is false and
+ * Rich renderable content hydrated from the run's own hidden harness task.
+ * When the harness task has expired or been deleted, `available` is false and
  * the collections are empty; stored run snapshots (input/output/template)
  * remain usable on the run itself.
  */
 export interface CompanySkillTestRunHarnessContent {
   available: boolean;
   unavailableReason: CompanySkillTestRunHarnessContentUnavailableReason | null;
-  documents: IssueDocument[];
-  attachments: IssueAttachment[];
-  workProducts: IssueWorkProduct[];
+  documents: TaskDocument[];
+  attachments: TaskAttachment[];
+  workProducts: TaskWorkProduct[];
 }
 
 export interface CompanySkillTestRunDetail extends CompanySkillTestRun {
   skillVersion: CompanySkillVersion;
   outputBody: string;
   harnessContent: CompanySkillTestRunHarnessContent;
-  harnessIssue: {
+  harnessTask: {
     id: string;
     identifier: string | null;
     title: string | null;

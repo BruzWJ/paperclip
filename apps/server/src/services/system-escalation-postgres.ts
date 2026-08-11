@@ -3,39 +3,39 @@ import {
   agentAdapterConfigRevisions,
   agents,
   companies,
-  issueCreatorEdgeReceivability,
-  issueExecutionAuthorities,
-  issueExecutionRefs,
-  issueSessionContextEpochs,
-  issueSessions,
-  issues,
+  taskCreatorEdgeReceivability,
+  taskExecutionAuthorities,
+  taskExecutionRefs,
+  taskSessionContextEpochs,
+  taskSessions,
+  tasks,
   plugins,
   routines,
   systemEscalationIdentities,
   type Db,
 } from "@paperclipai/db";
 import {
-  decodeIssueCreatorEdgeTerminalReason,
-  isIssueCreatorEdgeTerminalReason,
-  type IssueCreatorEdgeTerminalReason,
+  decodeTaskCreatorEdgeTerminalReason,
+  isTaskCreatorEdgeTerminalReason,
+  type TaskCreatorEdgeTerminalReason,
   type SystemCreatorSourceKind,
 } from "@paperclipai/shared";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { evaluateAgentInvokability } from "./agent-invokability.js";
 import {
-  createIssueSessionAdmissionService,
-  type IssueSessionAdmissionService,
-} from "./issue-session/admission.js";
-import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
-import { admitIssueExecutionInTransaction } from "./issue-execution-initial-start-admission.js";
-import { persistCanonicalIssueAggregateInTx } from "./canonical-issue-aggregate.js";
+  createTaskSessionAdmissionService,
+  type TaskSessionAdmissionService,
+} from "./task-session/admission.js";
+import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
+import { admitTaskExecutionInTransaction } from "./task-execution-initial-start-admission.js";
+import { persistCanonicalTaskAggregateInTx } from "./canonical-task-aggregate.js";
 import {
-  IssueExecutionWorkspaceReservationRejected,
+  TaskExecutionWorkspaceReservationRejected,
 } from "./execution-workspaces.js";
-import { resolveIssueExecutionRunIdentityById } from "./issue-execution-run-service.js";
+import { resolveTaskExecutionRunIdentityById } from "./task-execution-run-service.js";
 
-type IssueRow = typeof issues.$inferSelect;
-type EdgeRow = typeof issueCreatorEdgeReceivability.$inferSelect;
+type TaskRow = typeof tasks.$inferSelect;
+type EdgeRow = typeof taskCreatorEdgeReceivability.$inferSelect;
 
 export type SystemEscalationOwner =
   | { kind: "agent"; agentId: string }
@@ -44,7 +44,7 @@ export type SystemEscalationOwner =
 
 export interface EnsureSystemEscalationInput {
   companyId: string;
-  affectedIssueId: string;
+  affectedTaskId: string;
   affectedOwnershipEpoch: number;
   terminalCreatorEdgeId: string;
   systemSource: SystemCreatorSourceKind;
@@ -54,10 +54,10 @@ export interface EnsureSystemEscalationInput {
 
 export interface TerminalizeCreatorEdgeInput {
   companyId: string;
-  issueId: string;
+  taskId: string;
   ownershipEpoch: number;
   creatorEdgeId: string;
-  reason: IssueCreatorEdgeTerminalReason;
+  reason: TaskCreatorEdgeTerminalReason;
   sourceKind: string;
   sourceId: string;
   systemSource: SystemCreatorSourceKind;
@@ -68,7 +68,7 @@ export interface TerminalizeCreatorEdgeInput {
 
 export interface SystemEscalationTransactionResult {
   identity: typeof systemEscalationIdentities.$inferSelect;
-  issue: IssueRow;
+  task: TaskRow;
   owner: SystemEscalationOwner;
   dispatchRefId: string | null;
   created: boolean;
@@ -107,7 +107,7 @@ async function withEscalationWorkspaceReservationErrors<T>(
   try {
     return await operation();
   } catch (error) {
-    if (error instanceof IssueExecutionWorkspaceReservationRejected) {
+    if (error instanceof TaskExecutionWorkspaceReservationRejected) {
       throw new PostgresSystemEscalationConflict(
         error.message,
         error.reason,
@@ -123,37 +123,37 @@ function bounded(value: string, maximum: number): string {
   return `${value.slice(0, maximum - 1)}…`;
 }
 
-function stableAffectedLabel(issue: IssueRow): string {
-  const identifier = issue.identifier?.trim() || issue.id;
-  const title = issue.title?.trim();
+function stableAffectedLabel(task: TaskRow): string {
+  const identifier = task.identifier?.trim() || task.id;
+  const title = task.title?.trim();
   return title
     ? `${identifier} (${bounded(title, 160)})`
     : identifier;
 }
 
-function escalationTitle(issue: IssueRow): string {
+function escalationTitle(task: TaskRow): string {
   return bounded(
-    `Escalation for ${issue.identifier?.trim() || issue.title?.trim() || issue.id}`,
+    `Escalation for ${task.identifier?.trim() || task.title?.trim() || task.id}`,
     MAX_ESCALATION_TITLE_CHARS,
   );
 }
 
 function escalationRequest(
-  issue: IssueRow,
+  task: TaskRow,
   source: SystemCreatorSourceKind,
-  reason: IssueCreatorEdgeTerminalReason,
+  reason: TaskCreatorEdgeTerminalReason,
 ): string {
   return bounded(
-    `System ${source} safeguard for ${stableAffectedLabel(issue)}: the immutable creator endpoint is permanently unreceivable (${reason}). Review the affected issue and decide the next board action.`,
+    `System ${source} safeguard for ${stableAffectedLabel(task)}: the immutable creator endpoint is permanently unreceivable (${reason}). Review the affected task and decide the next board action.`,
     MAX_ESCALATION_REQUEST_CHARS,
   );
 }
 
 function terminalReason(
   value: string | null,
-): IssueCreatorEdgeTerminalReason {
+): TaskCreatorEdgeTerminalReason {
   try {
-    return decodeIssueCreatorEdgeTerminalReason(value);
+    return decodeTaskCreatorEdgeTerminalReason(value);
   } catch {
     throw new PostgresSystemEscalationConflict(
       "Creator edge is not terminal for a canonical structural-loss or exhaustion reason",
@@ -179,7 +179,7 @@ export class PostgresSystemEscalationConflict extends Error {
 }
 
 async function loadCompanyAgents(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   companyId: string,
 ) {
   return tx
@@ -203,27 +203,27 @@ function liveAgent(
 }
 
 /**
- * Resolve only the goal's issue-tree ladder. The full company agent set is
+ * Resolve only the goal's task-tree ladder. The full company agent set is
  * loaded solely to evaluate reporting-chain health; it is never an owner
  * candidate catalog.
  */
 export async function resolveSystemEscalationOwnerInTransaction(
-  tx: IssueSessionDbTransaction,
-  affected: IssueRow,
+  tx: TaskSessionDbTransaction,
+  affected: TaskRow,
 ): Promise<SystemEscalationOwner> {
-  const [companyAgents, companyIssues] = await Promise.all([
+  const [companyAgents, companyTasks] = await Promise.all([
     loadCompanyAgents(tx, affected.companyId),
     tx
       .select({
-        id: issues.id,
-        parentId: issues.parentId,
-        ownerKind: issues.ownerKind,
-        ownerAgentId: issues.ownerAgentId,
-        creatorKind: issues.creatorKind,
-        creatorUserId: issues.creatorUserId,
+        id: tasks.id,
+        parentId: tasks.parentId,
+        ownerKind: tasks.ownerKind,
+        ownerAgentId: tasks.ownerAgentId,
+        creatorKind: tasks.creatorKind,
+        creatorUserId: tasks.creatorUserId,
       })
-      .from(issues)
-      .where(eq(issues.companyId, affected.companyId))
+      .from(tasks)
+      .where(eq(tasks.companyId, affected.companyId))
       .for("share"),
   ]);
 
@@ -232,16 +232,16 @@ export async function resolveSystemEscalationOwnerInTransaction(
     affected.creatorAuthorityId
   ) {
     const creatorAuthority = await tx
-      .select({ agentId: issueExecutionAuthorities.agentId })
-      .from(issueExecutionAuthorities)
+      .select({ agentId: taskExecutionAuthorities.agentId })
+      .from(taskExecutionAuthorities)
       .where(
         and(
           eq(
-            issueExecutionAuthorities.companyId,
+            taskExecutionAuthorities.companyId,
             affected.companyId,
           ),
           eq(
-            issueExecutionAuthorities.id,
+            taskExecutionAuthorities.id,
             affected.creatorAuthorityId,
           ),
         ),
@@ -257,10 +257,10 @@ export async function resolveSystemEscalationOwnerInTransaction(
     }
   }
 
-  const issueById = new Map(companyIssues.map((issue) => [issue.id, issue]));
+  const taskById = new Map(companyTasks.map((task) => [task.id, task]));
   const visited = new Set<string>([affected.id]);
   let cursorId = affected.parentId;
-  let root = issueById.get(affected.id) ?? {
+  let root = taskById.get(affected.id) ?? {
     id: affected.id,
     parentId: affected.parentId,
     ownerKind: affected.ownerKind,
@@ -273,7 +273,7 @@ export async function resolveSystemEscalationOwnerInTransaction(
       return { kind: "board" };
     }
     visited.add(cursorId);
-    const ancestor = issueById.get(cursorId);
+    const ancestor = taskById.get(cursorId);
     if (!ancestor) {
       return { kind: "board" };
     }
@@ -300,7 +300,7 @@ export async function resolveSystemEscalationOwnerInTransaction(
 }
 
 async function requireSelectedAgentRevision(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   companyId: string,
   agentId: string,
 ) {
@@ -343,12 +343,12 @@ async function requireSelectedAgentRevision(
 }
 
 async function validateTriggeringRun(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   companyId: string,
   triggeringRunId: string | null,
 ): Promise<void> {
   if (!triggeringRunId) return;
-  const run = await resolveIssueExecutionRunIdentityById(tx, triggeringRunId);
+  const run = await resolveTaskExecutionRunIdentityById(tx, triggeringRunId);
   if (!run || run.companyId !== companyId) {
     throw new PostgresSystemEscalationConflict(
       "Escalation triggeringRunId must identify the persisted causal run",
@@ -358,21 +358,21 @@ async function validateTriggeringRun(
 }
 
 async function appendAffectedCrossLink(
-  sessions: IssueSessionAdmissionService,
-  tx: IssueSessionDbTransaction,
+  sessions: TaskSessionAdmissionService,
+  tx: TaskSessionDbTransaction,
   input: EnsureSystemEscalationInput,
-  affected: IssueRow,
+  affected: TaskRow,
   affectedSessionId: string,
   identity: typeof systemEscalationIdentities.$inferSelect,
-  escalationIssue: IssueRow,
+  escalationTask: TaskRow,
 ): Promise<void> {
   const affectedLabel = affected.identifier?.trim() || affected.id;
   const escalationLabel =
-    escalationIssue.identifier?.trim() || escalationIssue.id;
+    escalationTask.identifier?.trim() || escalationTask.id;
   await sessions.appendNonDispatchControlNotice(
     {
       companyId: input.companyId,
-      issueId: affected.id,
+      taskId: affected.id,
       sessionId: affectedSessionId,
       sourceKind: "system_escalation_crosslink",
       immutableSourceKey: identity.id,
@@ -389,30 +389,30 @@ async function appendAffectedCrossLink(
 }
 
 async function appendEscalationNudge(
-  sessions: IssueSessionAdmissionService,
-  tx: IssueSessionDbTransaction,
+  sessions: TaskSessionAdmissionService,
+  tx: TaskSessionDbTransaction,
   input: EnsureSystemEscalationInput,
   identity: typeof systemEscalationIdentities.$inferSelect,
-  escalationIssue: IssueRow,
+  escalationTask: TaskRow,
 ): Promise<string | null> {
   const sessionState = await tx
     .select({
-      session: issueSessions,
-      contextGeneration: issueSessionContextEpochs.generation,
+      session: taskSessions,
+      contextGeneration: taskSessionContextEpochs.generation,
     })
-    .from(issueSessions)
+    .from(taskSessions)
     .innerJoin(
-      issueSessionContextEpochs,
+      taskSessionContextEpochs,
       and(
-        eq(issueSessionContextEpochs.companyId, issueSessions.companyId),
-        eq(issueSessionContextEpochs.issueId, issueSessions.issueId),
-        eq(issueSessionContextEpochs.sessionId, issueSessions.id),
+        eq(taskSessionContextEpochs.companyId, taskSessions.companyId),
+        eq(taskSessionContextEpochs.taskId, taskSessions.taskId),
+        eq(taskSessionContextEpochs.sessionId, taskSessions.id),
       ),
     )
     .where(
       and(
-        eq(issueSessions.companyId, input.companyId),
-        eq(issueSessions.issueId, escalationIssue.id),
+        eq(taskSessions.companyId, input.companyId),
+        eq(taskSessions.taskId, escalationTask.id),
       ),
     )
     .for("update")
@@ -427,20 +427,20 @@ async function appendEscalationNudge(
   const reason = terminalReason(
     (identity.immutableSource.reason as string | undefined) ?? null,
   );
-  const exactText = `System ${input.systemSource} nudge: the escalation for ${identity.affectedIssueId} remains active (${reason}).`;
+  const exactText = `System ${input.systemSource} nudge: the escalation for ${identity.affectedTaskId} remains active (${reason}).`;
   const sourceKey = `${identity.id}:${input.causalSourceId}`;
 
   if (
-    escalationIssue.hiddenAt === null &&
-    escalationIssue.ownerKind === "agent" &&
-    escalationIssue.ownerAgentId &&
-    escalationIssue.ownershipEpoch &&
-    escalationIssue.lifecycleStatus &&
-    NONTERMINAL_STATUSES.has(escalationIssue.lifecycleStatus)
+    escalationTask.hiddenAt === null &&
+    escalationTask.ownerKind === "agent" &&
+    escalationTask.ownerAgentId &&
+    escalationTask.ownershipEpoch &&
+    escalationTask.lifecycleStatus &&
+    NONTERMINAL_STATUSES.has(escalationTask.lifecycleStatus)
   ) {
     const companyAgents = await loadCompanyAgents(tx, input.companyId);
     const currentOwner = liveAgent(
-      escalationIssue.ownerAgentId,
+      escalationTask.ownerAgentId,
       companyAgents,
     );
     if (currentOwner?.currentAdapterConfigRevisionId) {
@@ -468,26 +468,26 @@ async function appendEscalationNudge(
           .then((rows) => rows[0] ?? null),
         tx
           .select()
-          .from(issueExecutionAuthorities)
+          .from(taskExecutionAuthorities)
           .where(
             and(
               eq(
-                issueExecutionAuthorities.companyId,
+                taskExecutionAuthorities.companyId,
                 input.companyId,
               ),
               eq(
-                issueExecutionAuthorities.issueId,
-                escalationIssue.id,
+                taskExecutionAuthorities.taskId,
+                escalationTask.id,
               ),
               eq(
-                issueExecutionAuthorities.ownershipEpoch,
-                escalationIssue.ownershipEpoch,
+                taskExecutionAuthorities.ownershipEpoch,
+                escalationTask.ownershipEpoch,
               ),
               eq(
-                issueExecutionAuthorities.agentId,
+                taskExecutionAuthorities.agentId,
                 currentOwner.id,
               ),
-              eq(issueExecutionAuthorities.state, "current"),
+              eq(taskExecutionAuthorities.state, "current"),
             ),
           )
           .for("update")
@@ -497,11 +497,11 @@ async function appendEscalationNudge(
         const admitted = await sessions.admitExecutionSource(
           {
             companyId: input.companyId,
-            issueId: escalationIssue.id,
+            taskId: escalationTask.id,
             sessionId: session.id,
-            ownershipEpoch: escalationIssue.ownershipEpoch,
+            ownershipEpoch: escalationTask.ownershipEpoch,
             targetAgentId: currentOwner.id,
-            issueExecutionAuthorityId: authority.id,
+            taskExecutionAuthorityId: authority.id,
             consultExecutionId: null,
             adapterConfigRevisionId: revision.id,
             contextEpoch: contextGeneration,
@@ -531,7 +531,7 @@ async function appendEscalationNudge(
   await sessions.appendNonDispatchControlNotice(
     {
       companyId: input.companyId,
-      issueId: escalationIssue.id,
+      taskId: escalationTask.id,
       sessionId: session.id,
       sourceKind: "system_escalation_nudge",
       immutableSourceKey: sourceKey,
@@ -549,16 +549,16 @@ async function appendEscalationNudge(
 }
 
 async function loadLockedAffectedScope(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   input: EnsureSystemEscalationInput,
 ) {
   const affected = await tx
     .select()
-    .from(issues)
+    .from(tasks)
     .where(
       and(
-        eq(issues.companyId, input.companyId),
-        eq(issues.id, input.affectedIssueId),
+        eq(tasks.companyId, input.companyId),
+        eq(tasks.id, input.affectedTaskId),
       ),
     )
     .for("update")
@@ -570,13 +570,13 @@ async function loadLockedAffectedScope(
     !NONTERMINAL_STATUSES.has(affected.lifecycleStatus)
   ) {
     throw new PostgresSystemEscalationConflict(
-      "System escalation requires the current nonterminal affected issue epoch",
-      "affected_issue_not_current_nonterminal",
+      "System escalation requires the current nonterminal affected task epoch",
+      "affected_task_not_current_nonterminal",
     );
   }
   if (
     affected.creatorKind === "system" ||
-    affected.escalatedFromAffectedIssueId !== null
+    affected.escalatedFromAffectedTaskId !== null
   ) {
     throw new PostgresSystemEscalationConflict(
       "A system escalation cannot itself be escalated",
@@ -585,16 +585,16 @@ async function loadLockedAffectedScope(
   }
   const edges = await tx
     .select()
-    .from(issueCreatorEdgeReceivability)
+    .from(taskCreatorEdgeReceivability)
     .where(
       and(
-        eq(issueCreatorEdgeReceivability.companyId, input.companyId),
+        eq(taskCreatorEdgeReceivability.companyId, input.companyId),
         eq(
-          issueCreatorEdgeReceivability.issueId,
-          input.affectedIssueId,
+          taskCreatorEdgeReceivability.taskId,
+          input.affectedTaskId,
         ),
         eq(
-          issueCreatorEdgeReceivability.ownershipEpoch,
+          taskCreatorEdgeReceivability.ownershipEpoch,
           input.affectedOwnershipEpoch,
         ),
       ),
@@ -616,12 +616,12 @@ async function loadLockedAffectedScope(
   terminalReason(edge.terminalReason);
   const affectedSession = await tx
     .select()
-    .from(issueSessions)
+    .from(taskSessions)
     .where(
       and(
-        eq(issueSessions.companyId, input.companyId),
-        eq(issueSessions.issueId, affected.id),
-        eq(issueSessions.id, edge.sessionId),
+        eq(taskSessions.companyId, input.companyId),
+        eq(taskSessions.taskId, affected.id),
+        eq(taskSessions.id, edge.sessionId),
       ),
     )
     .for("update")
@@ -633,7 +633,7 @@ async function loadLockedAffectedScope(
     affectedSession.purgeFencedAt !== null
   ) {
     throw new PostgresSystemEscalationConflict(
-      "Affected issue Session is lifecycle-fenced",
+      "Affected task Session is lifecycle-fenced",
       "affected_session_not_ready",
     );
   }
@@ -642,17 +642,17 @@ async function loadLockedAffectedScope(
 
 /**
  * Canonical PostgreSQL constructor. Callers that already own a transaction
- * use this function so edge terminalization, identity claim, issue creation,
+ * use this function so edge terminalization, identity claim, task creation,
  * cross-link, and owner ref commit together.
  */
 export async function ensureSystemEscalationInTransaction(
-  tx: IssueSessionDbTransaction,
-  sessions: IssueSessionAdmissionService,
+  tx: TaskSessionDbTransaction,
+  sessions: TaskSessionAdmissionService,
   input: EnsureSystemEscalationInput,
   clock: () => Date = () => new Date(),
 ): Promise<SystemEscalationTransactionResult> {
   await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${`${input.companyId}:system-escalation:${input.affectedIssueId}:${input.affectedOwnershipEpoch}`}, 0))`,
+    sql`select pg_advisory_xact_lock(hashtextextended(${`${input.companyId}:system-escalation:${input.affectedTaskId}:${input.affectedOwnershipEpoch}`}, 0))`,
   );
   const { affected, edge, affectedSession } =
     await loadLockedAffectedScope(tx, input);
@@ -669,8 +669,8 @@ export async function ensureSystemEscalationInTransaction(
       and(
         eq(systemEscalationIdentities.companyId, input.companyId),
         eq(
-          systemEscalationIdentities.affectedIssueId,
-          input.affectedIssueId,
+          systemEscalationIdentities.affectedTaskId,
+          input.affectedTaskId,
         ),
         eq(
           systemEscalationIdentities.affectedOwnershipEpoch,
@@ -681,21 +681,21 @@ export async function ensureSystemEscalationInTransaction(
     .for("update")
     .then((rows) => rows[0] ?? null);
   if (existingIdentity) {
-    const escalationIssue = await tx
+    const escalationTask = await tx
       .select()
-      .from(issues)
+      .from(tasks)
       .where(
         and(
-          eq(issues.companyId, input.companyId),
-          eq(issues.id, existingIdentity.escalationIssueId),
+          eq(tasks.companyId, input.companyId),
+          eq(tasks.id, existingIdentity.escalationTaskId),
         ),
       )
       .for("update")
       .then((rows) => rows[0] ?? null);
-    if (!escalationIssue) {
+    if (!escalationTask) {
       throw new PostgresSystemEscalationConflict(
-        "Historical escalation identity lost its escalation issue",
-        "escalation_issue_missing",
+        "Historical escalation identity lost its escalation task",
+        "escalation_task_missing",
       );
     }
     await appendAffectedCrossLink(
@@ -705,7 +705,7 @@ export async function ensureSystemEscalationInTransaction(
       affected,
       affectedSession.id,
       existingIdentity,
-      escalationIssue,
+      escalationTask,
     );
     const initialCausalSourceId =
       typeof existingIdentity.immutableSource.initialCausalSourceId ===
@@ -720,18 +720,18 @@ export async function ensureSystemEscalationInTransaction(
             tx,
             input,
             existingIdentity,
-            escalationIssue,
+            escalationTask,
           );
     return {
       identity: existingIdentity,
-      issue: escalationIssue,
+      task: escalationTask,
       owner:
-        escalationIssue.ownerKind === "agent" &&
-        escalationIssue.ownerAgentId
-          ? { kind: "agent", agentId: escalationIssue.ownerAgentId }
-          : escalationIssue.ownerKind === "user" &&
-              escalationIssue.ownerUserId
-            ? { kind: "user", userId: escalationIssue.ownerUserId }
+        escalationTask.ownerKind === "agent" &&
+        escalationTask.ownerAgentId
+          ? { kind: "agent", agentId: escalationTask.ownerAgentId }
+          : escalationTask.ownerKind === "user" &&
+              escalationTask.ownerUserId
+            ? { kind: "user", userId: escalationTask.ownerUserId }
             : { kind: "board" },
       dispatchRefId,
       created: false,
@@ -771,10 +771,10 @@ export async function ensureSystemEscalationInTransaction(
 
   const identityId = deterministicUuid(
     "system-escalation-identity",
-    `${input.companyId}:${input.affectedIssueId}:${input.affectedOwnershipEpoch}`,
+    `${input.companyId}:${input.affectedTaskId}:${input.affectedOwnershipEpoch}`,
   );
-  const escalationIssueId = deterministicUuid(
-    "system-escalation-issue",
+  const escalationTaskId = deterministicUuid(
+    "system-escalation-task",
     identityId,
   );
   const sessionId = stableSessionId(`system-escalation:${identityId}`);
@@ -784,30 +784,30 @@ export async function ensureSystemEscalationInTransaction(
     terminalReason(edge.terminalReason),
   );
   const title = escalationTitle(affected);
-  const maxIssueNumber = await tx
+  const maxTaskNumber = await tx
     .select({
-      value: sql<number>`coalesce(max(${issues.issueNumber}), 0)`,
+      value: sql<number>`coalesce(max(${tasks.taskNumber}), 0)`,
     })
-    .from(issues)
-    .where(eq(issues.companyId, input.companyId))
+    .from(tasks)
+    .where(eq(tasks.companyId, input.companyId))
     .then((rows) => rows[0]?.value ?? 0);
-  const issueNumber = Math.max(company.issueCounter, maxIssueNumber) + 1;
+  const taskNumber = Math.max(company.taskCounter, maxTaskNumber) + 1;
   await tx
     .update(companies)
-    .set({ issueCounter: issueNumber, updatedAt: now })
+    .set({ taskCounter: taskNumber, updatedAt: now })
     .where(eq(companies.id, input.companyId));
-  const identifier = `${company.issuePrefix}-${issueNumber}`;
+  const identifier = `${company.taskPrefix}-${taskNumber}`;
 
   const authorityId = selectedAgent
     ? deterministicUuid(
         "system-escalation-authority",
-        `${escalationIssueId}:${selectedAgent.owner.id}`,
+        `${escalationTaskId}:${selectedAgent.owner.id}`,
       )
     : null;
   const aggregate = await withEscalationWorkspaceReservationErrors(() =>
-    persistCanonicalIssueAggregateInTx(tx, {
-      issue: {
-      id: escalationIssueId,
+    persistCanonicalTaskAggregateInTx(tx, {
+      task: {
+      id: escalationTaskId,
       companyId: input.companyId,
       parentId: null,
       projectId: null,
@@ -827,11 +827,11 @@ export async function ensureSystemEscalationInTransaction(
       creatorKind: "system",
       creatorSystemSourceKind: input.systemSource,
       creatorSystemSourceId: `system-escalation:${identityId}`,
-      escalatedFromAffectedIssueId: affected.id,
+      escalatedFromAffectedTaskId: affected.id,
       escalatedFromTriggeringRunId: input.triggeringRunId,
       escalatedFromReason: edge.terminalReason,
       affectedOwnershipEpoch: input.affectedOwnershipEpoch,
-      issueNumber,
+      taskNumber,
       identifier,
       originKind: "system_escalation",
       originId: affected.id,
@@ -863,16 +863,16 @@ export async function ensureSystemEscalationInTransaction(
           : null,
     }),
   );
-  const escalationIssue = aggregate.issue;
+  const escalationTask = aggregate.task;
 
   const identity = await tx
     .insert(systemEscalationIdentities)
     .values({
       id: identityId,
       companyId: input.companyId,
-      affectedIssueId: affected.id,
+      affectedTaskId: affected.id,
       affectedOwnershipEpoch: input.affectedOwnershipEpoch,
-      escalationIssueId: escalationIssue.id,
+      escalationTaskId: escalationTask.id,
       systemSource: input.systemSource,
       triggeringRunId: input.triggeringRunId,
       terminalCreatorEdgeId: edge.id,
@@ -899,29 +899,29 @@ export async function ensureSystemEscalationInTransaction(
 
   let dispatchRefId: string | null = null;
   if (selectedAgent && authorityId) {
-    const admitted = await admitIssueExecutionInTransaction({
+    const admitted = await admitTaskExecutionInTransaction({
       sessionAdmission: sessions,
       transaction: tx,
       work: {
         companyId: input.companyId,
-        issueId: escalationIssue.id,
+        taskId: escalationTask.id,
         sessionId,
         ownershipEpoch: 1,
         targetAgentId: selectedAgent.owner.id,
-        issueExecutionAuthorityId: authorityId,
+        taskExecutionAuthorityId: authorityId,
         consultExecutionId: null,
         adapterConfigRevisionId: selectedAgent.revision.id,
         contextEpoch: 0,
         mode: "owner",
-        sourceKind: "issue_request",
+        sourceKind: "task_request",
         actor: {
           kind: "system",
           sourceKind: input.systemSource,
           sourceId: identity.id,
         },
         immutableSourceKey: identity.id,
-        sourceRecordId: escalationIssue.id,
-        exactText: escalationIssue.request!,
+        sourceRecordId: escalationTask.id,
+        exactText: escalationTask.request!,
         comment: {
           author: sourceAuthor(input.systemSource),
           producingRun: null,
@@ -940,12 +940,12 @@ export async function ensureSystemEscalationInTransaction(
     await sessions.appendNonDispatchControlNotice(
       {
         companyId: input.companyId,
-        issueId: escalationIssue.id,
+        taskId: escalationTask.id,
         sessionId,
         sourceKind: "system_escalation_request",
         immutableSourceKey: identity.id,
-        sourceRecordId: escalationIssue.id,
-        exactText: escalationIssue.request!,
+        sourceRecordId: escalationTask.id,
+        exactText: escalationTask.request!,
         comment: {
           author: sourceAuthor(input.systemSource),
           producingRun: null,
@@ -963,11 +963,11 @@ export async function ensureSystemEscalationInTransaction(
     affected,
     affectedSession.id,
     identity,
-    escalationIssue,
+    escalationTask,
   );
   return {
     identity,
-    issue: escalationIssue,
+    task: escalationTask,
     owner,
     dispatchRefId,
     created: true,
@@ -975,8 +975,8 @@ export async function ensureSystemEscalationInTransaction(
 }
 
 export async function terminalizeCreatorEdgeInTransaction(
-  tx: IssueSessionDbTransaction,
-  sessions: IssueSessionAdmissionService,
+  tx: TaskSessionDbTransaction,
+  sessions: TaskSessionAdmissionService,
   input: TerminalizeCreatorEdgeInput,
   clock: () => Date = () => new Date(),
 ): Promise<{
@@ -985,18 +985,18 @@ export async function terminalizeCreatorEdgeInTransaction(
 }> {
   const affected = await tx
     .select()
-    .from(issues)
+    .from(tasks)
     .where(
       and(
-        eq(issues.companyId, input.companyId),
-        eq(issues.id, input.issueId),
+        eq(tasks.companyId, input.companyId),
+        eq(tasks.id, input.taskId),
       ),
     )
     .for("update")
     .then((rows) => rows[0] ?? null);
   if (!affected || affected.ownershipEpoch !== input.ownershipEpoch) {
     throw new PostgresSystemEscalationConflict(
-      "Creator edge no longer belongs to the current issue epoch",
+      "Creator edge no longer belongs to the current task epoch",
       "creator_edge_epoch_stale",
     );
   }
@@ -1007,20 +1007,20 @@ export async function terminalizeCreatorEdgeInTransaction(
     affected.lifecycleStatus !== "cancelled"
   ) {
     throw new PostgresSystemEscalationConflict(
-      "Creator-edge terminalization requires a canonical issue lifecycle status",
-      "creator_edge_issue_status_invalid",
+      "Creator-edge terminalization requires a canonical task lifecycle status",
+      "creator_edge_task_status_invalid",
     );
   }
   const current = await tx
     .select()
-    .from(issueCreatorEdgeReceivability)
+    .from(taskCreatorEdgeReceivability)
     .where(
       and(
-        eq(issueCreatorEdgeReceivability.id, input.creatorEdgeId),
-        eq(issueCreatorEdgeReceivability.companyId, input.companyId),
-        eq(issueCreatorEdgeReceivability.issueId, input.issueId),
+        eq(taskCreatorEdgeReceivability.id, input.creatorEdgeId),
+        eq(taskCreatorEdgeReceivability.companyId, input.companyId),
+        eq(taskCreatorEdgeReceivability.taskId, input.taskId),
         eq(
-          issueCreatorEdgeReceivability.ownershipEpoch,
+          taskCreatorEdgeReceivability.ownershipEpoch,
           input.ownershipEpoch,
         ),
       ),
@@ -1029,7 +1029,7 @@ export async function terminalizeCreatorEdgeInTransaction(
     .then((rows) => rows[0] ?? null);
   if (!current) {
     throw new PostgresSystemEscalationConflict(
-      "Creator edge does not belong to this issue epoch",
+      "Creator edge does not belong to this task epoch",
       "creator_edge_scope_stale",
     );
   }
@@ -1044,7 +1044,7 @@ export async function terminalizeCreatorEdgeInTransaction(
   }
 
   const now = clock();
-  const issueIsNonterminal =
+  const taskIsNonterminal =
     affected.lifecycleStatus === "open" ||
     affected.lifecycleStatus === "blocked";
   let edge = current;
@@ -1055,9 +1055,9 @@ export async function terminalizeCreatorEdgeInTransaction(
         "creator_edge_terminal_reason_conflict",
       );
     }
-  } else if (issueIsNonterminal) {
+  } else if (taskIsNonterminal) {
     edge = await tx
-      .update(issueCreatorEdgeReceivability)
+      .update(taskCreatorEdgeReceivability)
       .set({
         state: "terminal",
         terminalReason: input.reason,
@@ -1070,8 +1070,8 @@ export async function terminalizeCreatorEdgeInTransaction(
       })
       .where(
         and(
-          eq(issueCreatorEdgeReceivability.id, current.id),
-          eq(issueCreatorEdgeReceivability.state, "receivable"),
+          eq(taskCreatorEdgeReceivability.id, current.id),
+          eq(taskCreatorEdgeReceivability.state, "receivable"),
         ),
       )
       .returning()
@@ -1084,13 +1084,13 @@ export async function terminalizeCreatorEdgeInTransaction(
     }
   }
 
-  const escalation = issueIsNonterminal
+  const escalation = taskIsNonterminal
     ? await ensureSystemEscalationInTransaction(
         tx,
         sessions,
         {
           companyId: input.companyId,
-          affectedIssueId: input.issueId,
+          affectedTaskId: input.taskId,
           affectedOwnershipEpoch: input.ownershipEpoch,
           terminalCreatorEdgeId: edge.id,
           systemSource: input.systemSource,
@@ -1104,8 +1104,8 @@ export async function terminalizeCreatorEdgeInTransaction(
 }
 
 export async function terminalizeAgentCreatorEdgesInTransaction(
-  tx: IssueSessionDbTransaction,
-  sessions: IssueSessionAdmissionService,
+  tx: TaskSessionDbTransaction,
+  sessions: TaskSessionAdmissionService,
   input: {
     companyId: string;
     agentId: string;
@@ -1114,56 +1114,56 @@ export async function terminalizeAgentCreatorEdgesInTransaction(
   },
 ): Promise<SystemEscalationTransactionResult[]> {
   const authorityRows = await tx
-    .select({ id: issueExecutionAuthorities.id })
-    .from(issueExecutionAuthorities)
+    .select({ id: taskExecutionAuthorities.id })
+    .from(taskExecutionAuthorities)
     .where(
       and(
-        eq(issueExecutionAuthorities.companyId, input.companyId),
-        eq(issueExecutionAuthorities.agentId, input.agentId),
+        eq(taskExecutionAuthorities.companyId, input.companyId),
+        eq(taskExecutionAuthorities.agentId, input.agentId),
       ),
     )
-    .orderBy(asc(issueExecutionAuthorities.id))
+    .orderBy(asc(taskExecutionAuthorities.id))
     .for("update");
   const authorityIds = authorityRows.map((authority) => authority.id);
   if (authorityIds.length === 0) return [];
   const edges = await tx
-    .select({ edge: issueCreatorEdgeReceivability })
-    .from(issueCreatorEdgeReceivability)
+    .select({ edge: taskCreatorEdgeReceivability })
+    .from(taskCreatorEdgeReceivability)
     .innerJoin(
-      issues,
+      tasks,
       and(
-        eq(issues.companyId, issueCreatorEdgeReceivability.companyId),
-        eq(issues.id, issueCreatorEdgeReceivability.issueId),
+        eq(tasks.companyId, taskCreatorEdgeReceivability.companyId),
+        eq(tasks.id, taskCreatorEdgeReceivability.taskId),
         eq(
-          issues.ownershipEpoch,
-          issueCreatorEdgeReceivability.ownershipEpoch,
+          tasks.ownershipEpoch,
+          taskCreatorEdgeReceivability.ownershipEpoch,
         ),
       ),
     )
     .where(
       and(
-        eq(issueCreatorEdgeReceivability.companyId, input.companyId),
-        eq(issueCreatorEdgeReceivability.endpointKind, "agent-execution"),
-        inArray(issueCreatorEdgeReceivability.endpointId, authorityIds),
-        eq(issueCreatorEdgeReceivability.state, "receivable"),
+        eq(taskCreatorEdgeReceivability.companyId, input.companyId),
+        eq(taskCreatorEdgeReceivability.endpointKind, "agent-execution"),
+        inArray(taskCreatorEdgeReceivability.endpointId, authorityIds),
+        eq(taskCreatorEdgeReceivability.state, "receivable"),
       ),
     )
     .orderBy(
-      asc(issueCreatorEdgeReceivability.issueId),
-      asc(issueCreatorEdgeReceivability.ownershipEpoch),
-      asc(issueCreatorEdgeReceivability.id),
+      asc(taskCreatorEdgeReceivability.taskId),
+      asc(taskCreatorEdgeReceivability.ownershipEpoch),
+      asc(taskCreatorEdgeReceivability.id),
     );
-  const seenIssues = new Set<string>();
+  const seenTasks = new Set<string>();
   const escalations: SystemEscalationTransactionResult[] = [];
   for (const row of edges) {
-    if (seenIssues.has(row.edge.issueId)) continue;
-    seenIssues.add(row.edge.issueId);
+    if (seenTasks.has(row.edge.taskId)) continue;
+    seenTasks.add(row.edge.taskId);
     const result = await terminalizeCreatorEdgeInTransaction(
       tx,
       sessions,
       {
         companyId: input.companyId,
-        issueId: row.edge.issueId,
+        taskId: row.edge.taskId,
         ownershipEpoch: row.edge.ownershipEpoch,
         creatorEdgeId: row.edge.id,
         reason: "agent_terminated",
@@ -1188,8 +1188,8 @@ export async function terminalizeAgentCreatorEdgesInTransaction(
 }
 
 export async function terminalizePluginCreatorEdgesInTransaction(
-  tx: IssueSessionDbTransaction,
-  sessions: IssueSessionAdmissionService,
+  tx: TaskSessionDbTransaction,
+  sessions: TaskSessionAdmissionService,
   input: {
     pluginInstallationId: string;
     reason: "plugin_disabled" | "plugin_uninstalled";
@@ -1198,47 +1198,47 @@ export async function terminalizePluginCreatorEdgesInTransaction(
   },
 ): Promise<SystemEscalationTransactionResult[]> {
   const edges = await tx
-    .select({ edge: issueCreatorEdgeReceivability })
-    .from(issueCreatorEdgeReceivability)
+    .select({ edge: taskCreatorEdgeReceivability })
+    .from(taskCreatorEdgeReceivability)
     .innerJoin(
-      issues,
+      tasks,
       and(
-        eq(issues.companyId, issueCreatorEdgeReceivability.companyId),
-        eq(issues.id, issueCreatorEdgeReceivability.issueId),
+        eq(tasks.companyId, taskCreatorEdgeReceivability.companyId),
+        eq(tasks.id, taskCreatorEdgeReceivability.taskId),
         eq(
-          issues.ownershipEpoch,
-          issueCreatorEdgeReceivability.ownershipEpoch,
+          tasks.ownershipEpoch,
+          taskCreatorEdgeReceivability.ownershipEpoch,
         ),
       ),
     )
     .where(
       and(
-        eq(issueCreatorEdgeReceivability.endpointKind, "plugin"),
+        eq(taskCreatorEdgeReceivability.endpointKind, "plugin"),
         eq(
-          issueCreatorEdgeReceivability.endpointId,
+          taskCreatorEdgeReceivability.endpointId,
           input.pluginInstallationId,
         ),
-        eq(issueCreatorEdgeReceivability.state, "receivable"),
+        eq(taskCreatorEdgeReceivability.state, "receivable"),
       ),
     )
     .orderBy(
-      asc(issueCreatorEdgeReceivability.companyId),
-      asc(issueCreatorEdgeReceivability.issueId),
-      asc(issueCreatorEdgeReceivability.ownershipEpoch),
-      asc(issueCreatorEdgeReceivability.id),
+      asc(taskCreatorEdgeReceivability.companyId),
+      asc(taskCreatorEdgeReceivability.taskId),
+      asc(taskCreatorEdgeReceivability.ownershipEpoch),
+      asc(taskCreatorEdgeReceivability.id),
     );
-  const seenIssues = new Set<string>();
+  const seenTasks = new Set<string>();
   const escalations: SystemEscalationTransactionResult[] = [];
   for (const row of edges) {
-    const issueKey = `${row.edge.companyId}:${row.edge.issueId}`;
-    if (seenIssues.has(issueKey)) continue;
-    seenIssues.add(issueKey);
+    const pluginTaskScope = `${row.edge.companyId}:${row.edge.taskId}`;
+    if (seenTasks.has(pluginTaskScope)) continue;
+    seenTasks.add(pluginTaskScope);
     const result = await terminalizeCreatorEdgeInTransaction(
       tx,
       sessions,
       {
         companyId: row.edge.companyId,
-        issueId: row.edge.issueId,
+        taskId: row.edge.taskId,
         ownershipEpoch: row.edge.ownershipEpoch,
         creatorEdgeId: row.edge.id,
         reason: input.reason,
@@ -1266,8 +1266,8 @@ export async function terminalizePluginCreatorEdgesInTransaction(
 }
 
 export async function terminalizeRoutineCreatorEdgesInTransaction(
-  tx: IssueSessionDbTransaction,
-  sessions: IssueSessionAdmissionService,
+  tx: TaskSessionDbTransaction,
+  sessions: TaskSessionAdmissionService,
   input: {
     companyId: string;
     routineId: string;
@@ -1276,43 +1276,43 @@ export async function terminalizeRoutineCreatorEdgesInTransaction(
   },
 ): Promise<SystemEscalationTransactionResult[]> {
   const edges = await tx
-    .select({ edge: issueCreatorEdgeReceivability })
-    .from(issueCreatorEdgeReceivability)
+    .select({ edge: taskCreatorEdgeReceivability })
+    .from(taskCreatorEdgeReceivability)
     .innerJoin(
-      issues,
+      tasks,
       and(
-        eq(issues.companyId, issueCreatorEdgeReceivability.companyId),
-        eq(issues.id, issueCreatorEdgeReceivability.issueId),
+        eq(tasks.companyId, taskCreatorEdgeReceivability.companyId),
+        eq(tasks.id, taskCreatorEdgeReceivability.taskId),
         eq(
-          issues.ownershipEpoch,
-          issueCreatorEdgeReceivability.ownershipEpoch,
+          tasks.ownershipEpoch,
+          taskCreatorEdgeReceivability.ownershipEpoch,
         ),
       ),
     )
     .where(
       and(
-        eq(issueCreatorEdgeReceivability.companyId, input.companyId),
-        eq(issueCreatorEdgeReceivability.endpointKind, "routine"),
-        eq(issueCreatorEdgeReceivability.endpointId, input.routineId),
-        eq(issueCreatorEdgeReceivability.state, "receivable"),
+        eq(taskCreatorEdgeReceivability.companyId, input.companyId),
+        eq(taskCreatorEdgeReceivability.endpointKind, "routine"),
+        eq(taskCreatorEdgeReceivability.endpointId, input.routineId),
+        eq(taskCreatorEdgeReceivability.state, "receivable"),
       ),
     )
     .orderBy(
-      asc(issueCreatorEdgeReceivability.issueId),
-      asc(issueCreatorEdgeReceivability.ownershipEpoch),
-      asc(issueCreatorEdgeReceivability.id),
+      asc(taskCreatorEdgeReceivability.taskId),
+      asc(taskCreatorEdgeReceivability.ownershipEpoch),
+      asc(taskCreatorEdgeReceivability.id),
     );
-  const seenIssues = new Set<string>();
+  const seenTasks = new Set<string>();
   const escalations: SystemEscalationTransactionResult[] = [];
   for (const row of edges) {
-    if (seenIssues.has(row.edge.issueId)) continue;
-    seenIssues.add(row.edge.issueId);
+    if (seenTasks.has(row.edge.taskId)) continue;
+    seenTasks.add(row.edge.taskId);
     const result = await terminalizeCreatorEdgeInTransaction(
       tx,
       sessions,
       {
         companyId: row.edge.companyId,
-        issueId: row.edge.issueId,
+        taskId: row.edge.taskId,
         ownershipEpoch: row.edge.ownershipEpoch,
         creatorEdgeId: row.edge.id,
         reason: "routine_deleted",
@@ -1337,24 +1337,24 @@ export async function terminalizeRoutineCreatorEdgesInTransaction(
 }
 
 async function inspectEndpointTerminality(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   edge: EdgeRow,
 ): Promise<{
-  reason: IssueCreatorEdgeTerminalReason;
+  reason: TaskCreatorEdgeTerminalReason;
   tombstone: Record<string, unknown>;
 } | null> {
   if (edge.endpointKind === "agent-execution") {
     const authority = edge.endpointId
       ? await tx
           .select()
-          .from(issueExecutionAuthorities)
+          .from(taskExecutionAuthorities)
           .where(
             and(
               eq(
-                issueExecutionAuthorities.companyId,
+                taskExecutionAuthorities.companyId,
                 edge.companyId,
               ),
-              eq(issueExecutionAuthorities.id, edge.endpointId),
+              eq(taskExecutionAuthorities.id, edge.endpointId),
             ),
           )
           .limit(1)
@@ -1454,7 +1454,7 @@ export function createPostgresSystemEscalationService(
   options: PostgresSystemEscalationOptions,
 ) {
   const clock = options.clock ?? (() => new Date());
-  const sessions = createIssueSessionAdmissionService(db, { clock });
+  const sessions = createTaskSessionAdmissionService(db, { clock });
 
   async function dispatch(refId: string | null): Promise<void> {
     if (refId) await options.dispatchRef(refId);
@@ -1493,30 +1493,30 @@ export function createPostgresSystemEscalationService(
       const limit = Math.max(1, Math.min(input.limit ?? 100, 500));
       const candidates = await db
         .select({
-          edge: issueCreatorEdgeReceivability,
-          issueLifecycleStatus: issues.lifecycleStatus,
-          issueOwnershipEpoch: issues.ownershipEpoch,
+          edge: taskCreatorEdgeReceivability,
+          taskLifecycleStatus: tasks.lifecycleStatus,
+          taskOwnershipEpoch: tasks.ownershipEpoch,
         })
-        .from(issueCreatorEdgeReceivability)
+        .from(taskCreatorEdgeReceivability)
         .innerJoin(
-          issues,
+          tasks,
           and(
-            eq(issues.companyId, issueCreatorEdgeReceivability.companyId),
-            eq(issues.id, issueCreatorEdgeReceivability.issueId),
+            eq(tasks.companyId, taskCreatorEdgeReceivability.companyId),
+            eq(tasks.id, taskCreatorEdgeReceivability.taskId),
             eq(
-              issues.ownershipEpoch,
-              issueCreatorEdgeReceivability.ownershipEpoch,
+              tasks.ownershipEpoch,
+              taskCreatorEdgeReceivability.ownershipEpoch,
             ),
           ),
         )
         .where(
-          sql`${issueCreatorEdgeReceivability.endpointKind} not in ('user/board', 'system')`,
+          sql`${taskCreatorEdgeReceivability.endpointKind} not in ('user/board', 'system')`,
         )
         .orderBy(
-          asc(issueCreatorEdgeReceivability.companyId),
-          asc(issueCreatorEdgeReceivability.issueId),
-          asc(issueCreatorEdgeReceivability.ownershipEpoch),
-          asc(issueCreatorEdgeReceivability.id),
+          asc(taskCreatorEdgeReceivability.companyId),
+          asc(taskCreatorEdgeReceivability.taskId),
+          asc(taskCreatorEdgeReceivability.ownershipEpoch),
+          asc(taskCreatorEdgeReceivability.id),
         )
         .limit(limit);
       const dispatchRefIds: string[] = [];
@@ -1524,43 +1524,43 @@ export function createPostgresSystemEscalationService(
       let ensured = 0;
       for (const candidate of candidates) {
         const result = await db.transaction(async (tx) => {
-          const issue = await tx
+          const task = await tx
             .select()
-            .from(issues)
+            .from(tasks)
             .where(
               and(
-                eq(issues.companyId, candidate.edge.companyId),
-                eq(issues.id, candidate.edge.issueId),
+                eq(tasks.companyId, candidate.edge.companyId),
+                eq(tasks.id, candidate.edge.taskId),
               ),
             )
             .for("update")
             .then((rows) => rows[0] ?? null);
           if (
-            !issue ||
-            issue.ownershipEpoch !== candidate.edge.ownershipEpoch
+            !task ||
+            task.ownershipEpoch !== candidate.edge.ownershipEpoch
           ) {
             return null;
           }
           const edge = await tx
             .select()
-            .from(issueCreatorEdgeReceivability)
+            .from(taskCreatorEdgeReceivability)
             .where(
               and(
                 eq(
-                  issueCreatorEdgeReceivability.id,
+                  taskCreatorEdgeReceivability.id,
                   candidate.edge.id,
                 ),
                 eq(
-                  issueCreatorEdgeReceivability.companyId,
-                  issue.companyId,
+                  taskCreatorEdgeReceivability.companyId,
+                  task.companyId,
                 ),
                 eq(
-                  issueCreatorEdgeReceivability.issueId,
-                  issue.id,
+                  taskCreatorEdgeReceivability.taskId,
+                  task.id,
                 ),
                 eq(
-                  issueCreatorEdgeReceivability.ownershipEpoch,
-                  issue.ownershipEpoch,
+                  taskCreatorEdgeReceivability.ownershipEpoch,
+                  task.ownershipEpoch,
                 ),
               ),
             )
@@ -1568,7 +1568,7 @@ export function createPostgresSystemEscalationService(
             .then((rows) => rows[0] ?? null);
           if (!edge) return null;
           if (edge.state === "terminal") {
-            if (!isIssueCreatorEdgeTerminalReason(edge.terminalReason)) {
+            if (!isTaskCreatorEdgeTerminalReason(edge.terminalReason)) {
               throw new PostgresSystemEscalationConflict(
                 "Terminal creator edge has no canonical terminal reason",
                 "creator_edge_reason_not_escalating",
@@ -1579,7 +1579,7 @@ export function createPostgresSystemEscalationService(
               sessions,
               {
                 companyId: edge.companyId,
-                issueId: edge.issueId,
+                taskId: edge.taskId,
                 ownershipEpoch: edge.ownershipEpoch,
                 creatorEdgeId: edge.id,
                 reason: edge.terminalReason,
@@ -1604,7 +1604,7 @@ export function createPostgresSystemEscalationService(
               sessions,
               {
                 companyId: edge.companyId,
-                issueId: edge.issueId,
+                taskId: edge.taskId,
                 ownershipEpoch: edge.ownershipEpoch,
                 creatorEdgeId: edge.id,
                 reason: endpoint.reason,
@@ -1619,8 +1619,8 @@ export function createPostgresSystemEscalationService(
             );
           return {
             terminalized:
-              issue.lifecycleStatus === "open" ||
-              issue.lifecycleStatus === "blocked",
+              task.lifecycleStatus === "open" ||
+              task.lifecycleStatus === "blocked",
             escalation: terminalizedResult.escalation,
           };
         });

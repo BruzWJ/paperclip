@@ -26,7 +26,7 @@ vi.mock("../services/activity-log.js", () => ({
   logActivity: dependencies.logActivity,
 }));
 
-vi.mock("../services/issue-session-producers.js", () => ({
+vi.mock("../services/task-session-producers.js", () => ({
   appendCanonicalControlNotice: dependencies.appendCanonicalControlNotice,
 }));
 
@@ -110,7 +110,7 @@ describe("workspace branch reconciliation safeguards", () => {
         repoRoot,
         worktreePath,
         expectedBranchName: expectedBranch,
-        sourceIssue: null,
+        sourceTask: null,
         enableWorkspaceBranchReconcileForward: false,
         enableWorkspaceDirtyQuarantineRepair: true,
       }),
@@ -156,7 +156,7 @@ describe("workspace branch reconciliation safeguards", () => {
         lastUsedAt: now,
         createdAt: now,
       },
-      boundIssueId: "issue-1",
+      boundTaskId: "task-1",
       boundOwnershipEpoch: 1,
       inspection: {
         fingerprint: "fingerprint",
@@ -180,7 +180,7 @@ describe("workspace branch reconciliation safeguards", () => {
         repoRoot,
         worktreePath,
         expectedBranchName: expectedBranch,
-        sourceIssue: null,
+        sourceTask: null,
         executionWorkspaceId: "workspace-1",
         runId: "run-1",
         enableWorkspaceBranchReconcileForward: true,
@@ -212,7 +212,7 @@ describe("workspace branch reconciliation safeguards", () => {
         repoRoot,
         worktreePath,
         expectedBranchName: expectedBranch,
-        sourceIssue: null,
+        sourceTask: null,
         enableWorkspaceBranchReconcileForward: true,
         enableWorkspaceDirtyQuarantineRepair: false,
       }),
@@ -255,8 +255,8 @@ describe("workspace branch reconciliation safeguards", () => {
       repoRoot,
       worktreePath,
       expectedBranchName: expectedBranch,
-      sourceIssue: {
-        id: "issue-1",
+      sourceTask: {
+        id: "task-1",
         identifier: "PAP-1",
       },
       executionWorkspaceId: "workspace-1",

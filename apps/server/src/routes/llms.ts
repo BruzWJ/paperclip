@@ -36,7 +36,7 @@ export function llmRoutes(_db: Db) {
       "Notes:",
       "- Sensitive values are redacted in configuration read APIs.",
       "- Runtime-agent identity and grants, adapter/provider revisions, and operational fields have separate write contracts.",
-      "- Agents run only from persisted issue-execution references. Recurring work must be modeled as a routine that creates ordinary issues.",
+      "- Agents run only from persisted task-execution references. Recurring work must be modeled as a routine that creates ordinary tasks.",
       "",
     ];
     res.type("text/plain").send(lines.join("\n"));

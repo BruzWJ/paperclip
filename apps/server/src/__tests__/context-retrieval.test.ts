@@ -6,19 +6,19 @@ import {
   ContextRetrievalInvalidCursor,
   createContextRetrievalService,
   type CanonicalRunTrace,
-  type ContextRetrievalIssueProjection,
+  type ContextRetrievalTaskProjection,
   type ContextRetrievalRepository,
 } from "../services/context-retrieval.ts";
 
-function issue(
+function task(
   id: string,
   parentId: string | null,
   updatedAt = "2026-07-25T00:00:00.000Z",
-): ContextRetrievalIssueProjection {
+): ContextRetrievalTaskProjection {
   return {
     id,
     identifier: `PAP-${id}`,
-    title: `Issue ${id}`,
+    title: `Task ${id}`,
     request: `Request ${id}`,
     status: "open",
     disposition: null,
@@ -38,20 +38,20 @@ function repository(): ContextRetrievalRepository {
     ["other", { sameCompany: true, active: false, descendant: false }],
   ]);
   return {
-    async issueReach({ issueId }) {
-      return reach.get(issueId) ?? null;
+    async taskReach({ taskId }) {
+      return reach.get(taskId) ?? null;
     },
-    async listTopLevelIssues() {
-      return [issue("top-1", null), issue("top-2", null)];
+    async listTopLevelTasks() {
+      return [task("top-1", null), task("top-2", null)];
     },
-    async listDirectChildren({ issueId }) {
-      return [issue("child", issueId)];
+    async listDirectChildren({ taskId }) {
+      return [task("child", taskId)];
     },
-    async listIssueComments({ issueId }) {
+    async listTaskComments({ taskId }) {
       return [
         {
           id: "comment-1",
-          issueId,
+          taskId,
           body: "First",
           author: { kind: "user", userId: "board-user" },
           runId: null,
@@ -60,7 +60,7 @@ function repository(): ContextRetrievalRepository {
         },
         {
           id: "comment-2",
-          issueId,
+          taskId,
           body: "Second",
           author: { kind: "agent", agentId: "agent-2" },
           runId: "run-1",
@@ -69,14 +69,14 @@ function repository(): ContextRetrievalRepository {
         },
       ];
     },
-    async runIssue({ runId }) {
-      return runId === "run-child" ? { issueId: "child" } : null;
+    async runTask({ runId }) {
+      return runId === "run-child" ? { taskId: "child" } : null;
     },
     async readCanonicalRunTrace({ runId }) {
       return {
         runId,
         runKind: "productive",
-        issueId: "child",
+        taskId: "child",
         status: "succeeded",
         startedAt: "2026-07-25T00:00:00.000Z",
         finishedAt: "2026-07-25T00:01:00.000Z",
@@ -115,7 +115,7 @@ function scope(
 ) {
   return {
     companyId: "company-1",
-    activeIssueId: "active",
+    activeTaskId: "active",
     dial: resolveContextDial({ agent: grants }).effective,
   };
 }
@@ -123,24 +123,24 @@ function scope(
 describe("context retrieval", () => {
   it("uses the identical shared trace DTO at the gateway and plugin boundary", () => {
     type GatewayTrace = Awaited<
-      ReturnType<ReturnType<typeof createContextRetrievalService>["readIssueAgentRun"]>
+      ReturnType<ReturnType<typeof createContextRetrievalService>["readTaskAgentRun"]>
     >;
     type PluginTrace =
-      WorkerToHostMethods["run.issues.readIssueAgentRun"][1];
+      WorkerToHostMethods["run.tasks.readTaskAgentRun"][1];
 
     expectTypeOf<GatewayTrace>().toEqualTypeOf<PluginTrace>();
   });
 
-  it("lists top-level company issues and direct children only", async () => {
+  it("lists top-level company tasks and direct children only", async () => {
     const api = service();
-    const company = await api.listCompanyIssues(
-      scope({ list_company_issues: true }),
+    const company = await api.listCompanyTasks(
+      scope({ list_company_tasks: true }),
     );
     expect(company.items.map((row) => row.id)).toEqual(["top-1", "top-2"]);
     expect(company.items.every((row) => row.parentId === null)).toBe(true);
 
-    const children = await api.listSubIssues(
-      scope({ list_sub_issues: true }),
+    const children = await api.listSubTasks(
+      scope({ list_sub_tasks: true }),
     );
     expect(children.items).toHaveLength(1);
     expect(children.items[0].parentId).toBe("active");
@@ -148,45 +148,45 @@ describe("context retrieval", () => {
 
   it("projects immutable creators through the provider-safe allowlist", async () => {
     const repo = repository();
-    const unsafeCreatorIssue = (
+    const unsafeCreatorTask = (
       id: string,
       creator: Record<string, unknown>,
-    ): ContextRetrievalIssueProjection => ({
-      ...issue(id, null),
+    ): ContextRetrievalTaskProjection => ({
+      ...task(id, null),
       creator: creator as never,
     });
-    repo.listTopLevelIssues = async () => [
-      unsafeCreatorIssue("creator-agent", {
+    repo.listTopLevelTasks = async () => [
+      unsafeCreatorTask("creator-agent", {
         kind: "agent-execution",
         agentId: "agent-creator",
-        issueExecutionAuthorityId: "must-not-leak-authority",
+        taskExecutionAuthorityId: "must-not-leak-authority",
         adapterConfigRevisionId: "must-not-leak-revision",
       }),
-      unsafeCreatorIssue("creator-user", {
+      unsafeCreatorTask("creator-user", {
         kind: "user/board",
         userId: "user-creator",
         creatorAuthorityId: "must-not-leak-authority",
       }),
-      unsafeCreatorIssue("creator-plugin", {
+      unsafeCreatorTask("creator-plugin", {
         kind: "plugin",
         pluginKey: "plugin-key",
         pluginInstallationId: "must-not-leak-installation",
         callbackKey: "must-not-leak-callback",
       }),
-      unsafeCreatorIssue("creator-routine", {
+      unsafeCreatorTask("creator-routine", {
         kind: "routine",
         routineId: "routine-1",
         routineDispatchId: "must-not-leak-dispatch",
       }),
-      unsafeCreatorIssue("creator-system", {
+      unsafeCreatorTask("creator-system", {
         kind: "system",
         sourceKind: "recovery",
         sourceId: "must-not-leak-source",
       }),
     ];
 
-    const result = await service(repo).listCompanyIssues(
-      scope({ list_company_issues: true }),
+    const result = await service(repo).listCompanyTasks(
+      scope({ list_company_tasks: true }),
     );
 
     expect(result.items.map((row) => row.creator)).toEqual([
@@ -202,14 +202,14 @@ describe("context retrieval", () => {
   it("does not let an explicit leaked id widen comment reach", async () => {
     const api = service();
     await expect(
-      api.readIssueComments(scope({ read_issue_comments: true }), {
-        issueId: "child",
+      api.readTaskComments(scope({ read_task_comments: true }), {
+        taskId: "child",
       }),
     ).rejects.toBeInstanceOf(ContextRetrievalDenied);
 
     await expect(
-      api.readIssueComments(scope({ read_sub_issue_comments: true }), {
-        issueId: "child",
+      api.readTaskComments(scope({ read_sub_task_comments: true }), {
+        taskId: "child",
       }),
     ).resolves.toMatchObject({
       items: [{ id: "comment-1" }, { id: "comment-2" }],
@@ -218,14 +218,14 @@ describe("context retrieval", () => {
 
   it("returns chronological comments and a sanitized V2 trace", async () => {
     const api = service();
-    const comments = await api.readIssueComments(
-      scope({ read_sub_issue_comments: true }),
-      { issueId: "child" },
+    const comments = await api.readTaskComments(
+      scope({ read_sub_task_comments: true }),
+      { taskId: "child" },
     );
     expect(comments.items.map((row) => row.sequence)).toEqual([1, 2]);
 
-    const trace = await api.readIssueAgentRun(
-      scope({ read_sub_issue_agent_run: true }),
+    const trace = await api.readTaskAgentRun(
+      scope({ read_sub_task_agent_run: true }),
       { runId: "run-child" },
     );
     expect(trace).toEqual({
@@ -249,10 +249,10 @@ describe("context retrieval", () => {
 
   it("keeps plugin comment attribution provider-safe and rejects leaked installation identity", async () => {
     const repo = repository();
-    repo.listIssueComments = async ({ issueId }) => [
+    repo.listTaskComments = async ({ taskId }) => [
       {
         id: "plugin-comment",
-        issueId,
+        taskId,
         body: "Plugin-authored update",
         author: {
           kind: "plugin",
@@ -264,8 +264,8 @@ describe("context retrieval", () => {
       },
     ];
 
-    const result = await service(repo).readIssueComments(
-      scope({ read_issue_comments: true }),
+    const result = await service(repo).readTaskComments(
+      scope({ read_task_comments: true }),
     );
     expect(result.items[0]?.author).toEqual({
       kind: "plugin",
@@ -273,10 +273,10 @@ describe("context retrieval", () => {
     });
     expect(JSON.stringify(result)).not.toContain("pluginInstallationId");
 
-    repo.listIssueComments = async ({ issueId }) => [
+    repo.listTaskComments = async ({ taskId }) => [
       {
         id: "malformed-plugin-comment",
-        issueId,
+        taskId,
         body: "Malformed",
         author: {
           kind: "plugin",
@@ -289,7 +289,7 @@ describe("context retrieval", () => {
       },
     ];
     await expect(
-      service(repo).readIssueComments(scope({ read_issue_comments: true })),
+      service(repo).readTaskComments(scope({ read_task_comments: true })),
     ).rejects.toThrow("non-canonical shape");
   });
 
@@ -298,7 +298,7 @@ describe("context retrieval", () => {
     const rows = [
       {
         id: "progress-active",
-        issueId: "active",
+        taskId: "active",
         body: "",
         author: { kind: "agent" as const, agentId: "agent-1" },
         runId: "run-active",
@@ -307,7 +307,7 @@ describe("context retrieval", () => {
       },
       {
         id: "progress-folded",
-        issueId: "active",
+        taskId: "active",
         body: "",
         author: { kind: "agent" as const, agentId: "agent-1" },
         runId: "run-folded",
@@ -315,7 +315,7 @@ describe("context retrieval", () => {
         createdAt: "2026-07-25T00:01:00.000Z",
       },
     ];
-    repo.listIssueComments = async ({ after, limit }) =>
+    repo.listTaskComments = async ({ after, limit }) =>
       rows
         .filter((row) =>
           after === null ||
@@ -324,8 +324,8 @@ describe("context retrieval", () => {
         .slice(0, limit);
     const api = service(repo);
 
-    const first = await api.readIssueComments(
-      scope({ read_issue_comments: true }),
+    const first = await api.readTaskComments(
+      scope({ read_task_comments: true }),
       { limit: 1 },
     );
     expect(first.items).toMatchObject([
@@ -334,7 +334,7 @@ describe("context retrieval", () => {
     expect(first.nextCursor).toBeTypeOf("string");
 
     await expect(
-      api.readIssueComments(scope({ read_issue_comments: true }), {
+      api.readTaskComments(scope({ read_task_comments: true }), {
         limit: 1,
         cursor: first.nextCursor,
       }),
@@ -346,8 +346,8 @@ describe("context retrieval", () => {
 
   it("rejects a forged run-trace cursor before reading canonical rows", async () => {
     await expect(
-      service().readIssueAgentRun(
-        scope({ read_sub_issue_agent_run: true }),
+      service().readTaskAgentRun(
+        scope({ read_sub_task_agent_run: true }),
         { runId: "run-child", cursor: "forged" },
       ),
     ).rejects.toBeInstanceOf(ContextRetrievalInvalidCursor);
@@ -358,7 +358,7 @@ describe("context retrieval", () => {
     repo.readCanonicalRunTrace = async () => ({
       runId: "run-child",
       runKind: "productive",
-      issueId: "child",
+      taskId: "child",
       status: "succeeded",
       startedAt: "2026-07-25T00:00:00.000Z",
       finishedAt: "2026-07-25T00:01:00.000Z",
@@ -488,7 +488,7 @@ describe("context retrieval", () => {
         {
           commentId: "comment-update",
           messageId: "must-not-leak-comment-message-link",
-          sourceKind: "issue_update",
+          sourceKind: "task_update",
           projectedEventSeq: 71,
         },
         {
@@ -500,8 +500,8 @@ describe("context retrieval", () => {
       ],
     } as unknown as CanonicalRunTrace);
 
-    const trace = await service(repo).readIssueAgentRun(
-      scope({ read_sub_issue_agent_run: true }),
+    const trace = await service(repo).readTaskAgentRun(
+      scope({ read_sub_task_agent_run: true }),
       { runId: "run-child" },
     );
 
@@ -578,31 +578,31 @@ describe("context retrieval", () => {
     expect(JSON.stringify(trace)).not.toContain("must-not-leak");
     expect(trace).not.toHaveProperty("events");
     expect(trace).not.toHaveProperty("usage");
-    expect(trace).not.toHaveProperty("issueId");
+    expect(trace).not.toHaveProperty("taskId");
   });
 
   it("uses signed scope-bound keyset cursors", async () => {
     const repo = repository();
-    repo.listTopLevelIssues = async () => [
-      issue("top-1", null, "2026-07-25T00:00:00.000Z"),
-      issue("top-2", null, "2026-07-25T00:01:00.000Z"),
+    repo.listTopLevelTasks = async () => [
+      task("top-1", null, "2026-07-25T00:00:00.000Z"),
+      task("top-2", null, "2026-07-25T00:01:00.000Z"),
     ];
     const api = service(repo);
-    const first = await api.listCompanyIssues(
-      scope({ list_company_issues: true }),
+    const first = await api.listCompanyTasks(
+      scope({ list_company_tasks: true }),
       { limit: 1 },
     );
     expect(first.nextCursor).toBeTypeOf("string");
 
     await expect(
-      api.listSubIssues(scope({ list_company_issues: true }), {
+      api.listSubTasks(scope({ list_company_tasks: true }), {
         cursor: first.nextCursor,
       }),
     ).rejects.toBeInstanceOf(ContextRetrievalInvalidCursor);
 
     const tampered = `${first.nextCursor?.slice(0, -1)}x`;
     await expect(
-      api.listCompanyIssues(scope({ list_company_issues: true }), {
+      api.listCompanyTasks(scope({ list_company_tasks: true }), {
         cursor: tampered,
         limit: 1,
       }),

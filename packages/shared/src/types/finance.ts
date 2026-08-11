@@ -10,7 +10,7 @@ export interface FinanceEvent {
   id: string;
   companyId: string;
   agentId: string | null;
-  issueId: string | null;
+  taskId: string | null;
   projectId: string | null;
   goalId: string | null;
   billingCode: string | null;

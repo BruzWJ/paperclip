@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentActionButtons } from "./AgentActionButtons";
 
 const mockNavigate = vi.hoisted(() => vi.fn());
-const mockOpenNewIssue = vi.hoisted(() => vi.fn());
+const mockOpenNewTask = vi.hoisted(() => vi.fn());
 const mockPushToast = vi.hoisted(() => vi.fn());
 const mockAgentsApi = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -30,7 +30,7 @@ vi.mock("@/lib/router", () => ({
 }));
 
 vi.mock("../context/DialogContext", () => ({
-  useDialogActions: () => ({ openNewIssue: mockOpenNewIssue }),
+  useDialogActions: () => ({ openNewTask: mockOpenNewTask }),
 }));
 
 vi.mock("../context/ToastContext", () => ({

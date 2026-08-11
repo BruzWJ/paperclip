@@ -168,7 +168,7 @@ function assertManifestWorkerMethodAgreement(
   }
   for (const [method, capability] of [
     ["onEvent", "events.subscribe"],
-    ["issues.creatorCallback.deliver", "issues.create"],
+    ["tasks.creatorCallback.deliver", "tasks.create"],
   ] as const) {
     if (
       supportedMethods.includes(method)

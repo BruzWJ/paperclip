@@ -2,10 +2,10 @@
 
 import { describe, expect, it } from "vitest";
 import type {
-  Issue,
-  IssueBlockedInboxAttention,
-  IssueBlockedInboxReason,
-  IssueBlockedInboxSeverity,
+  Task,
+  TaskBlockedInboxAttention,
+  TaskBlockedInboxReason,
+  TaskBlockedInboxSeverity,
 } from "@paperclipai/shared";
 import {
   BLOCKED_REASON_VARIANT_ORDER,
@@ -21,13 +21,13 @@ import {
   formatStoppedAge,
   groupBlockedInboxRows,
   sortBlockedInboxRows,
-  type BlockedInboxIssueRow,
+  type BlockedInboxTaskRow,
 } from "./blockedInbox";
-import { createTestIssue, type TestIssueOverrides } from "../test-utils/issue";
+import { createTestTask, type TestTaskOverrides } from "../test-utils/task";
 
 function makeAttention(
-  overrides: Partial<IssueBlockedInboxAttention> = {},
-): IssueBlockedInboxAttention {
+  overrides: Partial<TaskBlockedInboxAttention> = {},
+): TaskBlockedInboxAttention {
   return {
     kind: "blocked",
     state: "needs_attention",
@@ -36,21 +36,21 @@ function makeAttention(
     stoppedSinceAt: "2026-05-08T12:00:00.000Z",
     owner: { type: "agent", agentId: null, userId: null, label: "QA" },
     action: { label: "Resolve PAP-1", detail: null },
-    sourceIssue: null,
-    leafIssue: null,
+    sourceTask: null,
+    leafTask: null,
     approvalId: null,
-    sampleIssueIdentifier: null,
+    sampleTaskIdentifier: null,
     redaction: { externalDetailsRedacted: false, secretFieldsOmitted: true },
     ...overrides,
   };
 }
 
-function makeIssue(
-  overrides: TestIssueOverrides & { id: string },
-  attention: IssueBlockedInboxAttention | null = null,
-): Issue {
+function makeTask(
+  overrides: TestTaskOverrides & { id: string },
+  attention: TaskBlockedInboxAttention | null = null,
+): Task {
   const { id, ...rest } = overrides;
-  return createTestIssue({
+  return createTestTask({
     id,
     title: "Title",
     request: "",
@@ -65,7 +65,7 @@ function makeIssue(
 
 describe("blockedInbox", () => {
   it("maps every reason to a known variant and label", () => {
-    const reasons: IssueBlockedInboxReason[] = [
+    const reasons: TaskBlockedInboxReason[] = [
       "pending_board_decision",
       "pending_user_decision",
       "blocked_chain_stalled",
@@ -80,7 +80,7 @@ describe("blockedInbox", () => {
   });
 
   it("ranks severity critical first and low last", () => {
-    const order: IssueBlockedInboxSeverity[] = ["critical", "high", "medium", "low"];
+    const order: TaskBlockedInboxSeverity[] = ["critical", "high", "medium", "low"];
     const ranks = order.map((s) => blockedSeverityRank(s));
     expect([...ranks].sort((a, b) => a - b)).toEqual(ranks);
   });
@@ -109,23 +109,23 @@ describe("blockedInbox", () => {
     expect(compareBlockedAttention(a, b)).toBe(0);
   });
 
-  it("buildBlockedInboxRows skips issues without attention", () => {
-    const issues = [
-      makeIssue({ id: "issue-1" }, makeAttention()),
-      makeIssue({ id: "issue-2" }, null),
+  it("buildBlockedInboxRows skips tasks without attention", () => {
+    const tasks = [
+      makeTask({ id: "task-1" }, makeAttention()),
+      makeTask({ id: "task-2" }, null),
     ];
-    const rows = buildBlockedInboxRows(issues);
+    const rows = buildBlockedInboxRows(tasks);
     expect(rows).toHaveLength(1);
-    expect(rows[0].issue.id).toBe("issue-1");
+    expect(rows[0].task.id).toBe("task-1");
   });
 
   it("groupBlockedInboxRows orders groups by canonical variant order and sorts within group", () => {
-    const issues = [
-      makeIssue(
+    const tasks = [
+      makeTask(
         { id: "external-1" },
         makeAttention({ reason: "external_owner_action", severity: "low" }),
       ),
-      makeIssue(
+      makeTask(
         { id: "stalled-1" },
         makeAttention({
           reason: "blocked_chain_stalled",
@@ -133,7 +133,7 @@ describe("blockedInbox", () => {
           stoppedSinceAt: "2026-05-09T01:00:00.000Z",
         }),
       ),
-      makeIssue(
+      makeTask(
         { id: "stalled-2" },
         makeAttention({
           reason: "blocked_chain_stalled",
@@ -141,38 +141,38 @@ describe("blockedInbox", () => {
           stoppedSinceAt: "2026-05-09T05:00:00.000Z",
         }),
       ),
-      makeIssue(
+      makeTask(
         { id: "decision-1" },
         makeAttention({ reason: "pending_board_decision", severity: "medium" }),
       ),
     ];
-    const groups = groupBlockedInboxRows(buildBlockedInboxRows(issues));
+    const groups = groupBlockedInboxRows(buildBlockedInboxRows(tasks));
     expect(groups.map((g) => g.variant)).toEqual([
       "needs_decision",
       "stalled",
       "external_wait",
     ]);
     const stalled = groups.find((g) => g.variant === "stalled")!;
-    expect(stalled.rows.map((r) => r.issue.id)).toEqual(["stalled-2", "stalled-1"]);
+    expect(stalled.rows.map((r) => r.task.id)).toEqual(["stalled-2", "stalled-1"]);
   });
 
   it("sortBlockedInboxRows supports recent and longest-stopped ordering", () => {
     const rows = buildBlockedInboxRows([
-      makeIssue(
+      makeTask(
         { id: "old", title: "Old stopped" },
         makeAttention({
           severity: "low",
           stoppedSinceAt: "2026-05-06T00:00:00.000Z",
         }),
       ),
-      makeIssue(
+      makeTask(
         { id: "recent", title: "Recently stopped" },
         makeAttention({
           severity: "critical",
           stoppedSinceAt: "2026-05-09T00:00:00.000Z",
         }),
       ),
-      makeIssue(
+      makeTask(
         { id: "middle", title: "Middle stopped" },
         makeAttention({
           severity: "medium",
@@ -181,12 +181,12 @@ describe("blockedInbox", () => {
       ),
     ]);
 
-    expect(sortBlockedInboxRows(rows, "most_recent").map((row) => row.issue.id)).toEqual([
+    expect(sortBlockedInboxRows(rows, "most_recent").map((row) => row.task.id)).toEqual([
       "recent",
       "middle",
       "old",
     ]);
-    expect(sortBlockedInboxRows(rows, "longest_stopped").map((row) => row.issue.id)).toEqual([
+    expect(sortBlockedInboxRows(rows, "longest_stopped").map((row) => row.task.id)).toEqual([
       "old",
       "middle",
       "recent",
@@ -195,15 +195,15 @@ describe("blockedInbox", () => {
   });
 
   it("blockedRowMatchesSearch matches title, identifier, owner, action and reason", () => {
-    const issue = makeIssue(
-      { id: "issue-1", identifier: "PAP-77", title: "Resume parked work" },
+    const task = makeTask(
+      { id: "task-1", identifier: "PAP-77", title: "Resume parked work" },
       makeAttention({
         reason: "blocked_chain_stalled",
         owner: { type: "agent", agentId: null, userId: null, label: "Charlie" },
         action: { label: "Resume parked blocker", detail: null },
       }),
     );
-    const row: BlockedInboxIssueRow = buildBlockedInboxRows([issue])[0];
+    const row: BlockedInboxTaskRow = buildBlockedInboxRows([task])[0];
     expect(blockedRowMatchesSearch(row, "")).toBe(true);
     expect(blockedRowMatchesSearch(row, "pap-77")).toBe(true);
     expect(blockedRowMatchesSearch(row, "parked")).toBe(true);
@@ -212,18 +212,18 @@ describe("blockedInbox", () => {
   });
 
   it("blockedBadgeTone reflects the highest severity present", () => {
-    const empty: BlockedInboxIssueRow[] = [];
+    const empty: BlockedInboxTaskRow[] = [];
     expect(blockedBadgeTone(empty)).toBe("muted");
 
-    const issues = [
-      makeIssue({ id: "a" }, makeAttention({ severity: "low" })),
-      makeIssue({ id: "b" }, makeAttention({ severity: "high" })),
+    const tasks = [
+      makeTask({ id: "a" }, makeAttention({ severity: "low" })),
+      makeTask({ id: "b" }, makeAttention({ severity: "high" })),
     ];
-    expect(blockedBadgeTone(buildBlockedInboxRows(issues))).toBe("amber");
+    expect(blockedBadgeTone(buildBlockedInboxRows(tasks))).toBe("amber");
 
     const critical = [
-      ...issues,
-      makeIssue({ id: "c" }, makeAttention({ severity: "critical" })),
+      ...tasks,
+      makeTask({ id: "c" }, makeAttention({ severity: "critical" })),
     ];
     expect(blockedBadgeTone(buildBlockedInboxRows(critical))).toBe("red");
   });

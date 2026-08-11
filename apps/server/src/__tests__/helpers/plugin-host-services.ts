@@ -2,8 +2,8 @@ import type { HostToWorkerMethods } from "@paperclipai/plugin-sdk";
 import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
 import type {
   PluginHostServicesOptions,
-  PluginIssueControlPlane,
-  PluginRunIssueContextReader,
+  PluginTaskControlPlane,
+  PluginRunTaskContextReader,
   PluginRuntimeRecordsReader,
 } from "../../services/plugin-host-services.js";
 
@@ -11,29 +11,29 @@ function unexpectedHostCall(name: string): Promise<never> {
   return Promise.reject(new Error(`Unexpected plugin host test call: ${name}`));
 }
 
-export function createPluginIssueControlPlaneFake(
-  overrides: Partial<PluginIssueControlPlane> = {},
-): PluginIssueControlPlane {
+export function createPluginTaskControlPlaneFake(
+  overrides: Partial<PluginTaskControlPlane> = {},
+): PluginTaskControlPlane {
   return {
-    list: () => unexpectedHostCall("issues.list"),
-    get: () => unexpectedHostCall("issues.get"),
-    create: () => unexpectedHostCall("issues.create"),
-    update: () => unexpectedHostCall("issues.update"),
-    withdraw: () => unexpectedHostCall("issues.withdraw"),
+    list: () => unexpectedHostCall("tasks.list"),
+    get: () => unexpectedHostCall("tasks.get"),
+    create: () => unexpectedHostCall("tasks.create"),
+    update: () => unexpectedHostCall("tasks.update"),
+    withdraw: () => unexpectedHostCall("tasks.withdraw"),
     ...overrides,
   };
 }
 
-export function createPluginRunIssueContextReaderFake(
-  overrides: Partial<PluginRunIssueContextReader> = {},
-): PluginRunIssueContextReader {
+export function createPluginRunTaskContextReaderFake(
+  overrides: Partial<PluginRunTaskContextReader> = {},
+): PluginRunTaskContextReader {
   return {
     resolveContext: () => unexpectedHostCall("run.context.resolve"),
-    issueReach: () => unexpectedHostCall("run.context.issueReach"),
-    listCompanyIssues: () => unexpectedHostCall("run.issues.listCompanyIssues"),
-    listSubIssues: () => unexpectedHostCall("run.issues.listSubIssues"),
-    readIssueComments: () => unexpectedHostCall("run.issues.readIssueComments"),
-    readIssueAgentRun: () => unexpectedHostCall("run.issues.readIssueAgentRun"),
+    taskReach: () => unexpectedHostCall("run.context.taskReach"),
+    listCompanyTasks: () => unexpectedHostCall("run.tasks.listCompanyTasks"),
+    listSubTasks: () => unexpectedHostCall("run.tasks.listSubTasks"),
+    readTaskComments: () => unexpectedHostCall("run.tasks.readTaskComments"),
+    readTaskAgentRun: () => unexpectedHostCall("run.tasks.readTaskAgentRun"),
     ...overrides,
   };
 }
@@ -44,7 +44,7 @@ export function createPluginRuntimeRecordsReaderFake(
   return {
     readSession: () => unexpectedHostCall("runtime.records.readSession"),
     readRun: () => unexpectedHostCall("runtime.records.readRun"),
-    readIssueComments: () => unexpectedHostCall("runtime.records.readIssueComments"),
+    readTaskComments: () => unexpectedHostCall("runtime.records.readTaskComments"),
     ...overrides,
   };
 }
@@ -71,12 +71,12 @@ export function createPluginHostServicesTestOptions(
 ): PluginHostServicesOptions {
   return {
     manifest: createPluginManifestFake(),
-    pluginIssueControlPlane: createPluginIssueControlPlaneFake(),
-    pluginRunIssueContextReader: createPluginRunIssueContextReaderFake(),
+    pluginTaskControlPlane: createPluginTaskControlPlaneFake(),
+    pluginRunTaskContextReader: createPluginRunTaskContextReaderFake(),
     pluginRuntimeRecordsReader: createPluginRuntimeRecordsReaderFake(),
-    ordinaryIssues: {} as PluginHostServicesOptions["ordinaryIssues"],
-    issueExecutionCancellation:
-      {} as PluginHostServicesOptions["issueExecutionCancellation"],
+    ordinaryTasks: {} as PluginHostServicesOptions["ordinaryTasks"],
+    taskExecutionCancellation:
+      {} as PluginHostServicesOptions["taskExecutionCancellation"],
     ...overrides,
   };
 }

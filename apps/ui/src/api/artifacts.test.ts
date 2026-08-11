@@ -21,11 +21,11 @@ function sampleArtifact(overrides: Partial<CompanyArtifact> = {}): CompanyArtifa
     contentPath: "/files/wp-1.mp4",
     openPath: "/files/wp-1.mp4",
     downloadPath: "/files/wp-1.mp4?download=1",
-    issue: { id: "issue-1", identifier: "PAP-10205", title: "Demo reel" },
+    task: { id: "task-1", identifier: "PAP-10205", title: "Demo reel" },
     project: { id: "proj-1", name: "Paperclip App" },
     createdByAgent: { id: "agent-1", name: "ClaudeCoder" },
     updatedAt: "2026-06-01T00:00:00.000Z",
-    href: "/issues/PAP-10205#work-product-wp-1",
+    href: "/tasks/PAP-10205#work-product-wp-1",
     ...overrides,
   };
 }
@@ -64,32 +64,32 @@ describe("artifactsApi.list", () => {
     expect(mockApi.get).toHaveBeenCalledWith("/companies/company-1/artifacts");
   });
 
-  it("serializes groupBy and the selected stack issue", async () => {
+  it("serializes groupBy and the selected stack task", async () => {
     await artifactsApi.list("company-1", {
-      groupBy: "parent_issue",
-      groupIssueId: "issue-9",
+      groupBy: "parent_task",
+      groupTaskId: "task-9",
       kind: "image",
     });
     expect(mockApi.get).toHaveBeenCalledWith(
-      "/companies/company-1/artifacts?kind=image&groupBy=parent_issue&groupIssueId=issue-9",
+      "/companies/company-1/artifacts?kind=image&groupBy=parent_task&groupTaskId=task-9",
     );
   });
 
   it("preserves groups and selectedGroup from the envelope", async () => {
     const artifact = sampleArtifact();
     const group = {
-      id: "issue:issue-1",
-      groupBy: "issue" as const,
-      issue: artifact.issue,
+      id: "task:task-1",
+      groupBy: "task" as const,
+      task: artifact.task,
       title: "Demo reel",
       count: 3,
       mediaKinds: ["video" as const],
       previewArtifacts: [artifact],
       updatedAt: "2026-06-01T00:00:00.000Z",
-      href: "/PAP/artifacts?groupBy=issue&groupIssueId=issue-1",
+      href: "/PAP/artifacts?groupBy=task&groupTaskId=task-1",
     };
     mockApi.get.mockResolvedValue({ artifacts: [], groups: [group], nextCursor: "next" });
-    const result = await artifactsApi.list("company-1", { groupBy: "issue" });
+    const result = await artifactsApi.list("company-1", { groupBy: "task" });
     expect(result.groups).toEqual([group]);
     expect(result.nextCursor).toBe("next");
   });

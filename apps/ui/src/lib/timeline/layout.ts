@@ -104,8 +104,8 @@ export interface TimelineLayout {
   toMs: number;
   gutter: number;
   pxPerMinute: number;
-  /** ordered list of distinct issue keys present for the task hue map. */
-  issues: { key: string; label: string; color: string }[];
+  /** ordered list of distinct task keys present for the task hue map. */
+  tasks: { key: string; label: string; color: string }[];
 }
 
 export const AXIS_H = 32;
@@ -122,7 +122,7 @@ export function isCancelledStatus(status: string): boolean {
 
 /**
  * "Signal" encoding (PAP-12694, board-picked): colour spends on ONE meaning —
- * how the run started — instead of a per-issue hash rainbow. Delegated runs
+ * how the run started — instead of a per-task hash rainbow. Delegated runs
  * (kicked off by another actor) read blue; automation/self-started runs read
  * amber. The blue/amber pair is colour-blind-safe and holds contrast on both
  * light and dark backgrounds so the chart screenshots cleanly. Cancelled runs
@@ -153,8 +153,8 @@ export function actorType(actor: WorkTimelineActor | undefined): string {
   return actor?.type ?? "system";
 }
 
-/** Deterministic, stable hue per issue that reads on both light and dark. */
-export function issueColor(key: string): string {
+/** Deterministic, stable hue per task that reads on both light and dark. */
+export function taskColor(key: string): string {
   let hash = 0;
   for (let i = 0; i < key.length; i++) {
     hash = (hash * 31 + key.charCodeAt(i)) & 0xffffffff;
@@ -183,8 +183,8 @@ function kickoffEdgeRunDistanceMs(edge: WorkTimelineEdge, span: WorkTimelineSpan
   return Math.abs(spanStartMs(span) - new Date(edge.at).getTime());
 }
 
-function spanGroupKey(actorId: string, issueId: string): string {
-  return `${actorId}\0${issueId}`;
+function spanGroupKey(actorId: string, taskId: string): string {
+  return `${actorId}\0${taskId}`;
 }
 
 function closestRunForKickoffEdge(edge: WorkTimelineEdge, spans: readonly WorkTimelineSpan[]): string | null {
@@ -206,19 +206,19 @@ function buildClosestRunByKickoffEdge(
   spans: readonly WorkTimelineSpan[],
   edges: readonly WorkTimelineEdge[],
 ): Map<WorkTimelineEdge, string> {
-  const spansByActorIssue = new Map<string, WorkTimelineSpan[]>();
+  const spansByActorTask = new Map<string, WorkTimelineSpan[]>();
   for (const span of spans) {
-    const key = spanGroupKey(span.actorId, span.issueId);
-    const group = spansByActorIssue.get(key);
+    const key = spanGroupKey(span.actorId, span.taskId);
+    const group = spansByActorTask.get(key);
     if (group) group.push(span);
-    else spansByActorIssue.set(key, [span]);
+    else spansByActorTask.set(key, [span]);
   }
 
   const closestRunByEdge = new Map<WorkTimelineEdge, string>();
   for (const edge of edges) {
     const closestRunId = closestRunForKickoffEdge(
       edge,
-      spansByActorIssue.get(spanGroupKey(edge.toActorId, edge.issueId)) ?? [],
+      spansByActorTask.get(spanGroupKey(edge.toActorId, edge.taskId)) ?? [],
     );
     if (closestRunId) closestRunByEdge.set(edge, closestRunId);
   }
@@ -227,7 +227,7 @@ function buildClosestRunByKickoffEdge(
 
 /**
  * Resolve the kickoff actor for a run: the source of the delegation/assignment
- * edge that points at this run's actor on this run's issue, closest at-or-before
+ * edge that points at this run's actor on this run's task, closest at-or-before
  * the run start (falling back to the nearest such edge). Mirrors the design's
  * "avatar chip at the leading edge = who kicked it off".
  */
@@ -240,7 +240,7 @@ function resolveKickoff(
   const start = spanStartMs(span);
   let best: { edge: WorkTimelineEdge; delta: number } | null = null;
   for (const e of edges) {
-    if (e.toActorId !== span.actorId || e.issueId !== span.issueId) continue;
+    if (e.toActorId !== span.actorId || e.taskId !== span.taskId) continue;
     if (e.fromActorId === span.actorId) continue; // self-kickoff is not a delegation
     const at = new Date(e.at).getTime();
     // Prefer edges at-or-before the run start; otherwise smallest absolute gap.
@@ -274,17 +274,17 @@ export function computeLayout(result: WorkTimelineResult, opts: LayoutOptions): 
     .filter((a) => firstActivity.has(a.id)) // drop actors with no run in-window
     .sort((a, b) => (firstActivity.get(a.id)! - firstActivity.get(b.id)!));
 
-  // Issue hue map (ordered by first appearance) for the task color map.
-  const issueOrder: string[] = [];
-  const issueLabel = new Map<string, string>();
+  // Task hue map (ordered by first appearance) for the task color map.
+  const taskOrder: string[] = [];
+  const taskLabel = new Map<string, string>();
   for (const s of result.spans) {
-    const key = s.issueId;
-    if (!issueLabel.has(key)) {
-      issueOrder.push(key);
-      issueLabel.set(key, s.issueIdentifier ?? s.issueTitle ?? "issue");
+    const key = s.taskId;
+    if (!taskLabel.has(key)) {
+      taskOrder.push(key);
+      taskLabel.set(key, s.taskIdentifier ?? s.taskTitle ?? "task");
     }
   }
-  const issues = issueOrder.map((key) => ({ key, label: issueLabel.get(key)!, color: issueColor(key) }));
+  const tasks = taskOrder.map((key) => ({ key, label: taskLabel.get(key)!, color: taskColor(key) }));
 
   const barIndex = new Map<string, PositionedBar>(); // runId -> bar
   const rows: ActorRow[] = [];
@@ -348,7 +348,7 @@ export function computeLayout(result: WorkTimelineResult, opts: LayoutOptions): 
 
   // Connectors: straight agent→agent lines, connected at both ends. For each bar
   // with an agent/system kickoff, connect from the kickoff actor's nearest
-  // preceding bar (same issue preferred) to this bar's leading edge.
+  // preceding bar (same task preferred) to this bar's leading edge.
   const connectors: Connector[] = [];
   for (const row of rows) {
     for (const bar of row.bars) {
@@ -370,10 +370,10 @@ export function computeLayout(result: WorkTimelineResult, opts: LayoutOptions): 
 
   const width = gutter + ((toMs - fromMs) / 60000) * pxPerMinute + 40;
   const height = y + AXIS_H;
-  return { rows, connectors, width, height, fromMs, toMs, gutter, pxPerMinute, issues };
+  return { rows, connectors, width, height, fromMs, toMs, gutter, pxPerMinute, tasks };
 }
 
-/** The kickoff actor's bar that best precedes `target` (same issue preferred). */
+/** The kickoff actor's bar that best precedes `target` (same task preferred). */
 function nearestSourceBar(
   kickoffActorId: string,
   target: PositionedBar,
@@ -381,19 +381,19 @@ function nearestSourceBar(
   nowMs: number,
 ): PositionedBar | null {
   const targetStart = spanStartMs(target.span);
-  let sameIssue: PositionedBar | null = null;
-  let anyIssue: PositionedBar | null = null;
+  let sameTask: PositionedBar | null = null;
+  let anyTask: PositionedBar | null = null;
   for (const bar of barIndex.values()) {
     if (bar.span.actorId !== kickoffActorId) continue;
     if (bar === target) continue;
     const end = spanEndMs(bar.span, nowMs);
     if (end > targetStart + 1) continue; // must precede (small tolerance)
-    if (bar.span.issueId === target.span.issueId) {
-      if (!sameIssue || spanEndMs(sameIssue.span, nowMs) < end) sameIssue = bar;
+    if (bar.span.taskId === target.span.taskId) {
+      if (!sameTask || spanEndMs(sameTask.span, nowMs) < end) sameTask = bar;
     }
-    if (!anyIssue || spanEndMs(anyIssue.span, nowMs) < end) anyIssue = bar;
+    if (!anyTask || spanEndMs(anyTask.span, nowMs) < end) anyTask = bar;
   }
-  return sameIssue ?? anyIssue;
+  return sameTask ?? anyTask;
 }
 
 /** Choose a "nice" gridline step (ms) targeting ~120px between labels. */

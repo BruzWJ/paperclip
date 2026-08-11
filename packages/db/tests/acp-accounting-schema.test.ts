@@ -9,11 +9,11 @@ import { budgetPolicies } from "../schema/budget_policies.js";
 import { companies } from "../schema/companies.js";
 import { costEvents } from "../schema/cost_events.js";
 import { financeEvents } from "../schema/finance_events.js";
-import { issueExecutionSessions } from "../schema/issue_execution_capabilities.js";
+import { taskExecutionSessions } from "../schema/task_execution_capabilities.js";
 import {
-  issueSessionEvents,
-  issueSessionMessages,
-} from "../schema/issue_sessions.js";
+  taskSessionEvents,
+  taskSessionMessages,
+} from "../schema/task_sessions.js";
 
 // PAPERCLIP_REMOVAL_NEGATIVE_FIXTURE: usage_json, billed_cents
 
@@ -73,7 +73,7 @@ describe("canonical ACP prompt accounting schema", () => {
     expect(columns(acpPromptAccounting)).toEqual([
       "id",
       "company_id",
-      "issue_id",
+      "task_id",
       "session_id",
       "agent_id",
       "run_id",
@@ -166,17 +166,17 @@ describe("canonical ACP prompt accounting schema", () => {
   });
 
   it("binds canonical Session event and message rows only to canonical runs", () => {
-    expect(foreignKeyTargetNames(issueSessionEvents)).toContain(
-      "issue_execution_runs",
+    expect(foreignKeyTargetNames(taskSessionEvents)).toContain(
+      "task_execution_runs",
     );
-    expect(foreignKeyTargetNames(issueSessionMessages)).toContain(
-      "issue_execution_runs",
+    expect(foreignKeyTargetNames(taskSessionMessages)).toContain(
+      "task_execution_runs",
     );
     expect(
-      checkSql(issueSessionEvents, "issue_session_events_type_check"),
+      checkSql(taskSessionEvents, "task_session_events_type_check"),
     ).not.toContain("session.next.compaction");
     expect(
-      checkSql(issueSessionMessages, "issue_session_messages_type_check"),
+      checkSql(taskSessionMessages, "task_session_messages_type_check"),
     ).not.toContain("'compaction'");
   });
 });
@@ -187,7 +187,7 @@ describe("canonical ACP cost transition schema", () => {
       "id",
       "accounting_id",
       "company_id",
-      "issue_id",
+      "task_id",
       "agent_id",
       "run_id",
       "run_kind",
@@ -290,10 +290,10 @@ describe("canonical ACP cost transition schema", () => {
       ).toBe("numeric");
     }
     expectTypeOf<
-      (typeof issueExecutionSessions.$inferSelect)["costCursorAmount"]
+      (typeof taskExecutionSessions.$inferSelect)["costCursorAmount"]
     >().toEqualTypeOf<MoneyAmount | null>();
-    expect(foreignKeyNames(issueExecutionSessions)).toContain(
-      "issue_execution_sessions_cost_cursor_currency_fk",
+    expect(foreignKeyNames(taskExecutionSessions)).toContain(
+      "task_execution_sessions_cost_cursor_currency_fk",
     );
   });
 });

@@ -18,8 +18,8 @@ vi.mock("@/lib/router", () => ({
   ),
 }));
 
-vi.mock("../api/issues", () => ({
-  issuesApi: {
+vi.mock("../api/tasks", () => ({
+  tasksApi: {
     get: vi.fn(),
   },
 }));

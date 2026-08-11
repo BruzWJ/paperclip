@@ -34,7 +34,7 @@ describe("SystemNotice", () => {
     const node = render(
       <SystemNotice
         tone="warning"
-        body="Paperclip needs a disposition before this issue can continue."
+        body="Paperclip needs a disposition before this task can continue."
       />,
     );
 
@@ -42,7 +42,7 @@ describe("SystemNotice", () => {
     expect(status.length).toBe(1);
     expect(status[0]?.getAttribute("aria-label")).toBe("System warning");
     expect(node.textContent).toContain(
-      "Paperclip needs a disposition before this issue can continue.",
+      "Paperclip needs a disposition before this task can continue.",
     );
   });
 
@@ -74,10 +74,10 @@ describe("SystemNotice", () => {
             title: "Required action",
             rows: [
               {
-                kind: "issue",
-                label: "Source issue",
+                kind: "task",
+                label: "Source task",
                 identifier: "PAP-3440",
-                href: "/PAP/issues/PAP-3440",
+                href: "/PAP/tasks/PAP-3440",
               },
             ],
           },
@@ -136,10 +136,10 @@ describe("SystemNotice", () => {
           {
             rows: [
               {
-                kind: "issue",
-                label: "Recovery issue",
+                kind: "task",
+                label: "Recovery task",
                 identifier: "PAP-3440",
-                href: "/PAP/issues/PAP-3440",
+                href: "/PAP/tasks/PAP-3440",
                 title: "Disposition recovery",
               },
               {
@@ -162,7 +162,7 @@ describe("SystemNotice", () => {
     );
 
     const links = Array.from(node.querySelectorAll("a")).map((a) => a.getAttribute("href"));
-    expect(links).toContain("/PAP/issues/PAP-3440");
+    expect(links).toContain("/PAP/tasks/PAP-3440");
     expect(links).toContain("/PAP/agents/architect");
     expect(links).toContain("/PAP/agents/codexcoder/runs/9cdba892");
     expect(node.textContent).toContain("PAP-3440");
@@ -182,7 +182,7 @@ describe("SystemNotice", () => {
             rows: [
               { kind: "agent", label: "Reassigned to", name: "ClaudeFixer" },
               { kind: "run", label: "Run", runId: "abc12345" },
-              { kind: "issue", label: "Issue", identifier: "PAP-1" },
+              { kind: "task", label: "Task", identifier: "PAP-1" },
             ],
           },
         ]}

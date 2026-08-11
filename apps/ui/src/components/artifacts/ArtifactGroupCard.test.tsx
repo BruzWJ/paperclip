@@ -22,31 +22,31 @@ function sampleArtifact(overrides: Partial<CompanyArtifact> = {}): CompanyArtifa
     contentPath: "/files/hero.png",
     openPath: "/files/hero.png",
     downloadPath: "/files/hero.png?download=1",
-    issue: { id: "issue-1", identifier: "PAP-42", title: "Ship launch" },
+    task: { id: "task-1", identifier: "PAP-42", title: "Ship launch" },
     project: null,
     createdByAgent: null,
     updatedAt: "2026-06-01T00:00:00.000Z",
-    href: "/PAP/issues/PAP-42#attachment-1",
+    href: "/PAP/tasks/PAP-42#attachment-1",
     ...overrides,
   } as CompanyArtifact;
 }
 
 function sampleGroup(overrides: Partial<CompanyArtifactGroup> = {}): CompanyArtifactGroup {
   return {
-    id: "issue:issue-1",
-    groupBy: "issue",
-    issue: { id: "issue-1", identifier: "PAP-42", title: "Ship launch" },
+    id: "task:task-1",
+    groupBy: "task",
+    task: { id: "task-1", identifier: "PAP-42", title: "Ship launch" },
     title: "Ship launch",
     count: 3,
     mediaKinds: ["image"],
     previewArtifacts: [sampleArtifact()],
     updatedAt: "2026-06-01T00:00:00.000Z",
-    href: "/PAP/artifacts?groupBy=issue&groupIssueId=issue-1",
+    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-1",
     ...overrides,
   };
 }
 
-function render(group: CompanyArtifactGroup, to = "?groupBy=issue&groupIssueId=issue-1") {
+function render(group: CompanyArtifactGroup, to = "?groupBy=task&groupTaskId=task-1") {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -100,7 +100,7 @@ describe("ArtifactGroupCard", () => {
     mounted = render(sampleGroup());
     const anchor = mounted.container.querySelector("a") as HTMLAnchorElement;
     expect(anchor).not.toBeNull();
-    expect(anchor.getAttribute("href")).toContain("groupIssueId=issue-1");
+    expect(anchor.getAttribute("href")).toContain("groupTaskId=task-1");
     expect(mounted.container.textContent).toContain("PAP-42");
     expect(mounted.container.textContent).toContain("Ship launch");
   });

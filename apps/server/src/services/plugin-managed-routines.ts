@@ -21,14 +21,14 @@ import { ROUTINE_STATUSES } from "@paperclipai/shared";
 import { notFound, unprocessable } from "../errors.js";
 import { logActivity } from "./activity-log.js";
 import { routineService } from "./routines.js";
-import type { OrdinaryIssueRuntime } from "./ordinary-issue-runtime.js";
+import type { OrdinaryTaskRuntime } from "./ordinary-task-runtime.js";
 
 const MANAGED_ROUTINE_RESOURCE_KIND = "routine";
 
 interface PluginManagedRoutineServiceOptions {
   pluginId: string;
   manifest: import("@paperclipai/shared").PaperclipPluginManifestV1;
-  ordinaryIssues: OrdinaryIssueRuntime;
+  ordinaryTasks: OrdinaryTaskRuntime;
 }
 
 interface RoutineOverrides {
@@ -50,7 +50,7 @@ function buildRoutineDefaults(declaration: PluginManagedRoutineDeclaration) {
     catchUpPolicy: declaration.catchUpPolicy ?? "skip_missed",
     variables: declaration.variables ?? [],
     triggers: declaration.triggers ?? [],
-    issueTemplate: declaration.issueTemplate ?? null,
+    taskTemplate: declaration.taskTemplate ?? null,
   };
 }
 
@@ -127,7 +127,7 @@ export function pluginManagedRoutineService(
 ) {
   const pluginKey = options.manifest.id;
   const routinesSvc = routineService(db, {
-    ordinaryIssues: options.ordinaryIssues,
+    ordinaryTasks: options.ordinaryTasks,
   });
 
   function declarationFor(routineKey: string) {

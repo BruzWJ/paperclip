@@ -22,7 +22,7 @@ import { formatMoneyAmount } from "./utils";
 /**
  * Source kinds the queue can fully resolve in-row. Everything else deep-links
  * to its native surface — reviews and Board requests use the existing
- * issue-aware continuation flow.
+ * task-aware continuation flow.
  */
 export const INLINE_RESOLVABLE_SOURCE_KINDS: ReadonlySet<AttentionSourceKind> = new Set<AttentionSourceKind>([
   "approval",
@@ -589,7 +589,7 @@ export function groupAttentionItems(
   }
 
   // type / project: group, then order groups by most-recent activity so the
-  // freshest section floats to the top (matching Inbox's issue-group ordering).
+  // freshest section floats to the top (matching Inbox's task-group ordering).
   const groups = new Map<string, { label: string; items: AttentionItem[]; latest: number }>();
   for (const item of items) {
     const resolved =

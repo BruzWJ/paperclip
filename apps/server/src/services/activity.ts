@@ -1,7 +1,7 @@
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { activityLog, issues } from "@paperclipai/db";
-import { visibleIssueCondition } from "./issue-visibility.js";
+import { activityLog, tasks } from "@paperclipai/db";
+import { visibleTaskCondition } from "./task-visibility.js";
 
 export interface ActivityFilters {
   companyId: string;
@@ -23,7 +23,7 @@ export function normalizeActivityLimit(limit: number | undefined) {
 }
 
 export function activityService(db: Db) {
-  const issueIdAsText = sql<string>`${issues.id}::text`;
+  const taskIdAsText = sql<string>`${tasks.id}::text`;
 
   return {
     list: (filters: ActivityFilters) => {
@@ -44,18 +44,18 @@ export function activityService(db: Db) {
         .select({ activityLog })
         .from(activityLog)
         .leftJoin(
-          issues,
+          tasks,
           and(
-            eq(activityLog.entityType, sql`'issue'`),
-            eq(activityLog.entityId, issueIdAsText),
+            eq(activityLog.entityType, sql`'task'`),
+            eq(activityLog.entityId, taskIdAsText),
           ),
         )
         .where(
           and(
             ...conditions,
             or(
-              sql`${activityLog.entityType} != 'issue'`,
-              visibleIssueCondition(),
+              sql`${activityLog.entityType} != 'task'`,
+              visibleTaskCondition(),
             ),
           ),
         )
@@ -64,14 +64,14 @@ export function activityService(db: Db) {
         .then((rows) => rows.map((row) => row.activityLog));
     },
 
-    forIssue: (issueId: string) =>
+    forTask: (taskId: string) =>
       db
         .select()
         .from(activityLog)
         .where(
           and(
-            eq(activityLog.entityType, "issue"),
-            eq(activityLog.entityId, issueId),
+            eq(activityLog.entityType, "task"),
+            eq(activityLog.entityId, taskId),
           ),
         )
         .orderBy(desc(activityLog.createdAt)),

@@ -10,28 +10,28 @@ Paperclip core has no AgentMemory or memory-specific API.
 
 | Paperclip memory cell | Read tool | AgentMemory namespace |
 | --- | --- | --- |
-| Issue + current agent | `read_issue_agent_memory(issueId, query)` | issue scope + company-scoped agent principal |
-| Issue shared | `read_issue_shared_memory(issueId, query)` | issue scope + company-scoped shared principal |
+| Task + current agent | `read_task_agent_memory(taskId, query)` | task scope + company-scoped agent principal |
+| Task shared | `read_task_shared_memory(taskId, query)` | task scope + company-scoped shared principal |
 | Company + current agent | `read_company_agent_memory(query)` | company scope + company-scoped agent principal |
 | Company shared | `read_company_shared_memory(query)` | company scope + company-scoped shared principal |
 
 The provider-visible MCP names are prefixed with
-`paperclip.agentmemory__`. Sub-issues and other company issues use the same two
-issue tools after the agent obtains an issue ID through Paperclip's ordinary
-issue tools.
+`paperclip.agentmemory__`. Sub-tasks and other company tasks use the same two
+task tools after the agent obtains a task ID through Paperclip's ordinary
+task tools.
 
 There is no separate memory-access configuration. Paperclip derives authority
 from the agent's existing context-access matrix on every tool call:
 
-- issue-agent memory requires the matching current, descendant, or company
+- task-agent memory requires the matching current, descendant, or company
   agent-run detail grant;
-- issue-shared memory requires the matching comment detail grant;
-- company-agent memory requires company issue listing plus company agent-run
+- task-shared memory requires the matching comment detail grant;
+- company-agent memory requires company task listing plus company agent-run
   detail;
-- company-shared memory requires company issue listing plus company comment
+- company-shared memory requires company task listing plus company comment
   detail.
 
-Knowing an issue ID is not authority. The host must also resolve that issue as
+Knowing a task ID is not authority. The host must also resolve that task as
 visible within the current agent run.
 
 ## AgentMemory coordinate translation
@@ -44,8 +44,8 @@ directly:
 | --- | --- | --- |
 | `companyId + agentId` | opaque company scope | opaque company-scoped agent |
 | `companyId` | opaque company scope | opaque company-scoped shared principal |
-| `companyId + issueId + agentId` | opaque issue scope | opaque company-scoped agent |
-| `companyId + issueId` | opaque issue scope | opaque company-scoped shared principal |
+| `companyId + taskId + agentId` | opaque task scope | opaque company-scoped agent |
+| `companyId + taskId` | opaque task scope | opaque company-scoped shared principal |
 
 Raw Paperclip IDs never leave the plugin. Every coordinate is hashed, and every
 observation session ID carries an opaque scope prefix. Memory-tool searches use
@@ -60,10 +60,10 @@ Immediately before each provider request, the blocking plugin hook:
 
 1. reads the canonical Session through the exact source-message snapshot;
 2. records newly visible current-agent prompts, finalized assistant text, and
-   bounded completed/failed non-memory tool results into issue-agent and
+   bounded completed/failed non-memory tool results into task-agent and
    company-agent memory;
-3. records canonical issue comments through the same projection boundary into
-   issue-shared and company-shared memory.
+3. records canonical task comments through the same projection boundary into
+   task-shared and company-shared memory.
 
 The hook is capture-only: it never searches or injects memory into a provider
 request. Agents retrieve memory only by calling the four read-only
@@ -71,7 +71,7 @@ Paperclip-managed memory tools. A capture failure stops provider transmission,
 so an agent never advances past a memory update that the plugin could not
 confirm.
 
-Terminal run events eagerly warm issue-agent and company-agent memory so a
+Terminal run events eagerly warm task-agent and company-agent memory so a
 later memory-tool call can recall the completed run even from another provider
 session.
 Shared comments need no second event path: the next blocking prompt catches

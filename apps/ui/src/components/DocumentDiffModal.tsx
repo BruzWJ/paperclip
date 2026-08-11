@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { QueryKey } from "@tanstack/react-query";
 import type { DocumentRevision } from "@paperclipai/shared";
-import { issuesApi } from "../api/issues";
+import { tasksApi } from "../api/tasks";
 import { queryKeys } from "../lib/queryKeys";
 import { buildLineDiff, type DiffRow } from "../lib/line-diff";
 import { relativeTime } from "../lib/utils";
@@ -53,7 +53,7 @@ function DocumentDiffEmptyState({ revisionCount }: { revisionCount: number }) {
 }
 
 export function DocumentDiffModal({
-  issueId,
+  taskId,
   documentKey,
   latestRevisionNumber,
   open,
@@ -61,7 +61,7 @@ export function DocumentDiffModal({
   revisionsQueryKey,
   revisionsQueryFn,
 }: {
-  issueId?: string;
+  taskId?: string;
   documentKey: string;
   latestRevisionNumber: number;
   open: boolean;
@@ -70,8 +70,8 @@ export function DocumentDiffModal({
   revisionsQueryFn?: () => Promise<DocumentRevision[]>;
 }) {
   const { data: revisions } = useQuery({
-    queryKey: revisionsQueryKey ?? queryKeys.issues.documentRevisions(issueId ?? "", documentKey),
-    queryFn: () => revisionsQueryFn ? revisionsQueryFn() : issuesApi.listDocumentRevisions(issueId ?? "", documentKey),
+    queryKey: revisionsQueryKey ?? queryKeys.tasks.documentRevisions(taskId ?? "", documentKey),
+    queryFn: () => revisionsQueryFn ? revisionsQueryFn() : tasksApi.listDocumentRevisions(taskId ?? "", documentKey),
     enabled: open,
   });
 

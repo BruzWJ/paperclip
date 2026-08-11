@@ -14,7 +14,7 @@ import type { CompanySkillFileInventoryEntry, CompanySkillSharingScope } from "@
 import { agents } from "./agents.js";
 import { authUsers } from "./auth.js";
 import { companies } from "./companies.js";
-import { issues } from "./issues.js";
+import { tasks } from "./tasks.js";
 import { folders } from "./folders.js";
 
 export const companySkills = pgTable(
@@ -216,20 +216,20 @@ export const companySkillTestRuns = pgTable(
     skillVersionId: uuid("skill_version_id").notNull().references(() => companySkillVersions.id, { onDelete: "restrict" }),
     agentId: uuid("agent_id").notNull().references(() => agents.id, { onDelete: "restrict" }),
     agentConfigSnapshot: jsonb("agent_config_snapshot").$type<Record<string, unknown>>().notNull().default({}),
-    issueId: uuid("issue_id").notNull().references(() => issues.id, { onDelete: "restrict" }),
+    taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "restrict" }),
     templateId: text("template_id"),
     templateName: text("template_name"),
     templateBody: text("template_body"),
     renderedTemplateBody: text("rendered_template_body"),
-    harnessIssueRequest: text("harness_issue_request").notNull().default(""),
+    harnessTaskRequest: text("harness_task_request").notNull().default(""),
     status: text("status").notNull().default("queued"),
     outputDocumentKey: text("output_document_key").notNull().default("output"),
     outputSnapshot: text("output_snapshot").notNull().default(""),
     error: text("error"),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     supersededAt: timestamp("superseded_at", { withTimezone: true }),
-    harnessIssueExpiresAt: timestamp("harness_issue_expires_at", { withTimezone: true }),
-    harnessIssueDeletedAt: timestamp("harness_issue_deleted_at", { withTimezone: true }),
+    harnessTaskExpiresAt: timestamp("harness_task_expires_at", { withTimezone: true }),
+    harnessTaskDeletedAt: timestamp("harness_task_deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -239,16 +239,16 @@ export const companySkillTestRuns = pgTable(
       table.skillId,
       table.createdAt,
     ),
-    companyIssueIdx: uniqueIndex("company_skill_test_runs_company_issue_idx").on(table.companyId, table.issueId),
+    companyTaskIdx: uniqueIndex("company_skill_test_runs_company_task_idx").on(table.companyId, table.taskId),
     companyInputCreatedIdx: index("company_skill_test_runs_company_input_created_idx").on(
       table.companyId,
       table.inputId,
       table.createdAt,
     ),
     companyStatusIdx: index("company_skill_test_runs_company_status_idx").on(table.companyId, table.status),
-    companyHarnessIssueExpiresIdx: index("company_skill_test_runs_company_harness_expires_idx").on(
+    companyHarnessTaskExpiresIdx: index("company_skill_test_runs_company_harness_expires_idx").on(
       table.companyId,
-      table.harnessIssueExpiresAt,
+      table.harnessTaskExpiresAt,
     ),
   }),
 );

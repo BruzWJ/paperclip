@@ -593,7 +593,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                     </div>
                   ) : (
                     <div className="text-xs text-muted-foreground">
-                      Not set. Runs use an instance-managed issue folder.
+                      Not set. Runs use an instance-managed task folder.
                     </div>
                   )}
                 </div>

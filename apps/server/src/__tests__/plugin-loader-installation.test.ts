@@ -37,7 +37,7 @@ const manifest = {
   description: "Exercises isolated managed installation roots.",
   author: "Paperclip",
   categories: ["automation"],
-  capabilities: ["issues.read"],
+  capabilities: ["tasks.read"],
   entrypoints: { worker: "./worker.js" },
 };
 let materializedManifest: Record<string, unknown> = manifest;

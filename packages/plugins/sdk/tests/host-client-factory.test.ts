@@ -216,21 +216,21 @@ describe("createHostClientHandlers invocation company scope", () => {
   it("gates withdrawal and injects the host-owned operation identity", async () => {
     const withdraw = vi.fn(async (_params, operation) => ({
       operationId: operation.hostRpcOperationId,
-      issue: { id: "issue-1", status: "cancelled" },
+      task: { id: "task-1", status: "cancelled" },
       retried: false,
     }));
     const services = {
-      issues: { withdraw },
+      tasks: { withdraw },
     } as unknown as HostServices;
     const handlers = createHostClientHandlers({
       pluginId: "paperclip.test",
-      capabilities: ["issues.withdraw"],
+      capabilities: ["tasks.withdraw"],
       services,
     });
 
-    await expect(handlers["issues.withdraw"]({
+    await expect(handlers["tasks.withdraw"]({
       companyId: "company-a",
-      issueId: "issue-1",
+      taskId: "task-1",
       message: "No longer needed",
     }, {
       invocationScope: { companyId: "company-a" },
@@ -241,15 +241,15 @@ describe("createHostClientHandlers invocation company scope", () => {
     });
     expect(withdraw).toHaveBeenCalledWith({
       companyId: "company-a",
-      issueId: "issue-1",
+      taskId: "task-1",
       message: "No longer needed",
     }, {
       hostRpcOperationId: "host-op-1",
     });
 
-    await expect(handlers["issues.withdraw"]({
+    await expect(handlers["tasks.withdraw"]({
       companyId: "company-a",
-      issueId: "issue-1",
+      taskId: "task-1",
       message: "No host identity",
     }, {
       invocationScope: { companyId: "company-a" },
@@ -260,9 +260,9 @@ describe("createHostClientHandlers invocation company scope", () => {
       capabilities: [],
       services,
     });
-    await expect(denied["issues.withdraw"]({
+    await expect(denied["tasks.withdraw"]({
       companyId: "company-a",
-      issueId: "issue-1",
+      taskId: "task-1",
       message: "No longer needed",
     }, {
       invocationScope: { companyId: "company-a" },
@@ -274,23 +274,23 @@ describe("createHostClientHandlers invocation company scope", () => {
 describe("createHostClientHandlers plugin run-context scope", () => {
   it.each([
     [
-      "issues.list",
-      "issues.read",
+      "tasks.list",
+      "tasks.read",
       { companyId: "company-a" },
     ],
     [
-      "issues.get",
-      "issues.read",
-      { companyId: "company-a", issueId: "issue-a" },
+      "tasks.get",
+      "tasks.read",
+      { companyId: "company-a", taskId: "task-a" },
     ],
     [
-      "issues.creatorCallback.register",
-      "issues.create",
+      "tasks.creatorCallback.register",
+      "tasks.create",
       { callbackKey: "creator", callbackVersion: "1" },
     ],
     [
-      "issues.create",
-      "issues.create",
+      "tasks.create",
+      "tasks.create",
       {
         companyId: "company-a",
         request: "Create ordinary plugin work.",
@@ -300,27 +300,27 @@ describe("createHostClientHandlers plugin run-context scope", () => {
       },
     ],
     [
-      "issues.update",
-      "issues.update",
+      "tasks.update",
+      "tasks.update",
       {
         companyId: "company-a",
-        issueId: "issue-a",
+        taskId: "task-a",
         input: { kind: "message", message: "Creator message." },
       },
     ],
     [
-      "issues.withdraw",
-      "issues.withdraw",
+      "tasks.withdraw",
+      "tasks.withdraw",
       {
         companyId: "company-a",
-        issueId: "issue-a",
+        taskId: "task-a",
         message: "No longer needed.",
       },
     ],
   ] as const)(
     "rejects ordinary %s control-plane access while an agent run context is active",
     async (method, capability, params) => {
-      const ordinaryIssueServices = {
+      const ordinaryTaskServices = {
         list: vi.fn(async () => []),
         get: vi.fn(async () => null),
         registerCreatorCallback: vi.fn(async () => ({
@@ -328,15 +328,15 @@ describe("createHostClientHandlers plugin run-context scope", () => {
           callbackVersion: "1",
           registered: true as const,
         })),
-        create: vi.fn(async () => ({ id: "issue-a" })),
-        update: vi.fn(async () => ({ id: "issue-a" })),
-        withdraw: vi.fn(async () => ({ issue: { id: "issue-a" } })),
+        create: vi.fn(async () => ({ id: "task-a" })),
+        update: vi.fn(async () => ({ id: "task-a" })),
+        withdraw: vi.fn(async () => ({ task: { id: "task-a" } })),
       };
       const handlers = createHostClientHandlers({
         pluginId: "paperclip.test",
         capabilities: [capability],
         services: {
-          issues: ordinaryIssueServices,
+          tasks: ordinaryTaskServices,
         } as unknown as HostServices,
       });
 
@@ -357,11 +357,11 @@ describe("createHostClientHandlers plugin run-context scope", () => {
         name: "InvocationScopeDeniedError",
         code: PLUGIN_RPC_ERROR_CODES.INVOCATION_SCOPE_DENIED,
         message: expect.stringContaining(
-          "installation issue control plane is unavailable while serving an agent run",
+          "installation task control plane is unavailable while serving an agent run",
         ),
       });
       expect(
-        Object.values(ordinaryIssueServices).reduce(
+        Object.values(ordinaryTaskServices).reduce(
           (callCount, delegate) => callCount + delegate.mock.calls.length,
           0,
         ),
@@ -369,17 +369,17 @@ describe("createHostClientHandlers plugin run-context scope", () => {
     },
   );
 
-  it("allows a run-serving issue read only with the exact active opaque handle", async () => {
-    const listCompanyIssues = vi.fn(async () => ({
+  it("allows a run-serving task read only with the exact active opaque handle", async () => {
+    const listCompanyTasks = vi.fn(async () => ({
       items: [],
       nextCursor: null,
     }));
     const services = {
-      runIssues: { listCompanyIssues },
+      runTasks: { listCompanyTasks },
     } as unknown as HostServices;
     const handlers = createHostClientHandlers({
       pluginId: "paperclip.test",
-      capabilities: ["issues.read"],
+      capabilities: ["tasks.read"],
       services,
     });
     const params = {
@@ -388,33 +388,33 @@ describe("createHostClientHandlers plugin run-context scope", () => {
     };
 
     await expect(
-      handlers["run.issues.listCompanyIssues"](params, {
+      handlers["run.tasks.listCompanyTasks"](params, {
         invocationScope: {
           companyId: "company-a",
           pluginRunContextHandle: "pc_plugin_ctx_v1_exact",
         },
       }),
     ).resolves.toEqual({ items: [], nextCursor: null });
-    expect(listCompanyIssues).toHaveBeenCalledWith(params);
+    expect(listCompanyTasks).toHaveBeenCalledWith(params);
   });
 
   it("gates privileged run identity resolution by capability and exact opaque handle", async () => {
     const resolved = {
       companyId: "company-a",
-      issueId: "issue-a",
+      taskId: "task-a",
       agentId: "agent-a",
       runId: "run-a",
       projectId: null,
       contextAccess: {
         carry_context: false,
-        read_issue_comments: false,
-        read_issue_agent_run: false,
-        list_sub_issues: false,
-        read_sub_issue_comments: false,
-        read_sub_issue_agent_run: false,
-        list_company_issues: false,
-        read_company_issue_comments: false,
-        read_company_issue_agent_run: false,
+        read_task_comments: false,
+        read_task_agent_run: false,
+        list_sub_tasks: false,
+        read_sub_task_comments: false,
+        read_sub_task_agent_run: false,
+        list_company_tasks: false,
+        read_company_task_comments: false,
+        read_company_task_agent_run: false,
       },
     };
     const resolveContext = vi.fn(async () => resolved);
@@ -426,7 +426,7 @@ describe("createHostClientHandlers plugin run-context scope", () => {
       },
     };
     const services = {
-      runIssues: { resolveContext },
+      runTasks: { resolveContext },
     } as unknown as HostServices;
 
     await expect(createHostClientHandlers({
@@ -444,17 +444,17 @@ describe("createHostClientHandlers plugin run-context scope", () => {
   });
 
   it("keeps privileged runtime records inside the invocation company", async () => {
-    const readIssueComments = vi.fn(async () => ({ items: [], nextCursor: null }));
+    const readTaskComments = vi.fn(async () => ({ items: [], nextCursor: null }));
     const readSession = vi.fn(async () => ({
       session: {
         companyId: "company-a",
-        issueId: "issue-a",
+        taskId: "task-a",
         sessionId: "session-a",
       },
       snapshotHighWaterSeq: 15,
     }) as never);
     const services = {
-      runtimeRecords: { readIssueComments, readSession },
+      runtimeRecords: { readTaskComments, readSession },
     } as unknown as HostServices;
     const handlers = createHostClientHandlers({
       pluginId: "paperclip.test",
@@ -462,11 +462,11 @@ describe("createHostClientHandlers plugin run-context scope", () => {
       services,
     });
 
-    await expect(handlers["runtime.records.readIssueComments"](
-      { companyId: "company-b", issueId: "issue-b" },
+    await expect(handlers["runtime.records.readTaskComments"](
+      { companyId: "company-b", taskId: "task-b" },
       { invocationScope: { companyId: "company-a" } },
     )).rejects.toBeInstanceOf(InvocationScopeDeniedError);
-    expect(readIssueComments).not.toHaveBeenCalled();
+    expect(readTaskComments).not.toHaveBeenCalled();
 
     const sessionInput = {
       companyId: "company-a",
@@ -479,7 +479,7 @@ describe("createHostClientHandlers plugin run-context scope", () => {
       invocationScope: {
         companyId: "company-a",
         canonicalSession: {
-          issueId: "issue-a",
+          taskId: "task-a",
           sessionId: "session-a",
           snapshotHighWaterSeq: 15,
         },
@@ -493,7 +493,7 @@ describe("createHostClientHandlers plugin run-context scope", () => {
         invocationScope: {
           companyId: "company-a",
           canonicalSession: {
-            issueId: "issue-a",
+            taskId: "task-a",
             sessionId: "session-a",
             snapshotHighWaterSeq: 15,
           },
@@ -519,7 +519,7 @@ describe("createHostClientHandlers plugin run-context scope", () => {
 
   it("uses the shared gateway trace DTO unchanged in the plugin protocol", async () => {
     type PluginTrace =
-      WorkerToHostMethods["run.issues.readIssueAgentRun"][1];
+      WorkerToHostMethods["run.tasks.readTaskAgentRun"][1];
     expectTypeOf<PluginTrace>().toEqualTypeOf<ProviderSafeRunTrace>();
 
     const trace: ProviderSafeRunTrace = {
@@ -549,13 +549,13 @@ describe("createHostClientHandlers plugin run-context scope", () => {
         { commentId: "comment-a" },
       ],
     };
-    const readIssueAgentRun = vi.fn(async () => trace);
+    const readTaskAgentRun = vi.fn(async () => trace);
     const services = {
-      runIssues: { readIssueAgentRun },
+      runTasks: { readTaskAgentRun },
     } as unknown as HostServices;
     const handlers = createHostClientHandlers({
       pluginId: "paperclip.test",
-      capabilities: ["issues.read"],
+      capabilities: ["tasks.read"],
       services,
     });
     const params = {
@@ -563,7 +563,7 @@ describe("createHostClientHandlers plugin run-context scope", () => {
       runId: "run-a",
     };
 
-    const result = await handlers["run.issues.readIssueAgentRun"](params, {
+    const result = await handlers["run.tasks.readTaskAgentRun"](params, {
       invocationScope: {
         companyId: "company-a",
         pluginRunContextHandle: "pc_plugin_ctx_v1_exact",
@@ -571,7 +571,7 @@ describe("createHostClientHandlers plugin run-context scope", () => {
     });
 
     expect(result).toBe(trace);
-    expect(readIssueAgentRun).toHaveBeenCalledWith(params);
+    expect(readTaskAgentRun).toHaveBeenCalledWith(params);
   });
 
   it.each([
@@ -591,43 +591,43 @@ describe("createHostClientHandlers plugin run-context scope", () => {
     ],
     ["expired invocation", { invalidInvocationScope: true }],
   ])("rejects %s without calling the run reader", async (_label, context) => {
-    const readIssueComments = vi.fn(async () => ({
+    const readTaskComments = vi.fn(async () => ({
       items: [],
       nextCursor: null,
     }));
     const services = {
-      runIssues: { readIssueComments },
+      runTasks: { readTaskComments },
     } as unknown as HostServices;
     const handlers = createHostClientHandlers({
       pluginId: "paperclip.test",
-      capabilities: ["issues.read"],
+      capabilities: ["tasks.read"],
       services,
     });
 
     await expect(
-      handlers["run.issues.readIssueComments"](
+      handlers["run.tasks.readTaskComments"](
         { runContextHandle: "pc_plugin_ctx_v1_exact" },
         context,
       ),
     ).rejects.toBeInstanceOf(InvocationScopeDeniedError);
-    expect(readIssueComments).not.toHaveBeenCalled();
+    expect(readTaskComments).not.toHaveBeenCalled();
   });
 
   it("keeps the installation control plane available outside runs and unrelated control-plane calls available during runs", async () => {
     const list = vi.fn(async () => []);
     const managedGet = vi.fn(async () => ({ routine: null }));
     const services = {
-      issues: { list },
+      tasks: { list },
       routines: { managedGet },
     } as unknown as HostServices;
     const handlers = createHostClientHandlers({
       pluginId: "paperclip.test",
-      capabilities: ["issues.read", "routines.managed"],
+      capabilities: ["tasks.read", "routines.managed"],
       services,
     });
 
     await expect(
-      handlers["issues.list"](
+      handlers["tasks.list"](
         { companyId: "company-a" },
         { invocationScope: { companyId: "company-a" } },
       ),

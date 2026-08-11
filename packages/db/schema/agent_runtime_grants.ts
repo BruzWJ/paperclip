@@ -41,14 +41,14 @@ export const agentContextGrants = pgTable(
       "agent_context_grants_key_check",
       sql`${table.key} in (
         'carry_context',
-        'read_issue_comments',
-        'read_issue_agent_run',
-        'list_sub_issues',
-        'read_sub_issue_comments',
-        'read_sub_issue_agent_run',
-        'list_company_issues',
-        'read_company_issue_comments',
-        'read_company_issue_agent_run'
+        'read_task_comments',
+        'read_task_agent_run',
+        'list_sub_tasks',
+        'read_sub_task_comments',
+        'read_sub_task_agent_run',
+        'list_company_tasks',
+        'read_company_task_comments',
+        'read_company_task_agent_run'
       )`,
     ),
     foreignKey({
@@ -86,7 +86,7 @@ export const agentActionGrants = pgTable(
     check(
       "agent_action_grants_key_check",
       sql`${table.key} in (
-        'issue_create',
+        'task_create',
         'mention_board',
         'agent_hire',
         'agent_configure',
@@ -191,7 +191,7 @@ export const runtimeAgentConfigurationAudits = pgTable(
     }),
     actorPluginInstallationId: uuid("actor_plugin_installation_id"),
     runId: uuid("run_id"),
-    issueExecutionRefId: uuid("issue_execution_ref_id"),
+    taskExecutionRefId: uuid("task_execution_ref_id"),
     idempotencyKey: text("idempotency_key"),
     requestDigest: text("request_digest").notNull(),
     changedKeys: jsonb("changed_keys").$type<string[]>().notNull(),
@@ -227,21 +227,21 @@ export const runtimeAgentConfigurationAudits = pgTable(
           and ${table.actorAgentId} is null
           and ${table.actorPluginInstallationId} is null
           and ${table.runId} is null
-          and ${table.issueExecutionRefId} is null
+          and ${table.taskExecutionRefId} is null
         ) or (
           ${table.actorKind} = 'agent'
           and ${table.actorAgentId} is not null
           and ${table.actorUserId} is null
           and ${table.actorPluginInstallationId} is null
           and ${table.runId} is not null
-          and ${table.issueExecutionRefId} is not null
+          and ${table.taskExecutionRefId} is not null
         ) or (
           ${table.actorKind} = 'plugin'
           and ${table.actorAgentId} is null
           and ${table.actorUserId} is null
           and ${table.actorPluginInstallationId} is not null
           and ${table.runId} is null
-          and ${table.issueExecutionRefId} is null
+          and ${table.taskExecutionRefId} is null
         )
       )`,
     ),

@@ -725,7 +725,7 @@ describe("secretService", () => {
       consumerId: agentId,
       actorType: "agent",
       actorId: agentId,
-      issueId: "issue-1",
+      taskId: "task-1",
       runId: "run-1",
       allowedBindingIds: [bindingId],
     });
@@ -756,7 +756,7 @@ describe("secretService", () => {
       consumerType: "agent",
       consumerId: agentId,
       configPath: "env.API_KEY",
-      issueId: "issue-1",
+      taskId: "task-1",
       runId: "run-1",
       outcome: "success",
       errorCode: null,

@@ -21,7 +21,7 @@ import { UserSecretChip } from "./user-secret-presentation";
 /**
  * Shared "set my value" dialog for a user-secret definition. Used both from the
  * Secrets → My secrets tab and from the missing-required-secret warning surfaces
- * (task run / issue failure), so a user can satisfy a required secret from either
+ * (task run / task failure), so a user can satisfy a required secret from either
  * place with identical behavior.
  */
 export function SetMyUserSecretDialog({

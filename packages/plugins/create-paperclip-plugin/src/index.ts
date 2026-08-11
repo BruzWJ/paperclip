@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  validationDetails,
   PLUGIN_CATEGORIES,
   pluginPackageNameSchema,
   type PluginCategory,
@@ -132,7 +133,7 @@ export function scaffoldPluginProject(options: ScaffoldPluginOptions): string {
 
   const parsedPackageName = pluginPackageNameSchema.safeParse(options.pluginName);
   if (!parsedPackageName.success) {
-    throw new Error(parsedPackageName.error.issues[0]?.message ?? "Invalid plugin package name");
+    throw new Error(validationDetails(parsedPackageName.error)[0]?.message ?? "Invalid plugin package name");
   }
 
   if (!PLUGIN_CATEGORIES.includes(options.category)) {

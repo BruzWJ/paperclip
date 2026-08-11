@@ -13,8 +13,8 @@ type SurfaceStatus = {
   routeKeys: string[];
   capabilities: string[];
   summary: null | {
-    rootIssueId: string;
-    childIssueId: string | null;
+    rootTaskId: string;
+    childTaskId: string | null;
     ownerAgentId: string;
     request: string;
     childStatus: string | null;
@@ -60,38 +60,38 @@ export function DashboardWidget({ context }: PluginHostContextProps) {
     companyId: context.companyId,
   });
 
-  if (loading) return <div>Loading issue runtime smoke status...</div>;
-  if (error) return <div>Issue runtime smoke error: {error.message}</div>;
+  if (loading) return <div>Loading task runtime smoke status...</div>;
+  if (error) return <div>Task runtime smoke error: {error.message}</div>;
   if (!data) return null;
 
   return (
     <div style={panelStyle}>
-      <strong>Issue Runtime Smoke</strong>
+      <strong>Task Runtime Smoke</strong>
       <SurfaceRows data={data} />
       <div>Checked {data.checkedAt}</div>
     </div>
   );
 }
 
-export function IssuePanel({ context }: PluginDetailTabProps) {
+export function TaskPanel({ context }: PluginDetailTabProps) {
   const { data, loading, error, refresh } = usePluginData<SurfaceStatus>("surface-status", {
     companyId: context.companyId,
-    issueId: context.entityId,
+    taskId: context.entityId,
   });
   const initialize = usePluginAction("initialize-smoke");
 
-  if (loading) return <div>Loading issue runtime smoke...</div>;
-  if (error) return <div>Issue runtime smoke error: {error.message}</div>;
+  if (loading) return <div>Loading task runtime smoke...</div>;
+  if (error) return <div>Task runtime smoke error: {error.message}</div>;
   if (!data) return null;
 
   return (
     <div style={panelStyle}>
       <div style={rowStyle}>
-        <strong>Issue Runtime Smoke</strong>
+        <strong>Task Runtime Smoke</strong>
         <button
           style={buttonStyle}
           onClick={async () => {
-            await initialize({ issueId: context.entityId });
+            await initialize({ taskId: context.entityId });
             refresh();
           }}
         >
@@ -101,13 +101,13 @@ export function IssuePanel({ context }: PluginDetailTabProps) {
       <SurfaceRows data={data} />
       {data.summary ? (
         <div style={{ display: "grid", gap: 4 }}>
-          <div style={rowStyle}><span>Child</span><code>{data.summary.childIssueId ?? "none"}</code></div>
+          <div style={rowStyle}><span>Child</span><code>{data.summary.childTaskId ?? "none"}</code></div>
           <div style={rowStyle}><span>Owner</span><code>{data.summary.ownerAgentId}</code></div>
           <div style={rowStyle}><span>Status</span><strong>{data.summary.childStatus ?? "unknown"}</strong></div>
           <div style={rowStyle}><span>Request</span><span>{data.summary.request}</span></div>
         </div>
       ) : (
-        <div>No smoke run recorded for this issue.</div>
+        <div>No smoke run recorded for this task.</div>
       )}
     </div>
   );
@@ -118,13 +118,13 @@ export function SettingsPage({ context }: PluginHostContextProps) {
     companyId: context.companyId,
   });
 
-  if (loading) return <div>Loading issue runtime smoke settings...</div>;
-  if (error) return <div>Issue runtime smoke settings error: {error.message}</div>;
+  if (loading) return <div>Loading task runtime smoke settings...</div>;
+  if (error) return <div>Task runtime smoke settings error: {error.message}</div>;
   if (!data) return null;
 
   return (
     <div style={panelStyle}>
-      <strong>Issue Runtime Smoke Surface</strong>
+      <strong>Task Runtime Smoke Surface</strong>
       <SurfaceRows data={data} />
     </div>
   );

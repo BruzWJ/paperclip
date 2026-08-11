@@ -4,8 +4,8 @@ const manifest: PaperclipPluginManifestV1 = {
   id: "paperclipai.plugin-orchestration-smoke-example",
   apiVersion: 1,
   version: "0.1.0",
-  displayName: "Plugin Issue Runtime Smoke Example",
-  description: "First-party smoke plugin that exercises canonical plugin-created ordinary issues.",
+  displayName: "Plugin Task Runtime Smoke Example",
+  description: "First-party smoke plugin that exercises canonical plugin-created ordinary tasks.",
   author: "Paperclip",
   categories: ["automation", "ui"],
   capabilities: [
@@ -13,8 +13,8 @@ const manifest: PaperclipPluginManifestV1 = {
     "database.namespace.migrate",
     "database.namespace.read",
     "database.namespace.write",
-    "issues.read",
-    "issues.create",
+    "tasks.read",
+    "tasks.create",
     "ui.dashboardWidget.register",
     "ui.detailTab.register",
     "instance.settings.register"
@@ -26,20 +26,20 @@ const manifest: PaperclipPluginManifestV1 = {
   database: {
     namespaceSlug: "orchestration_smoke",
     migrationsDir: "migrations",
-    coreReadTables: ["issues"]
+    coreReadTables: ["tasks"]
   },
   apiRoutes: [
     {
       routeKey: "initialize",
       method: "POST",
-      path: "/issues/:issueId/smoke",
-      companyResolution: { from: "issue", param: "issueId" }
+      path: "/tasks/:taskId/smoke",
+      companyResolution: { from: "task", param: "taskId" }
     },
     {
       routeKey: "summary",
       method: "GET",
-      path: "/issues/:issueId/smoke",
-      companyResolution: { from: "issue", param: "issueId" }
+      path: "/tasks/:taskId/smoke",
+      companyResolution: { from: "task", param: "taskId" }
     }
   ],
   ui: {
@@ -51,11 +51,11 @@ const manifest: PaperclipPluginManifestV1 = {
         exportName: "DashboardWidget"
       },
       {
-        type: "issueDetailView",
-        id: "issue-panel",
+        type: "taskDetailView",
+        id: "task-panel",
         displayName: "Orchestration Smoke",
-        exportName: "IssuePanel",
-        entityTypes: ["issue"]
+        exportName: "TaskPanel",
+        entityTypes: ["task"]
       },
       {
         type: "settingsPage",

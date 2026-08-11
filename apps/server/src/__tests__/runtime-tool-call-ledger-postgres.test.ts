@@ -10,11 +10,11 @@ import { createMockDb } from "./helpers/mock-db.js";
 
 const capability: PromptCapabilityBinding = {
   companyId: "00000000-0000-4000-8000-000000000301",
-  issueId: "00000000-0000-4000-8000-000000000302",
+  taskId: "00000000-0000-4000-8000-000000000302",
   ownershipEpoch: 1,
   targetAgentId: "00000000-0000-4000-8000-000000000303",
   executionMode: "owner",
-  issueExecutionAuthorityId: "00000000-0000-4000-8000-000000000304",
+  taskExecutionAuthorityId: "00000000-0000-4000-8000-000000000304",
   consultExecutionId: null,
   capabilityConnectionId: "00000000-0000-4000-8000-000000000305",
   capabilityGeneration: 2,
@@ -40,7 +40,7 @@ const capability: PromptCapabilityBinding = {
 };
 
 const nonMentionDescriptor: CompiledRunToolDescriptor = {
-  name: "read_issue_comments",
+  name: "read_task_comments",
   title: "Read comments",
   description: "",
   inputSchema: { type: "object" },
@@ -143,7 +143,7 @@ describe("runtime tool-call ledger", () => {
       callIdentitySource: "jsonrpc",
       callIdentityType: "string",
       callIdentityValue: "call-0",
-      toolName: "read_issue_comments",
+      toolName: "read_task_comments",
       argumentsDigest: digest('{"a":1,"b":2}'),
       classification: "non_mention",
       mentionTargetAgentId: null,
@@ -236,7 +236,7 @@ describe("runtime tool-call ledger", () => {
       error: Object.assign(new Error("Malformed tool payload"), {
         code: "invalid_arguments",
         status: 400,
-        details: { field: "issueId" },
+        details: { field: "taskId" },
       }),
     });
 
@@ -265,7 +265,7 @@ describe("runtime tool-call ledger", () => {
         message: "Malformed tool payload",
         code: "invalid_arguments",
         status: 400,
-        details: { field: "issueId" },
+        details: { field: "taskId" },
       },
       completedAt: now,
     });

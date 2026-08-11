@@ -5,8 +5,8 @@ const MISSION = "Build affordable home robots that handle household chores.";
 const AGENT_NAME = "Robotics coordinator";
 const AGENT_TITLE = "Automation lead";
 const CODEX_MODEL = "gpt-5.6";
-const ISSUE_TITLE = "Plan the household workflow";
-const ISSUE_REQUEST =
+const TASK_TITLE = "Plan the household workflow";
+const TASK_REQUEST =
   "  Map the first household workflow the robot should automate.\nKeep the operator checkpoints explicit.  ";
 
 type CreatedCompany = {
@@ -60,7 +60,7 @@ async function listRuns(request: APIRequestContext, companyId: string, agentId: 
 }
 
 test.describe("Onboarding wizard", () => {
-  test("creates an explicitly configured ordinary agent, then its first issue", async ({
+  test("creates an explicitly configured ordinary agent, then its first task", async ({
     page,
     request,
   }) => {
@@ -149,28 +149,28 @@ test.describe("Onboarding wizard", () => {
     // Creating and configuring an agent alone cannot start provider work.
     expect(await listRuns(request, company!.id, agent.id)).toEqual([]);
 
-    await page.getByPlaceholder("Issue title (optional)").fill(ISSUE_TITLE);
+    await page.getByPlaceholder("Task title (optional)").fill(TASK_TITLE);
     await page
       .getByPlaceholder(/Describe .* first concrete assignment/)
-      .fill(ISSUE_REQUEST);
+      .fill(TASK_REQUEST);
     await page.getByRole("button", { name: "Get started" }).click();
     await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 });
 
-    const issuesResponse = await request.get(
-      `/api/companies/${company!.id}/issues`,
+    const tasksResponse = await request.get(
+      `/api/companies/${company!.id}/tasks`,
     );
-    expect(issuesResponse.ok()).toBe(true);
-    const issue = (
-      (await issuesResponse.json()) as Array<{
+    expect(tasksResponse.ok()).toBe(true);
+    const task = (
+      (await tasksResponse.json()) as Array<{
         title: string | null;
         request: string;
         ownerAgentId: string | null;
       }>
-    ).find((candidate) => candidate.title === ISSUE_TITLE);
-    expect(issue).toEqual(
+    ).find((candidate) => candidate.title === TASK_TITLE);
+    expect(task).toEqual(
       expect.objectContaining({
-        title: ISSUE_TITLE,
-        request: ISSUE_REQUEST,
+        title: TASK_TITLE,
+        request: TASK_REQUEST,
         ownerAgentId: agent.id,
       }),
     );

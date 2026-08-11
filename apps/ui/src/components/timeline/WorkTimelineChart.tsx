@@ -1,7 +1,7 @@
 /**
  * Work Timeline — custom-SVG Gantt (board-locked Direction C, PAP-12422).
  *
- * Renders actor rows with concurrency sub-lanes, run bars (no issue IDs on the
+ * Renders actor rows with concurrency sub-lanes, run bars (no task IDs on the
  * bar — identity is the thin left colour tab; truncated title shows on hover),
  * human kickoff chips at the first matching run's leading edge, straight
  * hover-revealed agent→agent delegation connectors (dashed for retries), an
@@ -391,8 +391,8 @@ export function WorkTimelineChart({
   const startTick = Math.ceil(layout.fromMs / stepMs) * stepMs;
   for (let ms = startTick; ms <= layout.toMs; ms += stepMs) ticks.push(ms);
 
-  const openIssue = (issueId: string) => {
-    const href = applyCompanyPrefix(`/issues/${encodeURIComponent(issueId)}`, companyPrefix);
+  const openTask = (taskId: string) => {
+    const href = applyCompanyPrefix(`/tasks/${encodeURIComponent(taskId)}`, companyPrefix);
     window.open(href, "_blank", "noopener,noreferrer");
   };
 
@@ -623,7 +623,7 @@ export function WorkTimelineChart({
                           setHoveredRunId(null);
                         }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        onClick={() => openIssue(bar.span.issueId)}
+                        onClick={() => openTask(bar.span.taskId)}
                       >
                         {/* "Signal" encoding: fill = how the run started (delegated /
                             automation); cancelled runs drop the fill and read as a
@@ -790,7 +790,7 @@ function Tooltip({ tooltip, now }: { tooltip: TooltipState; now: number }) {
   const { bar } = tooltip;
   const startMs = new Date(bar.span.start).getTime();
   const endMs = bar.span.end ? new Date(bar.span.end).getTime() : now;
-  const title = bar.span.issueTitle ?? bar.span.issueIdentifier ?? "run";
+  const title = bar.span.taskTitle ?? bar.span.taskIdentifier ?? "run";
   const left = Math.min(tooltip.x + 14, (typeof window !== "undefined" ? window.innerWidth : 1200) - 300);
   return (
     <div

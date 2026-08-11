@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import {
   parseAgentMentionHref,
-  parseIssueReferenceHref,
+  parseTaskReferenceHref,
   parseProjectMentionHref,
   parseRoutineMentionHref,
   parseSkillMentionHref,
@@ -17,7 +17,7 @@ export type ParsedMentionChip =
       icon: string | null;
     }
   | {
-      kind: "issue";
+      kind: "task";
       identifier: string;
     }
   | {
@@ -46,11 +46,11 @@ export function parseMentionChipHref(href: string): ParsedMentionChip | null {
     return null;
   }
 
-  const issue = parseIssueReferenceHref(href);
-  if (issue) {
+  const task = parseTaskReferenceHref(href);
+  if (task) {
     return {
-      kind: "issue",
-      identifier: issue.identifier,
+      kind: "task",
+      identifier: task.identifier,
     };
   }
 
@@ -146,7 +146,7 @@ export function clearMentionChipDecoration(element: HTMLElement) {
   element.classList.remove(
     "paperclip-mention-chip",
     "paperclip-mention-chip--agent",
-    "paperclip-mention-chip--issue",
+    "paperclip-mention-chip--task",
     "paperclip-mention-chip--project",
     "paperclip-mention-chip--routine",
     "paperclip-mention-chip--user",

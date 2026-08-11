@@ -23,7 +23,7 @@ import { useDialogActions } from "../context/DialogContext";
 import { searchApi } from "../api/search";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
-import { issuesApi } from "../api/issues";
+import { tasksApi } from "../api/tasks";
 import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
 import { loadRecentSearches, pushRecentSearch } from "../lib/recent-searches";
@@ -39,7 +39,7 @@ import {
   type ParsedSearchQuery,
   type SearchQueryParserContext,
 } from "../lib/search-query-parser";
-import { IssueGroupHeader } from "../components/IssueGroupHeader";
+import { TaskGroupHeader } from "../components/TaskGroupHeader";
 import { SearchResultRow } from "../components/search/SearchResultRow";
 import { SearchFilterBar, type SearchFilterDataProps } from "../components/search/SearchFilterBar";
 import { SearchFilterChips } from "../components/search/SearchFilterChips";
@@ -54,14 +54,14 @@ import {
   type FilterChipLookups,
 } from "../lib/search-filters";
 import type { ReactNode } from "react";
-import type { Agent, IssueLabel, Project } from "@paperclipai/shared";
+import type { Agent, TaskLabel, Project } from "@paperclipai/shared";
 
 const SEARCH_DEBOUNCE_MS = 250;
 const IDENTIFIER_PATTERN = /^[A-Z]+-\d+$/;
 
 const SCOPE_LABELS: Record<CompanySearchScope, string> = {
   all: "All",
-  issues: "Tasks",
+  tasks: "Tasks",
   comments: "Comments",
   documents: "Documents",
   artifacts: "Artifacts",
@@ -69,12 +69,12 @@ const SCOPE_LABELS: Record<CompanySearchScope, string> = {
   projects: "Projects",
 };
 
-type SubGroupKey = "issues" | "comments" | "documents" | "artifacts" | "agents" | "projects";
+type SubGroupKey = "tasks" | "comments" | "documents" | "artifacts" | "agents" | "projects";
 
-const SUBGROUP_ORDER: SubGroupKey[] = ["issues", "comments", "documents", "artifacts", "agents", "projects"];
+const SUBGROUP_ORDER: SubGroupKey[] = ["tasks", "comments", "documents", "artifacts", "agents", "projects"];
 
 const SUBGROUP_LABELS: Record<SubGroupKey, string> = {
-  issues: "Tasks",
+  tasks: "Tasks",
   comments: "Comments",
   documents: "Documents",
   artifacts: "Artifacts",
@@ -87,10 +87,10 @@ function classifyResult(result: CompanySearchResult): SubGroupKey {
   if (result.type === "agent") return "agents";
   if (result.type === "project") return "projects";
   const matched = new Set(result.matchedFields);
-  if (matched.has("title") || matched.has("identifier") || matched.has("request")) return "issues";
+  if (matched.has("title") || matched.has("identifier") || matched.has("request")) return "tasks";
   if (matched.has("comment")) return "comments";
   if (matched.has("document")) return "documents";
-  return "issues";
+  return "tasks";
 }
 
 function buildSubgroups(results: CompanySearchResult[]): Array<{ key: SubGroupKey; results: CompanySearchResult[] }> {
@@ -118,7 +118,7 @@ function describeScope(scope: CompanySearchScope) {
 
 function totalMatchCount(counts: Partial<Record<CompanySearchCountType, number>>): number {
   return (
-    (counts.issue ?? 0)
+    (counts.task ?? 0)
     + (counts.comment ?? 0)
     + (counts.document ?? 0)
     + (counts.artifact ?? 0)
@@ -173,7 +173,7 @@ function shapeError(error: unknown): { message: string; status?: number } {
 export function Search() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const { openNewIssue } = useDialogActions();
+  const { openNewTask } = useDialogActions();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -231,8 +231,8 @@ export function Search() {
   });
 
   const { data: labels = [] } = useQuery({
-    queryKey: queryKeys.issues.labels(selectedCompanyId!),
-    queryFn: () => issuesApi.listLabels(selectedCompanyId!),
+    queryKey: queryKeys.tasks.labels(selectedCompanyId!),
+    queryFn: () => tasksApi.listLabels(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
@@ -246,7 +246,7 @@ export function Search() {
     currentUserId,
     agents: agents as Agent[],
     projects: projects as Project[],
-    labels: labels as IssueLabel[],
+    labels: labels as TaskLabel[],
   }), [agents, currentUserId, labels, projects]);
   const parsedUrlFilters = useMemo(() => readSearchFiltersFromParams(searchParams), [searchParams]);
   const [urlFilters, setUrlFilters] = useState(parsedUrlFilters);
@@ -375,7 +375,7 @@ export function Search() {
   }, [agents]);
 
   const projectsById = useMemo(() => new Map((projects as Project[]).map((p) => [p.id, p])), [projects]);
-  const labelsById = useMemo(() => new Map((labels as IssueLabel[]).map((l) => [l.id, l])), [labels]);
+  const labelsById = useMemo(() => new Map((labels as TaskLabel[]).map((l) => [l.id, l])), [labels]);
 
   const filterLookups = useMemo<FilterChipLookups>(
     () => ({
@@ -393,7 +393,7 @@ export function Search() {
       counts: data?.filterOptionCounts,
       agents: agents as Agent[],
       projects: projects as Project[],
-      labels: labels as IssueLabel[],
+      labels: labels as TaskLabel[],
       currentUserId,
     }),
     [data?.filterOptionCounts, agents, projects, labels, currentUserId],
@@ -444,12 +444,12 @@ export function Search() {
     if (!IDENTIFIER_PATTERN.test(upper)) return;
     if (lastIdentifierRedirectRef.current === upper) return;
     const exact = data.results.find(
-      (result) => result.type === "issue" && result.issue?.identifier?.toUpperCase() === upper,
+      (result) => result.type === "task" && result.task?.identifier?.toUpperCase() === upper,
     );
-    if (!exact?.issue) return;
+    if (!exact?.task) return;
     lastIdentifierRedirectRef.current = upper;
     // Strip the comment/document deep-link suffix so an exact identifier match
-    // lands on the issue root, not the top-scored snippet.
+    // lands on the task root, not the top-scored snippet.
     const baseHref = exact.href.split("#")[0] ?? exact.href;
     const navigateHref = baseHref.startsWith("/") ? baseHref : `/${baseHref}`;
     navigate(navigateHref, { replace: true });
@@ -484,7 +484,7 @@ export function Search() {
     return () => window.removeEventListener("keydown", handler);
   }, [focusInput]);
 
-  const counts = data?.countsByType ?? { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 };
+  const counts = data?.countsByType ?? { task: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 };
   const totalResults = data?.results.length ?? 0;
   const allMatchTotal = data ? totalMatchCount(counts) : 0;
   const previewTotal = previewData ? totalMatchCount(previewData.countsByType) : null;
@@ -498,23 +498,23 @@ export function Search() {
         </Badge>
       );
     }
-    const issuesTotal = counts.issue ?? 0;
+    const tasksTotal = counts.task ?? 0;
     return COMPANY_SEARCH_SCOPES.map((value) => {
       let count: number | null = null;
       if (value === "all") {
-        count = (counts.issue ?? 0)
+        count = (counts.task ?? 0)
           + (counts.comment ?? 0)
           + (counts.document ?? 0)
           + (counts.artifact ?? 0)
           + (counts.agent ?? 0)
           + (counts.project ?? 0);
-      } else if (value === "issues") count = issuesTotal;
+      } else if (value === "tasks") count = tasksTotal;
       else if (value === "comments") count = counts.comment ?? 0;
       else if (value === "documents") count = counts.document ?? 0;
       else if (value === "artifacts") count = counts.artifact ?? 0;
       else if (value === "agents") count = counts.agent ?? 0;
       else if (value === "projects") count = counts.project ?? 0;
-      // Issue-only filters don't constrain agents/projects, so show a dash there
+      // Task-only filters don't constrain agents/projects, so show a dash there
       // rather than an unfiltered count that would misrepresent the result set.
       const dashOut = filtersActive && (value === "agents" || value === "projects");
       return {
@@ -562,9 +562,9 @@ export function Search() {
     />
   ) : null;
 
-  function navigateIssuesFallback() {
+  function navigateTasksFallback() {
     const fallbackQuery = trimmedQuery || displayQuery;
-    navigate(fallbackQuery ? `/issues?q=${encodeURIComponent(fallbackQuery)}` : "/issues");
+    navigate(fallbackQuery ? `/tasks?q=${encodeURIComponent(fallbackQuery)}` : "/tasks");
   }
 
   function handleRecentClick(value: string) {
@@ -716,8 +716,8 @@ export function Search() {
                 trimmedQuery={searchDisplayLabel}
                 scope={scope}
                 showAllScope={showAllScope}
-                navigateIssuesFallback={navigateIssuesFallback}
-                openNewIssue={() => openNewIssue({ title: searchDisplayLabel })}
+                navigateTasksFallback={navigateTasksFallback}
+                openNewTask={() => openNewTask({ title: searchDisplayLabel })}
                 refetch={() => void refetch()}
                 recentSearches={recentSearches}
                 onRecentClick={handleRecentClick}
@@ -762,8 +762,8 @@ interface SearchTabContentProps {
   trimmedQuery: string;
   scope: CompanySearchScope;
   showAllScope: () => void;
-  navigateIssuesFallback: () => void;
-  openNewIssue: () => void;
+  navigateTasksFallback: () => void;
+  openNewTask: () => void;
   refetch: () => void;
   recentSearches: string[];
   onRecentClick: (query: string) => void;
@@ -787,8 +787,8 @@ function SearchTabContent({
   trimmedQuery,
   scope,
   showAllScope,
-  navigateIssuesFallback,
-  openNewIssue,
+  navigateTasksFallback,
+  openNewTask,
   refetch,
   recentSearches,
   onRecentClick,
@@ -863,7 +863,7 @@ function SearchTabContent({
           <Button onClick={refetch} variant="default" size="sm">
             Retry
           </Button>
-          <Button onClick={navigateIssuesFallback} variant="outline" size="sm">
+          <Button onClick={navigateTasksFallback} variant="outline" size="sm">
             Open Tasks filter view
           </Button>
         </div>
@@ -913,11 +913,11 @@ function SearchTabContent({
               Search all scopes
             </Button>
           ) : null}
-          <Button onClick={openNewIssue} size="sm" variant="default">
+          <Button onClick={openNewTask} size="sm" variant="default">
             <Plus data-icon="inline-start" className="mr-1.5 h-4 w-4" />
             Create task from this query
           </Button>
-          <Button onClick={navigateIssuesFallback} size="sm" variant="ghost">
+          <Button onClick={navigateTasksFallback} size="sm" variant="ghost">
             Open Tasks filter view
           </Button>
         </div>
@@ -958,7 +958,7 @@ function SearchTabContent({
               aria-label={SUBGROUP_LABELS[group.key]}
               className={cn("flex flex-col", groupIndex > 0 && "mt-6")}
             >
-              <IssueGroupHeader
+              <TaskGroupHeader
                 label={SUBGROUP_LABELS[group.key]}
                 trailing={
                   <span className="text-xs font-normal tabular-nums text-muted-foreground">

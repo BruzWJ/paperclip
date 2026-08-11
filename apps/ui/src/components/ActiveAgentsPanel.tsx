@@ -3,16 +3,16 @@ import { Link } from "@/lib/router";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import type {
   Agent,
-  Issue,
-  IssueExecutionRunEnvelopeRecord,
-  IssueExecutionRunListPageRecord,
+  Task,
+  TaskExecutionRunEnvelopeRecord,
+  TaskExecutionRunListPageRecord,
 } from "@paperclipai/shared";
 import { agentsApi } from "../api/agents";
 import {
-  ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+  ACTIVE_TASK_EXECUTION_RUN_STATUSES,
   runsApi,
 } from "../api/runs";
-import { issuesApi } from "../api/issues";
+import { tasksApi } from "../api/tasks";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, relativeTime } from "../lib/utils";
 import { Bot, ExternalLink } from "lucide-react";
@@ -68,7 +68,7 @@ export function ActiveAgentsPanel({
   showMoreLink = true,
 }: ActiveAgentsPanelProps) {
   const limit = Math.max(1, fetchLimit ?? minRunCount, cardLimit);
-  const status = ACTIVE_ISSUE_EXECUTION_RUN_STATUSES;
+  const status = ACTIVE_TASK_EXECUTION_RUN_STATUSES;
   const runsQueryKey = [
     ...queryKeys.runs(companyId, { status }),
     queryScope,
@@ -81,7 +81,7 @@ export function ActiveAgentsPanel({
     enabled: Boolean(companyId),
     leaderOnly: true,
   });
-  const { data: runPage, dataUpdatedAt } = useQuery<IssueExecutionRunListPageRecord>({
+  const { data: runPage, dataUpdatedAt } = useQuery<TaskExecutionRunListPageRecord>({
     queryKey: runsQueryKey,
     queryFn: () => runsApi.listForCompany(companyId, { status, limit }),
     enabled: sharedRuns.enabled,
@@ -101,25 +101,25 @@ export function ActiveAgentsPanel({
   const runs = runPage?.items ?? [];
   const visibleRuns = useMemo(() => runs.slice(0, cardLimit), [cardLimit, runs]);
   const hiddenRunCount = Math.max(0, runs.length - visibleRuns.length);
-  const visibleIssueIds = useMemo(
-    () => [...new Set(visibleRuns.map((run) => run.issueId))],
+  const visibleTaskIds = useMemo(
+    () => [...new Set(visibleRuns.map((run) => run.taskId))],
     [visibleRuns],
   );
-  const issueQueries = useQueries({
-    queries: visibleIssueIds.map((issueId) => ({
-      queryKey: queryKeys.issues.detail(issueId),
-      queryFn: () => issuesApi.get(issueId),
+  const taskQueries = useQueries({
+    queries: visibleTaskIds.map((taskId) => ({
+      queryKey: queryKeys.tasks.detail(taskId),
+      queryFn: () => tasksApi.get(taskId),
       staleTime: 30_000,
       retry: false,
     })),
   });
-  const issueById = useMemo(() => {
-    const map = new Map<string, Issue>();
-    for (const query of issueQueries) {
+  const taskById = useMemo(() => {
+    const map = new Map<string, Task>();
+    for (const query of taskQueries) {
       if (query.data) map.set(query.data.id, query.data);
     }
     return map;
-  }, [issueQueries]);
+  }, [taskQueries]);
 
   return (
     <div>
@@ -138,7 +138,7 @@ export function ActiveAgentsPanel({
               key={run.id}
               run={run}
               agent={agentById.get(run.targetAgentId)}
-              issue={issueById.get(run.issueId)}
+              task={taskById.get(run.taskId)}
               className={cardClassName}
             />
           ))}
@@ -158,12 +158,12 @@ export function ActiveAgentsPanel({
 const AgentRunCard = memo(function AgentRunCard({
   run,
   agent,
-  issue,
+  task,
   className,
 }: {
-  run: IssueExecutionRunEnvelopeRecord;
+  run: TaskExecutionRunEnvelopeRecord;
   agent?: Agent;
-  issue?: Issue;
+  task?: Task;
   className?: string;
 }) {
   const agentRef = agent?.urlKey ?? run.targetAgentId;
@@ -205,11 +205,11 @@ const AgentRunCard = memo(function AgentRunCard({
           <p className="mt-1 font-mono text-muted-foreground">{run.id}</p>
         </div>
         <Link
-          to={"/issues/" + (issue?.identifier ?? run.issueId)}
+          to={"/tasks/" + (task?.identifier ?? run.taskId)}
           className="rounded-lg border border-border/60 bg-background/60 px-2.5 py-2 text-blue-700 hover:underline dark:text-blue-300"
         >
-          {issue?.identifier ?? run.issueId.slice(0, 8)}
-          {issue?.title ? " - " + issue.title : ""}
+          {task?.identifier ?? run.taskId.slice(0, 8)}
+          {task?.title ? " - " + task.title : ""}
         </Link>
       </div>
     </div>

@@ -20,7 +20,7 @@ import {
 
 const CIPHERTEXT_PREFIX = "pcnc.v1";
 const CIPHER_AAD = Buffer.from(
-  "paperclip.issue-execution-native-correlation/v1",
+  "paperclip.task-execution-native-correlation/v1",
   "utf8",
 );
 

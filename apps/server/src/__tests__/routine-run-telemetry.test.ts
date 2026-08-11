@@ -40,7 +40,7 @@ describe("routine run telemetry", () => {
       projectId: null,
       folderId: null,
       goalId: null,
-      parentIssueId: null,
+      parentTaskId: null,
       title: "Run telemetry test",
       description: "Routine body",
       assigneeAgentId: agentId,
@@ -63,7 +63,7 @@ describe("routine run telemetry", () => {
         projectId: null,
         folderId: null,
         goalId: null,
-        parentIssueId: null,
+        parentTaskId: null,
         title: routine.title,
         description: routine.description,
         assigneeAgentId: agentId,
@@ -83,14 +83,14 @@ describe("routine run telemetry", () => {
       routineId,
       triggerId: null,
       source: "manual",
-      status: "issue_created",
+      status: "task_created",
       triggeredAt: now,
       idempotencyKey,
       triggerPayload: null,
       dispatchFingerprint: "already-dispatched",
       routineRevisionId: revisionId,
       responsibleUserId: null,
-      linkedIssueId: randomUUID(),
+      linkedTaskId: randomUUID(),
       coalescedIntoRunId: null,
       failureReason: null,
       completedAt: now,
@@ -107,7 +107,7 @@ describe("routine run telemetry", () => {
       execute: [[]],
     });
     const service = routineService(harness.db, {
-      ordinaryIssues: {} as never,
+      ordinaryTasks: {} as never,
     });
 
     const run = await service.runRoutine(routineId, {
@@ -118,7 +118,7 @@ describe("routine run telemetry", () => {
     expect(run).toBe(existingRun);
     expect(mockTrackRoutineRun).toHaveBeenCalledWith(mockTelemetryClient, {
       source: "manual",
-      status: "issue_created",
+      status: "task_created",
     });
     expect(harness.remaining("select")).toBe(0);
     expect(harness.remaining("execute")).toBe(0);

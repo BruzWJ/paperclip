@@ -4,9 +4,9 @@ import {
   buildCompanyUserInlineOptions,
   buildCompanyUserLabelMap,
   buildCompanyUserProfileMap,
-  buildIssueMentionOptions,
+  buildTaskMentionOptions,
   buildMarkdownMentionOptions,
-  isAgentIssueOwnerTarget,
+  isAgentTaskOwnerTarget,
   isAgentTaskTarget,
 } from "./company-members";
 
@@ -32,9 +32,9 @@ const activeMember = (overrides: Partial<CompanyMember>): CompanyMember => ({
 });
 
 describe("company-members helpers", () => {
-  it("keeps issue-owner eligibility narrower than task assignment", () => {
+  it("keeps task-owner eligibility narrower than task assignment", () => {
     expect(
-      isAgentIssueOwnerTarget({
+      isAgentTaskOwnerTarget({
         status: "active",
         currentAdapterConfigRevisionId: "revision-1",
       }),
@@ -45,13 +45,13 @@ describe("company-members helpers", () => {
       }),
     ).toBe(true);
     expect(
-      isAgentIssueOwnerTarget({
+      isAgentTaskOwnerTarget({
         status: "paused",
         currentAdapterConfigRevisionId: "revision-1",
       }),
     ).toBe(false);
     expect(
-      isAgentIssueOwnerTarget({
+      isAgentTaskOwnerTarget({
         status: "active",
         currentAdapterConfigRevisionId: null,
       }),
@@ -178,47 +178,47 @@ describe("company-members helpers", () => {
     ]);
   });
 
-  it("builds issue mention options with identifier + title search text", () => {
-    const options = buildIssueMentionOptions([
-      { id: "issue-1", identifier: "PAP-102", title: "@task references" },
-      { id: "issue-2", identifier: "PAP-7", title: "" },
+  it("builds task mention options with identifier + title search text", () => {
+    const options = buildTaskMentionOptions([
+      { id: "task-1", identifier: "PAP-102", title: "@task references" },
+      { id: "task-2", identifier: "PAP-7", title: "" },
     ]);
 
     expect(options).toEqual([
       {
-        id: "issue:issue-1",
+        id: "task:task-1",
         name: "PAP-102 @task references",
-        kind: "issue",
-        issueId: "issue-1",
-        issueIdentifier: "PAP-102",
+        kind: "task",
+        taskId: "task-1",
+        taskIdentifier: "PAP-102",
       },
       {
-        id: "issue:issue-2",
+        id: "task:task-2",
         name: "PAP-7",
-        kind: "issue",
-        issueId: "issue-2",
-        issueIdentifier: "PAP-7",
+        kind: "task",
+        taskId: "task-2",
+        taskIdentifier: "PAP-7",
       },
     ]);
   });
 
-  it("appends issue mention options after agents and projects, preserving order", () => {
+  it("appends task mention options after agents and projects, preserving order", () => {
     const options = buildMarkdownMentionOptions({
       agents: [
         { id: "agent-1", name: "CodexCoder", status: "active", icon: "code" },
       ],
       projects: [{ id: "project-1", name: "Paperclip App", color: "#336699" }],
-      issues: [
-        { id: "issue-2", identifier: "PAP-50", title: "Newer" },
-        { id: "issue-1", identifier: "PAP-3", title: "Older" },
+      tasks: [
+        { id: "task-2", identifier: "PAP-50", title: "Newer" },
+        { id: "task-1", identifier: "PAP-3", title: "Older" },
       ],
     });
 
     expect(options.map((option) => option.id)).toEqual([
       "agent:agent-1",
       "project:project-1",
-      "issue:issue-2",
-      "issue:issue-1",
+      "task:task-2",
+      "task:task-1",
     ]);
   });
 

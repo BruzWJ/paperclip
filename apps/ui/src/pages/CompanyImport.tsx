@@ -73,10 +73,10 @@ function buildActionMap(preview: CompanyPortabilityPreviewResult): Map<string, s
     }
   }
 
-  for (const ip of preview.plan.issuePlans) {
-    const issue = manifest.issues.find((i) => i.slug === ip.slug);
-    if (issue) {
-      const path = ensureMarkdownPath(issue.path);
+  for (const ip of preview.plan.taskPlans) {
+    const task = manifest.tasks.find((i) => i.slug === ip.slug);
+    if (task) {
+      const path = ensureMarkdownPath(task.path);
       map.set(path, ip.action);
     }
   }
@@ -239,10 +239,10 @@ function ImportPreviewPane({
         {parsed ? (
           <>
             <FrontmatterCard data={parsed.data} />
-            {parsed.body.trim() && <MarkdownBody resolveImageSrc={resolveImageSrc} softBreaks={false} linkIssueReferences={false}>{parsed.body}</MarkdownBody>}
+            {parsed.body.trim() && <MarkdownBody resolveImageSrc={resolveImageSrc} softBreaks={false} linkTaskReferences={false}>{parsed.body}</MarkdownBody>}
           </>
         ) : isMarkdown ? (
-          <MarkdownBody resolveImageSrc={resolveImageSrc} softBreaks={false} linkIssueReferences={false}>{textContent ?? ""}</MarkdownBody>
+          <MarkdownBody resolveImageSrc={resolveImageSrc} softBreaks={false} linkTaskReferences={false}>{textContent ?? ""}</MarkdownBody>
         ) : imageSrc ? (
           <div className="flex min-h-(--sz-520px) items-center justify-center rounded-lg border border-border bg-accent/10 p-6">
             <img src={imageSrc} alt={selectedFile} className="max-h-(--sz-480px) max-w-full object-contain" />
@@ -265,7 +265,7 @@ function ImportPreviewPane({
 
 interface ConflictItem {
   slug: string;
-  kind: "agent" | "project" | "issue" | "skill";
+  kind: "agent" | "project" | "task" | "skill";
   originalName: string;
   plannedName: string;
   filePath: string | null;
@@ -720,7 +720,7 @@ export function CompanyImport() {
       if (!source) throw new Error("No source configured.");
       return companiesApi.importPreview({
         source,
-        include: { company: true, agents: true, projects: true, issues: true },
+        include: { company: true, agents: true, projects: true, tasks: true },
         target:
           targetMode === "new"
             ? { mode: "new_company", newCompanyName: newCompanyName || null }
@@ -825,7 +825,7 @@ export function CompanyImport() {
       if (!source) throw new Error("No source configured.");
       return companiesApi.importBundle({
         source,
-        include: { company: true, agents: true, projects: true, issues: true },
+        include: { company: true, agents: true, projects: true, tasks: true },
         target:
           targetMode === "new"
             ? { mode: "new_company", newCompanyName: newCompanyName || null }
@@ -858,7 +858,7 @@ export function CompanyImport() {
         body: `${result.company.name}: ${result.agents.length} agent${result.agents.length === 1 ? "" : "s"} processed.`,
       });
       // Force a fresh dashboard load so newly imported agents are immediately visible.
-      window.location.assign(`/${importedCompany.issuePrefix}/dashboard`);
+      window.location.assign(`/${importedCompany.taskPrefix}/dashboard`);
     },
     onError: (err) => {
       pushToast({

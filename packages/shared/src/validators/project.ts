@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addValidationDetail } from "../validation-details.js";
 import { PROJECT_STATUSES, PROJECT_ICON_NAMES } from "../constants.js";
 import { envConfigSchema } from "./secret.js";
 
@@ -40,8 +41,7 @@ export const projectCodebaseInputSchema = z
 export const updateProjectCodebaseSchema = projectCodebaseInputSchema.superRefine(
   (value, ctx) => {
     if (value.localFolder === undefined && value.repoUrl === undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "Codebase update requires localFolder or repoUrl.",
       });
     }

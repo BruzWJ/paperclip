@@ -12,7 +12,7 @@ import type {
   RuntimeAgentConfigurationSnapshot,
   RuntimeAgentConfigurationUpdate,
   CompanySkillPin,
-  InvokableIssueOwnerCatalogEntry,
+  InvokableTaskOwnerCatalogEntry,
 } from "@paperclipai/shared";
 import type {
   AdapterModelProfileDefinition,
@@ -68,9 +68,9 @@ function agentPath(id: string, companyId?: string, suffix = "") {
 
 export const agentsApi = {
   list: (companyId: string) => api.get<Agent[]>(`/companies/${companyId}/agents`),
-  listInvokableIssueOwners: (companyId: string) =>
-    api.get<InvokableIssueOwnerCatalogEntry[]>(
-      `/companies/${encodeURIComponent(companyId)}/issue-owner-catalog`,
+  listInvokableTaskOwners: (companyId: string) =>
+    api.get<InvokableTaskOwnerCatalogEntry[]>(
+      `/companies/${encodeURIComponent(companyId)}/task-owner-catalog`,
     ),
   org: (companyId: string) => api.get<OrgNode[]>(`/companies/${companyId}/org`),
   get: (id: string, companyId?: string) =>

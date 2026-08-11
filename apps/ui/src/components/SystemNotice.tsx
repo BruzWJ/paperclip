@@ -15,7 +15,7 @@ export type SystemNoticeTone = "neutral" | "info" | "success" | "warning" | "dan
 export type SystemNoticeMetadataRow =
   | { kind: "text"; label: string; value: string }
   | { kind: "code"; label: string; value: string }
-  | { kind: "issue"; label: string; identifier: string; href?: string; title?: string }
+  | { kind: "task"; label: string; identifier: string; href?: string; title?: string }
   | { kind: "agent"; label: string; name: string; href?: string }
   | { kind: "run"; label: string; runId: string; href?: string; status?: string };
 
@@ -128,8 +128,8 @@ function MetadataRow({ row, tone }: { row: SystemNoticeMetadataRow; tone: ToneTo
                   {row.value}
                 </code>
               );
-            case "issue": {
-              const issueLabel = (
+            case "task": {
+              const taskLabel = (
                 <>
                   <span>{row.identifier}</span>
                   {row.title ? (
@@ -146,13 +146,13 @@ function MetadataRow({ row, tone }: { row: SystemNoticeMetadataRow; tone: ToneTo
                       tone.label,
                     )}
                   >
-                    {issueLabel}
+                    {taskLabel}
                   </a>
                 );
               }
               return (
                 <span className={cn("inline-flex items-center gap-1 font-medium", tone.label)}>
-                  {issueLabel}
+                  {taskLabel}
                 </span>
               );
             }

@@ -10,7 +10,7 @@ export type AttentionSourceKind =
 
 export type AttentionSubjectKind =
   | "approval"
-  | "issue"
+  | "task"
   | "join_request"
   | "run"
   | "budget_incident"
@@ -99,7 +99,7 @@ export interface AttentionItem {
   activityAt: string;
   createdAt: string;
   updatedAt: string;
-  relatedIssue: AttentionSubject | null;
+  relatedTask: AttentionSubject | null;
   project: AttentionProjectRef | null;
   workspace: AttentionWorkspaceRef | null;
   detail: AttentionItemDetail | null;

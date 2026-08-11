@@ -16,7 +16,7 @@ import type { PluginStateScopeKind } from "@paperclipai/shared";
  * objects and external plugin-defined entities.
  *
  * This table is used by plugins (e.g. `linear`, `github`) to store pointers
- * to their respective external IDs for projects, issues, etc. and to store
+ * to their respective external IDs for projects, tasks, etc. and to store
  * their custom data.
  *
  * Unlike `plugin_state`, which is for raw K-V persistence, `plugin_entities`

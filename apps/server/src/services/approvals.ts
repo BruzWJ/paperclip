@@ -4,8 +4,8 @@ import {
   agents,
   approvalComments,
   approvals,
-  issueExecutionRefs,
-  issueExecutionRunRefs,
+  taskExecutionRefs,
+  taskExecutionRunRefs,
   plugins,
 } from "@paperclipai/db";
 import {
@@ -148,7 +148,7 @@ export async function withdrawOpenHireApprovalForAgentInTransaction(
 export function approvalService(
   db: Db,
   options: {
-    issueExecutionCancellation: AgentLifecycleCancellationService;
+    taskExecutionCancellation: AgentLifecycleCancellationService;
     terminateHireRejectionAgentInTransaction:
       HireRejectionAgentTerminationOwner;
     dispatchRef(refId: string): Promise<void>;
@@ -184,27 +184,27 @@ export function approvalService(
     if (payload.source.kind === "agent_run") {
       const sourceRef = await tx
         .select({
-          id: issueExecutionRefs.id,
-          companyId: issueExecutionRefs.companyId,
-          issueId: issueExecutionRefs.issueId,
-          runId: issueExecutionRunRefs.runId,
-          targetAgentId: issueExecutionRefs.targetAgentId,
+          id: taskExecutionRefs.id,
+          companyId: taskExecutionRefs.companyId,
+          taskId: taskExecutionRefs.taskId,
+          runId: taskExecutionRunRefs.runId,
+          targetAgentId: taskExecutionRefs.targetAgentId,
         })
-        .from(issueExecutionRefs)
+        .from(taskExecutionRefs)
         .innerJoin(
-          issueExecutionRunRefs,
+          taskExecutionRunRefs,
           and(
-            eq(issueExecutionRunRefs.companyId, issueExecutionRefs.companyId),
-            eq(issueExecutionRunRefs.issueId, issueExecutionRefs.issueId),
-            eq(issueExecutionRunRefs.refId, issueExecutionRefs.id),
+            eq(taskExecutionRunRefs.companyId, taskExecutionRefs.companyId),
+            eq(taskExecutionRunRefs.taskId, taskExecutionRefs.taskId),
+            eq(taskExecutionRunRefs.refId, taskExecutionRefs.id),
           ),
         )
         .where(
           and(
-            eq(issueExecutionRefs.id, payload.source.issueExecutionRefId),
-            eq(issueExecutionRefs.companyId, approval.companyId),
-            eq(issueExecutionRefs.issueId, payload.source.issueId),
-            eq(issueExecutionRunRefs.runId, payload.source.runId),
+            eq(taskExecutionRefs.id, payload.source.taskExecutionRefId),
+            eq(taskExecutionRefs.companyId, approval.companyId),
+            eq(taskExecutionRefs.taskId, payload.source.taskId),
+            eq(taskExecutionRunRefs.runId, payload.source.runId),
           ),
         )
         .limit(1)
@@ -214,7 +214,7 @@ export function approvalService(
         sourceRef.targetAgentId !== approval.requestedByAgentId
       ) {
         throw conflict(
-          "Hire approval source issue/run/ref link is missing or no longer matches its requester",
+          "Hire approval source task/run/ref link is missing or no longer matches its requester",
           {
             code: "hire_approval_source_link_missing",
             approvalId: approval.id,
@@ -465,7 +465,7 @@ export function approvalService(
               decidedByUserId,
               now,
             },
-            options.issueExecutionCancellation,
+            options.taskExecutionCancellation,
           );
         if (!terminated) {
           throw conflict(
@@ -514,13 +514,13 @@ export function approvalService(
       };
     });
     if (committed.cancellationRequests) {
-      await options.issueExecutionCancellation
+      await options.taskExecutionCancellation
         .reconcileRequestedCancellations(
           committed.cancellationRequests,
         );
     }
     if (committed.suspensionRequests) {
-      await options.issueExecutionCancellation
+      await options.taskExecutionCancellation
         .reconcileRequestedCancellations(committed.suspensionRequests);
     }
     for (const refId of committed.dispatchRefIds) {

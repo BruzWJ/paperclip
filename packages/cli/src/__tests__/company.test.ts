@@ -68,8 +68,8 @@ function company(overrides: Record<string, unknown> = {}) {
     name: "Paperclip",
     description: null,
     status: "active",
-    issuePrefix: "PAP",
-    issueCounter: 1,
+    taskPrefix: "PAP",
+    taskCounter: 1,
     budgetCurrency: "USD",
     budgetMonthlyAmount: "0",
     knownSpendAmount: "0",
@@ -90,7 +90,7 @@ function interactiveImportPreview(): CompanyPortabilityPreviewResult {
       company: true,
       agents: true,
       projects: true,
-      issues: true,
+      tasks: true,
       skills: true,
     },
     targetCompanyId: COMPANY_ID,
@@ -109,7 +109,7 @@ function interactiveImportPreview(): CompanyPortabilityPreviewResult {
         },
       ],
       projectPlans: [],
-      issuePlans: [],
+      taskPlans: [],
     },
     manifest: {
       schemaVersion: 1,
@@ -122,7 +122,7 @@ function interactiveImportPreview(): CompanyPortabilityPreviewResult {
         company: true,
         agents: true,
         projects: true,
-        issues: true,
+        tasks: true,
         skills: true,
       },
       company: {
@@ -167,7 +167,7 @@ function interactiveImportPreview(): CompanyPortabilityPreviewResult {
       ],
       skills: [],
       projects: [],
-      issues: [],
+      tasks: [],
       envInputs: [],
     },
     files: {
@@ -297,7 +297,7 @@ describe("company CLI commands", () => {
       .mockResolvedValueOnce(jsonResponse(preview))
       .mockResolvedValueOnce(jsonResponse(preview))
       .mockResolvedValueOnce(jsonResponse(imported, 201))
-      .mockResolvedValueOnce(jsonResponse(company({ issuePrefix: "" })));
+      .mockResolvedValueOnce(jsonResponse(company({ taskPrefix: "" })));
 
     await runCommand([
       "company",
@@ -446,7 +446,7 @@ describe("renderCompanyImportPreview", () => {
         company: true,
         agents: true,
         projects: true,
-        issues: true,
+        tasks: true,
         skills: true,
       },
       targetCompanyId: "company-123",
@@ -467,7 +467,7 @@ describe("renderCompanyImportPreview", () => {
         projectPlans: [
           { slug: "alpha", action: "create", plannedName: "Alpha", existingProjectId: null, reason: null },
         ],
-        issuePlans: [
+        taskPlans: [
           { slug: "kickoff", action: "create", plannedTitle: "Kickoff", reason: null },
         ],
       },
@@ -482,7 +482,7 @@ describe("renderCompanyImportPreview", () => {
           company: true,
           agents: true,
           projects: true,
-          issues: true,
+          tasks: true,
           skills: true,
         },
         company: {
@@ -557,12 +557,12 @@ describe("renderCompanyImportPreview", () => {
             metadata: null,
           },
         ],
-        issues: [
+        tasks: [
           {
             slug: "kickoff",
             identifier: null,
             title: "Kickoff",
-            path: "issues/kickoff/ISSUE.md",
+            path: "tasks/kickoff/TASK.md",
             projectSlug: "alpha",
             ownerAgentSlug: "lead",
             request: "# Kickoff",
@@ -615,10 +615,10 @@ describe("renderCompanyImportPreview", () => {
     });
 
     expect(rendered).toContain("Include");
-    expect(rendered).toContain("company, projects, issues, agents, skills");
+    expect(rendered).toContain("company, projects, tasks, agents, skills");
     expect(rendered).toContain("7 agents total");
     expect(rendered).toContain("1 project total");
-    expect(rendered).toContain("1 issue total");
+    expect(rendered).toContain("1 task total");
     expect(rendered).toContain("skills: 1 skill packaged");
     expect(rendered).toContain("+1 more");
     expect(rendered).toContain("Using external adapter");
@@ -668,13 +668,13 @@ describe("renderCompanyImportResult", () => {
 });
 
 describe("import selection catalog", () => {
-  it("defaults to everything and keeps project selection separate from issue selection", () => {
+  it("defaults to everything and keeps project selection separate from task selection", () => {
     const preview: CompanyPortabilityPreviewResult = {
       include: {
         company: true,
         agents: true,
         projects: true,
-        issues: true,
+        tasks: true,
         skills: true,
       },
       targetCompanyId: "company-123",
@@ -685,7 +685,7 @@ describe("import selection catalog", () => {
         companyAction: "create",
         agentPlans: [],
         projectPlans: [],
-        issuePlans: [],
+        taskPlans: [],
       },
       manifest: {
         schemaVersion: 1,
@@ -698,7 +698,7 @@ describe("import selection catalog", () => {
           company: true,
           agents: true,
           projects: true,
-          issues: true,
+          tasks: true,
           skills: true,
         },
         company: {
@@ -773,12 +773,12 @@ describe("import selection catalog", () => {
             metadata: null,
           },
         ],
-        issues: [
+        tasks: [
           {
             slug: "kickoff",
             identifier: null,
             title: "Kickoff",
-            path: "issues/kickoff/ISSUE.md",
+            path: "tasks/kickoff/TASK.md",
             projectSlug: "alpha",
             ownerAgentSlug: "lead",
             request: "# Kickoff",
@@ -807,8 +807,8 @@ describe("import selection catalog", () => {
         },
         "projects/alpha/PROJECT.md": "# Alpha",
         "projects/alpha/notes.md": "project notes",
-        "issues/kickoff/ISSUE.md": "# Kickoff",
-        "issues/kickoff/details.md": "issue details",
+        "tasks/kickoff/TASK.md": "# Kickoff",
+        "tasks/kickoff/details.md": "task details",
         "agents/lead/AGENT.md": "# Lead",
         "agents/lead/prompt.md": "prompt",
         "skills/skill-a/SKILL.md": "# Skill A",
@@ -824,12 +824,12 @@ describe("import selection catalog", () => {
 
     expect(state.company).toBe(true);
     expect(state.projects.has("alpha")).toBe(true);
-    expect(state.issues.has("kickoff")).toBe(true);
+    expect(state.tasks.has("kickoff")).toBe(true);
     expect(state.agents.has("lead")).toBe(true);
     expect(state.skills.has("skill-a")).toBe(true);
 
     state.company = false;
-    state.issues.clear();
+    state.tasks.clear();
     state.agents.clear();
     state.skills.clear();
 
@@ -838,8 +838,8 @@ describe("import selection catalog", () => {
     expect(selectedFiles).toContain(".paperclip.yaml");
     expect(selectedFiles).toContain("projects/alpha/PROJECT.md");
     expect(selectedFiles).toContain("projects/alpha/notes.md");
-    expect(selectedFiles).not.toContain("issues/kickoff/ISSUE.md");
-    expect(selectedFiles).not.toContain("issues/kickoff/details.md");
+    expect(selectedFiles).not.toContain("tasks/kickoff/TASK.md");
+    expect(selectedFiles).not.toContain("tasks/kickoff/details.md");
   });
 
   it("includes extension file even when all entities are deselected", () => {
@@ -848,7 +848,7 @@ describe("import selection catalog", () => {
         company: true,
         agents: true,
         projects: true,
-        issues: true,
+        tasks: true,
         skills: true,
       },
       targetCompanyId: "company-123",
@@ -859,7 +859,7 @@ describe("import selection catalog", () => {
         companyAction: "create",
         agentPlans: [],
         projectPlans: [],
-        issuePlans: [],
+        taskPlans: [],
       },
       manifest: {
         schemaVersion: 1,
@@ -872,7 +872,7 @@ describe("import selection catalog", () => {
           company: true,
           agents: true,
           projects: true,
-          issues: true,
+          tasks: true,
           skills: true,
         },
         company: {
@@ -893,7 +893,7 @@ describe("import selection catalog", () => {
         agents: [],
         skills: [],
         projects: [],
-        issues: [],
+        tasks: [],
         envInputs: [],
       },
       files: {
@@ -909,7 +909,7 @@ describe("import selection catalog", () => {
 
     state.company = false;
     state.projects.clear();
-    state.issues.clear();
+    state.tasks.clear();
     state.agents.clear();
     state.skills.clear();
 

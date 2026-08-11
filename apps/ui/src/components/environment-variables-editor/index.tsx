@@ -449,7 +449,7 @@ export const EnvironmentVariablesEditor = forwardRef<EnvironmentVariablesEditorH
           </div>
 
           {rows.map((row, index) => {
-            const issue = validateName(row.name, duplicateNames, reservedPrefixes);
+            const diagnostic = validateName(row.name, duplicateNames, reservedPrefixes);
             const touched = touchedNames.has(row.name.trim());
             return (
               <EnvironmentVariableRow
@@ -460,8 +460,8 @@ export const EnvironmentVariablesEditor = forwardRef<EnvironmentVariablesEditorH
                 userSecretDefinitions={userSecretDefinitions}
                 recentlyUsedSecrets={recentlyUsedSecrets}
                 disabled={disabled}
-                nameIssue={issue}
-                showNameIssue={touched}
+                nameDiagnostic={diagnostic}
+                showNameDiagnostic={touched}
                 dirtyFields={rowDirtyFields(row, committedRowsById.get(row.id))}
                 onPatch={(patch) => patchRow(row.id, patch)}
                 onRemove={() => removeRow(row.id)}

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addValidationDetail } from "./validation-details.js";
 import {
   BIND_MODES,
   DEPLOYMENT_EXPOSURES,
@@ -43,8 +44,7 @@ export const authConfigSchema = z
       try {
         return normalizePublicOrigin(value);
       } catch (error) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+        addValidationDetail(ctx, {
           message: error instanceof Error ? error.message : "Invalid public origin",
         });
         return z.NEVER;
@@ -133,24 +133,21 @@ export const paperclipConfigSchema = z
       host: value.server.host,
       customBindHost: value.server.customBindHost,
     })) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message,
         path: message.includes("customBindHost") ? ["server", "customBindHost"] : ["server", "bind"],
       });
     }
 
     if (value.server.exposure === "public" && !value.auth.publicBaseUrl) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "auth.publicBaseUrl is required when server.exposure=public",
         path: ["auth", "publicBaseUrl"],
       });
     }
 
     if (value.server.exposure === "private" && value.auth.publicBaseUrl) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "auth.publicBaseUrl is only valid when server.exposure=public",
         path: ["auth", "publicBaseUrl"],
       });

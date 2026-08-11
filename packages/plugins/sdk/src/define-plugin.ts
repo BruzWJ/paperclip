@@ -17,7 +17,7 @@
  *     await ctx.logger.info("Linear sync plugin starting");
  *
  *     // Subscribe to events
- *     ctx.events.on("issue.board.comment.created", async (event) => {
+ *     ctx.events.on("task.board.comment.created", async (event) => {
  *       const config = await ctx.config.get();
  *       const apiKey = String(config.apiKey ?? "");
  *       await ctx.http.fetch(`https://api.linear.app/...`, {
@@ -265,7 +265,7 @@ export interface PaperclipPlugin {
  * export default definePlugin({
  *   async setup(ctx) {
  *     await ctx.logger.info("Plugin started");
- *     ctx.events.on("issue.board.comment.created", async (event) => {
+ *     ctx.events.on("task.board.comment.created", async (event) => {
  *       // handle event
  *     });
  *   },

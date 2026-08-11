@@ -3,12 +3,12 @@ import {
   focusPageSearchShortcutTarget,
   hasBlockingShortcutDialog,
   isKeyboardShortcutTextInputTarget,
-  resolveIssueDetailGoKeyAction,
+  resolveTaskDetailGoKeyAction,
 } from "../lib/keyboardShortcuts";
 
 interface ShortcutHandlers {
   enabled?: boolean;
-  onNewIssue?: () => void;
+  onNewTask?: () => void;
   onSearch?: () => void;
   onToggleSidebar?: () => void;
   onToggleCollapse?: () => void;
@@ -19,7 +19,7 @@ interface ShortcutHandlers {
 
 export function useKeyboardShortcuts({
   enabled = true,
-  onNewIssue,
+  onNewTask,
   onSearch,
   onToggleSidebar,
   onToggleCollapse,
@@ -30,9 +30,9 @@ export function useKeyboardShortcuts({
   useEffect(() => {
     if (!enabled) return;
 
-    // g → i chord state. IssueDetail runs its own capture-phase handler with
+    // g → i chord state. TaskDetail runs its own capture-phase handler with
     // an extra comment-focus chord and stops propagation when it handles it, so
-    // this bubble-phase chord only fires outside the issue detail page.
+    // this bubble-phase chord only fires outside the task detail page.
     let goChordArmed = false;
     let goChordTimeout: number | null = null;
     const clearGoChordTimeout = () => {
@@ -61,7 +61,7 @@ export function useKeyboardShortcuts({
       }
 
       if (onGoToInbox) {
-        const chordAction = resolveIssueDetailGoKeyAction({
+        const chordAction = resolveTaskDetailGoKeyAction({
           armed: goChordArmed,
           defaultPrevented: e.defaultPrevented,
           key: e.key,
@@ -82,7 +82,7 @@ export function useKeyboardShortcuts({
           return;
         }
         if (chordAction === "focus_comment") {
-          // Swallow issue-detail-only chord keys so they do not trigger bare
+          // Swallow task-detail-only chord keys so they do not trigger bare
           // shortcuts.
           disarmGoChord();
           e.preventDefault();
@@ -116,10 +116,10 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      // C → New Issue
+      // C → New Task
       if (e.key === "c" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
-        onNewIssue?.();
+        onNewTask?.();
       }
 
       // [ → Toggle Sidebar
@@ -155,5 +155,5 @@ export function useKeyboardShortcuts({
       document.removeEventListener("focusin", handleFocusIn, true);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [enabled, onNewIssue, onSearch, onToggleSidebar, onToggleCollapse, onTogglePanel, onShowShortcuts, onGoToInbox]);
+  }, [enabled, onNewTask, onSearch, onToggleSidebar, onToggleCollapse, onTogglePanel, onShowShortcuts, onGoToInbox]);
 }

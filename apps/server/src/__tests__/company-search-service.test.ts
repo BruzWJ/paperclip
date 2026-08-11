@@ -73,7 +73,7 @@ describe("companySearchService", () => {
       hasMore: false,
     });
     expect(result.countsByType).toEqual({
-      issue: 0,
+      task: 0,
       comment: 0,
       document: 0,
       artifact: 0,

@@ -63,7 +63,7 @@ describe("llm routes", () => {
     ]);
   });
 
-  it("documents persisted issue references and routines as the execution model", async () => {
+  it("documents persisted task references and routines as the execution model", async () => {
     const app = await createApp(testBoardSessionActor({
       userId: "board-user",
       companyIds: ["company-1"],
@@ -74,13 +74,13 @@ describe("llm routes", () => {
 
     expect(res.status).toBe(200);
     expect(res.text).toContain(
-      "Agents run only from persisted issue-execution references.",
+      "Agents run only from persisted task-execution references.",
     );
     expect(res.text).toContain(
-      "Recurring work must be modeled as a routine that creates ordinary issues.",
+      "Recurring work must be modeled as a routine that creates ordinary tasks.",
     );
     expect(res.text).not.toContain("desiredSkills");
-    expect(res.text).not.toContain("sourceIssueId");
+    expect(res.text).not.toContain("sourceTaskId");
     expect(res.text).not.toContain("heartbeat");
     expect(mockRefreshAcpxAdapters).toHaveBeenCalledOnce();
   }, 20_000);

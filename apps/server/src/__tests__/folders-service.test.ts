@@ -86,7 +86,7 @@ describe("folder service", () => {
   });
 
   it.each(["bundled", "my", "projects"])(
-    "rejects the reserved %s root before issuing a query",
+    "rejects the reserved %s root before sending a query",
     async (slug) => {
       const harness = createMockDb();
 

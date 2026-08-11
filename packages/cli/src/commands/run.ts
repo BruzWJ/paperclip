@@ -105,7 +105,7 @@ export async function runCommand(
   const summary = await doctor({ config: configPath });
 
   if (summary.failed > 0) {
-    p.log.error("Doctor found blocking issues. Not starting server.");
+    p.log.error("Doctor found blocking failures. Not starting server.");
     process.exit(1);
   }
 

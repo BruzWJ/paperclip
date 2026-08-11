@@ -10,7 +10,7 @@ import { NewAgentDialog } from "./NewAgentDialog";
 const createCompanyInviteMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
 const closeNewAgentMock = vi.hoisted(() => vi.fn());
-const openNewIssueMock = vi.hoisted(() => vi.fn());
+const openNewTaskMock = vi.hoisted(() => vi.fn());
 const pushToastMock = vi.hoisted(() => vi.fn());
 const clipboardWriteTextMock = vi.hoisted(() => vi.fn());
 
@@ -22,7 +22,7 @@ vi.mock("../context/DialogContext", () => ({
   useDialog: () => ({
     newAgentOpen: true,
     closeNewAgent: closeNewAgentMock,
-    openNewIssue: openNewIssueMock,
+    openNewTask: openNewTaskMock,
   }),
 }));
 

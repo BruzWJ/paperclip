@@ -5,7 +5,7 @@ import { registerOrganizationCommands } from "../commands/client/organization.js
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
-const ISSUE_ID = "44444444-4444-4444-8444-444444444444";
+const TASK_ID = "44444444-4444-4444-8444-444444444444";
 const INCIDENT_ID = "99999999-9999-4999-8999-999999999999";
 
 function createProgram(): Command {
@@ -45,7 +45,7 @@ describe("operations parity commands", () => {
     await run(["cost", "summary", "--company-id", COMPANY_ID]);
     await run(["cost", "by-agent", "--company-id", COMPANY_ID]);
     await run(["cost", "by-project", "--company-id", COMPANY_ID]);
-    await run(["cost", "issue", ISSUE_ID]);
+    await run(["cost", "task", TASK_ID]);
     await run(["cost", "events", "--company-id", COMPANY_ID]);
     await run([
       "finance",
@@ -100,7 +100,7 @@ describe("operations parity commands", () => {
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/costs/summary`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/costs/by-agent`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/costs/by-project`],
-      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/cost-summary`],
+      ["GET", `http://localhost:3100/api/tasks/${TASK_ID}/cost-summary`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/cost-events`],
       ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/finance-events`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/costs/finance-summary`],

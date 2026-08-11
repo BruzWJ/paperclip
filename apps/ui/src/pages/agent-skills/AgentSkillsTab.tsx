@@ -21,7 +21,7 @@ import { filterAgentSkills } from "./agent-skill-filter";
 import { buildAgentSkillSourceMeta } from "./agent-skill-source";
 
 const MATERIALIZATION_NOTE =
-  "Selected company skill pins apply to the next issue execution. The local CLI owns native skill discovery; selections grant no runtime authority.";
+  "Selected company skill pins apply to the next task execution. The local CLI owns native skill discovery; selections grant no runtime authority.";
 
 export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?: string }) {
   const queryClient = useQueryClient();
@@ -234,7 +234,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="inline-flex cursor-default items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground">
-                Applied on next issue execution
+                Applied on next task execution
               </span>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="max-w-xs">

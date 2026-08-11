@@ -8,7 +8,7 @@ import {
   terminalizeRoutineCreatorEdgesInTransaction,
 } from "../services/system-escalation-postgres.js";
 
-type AffectedIssue = Parameters<
+type AffectedTask = Parameters<
   typeof resolveSystemEscalationOwnerInTransaction
 >[1];
 type SessionAdmission = Parameters<
@@ -34,9 +34,9 @@ function agent(
   };
 }
 
-function issue(
-  overrides: Partial<AffectedIssue> & Pick<AffectedIssue, "id">,
-): AffectedIssue {
+function task(
+  overrides: Partial<AffectedTask> & Pick<AffectedTask, "id">,
+): AffectedTask {
   return {
     id: overrides.id,
     companyId: COMPANY_ID,
@@ -51,7 +51,7 @@ function issue(
     creatorAuthorityId: null,
     lifecycleStatus: "open",
     ...overrides,
-  } as AffectedIssue;
+  } as AffectedTask;
 }
 
 function edge(
@@ -60,7 +60,7 @@ function edge(
   return {
     id: "edge-1",
     companyId: COMPANY_ID,
-    issueId: "issue-child",
+    taskId: "task-child",
     sessionId: "ses_child",
     ownershipEpoch: 1,
     generation: 1,
@@ -83,9 +83,9 @@ function edge(
 
 describe("PostgreSQL system escalation contracts without a database", () => {
   it("selects the live immutable agent creator before every ancestor", async () => {
-    const affected = issue({
-      id: "issue-child",
-      parentId: "issue-parent",
+    const affected = task({
+      id: "task-child",
+      parentId: "task-parent",
       creatorKind: "agent-execution",
       creatorAuthorityId: "authority-creator",
     });
@@ -94,8 +94,8 @@ describe("PostgreSQL system escalation contracts without a database", () => {
         [agent("creator-agent"), agent("ancestor-agent")],
         [
           affected,
-          issue({
-            id: "issue-parent",
+          task({
+            id: "task-parent",
             ownerAgentId: "ancestor-agent",
           }),
         ],
@@ -113,9 +113,9 @@ describe("PostgreSQL system escalation contracts without a database", () => {
   });
 
   it("falls through a dead immutable creator to the first live ancestor owner", async () => {
-    const affected = issue({
-      id: "issue-child",
-      parentId: "issue-parent",
+    const affected = task({
+      id: "task-child",
+      parentId: "task-parent",
       creatorKind: "agent-execution",
       creatorAuthorityId: "authority-creator",
     });
@@ -124,8 +124,8 @@ describe("PostgreSQL system escalation contracts without a database", () => {
         [agent("creator-agent", "terminated"), agent("ancestor-agent")],
         [
           affected,
-          issue({
-            id: "issue-parent",
+          task({
+            id: "task-parent",
             ownerAgentId: "ancestor-agent",
           }),
         ],
@@ -142,13 +142,13 @@ describe("PostgreSQL system escalation contracts without a database", () => {
   });
 
   it("uses the named root creator after the agent ladder is exhausted", async () => {
-    const affected = issue({
-      id: "issue-child",
-      parentId: "issue-root",
+    const affected = task({
+      id: "task-child",
+      parentId: "task-root",
       creatorKind: "routine",
     });
-    const root = issue({
-      id: "issue-root",
+    const root = task({
+      id: "task-root",
       ownerAgentId: "dead-root-owner",
       creatorKind: "user/board",
       creatorUserId: "root-user",
@@ -169,8 +169,8 @@ describe("PostgreSQL system escalation contracts without a database", () => {
   });
 
   it("falls back to the board and never promotes an unrelated live company agent", async () => {
-    const affected = issue({
-      id: "issue-child",
+    const affected = task({
+      id: "task-child",
       creatorKind: "plugin",
     });
     const harness = createMockDb({
@@ -185,15 +185,15 @@ describe("PostgreSQL system escalation contracts without a database", () => {
     ).resolves.toEqual({ kind: "board" });
   });
 
-  it("fails closed to the board for a cyclic issue ancestry", async () => {
-    const affected = issue({
-      id: "issue-child",
-      parentId: "issue-parent",
+  it("fails closed to the board for a cyclic task ancestry", async () => {
+    const affected = task({
+      id: "task-child",
+      parentId: "task-parent",
       creatorKind: "routine",
     });
-    const parent = issue({
-      id: "issue-parent",
-      parentId: "issue-child",
+    const parent = task({
+      id: "task-parent",
+      parentId: "task-child",
       ownerKind: "user",
       creatorUserId: "must-not-win",
     });
@@ -207,9 +207,9 @@ describe("PostgreSQL system escalation contracts without a database", () => {
     ).resolves.toEqual({ kind: "board" });
   });
 
-  it("keeps a terminal issue's creator edge receivable and opens no escalation", async () => {
-    const affected = issue({
-      id: "issue-child",
+  it("keeps a terminal task's creator edge receivable and opens no escalation", async () => {
+    const affected = task({
+      id: "task-child",
       lifecycleStatus: "done",
     });
     const current = edge();
@@ -223,7 +223,7 @@ describe("PostgreSQL system escalation contracts without a database", () => {
         sessions,
         {
           companyId: COMPANY_ID,
-          issueId: affected.id,
+          taskId: affected.id,
           ownershipEpoch: 1,
           creatorEdgeId: current.id,
           reason: "plugin_disabled",
@@ -241,9 +241,9 @@ describe("PostgreSQL system escalation contracts without a database", () => {
     expect(harness.remaining("select")).toBe(0);
   });
 
-  it("deduplicates agent structural-loss settlement by issue and preserves agent_terminated", async () => {
-    const affected = issue({
-      id: "issue-child",
+  it("deduplicates agent structural-loss settlement by task and preserves agent_terminated", async () => {
+    const affected = task({
+      id: "task-child",
       lifecycleStatus: "cancelled",
     });
     const wrapperEdge = edge({
@@ -304,8 +304,8 @@ describe("PostgreSQL system escalation contracts without a database", () => {
         }),
     },
   ])("maps $label loss to its canonical terminal reason", async ({ reason, invoke }) => {
-    const affected = issue({
-      id: "issue-child",
+    const affected = task({
+      id: "task-child",
       lifecycleStatus: "done",
     });
     const wrapperEdge = edge({

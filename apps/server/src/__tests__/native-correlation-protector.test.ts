@@ -16,7 +16,7 @@ const secret =
 const scope: AcpCarryCorrelationScope = {
   purpose: "carry",
   companyId: "company-1",
-  issueId: "issue-1",
+  taskId: "task-1",
   ownershipEpoch: 2,
   targetAgentId: "agent-1",
   adapterConfigIdentity: "revision-1",
@@ -29,7 +29,7 @@ const scope: AcpCarryCorrelationScope = {
 const steeringScope: AcpActiveRunSteeringCorrelationScope = {
   purpose: "active_run_steering",
   companyId: "company-1",
-  issueId: "issue-1",
+  taskId: "task-1",
   ownershipEpoch: 2,
   targetAgentId: "agent-1",
   adapterConfigIdentity: "revision-1",

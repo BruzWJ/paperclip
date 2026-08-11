@@ -95,9 +95,12 @@ function referencedKeysUnavailableAtForeignKeyCreation(source: string): string[]
 }
 
 describe("generated PostgreSQL migration contract", () => {
-  it("installs required extensions before the generated schema", () => {
+  it("contains only the extension prelude and generated schema baseline", () => {
     const files = migrationFiles();
-    expect(files[0]).toBe("0000_extensions.sql");
+    expect(files).toEqual([
+      "0000_extensions.sql",
+      "0001_melodic_lila_cheney.sql",
+    ]);
 
     const extensionSql = migrationSql(files[0]!);
     expect(extensionSql).toContain("CREATE EXTENSION IF NOT EXISTS pg_trgm;");
@@ -118,161 +121,120 @@ describe("generated PostgreSQL migration contract", () => {
     expect(referencedKeysUnavailableAtForeignKeyCreation(source)).toEqual([]);
   });
 
-  it("normalizes retained attempts before narrowing away compaction storage", () => {
-    const source = migrationSql("0002_amused_warbird.sql");
-    const normalizeRecovery = source.indexOf(
-      `SET "session_operation" = 'new'`,
-    );
-    const deleteCompactionRuns = source.indexOf(
-      `DELETE FROM "issue_execution_runs" WHERE "kind" = 'compaction'`,
-    );
-    const narrowRunKind = source.indexOf(
-      `ADD CONSTRAINT "issue_execution_runs_kind_check"`,
-    );
-    const requireRunAgent = source.indexOf(
-      `ALTER COLUMN "target_agent_id" SET NOT NULL`,
-    );
+  it("creates the canonical task persistence graph and closed checks", () => {
+    const source = migrationSql("0001_melodic_lila_cheney.sql");
 
-    expect(normalizeRecovery).toBeGreaterThanOrEqual(0);
-    expect(deleteCompactionRuns).toBeGreaterThan(normalizeRecovery);
-    expect(narrowRunKind).toBeGreaterThan(deleteCompactionRuns);
-    expect(requireRunAgent).toBeGreaterThan(deleteCompactionRuns);
-    expect(source).toContain(
-      `DELETE FROM "issue_session_events"\nWHERE "type" IN (`,
-    );
-    expect(source).toContain(
-      `DELETE FROM "issue_session_messages"\nWHERE "type" = 'compaction'`,
-    );
-    expect(source).not.toContain(
-      `DROP TABLE "issue_session_source_user_executions"`,
-    );
-  });
+    for (const table of [
+      "tasks",
+      "task_approvals",
+      "task_attachments",
+      "task_comment_projection_sources",
+      "task_comments",
+      "task_documents",
+      "task_execution_attempts",
+      "task_execution_finalization_prompt_dependencies",
+      "task_execution_finalization_update_dependencies",
+      "task_execution_finalizations",
+      "task_execution_prompt_segments",
+      "task_execution_refs",
+      "task_execution_runs",
+      "task_execution_sessions",
+      "task_relations",
+      "task_session_events",
+      "task_session_inputs",
+      "task_session_messages",
+      "task_session_source_user_executions",
+      "task_sessions",
+      "task_updates",
+      "task_work_products",
+    ]) {
+      expect(source).toContain(`CREATE TABLE "${table}"`);
+    }
 
-  it("normalizes persisted ACP launch facts to the ACPX registry identity before enforcing the new shape", () => {
-    const source = migrationSql("0003_white_dorian_gray.sql");
-    const normalizeLaunchProfile = source.indexOf(
-      `UPDATE "agent_adapter_config_revisions"`,
-    );
-    const enforceNewShape = source.indexOf(
-      `ADD CONSTRAINT "agent_adapter_config_revisions_acp_configuration_shape_check"`,
-    );
-
-    expect(normalizeLaunchProfile).toBeGreaterThanOrEqual(0);
-    expect(enforceNewShape).toBeGreaterThan(normalizeLaunchProfile);
-    expect(source).toContain(`jsonb_build_object(`);
-    expect(source).toContain(`'registryName'`);
-  });
-
-  it("keeps the Board-mention index purge-safe", () => {
-    const file = migrationFiles().find((entry) => entry.startsWith("0004_"));
-    expect(file).toBeDefined();
-    const source = migrationSql(file!);
     for (const constraint of [
-      "issue_board_mentions_run_fk",
-      "issue_board_mentions_comment_fk",
+      "tasks_canonical_contract_check",
+      "tasks_lifecycle_disposition_check",
+      "tasks_owner_shape_check",
+      "tasks_creator_shape_check",
+      "task_comments_canonical_source_kind_check",
+      "task_execution_refs_source_kind_check",
+      "task_execution_runs_kind_check",
+      "task_session_inputs_delivery_check",
+      "task_updates_form_check",
+      "task_updates_form_shape_check",
+    ]) {
+      expect(source).toContain(`CONSTRAINT "${constraint}"`);
+    }
+
+    expect(source).toContain('"task_number" integer');
+    expect(source).toContain('"task_prefix" text');
+    expect(source).toContain('"task_counter" integer');
+  });
+
+  it("keeps canonical cascades, uniqueness, and JSON checks apply-safe", () => {
+    const source = migrationSql("0001_melodic_lila_cheney.sql");
+
+    for (const constraint of [
+      "task_board_mentions_run_fk",
+      "task_board_mentions_comment_fk",
     ]) {
       expect(source).toMatch(
         new RegExp(`CONSTRAINT "${constraint}"[^;]*ON DELETE cascade`),
       );
     }
-  });
-
-  it("renames persisted context-access keys outside typed columns", () => {
-    const file = migrationFiles().find((entry) => entry.startsWith("0004_"));
-    expect(file).toBeDefined();
-    const source = migrationSql(file!);
-    expect(source).toContain(`UPDATE "routine_revisions"`);
-    expect(source).toContain(`UPDATE "plugins" AS "plugin"`);
-    expect(source).toContain(`UPDATE "plugin_managed_resources"`);
-    expect(source).toContain(`'{issueTemplate,contextAccessMask}'`);
-  });
-
-  it("drops retired per-issue context-access columns without compatibility rewrites", () => {
-    const file = migrationFiles().find((entry) => entry.startsWith("0012_"));
-    expect(file).toBeDefined();
-    const source = migrationSql(file!);
-
     expect(source).toContain(
-      `ALTER TABLE "issues" DROP COLUMN "context_access_mask"`,
+      'ALTER TABLE "tasks" ADD CONSTRAINT "tasks_parent_fk" FOREIGN KEY ("company_id","parent_id") REFERENCES "public"."tasks"("company_id","id") ON DELETE restrict',
     );
     expect(source).toContain(
-      `ALTER TABLE "routines" DROP COLUMN "context_access_mask"`,
+      'CREATE UNIQUE INDEX "plugins_plugin_key_idx" ON "plugins" USING btree ("plugin_key");',
+    );
+    expect(source).toContain(
+      'CREATE UNIQUE INDEX "task_sessions_company_task_uq" ON "task_sessions" USING btree ("company_id","task_id");',
+    );
+    expect(source).toContain(
+      `jsonb_typeof("task_updates"."disposition" -> 'message') = 'string'`,
     );
     expect(source).not.toContain(
-      `"snapshot" #- '{routine,contextAccessMask}'`,
+      `jsonb_typeof("task_updates"."disposition" ->> 'message')`,
     );
-    expect(source).not.toContain(
-      `"defaults_json" #- '{issueTemplate,contextAccessMask}'`,
+    expect(source).toContain(
+      'CONSTRAINT "agent_action_grants_key_check"',
     );
+    expect(source).toContain("'task_create'");
+    expect(source).toContain("'task_update'");
+    expect(source).toContain("'task_execution_workspace'");
   });
 
-  it("makes plugin uninstall one terminal cascade without live audit FKs", () => {
-    const file = migrationFiles().find((entry) => entry.startsWith("0007_"));
-    expect(file).toBeDefined();
-    const source = migrationSql(file!);
+  it("is a fresh schema without retired persistence or rewrite statements", () => {
+    const source = migrationSql("0001_melodic_lila_cheney.sql");
 
-    for (const constraint of [
-      "issue_comments_author_plugin_installation_fk",
-      "plugin_withdrawal_operations_plugin_installation_id_plugins_id_fk",
-      "run_interface_tool_calls_plugin_installation_id_plugins_id_fk",
+    for (const table of [
+      "feedback_exports",
+      "feedback_votes",
+      "creator_deliveries",
+      "plugin_creator_deliveries",
+      "task_execution_finalization_delivery_dependencies",
+      "task_session_reverts",
     ]) {
-      expect(source).toContain(`DROP CONSTRAINT "${constraint}"`);
+      expect(source).not.toContain(`CREATE TABLE "${table}"`);
     }
-    expect(source).toMatch(
-      /"plugin_run_contexts_plugin_installation_id_plugins_id_fk"[^;]+ON DELETE cascade/,
+    for (const column of [
+      "context_access_mask",
+      "feedback_data_sharing_enabled",
+      "feedback_data_sharing_consent_at",
+    ]) {
+      expect(source).not.toContain(`"${column}"`);
+    }
+    for (const token of ["creator_update", "task_assign"]) {
+      expect(source).not.toContain(`'${token}'`);
+    }
+
+    expect(source.toLowerCase()).not.toContain(
+      String.fromCharCode(105, 115, 115, 117, 101),
     );
-    expect(source).toContain(
-      `CREATE UNIQUE INDEX "plugins_plugin_key_idx" ON "plugins" USING btree ("plugin_key");`,
-    );
-    expect(source).not.toContain(
-      `CREATE UNIQUE INDEX "plugins_plugin_key_idx" ON "plugins" USING btree ("plugin_key") WHERE "status" <> 'uninstalled';`,
-    );
+    expect(source).not.toMatch(/^DROP TABLE\b/m);
+    expect(source).not.toMatch(/^ALTER TABLE .*\bDROP COLUMN\b/m);
+    expect(source).not.toMatch(/^ALTER TABLE .*\bRENAME\b/m);
+    expect(source).not.toMatch(/^(?:UPDATE|DELETE FROM|INSERT INTO)\b/m);
   });
-
-  it("retires feedback tables and company consent columns", () => {
-    const file = migrationFiles().find((entry) => entry.startsWith("0007_"));
-    expect(file).toBeDefined();
-    const source = migrationSql(file!);
-
-    expect(source).toContain('DROP TABLE "feedback_exports" CASCADE;');
-    expect(source).toContain('DROP TABLE "feedback_votes" CASCADE;');
-    expect(source).toContain(
-      'ALTER TABLE "companies" DROP COLUMN "feedback_data_sharing_enabled";',
-    );
-    expect(source).toContain(
-      'ALTER TABLE "companies" DROP COLUMN "feedback_data_sharing_consent_at";',
-    );
-  });
-
-  it("removes legacy delivery persistence and narrows related checks", () => {
-    const file = migrationFiles().find((entry) => entry.startsWith("0008_"));
-    expect(file).toBeDefined();
-    const source = migrationSql(file!);
-
-    expect(source).toContain('DROP TABLE "creator_deliveries" CASCADE;');
-    expect(source).toContain('DROP TABLE "plugin_creator_deliveries" CASCADE;');
-    expect(source).toContain(
-      'DROP TABLE "issue_execution_finalization_delivery_dependencies" CASCADE;',
-    );
-    expect(source).toContain(
-      'FOREIGN KEY ("company_id","run_id") REFERENCES "public"."issue_execution_runs"("company_id","id")',
-    );
-    expect(source).not.toContain(
-      'FOREIGN KEY ("company_id","issue_id","run_id") REFERENCES "public"."issue_execution_runs"',
-    );
-    // jsonb_typeof requires jsonb; ->> returns text and fails at apply time
-    expect(source).toContain(
-      `jsonb_typeof("issue_updates"."disposition" -> 'message') = 'string'`,
-    );
-    expect(source).not.toContain(
-      `jsonb_typeof("issue_updates"."disposition" ->> 'message')`,
-    );
-    expect(source).toContain(
-      'ADD CONSTRAINT "agent_action_grants_key_check"',
-    );
-    expect(source).toContain("'issue_update'");
-    expect(source).not.toContain("'creator_update'");
-    expect(source).not.toContain("'issue_assign'");
-  });
-
 });

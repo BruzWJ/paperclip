@@ -8,12 +8,12 @@ import { errorHandler } from "../middleware/index.js";
 import { userProfileRoutes } from "../routes/user-profiles.js";
 
 describe("GET /companies/:companyId/users/:userSlug/profile", () => {
-  it("resolves a user slug and returns issue, activity, and attributed cost stats", async () => {
+  it("resolves a user slug and returns task, activity, and attributed cost stats", async () => {
     const companyId = randomUUID();
     const userId = randomUUID();
     const agentId = randomUUID();
-    const openIssueId = randomUUID();
-    const doneIssueId = randomUUID();
+    const openTaskId = randomUUID();
+    const doneTaskId = randomUUID();
     const now = new Date("2026-01-15T00:00:00.000Z");
     const companyUser = {
       id: randomUUID(),
@@ -28,11 +28,11 @@ describe("GET /companies/:companyId/users/:userSlug/profile", () => {
     };
     // Every aggregate query receives a read-only superset row. Aggregate
     // consumers read their named fields, while list consumers preserve the
-    // declared recent-issue ordering. This is a response queue, not a SQL
+    // declared recent-task ordering. This is a response queue, not a SQL
     // emulator: no predicates or mutations are interpreted in test code.
     const universalRows = [
       {
-        id: openIssueId,
+        id: openTaskId,
         identifier: "USR-2",
         title: "Review profile copy",
         boardPresentationStatus: "in_progress",
@@ -41,25 +41,25 @@ describe("GET /companies/:companyId/users/:userSlug/profile", () => {
         ownerUserId: userId,
         updatedAt: now,
         completedAt: null,
-        touchedIssues: 2,
-        createdIssues: 1,
-        completedIssues: 1,
-        assignedOpenIssues: 1,
+        touchedTasks: 2,
+        createdTasks: 1,
+        completedTasks: 1,
+        assignedOpenTasks: 1,
         count: 1,
         knownCostAmount: "42",
         pricedPromptCount: 1,
         unpricedPromptCount: 0,
         date: "1900-01-01",
-        action: "issue.updated",
-        entityType: "issue",
-        entityId: doneIssueId,
+        action: "task.updated",
+        entityType: "task",
+        entityId: doneTaskId,
         details: null,
         createdAt: now,
         agentId,
         agentName: "Coder",
       },
       {
-        id: doneIssueId,
+        id: doneTaskId,
         identifier: "USR-1",
         title: "Ship profile page",
         boardPresentationStatus: "done",
@@ -101,10 +101,10 @@ describe("GET /companies/:companyId/users/:userSlug/profile", () => {
     expect(response.body.stats).toHaveLength(3);
     const all = response.body.stats.find((entry: { key: string }) => entry.key === "all");
     expect(all).toMatchObject({
-      touchedIssues: 2,
-      createdIssues: 1,
-      completedIssues: 1,
-      assignedOpenIssues: 1,
+      touchedTasks: 2,
+      createdTasks: 1,
+      completedTasks: 1,
+      assignedOpenTasks: 1,
       commentCount: 1,
       activityCount: 1,
       knownCostAmount: "42",
@@ -112,9 +112,9 @@ describe("GET /companies/:companyId/users/:userSlug/profile", () => {
       unpricedPromptCount: 0,
     });
     expect(response.body.daily).toHaveLength(14);
-    expect(response.body.recentIssues.map((issue: { identifier: string }) => issue.identifier))
+    expect(response.body.recentTasks.map((task: { identifier: string }) => task.identifier))
       .toEqual(["USR-2", "USR-1"]);
-    expect(response.body.recentActivity[0].action).toBe("issue.updated");
+    expect(response.body.recentActivity[0].action).toBe("task.updated");
     expect(response.body.topAgents[0]).toMatchObject({
       agentId,
       agentName: "Coder",

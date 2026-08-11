@@ -1,12 +1,12 @@
 // @vitest-environment node
 
 import { describe, expect, it, vi } from "vitest";
-import { ACTIVE_ISSUE_EXECUTION_RUN_STATUSES } from "../api/runs";
+import { ACTIVE_TASK_EXECUTION_RUN_STATUSES } from "../api/runs";
 import { queryKeys } from "../lib/queryKeys";
 import { __liveUpdatesTestUtils } from "./LiveUpdatesProvider";
 
 describe("LiveUpdatesProvider canonical run invalidation", () => {
-  it("invalidates canonical company and issue run projections for issue activity", () => {
+  it("invalidates canonical company and task run projections for task activity", () => {
     const invalidateQueries = vi.fn();
     const queryClient = {
       invalidateQueries,
@@ -17,9 +17,9 @@ describe("LiveUpdatesProvider canonical run invalidation", () => {
       queryClient as never,
       "company-1",
       {
-        entityType: "issue",
-        entityId: "issue-1",
-        action: "issue.updated",
+        entityType: "task",
+        entityId: "task-1",
+        action: "task.updated",
         details: null,
       },
       { userId: null, agentId: null },
@@ -29,14 +29,14 @@ describe("LiveUpdatesProvider canonical run invalidation", () => {
       queryKey: ["runs", "company-1"],
     });
     expect(invalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["issues", "runs", "issue-1"],
+      queryKey: ["tasks", "runs", "task-1"],
     });
   });
 
-  it("invalidates the visible issue when a canonical run id matches", () => {
+  it("invalidates the visible task when a canonical run id matches", () => {
     const invalidateQueries = vi.fn();
-    const issue = {
-      id: "issue-1",
+    const task = {
+      id: "task-1",
       identifier: "PAP-1",
       ownerAgentId: "agent-1",
     };
@@ -47,15 +47,15 @@ describe("LiveUpdatesProvider canonical run invalidation", () => {
     const queryClient = {
       invalidateQueries,
       getQueryData: (key: readonly unknown[]) => {
-        if (JSON.stringify(key) === JSON.stringify(queryKeys.issues.detail("PAP-1"))) {
-          return issue;
+        if (JSON.stringify(key) === JSON.stringify(queryKeys.tasks.detail("PAP-1"))) {
+          return task;
         }
         if (
           JSON.stringify(key) ===
           JSON.stringify(
-            queryKeys.issues.runs(
+            queryKeys.tasks.runs(
               "PAP-1",
-              ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+              ACTIVE_TASK_EXECUTION_RUN_STATUSES,
             ),
           )
         ) {
@@ -65,19 +65,19 @@ describe("LiveUpdatesProvider canonical run invalidation", () => {
       },
     };
 
-    const matched = __liveUpdatesTestUtils.invalidateVisibleIssueRunQueries(
+    const matched = __liveUpdatesTestUtils.invalidateVisibleTaskRunQueries(
       queryClient as never,
-      "/DEMO/issues/PAP-1",
+      "/DEMO/tasks/PAP-1",
       { runId: "run-1" },
       { isForegrounded: true },
     );
 
     expect(matched).toBe(true);
     expect(invalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["issues", "runs", "PAP-1"],
+      queryKey: ["tasks", "runs", "PAP-1"],
     });
     expect(invalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["issues", "runs", "issue-1"],
+      queryKey: ["tasks", "runs", "task-1"],
     });
   });
 

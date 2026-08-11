@@ -1,26 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  reserveIssueExecutionWorkspaceBinding,
-  IssueExecutionWorkspaceReservationRejected,
+  reserveTaskExecutionWorkspaceBinding,
+  TaskExecutionWorkspaceReservationRejected,
 } from "../services/execution-workspaces.js";
 import { createMockDb } from "./helpers/mock-db.js";
 
 const mkdirMock = vi.hoisted(() => vi.fn());
-const createIssueSessionRootMock = vi.hoisted(() => vi.fn());
+const createTaskSessionRootMock = vi.hoisted(() => vi.fn());
 
 vi.mock("node:fs/promises", () => ({
   default: { mkdir: mkdirMock },
 }));
 
-vi.mock("../services/issue-session-root-postgres.js", () => ({
-  createIssueSessionRootInTx: createIssueSessionRootMock,
+vi.mock("../services/task-session-root-postgres.js", () => ({
+  createTaskSessionRootInTx: createTaskSessionRootMock,
 }));
 
 const now = new Date("2026-08-09T00:00:00.000Z");
 
-function reservationIssue(projectWorkspaceId: string | null) {
+function reservationTask(projectWorkspaceId: string | null) {
   return {
-    id: "issue-1",
+    id: "task-1",
     companyId: "company-1",
     parentId: null,
     projectId: "project-1",
@@ -60,7 +60,7 @@ function bindingRow(projectWorkspaceId: string, cwd: string) {
   return {
     id: `binding-${projectWorkspaceId}`,
     companyId: "company-1",
-    issueId: "issue-1",
+    taskId: "task-1",
     sessionId: "session-1",
     ownershipEpoch: 1,
     executionWorkspaceId: `execution-${projectWorkspaceId}`,
@@ -71,11 +71,11 @@ function bindingRow(projectWorkspaceId: string, cwd: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   mkdirMock.mockResolvedValue(undefined);
-  createIssueSessionRootMock.mockImplementation(async (_tx, input) => ({
+  createTaskSessionRootMock.mockImplementation(async (_tx, input) => ({
     session: {
       id: input.id,
       companyId: input.companyId,
-      issueId: input.issueId,
+      taskId: input.taskId,
       parentSessionId: input.parentSessionId,
       directory: input.directory,
     },
@@ -94,8 +94,8 @@ describe("shared local execution workspace reservation", () => {
       insert: [[workspace], [binding]],
     });
 
-    const result = await reserveIssueExecutionWorkspaceBinding(harness.db, {
-      issue: reservationIssue(selected.id),
+    const result = await reserveTaskExecutionWorkspaceBinding(harness.db, {
+      task: reservationTask(selected.id),
       session: { id: "session-1", now },
       provenance: { userId: "board-user" },
     });
@@ -109,7 +109,7 @@ describe("shared local execution workspace reservation", () => {
     expect(mkdirMock).toHaveBeenCalledWith("/repo/project", {
       recursive: true,
     });
-    expect(createIssueSessionRootMock).toHaveBeenCalledWith(
+    expect(createTaskSessionRootMock).toHaveBeenCalledWith(
       harness.db,
       expect.objectContaining({ directory: "/repo/project" }),
     );
@@ -129,7 +129,7 @@ describe("shared local execution workspace reservation", () => {
     });
   });
 
-  it("uses the project's only codebase when the issue selector is omitted", async () => {
+  it("uses the project's only codebase when the task selector is omitted", async () => {
     const selected = projectCodebase("codebase-1", "/repo/project");
     const workspace = executionWorkspaceRow(selected.id, selected.cwd);
     const binding = bindingRow(selected.id, selected.cwd);
@@ -139,8 +139,8 @@ describe("shared local execution workspace reservation", () => {
       insert: [[workspace], [binding]],
     });
 
-    const result = await reserveIssueExecutionWorkspaceBinding(harness.db, {
-      issue: reservationIssue(null),
+    const result = await reserveTaskExecutionWorkspaceBinding(harness.db, {
+      task: reservationTask(null),
       session: { id: "session-1", now },
     });
 
@@ -148,19 +148,19 @@ describe("shared local execution workspace reservation", () => {
     expect(result.binding.absoluteCwd).toBe("/repo/project");
   });
 
-  it("rejects a codebase outside the issue project", async () => {
+  it("rejects a codebase outside the task project", async () => {
     const harness = createMockDb({
       execute: [[]],
       select: [[], [{ id: "project-1" }], []],
     });
 
     await expect(
-      reserveIssueExecutionWorkspaceBinding(harness.db, {
-        issue: reservationIssue("codebase-from-another-project"),
+      reserveTaskExecutionWorkspaceBinding(harness.db, {
+        task: reservationTask("codebase-from-another-project"),
         session: { id: "session-1", now },
       }),
     ).rejects.toMatchObject<
-      Partial<IssueExecutionWorkspaceReservationRejected>
+      Partial<TaskExecutionWorkspaceReservationRejected>
     >({ reason: "project_workspace_invalid" });
   });
 });

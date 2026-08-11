@@ -1,4 +1,4 @@
-import type { AgentVisibleIssueStatus } from "@paperclipai/shared";
+import type { AgentVisibleTaskStatus } from "@paperclipai/shared";
 import type { PaperclipManagedToolName } from "./paperclip-managed-tool-registry.js";
 
 export interface PaperclipMessageAgent {
@@ -11,7 +11,7 @@ export interface PaperclipMessageActor {
   name: string;
 }
 
-export interface PaperclipMessageIssue {
+export interface PaperclipMessageTask {
   id: string;
   identifier?: string | null;
 }
@@ -24,12 +24,12 @@ interface PaperclipManagedToolPromptDefinitions {
   mention_agent: {
     arguments: { agentId: string; message: string };
     context: {
-      issue: PaperclipMessageIssue;
+      task: PaperclipMessageTask;
       from: PaperclipMessageAgent;
       to: PaperclipMessageAgent;
     };
   };
-  issue_create: {
+  task_create: {
     arguments: {
       request: string;
       title?: string | null;
@@ -37,38 +37,38 @@ interface PaperclipManagedToolPromptDefinitions {
       owner: PaperclipPromptOwnerArgument;
     };
     context: {
-      issue: PaperclipMessageIssue;
+      task: PaperclipMessageTask;
       from: PaperclipMessageActor;
       owner: PaperclipMessageAgent;
-      status: AgentVisibleIssueStatus;
+      status: AgentVisibleTaskStatus;
     };
   };
-  issue_assign: {
+  task_assign: {
     arguments: {
-      issueId: string;
+      taskId: string;
       owner: PaperclipPromptOwnerArgument;
     };
     context: {
-      issue: PaperclipMessageIssue;
+      task: PaperclipMessageTask;
       from: PaperclipMessageActor;
       owner: PaperclipMessageAgent;
-      status: AgentVisibleIssueStatus;
+      status: AgentVisibleTaskStatus;
       request: string;
     };
   };
-  issue_update: {
+  task_update: {
     arguments: {
-      issueId?: string;
-      status?: AgentVisibleIssueStatus;
+      taskId?: string;
+      status?: AgentVisibleTaskStatus;
       message: string;
       structuredResult?: unknown;
     };
     context: {
-      issue: PaperclipMessageIssue;
+      task: PaperclipMessageTask;
       from: PaperclipMessageActor;
-      sourceRole: "issue creator" | "issue owner";
-      previousStatus: AgentVisibleIssueStatus;
-      effectiveStatus: AgentVisibleIssueStatus;
+      sourceRole: "task creator" | "task owner";
+      previousStatus: AgentVisibleTaskStatus;
+      effectiveStatus: AgentVisibleTaskStatus;
       pendingReview?: boolean;
     };
   };
@@ -119,12 +119,12 @@ function actor(value: PaperclipMessageActor): string {
     : `${name} (${oneLine(value.id, "Paperclip message actor id")})`;
 }
 
-function issueLines(issue: PaperclipMessageIssue): string[] {
-  const id = oneLine(issue.id, "Paperclip message issue id");
-  const identifier = issue.identifier?.trim()
-    ? oneLine(issue.identifier, "Paperclip message issue identifier")
+function taskLines(task: PaperclipMessageTask): string[] {
+  const id = oneLine(task.id, "Paperclip message task id");
+  const identifier = task.identifier?.trim()
+    ? oneLine(task.identifier, "Paperclip message task identifier")
     : null;
-  return [`Issue: ${identifier ? `${identifier} (${id})` : id}`];
+  return [`Task: ${identifier ? `${identifier} (${id})` : id}`];
 }
 
 function envelope(lines: readonly string[], exactBody: string): string {
@@ -133,7 +133,7 @@ function envelope(lines: readonly string[], exactBody: string): string {
 
 export function paperclipEnvelopeHasBody(
   rendered: string,
-  heading: "[Paperclip agent message]" | "[Paperclip issue assignment]",
+  heading: "[Paperclip agent message]" | "[Paperclip task assignment]",
   exactBody: string,
 ): boolean {
   const separator = rendered.indexOf("\n\n");
@@ -151,21 +151,21 @@ function renderMentionAgentPrompt(
     [
       "[Paperclip agent message]",
       `To: ${actor(input.context.to)}`,
-      ...issueLines(input.context.issue),
+      ...taskLines(input.context.task),
       `From: ${actor(input.context.from)}`,
     ],
     `@${input.context.to.name} ${input.arguments.message}`,
   );
 }
 
-function renderIssueCreatePrompt(
-  input: PaperclipManagedToolPrompt<"issue_create">,
+function renderTaskCreatePrompt(
+  input: PaperclipManagedToolPrompt<"task_create">,
 ): string {
   return envelope(
     [
-      "[Paperclip issue assignment]",
+      "[Paperclip task assignment]",
       "Action: Created and assigned",
-      ...issueLines(input.context.issue),
+      ...taskLines(input.context.task),
       `From: ${actor(input.context.from)}`,
       `Owner: ${actor(input.context.owner)}`,
       `Status: ${input.context.status}`,
@@ -174,14 +174,14 @@ function renderIssueCreatePrompt(
   );
 }
 
-function renderIssueAssignPrompt(
-  input: PaperclipManagedToolPrompt<"issue_assign">,
+function renderTaskAssignPrompt(
+  input: PaperclipManagedToolPrompt<"task_assign">,
 ): string {
   return envelope(
     [
-      "[Paperclip issue assignment]",
+      "[Paperclip task assignment]",
       "Action: Reassigned",
-      ...issueLines(input.context.issue),
+      ...taskLines(input.context.task),
       `From: ${actor(input.context.from)}`,
       `Owner: ${actor(input.context.owner)}`,
       `Status: ${input.context.status}`,
@@ -190,8 +190,8 @@ function renderIssueAssignPrompt(
   );
 }
 
-function renderIssueUpdatePrompt(
-  input: PaperclipManagedToolPrompt<"issue_update">,
+function renderTaskUpdatePrompt(
+  input: PaperclipManagedToolPrompt<"task_update">,
 ): string {
   const requestedStatus = input.arguments.status;
   const status = requestedStatus === undefined
@@ -201,8 +201,8 @@ function renderIssueUpdatePrompt(
       : `${input.context.previousStatus} -> ${input.context.effectiveStatus}`;
   return envelope(
     [
-      "[Paperclip issue update]",
-      ...issueLines(input.context.issue),
+      "[Paperclip task update]",
+      ...taskLines(input.context.task),
       `From: ${input.context.sourceRole}, ${actor(input.context.from)}`,
       `Status: ${status}`,
     ],
@@ -216,11 +216,11 @@ export function renderPaperclipManagedToolPrompt(
   switch (input.toolName) {
     case "mention_agent":
       return renderMentionAgentPrompt(input);
-    case "issue_create":
-      return renderIssueCreatePrompt(input);
-    case "issue_assign":
-      return renderIssueAssignPrompt(input);
-    case "issue_update":
-      return renderIssueUpdatePrompt(input);
+    case "task_create":
+      return renderTaskCreatePrompt(input);
+    case "task_assign":
+      return renderTaskAssignPrompt(input);
+    case "task_update":
+      return renderTaskUpdatePrompt(input);
   }
 }

@@ -133,9 +133,9 @@ export function valueFromRows(rows: EnvRow[]): Record<string, EnvBinding> | unde
 
 export const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-export type NameIssueLevel = "error" | "warn";
-export interface NameIssue {
-  level: NameIssueLevel;
+export type NameDiagnosticLevel = "error" | "warn";
+export interface NameDiagnostic {
+  level: NameDiagnosticLevel;
   message: string;
 }
 
@@ -147,7 +147,7 @@ export function validateName(
   name: string,
   duplicateNames: ReadonlySet<string>,
   reservedPrefixes: readonly string[],
-): NameIssue | null {
+): NameDiagnostic | null {
   const trimmed = name.trim();
   if (!trimmed) return null;
   if (!ENV_NAME_RE.test(trimmed)) {

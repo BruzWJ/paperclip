@@ -31,9 +31,9 @@ const apiPrefixes: Record<string, string> = {
   "inbox-agent-policy.ts": "/api",
   "inbox-dismissals.ts": "/api",
   "instance-settings.ts": "/api",
-  "issues.ts": "/api",
-  "issue-tree-control.ts": "/api",
-  "issue-ingress.ts": "/api",
+  "tasks.ts": "/api",
+  "task-tree-control.ts": "/api",
+  "task-ingress.ts": "/api",
   "llms.ts": "/api",
   "openapi.ts": "/api",
   "plugin-ui-static.ts": "/api",
@@ -80,7 +80,7 @@ const retiredRoutePrefixes = [
   "/api/environments/",
   "/api/decision-training/",
   "/api/execution-workspaces/",
-  "/api/issues/{issueId}/external-object",
+  "/api/tasks/{taskId}/external-object",
   "/api/mcp/gateways",
   "/api/runs/{runId}/watchdog-decisions",
   "/api/tool-gateway/",
@@ -332,7 +332,7 @@ describe("openapi routes", () => {
       const serialized = JSON.stringify(schema);
       expect(serialized).not.toContain("nativeCorrelationKind");
       expect(serialized).not.toContain("nativeCorrelation");
-      expect(serialized).not.toContain("issue-execution-native/v1");
+      expect(serialized).not.toContain("task-execution-native/v1");
       expect(serialized).not.toContain("providerSelectors");
       expect(serialized).not.toContain("providerInputKind");
     }

@@ -5,12 +5,12 @@ import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { agentsApi } from "../api/agents";
 import { companySkillsApi } from "../api/companySkills";
-import { issuesApi } from "../api/issues";
+import { tasksApi } from "../api/tasks";
 import { queryKeys } from "../lib/queryKeys";
 import { resolveSkillSummaryText } from "../lib/company-skill-summary";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { issueUrl } from "../lib/utils";
+import { taskUrl } from "../lib/utils";
 import { AgentConfigForm } from "../components/AgentConfigForm";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import { defaultCreateValues } from "../components/agent-config-defaults";
@@ -44,7 +44,7 @@ export function NewAgent() {
   const [title, setTitle] = useState("");
   const [capabilities, setCapabilities] = useState("");
   const [instruction, setInstruction] = useState("");
-  const [initialIssueTitle, setInitialIssueTitle] = useState("");
+  const [initialTaskTitle, setInitialTaskTitle] = useState("");
   const [initialRequest, setInitialRequest] = useState("");
   const [runtimeAccess, setRuntimeAccess] =
     useState<RuntimeAgentConfigurationValues>(
@@ -105,8 +105,8 @@ export function NewAgent() {
   const createAgent = useMutation({
     mutationFn: async (input: {
       payloads: ReturnType<typeof buildNewAgentControlPlanePayloads>;
-      issueTitle: string | null;
-      issueRequest: string;
+      taskTitle: string | null;
+      taskRequest: string;
     }) => {
       const created = await agentsApi.createRuntimeAgent(
         selectedCompanyId!,
@@ -123,18 +123,18 @@ export function NewAgent() {
         input.payloads.adapterRevision,
         selectedCompanyId!,
       );
-      const issue = await issuesApi.create(selectedCompanyId!, {
-        request: input.issueRequest,
+      const task = await tasksApi.create(selectedCompanyId!, {
+        request: input.taskRequest,
         ownerAgentId: created.agent.id,
-        idempotencyKey: `new-agent:${created.agent.id}:initial-issue`,
-        ...(input.issueTitle ? { title: input.issueTitle } : {}),
+        idempotencyKey: `new-agent:${created.agent.id}:initial-task`,
+        ...(input.taskTitle ? { title: input.taskTitle } : {}),
       });
-      return { agent: created.agent, issue };
+      return { agent: created.agent, task };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId!) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
-      navigate(issueUrl(result.issue));
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.list(selectedCompanyId!) });
+      navigate(taskUrl(result.task));
     },
     onError: (error) => {
       setFormError(error instanceof Error ? error.message : "Failed to create agent");
@@ -173,8 +173,8 @@ export function NewAgent() {
         adapterConfig: adapterConfigResolution.config,
         companySkillPins,
       }),
-      issueTitle: initialIssueTitle.trim() || null,
-      issueRequest: initialRequest.trim(),
+      taskTitle: initialTaskTitle.trim() || null,
+      taskRequest: initialRequest.trim(),
     });
   }
 
@@ -351,21 +351,21 @@ export function NewAgent() {
         <div className="border-t border-border px-4 py-4">
           <div className="space-y-3">
             <div>
-              <h2 className="text-sm font-medium">Initial issue</h2>
+              <h2 className="text-sm font-medium">Initial task</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Creating an agent also creates its first ordinary board issue.
+                Creating an agent also creates its first ordinary board task.
                 This immutable request is the only source that starts provider work.
               </p>
             </div>
             <input
-              aria-label="Initial issue title"
+              aria-label="Initial task title"
               className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              placeholder="Issue title (optional)"
-              value={initialIssueTitle}
-              onChange={(event) => setInitialIssueTitle(event.target.value)}
+              placeholder="Task title (optional)"
+              value={initialTaskTitle}
+              onChange={(event) => setInitialTaskTitle(event.target.value)}
             />
             <textarea
-              aria-label="Initial issue request"
+              aria-label="Initial task request"
               className="min-h-28 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               placeholder="Describe the first concrete assignment"
               value={initialRequest}

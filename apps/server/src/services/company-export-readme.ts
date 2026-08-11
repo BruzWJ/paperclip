@@ -17,7 +17,7 @@ export interface CompanyReadmeManifest {
     >
   >;
   skills: CompanyPortabilityManifest["skills"];
-  issues: Array<unknown>;
+  tasks: Array<unknown>;
 }
 
 /**
@@ -108,7 +108,7 @@ export function generateReadme(
   if (manifest.agents.length > 0) counts.push(["Agents", manifest.agents.length]);
   if (manifest.projects.length > 0) counts.push(["Projects", manifest.projects.length]);
   if (manifest.skills.length > 0) counts.push(["Skills", manifest.skills.length]);
-  if (manifest.issues.length > 0) counts.push(["Issues", manifest.issues.length]);
+  if (manifest.tasks.length > 0) counts.push(["Tasks", manifest.tasks.length]);
 
   if (counts.length > 0) {
     lines.push("| Content | Count |");

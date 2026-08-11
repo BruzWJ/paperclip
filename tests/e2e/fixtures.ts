@@ -49,7 +49,7 @@ export class MockPaperclipApi {
   companies: JsonRecord[] = [];
   agents: JsonRecord[] = [];
   goals: JsonRecord[] = [];
-  issues: JsonRecord[] = [];
+  tasks: JsonRecord[] = [];
   runs: JsonRecord[] = [];
   projects: JsonRecord[] = [];
   members: JsonRecord[] = [];
@@ -164,7 +164,7 @@ export class MockPaperclipApi {
           company.id,
           {
             agentCount: this.agents.filter((row) => row.companyId === company.id).length,
-            issueCount: this.issues.filter((row) => row.companyId === company.id).length,
+            taskCount: this.tasks.filter((row) => row.companyId === company.id).length,
           },
         ])),
       };
@@ -179,7 +179,7 @@ export class MockPaperclipApi {
         name: body.name ?? `Company ${this.companyOrdinal}`,
         description: body.description ?? null,
         status: "active",
-        issuePrefix: prefix,
+        taskPrefix: prefix,
         prefix,
         urlKey: prefix,
         budgetCurrency: "USD",
@@ -295,12 +295,12 @@ export class MockPaperclipApi {
         }
         return { status: 201, body: agent };
       }
-      if (resource === "issues") {
-        if (method === "GET") return { body: this.issues.filter((row) => row.companyId === companyId) };
-        const issue = {
+      if (resource === "tasks") {
+        if (method === "GET") return { body: this.tasks.filter((row) => row.companyId === companyId) };
+        const task = {
           id: id(),
           companyId,
-          identifier: `${this.company(companyId)?.issuePrefix ?? "ISS"}-${this.issues.length + 1}`,
+          identifier: `${this.company(companyId)?.taskPrefix ?? "TSK"}-${this.tasks.length + 1}`,
           title: body.title ?? null,
           request: body.request ?? body.description ?? "",
           lifecycleStatus: body.lifecycleStatus ?? "open",
@@ -312,20 +312,20 @@ export class MockPaperclipApi {
           createdAt: now(),
           updatedAt: now(),
         };
-        this.issues.push(issue);
-        if (issue.ownerAgentId) {
+        this.tasks.push(task);
+        if (task.ownerAgentId) {
           this.runs.push({
             id: id(),
             companyId,
-            issueId: issue.id,
-            agentId: issue.ownerAgentId,
-            targetAgentId: issue.ownerAgentId,
+            taskId: task.id,
+            agentId: task.ownerAgentId,
+            targetAgentId: task.ownerAgentId,
             status: "running",
             createdAt: now(),
             updatedAt: now(),
           });
         }
-        return { status: 201, body: issue };
+        return { status: 201, body: task };
       }
       if (resource.startsWith("runs")) {
         const agentId = url.searchParams.get("agentId");
@@ -398,7 +398,7 @@ export class MockPaperclipApi {
           },
         };
       }
-      if (resource === "issue-owner-catalog") {
+      if (resource === "task-owner-catalog") {
         return {
           body: this.agents.filter((row) => row.companyId === companyId).map((row) => ({
             id: row.id,
@@ -421,12 +421,12 @@ export class MockPaperclipApi {
       return { body: goal };
     }
 
-    const issueMatch = path.match(/^\/issues\/([^/]+)$/);
-    if (issueMatch) {
-      const issue = this.issues.find((row) => row.id === issueMatch[1]);
-      if (!issue) return { status: 404, body: { error: "Issue not found" } };
-      if (method === "PATCH") Object.assign(issue, body, { updatedAt: now() });
-      return { body: issue };
+    const taskMatch = path.match(/^\/tasks\/([^/]+)$/);
+    if (taskMatch) {
+      const task = this.tasks.find((row) => row.id === taskMatch[1]);
+      if (!task) return { status: 404, body: { error: "Task not found" } };
+      if (method === "PATCH") Object.assign(task, body, { updatedAt: now() });
+      return { body: task };
     }
 
     const inviteMatch = path.match(/^\/invites\/([^/]+)(?:\/accept)?$/);
@@ -464,7 +464,7 @@ export class MockPaperclipApi {
     if (path.includes("/events/ws")) return { status: 426, body: { error: "WebSocket unavailable in UI fixture" } };
 
     if (method === "GET") {
-      if (/\/(?:comments|attachments|approvals|documents|work-products|projects|routines|labels|agents|issues|events)$/.test(path)) return { body: [] };
+      if (/\/(?:comments|attachments|approvals|documents|work-products|projects|routines|labels|agents|tasks|events)$/.test(path)) return { body: [] };
       if (/\/(?:count|counts)$/.test(path)) return { body: { count: 0 } };
       return { body: [] };
     }

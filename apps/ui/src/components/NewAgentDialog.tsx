@@ -20,7 +20,7 @@ import { useToast } from "../context/ToastContext";
 type NewAgentDialogMode = "choices" | "invite" | "prompt";
 
 export function NewAgentDialog() {
-  const { newAgentOpen, closeNewAgent, openNewIssue } = useDialog();
+  const { newAgentOpen, closeNewAgent, openNewTask } = useDialog();
   const { selectedCompanyId } = useCompany();
   const { pushToast } = useToast();
   const navigate = useNavigate();
@@ -49,7 +49,7 @@ export function NewAgentDialog() {
 
   function handleAskAgent() {
     closeNewAgent();
-    openNewIssue({
+    openNewTask({
       title: "Create a new agent",
       request: "(type in what kind of agent you want here)",
     });
@@ -216,7 +216,7 @@ export function NewAgentDialog() {
               </label>
 
               <div className="rounded-lg border border-border px-4 py-3 text-sm text-muted-foreground">
-                Agent invites create a configuration proposal. A company admin chooses the final adapter and execution configuration before creating the agent; no generic Paperclip API key is issued.
+                Agent invites create a configuration proposal. A company admin chooses the final adapter and execution configuration before creating the agent; no generic Paperclip API key is granted.
               </div>
 
               <div>

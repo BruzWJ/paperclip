@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { addValidationDetail } from "../validation-details.js";
 import {
-  ISSUE_PRIORITIES,
+  TASK_PRIORITIES,
   ROUTINE_CATCH_UP_POLICIES,
   ROUTINE_CONCURRENCY_POLICIES,
   ROUTINE_STATUSES,
@@ -22,23 +23,20 @@ export const routineVariableSchema = z.object({
   options: z.array(z.string().trim().min(1).max(120)).max(50).optional().default([]),
 }).superRefine((value, ctx) => {
   if (value.type === "select" && value.options.length === 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       path: ["options"],
       message: "Select variables require at least one option",
     });
   }
   if (value.type !== "select" && value.options.length > 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       path: ["options"],
       message: "Only select variables can define options",
     });
   }
   if (value.type === "select" && value.defaultValue != null) {
     if (typeof value.defaultValue !== "string" || !value.options.includes(value.defaultValue)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         path: ["defaultValue"],
         message: "Select variable defaults must match one of the allowed options",
       });
@@ -46,8 +44,7 @@ export const routineVariableSchema = z.object({
   }
   if (value.type === "date" && value.defaultValue != null) {
     if (typeof value.defaultValue !== "string" || !isValidRoutineDateString(value.defaultValue)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         path: ["defaultValue"],
         message: "Date variable defaults must be valid YYYY-MM-DD calendar dates",
       });
@@ -59,11 +56,11 @@ export const createRoutineSchema = z.object({
   projectId: z.string().uuid().optional().nullable(),
   folderId: z.string().uuid().optional().nullable(),
   goalId: z.string().uuid().optional().nullable(),
-  parentIssueId: z.string().uuid().optional().nullable(),
+  parentTaskId: z.string().uuid().optional().nullable(),
   title: z.string().trim().min(1).max(200),
   description: z.string().optional().nullable(),
   assigneeAgentId: z.string().uuid().optional().nullable(),
-  priority: z.enum(ISSUE_PRIORITIES).optional().default("medium"),
+  priority: z.enum(TASK_PRIORITIES).optional().default("medium"),
   status: z.enum(ROUTINE_STATUSES).optional().default("active"),
   concurrencyPolicy: z.enum(ROUTINE_CONCURRENCY_POLICIES).optional().default("coalesce_if_active"),
   catchUpPolicy: z.enum(ROUTINE_CATCH_UP_POLICIES).optional().default("skip_missed"),
@@ -84,11 +81,11 @@ export const routineRevisionSnapshotRoutineV1Schema = z.object({
   projectId: z.string().uuid().nullable(),
   folderId: z.string().uuid().nullable().optional(),
   goalId: z.string().uuid().nullable(),
-  parentIssueId: z.string().uuid().nullable(),
+  parentTaskId: z.string().uuid().nullable(),
   title: z.string().trim().min(1).max(200),
   description: z.string().nullable(),
   assigneeAgentId: z.string().uuid().nullable(),
-  priority: z.enum(ISSUE_PRIORITIES),
+  priority: z.enum(TASK_PRIORITIES),
   status: z.enum(ROUTINE_STATUSES),
   concurrencyPolicy: z.enum(ROUTINE_CONCURRENCY_POLICIES),
   catchUpPolicy: z.enum(ROUTINE_CATCH_UP_POLICIES),

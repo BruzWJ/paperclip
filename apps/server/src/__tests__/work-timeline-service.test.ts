@@ -6,25 +6,25 @@ import {
 import { createMockDb } from "./helpers/mock-db.js";
 
 const runMocks = vi.hoisted(() => ({
-  listIssueExecutionRunsForActivity: vi.fn(),
-  listIssueExecutionRunsForWorkTimeline: vi.fn(),
+  listTaskExecutionRunsForActivity: vi.fn(),
+  listTaskExecutionRunsForWorkTimeline: vi.fn(),
 }));
 
-vi.mock("../services/issue-execution-run-service.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../services/issue-execution-run-service.js")>();
+vi.mock("../services/task-execution-run-service.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/task-execution-run-service.js")>();
   return {
     ...actual,
-    listIssueExecutionRunsForActivity: runMocks.listIssueExecutionRunsForActivity,
-    listIssueExecutionRunsForWorkTimeline: runMocks.listIssueExecutionRunsForWorkTimeline,
+    listTaskExecutionRunsForActivity: runMocks.listTaskExecutionRunsForActivity,
+    listTaskExecutionRunsForWorkTimeline: runMocks.listTaskExecutionRunsForWorkTimeline,
   };
 });
 
 const from = new Date("2026-06-01T00:00:00.000Z");
 const to = new Date("2026-06-08T00:00:00.000Z");
 
-function issueRow(overrides: Record<string, unknown> = {}) {
+function taskRow(overrides: Record<string, unknown> = {}) {
   return {
-    id: "issue-1",
+    id: "task-1",
     companyId: "company-1",
     projectId: null,
     goalId: null,
@@ -45,11 +45,11 @@ function issueRow(overrides: Record<string, unknown> = {}) {
 describe("work timeline aggregation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    runMocks.listIssueExecutionRunsForActivity.mockResolvedValue({
+    runMocks.listTaskExecutionRunsForActivity.mockResolvedValue({
       items: [],
       nextCursor: null,
     });
-    runMocks.listIssueExecutionRunsForWorkTimeline.mockResolvedValue({
+    runMocks.listTaskExecutionRunsForWorkTimeline.mockResolvedValue({
       items: [],
       nextCursor: null,
     });
@@ -75,7 +75,7 @@ describe("work timeline aggregation", () => {
     expect(inverted.from).toEqual(new Date("2026-05-25T00:00:00.000Z"));
   });
 
-  it("returns a complete empty contract when no issue source contributes work", async () => {
+  it("returns a complete empty contract when no task source contributes work", async () => {
     const mock = createMockDb({ select: [[], [], [], []] });
 
     const result = await workTimelineService(mock.db).getTimeline({
@@ -91,10 +91,10 @@ describe("work timeline aggregation", () => {
       spans: [],
       events: [],
       edges: [],
-      pagination: { limit: 25, offset: 0, totalIssues: 0, hasMore: false },
+      pagination: { limit: 25, offset: 0, totalTasks: 0, hasMore: false },
       window: { from: from.toISOString(), to: to.toISOString(), capped: false },
     });
-    expect(runMocks.listIssueExecutionRunsForActivity).toHaveBeenCalledWith(
+    expect(runMocks.listTaskExecutionRunsForActivity).toHaveBeenCalledWith(
       mock.db,
       expect.objectContaining({ companyId: "company-1", limit: 200 }),
     );
@@ -102,16 +102,16 @@ describe("work timeline aggregation", () => {
   });
 
   it("emits canonical creation, comment, approval, assignment, and run records", async () => {
-    const issue = issueRow({
+    const task = taskRow({
       creatorKind: "user/board",
       creatorUserId: "user-creator",
       ownerAgentId: "agent-owner",
     });
-    runMocks.listIssueExecutionRunsForWorkTimeline.mockResolvedValue({
+    runMocks.listTaskExecutionRunsForWorkTimeline.mockResolvedValue({
       items: [{
         runId: "run-1",
         companyId: "company-1",
-        issueId: "issue-1",
+        taskId: "task-1",
         targetAgentId: "agent-owner",
         kind: "agent",
         status: "succeeded",
@@ -124,19 +124,19 @@ describe("work timeline aggregation", () => {
     });
     const mock = createMockDb({
       select: [
-        [{ id: "issue-1" }],
+        [{ id: "task-1" }],
         [],
         [],
         [],
-        [issue],
+        [task],
         [{
-          issueId: "issue-1",
+          taskId: "task-1",
           authorAgentId: "agent-owner",
           authorUserId: null,
           createdAt: new Date("2026-06-03T10:00:00.000Z"),
         }],
         [{
-          issueId: "issue-1",
+          taskId: "task-1",
           decidedByUserId: "user-reviewer",
           decidedAt: new Date("2026-06-03T11:00:00.000Z"),
           requestedByAgentId: null,
@@ -167,7 +167,7 @@ describe("work timeline aggregation", () => {
       expect.objectContaining({
         runId: "run-1",
         actorId: "agent:agent-owner",
-        issueIdentifier: "PAP-1",
+        taskIdentifier: "PAP-1",
         status: "succeeded",
       }),
     ]);
@@ -186,15 +186,15 @@ describe("work timeline aggregation", () => {
     expect(mock.remaining("select")).toBe(0);
   });
 
-  it("filters unreadable issues before querying their timeline details", async () => {
-    const canReadIssue = vi.fn().mockResolvedValue(false);
+  it("filters unreadable tasks before querying their timeline details", async () => {
+    const canReadTask = vi.fn().mockResolvedValue(false);
     const mock = createMockDb({
       select: [
-        [{ id: "issue-1" }],
+        [{ id: "task-1" }],
         [],
         [],
         [],
-        [issueRow()],
+        [taskRow()],
       ],
     });
 
@@ -202,16 +202,16 @@ describe("work timeline aggregation", () => {
       companyId: "company-1",
       from,
       to,
-      canReadIssue,
+      canReadTask,
     });
 
-    expect(canReadIssue).toHaveBeenCalledWith(expect.objectContaining({
-      id: "issue-1",
+    expect(canReadTask).toHaveBeenCalledWith(expect.objectContaining({
+      id: "task-1",
       companyId: "company-1",
       boardPresentationStatus: "in_progress",
     }));
     expect(result.events).toEqual([]);
-    expect(runMocks.listIssueExecutionRunsForWorkTimeline).not.toHaveBeenCalled();
+    expect(runMocks.listTaskExecutionRunsForWorkTimeline).not.toHaveBeenCalled();
     expect(mock.remaining("select")).toBe(0);
   });
 });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addValidationDetail } from "./validation-details.js";
 
 /**
  * Paperclip's closed AI budget/cost denomination catalog. The list is frozen
@@ -223,8 +224,7 @@ export const moneyAmountSchema: z.ZodType<
   try {
     return parseMoneyAmount(value);
   } catch (error) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(context, {
       message: error instanceof Error ? error.message : "Invalid money amount",
     });
     return z.NEVER;

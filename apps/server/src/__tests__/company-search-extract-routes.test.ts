@@ -7,7 +7,7 @@ import type {
   CompanySearchQuery,
   CompanySearchResponse,
 } from "@paperclipai/shared";
-import { issueRoutes } from "../routes/issues.js";
+import { taskRoutes } from "../routes/tasks.js";
 import { createCompanySearchRateLimiter } from "../services/company-search-rate-limit.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
@@ -30,7 +30,7 @@ function extractResponse(query: CompanySearchExtractQuery): CompanySearchExtract
     scope: query.scope,
     limit: query.limit,
     offset: query.offset,
-    matchesPerIssue: query.matchesPerIssue,
+    matchesPerTask: query.matchesPerTask,
     results: [],
     hasMore: false,
     truncated: false,
@@ -50,8 +50,8 @@ function createApp(companyIds: string[], extract: (companyId: string, query: Com
     });
     next();
   });
-  app.use("/api", issueRoutes({} as never, {} as never, {
-    ordinaryIssues: {} as never,
+  app.use("/api", taskRoutes({} as never, {} as never, {
+    ordinaryTasks: {} as never,
     searchService: { search: unusedSearch, extract },
     searchRateLimiter: createCompanySearchRateLimiter({
       maxRequests: 1,
@@ -84,7 +84,7 @@ describe("company extract-search route", () => {
         kind: "url",
         scope: "comments",
         limit: "200",
-        matchesPerIssue: "200",
+        matchesPerTask: "200",
       })
       .expect(200);
 
@@ -93,7 +93,7 @@ describe("company extract-search route", () => {
       kind: "url",
       scope: "comments",
       limit: 200,
-      matchesPerIssue: 200,
+      matchesPerTask: 200,
     }));
     expect(response.body).toMatchObject({ kind: "url", scope: "comments", truncated: false });
   });

@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
-  COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_ISSUE,
-  COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_ISSUE,
+  COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_TASK,
+  COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_TASK,
   companySearchExtractQuerySchema,
 } from "@paperclipai/shared";
 import { companySearchExtractService } from "../services/company-search-extract.js";
 import { createMockDb } from "./helpers/mock-db.js";
 
 const companyId = "00000000-0000-4000-8000-000000000001";
-const issueId = "00000000-0000-4000-8000-000000000002";
+const taskId = "00000000-0000-4000-8000-000000000002";
 
-function issueRow(overrides: Record<string, unknown> = {}) {
+function taskRow(overrides: Record<string, unknown> = {}) {
   return {
-    id: issueId,
+    id: taskId,
     identifier: "EXT-1",
     title: "Extract target",
     request: null,
@@ -33,18 +33,18 @@ describe("extract-search query validation", () => {
       status: "in_progress,in_review",
       limit: "200",
       offset: "5000",
-      matchesPerIssue: "200",
+      matchesPerTask: "200",
       updatedWithin: "30d",
     });
 
     expect(parsed.kind).toBe("url");
     expect(parsed.scope).toBe("comments");
     expect(parsed.status).toEqual(["in_progress", "in_review"]);
-    expect(parsed.matchesPerIssue).toBe(COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_ISSUE);
+    expect(parsed.matchesPerTask).toBe(COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_TASK);
     expect(() => companySearchExtractQuerySchema.parse({ contains: ".*", kind: "regex" })).toThrow();
     expect(() => companySearchExtractQuerySchema.parse({ contains: "x" })).toThrow();
     expect(() => companySearchExtractQuerySchema.parse({ contains: "needle", limit: "201" })).toThrow();
-    expect(() => companySearchExtractQuerySchema.parse({ contains: "needle", matchesPerIssue: "201" })).toThrow();
+    expect(() => companySearchExtractQuerySchema.parse({ contains: "needle", matchesPerTask: "201" })).toThrow();
     expect(() => companySearchExtractQuerySchema.parse({
       contains: "needle",
       updatedWithin: "30d",
@@ -54,17 +54,17 @@ describe("extract-search query validation", () => {
 });
 
 describe("companySearchExtractService", () => {
-  it("expands and deduplicates URLs across issue, comment, and document sources", async () => {
+  it("expands and deduplicates URLs across task, comment, and document sources", async () => {
     const firstUrl = "https://github.com/paperclipai/paperclip/pull/123";
     const secondUrl = "https://github.com/paperclipai/paperclip/pull/456";
     const thirdUrl = "https://github.com/paperclipai/paperclip/pull/789";
     const { db } = createMockDb({
       select: [
-        [issueRow({ request: `Primary ${firstUrl} and duplicate ${firstUrl}.` })],
-        [{ id: "comment-1", issueId, body: `Review ${secondUrl} and repeat ${firstUrl}` }],
+        [taskRow({ request: `Primary ${firstUrl} and duplicate ${firstUrl}.` })],
+        [{ id: "comment-1", taskId, body: `Review ${secondUrl} and repeat ${firstUrl}` }],
         [{
           id: "document-1",
-          issueId,
+          taskId,
           key: "plan",
           title: `PR notes ${thirdUrl}`,
           body: `Also see [the second PR](${secondUrl}).`,
@@ -102,11 +102,11 @@ describe("companySearchExtractService", () => {
     const documentBodyUrl = "https://github.com/paperclipai/paperclip/pull/104";
     const { db } = createMockDb({
       select: [
-        [issueRow({ title: `Review ${titleUrl}`, request: `Then merge ${requestUrl}` })],
+        [taskRow({ title: `Review ${titleUrl}`, request: `Then merge ${requestUrl}` })],
         [],
         [{
           id: "document-1",
-          issueId,
+          taskId,
           key: "plan",
           title: `Tracking ${documentTitleUrl}`,
           body: `Final follow-up ${documentBodyUrl}`,
@@ -134,7 +134,7 @@ describe("companySearchExtractService", () => {
   it("returns only candidate rows selected by the status and update predicates", async () => {
     const { db, calls } = createMockDb({
       select: [
-        [issueRow({ identifier: "EXT-RECENT", request: "needle" })],
+        [taskRow({ identifier: "EXT-RECENT", request: "needle" })],
         [],
         [],
       ],
@@ -149,17 +149,17 @@ describe("companySearchExtractService", () => {
       }),
     );
 
-    expect(result.results.map((row) => row.issueId)).toEqual([issueId]);
+    expect(result.results.map((row) => row.taskId)).toEqual([taskId]);
     expect(calls.filter((call) => call.method === "where")).toHaveLength(3);
   });
 
   it("uses the default distinct-match cap and marks truncation explicitly", async () => {
     const urls = Array.from(
-      { length: COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_ISSUE + 1 },
+      { length: COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_TASK + 1 },
       (_, index) => `https://github.com/paperclipai/paperclip/pull/${index + 1}`,
     );
     const { db } = createMockDb({
-      select: [[issueRow({ request: urls.join(" ") })], [], []],
+      select: [[taskRow({ request: urls.join(" ") })], [], []],
     });
 
     const result = await companySearchExtractService(db).extract(
@@ -170,19 +170,19 @@ describe("companySearchExtractService", () => {
       }),
     );
 
-    expect(result.matchesPerIssue).toBe(COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_ISSUE);
-    expect(result.results[0]?.matches).toHaveLength(COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_ISSUE);
+    expect(result.matchesPerTask).toBe(COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_TASK);
+    expect(result.results[0]?.matches).toHaveLength(COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_TASK);
     expect(result.results[0]?.matchesTruncated).toBe(true);
     expect(result.truncated).toBe(true);
   });
 
-  it("supports a bounded per-issue match cap for complete machine extraction", async () => {
+  it("supports a bounded per-task match cap for complete machine extraction", async () => {
     const urls = Array.from(
-      { length: COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_ISSUE + 1 },
+      { length: COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_TASK + 1 },
       (_, index) => `https://github.com/paperclipai/paperclip/pull/${index + 1}`,
     );
     const { db } = createMockDb({
-      select: [[issueRow({ request: urls.join(" ") })], [], []],
+      select: [[taskRow({ request: urls.join(" ") })], [], []],
     });
 
     const result = await companySearchExtractService(db).extract(
@@ -190,11 +190,11 @@ describe("companySearchExtractService", () => {
       companySearchExtractQuerySchema.parse({
         contains: "github.com/paperclipai/paperclip/pull",
         kind: "url",
-        matchesPerIssue: COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_ISSUE,
+        matchesPerTask: COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_TASK,
       }),
     );
 
-    expect(result.matchesPerIssue).toBe(COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_ISSUE);
+    expect(result.matchesPerTask).toBe(COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_TASK);
     expect(result.results[0]?.matches).toHaveLength(urls.length);
     expect(result.results[0]?.matchesTruncated).toBe(false);
     expect(result.truncated).toBe(false);

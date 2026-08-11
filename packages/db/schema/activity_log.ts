@@ -1,7 +1,7 @@
 import { pgTable, uuid, text, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { agents } from "./agents.js";
-import { issueExecutionRuns } from "./issue_execution_runs.js";
+import { taskExecutionRuns } from "./task_execution_runs.js";
 import { authUsers } from "./auth.js";
 
 export const activityLog = pgTable(
@@ -15,7 +15,7 @@ export const activityLog = pgTable(
     entityType: text("entity_type").notNull(),
     entityId: text("entity_id").notNull(),
     agentId: uuid("agent_id").references(() => agents.id),
-    runId: uuid("run_id").references(() => issueExecutionRuns.id),
+    runId: uuid("run_id").references(() => taskExecutionRuns.id),
     responsibleUserId: text("responsible_user_id").references(() => authUsers.id, {
       onDelete: "set null",
     }),

@@ -40,7 +40,7 @@ import { cn } from "../lib/utils";
 import { hasBlockingShortcutDialog, resolveAttentionQueueKeyAction } from "../lib/keyboardShortcuts";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AttentionQueueRow } from "../components/AttentionQueueRow";
-import { IssueGroupHeader } from "../components/IssueGroupHeader";
+import { TaskGroupHeader } from "../components/TaskGroupHeader";
 import { Button } from "../components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 
@@ -54,7 +54,7 @@ const SEVERITY_LABELS: Record<string, string> = {
 /** Curtain rows never expand; module-level so memoized rows see one identity. */
 const noopToggleExpand = () => {};
 
-// Incremental rendering (PAP-13784, same pattern as IssuesList): the feed is
+// Incremental rendering (PAP-13784, same pattern as TasksList): the feed is
 // uncapped, so mounting every row up front makes the page slow to paint and
 // scroll. Render a bounded window and grow it as the scroll position nears the
 // bottom. One budget spans the active groups and the open curtains in document
@@ -529,7 +529,7 @@ export function WhatNeedsMe() {
               return (
                 <section key={group.key} className="space-y-2">
                   {groupLabel !== null && (
-                    <IssueGroupHeader
+                    <TaskGroupHeader
                       label={groupLabel}
                       collapsible
                       collapsed={collapsed}
@@ -770,7 +770,7 @@ function Curtain({
 }) {
   return (
     <section className="space-y-2">
-      <IssueGroupHeader
+      <TaskGroupHeader
         label={`${label} (${count})`}
         collapsible
         collapsed={!open}

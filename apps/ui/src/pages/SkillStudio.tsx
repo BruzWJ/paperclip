@@ -34,7 +34,7 @@ import type {
   CompanySkillTestRunTemplateCreateRequest,
   CompanySkillTestRunTemplateUpdateRequest,
   CompanySkillVersion,
-  IssueDocument,
+  TaskDocument,
 } from "@paperclipai/shared";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import {
@@ -125,10 +125,10 @@ import { EmptyState } from "@/components/EmptyState";
 import { EntityRow } from "@/components/EntityRow";
 import { FilterBar } from "@/components/FilterBar";
 import { Identity } from "@/components/Identity";
-import { IssueAttachmentsSection } from "@/components/IssueAttachmentsSection";
+import { TaskAttachmentsSection } from "@/components/TaskAttachmentsSection";
 import { ImageGalleryModal, type GalleryMediaItem } from "@/components/ImageGalleryModal";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { IssueOutputSection } from "@/components/issue-output/IssueOutputSection";
+import { TaskOutputSection } from "@/components/task-output/TaskOutputSection";
 import { buildLineDiff } from "@/lib/line-diff";
 import {
   buildCreateRunRequest,
@@ -156,7 +156,7 @@ import {
   shouldPollRun,
   showRunErrorCard,
   syncSavedInputDraftState,
-  testIssueLinkState,
+  testTaskLinkState,
   type RunTemplateSelection,
   type SavedInputDraftState,
 } from "@/lib/skill-studio";
@@ -2125,7 +2125,7 @@ function InputPane({
             <textarea
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder="Paste text - treated as a new issue description."
+              placeholder="Paste text - treated as a new task description."
               aria-label="Skill test input"
               className="min-h-0 flex-1 resize-none border-0 bg-transparent px-3 py-3 text-sm leading-6 outline-none placeholder:text-muted-foreground focus-visible:ring-0"
             />
@@ -2898,7 +2898,7 @@ function RunTemplateDialog({
               className="min-h-(--sz-240px) font-mono text-xs leading-5"
             />
             <p className="text-xs text-muted-foreground">
-              Placeholders: {"{{skillName}}"}, {"{{skillKey}}"}, {"{{skillInvocation}}"}, {"{{skillVersion}}"}, {"{{runId}}"}, {"{{issueId}}"}, {"{{outputDocumentKey}}"}.
+              Placeholders: {"{{skillName}}"}, {"{{skillKey}}"}, {"{{skillInvocation}}"}, {"{{skillVersion}}"}, {"{{runId}}"}, {"{{taskId}}"}, {"{{outputDocumentKey}}"}.
             </p>
           </div>
         </div>
@@ -3130,7 +3130,7 @@ function RunDetailView({
   const removed = !agent;
   const outputMode = runOutputMode(detail);
   const nonTerminal = !isTerminalRunStatus(detail.status);
-  const taskLink = testIssueLinkState(detail);
+  const taskLink = testTaskLinkState(detail);
 
   return (
     <PaneScaffold title="Run" action={<BackButton onBack={onBack} />}>
@@ -3191,7 +3191,7 @@ function RunDetailView({
           <RunDocumentsSection documents={additionalDocuments} />
         ) : null}
 
-        <IssueOutputSection
+        <TaskOutputSection
           workProducts={detail.harnessContent.workProducts}
           onMediaClick={(item) => {
             const meta = item.metadata;
@@ -3207,7 +3207,7 @@ function RunDetailView({
         />
 
         {rawAttachments.length > 0 ? (
-          <IssueAttachmentsSection
+          <TaskAttachmentsSection
             attachments={rawAttachments}
             onImageClick={(attachment) => {
               const idx = mediaGalleryItems.findIndex((item) => (
@@ -3250,9 +3250,9 @@ function RunDetailView({
               <Trash2 data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" /> {deleteMutation.isPending ? "Deleting…" : "Delete"}
             </Button>
           )}
-          {taskLink.enabled && detail.harnessIssue ? (
+          {taskLink.enabled && detail.harnessTask ? (
             <Button variant="link" size="sm" asChild>
-              <Link to={`/issues/${detail.harnessIssue.id}`}>Open test task ↗</Link>
+              <Link to={`/tasks/${detail.harnessTask.id}`}>Open test task ↗</Link>
             </Button>
           ) : (
             <Tooltip>
@@ -3293,7 +3293,7 @@ function RunHarnessUnavailableNotice({
   );
 }
 
-function RunDocumentsSection({ documents }: { documents: IssueDocument[] }) {
+function RunDocumentsSection({ documents }: { documents: TaskDocument[] }) {
   return (
     <section className="space-y-2">
       <div className="flex items-center gap-2">

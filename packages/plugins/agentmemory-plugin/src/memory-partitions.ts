@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 
 export type MemoryPartitionKind =
-  | "issue_agent"
-  | "issue_shared"
+  | "task_agent"
+  | "task_shared"
   | "company_agent"
   | "company_shared";
 
@@ -21,12 +21,12 @@ function digest(kind: string, value: string): string {
 
 function coordinates(input: {
   companyId: string;
-  issueId?: string;
+  taskId?: string;
   agentId?: string;
 }) {
   return {
     company: digest("company", input.companyId),
-    issue: input.issueId ? digest("issue", input.issueId) : null,
+    task: input.taskId ? digest("task", input.taskId) : null,
     agent: input.agentId
       ? digest("company-agent", `${input.companyId}\0${input.agentId}`)
       : null,
@@ -38,35 +38,35 @@ function sharedAgentId(company: string): string {
 }
 
 /**
- * Translates Paperclip's company/issue × agent/shared matrix onto
+ * Translates Paperclip's company/task × agent/shared matrix onto
  * AgentMemory's required project + agentId coordinates. `project` is only an
  * AgentMemory namespace; it is unrelated to a Paperclip Project entity.
  */
 export function memoryPartition(
   kind: MemoryPartitionKind,
-  input: { companyId: string; issueId?: string; agentId?: string },
+  input: { companyId: string; taskId?: string; agentId?: string },
 ): MemoryPartition {
   const ids = coordinates(input);
   const cwd = `/paperclip/${ids.company}`;
   const companyProject = `paperclip:company:${ids.company}`;
   switch (kind) {
-    case "issue_agent":
-      if (!ids.issue || !ids.agent) {
-        throw new Error("issue_agent memory requires issueId and agentId");
+    case "task_agent":
+      if (!ids.task || !ids.agent) {
+        throw new Error("task_agent memory requires taskId and agentId");
       }
-      const issueAgentProject = `${companyProject}:issue:${ids.issue}`;
+      const taskAgentProject = `${companyProject}:task:${ids.task}`;
       return {
         kind,
-        project: issueAgentProject,
+        project: taskAgentProject,
         cwd,
         agentId: ids.agent,
       };
-    case "issue_shared":
-      if (!ids.issue) throw new Error("issue_shared memory requires issueId");
-      const issueSharedProject = `${companyProject}:issue:${ids.issue}`;
+    case "task_shared":
+      if (!ids.task) throw new Error("task_shared memory requires taskId");
+      const taskSharedProject = `${companyProject}:task:${ids.task}`;
       return {
         kind,
-        project: issueSharedProject,
+        project: taskSharedProject,
         cwd,
         agentId: sharedAgentId(ids.company),
       };

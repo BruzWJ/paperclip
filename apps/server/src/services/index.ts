@@ -27,15 +27,15 @@ export { documentAnnotationService } from "./document-annotations.js";
 export { projectService, toPublicProject, type InternalProject, type PublicProject } from "./projects.js";
 export { goalService } from "./goals.js";
 export {
-  clampIssueListLimit,
-  ISSUE_LIST_DEFAULT_LIMIT,
-  ISSUE_LIST_MAX_LIMIT,
-  issueService,
-  type IssueFilters,
-} from "./issues.js";
-export { issueTreeControlService } from "./issue-tree-control.js";
-export { issueApprovalService } from "./issue-approvals.js";
-export { issueReferenceService } from "./issue-references.js";
+  clampTaskListLimit,
+  TASK_LIST_DEFAULT_LIMIT,
+  TASK_LIST_MAX_LIMIT,
+  taskService,
+  type TaskFilters,
+} from "./tasks.js";
+export { taskTreeControlService } from "./task-tree-control.js";
+export { taskApprovalService } from "./task-approvals.js";
+export { taskReferenceService } from "./task-references.js";
 export { activityService, type ActivityFilters } from "./activity.js";
 export { workTimelineService, normalizeTimelineWindow } from "./work-timeline.js";
 export { attentionService } from "./attention.js";
@@ -105,20 +105,20 @@ export {
   lockActivePromptCapabilityBinding,
 } from "./prompt-capability-gateway-postgres.js";
 export {
-  createIssueExecutionAttemptExecutor,
-  IssueExecutionAttemptRejected,
-  type IssueExecutionAcpEventSink,
-  type IssueExecutionAttemptExecutor,
-  type IssueExecutionAttemptLease,
-  type IssueExecutionDispatchResult,
-  type IssueExecutionPromptClosure,
-  type IssueExecutionPromptClosureDecision,
-  type IssueExecutionPromptCapabilityIdentity,
-  type IssueExecutionPromptCycleRepository,
-  type IssueExecutionPromptIdentity,
-  type MintedIssueExecutionPromptCapability,
-  type ResolvedIssueExecutionPrompt,
-} from "./issue-execution-attempt-executor.js";
+  createTaskExecutionAttemptExecutor,
+  TaskExecutionAttemptRejected,
+  type TaskExecutionAcpEventSink,
+  type TaskExecutionAttemptExecutor,
+  type TaskExecutionAttemptLease,
+  type TaskExecutionDispatchResult,
+  type TaskExecutionPromptClosure,
+  type TaskExecutionPromptClosureDecision,
+  type TaskExecutionPromptCapabilityIdentity,
+  type TaskExecutionPromptCycleRepository,
+  type TaskExecutionPromptIdentity,
+  type MintedTaskExecutionPromptCapability,
+  type ResolvedTaskExecutionPrompt,
+} from "./task-execution-attempt-executor.js";
 export {
   settleAcpPromptInTransaction,
   AcpPromptSettlementRejected,
@@ -129,61 +129,61 @@ export {
   type SettledAcpPromptResult,
 } from "./acp-prompt-settlement.js";
 export {
-  createIssueExecutionRunService,
-  computeIssueExecutionRunBatchDigest,
-  resolveIssueExecutionRunIdentityById,
-  IssueExecutionSteeringRejected,
-  IssueExecutionRunInvariantViolation,
-  type JoinedIssueExecutionRunDetail,
-  type IssueExecutionRunEnvelope,
-  type IssueExecutionRunIdentity,
-  type IssueExecutionRunService,
-  type IssueExecutionSteeringActor,
-  type IssueExecutionSteeringCancellationPort,
-  type IssueExecutionSteeringCancellationSettlement,
-  type IssueExecutionSteeringRepository,
-  type IssueExecutionSteeringResumePort,
-  type ReboundIssueExecutionSteering,
-  type RequestedIssueExecutionSteering,
-  type RequestIssueExecutionSteeringInput,
-} from "./issue-execution-run-service.js";
+  createTaskExecutionRunService,
+  computeTaskExecutionRunBatchDigest,
+  resolveTaskExecutionRunIdentityById,
+  TaskExecutionSteeringRejected,
+  TaskExecutionRunInvariantViolation,
+  type JoinedTaskExecutionRunDetail,
+  type TaskExecutionRunEnvelope,
+  type TaskExecutionRunIdentity,
+  type TaskExecutionRunService,
+  type TaskExecutionSteeringActor,
+  type TaskExecutionSteeringCancellationPort,
+  type TaskExecutionSteeringCancellationSettlement,
+  type TaskExecutionSteeringRepository,
+  type TaskExecutionSteeringResumePort,
+  type ReboundTaskExecutionSteering,
+  type RequestedTaskExecutionSteering,
+  type RequestTaskExecutionSteeringInput,
+} from "./task-execution-run-service.js";
 export {
-  buildIssueExecutionFinalizationPlan,
-  IssueExecutionFinalizationRejected,
-  type BuildIssueExecutionFinalizationPlanInput,
-  type IssueExecutionFinalizationPlan,
-  type IssueExecutionFinalizationPromptDependency,
-  type IssueExecutionFinalizationPromptIdentity,
-  type IssueExecutionFinalizationUpdateDependency,
-  type IssueExecutionGatewayRevocationIdentity,
-} from "./issue-execution-finalization.js";
+  buildTaskExecutionFinalizationPlan,
+  TaskExecutionFinalizationRejected,
+  type BuildTaskExecutionFinalizationPlanInput,
+  type TaskExecutionFinalizationPlan,
+  type TaskExecutionFinalizationPromptDependency,
+  type TaskExecutionFinalizationPromptIdentity,
+  type TaskExecutionFinalizationUpdateDependency,
+  type TaskExecutionGatewayRevocationIdentity,
+} from "./task-execution-finalization.js";
 export {
-  createIssueExecutionCancellationService,
-  type IssueExecutionAuthorityFenceResult,
-  type IssueExecutionCancellationActor,
-  type IssueExecutionCancellationResult,
-  type IssueExecutionCancellationService,
-  type IssueExecutionCancellationServiceOptions,
+  createTaskExecutionCancellationService,
+  type TaskExecutionAuthorityFenceResult,
+  type TaskExecutionCancellationActor,
+  type TaskExecutionCancellationResult,
+  type TaskExecutionCancellationService,
+  type TaskExecutionCancellationServiceOptions,
   type RequestedAgentRunCancellations,
   type RequestedBudgetScopeSuspension,
   type RequestedRunCancellation,
   type RequestedScopedRunCancellations,
-} from "./issue-execution-cancellation.js";
+} from "./task-execution-cancellation.js";
 export {
-  createPostgresIssueExecutionProductionRuntime,
-  type PostgresIssueExecutionProductionRuntime,
-  type PostgresIssueExecutionProductionRuntimeOptions,
-} from "./issue-execution-postgres.js";
+  createPostgresTaskExecutionProductionRuntime,
+  type PostgresTaskExecutionProductionRuntime,
+  type PostgresTaskExecutionProductionRuntimeOptions,
+} from "./task-execution-postgres.js";
 export {
-  createPostgresIssueExecutionDispatcherRepository,
-  projectPersistedIssueExecutionRef,
-  PostgresIssueExecutionDispatchRejected,
-  type FencedIssueExecutionAuthority,
-  type IssueExecutionAuthorityFenceSelector,
-  type PersistedIssueExecutionRefRow,
-  type PostgresIssueExecutionDispatcherRepository,
-  type PostgresIssueExecutionDispatcherRepositoryOptions,
-} from "./issue-execution-dispatcher-postgres.js";
+  createPostgresTaskExecutionDispatcherRepository,
+  projectPersistedTaskExecutionRef,
+  PostgresTaskExecutionDispatchRejected,
+  type FencedTaskExecutionAuthority,
+  type TaskExecutionAuthorityFenceSelector,
+  type PersistedTaskExecutionRefRow,
+  type PostgresTaskExecutionDispatcherRepository,
+  type PostgresTaskExecutionDispatcherRepositoryOptions,
+} from "./task-execution-dispatcher-postgres.js";
 export {
   createAuthenticatedNativeCorrelationProtector,
   type PostgresNativeCorrelationProtector,
@@ -202,33 +202,33 @@ export {
   type StoredAcpSessionCorrelation,
 } from "./native-correlation.js";
 export {
-  createIssueExecutionRuntimeRedactor,
-  createIssueExecutionTargetAcquirer,
-  IssueExecutionTargetAcquisitionRejected,
-  type AcquiredIssueExecutionTarget,
-  type IssueExecutionRuntimeRedactor,
-  type IssueExecutionTargetAcquirer,
-  type IssueExecutionTargetAcquisitionInput,
-} from "./issue-execution-provider-configuration.js";
+  createTaskExecutionRuntimeRedactor,
+  createTaskExecutionTargetAcquirer,
+  TaskExecutionTargetAcquisitionRejected,
+  type AcquiredTaskExecutionTarget,
+  type TaskExecutionRuntimeRedactor,
+  type TaskExecutionTargetAcquirer,
+  type TaskExecutionTargetAcquisitionInput,
+} from "./task-execution-provider-configuration.js";
 export {
-  createPostgresIssueSessionCompositionRuntime,
-  type PostgresIssueSessionCompositionOptions,
-  type PostgresIssueSessionCompositionReconciliation,
-  type PostgresIssueSessionCompositionRuntime,
-} from "./issue-session-composition-postgres.js";
+  createPostgresTaskSessionCompositionRuntime,
+  type PostgresTaskSessionCompositionOptions,
+  type PostgresTaskSessionCompositionReconciliation,
+  type PostgresTaskSessionCompositionRuntime,
+} from "./task-session-composition-postgres.js";
 export {
   appendCanonicalControlNotice,
   appendCanonicalUserComment,
   type CanonicalControlNoticeInput,
   type CanonicalUserCommentInput,
-} from "./issue-session-producers.js";
+} from "./task-session-producers.js";
 export {
   createContextRetrievalDbRepository,
 } from "./context-retrieval-db.js";
 export {
-  createIssueSessionStore,
-  type IssueSessionStore,
-} from "./issue-session/store.js";
+  createTaskSessionStore,
+  type TaskSessionStore,
+} from "./task-session/store.js";
 export {
   createContextRetrievalService,
   type ContextRetrievalService,
@@ -256,26 +256,26 @@ export {
   type AgentRunNonAgentActionPort,
 } from "./runtime-agent-action-port.js";
 export {
-  createPostgresRuntimeIssueActionService,
-  createRuntimeIssueActionPort,
-  RuntimeIssueActionConflict,
-  RuntimeIssueActionDenied,
-  type PostgresRuntimeIssueActionServiceOptions,
-  type RuntimeIssueActionService,
-} from "./runtime-issue-action-port.js";
+  createPostgresRuntimeTaskActionService,
+  createRuntimeTaskActionPort,
+  RuntimeTaskActionConflict,
+  RuntimeTaskActionDenied,
+  type PostgresRuntimeTaskActionServiceOptions,
+  type RuntimeTaskActionService,
+} from "./runtime-task-action-port.js";
 export {
-  createOrdinaryIssueRuntime,
-  OrdinaryIssueRuntimeRejected,
-  type OrdinaryIssueRuntime,
-  type OrdinaryIssueRuntimeOptions,
-  type OrdinaryIssueCreateInput,
-  type OrdinaryIssueCreateResult,
-} from "./ordinary-issue-runtime.js";
+  createOrdinaryTaskRuntime,
+  OrdinaryTaskRuntimeRejected,
+  type OrdinaryTaskRuntime,
+  type OrdinaryTaskRuntimeOptions,
+  type OrdinaryTaskCreateInput,
+  type OrdinaryTaskCreateResult,
+} from "./ordinary-task-runtime.js";
 export {
-  persistCanonicalIssueAggregateInTx,
-  CanonicalIssueAggregateRejected,
-  type CanonicalIssueAggregateInput,
-} from "./canonical-issue-aggregate.js";
+  persistCanonicalTaskAggregateInTx,
+  CanonicalTaskAggregateRejected,
+  type CanonicalTaskAggregateInput,
+} from "./canonical-task-aggregate.js";
 export {
   createPostgresSystemEscalationService,
   ensureSystemEscalationInTransaction,
@@ -290,19 +290,19 @@ export {
   type TerminalizeCreatorEdgeInput,
   type SystemEscalationOwner,
 } from "./system-escalation-postgres.js";
-export { createPluginIssueControlPlane } from "./plugin-issue-control-plane.js";
+export { createPluginTaskControlPlane } from "./plugin-task-control-plane.js";
 export {
   assertPluginInstallationRequestScope,
-  assertPluginPermittedIssueOwnerInTransaction,
-  resolvePluginPermittedIssueOwnerCatalog,
-  resolvePluginPermittedIssueOwnerCatalogInTransaction,
-  selectPluginPermittedIssueOwner,
-  PluginIssueAuthorizationRejected,
-  type PluginIssueAuthorizationIdentity,
-  type PluginIssueAuthorizationRejectionReason,
-  type PluginIssueOwnerCatalogInput,
-  type PluginIssueOwnerOperation,
-} from "./plugin-issue-authorization.js";
+  assertPluginPermittedTaskOwnerInTransaction,
+  resolvePluginPermittedTaskOwnerCatalog,
+  resolvePluginPermittedTaskOwnerCatalogInTransaction,
+  selectPluginPermittedTaskOwner,
+  PluginTaskAuthorizationRejected,
+  type PluginTaskAuthorizationIdentity,
+  type PluginTaskAuthorizationRejectionReason,
+  type PluginTaskOwnerCatalogInput,
+  type PluginTaskOwnerOperation,
+} from "./plugin-task-authorization.js";
 export {
   createJoinRequestApprovalService,
   type JoinRequestApprovalInput,

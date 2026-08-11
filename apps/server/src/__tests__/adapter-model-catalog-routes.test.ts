@@ -32,8 +32,8 @@ function registerModuleMocks() {
     approvalService: () => ({}),
     budgetService: () => ({}),
     createRuntimeAgentConfigurationService: () => ({}),
-    issueApprovalService: () => ({}),
-    issueService: () => ({}),
+    taskApprovalService: () => ({}),
+    taskService: () => ({}),
     logActivity: vi.fn(),
     secretService: () => mockSecretService,
   }));
@@ -81,7 +81,7 @@ async function createApp() {
     next();
   });
   app.use("/api", agentRoutes({} as any, {
-    ordinaryIssues: {} as never,
+    ordinaryTasks: {} as never,
   }));
   app.use(errorHandler);
   return app;

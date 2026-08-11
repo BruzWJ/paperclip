@@ -1,17 +1,17 @@
 import { AlertTriangle, Clock, User } from "lucide-react";
 import type { ComponentType } from "react";
-import type { IssueBlockedInboxSeverity } from "@paperclipai/shared";
+import type { TaskBlockedInboxSeverity } from "@paperclipai/shared";
 import { cn } from "../lib/utils";
 import {
   blockedReasonVariant,
   blockedVariantLabel,
   type BlockedReasonVariant,
 } from "../lib/blockedInbox";
-import type { IssueBlockedInboxReason } from "@paperclipai/shared";
+import type { TaskBlockedInboxReason } from "@paperclipai/shared";
 
 interface BlockedReasonChipProps {
-  reason: IssueBlockedInboxReason;
-  severity: IssueBlockedInboxSeverity;
+  reason: TaskBlockedInboxReason;
+  severity: TaskBlockedInboxSeverity;
   compact?: boolean;
   className?: string;
 }
@@ -36,7 +36,7 @@ const VARIANT_ICONS: Record<BlockedReasonVariant, IconComponent> = {
   external_wait: User,
 };
 
-const SEVERITY_DOT: Partial<Record<IssueBlockedInboxSeverity, string>> = {
+const SEVERITY_DOT: Partial<Record<TaskBlockedInboxSeverity, string>> = {
   critical: "bg-red-500",
   high: "bg-orange-500",
 };

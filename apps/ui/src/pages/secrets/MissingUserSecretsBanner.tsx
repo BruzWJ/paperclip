@@ -10,7 +10,7 @@ import { SetMyUserSecretDialog } from "./SetMyUserSecretDialog";
 /**
  * Warning surface for user secrets the current user has not yet set. Renders
  * nothing when there is nothing missing, so it is safe to embed on task
- * creation / run and issue-failure surfaces. Lets the user satisfy a missing
+ * creation / run and task-failure surfaces. Lets the user satisfy a missing
  * required secret inline via the shared value dialog.
  *
  * Pass `definitionKeys` to scope the warning to a specific set (e.g. the user

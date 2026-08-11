@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { companyArtifactsService } from "../services/company-artifacts.js";
 import { createMockDb } from "./helpers/mock-db.js";
 
-const issueId = "00000000-0000-4000-8000-000000000001";
+const taskId = "00000000-0000-4000-8000-000000000001";
 const projectId = "00000000-0000-4000-8000-000000000002";
 const agentId = "00000000-0000-4000-8000-000000000003";
 
@@ -10,9 +10,9 @@ function documentRow(overrides: Record<string, unknown> = {}) {
   return {
     artifactId: "document:document-1",
     documentId: "document-1",
-    issueId,
-    issueIdentifier: "PAP-12",
-    issueTitle: "Ship the release",
+    taskId,
+    taskIdentifier: "PAP-12",
+    taskTitle: "Ship the release",
     projectId,
     projectName: "Paperclip",
     key: "release-notes",
@@ -26,10 +26,10 @@ function documentRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe("companyArtifactsService", () => {
-  it("projects agent-created issue documents into the canonical artifact shape", async () => {
+  it("projects agent-created task documents into the canonical artifact shape", async () => {
     const mock = createMockDb({
       select: [
-        [{ id: "company-1", issuePrefix: "PAP" }],
+        [{ id: "company-1", taskPrefix: "PAP" }],
         [documentRow()],
       ],
     });
@@ -50,11 +50,11 @@ describe("companyArtifactsService", () => {
         contentPath: null,
         openPath: null,
         downloadPath: null,
-        issue: { id: issueId, identifier: "PAP-12", title: "Ship the release" },
+        task: { id: taskId, identifier: "PAP-12", title: "Ship the release" },
         project: { id: projectId, name: "Paperclip" },
         createdByAgent: { id: agentId, name: "Writer" },
         updatedAt: "2026-04-03T12:00:00.000Z",
-        href: "/PAP/issues/PAP-12#document-release-notes",
+        href: "/PAP/tasks/PAP-12#document-release-notes",
       }],
       nextCursor: null,
     });
@@ -74,7 +74,7 @@ describe("companyArtifactsService", () => {
     });
     const mock = createMockDb({
       select: [
-        [{ id: "company-1", issuePrefix: "PAP" }],
+        [{ id: "company-1", taskPrefix: "PAP" }],
         [older, newer],
       ],
     });
@@ -95,7 +95,7 @@ describe("companyArtifactsService", () => {
     });
   });
 
-  it("builds issue groups after projection and keeps a bounded preview", async () => {
+  it("builds task groups after projection and keeps a bounded preview", async () => {
     const rows = [
       documentRow({ artifactId: "document:3", documentId: "3" }),
       documentRow({ artifactId: "document:2", documentId: "2" }),
@@ -104,10 +104,10 @@ describe("companyArtifactsService", () => {
     ];
     const mock = createMockDb({
       select: [
-        [{ id: "company-1", issuePrefix: "PAP" }],
+        [{ id: "company-1", taskPrefix: "PAP" }],
         rows,
         [{
-          id: issueId,
+          id: taskId,
           parentId: null,
           identifier: "PAP-12",
           title: "Ship the release",
@@ -118,16 +118,16 @@ describe("companyArtifactsService", () => {
 
     const result = await companyArtifactsService(mock.db).list("company-1", {
       kind: "document",
-      groupBy: "issue",
+      groupBy: "task",
       limit: 10,
     });
 
     expect(result.artifacts).toEqual([]);
     expect(result.groups).toEqual([
       expect.objectContaining({
-        id: `issue:${issueId}`,
-        groupBy: "issue",
-        issue: { id: issueId, identifier: "PAP-12", title: "Ship the release" },
+        id: `task:${taskId}`,
+        groupBy: "task",
+        task: { id: taskId, identifier: "PAP-12", title: "Ship the release" },
         count: 4,
         mediaKinds: ["document"],
         previewArtifacts: expect.any(Array),

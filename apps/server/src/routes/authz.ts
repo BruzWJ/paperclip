@@ -93,7 +93,7 @@ export function assertCompanyAccess(
  * routes. A board key is accepted only after middleware has resolved it to a
  * real Better Auth user; raw/provider identities never satisfy this shape.
  */
-export async function authorizeHumanIssueSteering(
+export async function authorizeHumanTaskSteering(
   db: Db,
   req: Request,
   companyId: string,

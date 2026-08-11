@@ -1,7 +1,7 @@
 import type {
   AcpCostCursorState,
   AcpCostUnavailableReason,
-  IssueExecutionRunKind,
+  TaskExecutionRunKind,
 } from "@paperclipai/shared";
 import { sql } from "drizzle-orm";
 import {
@@ -37,10 +37,10 @@ export const costEvents = pgTable(
       .notNull()
       .references(() => acpPromptAccounting.id, { onDelete: "cascade" }),
     companyId: uuid("company_id").notNull(),
-    issueId: uuid("issue_id").notNull(),
+    taskId: uuid("task_id").notNull(),
     agentId: uuid("agent_id").notNull(),
     runId: uuid("run_id").notNull(),
-    runKind: text("run_kind").$type<IssueExecutionRunKind>().notNull(),
+    runKind: text("run_kind").$type<TaskExecutionRunKind>().notNull(),
     promptKind: text("prompt_kind").$type<AcpPromptAccountingKind>().notNull(),
     refId: uuid("ref_id"),
     runOrdinal: integer("run_ordinal"),
@@ -214,7 +214,7 @@ export const costEvents = pgTable(
     foreignKey({
       columns: [
         table.companyId,
-        table.issueId,
+        table.taskId,
         table.agentId,
         table.runId,
         table.runKind,
@@ -225,7 +225,7 @@ export const costEvents = pgTable(
       ],
       foreignColumns: [
         acpPromptAccounting.companyId,
-        acpPromptAccounting.issueId,
+        acpPromptAccounting.taskId,
         acpPromptAccounting.agentId,
         acpPromptAccounting.runId,
         acpPromptAccounting.runKind,

@@ -2,11 +2,11 @@ import { useMemo } from "react";
 import { User, UserX } from "lucide-react";
 import {
   COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS,
-  ISSUE_PRIORITIES,
-  ISSUE_STATUSES,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
   type CompanySearchFilterOptionCounts,
   type CompanySearchSort,
-  type IssueStatus,
+  type TaskStatus,
 } from "@paperclipai/shared";
 import { StatusIcon } from "@/components/StatusIcon";
 import { PriorityIcon } from "@/components/PriorityIcon";
@@ -42,7 +42,7 @@ export interface SearchFilterDataProps {
 }
 
 // Non-terminal statuses — the single-click "Open items" preset from wireframe screen 2.
-const OPEN_STATUS_PRESET: IssueStatus[] = ISSUE_STATUSES.filter(
+const OPEN_STATUS_PRESET: TaskStatus[] = TASK_STATUSES.filter(
   (status) => status !== "done" && status !== "cancelled",
 );
 
@@ -71,14 +71,14 @@ export function buildSearchFilterOptions({
   labels,
   currentUserId,
 }: SearchFilterDataProps): SearchFilterOptionGroups {
-  const status: FilterMenuOption[] = ISSUE_STATUSES.map((value) => ({
+  const status: FilterMenuOption[] = TASK_STATUSES.map((value) => ({
     value,
     label: humanize(value),
     icon: <StatusIcon status={value} />,
     count: count(counts?.status as Record<string, number> | undefined, value),
   }));
 
-  const priority: FilterMenuOption[] = ISSUE_PRIORITIES.map((value) => ({
+  const priority: FilterMenuOption[] = TASK_PRIORITIES.map((value) => ({
     value,
     label: humanize(value),
     icon: <PriorityIcon priority={value} />,

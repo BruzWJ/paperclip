@@ -38,7 +38,7 @@ function createLifecycle(loader: Partial<PluginLoader>) {
   return pluginLifecycleManager({} as never, {
     loader: loader as PluginLoader,
     dispatchRef: async () => undefined,
-    issueExecutionCancellation: {} as never,
+    taskExecutionCancellation: {} as never,
   });
 }
 

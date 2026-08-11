@@ -53,7 +53,7 @@ const mockCompanySkillService = vi.hoisted(() => ({
   getTestRunDetail: vi.fn(),
   cancelTestRun: vi.fn(),
   deleteTestRun: vi.fn(),
-  pruneExpiredTestHarnessIssues: vi.fn(),
+  pruneExpiredTestHarnessTasks: vi.fn(),
 }));
 
 const mockCompanySkillPolicyService = vi.hoisted(() => ({
@@ -61,20 +61,20 @@ const mockCompanySkillPolicyService = vi.hoisted(() => ({
   evaluate: vi.fn(),
 }));
 
-const mockIssueService = vi.hoisted(() => ({
+const mockTaskService = vi.hoisted(() => ({
   getById: vi.fn(),
   updateControlState: vi.fn(),
 }));
 
-const mockIssueExecutionCancellation = vi.hoisted(() => ({
+const mockTaskExecutionCancellation = vi.hoisted(() => ({
   cancelRun: vi.fn(),
 }));
 
-const mockOrdinaryIssueRuntime = vi.hoisted(() => ({
+const mockOrdinaryTaskRuntime = vi.hoisted(() => ({
   create: vi.fn(),
 }));
 
-const mockResolveCurrentIssueOwnerRunLinkage = vi.hoisted(() => vi.fn());
+const mockResolveCurrentTaskOwnerRunLinkage = vi.hoisted(() => vi.fn());
 
 const mockCatalogService = vi.hoisted(() => ({
   listCatalogSkillsOrEmpty: vi.fn(),
@@ -171,7 +171,7 @@ function registerModuleMocks() {
   vi.doMock("../services/skills-catalog.js", () => mockCatalogService);
 
   vi.doMock("../services/productive-run-linkage.js", () => ({
-    resolveCurrentIssueOwnerRunLinkage: mockResolveCurrentIssueOwnerRunLinkage,
+    resolveCurrentTaskOwnerRunLinkage: mockResolveCurrentTaskOwnerRunLinkage,
   }));
 
   vi.doMock("../services/change-consent-gate.js", async () => {
@@ -188,8 +188,8 @@ function registerModuleMocks() {
     accessService: () => mockAccessService,
     agentService: () => mockAgentService,
     companySkillService: () => mockCompanySkillService,
-    createOrdinaryIssueRuntime: () => mockOrdinaryIssueRuntime,
-    issueService: () => mockIssueService,
+    createOrdinaryTaskRuntime: () => mockOrdinaryTaskRuntime,
+    taskService: () => mockTaskService,
     logActivity: mockLogActivity,
   }));
 }
@@ -207,8 +207,8 @@ async function createApp(actor: Record<string, unknown>) {
   });
   app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", companySkillRoutes({} as any, {
-    ordinaryIssues: mockOrdinaryIssueRuntime as never,
-    issueExecutionCancellation: mockIssueExecutionCancellation as never,
+    ordinaryTasks: mockOrdinaryTaskRuntime as never,
+    taskExecutionCancellation: mockTaskExecutionCancellation as never,
   }));
   app.use(errorHandler);
   return app;
@@ -508,7 +508,7 @@ describe("company skill mutation permissions", () => {
       sourceRef: "sha256:def",
       metadata: { originHash: "sha256:def" },
     });
-    mockCompanySkillService.pruneExpiredTestHarnessIssues.mockResolvedValue({ pruned: 0 });
+    mockCompanySkillService.pruneExpiredTestHarnessTasks.mockResolvedValue({ pruned: 0 });
     mockCompanySkillService.listTestInputs.mockResolvedValue([]);
     mockCompanySkillService.createTestInput.mockResolvedValue({
       id: "11111111-1111-4111-8111-111111111111",
@@ -583,24 +583,24 @@ describe("company skill mutation permissions", () => {
         adapterType: "codex",
         adapterConfig: { model: "gpt-5.6" },
       },
-      issueId: "44444444-4444-4444-8444-444444444444",
+      taskId: "44444444-4444-4444-8444-444444444444",
       templateId: null,
       templateName: null,
       templateBody: null,
       renderedTemplateBody: null,
-      harnessIssueRequest: "Try the skill",
+      harnessTaskRequest: "Try the skill",
       status: "queued",
       outputDocumentKey: "output",
       outputSnapshot: "",
       error: null,
       deletedAt: null,
       supersededAt: null,
-      harnessIssueExpiresAt: null,
-      harnessIssueDeletedAt: null,
+      harnessTaskExpiresAt: null,
+      harnessTaskDeletedAt: null,
       createdAt: new Date("2026-05-26T00:00:00.000Z"),
       updatedAt: new Date("2026-05-26T00:00:00.000Z"),
       cost: { knownCostAmount: "0", budgetCurrency: "USD", pricedPromptCount: 0, unpricedPromptCount: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
-      issueExpired: false,
+      taskExpired: false,
     });
     mockCompanySkillService.cancelTestRun.mockResolvedValue({
       id: "22222222-2222-4222-8222-222222222222",
@@ -614,41 +614,41 @@ describe("company skill mutation permissions", () => {
         adapterType: "codex",
         adapterConfig: { model: "gpt-5.6" },
       },
-      issueId: "44444444-4444-4444-8444-444444444444",
+      taskId: "44444444-4444-4444-8444-444444444444",
       templateId: null,
       templateName: null,
       templateBody: null,
       renderedTemplateBody: null,
-      harnessIssueRequest: "Try the skill",
+      harnessTaskRequest: "Try the skill",
       status: "cancelled",
       outputDocumentKey: "output",
       outputSnapshot: "",
       error: "Cancelled by operator",
       deletedAt: null,
       supersededAt: null,
-      harnessIssueExpiresAt: null,
-      harnessIssueDeletedAt: null,
+      harnessTaskExpiresAt: null,
+      harnessTaskDeletedAt: null,
       createdAt: new Date("2026-05-26T00:00:00.000Z"),
       updatedAt: new Date("2026-05-26T00:01:00.000Z"),
       cost: { knownCostAmount: "0", budgetCurrency: "USD", pricedPromptCount: 0, unpricedPromptCount: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
-      issueExpired: false,
+      taskExpired: false,
     });
-    mockIssueService.getById.mockResolvedValue({
+    mockTaskService.getById.mockResolvedValue({
       id: "44444444-4444-4444-8444-444444444444",
       companyId: "company-1",
       status: "in_progress",
     });
-    mockIssueService.updateControlState.mockResolvedValue({});
-    mockOrdinaryIssueRuntime.create.mockResolvedValue({
-      issue: {
+    mockTaskService.updateControlState.mockResolvedValue({});
+    mockOrdinaryTaskRuntime.create.mockResolvedValue({
+      task: {
         id: "44444444-4444-4444-8444-444444444444",
         identifier: "PAP-999",
         title: "Skill test: Review",
       },
       ref: { id: "ref-1" },
     });
-    mockResolveCurrentIssueOwnerRunLinkage.mockResolvedValue({ runId: "run-1" });
-    mockIssueExecutionCancellation.cancelRun.mockResolvedValue({});
+    mockResolveCurrentTaskOwnerRunLinkage.mockResolvedValue({ runId: "run-1" });
+    mockTaskExecutionCancellation.cancelRun.mockResolvedValue({});
     mockCatalogService.listCatalogSkillsOrEmpty.mockReturnValue([]);
     mockCatalogService.getCatalogSkillOrThrow.mockReturnValue({
       id: "paperclipai:bundled:software-development:review",
@@ -1515,17 +1515,17 @@ describe("company skill mutation permissions", () => {
     );
   });
 
-  it("creates and cancels skill test runs through ordinary issue orchestration", async () => {
+  it("creates and cancels skill test runs through ordinary task orchestration", async () => {
     mockCompanySkillService.createTestRun.mockImplementationOnce(async (
       _companyId: string,
       _skillId: string,
       _body: unknown,
       _actor: unknown,
       deps: {
-        createHarnessIssue: (input: Record<string, unknown>) => Promise<unknown>;
+        createHarnessTask: (input: Record<string, unknown>) => Promise<unknown>;
       },
     ) => {
-      await deps.createHarnessIssue({
+      await deps.createHarnessTask({
         id: "44444444-4444-4444-8444-444444444444",
         title: "Skill test: Review",
         request: "Try the skill",
@@ -1549,33 +1549,33 @@ describe("company skill mutation permissions", () => {
           adapterType: "codex",
           adapterConfig: { model: "gpt-5.6" },
         },
-        issueId: "44444444-4444-4444-8444-444444444444",
+        taskId: "44444444-4444-4444-8444-444444444444",
         templateId: null,
         templateName: null,
         templateBody: null,
         renderedTemplateBody: null,
-        harnessIssueRequest: "Try the skill",
+        harnessTaskRequest: "Try the skill",
         status: "queued",
         outputDocumentKey: "output",
         outputSnapshot: "",
         error: null,
         deletedAt: null,
         supersededAt: null,
-        harnessIssueExpiresAt: null,
-        harnessIssueDeletedAt: null,
+        harnessTaskExpiresAt: null,
+        harnessTaskDeletedAt: null,
         createdAt: new Date("2026-05-26T00:00:00.000Z"),
         updatedAt: new Date("2026-05-26T00:00:00.000Z"),
         cost: { knownCostAmount: "0", budgetCurrency: "USD", pricedPromptCount: 0, unpricedPromptCount: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
-        issueExpired: false,
+        taskExpired: false,
       };
     });
     mockCompanySkillService.cancelTestRun.mockImplementationOnce(async (
       _companyId: string,
       _skillId: string,
       _runId: string,
-      deps: { cancelHarnessIssue: (issueId: string) => Promise<unknown> },
+      deps: { cancelHarnessTask: (taskId: string) => Promise<unknown> },
     ) => {
-      await deps.cancelHarnessIssue("44444444-4444-4444-8444-444444444444");
+      await deps.cancelHarnessTask("44444444-4444-4444-8444-444444444444");
       return {
         id: "22222222-2222-4222-8222-222222222222",
         companyId: "company-1",
@@ -1588,24 +1588,24 @@ describe("company skill mutation permissions", () => {
           adapterType: "codex",
           adapterConfig: { model: "gpt-5.6" },
         },
-        issueId: "44444444-4444-4444-8444-444444444444",
+        taskId: "44444444-4444-4444-8444-444444444444",
         templateId: null,
         templateName: null,
         templateBody: null,
         renderedTemplateBody: null,
-        harnessIssueRequest: "Try the skill",
+        harnessTaskRequest: "Try the skill",
         status: "cancelled",
         outputDocumentKey: "output",
         outputSnapshot: "",
         error: "Cancelled by operator",
         deletedAt: null,
         supersededAt: null,
-        harnessIssueExpiresAt: null,
-        harnessIssueDeletedAt: null,
+        harnessTaskExpiresAt: null,
+        harnessTaskDeletedAt: null,
         createdAt: new Date("2026-05-26T00:00:00.000Z"),
         updatedAt: new Date("2026-05-26T00:01:00.000Z"),
         cost: { knownCostAmount: "0", budgetCurrency: "USD", pricedPromptCount: 0, unpricedPromptCount: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
-        issueExpired: false,
+        taskExpired: false,
       };
     });
 
@@ -1615,7 +1615,7 @@ describe("company skill mutation permissions", () => {
       .post("/api/companies/company-1/skills/skill-1/test-runs")
       .send({ inputId: "11111111-1111-4111-8111-111111111111", agentId: "55555555-5555-4555-8555-555555555555" });
     expect(created.status, JSON.stringify(created.body)).toBe(201);
-    expect(mockOrdinaryIssueRuntime.create).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockOrdinaryTaskRuntime.create).toHaveBeenCalledWith(expect.objectContaining({
       companyId: "company-1",
       harnessKind: "skill_test",
       workMode: "skill_test",
@@ -1629,15 +1629,15 @@ describe("company skill mutation permissions", () => {
       .post("/api/companies/company-1/skills/skill-1/test-runs/22222222-2222-4222-8222-222222222222/cancel")
       .send({});
     expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(200);
-    expect(mockResolveCurrentIssueOwnerRunLinkage).toHaveBeenCalledWith(expect.anything(), {
+    expect(mockResolveCurrentTaskOwnerRunLinkage).toHaveBeenCalledWith(expect.anything(), {
       companyId: "company-1",
-      issueId: "44444444-4444-4444-8444-444444444444",
+      taskId: "44444444-4444-4444-8444-444444444444",
     });
-    expect(mockIssueExecutionCancellation.cancelRun).toHaveBeenCalledWith(
+    expect(mockTaskExecutionCancellation.cancelRun).toHaveBeenCalledWith(
       "run-1",
       "Cancelled by skill test run request",
     );
-    expect(mockIssueService.updateControlState).not.toHaveBeenCalled();
+    expect(mockTaskService.updateControlState).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -1649,7 +1649,7 @@ describe("company skill mutation permissions", () => {
       id: "22222222-2222-4222-8222-222222222222",
       companyId: "company-1",
       skillId: "skill-1",
-      issueId: "44444444-4444-4444-8444-444444444444",
+      taskId: "44444444-4444-4444-8444-444444444444",
       agentId: "55555555-5555-4555-8555-555555555555",
       status: "queued",
     });
@@ -1677,7 +1677,7 @@ describe("company skill mutation permissions", () => {
     expect(mockCompanySkillService.deleteTestRun).not.toHaveBeenCalled();
   });
 
-  it("does not prune expired harness issues from test run reads", async () => {
+  it("does not prune expired harness tasks from test run reads", async () => {
     mockCompanySkillService.listTestRuns.mockResolvedValueOnce([]);
     mockCompanySkillService.getTestRunDetail.mockResolvedValueOnce({
       id: "22222222-2222-4222-8222-222222222222",
@@ -1703,11 +1703,11 @@ describe("company skill mutation permissions", () => {
       "skill-1",
       "22222222-2222-4222-8222-222222222222",
     );
-    expect(mockCompanySkillService.pruneExpiredTestHarnessIssues).not.toHaveBeenCalled();
+    expect(mockCompanySkillService.pruneExpiredTestHarnessTasks).not.toHaveBeenCalled();
   });
 
   it("deletes a terminal test run and hides its harness task", async () => {
-    mockIssueService.getById.mockResolvedValueOnce({
+    mockTaskService.getById.mockResolvedValueOnce({
       id: "44444444-4444-4444-8444-444444444444",
       companyId: "company-1",
       status: "done",
@@ -1716,9 +1716,9 @@ describe("company skill mutation permissions", () => {
       _companyId: string,
       _skillId: string,
       _runId: string,
-      deps: { hideHarnessIssue: (issueId: string) => Promise<unknown> },
+      deps: { hideHarnessTask: (taskId: string) => Promise<unknown> },
     ) => {
-      await deps.hideHarnessIssue("44444444-4444-4444-8444-444444444444");
+      await deps.hideHarnessTask("44444444-4444-4444-8444-444444444444");
       return {
         id: "22222222-2222-4222-8222-222222222222",
         companyId: "company-1",
@@ -1731,24 +1731,24 @@ describe("company skill mutation permissions", () => {
           adapterType: "codex",
           adapterConfig: { model: "gpt-5.6" },
         },
-        issueId: "44444444-4444-4444-8444-444444444444",
+        taskId: "44444444-4444-4444-8444-444444444444",
         templateId: null,
         templateName: null,
         templateBody: null,
         renderedTemplateBody: null,
-        harnessIssueRequest: "Try the skill",
+        harnessTaskRequest: "Try the skill",
         status: "succeeded",
         outputDocumentKey: "output",
         outputSnapshot: "",
         error: null,
         deletedAt: new Date("2026-05-26T00:02:00.000Z"),
         supersededAt: null,
-        harnessIssueExpiresAt: null,
-        harnessIssueDeletedAt: null,
+        harnessTaskExpiresAt: null,
+        harnessTaskDeletedAt: null,
         createdAt: new Date("2026-05-26T00:00:00.000Z"),
         updatedAt: new Date("2026-05-26T00:02:00.000Z"),
         cost: { knownCostAmount: "0", budgetCurrency: "USD", pricedPromptCount: 0, unpricedPromptCount: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
-        issueExpired: false,
+        taskExpired: false,
       };
     });
 
@@ -1758,7 +1758,7 @@ describe("company skill mutation permissions", () => {
       .delete("/api/companies/company-1/skills/skill-1/test-runs/22222222-2222-4222-8222-222222222222");
     expect(deleted.status, JSON.stringify(deleted.body)).toBe(200);
     expect(mockCompanySkillService.deleteTestRun).toHaveBeenCalled();
-    expect(mockIssueService.updateControlState).toHaveBeenCalledWith(
+    expect(mockTaskService.updateControlState).toHaveBeenCalledWith(
       "44444444-4444-4444-8444-444444444444",
       expect.objectContaining({ hiddenAt: expect.any(Date) }),
     );

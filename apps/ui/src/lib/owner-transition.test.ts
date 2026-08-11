@@ -78,7 +78,7 @@ describe("owner transition helpers", () => {
       { activeRun: null },
       { activeRun: null, skipped: true },
     ]);
-    expect(summary.affectedIssueCount).toBe(3);
+    expect(summary.affectedTaskCount).toBe(3);
     expect(summary.buckets.map(({ key, count }) => ({ key, count }))).toEqual([
       { key: "live_runs", count: 1 },
       { key: "queued_runs", count: 1 },

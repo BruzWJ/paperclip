@@ -6,7 +6,7 @@ import type {
   CompanySearchZeroResults,
 } from "@paperclipai/shared";
 import { Badge } from "@/components/ui/badge";
-import { IssueGroupHeader } from "@/components/IssueGroupHeader";
+import { TaskGroupHeader } from "@/components/TaskGroupHeader";
 import { Input } from "@/components/ui/input";
 import { PageTabBar, type PageTabItem } from "@/components/PageTabBar";
 import { MatchSourceChip } from "@/components/search/MatchSourceChip";
@@ -40,47 +40,47 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { StatusBadge } from "@/components/StatusBadge";
-import { storybookAgents, storybookProjects, storybookIssues } from "../fixtures/paperclipData";
+import { storybookAgents, storybookProjects, storybookTasks } from "../fixtures/paperclipData";
 
 const agentsById = new Map(storybookAgents.map((agent) => [agent.id, agent]));
 
-type IssueResultOverrides = Omit<Partial<CompanySearchResult>, "issue"> & {
-  issue?: Partial<NonNullable<CompanySearchResult["issue"]>>;
+type TaskResultOverrides = Omit<Partial<CompanySearchResult>, "task"> & {
+  task?: Partial<NonNullable<CompanySearchResult["task"]>>;
 };
 
-function buildIssueResult(overrides: IssueResultOverrides): CompanySearchResult {
-  const baseIssue = {
-    id: overrides.issue?.id ?? "issue-1",
-    identifier: overrides.issue?.identifier ?? "PAP-3142",
-    title: overrides.issue?.title ?? "Auth middleware flakes on cold-start when session token is rotated",
-    request: overrides.issue?.request ?? storybookIssues[0]?.request ?? "",
+function buildTaskResult(overrides: TaskResultOverrides): CompanySearchResult {
+  const baseTask = {
+    id: overrides.task?.id ?? "task-1",
+    identifier: overrides.task?.identifier ?? "PAP-3142",
+    title: overrides.task?.title ?? "Auth middleware flakes on cold-start when session token is rotated",
+    request: overrides.task?.request ?? storybookTasks[0]?.request ?? "",
     boardPresentationStatus:
-      overrides.issue?.boardPresentationStatus ?? "in_progress",
-    priority: overrides.issue?.priority ?? "high",
-    ownerAgentId: overrides.issue?.ownerAgentId ?? storybookAgents[0]?.id ?? null,
-    ownerUserId: overrides.issue?.ownerUserId ?? null,
-    projectId: overrides.issue?.projectId ?? storybookProjects[0]?.id ?? null,
-    updatedAt: overrides.issue?.updatedAt ?? new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
-  } satisfies NonNullable<CompanySearchResult["issue"]>;
+      overrides.task?.boardPresentationStatus ?? "in_progress",
+    priority: overrides.task?.priority ?? "high",
+    ownerAgentId: overrides.task?.ownerAgentId ?? storybookAgents[0]?.id ?? null,
+    ownerUserId: overrides.task?.ownerUserId ?? null,
+    projectId: overrides.task?.projectId ?? storybookProjects[0]?.id ?? null,
+    updatedAt: overrides.task?.updatedAt ?? new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
+  } satisfies NonNullable<CompanySearchResult["task"]>;
   return {
-    id: overrides.id ?? baseIssue.id,
-    type: "issue",
+    id: overrides.id ?? baseTask.id,
+    type: "task",
     score: 100,
-    title: `${baseIssue.identifier} ${baseIssue.title}`,
-    href: `/PAP/issues/${baseIssue.identifier}`,
+    title: `${baseTask.identifier} ${baseTask.title}`,
+    href: `/PAP/tasks/${baseTask.identifier}`,
     matchedFields: overrides.matchedFields ?? ["title"],
     sourceLabel: overrides.sourceLabel ?? null,
     snippet: overrides.snippet ?? null,
     snippets: overrides.snippets ?? [],
-    issue: baseIssue,
-    updatedAt: baseIssue.updatedAt,
+    task: baseTask,
+    updatedAt: baseTask.updatedAt,
     previewImageUrl: overrides.previewImageUrl ?? null,
   };
 }
 
 const fixtureResults: CompanySearchResult[] = [
-  buildIssueResult({
-    id: "issue-1",
+  buildTaskResult({
+    id: "task-1",
     matchedFields: ["title", "comment"],
     sourceLabel: "Comment",
     snippet: "we hit another flake in the morning batch — auth middleware",
@@ -99,10 +99,10 @@ const fixtureResults: CompanySearchResult[] = [
       },
     ],
   }),
-  buildIssueResult({
-    id: "issue-2",
-    issue: {
-      id: "issue-2",
+  buildTaskResult({
+    id: "task-2",
+    task: {
+      id: "task-2",
       identifier: "PAP-3091",
       title: "Audit auth flake telemetry from last quarter",
       boardPresentationStatus: "in_review",
@@ -128,10 +128,10 @@ const fixtureResults: CompanySearchResult[] = [
     previewImageUrl:
       "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23a78bfa'/><text x='50' y='55' font-size='14' fill='white' text-anchor='middle' font-family='sans-serif'>chart</text></svg>",
   }),
-  buildIssueResult({
-    id: "issue-3",
-    issue: {
-      id: "issue-3",
+  buildTaskResult({
+    id: "task-3",
+    task: {
+      id: "task-3",
       identifier: "PAP-2748",
       title: "Pin worker registration to a single auth backend",
       boardPresentationStatus: "done",
@@ -204,7 +204,7 @@ const fixtureResponse: CompanySearchResponse = {
   sort: "relevance",
   results: [...fixtureResults, ...fixtureAgents, ...fixtureProjects],
   countsByType: {
-    issue: fixtureResults.length,
+    task: fixtureResults.length,
     comment: 0,
     document: 0,
     artifact: 0,
@@ -228,17 +228,17 @@ function ScopeTabsPreview({
   active,
   response,
 }: {
-  active: "all" | "issues" | "comments" | "documents" | "artifacts" | "agents" | "projects";
+  active: "all" | "tasks" | "comments" | "documents" | "artifacts" | "agents" | "projects";
   response: CompanySearchResponse;
 }) {
   const total =
-    (response.countsByType.issue ?? 0) +
+    (response.countsByType.task ?? 0) +
     (response.countsByType.artifact ?? 0) +
     (response.countsByType.agent ?? 0) +
     (response.countsByType.project ?? 0);
   const items: PageTabItem[] = [
     { value: "all", label: <ScopeTabLabel label="All" count={total} /> },
-    { value: "issues", label: <ScopeTabLabel label="Issues" count={response.countsByType.issue} /> },
+    { value: "tasks", label: <ScopeTabLabel label="Tasks" count={response.countsByType.task} /> },
     { value: "comments", label: <ScopeTabLabel label="Comments" count={response.results.filter((result) => result.matchedFields.includes("comment")).length} /> },
     { value: "documents", label: <ScopeTabLabel label="Documents" count={response.results.filter((result) => result.matchedFields.includes("document")).length} /> },
     { value: "artifacts", label: <ScopeTabLabel label="Artifacts" count={response.countsByType.artifact} /> },
@@ -280,7 +280,7 @@ function SearchPagePreview({
           <Input
             value={query}
             readOnly
-            placeholder="Search issues, comments, documents, agents, projects…"
+            placeholder="Search tasks, comments, documents, agents, projects…"
             className="h-10 pl-9 pr-20 text-sm"
             aria-label="Search query"
           />
@@ -298,9 +298,9 @@ function SearchPagePreview({
           <div className="flex items-center justify-between py-2 text-[11px] uppercase tracking-wide text-muted-foreground">
             <span>{response.results.length} results · sorted by relevance</span>
           </div>
-          <section aria-label="Issues" className="flex flex-col">
-            <IssueGroupHeader
-              label="Issues"
+          <section aria-label="Tasks" className="flex flex-col">
+            <TaskGroupHeader
+              label="Tasks"
               trailing={
                 <span className="text-xs font-normal tabular-nums text-muted-foreground">
                   {fixtureResults.length}
@@ -319,7 +319,7 @@ function SearchPagePreview({
             </div>
           </section>
           <section aria-label="Agents" className="mt-6 flex flex-col">
-            <IssueGroupHeader
+            <TaskGroupHeader
               label="Agents"
               trailing={
                 <span className="text-xs font-normal tabular-nums text-muted-foreground">
@@ -335,7 +335,7 @@ function SearchPagePreview({
             </div>
           </section>
           <section aria-label="Projects" className="mt-6 flex flex-col">
-            <IssueGroupHeader
+            <TaskGroupHeader
               label="Projects"
               trailing={
                 <span className="text-xs font-normal tabular-nums text-muted-foreground">
@@ -390,13 +390,13 @@ function SearchPagePreview({
           <div>
             <h2 className="text-lg font-semibold">Type to search company memory.</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Issues, comments, plan documents, agents, projects — same surface, ranked by relevance.
+              Tasks, comments, plan documents, agents, projects — same surface, ranked by relevance.
             </p>
           </div>
           <ul className="space-y-1 text-xs text-muted-foreground">
             <li>
               <span className="font-medium text-foreground">Identifier lookup:</span> type{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-[11px]">PAP-123</code> to jump straight to an issue.
+              <code className="rounded bg-muted px-1 py-0.5 text-[11px]">PAP-123</code> to jump straight to a task.
             </li>
             <li>
               <span className="font-medium text-foreground">Quoted phrases:</span> wrap a phrase in quotes to match the
@@ -455,12 +455,12 @@ function CommandPaletteWithSearchAll({
 }) {
   return (
     <Command className="rounded-md border border-border bg-popover shadow-lg">
-      <CommandInput value={query} readOnly placeholder="Search issues, agents, projects..." />
+      <CommandInput value={query} readOnly placeholder="Search tasks, agents, projects..." />
       <CommandList className="max-h-none">
         {emptyResults ? (
           <CommandEmpty>
             <span>
-              No quick issue matches. Press{" "}
+              No quick task matches. Press{" "}
               <kbd className="rounded border border-border bg-muted px-1 py-0.5 text-[10px]">↵</kbd>{" "}
               to <span className="font-medium">search all</span> or keep typing to refine.
             </span>
@@ -494,7 +494,7 @@ function CommandPaletteWithSearchAll({
         <CommandGroup heading="Actions">
           <CommandItem>
             <SquarePen className="mr-2 h-4 w-4" />
-            Create new issue
+            Create new task
             <span className="ml-auto text-xs text-muted-foreground">C</span>
           </CommandItem>
           <CommandItem>
@@ -514,7 +514,7 @@ function CommandPaletteWithSearchAll({
           </CommandItem>
           <CommandItem>
             <CircleDot className="mr-2 h-4 w-4" />
-            Issues
+            Tasks
           </CommandItem>
           <CommandItem>
             <Target className="mr-2 h-4 w-4" />
@@ -536,13 +536,13 @@ function CommandPaletteWithSearchAll({
         {!emptyResults ? (
           <>
             <CommandSeparator />
-            <CommandGroup heading="Issues">
-              {storybookIssues.slice(0, 3).map((issue) => (
-                <CommandItem key={issue.id}>
+            <CommandGroup heading="Tasks">
+              {storybookTasks.slice(0, 3).map((task) => (
+                <CommandItem key={task.id}>
                   <CircleDot className="mr-2 h-4 w-4" />
-                  <span className="mr-2 font-mono text-xs text-muted-foreground">{issue.identifier}</span>
-                  <span className="flex-1 truncate">{issue.title}</span>
-                  <StatusBadge status={issue.boardPresentationStatus} />
+                  <span className="mr-2 font-mono text-xs text-muted-foreground">{task.identifier}</span>
+                  <span className="flex-1 truncate">{task.title}</span>
+                  <StatusBadge status={task.boardPresentationStatus} />
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -659,7 +659,7 @@ function SearchStories() {
             <div className="paperclip-story__label">/search</div>
             <h2 className="mt-1 text-lg font-semibold">No results state</h2>
           </div>
-          <SearchPagePreview response={{ ...fixtureResponse, results: [], countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 } }} state="empty" query="ghostbuster" />
+          <SearchPagePreview response={{ ...fixtureResponse, results: [], countsByType: { task: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 } }} state="empty" query="ghostbuster" />
         </section>
 
         <section className="paperclip-story__frame overflow-hidden">
@@ -726,7 +726,7 @@ function SearchStories() {
           <div className="grid gap-4 lg:grid-cols-2">
             <div>
               <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-                With quick issue matches
+                With quick task matches
               </div>
               <CommandPaletteWithSearchAll query="auth flake" />
             </div>
@@ -742,7 +742,7 @@ function SearchStories() {
         <section className="paperclip-story__frame overflow-hidden p-4">
           <div className="paperclip-story__title-block">
             <div className="paperclip-story__label">Search result row</div>
-            <h2 className="mt-1 text-lg font-semibold">Issue, agent, project rows</h2>
+            <h2 className="mt-1 text-lg font-semibold">Task, agent, project rows</h2>
           </div>
           <div className="flex w-full max-w-[960px] flex-col gap-y-1">
             {fixtureResults.map((result) => (
@@ -772,7 +772,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Full search page surfaces and Command K Search-all transition. Reuses StatusIcon, StatusBadge, Identity, IssueGroupHeader, and PageTabBar; adds MatchSourceChip + SearchResultRow.",
+          "Full search page surfaces and Command K Search-all transition. Reuses StatusIcon, StatusBadge, Identity, TaskGroupHeader, and PageTabBar; adds MatchSourceChip + SearchResultRow.",
       },
     },
   },

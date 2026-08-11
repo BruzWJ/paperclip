@@ -16,16 +16,16 @@ export const LOW_TRUST_TOOL_CLASSES = [
 export type LowTrustToolClass = (typeof LOW_TRUST_TOOL_CLASSES)[number] | string;
 
 export interface LowTrustOutputPromotionTarget {
-  type: "issue";
-  issueId: string;
+  type: "task";
+  taskId: string;
 }
 
 export interface LowTrustBoundary {
   mode: typeof LOW_TRUST_REVIEW_PRESET;
   companyId?: string;
   projectIds?: string[];
-  rootIssueId?: string;
-  issueIds?: string[];
+  rootTaskId?: string;
+  taskIds?: string[];
   allowedAgentIds?: string[];
   allowedSecretBindingIds?: string[];
   allowedToolClasses?: LowTrustToolClass[];
@@ -44,20 +44,20 @@ export interface TrustAuthorizationPolicy extends Record<string, unknown> {
   trustBoundary?: LowTrustBoundary;
 }
 
-export type SourceTrustArtifactKind = "issue" | "comment" | "document" | "work_product";
+export type SourceTrustArtifactKind = "task" | "comment" | "document" | "work_product";
 
 export type SourceTrustDisposition = "quarantined" | "promoted";
 
 export interface SourceTrustPromotionSource {
   artifactKind: SourceTrustArtifactKind;
   artifactId: string;
-  issueId?: string | null;
+  taskId?: string | null;
 }
 
 export interface SourceTrustMetadata {
   preset: TrustPreset;
   disposition: SourceTrustDisposition;
-  sourceIssueId?: string | null;
+  sourceTaskId?: string | null;
   sourceRunId?: string | null;
   sourceAgentId?: string | null;
   promotedFrom?: SourceTrustPromotionSource | null;

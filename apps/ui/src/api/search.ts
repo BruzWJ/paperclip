@@ -1,4 +1,4 @@
-import type { CompanySearchResponse, CompanySearchScope, CompanySearchSort, IssuePriority, IssueStatus } from "@paperclipai/shared";
+import type { CompanySearchResponse, CompanySearchScope, CompanySearchSort, TaskPriority, TaskStatus } from "@paperclipai/shared";
 import { api } from "./client";
 
 export interface CompanySearchParams {
@@ -6,8 +6,8 @@ export interface CompanySearchParams {
   scope?: CompanySearchScope;
   limit?: number;
   offset?: number;
-  status?: IssueStatus[];
-  priority?: IssuePriority[];
+  status?: TaskStatus[];
+  priority?: TaskPriority[];
   ownerAgentId?: string | null;
   ownerUserId?: string;
   projectId?: string;

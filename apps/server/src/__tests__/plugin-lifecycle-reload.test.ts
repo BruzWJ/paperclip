@@ -42,7 +42,7 @@ describe("pluginLifecycleManager.reloadRuntime", () => {
     const lifecycle = pluginLifecycleManager({} as never, {
       loader: loader as PluginLoader,
       dispatchRef: async () => undefined,
-      issueExecutionCancellation: {} as never,
+      taskExecutionCancellation: {} as never,
     });
     const deactivated = vi.fn();
     const activated = vi.fn();
@@ -75,7 +75,7 @@ describe("pluginLifecycleManager.reloadRuntime", () => {
     const lifecycle = pluginLifecycleManager({} as never, {
       loader: loader as PluginLoader,
       dispatchRef: async () => undefined,
-      issueExecutionCancellation: {} as never,
+      taskExecutionCancellation: {} as never,
     });
     const activated = vi.fn();
     lifecycle.on("plugin.activated", activated);
@@ -114,7 +114,7 @@ describe("pluginLifecycleManager.reloadRuntime", () => {
     const lifecycle = pluginLifecycleManager({} as never, {
       loader: loader as PluginLoader,
       dispatchRef: async () => undefined,
-      issueExecutionCancellation: {} as never,
+      taskExecutionCancellation: {} as never,
     });
 
     await lifecycle.activateReadyPlugins();

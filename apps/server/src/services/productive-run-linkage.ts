@@ -1,11 +1,11 @@
 /**
  * Productive linkage remains a stable service import, while every query that
- * touches the canonical run root is owned by issue-execution-run-service.
+ * touches the canonical run root is owned by task-execution-run-service.
  */
 export {
-  resolveCurrentIssueOwnerRunLinkage,
-  resolveCurrentIssueOwnerRunLinkages,
+  resolveCurrentTaskOwnerRunLinkage,
+  resolveCurrentTaskOwnerRunLinkages,
   resolveProductiveRunLinkage,
-  type CurrentIssueOwnerRunLinkage,
+  type CurrentTaskOwnerRunLinkage,
   type ProductiveRunLinkage,
-} from "./issue-execution-run-service.js";
+} from "./task-execution-run-service.js";

@@ -12,15 +12,15 @@ export interface FrontmatterBlock {
   hasFrontmatter: boolean;
 }
 
-export type FrontmatterRoundTripIssueKind =
+export type FrontmatterRoundTripDiagnosticKind =
   | "anchor"
   | "alias"
   | "comment"
   | "quoted_key"
   | "tag";
 
-export interface FrontmatterRoundTripIssue {
-  kind: FrontmatterRoundTripIssueKind;
+export interface FrontmatterRoundTripDiagnostic {
+  kind: FrontmatterRoundTripDiagnosticKind;
   line: number;
   column: number;
   message: string;
@@ -115,8 +115,8 @@ export function getSkillFrontmatterUnknownKeys(value: Record<string, unknown>) {
   return Object.keys(value).filter((key) => !known.has(key));
 }
 
-export function detectFrontmatterRoundTripIssues(rawYaml: string): FrontmatterRoundTripIssue[] {
-  const issues: FrontmatterRoundTripIssue[] = [];
+export function detectFrontmatterRoundTripDiagnostics(rawYaml: string): FrontmatterRoundTripDiagnostic[] {
+  const diagnostics: FrontmatterRoundTripDiagnostic[] = [];
   const lines = rawYaml.split("\n");
 
   for (let index = 0; index < lines.length; index += 1) {
@@ -126,7 +126,7 @@ export function detectFrontmatterRoundTripIssues(rawYaml: string): FrontmatterRo
 
     const content = line.slice(contentStart);
     if (content.startsWith("#")) {
-      issues.push({
+      diagnostics.push({
         kind: "comment",
         line: index + 1,
         column: contentStart + 1,
@@ -137,7 +137,7 @@ export function detectFrontmatterRoundTripIssues(rawYaml: string): FrontmatterRo
 
     const inlineComment = findRoundTripPattern(line, /(^|\s)#/u);
     if (inlineComment >= 0) {
-      issues.push({
+      diagnostics.push({
         kind: "comment",
         line: index + 1,
         column: inlineComment + 1,
@@ -147,7 +147,7 @@ export function detectFrontmatterRoundTripIssues(rawYaml: string): FrontmatterRo
 
     const quotedKey = /^\s*(?:-\s*)?(["']).+?\1\s*:/u.exec(line);
     if (quotedKey) {
-      issues.push({
+      diagnostics.push({
         kind: "quoted_key",
         line: index + 1,
         column: line.indexOf(quotedKey[1]!) + 1,
@@ -157,7 +157,7 @@ export function detectFrontmatterRoundTripIssues(rawYaml: string): FrontmatterRo
 
     const anchor = findRoundTripPattern(line, /(^|[\s,[{])&[A-Za-z0-9_-]+/u);
     if (anchor >= 0) {
-      issues.push({
+      diagnostics.push({
         kind: "anchor",
         line: index + 1,
         column: anchor + 1,
@@ -167,7 +167,7 @@ export function detectFrontmatterRoundTripIssues(rawYaml: string): FrontmatterRo
 
     const alias = findRoundTripPattern(line, /(^|[\s,[{])\*[A-Za-z0-9_-]+/u);
     if (alias >= 0) {
-      issues.push({
+      diagnostics.push({
         kind: "alias",
         line: index + 1,
         column: alias + 1,
@@ -177,7 +177,7 @@ export function detectFrontmatterRoundTripIssues(rawYaml: string): FrontmatterRo
 
     const tag = findRoundTripPattern(line, /(^|\s)![A-Za-z!][^\s]*/u);
     if (tag >= 0) {
-      issues.push({
+      diagnostics.push({
         kind: "tag",
         line: index + 1,
         column: tag + 1,
@@ -186,7 +186,7 @@ export function detectFrontmatterRoundTripIssues(rawYaml: string): FrontmatterRo
     }
   }
 
-  return issues;
+  return diagnostics;
 }
 
 /**
@@ -220,7 +220,7 @@ export interface FrontmatterAnalysis {
    */
   canRoundTrip: boolean;
   /** Structural features that make the block non-round-trippable, if any. */
-  issues: FrontmatterRoundTripIssue[];
+  diagnostics: FrontmatterRoundTripDiagnostic[];
 }
 
 /**
@@ -230,9 +230,9 @@ export interface FrontmatterAnalysis {
  * safety gate for the Skill Studio FrontmatterPanel (PAP-13145 Option B).
  */
 export function analyzeFrontmatterBlock(frontmatterText: string): FrontmatterAnalysis {
-  const issues = detectFrontmatterRoundTripIssues(frontmatterText);
+  const diagnostics = detectFrontmatterRoundTripDiagnostics(frontmatterText);
   const parsed = parseYamlFrontmatter(frontmatterText);
-  let canRoundTrip = issues.length === 0;
+  let canRoundTrip = diagnostics.length === 0;
   if (canRoundTrip) {
     try {
       canRoundTrip = stringifyFrontmatter(parsed) === frontmatterText;
@@ -240,7 +240,7 @@ export function analyzeFrontmatterBlock(frontmatterText: string): FrontmatterAna
       canRoundTrip = false;
     }
   }
-  return { parsed, canRoundTrip, issues };
+  return { parsed, canRoundTrip, diagnostics };
 }
 
 export function parseFrontmatterMarkdown(raw: string): MarkdownDoc {

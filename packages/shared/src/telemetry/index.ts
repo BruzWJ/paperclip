@@ -12,7 +12,7 @@ export {
   trackGoalCreated,
   trackAgentCreated,
   trackSkillImported,
-  trackAgentIssueCompleted,
+  trackAgentTaskCompleted,
   trackErrorHandlerCrash,
 } from "./events.js";
 export type {

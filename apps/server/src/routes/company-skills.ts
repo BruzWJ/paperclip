@@ -27,9 +27,9 @@ import { validate } from "../middleware/validate.js";
 import {
   accessService,
   companySkillService,
-  issueService,
+  taskService,
   logActivity,
-  type OrdinaryIssueRuntime,
+  type OrdinaryTaskRuntime,
 } from "../services/index.js";
 import { isGitRepoSkillImportSource, parseSkillImportSourceInput } from "../services/company-skills.js";
 import {
@@ -50,8 +50,8 @@ import {
   type SkillPolicyPrincipal,
 } from "../services/company-skill-policy.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
-import { resolveCurrentIssueOwnerRunLinkage } from "../services/productive-run-linkage.js";
-import type { IssueExecutionCancellationService } from "../services/issue-execution-cancellation.js";
+import { resolveCurrentTaskOwnerRunLinkage } from "../services/productive-run-linkage.js";
+import type { TaskExecutionCancellationService } from "../services/task-execution-cancellation.js";
 import {
   normalizeSkillPolicySourceLocator,
   type SkillPolicyAction,
@@ -85,9 +85,9 @@ type SkillPolicyResourceInput =
 export function companySkillRoutes(
   db: Db,
   opts: {
-    ordinaryIssues: OrdinaryIssueRuntime;
-    issueExecutionCancellation: Pick<
-      IssueExecutionCancellationService,
+    ordinaryTasks: OrdinaryTaskRuntime;
+    taskExecutionCancellation: Pick<
+      TaskExecutionCancellationService,
       "cancelRun"
     >;
   },
@@ -95,8 +95,8 @@ export function companySkillRoutes(
   const router = Router();
   const access = accessService(db);
   const svc = companySkillService(db);
-  const issues = issueService(db);
-  const ordinaryIssues = opts.ordinaryIssues;
+  const tasks = taskService(db);
+  const ordinaryTasks = opts.ordinaryTasks;
   const skillPolicies = companySkillPolicyService(db);
 
   function asString(value: unknown): string | null {
@@ -265,15 +265,15 @@ export function companySkillRoutes(
     runId: string,
   ): Promise<SkillTestRunTargetAuthorization> {
     const run = await svc.getTestRunDetail(companyId, skillId, runId);
-    if (!run?.issueId) return {};
-    const issue = await issues.getById(run.issueId);
-    if (!issue || issue.companyId !== companyId) {
+    if (!run?.taskId) return {};
+    const task = await tasks.getById(run.taskId);
+    if (!task || task.companyId !== companyId) {
       return {
         targetAgentId: run.agentId ?? null,
       };
     }
     return {
-      targetAgentId: issue.ownerAgentId ?? run.agentId ?? null,
+      targetAgentId: task.ownerAgentId ?? run.agentId ?? null,
     };
   }
 
@@ -565,37 +565,37 @@ export function companySkillRoutes(
       });
       const actor = boardActivityActor(req);
       const result = await svc.createTestRun(companyId, skillId, req.body, skillActor(req), {
-        createHarnessIssue: async (harnessIssue) => {
-          const created = await ordinaryIssues.create({
-            issueId: harnessIssue.id,
+        createHarnessTask: async (harnessTask) => {
+          const created = await ordinaryTasks.create({
+            taskId: harnessTask.id,
             companyId,
-            request: harnessIssue.request,
-            ownerAgentId: harnessIssue.ownerAgentId,
-            creator: harnessIssue.creator,
-            idempotencyKey: `skill-test:${harnessIssue.originId}`,
-            sourceKind: "issue_request",
-            title: harnessIssue.title,
+            request: harnessTask.request,
+            ownerAgentId: harnessTask.ownerAgentId,
+            creator: harnessTask.creator,
+            idempotencyKey: `skill-test:${harnessTask.originId}`,
+            sourceKind: "task_request",
+            title: harnessTask.title,
             priority: "medium",
             workMode: "skill_test",
             harnessKind: "skill_test",
-            correlate: harnessIssue.correlate,
+            correlate: harnessTask.correlate,
           });
           await logActivity(db, {
             companyId,
             ...actor,
-            action: "issue.created",
-            entityType: "issue",
-            entityId: created.issue.id,
+            action: "task.created",
+            entityType: "task",
+            entityId: created.task.id,
             details: {
-              title: created.issue.title,
-              identifier: created.issue.identifier,
+              title: created.task.title,
+              identifier: created.task.identifier,
               harnessKind: "skill_test",
               source: "company_skill_test_run",
               skillId,
               refId: created.ref.id,
             },
           });
-          return { id: created.issue.id };
+          return { id: created.task.id };
         },
       });
       await logActivity(db, {
@@ -604,13 +604,13 @@ export function companySkillRoutes(
         action: "company.skill_test_run_created",
         entityType: "company_skill_test_run",
         entityId: result.id,
-        issueId: result.issueId,
+        taskId: result.taskId,
         details: {
           skillId,
           inputId: result.inputId,
           skillVersionId: result.skillVersionId,
           agentId: result.agentId,
-          issueId: result.issueId,
+          taskId: result.taskId,
         },
       });
       res.status(201).json(result);
@@ -625,15 +625,15 @@ export function companySkillRoutes(
     await assertCanOrchestrateSkillTestHarness(req, companyId, await loadSkillTestRunAssignmentScope(companyId, skillId, runId));
     const actor = boardActivityActor(req);
     const result = await svc.cancelTestRun(companyId, skillId, runId, {
-      cancelHarnessIssue: async (issueId) => {
-        const issue = await issues.getById(issueId);
-        if (!issue || issue.companyId !== companyId) return;
-        const linkage = await resolveCurrentIssueOwnerRunLinkage(db, {
-          companyId: issue.companyId,
-          issueId: issue.id,
+      cancelHarnessTask: async (taskId) => {
+        const task = await tasks.getById(taskId);
+        if (!task || task.companyId !== companyId) return;
+        const linkage = await resolveCurrentTaskOwnerRunLinkage(db, {
+          companyId: task.companyId,
+          taskId: task.id,
         });
         if (linkage?.runId) {
-          await opts.issueExecutionCancellation.cancelRun(
+          await opts.taskExecutionCancellation.cancelRun(
             linkage.runId,
             "Cancelled by skill test run request",
           );
@@ -650,8 +650,8 @@ export function companySkillRoutes(
       action: "company.skill_test_run_cancelled",
       entityType: "company_skill_test_run",
       entityId: result.id,
-      issueId: result.issueId,
-      details: { skillId, issueId: result.issueId },
+      taskId: result.taskId,
+      details: { skillId, taskId: result.taskId },
     });
     res.json(result);
   });
@@ -664,10 +664,10 @@ export function companySkillRoutes(
     await assertCanOrchestrateSkillTestHarness(req, companyId, await loadSkillTestRunAssignmentScope(companyId, skillId, runId));
     const actor = boardActivityActor(req);
     const result = await svc.deleteTestRun(companyId, skillId, runId, {
-      hideHarnessIssue: async (issueId) => {
-        const issue = await issues.getById(issueId);
-        if (!issue || issue.companyId !== companyId) return;
-        await issues.updateControlState(issueId, {
+      hideHarnessTask: async (taskId) => {
+        const task = await tasks.getById(taskId);
+        if (!task || task.companyId !== companyId) return;
+        await tasks.updateControlState(taskId, {
           hiddenAt: new Date(),
           actorUserId: actor.actorId,
         });
@@ -683,8 +683,8 @@ export function companySkillRoutes(
       action: "company.skill_test_run_deleted",
       entityType: "company_skill_test_run",
       entityId: result.id,
-      issueId: result.issueId,
-      details: { skillId, issueId: result.issueId },
+      taskId: result.taskId,
+      details: { skillId, taskId: result.taskId },
     });
     res.json(result);
   });

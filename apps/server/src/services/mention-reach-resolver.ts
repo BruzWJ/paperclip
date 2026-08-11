@@ -10,7 +10,7 @@ export interface MentionReachAgent extends AgentOrgRow {
   currentAdapterConfigRevisionId: string | null;
 }
 
-export interface MentionReachIssue {
+export interface MentionReachTask {
   id: string;
   parentId: string | null;
   ownerKind: string;
@@ -81,19 +81,19 @@ function boundedAncestorIds(
     cursor = agentsById.get(cursor)?.reportsTo ?? null;
   }
 
-  // The issue root owner is the inclusive ceiling. If it is not on the
+  // The task root owner is the inclusive ceiling. If it is not on the
   // caller's reporting line, there is no safe dynamic upward reach.
   return new Set();
 }
 
 /**
- * Canonical same-issue consult resolver used by both tools/list compilation
+ * Canonical same-task consult resolver used by both tools/list compilation
  * and the transactional tools/call recheck.
  */
 export function resolveMentionReach(input: {
   sourceAgentId: string;
   companyAgents: readonly MentionReachAgent[];
-  issueTree: readonly MentionReachIssue[];
+  taskTree: readonly MentionReachTask[];
   mentionReach: Readonly<
     Partial<Record<AgentMentionReachGrantKey, boolean>>
   >;
@@ -113,15 +113,15 @@ export function resolveMentionReach(input: {
     )
     .map((agent) => agent.id);
 
-  const root = input.issueTree.find((issue) => issue.parentId === null) ?? null;
+  const root = input.taskTree.find((task) => task.parentId === null) ?? null;
   const treeOwnerIds = new Set(
-    input.issueTree
+    input.taskTree
       .filter(
-        (issue) =>
-          issue.ownerKind === "agent" &&
-          issue.ownerAgentId !== null,
+        (task) =>
+          task.ownerKind === "agent" &&
+          task.ownerAgentId !== null,
       )
-      .map((issue) => issue.ownerAgentId!),
+      .map((task) => task.ownerAgentId!),
   );
 
   const dynamicTargets = new Set<string>();

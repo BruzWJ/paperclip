@@ -12,7 +12,7 @@ describe("plugin public actor and invite contracts", () => {
     }>();
   });
 
-  it("requires shared canonical issuance provenance on access invites", () => {
+  it("requires shared canonical creation provenance on access invites", () => {
     expectTypeOf<Pick<PluginAccessInvite, "source">>().toEqualTypeOf<{
       source: InviteSource;
     }>();

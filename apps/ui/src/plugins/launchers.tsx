@@ -73,7 +73,7 @@ type PluginLauncherRuntimeContextValue = {
    *
    * The runtime accepts the normalized `PluginUiContribution` so callers can
    * reuse the `/api/plugins/ui-contributions` payload they already fetched
-   * instead of issuing another request for each launcher activation.
+   * instead of sending another request for each launcher activation.
    */
   activateLauncher(
     launcher: ResolvedPluginLauncher,
@@ -281,7 +281,7 @@ function usePluginLaunchers(
       for (const launcher of contribution.launchers) {
         if (!placementZones.has(launcher.placementZone)) continue;
         if (launcher.placementZone === "toolbarButton") {
-          if (filters.entityType !== "project" && filters.entityType !== "issue") continue;
+          if (filters.entityType !== "project" && filters.entityType !== "task") continue;
           if (!launcher.entityTypes.includes(filters.entityType)) continue;
         }
         rows.push({

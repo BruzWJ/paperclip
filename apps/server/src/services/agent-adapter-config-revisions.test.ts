@@ -138,7 +138,7 @@ describe("canonical ACP adapter configuration revision", () => {
           limits: null,
         },
         workspaceSelector: {
-          kind: "issue_execution_workspace",
+          kind: "task_execution_workspace",
         },
         companySkillPins: [
           {

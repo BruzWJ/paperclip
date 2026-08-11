@@ -4,7 +4,7 @@ import {
   plugins,
 } from "@paperclipai/db";
 import { and, eq } from "drizzle-orm";
-import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
+import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
 interface PluginCompanySettingLockInput {
   pluginInstallationId: string;
@@ -23,7 +23,7 @@ interface PluginCompanySettingLockScope
 
 /** Lock the instance installation and target company in canonical order. */
 export async function lockPluginInstallationCompanyScopeInTransaction(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   input: PluginCompanySettingLockInput,
 ): Promise<PluginInstallationCompanyLockScope> {
   const installation = await tx
@@ -52,7 +52,7 @@ export async function lockPluginInstallationCompanyScopeInTransaction(
  * serialized with a concurrent first insert.
  */
 export async function lockPluginCompanySettingScopeInTransaction(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   input: PluginCompanySettingLockInput,
 ): Promise<PluginCompanySettingLockScope> {
   const scope = await lockPluginInstallationCompanyScopeInTransaction(

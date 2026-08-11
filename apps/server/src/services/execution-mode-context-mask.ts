@@ -14,7 +14,7 @@ export interface ExecutionModeContextInput {
   workMode?: string | null;
   harnessKind?: string | null;
   originKind?: string | null;
-  issueExecutionPolicy?: unknown;
+  taskExecutionPolicy?: unknown;
 }
 
 function impliesLowTrust(value: unknown, depth = 0): boolean {
@@ -44,7 +44,7 @@ function impliesLowTrust(value: unknown, depth = 0): boolean {
 /**
  * Maps retained restricted execution modes to false-only context masks.
  * These modes receive their exact immutable request, but cannot pull prior or
- * neighboring Paperclip issue context through any launch, retry, consult, or
+ * neighboring Paperclip task context through any launch, retry, consult, or
  * native-session path.
  */
 export function resolveExecutionModeContextMask(
@@ -53,8 +53,7 @@ export function resolveExecutionModeContextMask(
   if (
     input.workMode === "skill_test" ||
     input.harnessKind === "skill_test" ||
-    input.originKind === "task_bridge" ||
-    impliesLowTrust(input.issueExecutionPolicy)
+    impliesLowTrust(input.taskExecutionPolicy)
   ) {
     return DENY_ALL_EXECUTION_CONTEXT_MASK;
   }

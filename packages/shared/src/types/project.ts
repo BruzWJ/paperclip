@@ -58,10 +58,10 @@ export interface Project {
   pausedAt: Date | null;
   managedByPlugin?: ProjectManagedByPlugin | null;
   /**
-   * Number of issues in the project. Populated by the projects list
+   * Number of tasks in the project. Populated by the projects list
    * endpoint (IA Phase 4 — PAP-60); omitted on single-project payloads.
    */
-  issueCount?: number;
+  taskCount?: number;
   /**
    * Active budget for the project, when set. Populated by the projects list
    * endpoint (IA Phase 4 — PAP-60); omitted on single-project payloads.

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addValidationDetail, validationDetails } from "../validation-details.js";
 import {
   SECRET_BINDING_TARGET_TYPES,
   SECRET_MANAGED_MODES,
@@ -55,8 +56,7 @@ export const createSecretSchema = z.object({
 }).superRefine((value, ctx) => {
   if ((value.managedMode ?? "paperclip_managed") === "external_reference") {
     if (!value.externalRef?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         path: ["externalRef"],
         message: "External reference secrets require externalRef",
       });
@@ -64,15 +64,13 @@ export const createSecretSchema = z.object({
     return;
   }
   if (value.externalRef?.trim()) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       path: ["externalRef"],
       message: "Managed secrets cannot set externalRef",
     });
   }
   if (!value.value?.trim()) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       path: ["value"],
       message: "Managed secrets require value",
     });
@@ -96,8 +94,7 @@ function requireSecretRotationInput(
     value.providerVersionRef == null &&
     value.providerConfigId == null
   ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       path: ["value"],
       message: "Secret rotation requires value, externalRef, providerVersionRef, or providerConfigId",
     });
@@ -176,15 +173,13 @@ export const createUserSecretValueSchema = z.object({
   providerConfigId: z.string().uuid().optional().nullable(),
 }).superRefine((value, ctx) => {
   if (!value.definitionKey && !value.definitionId) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       path: ["definitionId"],
       message: "User secret value requires definitionId or definitionKey",
     });
   }
   if (!value.value?.trim() && !value.externalRef?.trim()) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       path: ["value"],
       message: "User secret value requires value or externalRef",
     });
@@ -233,8 +228,7 @@ function rejectSensitiveProviderConfigKeys(value: unknown, ctx: z.RefinementCtx)
   if (!value || typeof value !== "object" || Array.isArray(value)) return;
   for (const key of Object.keys(value)) {
     if (!deniedProviderConfigKeyPattern.test(key)) continue;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       path: ["config", key],
       message: `Provider vault config cannot persist sensitive field: ${key}`,
     });
@@ -279,8 +273,7 @@ const vaultAddressSchema = z.preprocess(
       url.hash ||
       hasPath
     ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "Vault address must be an origin-only HTTP(S) URL without credentials, path, query, or fragment",
       });
     }
@@ -291,10 +284,10 @@ function rejectUnsafeVaultAddress(value: unknown, ctx: z.RefinementCtx) {
   if (value === undefined || value === null) return;
   const parsed = vaultAddressSchema.safeParse(value);
   if (parsed.success) return;
-  for (const issue of parsed.error.issues) {
-    ctx.addIssue({
-      ...issue,
-      path: ["config", "address", ...issue.path],
+  for (const detail of validationDetails(parsed.error)) {
+    addValidationDetail(ctx, {
+      ...detail,
+      path: ["config", "address", ...detail.path],
     });
   }
 }
@@ -326,24 +319,22 @@ export const createSecretProviderConfigSchema = z.object({
     config: value.config,
   });
   if (!parsed.success) {
-    for (const issue of parsed.error.issues) {
-      ctx.addIssue({
-        ...issue,
-        path: issue.path[0] === "config" ? issue.path : ["config", ...issue.path],
+    for (const detail of validationDetails(parsed.error)) {
+      addValidationDetail(ctx, {
+        ...detail,
+        path: detail.path[0] === "config" ? detail.path : ["config", ...detail.path],
       });
     }
   }
   const status = value.status ?? (["gcp_secret_manager", "vault"].includes(value.provider) ? "coming_soon" : "ready");
   if ((value.provider === "gcp_secret_manager" || value.provider === "vault") && status !== "coming_soon" && status !== "disabled") {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       path: ["status"],
       message: `${value.provider} provider vaults are locked while coming soon`,
     });
   }
   if ((status === "coming_soon" || status === "disabled") && value.isDefault) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       path: ["isDefault"],
       message: "Only ready or warning provider vaults can be default",
     });
@@ -363,8 +354,7 @@ export const updateSecretProviderConfigSchema = z.object({
     rejectUnsafeVaultAddress(value.config.address, ctx);
   }
   if ((value.status === "coming_soon" || value.status === "disabled") && value.isDefault) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       path: ["isDefault"],
       message: "Only ready or warning provider vaults can be default",
     });
@@ -395,10 +385,10 @@ export const secretProviderConfigDiscoveryPreviewSchema = z.object({
     config: value.config,
   });
   if (!parsed.success) {
-    for (const issue of parsed.error.issues) {
-      ctx.addIssue({
-        ...issue,
-        path: issue.path[0] === "config" ? issue.path : ["config", ...issue.path],
+    for (const detail of validationDetails(parsed.error)) {
+      addValidationDetail(ctx, {
+        ...detail,
+        path: detail.path[0] === "config" ? detail.path : ["config", ...detail.path],
       });
     }
   }

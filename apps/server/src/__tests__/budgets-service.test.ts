@@ -21,7 +21,7 @@ function companyRow(input: {
   return {
     id: input.id,
     name: input.name,
-    issuePrefix: "BUD",
+    taskPrefix: "BUD",
     status: "active",
     pauseReason: null,
     pausedAt: null,

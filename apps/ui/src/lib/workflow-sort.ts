@@ -1,6 +1,6 @@
 export type WorkflowSortBlocker = { id: string };
 
-export type WorkflowSortIssue = {
+export type WorkflowSortTask = {
   id: string;
   createdAt: Date | string;
   blockedBy?: WorkflowSortBlocker[] | null;
@@ -16,8 +16,8 @@ export type WorkflowSortIssue = {
 //
 // If the input contains a cycle (API rejects this, so it shouldn't happen in
 // practice), the util degrades to a pure tie-break sort instead of hanging.
-export function workflowSort<T extends WorkflowSortIssue>(issues: T[]): T[] {
-  if (issues.length <= 1) return [...issues];
+export function workflowSort<T extends WorkflowSortTask>(tasks: T[]): T[] {
+  if (tasks.length <= 1) return [...tasks];
 
   const tieBreakAsc = (a: T, b: T): number => {
     const ta = toTimestamp(a.createdAt);
@@ -29,23 +29,23 @@ export function workflowSort<T extends WorkflowSortIssue>(issues: T[]): T[] {
   };
 
   const byId = new Map<string, T>();
-  for (const issue of issues) byId.set(issue.id, issue);
+  for (const task of tasks) byId.set(task.id, task);
 
   const successors = new Map<string, string[]>();
   const inDegree = new Map<string, number>();
-  for (const issue of issues) {
-    successors.set(issue.id, []);
-    inDegree.set(issue.id, 0);
+  for (const task of tasks) {
+    successors.set(task.id, []);
+    inDegree.set(task.id, 0);
   }
-  for (const issue of issues) {
+  for (const task of tasks) {
     const seenBlockers = new Set<string>();
-    for (const blocker of issue.blockedBy ?? []) {
+    for (const blocker of task.blockedBy ?? []) {
       if (!blocker || !byId.has(blocker.id)) continue;
-      if (blocker.id === issue.id) continue;
+      if (blocker.id === task.id) continue;
       if (seenBlockers.has(blocker.id)) continue;
       seenBlockers.add(blocker.id);
-      successors.get(blocker.id)!.push(issue.id);
-      inDegree.set(issue.id, (inDegree.get(issue.id) ?? 0) + 1);
+      successors.get(blocker.id)!.push(task.id);
+      inDegree.set(task.id, (inDegree.get(task.id) ?? 0) + 1);
     }
   }
 
@@ -54,23 +54,23 @@ export function workflowSort<T extends WorkflowSortIssue>(issues: T[]): T[] {
   }
 
   const ready: T[] = [];
-  for (const issue of issues) {
-    if (inDegree.get(issue.id) === 0) ready.push(issue);
+  for (const task of tasks) {
+    if (inDegree.get(task.id) === 0) ready.push(task);
   }
   ready.sort(tieBreakAsc);
 
   const emitted = new Set<string>();
   const output: T[] = [];
 
-  const insertReady = (issue: T): void => {
+  const insertReady = (task: T): void => {
     let lo = 0;
     let hi = ready.length;
     while (lo < hi) {
       const mid = (lo + hi) >>> 1;
-      if (tieBreakAsc(ready[mid], issue) <= 0) lo = mid + 1;
+      if (tieBreakAsc(ready[mid], task) <= 0) lo = mid + 1;
       else hi = mid;
     }
-    ready.splice(lo, 0, issue);
+    ready.splice(lo, 0, task);
   };
 
   const releaseSuccessors = (id: string): void => {
@@ -97,14 +97,14 @@ export function workflowSort<T extends WorkflowSortIssue>(issues: T[]): T[] {
       const nextId = succIds[0];
       if (emitted.has(nextId)) break;
       if ((inDegree.get(nextId) ?? 0) !== 0) break;
-      const nextIndex = ready.findIndex((issue) => issue.id === nextId);
+      const nextIndex = ready.findIndex((task) => task.id === nextId);
       if (nextIndex < 0) break;
       [current] = ready.splice(nextIndex, 1);
     }
   }
 
-  if (emitted.size < issues.length) {
-    return [...issues].sort(tieBreakAsc);
+  if (emitted.size < tasks.length) {
+    return [...tasks].sort(tieBreakAsc);
   }
 
   return output;

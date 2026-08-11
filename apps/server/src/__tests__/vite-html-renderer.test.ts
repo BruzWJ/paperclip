@@ -52,7 +52,7 @@ describe("createCachedViteHtmlRenderer", () => {
     await expect(renderer.render("/")).resolves.toContain("/@vite/client");
     await expect(renderer.render("/")).resolves.toContain('"/@react-refresh"');
     const first = await renderer.render("/");
-    const second = await renderer.render("/issues");
+    const second = await renderer.render("/tasks");
     expect(first).toBe(second);
     expect(first.match(/\/@vite\/client/g)?.length).toBe(1);
     expect(first).toContain("window.$RefreshReg$");

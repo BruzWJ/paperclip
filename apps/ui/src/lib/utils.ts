@@ -121,9 +121,9 @@ export function formatDurationMs(ms: number): string {
   return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
 }
 
-/** Build an issue URL using the human-readable identifier when available. */
-export function issueUrl(issue: { id: string; identifier?: string | null }): string {
-  return `/issues/${issue.identifier ?? issue.id}`;
+/** Build a task URL using the human-readable identifier when available. */
+export function taskUrl(task: { id: string; identifier?: string | null }): string {
+  return `/tasks/${task.identifier ?? task.id}`;
 }
 
 /** Build an agent route URL using the short URL key when available. */

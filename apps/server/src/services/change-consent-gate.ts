@@ -3,9 +3,9 @@ import { changeConsents } from "@paperclipai/db";
 import { and, desc, eq, gt, inArray, isNull, lt, ne } from "drizzle-orm";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import {
-  readIssueExecutionRun,
-  resolveIssueExecutionRunIdentityById,
-} from "./issue-execution-run-service.js";
+  readTaskExecutionRun,
+  resolveTaskExecutionRunIdentityById,
+} from "./task-execution-run-service.js";
 
 export const CHANGE_CONSENT_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -158,12 +158,12 @@ export function changeConsentGateService(db: Db) {
       if (!(input.expiresAt instanceof Date) || Number.isNaN(input.expiresAt.getTime()) || input.expiresAt <= now) {
         throw badRequest("Change consent expiry must be in the future");
       }
-      const sourceIdentity = await resolveIssueExecutionRunIdentityById(
+      const sourceIdentity = await resolveTaskExecutionRunIdentityById(
         db,
         input.sourceRunId,
       );
       const sourceRun = sourceIdentity?.companyId === input.companyId
-        ? await readIssueExecutionRun(db, sourceIdentity)
+        ? await readTaskExecutionRun(db, sourceIdentity)
         : null;
       if (!sourceRun || sourceRun.targetAgentId !== input.requestedByAgentId) {
         throw badRequest("Change consent source run is invalid");

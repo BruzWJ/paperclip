@@ -6,10 +6,10 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   agentAdapterConfigRevisions,
   companies as companyRows,
-  issueCreateIdempotencyKeys,
-  issueExecutionRefs,
-  issueLabels,
-  issues as issueRows,
+  taskCreateIdempotencyKeys,
+  taskExecutionRefs,
+  taskLabels,
+  tasks as taskRows,
   labels as labelRows,
   principalPermissionGrants,
   type Db,
@@ -27,29 +27,29 @@ import type {
   CompanyPortabilityImportResult,
   CompanyPortabilityInclude,
   CompanyPortabilityManifest,
-  CompanyPortabilityIssueCommentManifestEntry,
+  CompanyPortabilityTaskCommentManifestEntry,
   CompanyPortabilityPreview,
   CompanyPortabilityPreviewAgentPlan,
   CompanyPortabilityPreviewResult,
   CompanyPortabilityProjectManifestEntry,
-  CompanyPortabilityIssueRoutineManifestEntry,
-  CompanyPortabilityIssueRoutineTriggerManifestEntry,
-  CompanyPortabilityIssueManifestEntry,
+  CompanyPortabilityTaskRoutineManifestEntry,
+  CompanyPortabilityTaskRoutineTriggerManifestEntry,
+  CompanyPortabilityTaskManifestEntry,
   CompanyPortabilitySidebarOrder,
   CompanyPortabilitySkillManifestEntry,
   CompanySkill,
   AgentEnvConfig,
   PermissionKey,
   RoutineVariable,
-  AgentVisibleIssueStatus,
-  IssueDisposition,
-  IssueStatus,
+  AgentVisibleTaskStatus,
+  TaskDisposition,
+  TaskStatus,
 } from "@paperclipai/shared";
 import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
-  ISSUE_PRIORITIES,
-  ISSUE_STATUSES,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
   PAPERCLIP_ACTION_KEYS,
   PROJECT_ICON_NAMES,
   PROJECT_STATUSES,
@@ -59,12 +59,12 @@ import {
   ROUTINE_TRIGGER_KINDS,
   ROUTINE_TRIGGER_SIGNING_MODES,
   agentAdapterAcpConfigurationSchema,
-  decodeIssueDisposition,
+  decodeTaskDisposition,
   deriveProjectUrlKey,
   envConfigSchema,
-  issueCommentAuthorTypeSchema,
-  issueCommentMetadataSchema,
-  issueCommentPresentationSchema,
+  taskCommentAuthorTypeSchema,
+  taskCommentMetadataSchema,
+  taskCommentPresentationSchema,
   isUuidLike,
   normalizeAgentUrlKey,
   parseBudgetCurrency,
@@ -84,12 +84,12 @@ import { renderOrgChartPng, type OrgNode } from "../routes/org-chart-svg.js";
 import { companySkillService } from "./company-skills.js";
 import { companyService } from "./companies.js";
 import { validateCron } from "./cron.js";
-import { issueService } from "./issues.js";
-import type { OrdinaryIssueRuntime } from "./ordinary-issue-runtime.js";
+import { taskService } from "./tasks.js";
+import type { OrdinaryTaskRuntime } from "./ordinary-task-runtime.js";
 import {
   appendCanonicalControlNotice,
   appendCanonicalUserComment,
-} from "./issue-session-producers.js";
+} from "./task-session-producers.js";
 import { projectService } from "./projects.js";
 import { routineService } from "./routines.js";
 import {
@@ -108,17 +108,17 @@ import {
   readPortableCatalogProvenance,
 } from "./catalog-provenance.js";
 import { normalizePortablePath } from "./portable-path.js";
-import { persistCanonicalIssueAggregateInTx } from "./canonical-issue-aggregate.js";
+import { persistCanonicalTaskAggregateInTx } from "./canonical-task-aggregate.js";
 import {
-  IssueExecutionWorkspaceReservationRejected,
+  TaskExecutionWorkspaceReservationRejected,
 } from "./execution-workspaces.js";
 import {
-  resolveInvokableIssueOwnerInTransaction,
+  resolveInvokableTaskOwnerInTransaction,
 } from "./agent-invokability.js";
 import {
-  createIssueSessionAdmissionService,
-} from "./issue-session/admission.js";
-import { admitIssueExecutionInTransaction } from "./issue-execution-initial-start-admission.js";
+  createTaskSessionAdmissionService,
+} from "./task-session/admission.js";
+import { admitTaskExecutionInTransaction } from "./task-execution-initial-start-admission.js";
 
 /** Build OrgNode tree from manifest agent list (slug + reportsToSlug). */
 function buildOrgTreeFromManifest(agents: CompanyPortabilityManifest["agents"]): OrgNode[] {
@@ -164,7 +164,7 @@ const DEFAULT_INCLUDE: CompanyPortabilityInclude = {
   company: true,
   agents: true,
   projects: false,
-  issues: false,
+  tasks: false,
   skills: false,
 };
 
@@ -186,12 +186,12 @@ function collectAgentSafeImportPolicyErrors(
   include: CompanyPortabilityInclude,
 ) {
   const errors: string[] = [];
-  if (include.issues) {
-    for (const issue of manifest.issues) {
-      const triggers = issue.routine?.triggers ?? [];
+  if (include.tasks) {
+    for (const task of manifest.tasks) {
+      const triggers = task.routine?.triggers ?? [];
       for (const trigger of triggers) {
         if (trigger.kind !== "schedule") {
-          errors.push(`Safe import does not allow routine issue ${issue.slug} ${trigger.kind} triggers.`);
+          errors.push(`Safe import does not allow routine task ${task.slug} ${trigger.kind} triggers.`);
         }
       }
     }
@@ -207,7 +207,7 @@ function classifyPortableFileKind(pathValue: string): CompanyPortabilityExportPr
   if (normalized.startsWith("agents/")) return "agent";
   if (normalized.startsWith("skills/")) return "skill";
   if (normalized.startsWith("projects/")) return "project";
-  if (normalized.startsWith("issues/")) return "issue";
+  if (normalized.startsWith("tasks/")) return "task";
   return "other";
 }
 
@@ -334,14 +334,14 @@ function deriveLocalExportNamespace(skill: CompanySkill, slug: string) {
 function derivePrimarySkillExportDir(
   skill: CompanySkill,
   slug: string,
-  companyIssuePrefix: string | null | undefined,
+  companyTaskPrefix: string | null | undefined,
 ) {
   const normalizedKey = normalizeSkillKey(skill.key);
   const keySegments = normalizedKey?.split("/") ?? [];
   const primaryNamespace = keySegments[0] ?? null;
 
   if (primaryNamespace === "company") {
-    const companySegment = normalizeExportPathSegment(companyIssuePrefix, true)
+    const companySegment = normalizeExportPathSegment(companyTaskPrefix, true)
       ?? normalizeExportPathSegment(keySegments[1], true)
       ?? "company";
     return `skills/company/${companySegment}/${slug}`;
@@ -383,9 +383,9 @@ function appendSkillExportDirSuffix(packageDir: string, suffix: string) {
 function deriveSkillExportDirCandidates(
   skill: CompanySkill,
   slug: string,
-  companyIssuePrefix: string | null | undefined,
+  companyTaskPrefix: string | null | undefined,
 ) {
-  const primaryDir = derivePrimarySkillExportDir(skill, slug, companyIssuePrefix);
+  const primaryDir = derivePrimarySkillExportDir(skill, slug, companyTaskPrefix);
   const metadata = isPlainRecord(skill.metadata) ? skill.metadata : null;
   const sourceKind = readSkillSourceKind(skill);
   const suffixes = new Set<string>();
@@ -426,13 +426,13 @@ function deriveSkillExportDirCandidates(
   return [primaryDir, ...Array.from(suffixes, (suffix) => appendSkillExportDirSuffix(primaryDir, suffix))];
 }
 
-function buildSkillExportDirMap(skills: CompanySkill[], companyIssuePrefix: string | null | undefined) {
+function buildSkillExportDirMap(skills: CompanySkill[], companyTaskPrefix: string | null | undefined) {
   const usedDirs = new Set<string>();
   const keyToDir = new Map<string, string>();
   const orderedSkills = [...skills].sort((left, right) => left.key.localeCompare(right.key));
   for (const skill of orderedSkills) {
     const slug = normalizeSkillSlug(skill.slug) ?? "skill";
-    const candidates = deriveSkillExportDirCandidates(skill, slug, companyIssuePrefix);
+    const candidates = deriveSkillExportDirCandidates(skill, slug, companyTaskPrefix);
 
     let packageDir = candidates.find((candidate) => !usedDirs.has(candidate)) ?? null;
     if (!packageDir) {
@@ -563,7 +563,7 @@ type PaperclipExtensionDoc = {
   company?: Record<string, unknown> | null;
   agents?: Record<string, Record<string, unknown>> | null;
   projects?: Record<string, Record<string, unknown>> | null;
-  issues?: Record<string, Record<string, unknown>> | null;
+  tasks?: Record<string, Record<string, unknown>> | null;
   routines?: Record<string, Record<string, unknown>> | null;
 };
 
@@ -573,7 +573,7 @@ const PAPERCLIP_EXTENSION_KEYS = [
   "sidebar",
   "agents",
   "projects",
-  "issues",
+  "tasks",
   "routines",
 ] as const;
 
@@ -599,7 +599,7 @@ const PORTABLE_AGENT_FRONTMATTER_KEYS = [
   "skills",
 ] as const;
 
-const PORTABLE_ISSUE_EXTENSION_KEYS = [
+const PORTABLE_TASK_EXTENSION_KEYS = [
   "identifier",
   "lifecycleStatus",
   "disposition",
@@ -610,7 +610,7 @@ const PORTABLE_ISSUE_EXTENSION_KEYS = [
   "comments",
   "metadata",
 ] as const;
-const PORTABLE_ISSUE_FRONTMATTER_KEYS = [
+const PORTABLE_TASK_FRONTMATTER_KEYS = [
   "name",
   "title",
   "slug",
@@ -633,7 +633,7 @@ type ProjectLike = {
   metadata?: Record<string, unknown> | null;
 };
 
-type IssueLike = {
+type TaskLike = {
   id: string;
   identifier: string | null;
   title: string | null;
@@ -646,20 +646,20 @@ type IssueLike = {
   billingCode: string | null;
 };
 
-function issueDisplayLabel(issue: Pick<IssueLike, "id" | "identifier" | "title" | "request">) {
-  if (issue.title) return issue.title;
-  if (issue.identifier) return issue.identifier;
-  const request = issue.request?.trim().replace(/\s+/g, " ");
-  if (!request) return `Issue ${issue.id}`;
+function taskDisplayLabel(task: Pick<TaskLike, "id" | "identifier" | "title" | "request">) {
+  if (task.title) return task.title;
+  if (task.identifier) return task.identifier;
+  const request = task.request?.trim().replace(/\s+/g, " ");
+  if (!request) return `Task ${task.id}`;
   return request.length <= 96 ? request : `${request.slice(0, 93).trimEnd()}...`;
 }
 
-function portableIssueDisplayLabel(issue: CompanyPortabilityIssueManifestEntry) {
-  if (issue.title) return issue.title;
-  if (issue.identifier) return issue.identifier;
-  const request = issue.request.trim().replace(/\s+/g, " ");
+function portableTaskDisplayLabel(task: CompanyPortabilityTaskManifestEntry) {
+  if (task.title) return task.title;
+  if (task.identifier) return task.identifier;
+  const request = task.request.trim().replace(/\s+/g, " ");
   if (request) return request.length <= 96 ? request : `${request.slice(0, 93).trimEnd()}...`;
-  return `Issue ${issue.slug}`;
+  return `Task ${task.slug}`;
 }
 
 type RoutineLike = NonNullable<Awaited<ReturnType<ReturnType<typeof routineService>["getDetail"]>>>;
@@ -740,7 +740,7 @@ function asBoolean(value: unknown): boolean | null {
 
 function normalizePortableDisposition(
   value: unknown,
-  lifecycleStatus: CompanyPortabilityIssueManifestEntry["lifecycleStatus"],
+  lifecycleStatus: CompanyPortabilityTaskManifestEntry["lifecycleStatus"],
   subjectLabel: string,
 ) {
   const terminal =
@@ -760,7 +760,7 @@ function normalizePortableDisposition(
     );
   }
   try {
-    return decodeIssueDisposition(value);
+    return decodeTaskDisposition(value);
   } catch {
     throw unprocessable(
       `${subjectLabel} disposition must contain only a non-empty message and optional structuredResult`,
@@ -792,7 +792,7 @@ async function withPortableWorkspaceReservationErrors<T>(
   try {
     return await operation();
   } catch (error) {
-    if (error instanceof IssueExecutionWorkspaceReservationRejected) {
+    if (error instanceof TaskExecutionWorkspaceReservationRejected) {
       throw unprocessable(error.message, { code: error.reason });
     }
     throw error;
@@ -817,7 +817,7 @@ function canonicalPortableJson(value: unknown): string {
     .join(",")}}`;
 }
 
-interface PortableCanonicalIssueCreateInput {
+interface PortableCanonicalTaskCreateInput {
   companyId: string;
   slug: string;
   request: string;
@@ -825,24 +825,24 @@ interface PortableCanonicalIssueCreateInput {
   ownerAgentId: string;
   creatorUserId: string;
   projectId: string | null;
-  lifecycleStatus: AgentVisibleIssueStatus;
-  boardPresentationStatus: IssueStatus;
-  disposition: IssueDisposition | null;
+  lifecycleStatus: AgentVisibleTaskStatus;
+  boardPresentationStatus: TaskStatus;
+  disposition: TaskDisposition | null;
   priority: "critical" | "high" | "medium" | "low";
   labelIds: string[];
   billingCode: string | null;
 }
 
-async function createPortableCanonicalIssue(
+async function createPortableCanonicalTask(
   db: Db,
-  input: PortableCanonicalIssueCreateInput,
+  input: PortableCanonicalTaskCreateInput,
 ) {
   const rawIdempotencyKey =
     `company-portability:${input.companyId}:${input.slug}`;
   const aggregateKey =
-    `ordinary-issue-create:${input.companyId}:${rawIdempotencyKey}`;
-  const issueId = deterministicPortableUuid(
-    "ordinary-issue",
+    `ordinary-task-create:${input.companyId}:${rawIdempotencyKey}`;
+  const taskId = deterministicPortableUuid(
+    "ordinary-task",
     aggregateKey,
   );
   const sessionId = stablePortableSessionId(aggregateKey);
@@ -851,34 +851,34 @@ async function createPortableCanonicalIssue(
       sql`select pg_advisory_xact_lock(hashtextextended(${aggregateKey}, 0))`,
     );
     const existing = await tx
-      .select({ issue: issueRows })
-      .from(issueCreateIdempotencyKeys)
+      .select({ task: taskRows })
+      .from(taskCreateIdempotencyKeys)
       .innerJoin(
-        issueRows,
-        eq(issueRows.id, issueCreateIdempotencyKeys.issueId),
+        taskRows,
+        eq(taskRows.id, taskCreateIdempotencyKeys.taskId),
       )
       .where(
         and(
-          eq(issueCreateIdempotencyKeys.companyId, input.companyId),
+          eq(taskCreateIdempotencyKeys.companyId, input.companyId),
           eq(
-            issueCreateIdempotencyKeys.idempotencyKey,
+            taskCreateIdempotencyKeys.idempotencyKey,
             aggregateKey,
           ),
         ),
       )
       .limit(1)
-      .then((rows) => rows[0]?.issue ?? null);
+      .then((rows) => rows[0]?.task ?? null);
     if (existing) {
       const existingLabels = await tx
-        .select({ labelId: issueLabels.labelId })
-        .from(issueLabels)
-        .where(eq(issueLabels.issueId, existing.id));
+        .select({ labelId: taskLabels.labelId })
+        .from(taskLabels)
+        .where(eq(taskLabels.taskId, existing.id));
       const requestedLabels = [...new Set(input.labelIds)].sort();
       const persistedLabels = existingLabels
         .map((entry) => entry.labelId)
         .sort();
       if (
-        existing.id !== issueId ||
+        existing.id !== taskId ||
         existing.request !== input.request ||
         existing.title !== (input.title?.trim() || null) ||
         existing.ownerKind !== "agent" ||
@@ -897,19 +897,19 @@ async function createPortableCanonicalIssue(
           canonicalPortableJson(requestedLabels)
       ) {
         throw unprocessable(
-          `Issue ${input.slug} import idempotency changed immutable input`,
+          `Task ${input.slug} import idempotency changed immutable input`,
         );
       }
       const ref =
         input.lifecycleStatus === "open"
           ? await tx
               .select()
-              .from(issueExecutionRefs)
+              .from(taskExecutionRefs)
               .where(
                 and(
-                  eq(issueExecutionRefs.companyId, input.companyId),
+                  eq(taskExecutionRefs.companyId, input.companyId),
                   eq(
-                    issueExecutionRefs.deliveryIdempotencyKey,
+                    taskExecutionRefs.deliveryIdempotencyKey,
                     aggregateKey,
                   ),
                 ),
@@ -919,10 +919,10 @@ async function createPortableCanonicalIssue(
           : null;
       if (input.lifecycleStatus === "open" && !ref) {
         throw unprocessable(
-          `Issue ${input.slug} import is missing its canonical execution ref`,
+          `Task ${input.slug} import is missing its canonical execution ref`,
         );
       }
-      return { issue: existing, ref, retried: true };
+      return { task: existing, ref, retried: true };
     }
 
     const company = await tx
@@ -938,12 +938,12 @@ async function createPortableCanonicalIssue(
       company.hardDeleteFencedAt !== null
     ) {
       throw unprocessable(
-        "Target company Session lifecycle is not ready for issue import",
+        "Target company Session lifecycle is not ready for task import",
       );
     }
 
     const { owner, revisionId } =
-      await resolveInvokableIssueOwnerInTransaction(tx, {
+      await resolveInvokableTaskOwnerInTransaction(tx, {
         companyId: input.companyId,
         ownerAgentId: input.ownerAgentId,
       });
@@ -960,35 +960,35 @@ async function createPortableCanonicalIssue(
         );
       if (labels.length !== uniqueLabelIds.length) {
         throw unprocessable(
-          `Issue ${input.slug} contains labels outside the target company`,
+          `Task ${input.slug} contains labels outside the target company`,
         );
       }
     }
 
     const now = new Date();
-    const maxIssueNumber = await tx
+    const maxTaskNumber = await tx
       .select({
-        value: sql<number>`coalesce(max(${issueRows.issueNumber}), 0)`,
+        value: sql<number>`coalesce(max(${taskRows.taskNumber}), 0)`,
       })
-      .from(issueRows)
-      .where(eq(issueRows.companyId, input.companyId))
+      .from(taskRows)
+      .where(eq(taskRows.companyId, input.companyId))
       .then((rows) => rows[0]?.value ?? 0);
-    const issueNumber =
-      Math.max(company.issueCounter, maxIssueNumber) + 1;
+    const taskNumber =
+      Math.max(company.taskCounter, maxTaskNumber) + 1;
     await tx
       .update(companyRows)
-      .set({ issueCounter: issueNumber, updatedAt: now })
+      .set({ taskCounter: taskNumber, updatedAt: now })
       .where(eq(companyRows.id, input.companyId));
-    const identifier = `${company.issuePrefix}-${issueNumber}`;
+    const identifier = `${company.taskPrefix}-${taskNumber}`;
     const title = input.title?.trim() || null;
     const authorityId = deterministicPortableUuid(
-      "issue-execution-authority",
-      `${issueId}:1:${owner.id}`,
+      "task-execution-authority",
+      `${taskId}:1:${owner.id}`,
     );
     const aggregate = await withPortableWorkspaceReservationErrors(() =>
-      persistCanonicalIssueAggregateInTx(tx, {
-      issue: {
-        id: issueId,
+      persistCanonicalTaskAggregateInTx(tx, {
+      task: {
+        id: taskId,
         companyId: input.companyId,
         projectId: input.projectId,
         goalId: null,
@@ -1009,7 +1009,7 @@ async function createPortableCanonicalIssue(
         creatorKind: "user/board",
         creatorUserId: input.creatorUserId,
         responsibleUserId: null,
-        issueNumber,
+        taskNumber,
         identifier,
         originKind: "manual",
         originId: null,
@@ -1046,28 +1046,28 @@ async function createPortableCanonicalIssue(
     );
     const admission =
       input.lifecycleStatus === "open"
-        ? await admitIssueExecutionInTransaction({
-            sessionAdmission: createIssueSessionAdmissionService(db),
+        ? await admitTaskExecutionInTransaction({
+            sessionAdmission: createTaskSessionAdmissionService(db),
             transaction: tx,
             work: {
-              companyId: aggregate.issue.companyId,
-              issueId: aggregate.issue.id,
+              companyId: aggregate.task.companyId,
+              taskId: aggregate.task.id,
               sessionId,
               ownershipEpoch: 1,
               targetAgentId: owner.id,
-              issueExecutionAuthorityId: authorityId,
+              taskExecutionAuthorityId: authorityId,
               consultExecutionId: null,
               adapterConfigRevisionId: revisionId,
               contextEpoch:
                 aggregate.sessionRoot.contextEpoch.generation,
               mode: "owner",
-              sourceKind: "issue_request",
+              sourceKind: "task_request",
               actor: {
                 kind: "user/board",
                 userId: input.creatorUserId,
               },
               immutableSourceKey: aggregateKey,
-              sourceRecordId: aggregate.issue.id,
+              sourceRecordId: aggregate.task.id,
               exactText: input.request,
               comment: {
                 author: {
@@ -1082,20 +1082,20 @@ async function createPortableCanonicalIssue(
         : null;
     if (input.lifecycleStatus === "open" && !admission?.ref) {
       throw unprocessable(
-        `Issue ${input.slug} import did not persist its canonical execution ref`,
+        `Task ${input.slug} import did not persist its canonical execution ref`,
       );
     }
     if (uniqueLabelIds.length > 0) {
-      await tx.insert(issueLabels).values(
+      await tx.insert(taskLabels).values(
         uniqueLabelIds.map((labelId) => ({
-          issueId: aggregate.issue.id,
+          taskId: aggregate.task.id,
           labelId,
           companyId: input.companyId,
         })),
       );
     }
     return {
-      issue: aggregate.issue,
+      task: aggregate.task,
       ref: admission?.ref ?? null,
       retried: false,
     };
@@ -1178,23 +1178,23 @@ function materializePortableBooleanMap<Key extends string>(
 }
 
 function derivePortableCommentAuthorType(value: Record<string, unknown>) {
-  const explicit = issueCommentAuthorTypeSchema.safeParse(value.authorType);
+  const explicit = taskCommentAuthorTypeSchema.safeParse(value.authorType);
   if (explicit.success) return explicit.data;
   return asString(value.authorAgentSlug) ? "agent" : asString(value.authorUserId) ? "user" : "system";
 }
 
-function readPortableIssueComments(
+function readPortableTaskComments(
   value: unknown,
   warnings: string[],
   sourceLabel: string,
-): CompanyPortabilityIssueCommentManifestEntry[] {
+): CompanyPortabilityTaskCommentManifestEntry[] {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) {
     warnings.push(`${sourceLabel} comments were ignored because they are not an array.`);
     return [];
   }
 
-  const comments: CompanyPortabilityIssueCommentManifestEntry[] = [];
+  const comments: CompanyPortabilityTaskCommentManifestEntry[] = [];
   for (const [index, entry] of value.entries()) {
     if (!isPlainRecord(entry)) {
       warnings.push(`${sourceLabel} comment ${index + 1} was ignored because it is not an object.`);
@@ -1205,12 +1205,12 @@ function readPortableIssueComments(
       warnings.push(`${sourceLabel} comment ${index + 1} was ignored because it has no body.`);
       continue;
     }
-    const presentation = entry.presentation == null ? null : issueCommentPresentationSchema.safeParse(entry.presentation);
+    const presentation = entry.presentation == null ? null : taskCommentPresentationSchema.safeParse(entry.presentation);
     if (presentation && !presentation.success) {
       warnings.push(`${sourceLabel} comment ${index + 1} has invalid presentation metadata and was ignored.`);
       continue;
     }
-    const metadata = entry.metadata == null ? null : issueCommentMetadataSchema.safeParse(entry.metadata);
+    const metadata = entry.metadata == null ? null : taskCommentMetadataSchema.safeParse(entry.metadata);
     if (metadata && !metadata.success) {
       warnings.push(`${sourceLabel} comment ${index + 1} has invalid hidden metadata and was ignored.`);
       continue;
@@ -1229,7 +1229,7 @@ function readPortableIssueComments(
   return comments;
 }
 
-function normalizeRoutineTriggerExtension(value: unknown): CompanyPortabilityIssueRoutineTriggerManifestEntry | null {
+function normalizeRoutineTriggerExtension(value: unknown): CompanyPortabilityTaskRoutineTriggerManifestEntry | null {
   if (!isPlainRecord(value)) return null;
   const kind = asString(value.kind);
   if (!kind) return null;
@@ -1267,7 +1267,7 @@ function normalizeRoutineVariableExtension(value: unknown): RoutineVariable | nu
   };
 }
 
-function normalizeRoutineExtension(value: unknown): CompanyPortabilityIssueRoutineManifestEntry | null {
+function normalizeRoutineExtension(value: unknown): CompanyPortabilityTaskRoutineManifestEntry | null {
   if (!isPlainRecord(value)) return null;
   if (hasOwn(value, "contextAccessMask")) {
     throw unprocessable(
@@ -1277,7 +1277,7 @@ function normalizeRoutineExtension(value: unknown): CompanyPortabilityIssueRouti
   const triggers = Array.isArray(value.triggers)
     ? value.triggers
       .map((entry) => normalizeRoutineTriggerExtension(entry))
-      .filter((entry): entry is CompanyPortabilityIssueRoutineTriggerManifestEntry => entry !== null)
+      .filter((entry): entry is CompanyPortabilityTaskRoutineTriggerManifestEntry => entry !== null)
     : [];
   const variables = Array.isArray(value.variables)
     ? value.variables
@@ -1303,62 +1303,62 @@ function normalizeImportedRuntimeConfig(runtimeConfig: unknown) {
 }
 
 function resolvePortableRoutineDefinition(
-  issue: Pick<
-    CompanyPortabilityIssueManifestEntry,
+  task: Pick<
+    CompanyPortabilityTaskManifestEntry,
     "slug" | "recurring" | "routine"
   >,
 ) {
   const warnings: string[] = [];
   const errors: string[] = [];
-  if (!issue.recurring) {
+  if (!task.recurring) {
     return { routine: null, warnings, errors };
   }
 
-  const routine = issue.routine
+  const routine = task.routine
     ? {
-      concurrencyPolicy: issue.routine.concurrencyPolicy,
-      catchUpPolicy: issue.routine.catchUpPolicy,
-      variables: issue.routine.variables ?? null,
-      triggers: [...issue.routine.triggers],
+      concurrencyPolicy: task.routine.concurrencyPolicy,
+      catchUpPolicy: task.routine.catchUpPolicy,
+      variables: task.routine.variables ?? null,
+      triggers: [...task.routine.triggers],
     }
     : {
       concurrencyPolicy: null,
       catchUpPolicy: null,
       variables: null,
-      triggers: [] as CompanyPortabilityIssueRoutineTriggerManifestEntry[],
+      triggers: [] as CompanyPortabilityTaskRoutineTriggerManifestEntry[],
     };
 
   if (routine.concurrencyPolicy && !ROUTINE_CONCURRENCY_POLICIES.includes(routine.concurrencyPolicy as any)) {
-    errors.push(`Recurring issue ${issue.slug} uses unsupported routine concurrencyPolicy "${routine.concurrencyPolicy}".`);
+    errors.push(`Recurring task ${task.slug} uses unsupported routine concurrencyPolicy "${routine.concurrencyPolicy}".`);
   }
   if (routine.catchUpPolicy && !ROUTINE_CATCH_UP_POLICIES.includes(routine.catchUpPolicy as any)) {
-    errors.push(`Recurring issue ${issue.slug} uses unsupported routine catchUpPolicy "${routine.catchUpPolicy}".`);
+    errors.push(`Recurring task ${task.slug} uses unsupported routine catchUpPolicy "${routine.catchUpPolicy}".`);
   }
 
   for (const trigger of routine.triggers) {
     if (!ROUTINE_TRIGGER_KINDS.includes(trigger.kind as any)) {
-      errors.push(`Recurring issue ${issue.slug} uses unsupported trigger kind "${trigger.kind}".`);
+      errors.push(`Recurring task ${task.slug} uses unsupported trigger kind "${trigger.kind}".`);
       continue;
     }
     if (trigger.kind === "schedule") {
       if (!trigger.cronExpression || !trigger.timezone) {
-        errors.push(`Recurring issue ${issue.slug} has a schedule trigger missing cronExpression/timezone.`);
+        errors.push(`Recurring task ${task.slug} has a schedule trigger missing cronExpression/timezone.`);
         continue;
       }
       const cronError = validateCron(trigger.cronExpression);
       if (cronError) {
-        errors.push(`Recurring issue ${issue.slug} has an invalid schedule trigger: ${cronError}`);
+        errors.push(`Recurring task ${task.slug} has an invalid schedule trigger: ${cronError}`);
       }
       continue;
     }
     if (trigger.kind === "webhook" && trigger.signingMode && !ROUTINE_TRIGGER_SIGNING_MODES.includes(trigger.signingMode as any)) {
-      errors.push(`Recurring issue ${issue.slug} uses unsupported webhook signingMode "${trigger.signingMode}".`);
+      errors.push(`Recurring task ${task.slug} uses unsupported webhook signingMode "${trigger.signingMode}".`);
     }
   }
 
   if (routine.triggers.length === 0) {
     errors.push(
-      `Recurring issue ${issue.slug} requires at least one canonical routine trigger.`,
+      `Recurring task ${task.slug} requires at least one canonical routine trigger.`,
     );
   }
 
@@ -1414,7 +1414,7 @@ function normalizeInclude(input?: Partial<CompanyPortabilityInclude>): CompanyPo
     company: input?.company ?? DEFAULT_INCLUDE.company,
     agents: input?.agents ?? DEFAULT_INCLUDE.agents,
     projects: input?.projects ?? DEFAULT_INCLUDE.projects,
-    issues: input?.issues ?? DEFAULT_INCLUDE.issues,
+    tasks: input?.tasks ?? DEFAULT_INCLUDE.tasks,
     skills: input?.skills ?? DEFAULT_INCLUDE.skills,
   };
 }
@@ -1528,16 +1528,16 @@ function pickTextFiles(files: Record<string, CompanyPortabilityFileEntry>) {
 function collectSelectedExportSlugs(selectedFiles: Set<string>) {
   const agents = new Set<string>();
   const projects = new Set<string>();
-  const issues = new Set<string>();
+  const tasks = new Set<string>();
   for (const filePath of selectedFiles) {
     const agentMatch = filePath.match(/^agents\/([^/]+)\//);
     if (agentMatch) agents.add(agentMatch[1]!);
     const projectMatch = filePath.match(/^projects\/([^/]+)\//);
     if (projectMatch) projects.add(projectMatch[1]!);
-    const issueMatch = filePath.match(/^issues\/([^/]+)\//);
-    if (issueMatch) issues.add(issueMatch[1]!);
+    const taskMatch = filePath.match(/^tasks\/([^/]+)\//);
+    if (taskMatch) tasks.add(taskMatch[1]!);
   }
-  return { agents, projects, issues, routines: new Set(issues) };
+  return { agents, projects, tasks, routines: new Set(tasks) };
 }
 
 function normalizePortableSlugList(value: unknown) {
@@ -1595,7 +1595,7 @@ function sortAgentsBySidebarOrder<T extends { id: string; name: string; reportsT
 function filterPortableExtensionYaml(yaml: string, selectedFiles: Set<string>) {
   const selected = collectSelectedExportSlugs(selectedFiles);
   const parsed = parseYamlFile(yaml);
-  for (const section of ["agents", "projects", "issues", "routines"] as const) {
+  for (const section of ["agents", "projects", "tasks", "routines"] as const) {
     const sectionValue = parsed[section];
     if (!isPlainRecord(sectionValue)) continue;
     const sectionSlugs = selected[section];
@@ -1991,7 +1991,7 @@ function applySelectedFilesToSource(source: ResolvedSource, selectedFiles?: stri
     company: filtered.manifest.company !== null,
     agents: filtered.manifest.agents.length > 0,
     projects: filtered.manifest.projects.length > 0,
-    issues: filtered.manifest.issues.length > 0,
+    tasks: filtered.manifest.tasks.length > 0,
     skills: filtered.manifest.skills.length > 0,
   };
 
@@ -2466,7 +2466,7 @@ function buildManifestFromPackageFiles(
   const paperclipSidebar = normalizePortableSidebarOrder(paperclipExtension.sidebar);
   const paperclipAgents = isPlainRecord(paperclipExtension.agents) ? paperclipExtension.agents : {};
   const paperclipProjects = isPlainRecord(paperclipExtension.projects) ? paperclipExtension.projects : {};
-  const paperclipIssues = isPlainRecord(paperclipExtension.issues) ? paperclipExtension.issues : {};
+  const paperclipTasks = isPlainRecord(paperclipExtension.tasks) ? paperclipExtension.tasks : {};
   const paperclipRoutines = isPlainRecord(paperclipExtension.routines) ? paperclipExtension.routines : {};
   const companyName =
     asString(companyFrontmatter.name)
@@ -2484,9 +2484,9 @@ function buildManifestFromPackageFiles(
   const referencedProjectPaths = includeEntries
     .map((entry) => resolvePortablePath(resolvedCompanyPath, entry.path))
     .filter((entry) => entry.endsWith("/PROJECT.md") || entry === "PROJECT.md");
-  const referencedIssuePaths = includeEntries
+  const referencedTaskPaths = includeEntries
     .map((entry) => resolvePortablePath(resolvedCompanyPath, entry.path))
-    .filter((entry) => entry.endsWith("/ISSUE.md") || entry === "ISSUE.md");
+    .filter((entry) => entry.endsWith("/TASK.md") || entry === "TASK.md");
   const referencedSkillPaths = includeEntries
     .map((entry) => resolvePortablePath(resolvedCompanyPath, entry.path))
     .filter((entry) => entry.endsWith("/SKILL.md") || entry === "SKILL.md");
@@ -2496,15 +2496,15 @@ function buildManifestFromPackageFiles(
   const discoveredProjectPaths = Object.keys(normalizedFiles).filter(
     (entry) => entry.endsWith("/PROJECT.md") || entry === "PROJECT.md",
   );
-  const discoveredIssuePaths = Object.keys(normalizedFiles).filter(
-    (entry) => entry.endsWith("/ISSUE.md") || entry === "ISSUE.md",
+  const discoveredTaskPaths = Object.keys(normalizedFiles).filter(
+    (entry) => entry.endsWith("/TASK.md") || entry === "TASK.md",
   );
   const discoveredSkillPaths = Object.keys(normalizedFiles).filter(
     (entry) => entry.endsWith("/SKILL.md") || entry === "SKILL.md",
   );
   const agentPaths = Array.from(new Set([...referencedAgentPaths, ...discoveredAgentPaths])).sort();
   const projectPaths = Array.from(new Set([...referencedProjectPaths, ...discoveredProjectPaths])).sort();
-  const issuePaths = Array.from(new Set([...referencedIssuePaths, ...discoveredIssuePaths])).sort();
+  const taskPaths = Array.from(new Set([...referencedTaskPaths, ...discoveredTaskPaths])).sort();
   const skillPaths = Array.from(new Set([...referencedSkillPaths, ...discoveredSkillPaths])).sort();
 
   const manifest: CompanyPortabilityManifest = {
@@ -2515,7 +2515,7 @@ function buildManifestFromPackageFiles(
       company: true,
       agents: true,
       projects: projectPaths.length > 0,
-      issues: issuePaths.length > 0,
+      tasks: taskPaths.length > 0,
       skills: skillPaths.length > 0,
     },
     company: {
@@ -2545,7 +2545,7 @@ function buildManifestFromPackageFiles(
     agents: [],
     skills: [],
     projects: [],
-    issues: [],
+    tasks: [],
     envInputs: [],
   };
 
@@ -2823,26 +2823,26 @@ function buildManifestFromPackageFiles(
     }
   }
 
-  for (const issuePath of issuePaths) {
-    const markdownRaw = readPortableTextFile(normalizedFiles, issuePath);
+  for (const taskPath of taskPaths) {
+    const markdownRaw = readPortableTextFile(normalizedFiles, taskPath);
     if (typeof markdownRaw !== "string") {
-      warnings.push(`Referenced issue file is missing from package: ${issuePath}`);
+      warnings.push(`Referenced task file is missing from package: ${taskPath}`);
       continue;
     }
-    const issueDoc = parseFrontmatterMarkdown(markdownRaw);
-    const frontmatter = issueDoc.frontmatter;
+    const taskDoc = parseFrontmatterMarkdown(markdownRaw);
+    const frontmatter = taskDoc.frontmatter;
     assertExactPortableKeys(
       frontmatter,
-      PORTABLE_ISSUE_FRONTMATTER_KEYS,
-      `Issue file ${issuePath}`,
+      PORTABLE_TASK_FRONTMATTER_KEYS,
+      `Task file ${taskPath}`,
     );
-    const fallbackSlug = normalizeAgentUrlKey(path.posix.basename(path.posix.dirname(issuePath))) ?? "issue";
+    const fallbackSlug = normalizeAgentUrlKey(path.posix.basename(path.posix.dirname(taskPath))) ?? "task";
     const slug = asString(frontmatter.slug) ?? fallbackSlug;
-    const extension = isPlainRecord(paperclipIssues[slug]) ? paperclipIssues[slug] : {};
+    const extension = isPlainRecord(paperclipTasks[slug]) ? paperclipTasks[slug] : {};
     assertExactPortableKeys(
       extension,
-      PORTABLE_ISSUE_EXTENSION_KEYS,
-      `Issue ${slug} manifest`,
+      PORTABLE_TASK_EXTENSION_KEYS,
+      `Task ${slug} manifest`,
     );
     const routineExtension = normalizeRoutineExtension(paperclipRoutines[slug]);
     const recurring =
@@ -2851,7 +2851,7 @@ function buildManifestFromPackageFiles(
     const ownerAgentSlug = asString(frontmatter.owner);
     if (!ownerAgentSlug) {
       throw unprocessable(
-        `Issue ${slug} requires an explicit owner`,
+        `Task ${slug} requires an explicit owner`,
       );
     }
     const lifecycleStatus = asString(extension.lifecycleStatus);
@@ -2862,7 +2862,7 @@ function buildManifestFromPackageFiles(
       )
     ) {
       throw unprocessable(
-        `Issue ${slug} requires lifecycleStatus open, blocked, done, or cancelled`,
+        `Task ${slug} requires lifecycleStatus open, blocked, done, or cancelled`,
       );
     }
     const boardPresentationStatus = asString(
@@ -2870,25 +2870,25 @@ function buildManifestFromPackageFiles(
     );
     if (!boardPresentationStatus) {
       throw unprocessable(
-        `Issue ${slug} requires boardPresentationStatus`,
+        `Task ${slug} requires boardPresentationStatus`,
       );
     }
-    manifest.issues.push({
+    manifest.tasks.push({
       slug,
       identifier: asString(extension.identifier),
       title: asString(frontmatter.name) ?? asString(frontmatter.title) ?? slug,
-      path: issuePath,
+      path: taskPath,
       projectSlug: asString(frontmatter.project),
       ownerAgentSlug,
-      request: issueDoc.body,
+      request: taskDoc.body,
       recurring,
       routine: routineExtension,
       lifecycleStatus:
-        lifecycleStatus as CompanyPortabilityIssueManifestEntry["lifecycleStatus"],
+        lifecycleStatus as CompanyPortabilityTaskManifestEntry["lifecycleStatus"],
       disposition: normalizePortableDisposition(
         extension.disposition,
-        lifecycleStatus as CompanyPortabilityIssueManifestEntry["lifecycleStatus"],
-        `Issue ${slug}`,
+        lifecycleStatus as CompanyPortabilityTaskManifestEntry["lifecycleStatus"],
+        `Task ${slug}`,
       ),
       boardPresentationStatus,
       priority: asString(extension.priority),
@@ -2896,11 +2896,11 @@ function buildManifestFromPackageFiles(
         ? extension.labelIds.filter((entry): entry is string => typeof entry === "string")
         : [],
       billingCode: asString(extension.billingCode),
-      comments: readPortableIssueComments(extension.comments, warnings, `Issue ${slug}`),
+      comments: readPortableTaskComments(extension.comments, warnings, `Task ${slug}`),
       metadata: isPlainRecord(extension.metadata) ? extension.metadata : null,
     });
-    if (frontmatter.kind && frontmatter.kind !== "issue") {
-      warnings.push(`Issue markdown ${issuePath} does not declare kind: issue in frontmatter.`);
+    if (frontmatter.kind && frontmatter.kind !== "task") {
+      warnings.push(`Task markdown ${taskPath} does not declare kind: task in frontmatter.`);
     }
   }
 
@@ -2972,14 +2972,14 @@ export function parseGitHubSourceUrl(rawUrl: string) {
 export function companyPortabilityService(
   db: Db,
   storage: StorageService | undefined,
-  ordinaryIssues: OrdinaryIssueRuntime,
+  ordinaryTasks: OrdinaryTaskRuntime,
 ) {
   const companies = companyService(db);
   const agents = agentService(db);
   const assetRecords = assetService(db);
   const access = accessService(db);
   const projects = projectService(db);
-  const issues = issueService(db);
+  const tasks = taskService(db);
   const companySkills = companySkillService(db);
   const secrets = secretService(db);
   const runtimeAgentConfigurations = createRuntimeAgentConfigurationService(db);
@@ -3225,10 +3225,10 @@ export function companyPortabilityService(
       ...input.include,
       agents: input.agents && input.agents.length > 0 ? true : input.include?.agents,
       projects: input.projects && input.projects.length > 0 ? true : input.include?.projects,
-      issues:
-        (input.issues && input.issues.length > 0) || (input.projectIssues && input.projectIssues.length > 0)
+      tasks:
+        (input.tasks && input.tasks.length > 0) || (input.projectTasks && input.projectTasks.length > 0)
           ? true
-          : input.include?.issues,
+          : input.include?.tasks,
       skills: input.skills && input.skills.length > 0 ? true : input.include?.skills,
     });
     const company = await companies.getById(companyId);
@@ -3242,7 +3242,7 @@ export function companyPortabilityService(
     let companyLogoPath: string | null = null;
 
     const allAgentRows =
-      include.agents || include.projects || include.issues
+      include.agents || include.projects || include.tasks
         ? await agents.list(companyId, { includeTerminated: true })
         : [];
     const liveAgentRows = allAgentRows.filter((agent) => agent.status !== "terminated");
@@ -3328,11 +3328,11 @@ export function companyPortabilityService(
     }
 
     const projectsSvc = projectService(db);
-    const issuesSvc = issueService(db);
-    const routinesSvc = routineService(db, { ordinaryIssues });
-    const allProjectsRaw = include.projects || include.issues ? await projectsSvc.list(companyId) : [];
+    const tasksSvc = taskService(db);
+    const routinesSvc = routineService(db, { ordinaryTasks });
+    const allProjectsRaw = include.projects || include.tasks ? await projectsSvc.list(companyId) : [];
     const allProjects = allProjectsRaw.filter((project) => !project.archivedAt);
-    const allRoutinesRaw = include.issues ? await routinesSvc.list(companyId) : [];
+    const allRoutinesRaw = include.tasks ? await routinesSvc.list(companyId) : [];
     const allRoutines = allRoutinesRaw;
     const projectById = new Map(allProjects.map((project) => [project.id, project]));
     const projectByReference = new Map<string, typeof allProjects[number]>();
@@ -3352,22 +3352,22 @@ export function companyPortabilityService(
       selectedProjects.set(match.id, match);
     }
 
-    type SelectedIssueRow =
-      | NonNullable<Awaited<ReturnType<typeof issuesSvc.getById>>>
-      | Awaited<ReturnType<typeof issuesSvc.list>>[number];
-    const selectedIssues = new Map<string, SelectedIssueRow>();
+    type SelectedTaskRow =
+      | NonNullable<Awaited<ReturnType<typeof tasksSvc.getById>>>
+      | Awaited<ReturnType<typeof tasksSvc.list>>[number];
+    const selectedTasks = new Map<string, SelectedTaskRow>();
     const selectedRoutines = new Map<string, typeof allRoutines[number]>();
     const routineById = new Map(allRoutines.map((routine) => [routine.id, routine]));
-    const resolveIssueBySelector = async (selector: string) => {
+    const resolveTaskBySelector = async (selector: string) => {
       const trimmed = selector.trim();
       if (!trimmed) return null;
       return trimmed.includes("-")
-        ? issuesSvc.getByIdentifier(trimmed)
-        : issuesSvc.getById(trimmed);
+        ? tasksSvc.getByIdentifier(trimmed)
+        : tasksSvc.getById(trimmed);
     };
-    for (const selector of input.issues ?? []) {
-      const issue = await resolveIssueBySelector(selector);
-      if (!issue || issue.companyId !== companyId) {
+    for (const selector of input.tasks ?? []) {
+      const task = await resolveTaskBySelector(selector);
+      if (!task || task.companyId !== companyId) {
         const routine = routineById.get(selector.trim());
         if (routine) {
           selectedRoutines.set(routine.id, routine);
@@ -3377,26 +3377,26 @@ export function companyPortabilityService(
           }
           continue;
         }
-        warnings.push(`Issue selector "${selector}" was not found and was skipped.`);
+        warnings.push(`Task selector "${selector}" was not found and was skipped.`);
         continue;
       }
-      selectedIssues.set(issue.id, issue);
-      if (issue.projectId) {
-        const parentProject = projectById.get(issue.projectId);
+      selectedTasks.set(task.id, task);
+      if (task.projectId) {
+        const parentProject = projectById.get(task.projectId);
         if (parentProject) selectedProjects.set(parentProject.id, parentProject);
       }
     }
 
-    for (const selector of input.projectIssues ?? []) {
+    for (const selector of input.projectTasks ?? []) {
       const match = projectByReference.get(selector) ?? projectByReference.get(normalizeProjectSelector(selector));
       if (!match) {
-        warnings.push(`Project-issues selector "${selector}" was not found and was skipped.`);
+        warnings.push(`Project-tasks selector "${selector}" was not found and was skipped.`);
         continue;
       }
       selectedProjects.set(match.id, match);
-      const projectIssues = await issuesSvc.list(companyId, { projectId: match.id });
-      for (const issue of projectIssues) {
-        selectedIssues.set(issue.id, issue);
+      const projectTasks = await tasksSvc.list(companyId, { projectId: match.id });
+      for (const task of projectTasks) {
+        selectedTasks.set(task.id, task);
       }
       for (const routine of allRoutines.filter((entry) => entry.projectId === match.id)) {
         selectedRoutines.set(routine.id, routine);
@@ -3409,12 +3409,12 @@ export function companyPortabilityService(
       }
     }
 
-    if (include.issues && selectedIssues.size === 0) {
-      const allIssues = await issuesSvc.list(companyId);
-      for (const issue of allIssues) {
-        selectedIssues.set(issue.id, issue);
-        if (issue.projectId) {
-          const parentProject = projectById.get(issue.projectId);
+    if (include.tasks && selectedTasks.size === 0) {
+      const allTasks = await tasksSvc.list(companyId);
+      for (const task of allTasks) {
+        selectedTasks.set(task.id, task);
+        if (task.projectId) {
+          const parentProject = projectById.get(task.projectId);
           if (parentProject) selectedProjects.set(parentProject.id, parentProject);
         }
       }
@@ -3431,25 +3431,25 @@ export function companyPortabilityService(
 
     const selectedProjectRows = Array.from(selectedProjects.values())
       .sort((left, right) => left.name.localeCompare(right.name));
-    const selectedIssueRows = Array.from(selectedIssues.values())
-      .filter((issue): issue is NonNullable<typeof issue> => issue != null)
-      .sort((left, right) => issueDisplayLabel(left).localeCompare(issueDisplayLabel(right)));
+    const selectedTaskRows = Array.from(selectedTasks.values())
+      .filter((task): task is NonNullable<typeof task> => task != null)
+      .sort((left, right) => taskDisplayLabel(left).localeCompare(taskDisplayLabel(right)));
     const selectedRoutineSummaries = Array.from(selectedRoutines.values())
       .sort((left, right) => left.title.localeCompare(right.title));
     const selectedRoutineRows = (
       await Promise.all(selectedRoutineSummaries.map((routine) => routinesSvc.getDetail(routine.id)))
     ).filter((routine): routine is RoutineLike => routine !== null);
 
-    const issueSlugByIssueId = new Map<string, string>();
-    const issueSlugByRoutineId = new Map<string, string>();
-    const usedIssueSlugs = new Set<string>();
-    for (const issue of selectedIssueRows) {
-      const baseSlug = normalizeAgentUrlKey(issueDisplayLabel(issue)) ?? "issue";
-      issueSlugByIssueId.set(issue.id, uniqueSlug(baseSlug, usedIssueSlugs));
+    const taskSlugByTaskId = new Map<string, string>();
+    const taskSlugByRoutineId = new Map<string, string>();
+    const usedTaskSlugs = new Set<string>();
+    for (const task of selectedTaskRows) {
+      const baseSlug = normalizeAgentUrlKey(taskDisplayLabel(task)) ?? "task";
+      taskSlugByTaskId.set(task.id, uniqueSlug(baseSlug, usedTaskSlugs));
     }
     for (const routine of selectedRoutineRows) {
-      const baseSlug = normalizeAgentUrlKey(routine.title) ?? "issue";
-      issueSlugByRoutineId.set(routine.id, uniqueSlug(baseSlug, usedIssueSlugs));
+      const baseSlug = normalizeAgentUrlKey(routine.title) ?? "task";
+      taskSlugByRoutineId.set(routine.id, uniqueSlug(baseSlug, usedTaskSlugs));
     }
 
     const projectSlugById = new Map<string, string>();
@@ -3500,7 +3500,7 @@ export function companyPortabilityService(
 
     const paperclipAgentsOut: Record<string, Record<string, unknown>> = {};
     const paperclipProjectsOut: Record<string, Record<string, unknown>> = {};
-    const paperclipIssuesOut: Record<string, Record<string, unknown>> = {};
+    const paperclipTasksOut: Record<string, Record<string, unknown>> = {};
     const paperclipRoutinesOut: Record<string, Record<string, unknown>> = {};
     const runtimeConfigurationByAgentId = new Map(
       await Promise.all(
@@ -3567,7 +3567,7 @@ export function companyPortabilityService(
     const selectedSkillRows = Array.from(selectedSkills.values())
       .sort((left, right) => left.key.localeCompare(right.key));
 
-    const skillExportDirs = buildSkillExportDirMap(selectedSkillRows, company.issuePrefix);
+    const skillExportDirs = buildSkillExportDirMap(selectedSkillRows, company.taskPrefix);
     for (const skill of selectedSkillRows) {
       const packageDir = skillExportDirs.get(skill.key) ?? `skills/${normalizeSkillSlug(skill.slug) ?? "skill"}`;
       if (shouldReferenceSkillOnExport(skill, Boolean(input.expandReferencedSkills))) {
@@ -3720,38 +3720,38 @@ export function companyPortabilityService(
       paperclipProjectsOut[slug] = isPlainRecord(extension) ? extension : {};
     }
 
-    for (const issue of selectedIssueRows) {
-      if (!issue.request?.trim()) {
+    for (const task of selectedTaskRows) {
+      if (!task.request?.trim()) {
         throw unprocessable(
-          `Issue ${issue.identifier ?? issue.id} has no canonical immutable request and cannot be exported`,
+          `Task ${task.identifier ?? task.id} has no canonical immutable request and cannot be exported`,
         );
       }
-      const issueSlug = issueSlugByIssueId.get(issue.id)!;
-      const projectSlug = issue.projectId ? (projectSlugById.get(issue.projectId) ?? null) : null;
-      // All issues go in top-level issues/ folder, never nested under projects/
-      const issuePath = `issues/${issueSlug}/ISSUE.md`;
-      const ownerSlug = issue.ownerAgentId ? (idToSlug.get(issue.ownerAgentId) ?? null) : null;
+      const taskSlug = taskSlugByTaskId.get(task.id)!;
+      const projectSlug = task.projectId ? (projectSlugById.get(task.projectId) ?? null) : null;
+      // All tasks go in top-level tasks/ folder, never nested under projects/
+      const taskPath = `tasks/${taskSlug}/TASK.md`;
+      const ownerSlug = task.ownerAgentId ? (idToSlug.get(task.ownerAgentId) ?? null) : null;
       if (!ownerSlug) {
         throw unprocessable(
-          `Issue ${issue.identifier ?? issue.id} has no portable agent owner and cannot be exported`,
+          `Task ${task.identifier ?? task.id} has no portable agent owner and cannot be exported`,
         );
       }
-      const comments = await issuesSvc.listComments(issue.id, { order: "asc" });
-      files[issuePath] = buildMarkdown(
+      const comments = await tasksSvc.listComments(task.id, { order: "asc" });
+      files[taskPath] = buildMarkdown(
         {
-          name: issue.title,
+          name: task.title,
           project: projectSlug,
           owner: ownerSlug,
         },
-        issue.request,
+        task.request,
       );
       const extension = stripEmptyValues({
-        identifier: issue.identifier,
-        lifecycleStatus: issue.lifecycleStatus,
-        boardPresentationStatus: issue.boardPresentationStatus,
-        priority: issue.priority,
-        labelIds: issue.labelIds ?? undefined,
-        billingCode: issue.billingCode ?? null,
+        identifier: task.identifier,
+        lifecycleStatus: task.lifecycleStatus,
+        boardPresentationStatus: task.boardPresentationStatus,
+        priority: task.priority,
+        labelIds: task.labelIds ?? undefined,
+        billingCode: task.billingCode ?? null,
         comments: comments.length > 0
           ? comments.map((comment) => ({
               body: comment.body,
@@ -3767,23 +3767,23 @@ export function companyPortabilityService(
             }))
           : undefined,
       });
-      if (isPlainRecord(extension) && issue.disposition != null) {
-        extension.disposition = decodeIssueDisposition(issue.disposition);
+      if (isPlainRecord(extension) && task.disposition != null) {
+        extension.disposition = decodeTaskDisposition(task.disposition);
       }
-      paperclipIssuesOut[issueSlug] = isPlainRecord(extension) ? extension : {};
+      paperclipTasksOut[taskSlug] = isPlainRecord(extension) ? extension : {};
     }
 
     for (const routine of selectedRoutineRows) {
-      const issueSlug = issueSlugByRoutineId.get(routine.id)!;
+      const taskSlug = taskSlugByRoutineId.get(routine.id)!;
       const projectSlug = routine.projectId ? (projectSlugById.get(routine.projectId) ?? null) : null;
-      const issuePath = `issues/${issueSlug}/ISSUE.md`;
+      const taskPath = `tasks/${taskSlug}/TASK.md`;
       const ownerSlug = routine.assigneeAgentId ? (idToSlug.get(routine.assigneeAgentId) ?? null) : null;
       if (!ownerSlug) {
         throw unprocessable(
           `Routine ${routine.title} has no portable agent owner and cannot be exported`,
         );
       }
-      files[issuePath] = buildMarkdown(
+      files[taskPath] = buildMarkdown(
         {
           name: routine.title,
           project: projectSlug,
@@ -3792,7 +3792,7 @@ export function companyPortabilityService(
         },
         routine.description ?? "",
       );
-      const issueExtension = stripEmptyValues({
+      const taskExtension = stripEmptyValues({
         lifecycleStatus: "open",
         boardPresentationStatus: routine.status,
         priority: routine.priority !== "medium" ? routine.priority : undefined,
@@ -3813,10 +3813,10 @@ export function companyPortabilityService(
             : undefined,
         })),
       });
-      paperclipIssuesOut[issueSlug] = isPlainRecord(issueExtension)
-        ? issueExtension
+      paperclipTasksOut[taskSlug] = isPlainRecord(taskExtension)
+        ? taskExtension
         : {};
-      paperclipRoutinesOut[issueSlug] = isPlainRecord(
+      paperclipRoutinesOut[taskSlug] = isPlainRecord(
         routineExtension,
       )
         ? routineExtension
@@ -3830,8 +3830,8 @@ export function companyPortabilityService(
     const paperclipProjects = Object.fromEntries(
       Object.entries(paperclipProjectsOut).filter(([, value]) => isPlainRecord(value) && Object.keys(value).length > 0),
     );
-    const paperclipIssues = Object.fromEntries(
-      Object.entries(paperclipIssuesOut).filter(([, value]) => isPlainRecord(value) && Object.keys(value).length > 0),
+    const paperclipTasks = Object.fromEntries(
+      Object.entries(paperclipTasksOut).filter(([, value]) => isPlainRecord(value) && Object.keys(value).length > 0),
     );
     const paperclipRoutines = Object.fromEntries(
       Object.entries(paperclipRoutinesOut).filter(([, value]) => isPlainRecord(value) && Object.keys(value).length > 0),
@@ -3850,7 +3850,7 @@ export function companyPortabilityService(
         sidebar: stripEmptyValues(sidebarOrder),
         agents: Object.keys(paperclipAgents).length > 0 ? paperclipAgents : undefined,
         projects: Object.keys(paperclipProjects).length > 0 ? paperclipProjects : undefined,
-        issues: Object.keys(paperclipIssues).length > 0 ? paperclipIssues : undefined,
+        tasks: Object.keys(paperclipTasks).length > 0 ? paperclipTasks : undefined,
         routines: Object.keys(paperclipRoutines).length > 0 ? paperclipRoutines : undefined,
       },
       {
@@ -3871,7 +3871,7 @@ export function companyPortabilityService(
       company: resolved.manifest.company !== null,
       agents: resolved.manifest.agents.length > 0,
       projects: resolved.manifest.projects.length > 0,
-      issues: resolved.manifest.issues.length > 0,
+      tasks: resolved.manifest.tasks.length > 0,
       skills: resolved.manifest.skills.length > 0,
     };
     resolved.manifest.envInputs = dedupeEnvInputs(envInputs);
@@ -3905,7 +3905,7 @@ export function companyPortabilityService(
       company: resolved.manifest.company !== null,
       agents: resolved.manifest.agents.length > 0,
       projects: resolved.manifest.projects.length > 0,
-      issues: resolved.manifest.issues.length > 0,
+      tasks: resolved.manifest.tasks.length > 0,
       skills: resolved.manifest.skills.length > 0,
     };
     resolved.manifest.envInputs = dedupeEnvInputs(envInputs);
@@ -3928,14 +3928,14 @@ export function companyPortabilityService(
       ...input,
       include: {
         ...input.include,
-        issues:
-          input.include?.issues
-          ?? Boolean((input.issues && input.issues.length > 0) || (input.projectIssues && input.projectIssues.length > 0))
+        tasks:
+          input.include?.tasks
+          ?? Boolean((input.tasks && input.tasks.length > 0) || (input.projectTasks && input.projectTasks.length > 0))
           ?? false,
       },
     };
-    if (previewInput.include && previewInput.include.issues === undefined) {
-      previewInput.include.issues = false;
+    if (previewInput.include && previewInput.include.tasks === undefined) {
+      previewInput.include.tasks = false;
     }
     const exported = await exportBundle(companyId, previewInput);
     return {
@@ -3951,7 +3951,7 @@ export function companyPortabilityService(
         agents: exported.manifest.agents.length,
         skills: exported.manifest.skills.length,
         projects: exported.manifest.projects.length,
-        issues: exported.manifest.issues.length,
+        tasks: exported.manifest.tasks.length,
       },
     };
   }
@@ -3968,7 +3968,7 @@ export function companyPortabilityService(
       company: requestedInclude.company && manifest.company !== null,
       agents: requestedInclude.agents && manifest.agents.length > 0,
       projects: requestedInclude.projects && manifest.projects.length > 0,
-      issues: requestedInclude.issues && manifest.issues.length > 0,
+      tasks: requestedInclude.tasks && manifest.tasks.length > 0,
       skills: requestedInclude.skills && manifest.skills.length > 0,
     };
     const collisionStrategy = input.collisionStrategy ?? DEFAULT_COLLISION_STRATEGY;
@@ -4108,45 +4108,45 @@ export function companyPortabilityService(
       }
     }
 
-    if (include.issues) {
-      for (const issue of manifest.issues) {
-        const markdown = readPortableTextFile(source.files, ensureMarkdownPath(issue.path));
+    if (include.tasks) {
+      for (const task of manifest.tasks) {
+        const markdown = readPortableTextFile(source.files, ensureMarkdownPath(task.path));
         if (typeof markdown !== "string") {
-          errors.push(`Missing markdown file for issue ${issue.slug}: ${issue.path}`);
+          errors.push(`Missing markdown file for task ${task.slug}: ${task.path}`);
           continue;
         }
         const parsed = parseFrontmatterMarkdown(markdown);
-        if (parsed.frontmatter.kind && parsed.frontmatter.kind !== "issue") {
-          warnings.push(`Issue markdown ${issue.path} does not declare kind: issue in frontmatter.`);
+        if (parsed.frontmatter.kind && parsed.frontmatter.kind !== "task") {
+          warnings.push(`Task markdown ${task.path} does not declare kind: task in frontmatter.`);
         }
-        if (issue.recurring) {
-          if (!issue.projectSlug) {
-            errors.push(`Recurring issue ${issue.slug} must declare a project to import as a routine.`);
+        if (task.recurring) {
+          if (!task.projectSlug) {
+            errors.push(`Recurring task ${task.slug} must declare a project to import as a routine.`);
           }
-          if (!issue.ownerAgentSlug) {
-            errors.push(`Recurring issue ${issue.slug} must declare an owner to import as a routine.`);
+          if (!task.ownerAgentSlug) {
+            errors.push(`Recurring task ${task.slug} must declare an owner to import as a routine.`);
           }
           const resolvedRoutine =
-            resolvePortableRoutineDefinition(issue);
+            resolvePortableRoutineDefinition(task);
           warnings.push(...resolvedRoutine.warnings);
           errors.push(...resolvedRoutine.errors);
           if (
-            issue.lifecycleStatus !== "open" ||
+            task.lifecycleStatus !== "open" ||
             !ROUTINE_STATUSES.includes(
-              issue.boardPresentationStatus as (typeof ROUTINE_STATUSES)[number],
+              task.boardPresentationStatus as (typeof ROUTINE_STATUSES)[number],
             )
           ) {
             errors.push(
-              `Recurring issue ${issue.slug} requires lifecycleStatus=open and a canonical routine boardPresentationStatus.`,
+              `Recurring task ${task.slug} requires lifecycleStatus=open and a canonical routine boardPresentationStatus.`,
             );
           }
         } else if (
-          !ISSUE_STATUSES.includes(
-            issue.boardPresentationStatus as IssueStatus,
+          !TASK_STATUSES.includes(
+            task.boardPresentationStatus as TaskStatus,
           )
         ) {
           errors.push(
-            `Issue ${issue.slug} requires a canonical issue boardPresentationStatus.`,
+            `Task ${task.slug} requires a canonical task boardPresentationStatus.`,
           );
         }
       }
@@ -4193,7 +4193,7 @@ export function companyPortabilityService(
     const existingAgentIds = new Set<string>();
     const existingSlugs = new Set<string>();
     const projectPlans: CompanyPortabilityPreviewResult["plan"]["projectPlans"] = [];
-    const issuePlans: CompanyPortabilityPreviewResult["plan"]["issuePlans"] = [];
+    const taskPlans: CompanyPortabilityPreviewResult["plan"]["taskPlans"] = [];
     const existingProjectSlugToProject = new Map<string, { id: string; name: string }>();
     const existingProjectSlugs = new Set<string>();
 
@@ -4363,7 +4363,7 @@ export function companyPortabilityService(
           pp.plannedName = override;
         }
       }
-      for (const ip of issuePlans) {
+      for (const ip of taskPlans) {
         const override = input.nameOverrides[ip.slug];
         if (override) {
           ip.plannedTitle = override;
@@ -4385,13 +4385,13 @@ export function companyPortabilityService(
       }
     }
 
-    if (include.issues) {
-      for (const manifestIssue of manifest.issues) {
-        issuePlans.push({
-          slug: manifestIssue.slug,
+    if (include.tasks) {
+      for (const manifestTask of manifest.tasks) {
+        taskPlans.push({
+          slug: manifestTask.slug,
           action: "create",
-          plannedTitle: portableIssueDisplayLabel(manifestIssue),
-          reason: manifestIssue.recurring ? "Recurring issue will be imported as a routine." : null,
+          plannedTitle: portableTaskDisplayLabel(manifestTask),
+          reason: manifestTask.recurring ? "Recurring task will be imported as a routine." : null,
         });
       }
     }
@@ -4410,7 +4410,7 @@ export function companyPortabilityService(
             : "none",
         agentPlans,
         projectPlans,
-        issuePlans,
+        taskPlans,
       },
       manifest,
       files: source.files,
@@ -4975,33 +4975,33 @@ export function companyPortabilityService(
         }
       }
 
-      if (include.issues) {
-        const routines = routineService(db, { ordinaryIssues });
-        for (const manifestIssue of sourceManifest.issues) {
-          const markdownRaw = readPortableTextFile(plan.source.files, manifestIssue.path);
+      if (include.tasks) {
+        const routines = routineService(db, { ordinaryTasks });
+        for (const manifestTask of sourceManifest.tasks) {
+          const markdownRaw = readPortableTextFile(plan.source.files, manifestTask.path);
           const parsed = markdownRaw ? parseFrontmatterMarkdown(markdownRaw) : null;
-          const request = parsed?.body || manifestIssue.request;
+          const request = parsed?.body || manifestTask.request;
           const ownerAgentId = resolveImportedOwnerAgentId(
-            manifestIssue.ownerAgentSlug,
+            manifestTask.ownerAgentSlug,
             importedSlugToAgentId,
             existingSlugToAgentId,
             agentStatusById,
             warnings,
-            `Issue ${manifestIssue.slug}`,
+            `Task ${manifestTask.slug}`,
           );
-          const projectId = manifestIssue.projectSlug
-            ? importedSlugToProjectId.get(manifestIssue.projectSlug)
-              ?? existingProjectSlugToId.get(manifestIssue.projectSlug)
+          const projectId = manifestTask.projectSlug
+            ? importedSlugToProjectId.get(manifestTask.projectSlug)
+              ?? existingProjectSlugToId.get(manifestTask.projectSlug)
               ?? null
             : null;
-          if (manifestIssue.recurring) {
+          if (manifestTask.recurring) {
             if (!projectId) {
-              throw unprocessable(`Recurring issue ${manifestIssue.slug} is missing the project required to create a routine.`);
+              throw unprocessable(`Recurring task ${manifestTask.slug} is missing the project required to create a routine.`);
             }
             const resolvedRoutine =
-              resolvePortableRoutineDefinition(manifestIssue);
+              resolvePortableRoutineDefinition(manifestTask);
             if (resolvedRoutine.errors.length > 0) {
-              throw unprocessable(`Recurring issue ${manifestIssue.slug} could not be imported as a routine: ${resolvedRoutine.errors.join("; ")}`);
+              throw unprocessable(`Recurring task ${manifestTask.slug} could not be imported as a routine: ${resolvedRoutine.errors.join("; ")}`);
             }
             warnings.push(...resolvedRoutine.warnings);
             const routineDefinition = resolvedRoutine.routine ?? {
@@ -5013,14 +5013,14 @@ export function companyPortabilityService(
             const createdRoutine = await routines.create(targetCompany.id, {
               projectId,
               goalId: null,
-              parentIssueId: null,
-              title: portableIssueDisplayLabel(manifestIssue),
+              parentTaskId: null,
+              title: portableTaskDisplayLabel(manifestTask),
               description: request,
               assigneeAgentId: ownerAgentId,
-              priority: manifestIssue.priority && ISSUE_PRIORITIES.includes(manifestIssue.priority as any)
-                ? manifestIssue.priority as typeof ISSUE_PRIORITIES[number]
+              priority: manifestTask.priority && TASK_PRIORITIES.includes(manifestTask.priority as any)
+                ? manifestTask.priority as typeof TASK_PRIORITIES[number]
                 : "medium",
-              status: manifestIssue
+              status: manifestTask
                 .boardPresentationStatus as (typeof ROUTINE_STATUSES)[number],
               concurrencyPolicy:
                 routineDefinition.concurrencyPolicy && ROUTINE_CONCURRENCY_POLICIES.includes(routineDefinition.concurrencyPolicy as any)
@@ -5066,34 +5066,34 @@ export function companyPortabilityService(
           }
           if (!actorUserId) {
             throw unprocessable(
-              `Issue ${manifestIssue.slug} requires a named importing board user`,
+              `Task ${manifestTask.slug} requires a named importing board user`,
             );
           }
           if (!ownerAgentId) {
             throw unprocessable(
-              `Issue ${manifestIssue.slug} requires an invokable owner that exists in the target company`,
+              `Task ${manifestTask.slug} requires an invokable owner that exists in the target company`,
             );
           }
           const priority =
-            manifestIssue.priority &&
-            ISSUE_PRIORITIES.includes(manifestIssue.priority as any)
-              ? manifestIssue.priority as typeof ISSUE_PRIORITIES[number]
+            manifestTask.priority &&
+            TASK_PRIORITIES.includes(manifestTask.priority as any)
+              ? manifestTask.priority as typeof TASK_PRIORITIES[number]
               : "medium";
           if (
-            !ISSUE_STATUSES.includes(
-              manifestIssue.boardPresentationStatus as IssueStatus,
+            !TASK_STATUSES.includes(
+              manifestTask.boardPresentationStatus as TaskStatus,
             )
           ) {
             throw unprocessable(
-              `Issue ${manifestIssue.slug} requires a canonical issue boardPresentationStatus`,
+              `Task ${manifestTask.slug} requires a canonical task boardPresentationStatus`,
             );
           }
           const boardPresentationStatus =
-            manifestIssue.boardPresentationStatus as IssueStatus;
-          const createdIssueResult =
-            manifestIssue.lifecycleStatus === "open" &&
+            manifestTask.boardPresentationStatus as TaskStatus;
+          const createdTaskResult =
+            manifestTask.lifecycleStatus === "open" &&
             boardPresentationStatus === "todo"
-              ? await ordinaryIssues.create({
+              ? await ordinaryTasks.create({
                   companyId: targetCompany.id,
                   request,
                   ownerAgentId,
@@ -5102,38 +5102,38 @@ export function companyPortabilityService(
                     userId: actorUserId,
                   },
                   idempotencyKey:
-                    `company-portability:${targetCompany.id}:${manifestIssue.slug}`,
-                  sourceKind: "issue_request",
+                    `company-portability:${targetCompany.id}:${manifestTask.slug}`,
+                  sourceKind: "task_request",
                   projectId,
-                  title: manifestIssue.title,
+                  title: manifestTask.title,
                   priority,
-                  labelIds: manifestIssue.labelIds ?? [],
-                  billingCode: manifestIssue.billingCode,
+                  labelIds: manifestTask.labelIds ?? [],
+                  billingCode: manifestTask.billingCode,
                 })
-              : await createPortableCanonicalIssue(db, {
+              : await createPortableCanonicalTask(db, {
                   companyId: targetCompany.id,
-                  slug: manifestIssue.slug,
+                  slug: manifestTask.slug,
                   request,
-                  title: manifestIssue.title,
+                  title: manifestTask.title,
                   ownerAgentId,
                   creatorUserId: actorUserId,
                   projectId,
-                  lifecycleStatus: manifestIssue.lifecycleStatus,
+                  lifecycleStatus: manifestTask.lifecycleStatus,
                   boardPresentationStatus,
-                  disposition: manifestIssue.disposition,
+                  disposition: manifestTask.disposition,
                   priority,
-                  labelIds: manifestIssue.labelIds ?? [],
-                  billingCode: manifestIssue.billingCode,
+                  labelIds: manifestTask.labelIds ?? [],
+                  billingCode: manifestTask.billingCode,
                 });
-          const createdIssue = createdIssueResult.issue;
-          for (const [commentIndex, comment] of (manifestIssue.comments ?? []).entries()) {
+          const createdTask = createdTaskResult.task;
+          for (const [commentIndex, comment] of (manifestTask.comments ?? []).entries()) {
             if (comment.authorType === "agent") {
               warnings.push(
-                `Comment on issue ${manifestIssue.slug} from agent ${comment.authorAgentSlug ?? "<unknown>"} was imported with system provenance because the portable comment does not include the producing run and adapter revision required for canonical agent attribution.`,
+                `Comment on task ${manifestTask.slug} from agent ${comment.authorAgentSlug ?? "<unknown>"} was imported with system provenance because the portable comment does not include the producing run and adapter revision required for canonical agent attribution.`,
               );
             }
             if (comment.authorType === "user" && !actorUserId) {
-              warnings.push(`Comment on issue ${manifestIssue.slug} was imported as a system comment because no importing user was available.`);
+              warnings.push(`Comment on task ${manifestTask.slug} was imported as a system comment because no importing user was available.`);
             }
             const authorType =
               comment.authorType === "user" && actorUserId
@@ -5141,7 +5141,7 @@ export function companyPortabilityService(
                 : "system";
             const sourceKey = createHash("sha256")
               .update(JSON.stringify({
-                issueSlug: manifestIssue.slug,
+                taskSlug: manifestTask.slug,
                 commentIndex,
                 body: comment.body,
                 authorType,
@@ -5156,7 +5156,7 @@ export function companyPortabilityService(
             if (authorType === "user" && actorUserId) {
               await appendCanonicalUserComment(db, {
                 companyId: targetCompany.id,
-                issueId: createdIssue.id,
+                taskId: createdTask.id,
                 sourceKind: "company_portability_import",
                 immutableSourceKey: sourceKey,
                 sourceRecordId: sourceKey,
@@ -5167,7 +5167,7 @@ export function companyPortabilityService(
             } else {
               await appendCanonicalControlNotice(db, {
                 companyId: targetCompany.id,
-                issueId: createdIssue.id,
+                taskId: createdTask.id,
                 sourceKind: "company_portability_import",
                 immutableSourceKey: sourceKey,
                 sourceRecordId: sourceKey,

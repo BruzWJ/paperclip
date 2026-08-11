@@ -2,12 +2,12 @@ import { useMemo } from "react";
 import { Link } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import type {
-  IssueExecutionRunEnvelopeRecord,
-  IssueExecutionRunListPageRecord,
+  TaskExecutionRunEnvelopeRecord,
+  TaskExecutionRunListPageRecord,
 } from "@paperclipai/shared";
 import { useVisibilityRefetchInterval } from "@/lib/polling";
 import {
-  ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+  ACTIVE_TASK_EXECUTION_RUN_STATUSES,
   runsApi,
 } from "../api/runs";
 import { queryKeys } from "../lib/queryKeys";
@@ -16,17 +16,17 @@ import { ExternalLink } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 
 interface LiveRunWidgetProps {
-  issueId: string;
+  taskId: string;
   companyId?: string | null;
 }
 
-export function LiveRunWidget({ issueId }: LiveRunWidgetProps) {
+export function LiveRunWidget({ taskId }: LiveRunWidgetProps) {
   const refetchInterval = useVisibilityRefetchInterval({ visibleMs: 3000 });
-  const status = ACTIVE_ISSUE_EXECUTION_RUN_STATUSES;
-  const { data: runPage } = useQuery<IssueExecutionRunListPageRecord>({
-    queryKey: queryKeys.issues.runs(issueId, status),
-    queryFn: () => runsApi.listForIssue(issueId, { status, limit: 200 }),
-    enabled: Boolean(issueId),
+  const status = ACTIVE_TASK_EXECUTION_RUN_STATUSES;
+  const { data: runPage } = useQuery<TaskExecutionRunListPageRecord>({
+    queryKey: queryKeys.tasks.runs(taskId, status),
+    queryFn: () => runsApi.listForTask(taskId, { status, limit: 200 }),
+    enabled: Boolean(taskId),
     refetchInterval,
   });
   const runs = useMemo(
@@ -46,11 +46,11 @@ export function LiveRunWidget({ issueId }: LiveRunWidgetProps) {
           Active runs
         </div>
         <div className="mt-1 text-xs text-muted-foreground">
-          Canonical issue sessions currently executing for this task.
+          Canonical task sessions currently executing for this task.
         </div>
       </div>
       <div className="divide-y divide-border/60">
-        {runs.map((run: IssueExecutionRunEnvelopeRecord) => (
+        {runs.map((run: TaskExecutionRunEnvelopeRecord) => (
           <section key={run.id} className="space-y-3 px-4 py-4">
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge status={run.status} />

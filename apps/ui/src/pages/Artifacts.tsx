@@ -40,15 +40,15 @@ export const ARTIFACT_KIND_FILTERS: { value: ArtifactKindFilter; label: string }
 
 export const ARTIFACT_GROUP_OPTIONS: { value: ArtifactGroupBy; label: string }[] = [
   { value: "none", label: "None" },
-  { value: "issue", label: "Task" },
-  { value: "parent_issue", label: "Parent task" },
+  { value: "task", label: "Task" },
+  { value: "parent_task", label: "Parent task" },
 ];
 
 const KIND_VALUES = new Set(ARTIFACT_KIND_FILTERS.map((filter) => filter.value));
 
 function parseGroupBy(value: string | null): ArtifactGroupBy {
-  if (value === "none" || value === "issue" || value === "parent_issue") return value;
-  return "issue";
+  if (value === "none" || value === "task" || value === "parent_task") return value;
+  return "task";
 }
 
 function parseKind(value: string | null): ArtifactKindFilter {
@@ -69,14 +69,14 @@ export function Artifacts() {
   const kind = parseKind(searchParams.get("kind"));
   const query = searchParams.get("q") ?? "";
   const groupBy = parseGroupBy(searchParams.get("groupBy"));
-  const groupIssueId = searchParams.get("groupIssueId") ?? undefined;
+  const groupTaskId = searchParams.get("groupTaskId") ?? undefined;
 
   const [draftQuery, setDraftQuery] = useState(query);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const grouping = groupBy !== "none";
-  const viewingStackList = grouping && !groupIssueId;
-  const viewingSelectedStack = grouping && !!groupIssueId;
+  const viewingStackList = grouping && !groupTaskId;
+  const viewingSelectedStack = grouping && !!groupTaskId;
 
   // Keep the search box in sync when the committed query changes from outside
   // (e.g. back/forward navigation or a shared URL), without clobbering in-flight
@@ -128,8 +128,8 @@ export function Artifacts() {
     (value: ArtifactGroupBy) => {
       updateParams((next) => {
         // Switching the grouping mode always returns to the stack list.
-        next.delete("groupIssueId");
-        if (value === "issue") next.delete("groupBy");
+        next.delete("groupTaskId");
+        if (value === "task") next.delete("groupBy");
         else next.set("groupBy", value);
       });
     },
@@ -150,11 +150,11 @@ export function Artifacts() {
   );
 
   const stackTo = useCallback(
-    (issueId: string): To =>
+    (taskId: string): To =>
       buildTo((next) => {
-        if (groupBy === "issue") next.delete("groupBy");
+        if (groupBy === "task") next.delete("groupBy");
         else if (groupBy !== "none") next.set("groupBy", groupBy);
-        next.set("groupIssueId", issueId);
+        next.set("groupTaskId", taskId);
       }),
     [buildTo, groupBy],
   );
@@ -162,8 +162,8 @@ export function Artifacts() {
   const backToStacksTo = useMemo<To>(
     () =>
       buildTo((next) => {
-        if (groupBy === "issue") next.delete("groupBy");
-        next.delete("groupIssueId");
+        if (groupBy === "task") next.delete("groupBy");
+        next.delete("groupTaskId");
       }),
     [buildTo, groupBy],
   );
@@ -177,13 +177,13 @@ export function Artifacts() {
     fetchNextPage,
     error,
   } = useInfiniteQuery({
-    queryKey: queryKeys.artifacts.list(selectedCompanyId!, kind, query, groupBy, groupIssueId),
+    queryKey: queryKeys.artifacts.list(selectedCompanyId!, kind, query, groupBy, groupTaskId),
     queryFn: ({ pageParam }) =>
       artifactsApi.list(selectedCompanyId!, {
         kind,
         q: query || undefined,
         groupBy,
-        groupIssueId,
+        groupTaskId,
         limit: ARTIFACTS_PAGE_SIZE,
         cursor: pageParam,
       }),
@@ -219,7 +219,7 @@ export function Artifacts() {
     if (viewingSelectedStack && selectedGroup) {
       setBreadcrumbs([
         { label: "Artifacts", href: "/artifacts" },
-        { label: `${selectedGroup.issue.identifier} · ${selectedGroup.title}` },
+        { label: `${selectedGroup.task.identifier} · ${selectedGroup.title}` },
       ]);
     } else {
       setBreadcrumbs([{ label: "Artifacts" }]);
@@ -242,7 +242,7 @@ export function Artifacts() {
       : viewingSelectedStack
         ? "No artifacts in this stack match the current filters."
         : kind === "all"
-          ? "No artifacts yet. Outputs attached to issues will appear here."
+          ? "No artifacts yet. Outputs attached to tasks will appear here."
           : "No artifacts of this type yet.";
 
   return (
@@ -336,7 +336,7 @@ export function Artifacts() {
           </Link>
           {selectedGroup ? (
             <span className="truncate text-muted-foreground">
-              <span className="text-foreground/80">{selectedGroup.issue.identifier}</span>{" "}
+              <span className="text-foreground/80">{selectedGroup.task.identifier}</span>{" "}
               {selectedGroup.title}
             </span>
           ) : null}
@@ -357,7 +357,7 @@ export function Artifacts() {
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
             {showGroupCards
               ? groups.map((group) => (
-                  <ArtifactGroupCard key={group.id} group={group} to={stackTo(group.issue.id)} />
+                  <ArtifactGroupCard key={group.id} group={group} to={stackTo(group.task.id)} />
                 ))
               : artifacts.map((artifact) => (
                   <ArtifactCard key={`${artifact.source}:${artifact.id}`} artifact={artifact} />

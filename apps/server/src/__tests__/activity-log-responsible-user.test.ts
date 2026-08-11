@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   companies,
-  issues,
+  tasks,
   type Db,
 } from "@paperclipai/db";
 import {
@@ -15,7 +15,7 @@ type TableRows = Map<unknown, Array<Record<string, unknown>>>;
 
 const companyId = "00000000-0000-4000-8000-000000000001";
 const agentId = "00000000-0000-4000-8000-000000000002";
-const issueId = "00000000-0000-4000-8000-000000000003";
+const taskId = "00000000-0000-4000-8000-000000000003";
 const runId = "00000000-0000-4000-8000-000000000004";
 
 function createReader(rowsByTable: TableRows) {
@@ -36,9 +36,9 @@ function activityInput(overrides: Partial<LogActivityInput> = {}): LogActivityIn
     companyId,
     actorType: "agent",
     actorId: agentId,
-    action: "issue.updated",
-    entityType: "issue",
-    entityId: issueId,
+    action: "task.updated",
+    entityType: "task",
+    entityId: taskId,
     agentId,
     ...overrides,
   };
@@ -60,28 +60,28 @@ describe("resolveResponsibleUserIdForActivity", () => {
     }))).resolves.toBe("user-1");
   });
 
-  it("uses issue attribution when an activity has a run id", async () => {
+  it("uses task attribution when an activity has a run id", async () => {
     const db = createReader(new Map([
-      [issues, [{ responsibleUserId: "issue-user", creatorUserId: null }]],
+      [tasks, [{ responsibleUserId: "task-user", creatorUserId: null }]],
       [companies, [{ defaultResponsibleUserId: "default-user" }]],
     ]));
 
     await expect(resolveResponsibleUserIdForActivity(db, activityInput({
       runId,
-    }))).resolves.toBe("issue-user");
+    }))).resolves.toBe("task-user");
   });
 
-  it("uses explicit issue context for non-issue activity", async () => {
+  it("uses explicit task context for non-task activity", async () => {
     const db = createReader(new Map([
-      [issues, [{ responsibleUserId: "issue-user", creatorUserId: null }]],
+      [tasks, [{ responsibleUserId: "task-user", creatorUserId: null }]],
       [companies, [{ defaultResponsibleUserId: "default-user" }]],
     ]));
 
     await expect(resolveResponsibleUserIdForActivity(db, activityInput({
-      entityType: "issue_execution_run",
+      entityType: "task_execution_run",
       entityId: runId,
-      issueId,
-    }))).resolves.toBe("issue-user");
+      taskId,
+    }))).resolves.toBe("task-user");
   });
 
   it("falls back to the company default responsible user", async () => {
@@ -95,9 +95,9 @@ describe("resolveResponsibleUserIdForActivity", () => {
     }))).resolves.toBe("default-user");
   });
 
-  it("uses issue creator attribution when responsibleUserId is absent", async () => {
+  it("uses task creator attribution when responsibleUserId is absent", async () => {
     const db = createReader(new Map([
-      [issues, [{ responsibleUserId: null, creatorUserId: "creator-user" }]],
+      [tasks, [{ responsibleUserId: null, creatorUserId: "creator-user" }]],
       [companies, [{ defaultResponsibleUserId: "default-user" }]],
     ]));
 
@@ -106,14 +106,14 @@ describe("resolveResponsibleUserIdForActivity", () => {
 
   it("ignores malformed UUID-backed identifiers", async () => {
     const db = createReader(new Map([
-      [issues, [{ responsibleUserId: "issue-user", creatorUserId: null }]],
+      [tasks, [{ responsibleUserId: "task-user", creatorUserId: null }]],
       [companies, [{ defaultResponsibleUserId: "default-user" }]],
     ]));
 
     await expect(resolveResponsibleUserIdForActivity(db, activityInput({
       runId: "not-a-run-uuid",
-      entityId: "not-an-issue-uuid",
-      details: { issueId },
+      entityId: "not-an-task-uuid",
+      details: { taskId },
     }))).resolves.toBe("default-user");
   });
 });

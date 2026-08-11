@@ -1,35 +1,35 @@
 import {
-  issueSessionEvents,
-  issueSessionMessages,
-  issueSessions,
+  taskSessionEvents,
+  taskSessionMessages,
+  taskSessions,
   type Db,
 } from "@paperclipai/db";
 import {
-  decodeDurableIssueSessionEventRow,
-  decodeIssueSessionMessage,
-  encodeIssueSessionMessage,
-} from "@paperclipai/shared/issue-session";
+  decodeDurableTaskSessionEventRow,
+  decodeTaskSessionMessage,
+  encodeTaskSessionMessage,
+} from "@paperclipai/shared/task-session";
 import { describe, expect, it, vi } from "vitest";
-import type { IssueSessionStore } from "./issue-session/store.js";
+import type { TaskSessionStore } from "./task-session/store.js";
 import { createPluginCanonicalSessionReader } from "./plugin-canonical-session-reader.js";
 
 const companyId = "10000000-0000-4000-8000-000000000001";
-const issueId = "20000000-0000-4000-8000-000000000001";
+const taskId = "20000000-0000-4000-8000-000000000001";
 const runId = "30000000-0000-4000-8000-000000000001";
 const agentId = "40000000-0000-4000-8000-000000000001";
 const revisionId = "50000000-0000-4000-8000-000000000001";
 const sessionId = "ses_plugin_reader";
 const createdAt = new Date("2026-08-05T00:00:00.000Z");
 
-type SessionRow = typeof issueSessions.$inferSelect;
-type MessageRow = typeof issueSessionMessages.$inferSelect;
-type EventRow = typeof issueSessionEvents.$inferSelect;
+type SessionRow = typeof taskSessions.$inferSelect;
+type MessageRow = typeof taskSessionMessages.$inferSelect;
+type EventRow = typeof taskSessionEvents.$inferSelect;
 
 function sessionRow(patch: Partial<SessionRow> = {}): SessionRow {
   return {
     id: sessionId,
     companyId,
-    issueId,
+    taskId,
     parentSessionId: null,
     projectId: "project-1",
     agent: "codex",
@@ -58,13 +58,13 @@ function sessionRow(patch: Partial<SessionRow> = {}): SessionRow {
 }
 
 function messageRecord() {
-  const message = decodeIssueSessionMessage({
+  const message = decodeTaskSessionMessage({
     id: "msg_plugin_reader",
     type: "user",
     text: "remember this",
     time: { created: createdAt.getTime() },
   });
-  const encoded = encodeIssueSessionMessage(message) as unknown as Record<
+  const encoded = encodeTaskSessionMessage(message) as unknown as Record<
     string,
     unknown
   >;
@@ -72,7 +72,7 @@ function messageRecord() {
   const row: MessageRow = {
     id: "msg_plugin_reader",
     companyId,
-    issueId,
+    taskId,
     sessionId,
     seq: 4,
     modelStateSeq: 5,
@@ -92,7 +92,7 @@ function eventRecord() {
   const row: EventRow = {
     id: "evt_plugin_reader",
     companyId,
-    issueId,
+    taskId,
     sessionId,
     seq: 4,
     type: "session.next.prompted.1",
@@ -116,7 +116,7 @@ function eventRecord() {
   };
   return {
     row,
-    event: decodeDurableIssueSessionEventRow({
+    event: decodeDurableTaskSessionEventRow({
       id: row.id,
       sessionId: row.sessionId,
       seq: row.seq,
@@ -171,7 +171,7 @@ function fakeStore(input: {
   };
   store.bindReadDatabase.mockReturnValue(store);
   return {
-    store: store as unknown as IssueSessionStore,
+    store: store as unknown as TaskSessionStore,
     pageMessages,
     pageEvents,
     bindReadDatabase: store.bindReadDatabase,
@@ -198,7 +198,7 @@ describe("plugin canonical Session reader", () => {
     expect(result).toMatchObject({
       session: {
         companyId,
-        issueId,
+        taskId,
         sessionId,
         projectId: "project-1",
       },
@@ -247,7 +247,7 @@ describe("plugin canonical Session reader", () => {
     expect(sessions.pageMessages).toHaveBeenCalledWith(
       expect.objectContaining({
         companyId,
-        issueId,
+        taskId,
         sessionId,
         afterSeq: 2,
         highWaterSeq: 6,
@@ -270,10 +270,10 @@ describe("plugin canonical Session reader", () => {
     expect(Object.keys(result.session).sort()).toEqual([
       "companyId",
       "createdAt",
-      "issueId",
       "parentSessionId",
       "projectId",
       "sessionId",
+      "taskId",
     ]);
     expect(result.session).not.toHaveProperty("projectedEventSeq");
     expect(result.session).not.toHaveProperty("revert");

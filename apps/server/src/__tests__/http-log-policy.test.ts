@@ -6,7 +6,7 @@ import {
 
 describe("shouldSilenceHttpSuccessLog", () => {
   it("silences cached 304 responses", () => {
-    expect(shouldSilenceHttpSuccessLog("GET", "/api/issues/PAP-1383", 304)).toBe(true);
+    expect(shouldSilenceHttpSuccessLog("GET", "/api/tasks/PAP-1383", 304)).toBe(true);
   });
 
   it("silences successful polling endpoints", () => {
@@ -42,7 +42,7 @@ describe("shouldSilenceHttpSuccessLog", () => {
     expect(
       shouldSilenceHttpSuccessLog(
         "GET",
-        "/api/companies/5cbe79ee-acb3-4597-896e-7662742593cd/issues?includeRoutineExecutions=true",
+        "/api/companies/5cbe79ee-acb3-4597-896e-7662742593cd/tasks?includeRoutineExecutions=true",
         200,
       ),
     ).toBe(true);
@@ -65,8 +65,8 @@ describe("shouldSilenceHttpSuccessLog", () => {
   });
 
   it("keeps normal successful application requests", () => {
-    expect(shouldSilenceHttpSuccessLog("GET", "/api/issues/PAP-1383", 200)).toBe(false);
-    expect(shouldSilenceHttpSuccessLog("PATCH", "/api/issues/PAP-1383", 200)).toBe(false);
+    expect(shouldSilenceHttpSuccessLog("GET", "/api/tasks/PAP-1383", 200)).toBe(false);
+    expect(shouldSilenceHttpSuccessLog("PATCH", "/api/tasks/PAP-1383", 200)).toBe(false);
   });
 
   it("keeps failing requests visible", () => {

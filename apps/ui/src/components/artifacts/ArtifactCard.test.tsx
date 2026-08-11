@@ -10,14 +10,14 @@ vi.mock("@/lib/router", () => ({
   Link: ({
     to,
     children,
-    disableIssueQuicklook,
+    disableTaskQuicklook,
     ...props
   }: {
     to: string;
     children: ReactNode;
-    disableIssueQuicklook?: boolean;
+    disableTaskQuicklook?: boolean;
   }) => (
-    <a href={to} data-disable-issue-quicklook={disableIssueQuicklook ? "true" : undefined} {...props}>
+    <a href={to} data-disable-task-quicklook={disableTaskQuicklook ? "true" : undefined} {...props}>
       {children}
     </a>
   ),
@@ -37,20 +37,20 @@ function makeArtifact(overrides: Partial<CompanyArtifact> = {}): CompanyArtifact
     contentPath: "/files/art-1.png",
     openPath: "/files/art-1.png",
     downloadPath: "/files/art-1.png?download=1",
-    issue: { id: "issue-1", identifier: "PAP-10306", title: "Landing visuals" },
+    task: { id: "task-1", identifier: "PAP-10306", title: "Landing visuals" },
     project: { id: "proj-1", name: "Paperclip App" },
     createdByAgent: { id: "agent-1", name: "ClaudeCoder" },
     updatedAt: "2026-06-01T12:00:00.000Z",
-    href: "/issues/PAP-10306#attachment-art-1",
+    href: "/tasks/PAP-10306#attachment-art-1",
     ...overrides,
   };
 }
 
 describe("ArtifactCard", () => {
-  it("renders an image preview with cover image and links to the issue anchor", () => {
+  it("renders an image preview with cover image and links to the task anchor", () => {
     const markup = renderToStaticMarkup(<ArtifactCard artifact={makeArtifact()} />);
-    expect(markup).toContain('href="/issues/PAP-10306#attachment-art-1"');
-    expect(markup).toContain('data-disable-issue-quicklook="true"');
+    expect(markup).toContain('href="/tasks/PAP-10306#attachment-art-1"');
+    expect(markup).toContain('data-disable-task-quicklook="true"');
     expect(markup).toContain('data-media-kind="image"');
     expect(markup).toContain("rounded-lg");
     expect(markup).toContain('src="/files/art-1.png"');
@@ -68,7 +68,7 @@ describe("ArtifactCard", () => {
       <ArtifactCard
         artifact={makeArtifact({
           title: "Social launch clip",
-          issue: { id: "issue-2", identifier: "PAP-10370", title: "Make artifact page look like this" },
+          task: { id: "task-2", identifier: "PAP-10370", title: "Make artifact page look like this" },
           updatedAt: "2025-10-08T12:00:00.000Z",
           createdByAgent: null,
         })}

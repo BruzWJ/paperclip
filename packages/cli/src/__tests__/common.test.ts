@@ -160,7 +160,7 @@ describe("resolveCommandContext", () => {
 });
 
 describe("inferContentTypeFromPath", () => {
-  it("maps the issue-attachment file types the server allows", () => {
+  it("maps the task-attachment file types the server allows", () => {
     // Must match apps/server/src/attachment-types.ts DEFAULT_ALLOWED_TYPES exactly.
     expect(inferContentTypeFromPath("newsletter.html")).toBe("text/html");
     expect(inferContentTypeFromPath("page.htm")).toBe("text/html");
@@ -188,14 +188,14 @@ describe("inferContentTypeFromPath", () => {
 
 describe("apiPath", () => {
   it("encodes dynamic path segments", () => {
-    expect(apiPath`/api/issues/${"PAP-1/child"}/comments/${"needs review?"}`)
-      .toBe("/api/issues/PAP-1%2Fchild/comments/needs%20review%3F");
+    expect(apiPath`/api/tasks/${"PAP-1/child"}/comments/${"needs review?"}`)
+      .toBe("/api/tasks/PAP-1%2Fchild/comments/needs%20review%3F");
   });
 
   it("rejects empty dynamic path segments", () => {
-    expect(() => apiPath`/api/issues/${""}`).toThrow("Cannot build API path with an empty path segment.");
-    expect(() => apiPath`/api/issues/${undefined}`).toThrow("Cannot build API path with an empty path segment.");
-    expect(() => apiPath`/api/issues/${null}`).toThrow("Cannot build API path with an empty path segment.");
-    expect(() => apiPath`/api/issues/${" "}`).toThrow("Cannot build API path with an empty path segment.");
+    expect(() => apiPath`/api/tasks/${""}`).toThrow("Cannot build API path with an empty path segment.");
+    expect(() => apiPath`/api/tasks/${undefined}`).toThrow("Cannot build API path with an empty path segment.");
+    expect(() => apiPath`/api/tasks/${null}`).toThrow("Cannot build API path with an empty path segment.");
+    expect(() => apiPath`/api/tasks/${" "}`).toThrow("Cannot build API path with an empty path segment.");
   });
 });

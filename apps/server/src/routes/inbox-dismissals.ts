@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { Db } from "@paperclipai/db";
+import { addValidationDetail } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { assertCompanyAccess } from "./authz.js";
 import { inboxDismissalService, logActivity } from "../services/index.js";
@@ -14,22 +15,22 @@ const inboxDismissalSchema = z.object({
 }).superRefine((value, ctx) => {
   if (value.kind === "dismiss") {
     if (value.snoozedUntil != null) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["snoozedUntil"], message: "Dismissals must not include snoozedUntil" });
+      addValidationDetail(ctx, { path: ["snoozedUntil"], message: "Dismissals must not include snoozedUntil" });
     }
     return;
   }
 
   if (!value.snoozedUntil) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["snoozedUntil"], message: "Snooze requires snoozedUntil" });
+    addValidationDetail(ctx, { path: ["snoozedUntil"], message: "Snooze requires snoozedUntil" });
     return;
   }
   const timestamp = new Date(value.snoozedUntil).getTime();
   if (!Number.isFinite(timestamp)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["snoozedUntil"], message: "snoozedUntil must be an ISO timestamp" });
+    addValidationDetail(ctx, { path: ["snoozedUntil"], message: "snoozedUntil must be an ISO timestamp" });
     return;
   }
   if (timestamp <= Date.now()) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["snoozedUntil"], message: "snoozedUntil must be in the future" });
+    addValidationDetail(ctx, { path: ["snoozedUntil"], message: "snoozedUntil must be in the future" });
   }
 });
 

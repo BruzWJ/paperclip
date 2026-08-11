@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { validationDetails } from "@paperclipai/shared";
 import { paperclipConfigSchema, type PaperclipConfig } from "./schema.js";
 import {
   resolveDefaultConfigPath,
@@ -41,17 +42,21 @@ function parseJson(filePath: string): unknown {
 }
 
 function formatValidationError(err: unknown): string {
-  const issues = (err as { issues?: Array<{ path?: unknown; message?: unknown }> })?.issues;
-  if (Array.isArray(issues) && issues.length > 0) {
-    return issues
-      .map((issue) => {
-        const pathParts = Array.isArray(issue.path) ? issue.path.map(String) : [];
-        const issuePath = pathParts.length > 0 ? pathParts.join(".") : "config";
-        const message = typeof issue.message === "string" ? issue.message : "Invalid value";
-        return `${issuePath}: ${message}`;
-      })
-      .join("; ");
+  try {
+    const details = validationDetails(err);
+    if (details.length > 0) {
+      return details
+        .map((detail) => {
+          const pathParts = detail.path.map(String);
+          const detailPath = pathParts.length > 0 ? pathParts.join(".") : "config";
+          return `${detailPath}: ${detail.message}`;
+        })
+        .join("; ");
+    }
+  } catch {
+    // Fall through for non-validation errors.
   }
+
   return err instanceof Error ? err.message : String(err);
 }
 

@@ -1,18 +1,18 @@
 import {
   agents,
   companies,
-  issueConsultExecutions,
-  issueExecutionAttempts,
-  issueExecutionAuthorities,
-  issueExecutionLeases,
-  issueExecutionPromptCapabilities,
-  issueExecutionPromptSegments,
-  issueExecutionRefs,
-  issueExecutionRunControls,
-  issueExecutionRunRefs,
-  issueExecutionSessions,
-  issueExecutionWorkspaceBindings,
-  issues,
+  taskConsultExecutions,
+  taskExecutionAttempts,
+  taskExecutionAuthorities,
+  taskExecutionLeases,
+  taskExecutionPromptCapabilities,
+  taskExecutionPromptSegments,
+  taskExecutionRefs,
+  taskExecutionRunControls,
+  taskExecutionRunRefs,
+  taskExecutionSessions,
+  taskExecutionWorkspaceBindings,
+  tasks,
   pluginRunContexts,
   plugins,
   runInterfaceToolCalls,
@@ -20,7 +20,7 @@ import {
 } from "@paperclipai/db";
 import { and, eq, gt, or, sql } from "drizzle-orm";
 import type { RuntimeInterfaceCompileInput } from "./runtime-interface-compiler.js";
-import type { IssueExecutionRunService } from "./issue-execution-run-service.js";
+import type { TaskExecutionRunService } from "./task-execution-run-service.js";
 import {
   PromptCapabilityAuthorityError,
   type PromptCapabilityAuthenticationResult,
@@ -29,9 +29,9 @@ import {
   type PromptCapabilityGatewayRepository,
 } from "./prompt-capability-gateway.js";
 import type {
-  IssueSessionDbTransaction,
-} from "./issue-session/event-store.js";
-import { activeIssueTreePauseHoldExistsSql } from "./issue-execution-lifecycle-gate.js";
+  TaskSessionDbTransaction,
+} from "./task-session/event-store.js";
+import { activeTaskTreePauseHoldExistsSql } from "./task-execution-lifecycle-gate.js";
 import { lockPluginInstallationCompanyScopeInTransaction } from "./plugin-authorization-locks.js";
 import { pluginManifestDeclaresAgentTool } from "./plugin-agent-tool-authority.js";
 import { pluginManifestIdentity } from "./plugin-manifest-identity.js";
@@ -43,10 +43,10 @@ interface PromptCapabilityCompiler {
 }
 
 type PromptCapabilityRow =
-  typeof issueExecutionPromptCapabilities.$inferSelect;
+  typeof taskExecutionPromptCapabilities.$inferSelect;
 
 async function transactionClockTimestamp(
-  transaction: IssueSessionDbTransaction,
+  transaction: TaskSessionDbTransaction,
 ): Promise<Date> {
   const rows = Array.from(
     await transaction.execute(sql<{ timestampMs: number }>`
@@ -85,13 +85,13 @@ function sameBinding(
     left.leaseId === right.leaseId &&
     left.leaseGeneration === right.leaseGeneration &&
     left.workerProcessIdentity === right.workerProcessIdentity &&
-    left.issueId === right.issueId &&
+    left.taskId === right.taskId &&
     left.sessionId === right.sessionId &&
     left.ownershipEpoch === right.ownershipEpoch &&
     left.targetAgentId === right.targetAgentId &&
     left.laneKind === right.laneKind &&
     left.executionMode === right.executionMode &&
-    left.issueExecutionAuthorityId === right.issueExecutionAuthorityId &&
+    left.taskExecutionAuthorityId === right.taskExecutionAuthorityId &&
     left.consultExecutionId === right.consultExecutionId &&
     left.adapterConfigIdentity === right.adapterConfigIdentity &&
     left.workspaceIdentity === right.workspaceIdentity &&
@@ -104,7 +104,7 @@ function sameBinding(
 }
 
 function runMatchesCapability(
-  run: NonNullable<Awaited<ReturnType<IssueExecutionRunService["readRun"]>>>,
+  run: NonNullable<Awaited<ReturnType<TaskExecutionRunService["readRun"]>>>,
   row: PromptCapabilityRow,
 ): boolean {
   return run.status === "running" &&
@@ -112,7 +112,7 @@ function runMatchesCapability(
     run.ownershipEpoch === row.ownershipEpoch &&
     run.targetAgentId === row.targetAgentId &&
     run.executionMode === row.executionMode &&
-    run.issueExecutionAuthorityId === row.issueExecutionAuthorityId &&
+    run.taskExecutionAuthorityId === row.taskExecutionAuthorityId &&
     run.consultExecutionId === row.consultExecutionId &&
     run.adapterConfigRevisionId === row.adapterConfigIdentity &&
     run.executionWorkspaceBindingId === row.workspaceIdentity &&
@@ -138,12 +138,12 @@ function rowMatchesBinding(
     row.leaseId === capability.leaseId &&
     row.leaseGeneration === capability.leaseGeneration &&
     row.workerProcessIdentity === capability.workerProcessIdentity &&
-    row.issueId === capability.issueId &&
+    row.taskId === capability.taskId &&
     row.ownershipEpoch === capability.ownershipEpoch &&
     row.targetAgentId === capability.targetAgentId &&
     row.laneKind === capability.laneKind &&
     row.executionMode === capability.executionMode &&
-    row.issueExecutionAuthorityId === capability.issueExecutionAuthorityId &&
+    row.taskExecutionAuthorityId === capability.taskExecutionAuthorityId &&
     row.consultExecutionId === capability.consultExecutionId &&
     row.adapterConfigIdentity === capability.adapterConfigIdentity &&
     row.workspaceIdentity === capability.workspaceIdentity &&
@@ -162,21 +162,21 @@ function rowMatchesBinding(
  * cannot race the protected mutation.
  */
 export async function lockActivePromptCapabilityBinding(
-  transaction: IssueSessionDbTransaction,
+  transaction: TaskSessionDbTransaction,
   capability: PromptCapabilityBinding,
   _at: Date,
 ): Promise<void> {
   const row = await transaction
     .select()
-    .from(issueExecutionPromptCapabilities)
+    .from(taskExecutionPromptCapabilities)
     .where(
       and(
         eq(
-          issueExecutionPromptCapabilities.capabilityConnectionId,
+          taskExecutionPromptCapabilities.capabilityConnectionId,
           capability.capabilityConnectionId,
         ),
         eq(
-          issueExecutionPromptCapabilities.capabilityGeneration,
+          taskExecutionPromptCapabilities.capabilityGeneration,
           capability.capabilityGeneration,
         ),
       ),
@@ -230,13 +230,13 @@ function projectIngressBinding(
     leaseId: row.leaseId,
     leaseGeneration: row.leaseGeneration,
     workerProcessIdentity: row.workerProcessIdentity,
-    issueId: row.issueId,
+    taskId: row.taskId,
     sessionId,
     ownershipEpoch: row.ownershipEpoch,
     targetAgentId: row.targetAgentId,
     laneKind: row.laneKind,
     executionMode: row.executionMode,
-    issueExecutionAuthorityId: row.issueExecutionAuthorityId,
+    taskExecutionAuthorityId: row.taskExecutionAuthorityId,
     consultExecutionId: row.consultExecutionId,
     adapterConfigIdentity: row.adapterConfigIdentity,
     workspaceIdentity: row.workspaceIdentity,
@@ -252,7 +252,7 @@ function projectIngressBinding(
 export function createPostgresPromptCapabilityGatewayRepository(
   db: Db,
   compiler: PromptCapabilityCompiler,
-  runService: Pick<IssueExecutionRunService, "readRun">,
+  runService: Pick<TaskExecutionRunService, "readRun">,
 ): PromptCapabilityGatewayRepository {
   async function validateRow(
     row: PromptCapabilityRow,
@@ -272,7 +272,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
     // exact authority/ref/attempt/lease/correlation fact.
     const run = await runService.readRun({
       companyId: row.companyId,
-      issueId: row.issueId,
+      taskId: row.taskId,
       runId: row.runId,
     });
     if (!run) return invalid("run_not_found");
@@ -282,7 +282,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
 
     const [
       companyRows,
-      issueRows,
+      taskRows,
       agentRows,
       refRows,
       memberRows,
@@ -305,18 +305,18 @@ export function createPostgresPromptCapabilityGatewayRepository(
         .limit(1),
       db
         .select({
-          companyId: issues.companyId,
-          ownershipEpoch: issues.ownershipEpoch,
-          lifecycleStatus: issues.lifecycleStatus,
-          ownerKind: issues.ownerKind,
-          ownerAgentId: issues.ownerAgentId,
-          executionPaused: activeIssueTreePauseHoldExistsSql(
-            issues.companyId,
-            issues.id,
+          companyId: tasks.companyId,
+          ownershipEpoch: tasks.ownershipEpoch,
+          lifecycleStatus: tasks.lifecycleStatus,
+          ownerKind: tasks.ownerKind,
+          ownerAgentId: tasks.ownerAgentId,
+          executionPaused: activeTaskTreePauseHoldExistsSql(
+            tasks.companyId,
+            tasks.id,
           ),
         })
-        .from(issues)
-        .where(eq(issues.id, row.issueId))
+        .from(tasks)
+        .where(eq(tasks.id, row.taskId))
         .limit(1),
       db
         .select({
@@ -330,17 +330,17 @@ export function createPostgresPromptCapabilityGatewayRepository(
         .limit(1),
       db
         .select()
-        .from(issueExecutionRefs)
-        .where(eq(issueExecutionRefs.id, row.refId))
+        .from(taskExecutionRefs)
+        .where(eq(taskExecutionRefs.id, row.refId))
         .limit(1),
       db
         .select()
-        .from(issueExecutionRunRefs)
+        .from(taskExecutionRunRefs)
         .where(
           and(
-            eq(issueExecutionRunRefs.runId, row.runId),
-            eq(issueExecutionRunRefs.refId, row.refId),
-            eq(issueExecutionRunRefs.refOrdinal, row.refOrdinal),
+            eq(taskExecutionRunRefs.runId, row.runId),
+            eq(taskExecutionRunRefs.refId, row.refId),
+            eq(taskExecutionRunRefs.refOrdinal, row.refOrdinal),
           ),
         )
         .limit(1),
@@ -348,17 +348,17 @@ export function createPostgresPromptCapabilityGatewayRepository(
         ? Promise.resolve([])
         : db
             .select()
-            .from(issueExecutionPromptSegments)
+            .from(taskExecutionPromptSegments)
             .where(
               and(
-                eq(issueExecutionPromptSegments.runId, row.runId),
-                eq(issueExecutionPromptSegments.refId, row.refId),
+                eq(taskExecutionPromptSegments.runId, row.runId),
+                eq(taskExecutionPromptSegments.refId, row.refId),
                 eq(
-                  issueExecutionPromptSegments.refOrdinal,
+                  taskExecutionPromptSegments.refOrdinal,
                   row.refOrdinal,
                 ),
                 eq(
-                  issueExecutionPromptSegments.segmentOrdinal,
+                  taskExecutionPromptSegments.segmentOrdinal,
                   row.segmentOrdinal,
                 ),
               ),
@@ -366,47 +366,47 @@ export function createPostgresPromptCapabilityGatewayRepository(
             .limit(1),
       db
         .select()
-        .from(issueExecutionRunControls)
-        .where(eq(issueExecutionRunControls.runId, row.runId))
+        .from(taskExecutionRunControls)
+        .where(eq(taskExecutionRunControls.runId, row.runId))
         .limit(1),
       db
         .select()
-        .from(issueExecutionAttempts)
-        .where(eq(issueExecutionAttempts.id, row.attemptId))
+        .from(taskExecutionAttempts)
+        .where(eq(taskExecutionAttempts.id, row.attemptId))
         .limit(1),
       db
         .select()
-        .from(issueExecutionLeases)
+        .from(taskExecutionLeases)
         .where(
           and(
-            eq(issueExecutionLeases.id, row.leaseId),
-            gt(issueExecutionLeases.expiresAt, sql<Date>`clock_timestamp()`),
+            eq(taskExecutionLeases.id, row.leaseId),
+            gt(taskExecutionLeases.expiresAt, sql<Date>`clock_timestamp()`),
           ),
         )
         .limit(1),
       db
         .select()
-        .from(issueExecutionSessions)
+        .from(taskExecutionSessions)
         .where(
           and(
-            eq(issueExecutionSessions.companyId, row.companyId),
-            eq(issueExecutionSessions.id, row.targetSessionCorrelationId),
+            eq(taskExecutionSessions.companyId, row.companyId),
+            eq(taskExecutionSessions.id, row.targetSessionCorrelationId),
           ),
         )
         .limit(1),
       db
         .select()
-        .from(issueExecutionWorkspaceBindings)
-        .where(eq(issueExecutionWorkspaceBindings.id, row.workspaceIdentity))
+        .from(taskExecutionWorkspaceBindings)
+        .where(eq(taskExecutionWorkspaceBindings.id, row.workspaceIdentity))
         .limit(1),
-      row.issueExecutionAuthorityId
+      row.taskExecutionAuthorityId
         ? db
             .select()
-            .from(issueExecutionAuthorities)
+            .from(taskExecutionAuthorities)
             .where(
               eq(
-                issueExecutionAuthorities.id,
-                row.issueExecutionAuthorityId,
+                taskExecutionAuthorities.id,
+                row.taskExecutionAuthorityId,
               ),
             )
             .limit(1)
@@ -414,8 +414,8 @@ export function createPostgresPromptCapabilityGatewayRepository(
       row.consultExecutionId
         ? db
             .select()
-            .from(issueConsultExecutions)
-            .where(eq(issueConsultExecutions.id, row.consultExecutionId))
+            .from(taskConsultExecutions)
+            .where(eq(taskConsultExecutions.id, row.consultExecutionId))
             .limit(1)
         : Promise.resolve([]),
     ]);
@@ -428,22 +428,22 @@ export function createPostgresPromptCapabilityGatewayRepository(
     ) {
       return invalid("company_inactive");
     }
-    const issue = issueRows[0];
+    const task = taskRows[0];
     if (
-      !issue ||
-      issue.companyId !== row.companyId ||
-      issue.ownershipEpoch !== row.ownershipEpoch ||
+      !task ||
+      task.companyId !== row.companyId ||
+      task.ownershipEpoch !== row.ownershipEpoch ||
       (row.executionMode === "owner" &&
-        (issue.ownerKind !== "agent" ||
-          issue.ownerAgentId !== row.targetAgentId))
+        (task.ownerKind !== "agent" ||
+          task.ownerAgentId !== row.targetAgentId))
     ) {
       return invalid("ownership_epoch_changed");
     }
-    if (!["open", "blocked"].includes(issue.lifecycleStatus)) {
-      return invalid("issue_lifecycle_terminal");
+    if (!["open", "blocked"].includes(task.lifecycleStatus)) {
+      return invalid("task_lifecycle_terminal");
     }
-    if (issue.executionPaused) {
-      return invalid("issue_execution_paused");
+    if (task.executionPaused) {
+      return invalid("task_execution_paused");
     }
     const agent = agentRows[0];
     if (
@@ -458,12 +458,12 @@ export function createPostgresPromptCapabilityGatewayRepository(
     if (
       !ref ||
       ref.companyId !== row.companyId ||
-      ref.issueId !== row.issueId ||
+      ref.taskId !== row.taskId ||
       ref.sessionId !== run.sessionId ||
       ref.ownershipEpoch !== row.ownershipEpoch ||
       ref.mode !== row.executionMode ||
       ref.targetAgentId !== row.targetAgentId ||
-      ref.issueExecutionAuthorityId !== row.issueExecutionAuthorityId ||
+      ref.taskExecutionAuthorityId !== row.taskExecutionAuthorityId ||
       ref.consultExecutionId !== row.consultExecutionId ||
       ref.adapterConfigRevisionId !== row.adapterConfigIdentity ||
       ref.disposition !== "active"
@@ -474,7 +474,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
     if (
       !member ||
       member.companyId !== row.companyId ||
-      member.issueId !== row.issueId ||
+      member.taskId !== row.taskId ||
       member.sessionId !== run.sessionId ||
       member.batchDigest !== row.runBatchDigest ||
       member.attemptId !== row.attemptId ||
@@ -490,7 +490,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
       row.segmentOrdinal > 0 &&
       (!segment ||
         segment.companyId !== row.companyId ||
-        segment.issueId !== row.issueId ||
+        segment.taskId !== row.taskId ||
         segment.sessionId !== run.sessionId ||
         segment.attemptId !== row.attemptId ||
         segment.capabilityConnectionId !== row.capabilityConnectionId ||
@@ -513,7 +513,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
     if (
       !attempt ||
       attempt.companyId !== row.companyId ||
-      attempt.issueId !== row.issueId ||
+      attempt.taskId !== row.taskId ||
       attempt.sessionId !== run.sessionId ||
       attempt.runId !== row.runId ||
       attempt.runKind !== run.kind ||
@@ -530,7 +530,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
     if (
       !lease ||
       lease.companyId !== row.companyId ||
-      lease.issueId !== row.issueId ||
+      lease.taskId !== row.taskId ||
       lease.runId !== row.runId ||
       lease.attemptId !== row.attemptId ||
       lease.leaseGeneration !== row.leaseGeneration ||
@@ -543,7 +543,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
     if (
       !workspace ||
       workspace.companyId !== row.companyId ||
-      workspace.issueId !== row.issueId ||
+      workspace.taskId !== row.taskId ||
       workspace.sessionId !== run.sessionId ||
       workspace.ownershipEpoch !== row.ownershipEpoch
     ) {
@@ -554,7 +554,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
       row.executionMode === "owner" &&
       (!authority ||
         authority.companyId !== row.companyId ||
-        authority.issueId !== row.issueId ||
+        authority.taskId !== row.taskId ||
         authority.sessionId !== run.sessionId ||
         authority.ownershipEpoch !== row.ownershipEpoch ||
         authority.agentId !== row.targetAgentId ||
@@ -567,7 +567,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
       row.executionMode === "consult" &&
       (!consult ||
         consult.companyId !== row.companyId ||
-        consult.issueId !== row.issueId ||
+        consult.taskId !== row.taskId ||
         consult.sessionId !== run.sessionId ||
         consult.ownershipEpoch !== row.ownershipEpoch ||
         consult.targetAgentId !== row.targetAgentId ||
@@ -579,7 +579,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
     const correlation = correlationRows[0];
     const sameCorrelationScope = Boolean(
       correlation &&
-        correlation.issueId === row.issueId &&
+        correlation.taskId === row.taskId &&
         correlation.ownershipEpoch === row.ownershipEpoch &&
         correlation.targetAgentId === row.targetAgentId &&
         correlation.adapterConfigIdentity === row.adapterConfigIdentity &&
@@ -617,18 +617,18 @@ export function createPostgresPromptCapabilityGatewayRepository(
     return db.transaction(async (transaction) => {
       const row = await transaction
         .select()
-        .from(issueExecutionPromptCapabilities)
+        .from(taskExecutionPromptCapabilities)
         .where(
           and(
             eq(
-              issueExecutionPromptCapabilities.capabilityConnectionId,
+              taskExecutionPromptCapabilities.capabilityConnectionId,
               input.capabilityConnectionId,
             ),
             eq(
-              issueExecutionPromptCapabilities.capabilityGeneration,
+              taskExecutionPromptCapabilities.capabilityGeneration,
               input.capabilityGeneration,
             ),
-            eq(issueExecutionPromptCapabilities.state, "active"),
+            eq(taskExecutionPromptCapabilities.state, "active"),
           ),
         )
         .limit(1)
@@ -644,13 +644,13 @@ export function createPostgresPromptCapabilityGatewayRepository(
       const locked = await db.transaction(async (transaction) => {
         const row = await transaction
           .select()
-          .from(issueExecutionPromptCapabilities)
+          .from(taskExecutionPromptCapabilities)
           .where(
             and(
-              eq(issueExecutionPromptCapabilities.bearerHash, bearerHash),
+              eq(taskExecutionPromptCapabilities.bearerHash, bearerHash),
               or(
-                eq(issueExecutionPromptCapabilities.state, "pending_setup"),
-                eq(issueExecutionPromptCapabilities.state, "active"),
+                eq(taskExecutionPromptCapabilities.state, "pending_setup"),
+                eq(taskExecutionPromptCapabilities.state, "active"),
               ),
             ),
           )
@@ -666,7 +666,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
       }
       const run = await runService.readRun({
         companyId: locked.row.companyId,
-        issueId: locked.row.issueId,
+        taskId: locked.row.taskId,
         runId: locked.row.runId,
       });
       if (!run) return invalid("run_not_found");
@@ -706,18 +706,18 @@ export function createPostgresPromptCapabilityGatewayRepository(
       await db.transaction(async (tx) => {
         const parent = await tx
           .select({
-            state: issueExecutionPromptCapabilities.state,
-            expiresAt: issueExecutionPromptCapabilities.expiresAt,
+            state: taskExecutionPromptCapabilities.state,
+            expiresAt: taskExecutionPromptCapabilities.expiresAt,
           })
-          .from(issueExecutionPromptCapabilities)
+          .from(taskExecutionPromptCapabilities)
           .where(
             and(
               eq(
-                issueExecutionPromptCapabilities.capabilityConnectionId,
+                taskExecutionPromptCapabilities.capabilityConnectionId,
                 input.capability.capabilityConnectionId,
               ),
               eq(
-                issueExecutionPromptCapabilities.capabilityGeneration,
+                taskExecutionPromptCapabilities.capabilityGeneration,
                 input.capability.capabilityGeneration,
               ),
             ),

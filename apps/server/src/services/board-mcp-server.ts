@@ -60,9 +60,9 @@ export function createBoardMcpServer(input: {
     {
       instructions: [
         "Paperclip Board MCP exposes Paperclip-managed tools for trusted local coding agents acting as the authenticated board user.",
-        "Local MCP config stores only this board API key. Do not store companyId, issueId, agentId, runId, or other entity targets in the local MCP config.",
+        "Local MCP config stores only this board API key. Do not store companyId, taskId, agentId, runId, or other entity targets in the local MCP config.",
         "Use tools/list as the source of truth for each tool input schema. Every listed Paperclip action and context reader is available without agent action grants, context dials, or mention-reach grants. Mutating tools execute directly for the authenticated board key. mention_board is intentionally unavailable because this MCP is already the board.",
-        "mention_agent uses the canonical Board comment mention path, so agentId must be the issue's current owner.",
+        "mention_agent uses the canonical Board comment mention path, so agentId must be the task's current owner.",
         "Accessible companies for the authenticated board user:",
         ...(companyLines.length > 0 ? companyLines : ["- No accessible companies"]),
       ].join("\n"),

@@ -3,21 +3,21 @@ import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
-} from "../issue-runtime.js";
+} from "../task-runtime.js";
 import {
   portabilityAdapterOverrideSchema,
   portabilityAgentManifestEntrySchema,
   portabilityCompanyManifestEntrySchema,
   portabilityEnvInputSchema,
-  portabilityIssueManifestEntrySchema,
+  portabilityTaskManifestEntrySchema,
 } from "./company-portability.js";
 
-function ordinaryIssue(overrides: Record<string, unknown> = {}) {
+function ordinaryTask(overrides: Record<string, unknown> = {}) {
   return {
-    slug: "portable-issue",
+    slug: "portable-task",
     identifier: "PAP-1",
-    title: "Portable issue",
-    path: "issues/portable-issue/ISSUE.md",
+    title: "Portable task",
+    path: "tasks/portable-task/TASK.md",
     projectSlug: null,
     ownerAgentSlug: "owner",
     request: "Do the portable work.",
@@ -35,24 +35,24 @@ function ordinaryIssue(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("company portability issue manifests", () => {
+describe("company portability task manifests", () => {
   it("rejects retired context-access masks", () => {
     expect(() =>
-      portabilityIssueManifestEntrySchema.parse(
-        ordinaryIssue({
-          contextAccessMask: { read_issue_comments: false },
+      portabilityTaskManifestEntrySchema.parse(
+        ordinaryTask({
+          contextAccessMask: { read_task_comments: false },
         }),
       ),
     ).toThrow();
     expect(() =>
-      portabilityIssueManifestEntrySchema.parse(
-        ordinaryIssue({
+      portabilityTaskManifestEntrySchema.parse(
+        ordinaryTask({
           recurring: true,
           boardPresentationStatus: "active",
           routine: {
             concurrencyPolicy: null,
             catchUpPolicy: null,
-            contextAccessMask: { read_sub_issue_comments: false },
+            contextAccessMask: { read_sub_task_comments: false },
             variables: null,
             triggers: [],
           },
@@ -60,8 +60,8 @@ describe("company portability issue manifests", () => {
       ),
     ).toThrow();
     expect(() =>
-      portabilityIssueManifestEntrySchema.parse(
-        ordinaryIssue({
+      portabilityTaskManifestEntrySchema.parse(
+        ordinaryTask({
           attentionMask: { carry_context: false },
         }),
       ),
@@ -70,8 +70,8 @@ describe("company portability issue manifests", () => {
 
   it("requires strict terminal disposition and preserves structured-result presence", () => {
     expect(() =>
-      portabilityIssueManifestEntrySchema.parse(
-        ordinaryIssue({
+      portabilityTaskManifestEntrySchema.parse(
+        ordinaryTask({
           lifecycleStatus: "done",
           boardPresentationStatus: "done",
           disposition: null,
@@ -79,15 +79,15 @@ describe("company portability issue manifests", () => {
       ),
     ).toThrow();
     expect(() =>
-      portabilityIssueManifestEntrySchema.parse(
-        ordinaryIssue({
+      portabilityTaskManifestEntrySchema.parse(
+        ordinaryTask({
           disposition: { message: "Not terminal." },
         }),
       ),
     ).toThrow();
     expect(() =>
-      portabilityIssueManifestEntrySchema.parse(
-        ordinaryIssue({
+      portabilityTaskManifestEntrySchema.parse(
+        ordinaryTask({
           lifecycleStatus: "cancelled",
           boardPresentationStatus: "cancelled",
           disposition: {
@@ -98,8 +98,8 @@ describe("company portability issue manifests", () => {
       ),
     ).toThrow();
 
-    const terminal = portabilityIssueManifestEntrySchema.parse(
-      ordinaryIssue({
+    const terminal = portabilityTaskManifestEntrySchema.parse(
+      ordinaryTask({
         lifecycleStatus: "done",
         boardPresentationStatus: "done",
         disposition: {
@@ -217,7 +217,7 @@ describe("company portability declarative ACP configuration", () => {
     ).toEqual({ model: "gpt-5.6" });
   });
 
-  it("rejects runtime-only issue actions in portable grant maps", () => {
+  it("rejects runtime-only task actions in portable grant maps", () => {
     const agent = portableAgent({}, {});
 
     expect(
@@ -225,7 +225,7 @@ describe("company portability declarative ACP configuration", () => {
         ...agent,
         actionGrants: {
           ...agent.actionGrants,
-          issue_assign: false,
+          task_assign: false,
         },
       }).success,
     ).toBe(false);
@@ -234,7 +234,7 @@ describe("company portability declarative ACP configuration", () => {
         ...agent,
         actionGrants: {
           ...agent.actionGrants,
-          issue_update: false,
+          task_update: false,
         },
       }).success,
     ).toBe(false);

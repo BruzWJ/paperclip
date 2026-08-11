@@ -94,7 +94,7 @@ function startTestWorker(plugin: ReturnType<typeof definePlugin>) {
 describe("before-prompt lifecycle negotiation", () => {
   const input = {
     companyId: "company-a",
-    issueId: "issue-a",
+    taskId: "task-a",
     sessionId: "session-a",
     runId: "run-a",
     agentId: "agent-a",
@@ -109,14 +109,14 @@ describe("before-prompt lifecycle negotiation", () => {
     sourceMessageSeq: 9,
     contextAccess: {
       carry_context: false,
-      read_issue_comments: false,
-      read_issue_agent_run: false,
-      list_sub_issues: false,
-      read_sub_issue_comments: false,
-      read_sub_issue_agent_run: false,
-      list_company_issues: false,
-      read_company_issue_comments: false,
-      read_company_issue_agent_run: false,
+      read_task_comments: false,
+      read_task_agent_run: false,
+      list_sub_tasks: false,
+      read_sub_task_comments: false,
+      read_sub_task_agent_run: false,
+      list_company_tasks: false,
+      read_company_task_comments: false,
+      read_company_task_agent_run: false,
     },
     snapshotHighWaterSeq: 9,
   } satisfies PluginBeforePromptInput;

@@ -20,7 +20,7 @@ test.describe("Multi-user account and membership projection", () => {
     expect(companyResponse.ok()).toBe(true);
     const company = await companyResponse.json() as {
       id: string;
-      issuePrefix: string;
+      taskPrefix: string;
     };
 
     const inviteResponse = await request.post(
@@ -72,7 +72,7 @@ test.describe("Multi-user account and membership projection", () => {
       ]),
     });
 
-    await page.goto(`/${company.issuePrefix}/company/settings`);
+    await page.goto(`/${company.taskPrefix}/company/settings`);
     await expect(page.getByRole("heading", { name: /Company settings/i }))
       .toBeVisible({ timeout: 30_000 });
   });

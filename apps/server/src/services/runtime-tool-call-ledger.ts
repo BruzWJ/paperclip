@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import {
-  issueExecutionPromptCapabilities,
+  taskExecutionPromptCapabilities,
   runInterfaceToolCalls,
   type Db,
 } from "@paperclipai/db";
@@ -17,7 +17,7 @@ import type {
 
 type ToolCallRow = typeof runInterfaceToolCalls.$inferSelect;
 type CapabilityRow =
-  typeof issueExecutionPromptCapabilities.$inferSelect;
+  typeof taskExecutionPromptCapabilities.$inferSelect;
 export type RuntimeToolCallTransaction =
   Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -249,19 +249,19 @@ export function createRuntimeToolCallLedger(
   ): Promise<CapabilityRow> {
     const row = await tx
       .select()
-      .from(issueExecutionPromptCapabilities)
+      .from(taskExecutionPromptCapabilities)
       .where(
         and(
           eq(
-            issueExecutionPromptCapabilities.companyId,
+            taskExecutionPromptCapabilities.companyId,
             capability.companyId,
           ),
           eq(
-            issueExecutionPromptCapabilities.capabilityConnectionId,
+            taskExecutionPromptCapabilities.capabilityConnectionId,
             capability.capabilityConnectionId,
           ),
           eq(
-            issueExecutionPromptCapabilities.capabilityGeneration,
+            taskExecutionPromptCapabilities.capabilityGeneration,
             capability.capabilityGeneration,
           ),
         ),
@@ -342,16 +342,16 @@ export function createRuntimeToolCallLedger(
       return;
     }
     await tx
-      .update(issueExecutionPromptCapabilities)
+      .update(taskExecutionPromptCapabilities)
       .set({ ingressHighWater, classificationHighWater })
       .where(
         and(
           eq(
-            issueExecutionPromptCapabilities.capabilityConnectionId,
+            taskExecutionPromptCapabilities.capabilityConnectionId,
             capability.capabilityConnectionId,
           ),
           eq(
-            issueExecutionPromptCapabilities.capabilityGeneration,
+            taskExecutionPromptCapabilities.capabilityGeneration,
             capability.capabilityGeneration,
           ),
         ),

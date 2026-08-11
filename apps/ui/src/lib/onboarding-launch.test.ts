@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildOnboardingIssuePayload,
+  buildOnboardingTaskPayload,
   buildOnboardingProjectPayload,
   selectDefaultCompanyGoalId,
   selectReusableOnboardingProject,
@@ -99,7 +99,7 @@ describe("onboarding launch payloads", () => {
     ).toBeNull();
   });
 
-  it("links the onboarding project and first issue to the selected goal", () => {
+  it("links the onboarding project and first task to the selected goal", () => {
     expect(buildOnboardingProjectPayload("goal-1")).toEqual({
       name: "Onboarding",
       status: "in_progress",
@@ -107,7 +107,7 @@ describe("onboarding launch payloads", () => {
     });
 
     expect(
-      buildOnboardingIssuePayload({
+      buildOnboardingTaskPayload({
         title: "  Hire your first engineer  ",
         request: "  Kick off the hiring plan  ",
         ownerAgentId: "agent-1",
@@ -131,15 +131,15 @@ describe("onboarding launch payloads", () => {
     });
 
     expect(
-      buildOnboardingIssuePayload({
+      buildOnboardingTaskPayload({
         title: "   ",
-        request: "The exact ordinary issue request",
+        request: "The exact ordinary task request",
         ownerAgentId: "agent-1",
         projectId: "project-1",
         goalId: null,
       }),
     ).toEqual({
-      request: "The exact ordinary issue request",
+      request: "The exact ordinary task request",
       ownerAgentId: "agent-1",
       idempotencyKey: "onboarding:project-1:agent-1",
       projectId: "project-1",
@@ -149,7 +149,7 @@ describe("onboarding launch payloads", () => {
   it("rejects blank requests even when display title metadata is present", () => {
     for (const request of ["", " \n\t "]) {
       expect(() =>
-        buildOnboardingIssuePayload({
+        buildOnboardingTaskPayload({
           title: "A display title cannot become provider input",
           request,
           ownerAgentId: "agent-1",
@@ -169,11 +169,11 @@ describe("onboarding launch payloads", () => {
       goalId: null,
     };
 
-    const first = buildOnboardingIssuePayload({
+    const first = buildOnboardingTaskPayload({
       ...base,
       title: "First display title",
     });
-    const retry = buildOnboardingIssuePayload({
+    const retry = buildOnboardingTaskPayload({
       ...base,
       title: "Changed display title",
     });

@@ -64,7 +64,7 @@ function stableFilterKey(value: unknown): string {
  * Returns true if the event type matches the subscription pattern.
  *
  * Matching rules:
- * - Exact match: `"issue.board.comment.created"` matches `"issue.board.comment.created"`.
+ * - Exact match: `"task.board.comment.created"` matches `"task.board.comment.created"`.
  * - Wildcard suffix: `"plugin.acme.*"` matches any event type that starts with
  *   `"plugin.acme."`. The wildcard `*` is only supported as a trailing token.
  *
@@ -113,18 +113,18 @@ function matchesPattern(eventType: string, pattern: string): boolean {
  * const linearBus = bus.forPlugin("acme.linear");
  *
  * // Subscribe from the plugin's perspective
- * linearBus.subscribe("issue.board.comment.created", async (event) => {
+ * linearBus.subscribe("task.board.comment.created", async (event) => {
  *   // handle event
  * });
  *
  * // Emit a core domain event (called by the host, not the plugin)
  * await bus.emit({
  *   eventId: "evt-1",
- *   eventType: "issue.board.comment.created",
+ *   eventType: "task.board.comment.created",
  *   occurredAt: new Date().toISOString(),
  *   entityId: "comment-1",
- *   entityType: "issue_comment",
- *   payload: { issueId: "iss-1", commentId: "comment-1" },
+ *   entityType: "task_comment",
+ *   payload: { taskId: "task-1", commentId: "comment-1" },
  * });
  * ```
  */
@@ -365,7 +365,7 @@ interface ScopedPluginEventBus {
    * Subscribe to a core domain event or a plugin-namespaced event.
    *
    * **Pattern syntax:**
-   * - Exact match: `"issue.board.comment.created"` — receives only that event type.
+   * - Exact match: `"task.board.comment.created"` — receives only that event type.
    * - Wildcard suffix: `"plugin.acme.linear.*"` — receives all events emitted by
    *   the `acme.linear` plugin. The `*` is supported only as a trailing token after
    *   a `.` separator; no other glob syntax is supported.
@@ -373,7 +373,7 @@ interface ScopedPluginEventBus {
    *   regardless of which plugin emitted them.
    *
    * Wildcards apply only to the `plugin.*` namespace. Core domain events must be
-   * subscribed to by exact name (e.g. `"issue.board.comment.created"`, not `"issue.*"`).
+   * subscribed to by exact name (e.g. `"task.board.comment.created"`, not `"task.*"`).
    *
    * An optional `EventFilter` can be passed as the second argument to perform
    * server-side pre-filtering; filtered-out events are never delivered to the handler.

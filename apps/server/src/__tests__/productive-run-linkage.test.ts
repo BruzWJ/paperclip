@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { authorizationService } from "../services/authorization.js";
 import {
-  resolveCurrentIssueOwnerRunLinkage,
+  resolveCurrentTaskOwnerRunLinkage,
   resolveProductiveRunLinkage,
 } from "../services/productive-run-linkage.js";
 import { createMockDb } from "./helpers/mock-db.js";
 
 const companyId = "00000000-0000-4000-8000-000000000001";
 const agentId = "00000000-0000-4000-8000-000000000002";
-const issueId = "00000000-0000-4000-8000-000000000003";
+const taskId = "00000000-0000-4000-8000-000000000003";
 const runId = "00000000-0000-4000-8000-000000000004";
 const refId = "00000000-0000-4000-8000-000000000005";
 const sessionId = "00000000-0000-4000-8000-000000000006";
 const adapterConfigRevisionId = "00000000-0000-4000-8000-000000000007";
-const issueExecutionAuthorityId = "00000000-0000-4000-8000-000000000008";
+const taskExecutionAuthorityId = "00000000-0000-4000-8000-000000000008";
 
 const currentOwnerLinkage = {
   runId,
@@ -21,18 +21,18 @@ const currentOwnerLinkage = {
   companyId,
   agentId,
   refId,
-  issueId,
+  taskId,
   projectId: null,
   routineId: null,
   sessionId,
   ownershipEpoch: 1,
   mode: "owner" as const,
-  sourceKind: "issue_request" as const,
-  sourceRecordId: issueId,
+  sourceKind: "task_request" as const,
+  sourceRecordId: taskId,
   adapterConfigRevisionId,
-  issueExecutionAuthorityId,
+  taskExecutionAuthorityId,
   consultExecutionId: null,
-  issueExecutionPolicy: { authorizationPolicy: {} },
+  taskExecutionPolicy: { authorizationPolicy: {} },
   startedAt: new Date("2026-04-21T10:00:00.000Z"),
   finishedAt: null,
   createdAt: new Date("2026-04-21T09:59:00.000Z"),
@@ -51,9 +51,9 @@ describe("productive run linkage", () => {
       companyId,
       agentId,
       refId,
-      issueId,
+      taskId,
       adapterConfigRevisionId,
-      issueExecutionPolicy: { authorizationPolicy: {} },
+      taskExecutionPolicy: { authorizationPolicy: {} },
     });
     expect(calls.filter((call) => call.method === "innerJoin")).toHaveLength(5);
     expect(calls.find((call) => call.method === "limit")?.args).toEqual([1]);
@@ -62,21 +62,21 @@ describe("productive run linkage", () => {
   it("projects a run only while it is the current owner epoch", async () => {
     const { db } = createMockDb({ select: [[currentOwnerLinkage], []] });
 
-    await expect(resolveCurrentIssueOwnerRunLinkage(db, {
+    await expect(resolveCurrentTaskOwnerRunLinkage(db, {
       companyId,
-      issueId,
+      taskId,
     })).resolves.toMatchObject({
       runId,
       refId,
-      issueId,
+      taskId,
       agentId,
       ownershipEpoch: 1,
       mode: "owner",
     });
 
-    await expect(resolveCurrentIssueOwnerRunLinkage(db, {
+    await expect(resolveCurrentTaskOwnerRunLinkage(db, {
       companyId,
-      issueId,
+      taskId,
     })).resolves.toBeNull();
   });
 
@@ -92,7 +92,7 @@ describe("productive run linkage", () => {
       runId,
       companyId,
       agentId,
-    })).resolves.toMatchObject({ refId, issueId });
+    })).resolves.toMatchObject({ refId, taskId });
     await expect(authorizationService(db).decide({
       actor: {
         type: "agent",
@@ -101,11 +101,11 @@ describe("productive run linkage", () => {
         runId,
         source: "internal",
       },
-      action: "issue:read",
+      action: "task:read",
       resource: {
-        type: "issue",
+        type: "task",
         companyId,
-        issueId,
+        taskId,
         ownerKind: "agent",
         ownerAgentId: agentId,
       },

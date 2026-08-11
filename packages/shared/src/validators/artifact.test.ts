@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { companyArtifactsQuerySchema, companyArtifactsResponseSchema } from "./artifact.js";
 
-const issue = {
+const task = {
   id: "11111111-1111-4111-8111-111111111111",
   identifier: "PAP-1",
   title: "Build artifacts",
@@ -17,11 +17,11 @@ const artifact = {
   contentPath: null,
   openPath: null,
   downloadPath: null,
-  issue,
+  task,
   project: null,
   createdByAgent: null,
   updatedAt: "2026-06-06T12:00:00.000Z",
-  href: "/PAP/issues/PAP-1#document-plan",
+  href: "/PAP/tasks/PAP-1#document-plan",
 };
 
 describe("companyArtifactsQuerySchema", () => {
@@ -36,14 +36,14 @@ describe("companyArtifactsQuerySchema", () => {
   it("accepts grouped artifact query parameters", () => {
     expect(
       companyArtifactsQuerySchema.parse({
-        groupBy: "parent_issue",
-        groupIssueId: issue.id,
+        groupBy: "parent_task",
+        groupTaskId: task.id,
         kind: "video",
         q: "render",
       }),
     ).toMatchObject({
-      groupBy: "parent_issue",
-      groupIssueId: issue.id,
+      groupBy: "parent_task",
+      groupTaskId: task.id,
       kind: "video",
       q: "render",
     });
@@ -51,22 +51,22 @@ describe("companyArtifactsQuerySchema", () => {
 
   it("rejects invalid grouped artifact query parameters", () => {
     expect(() => companyArtifactsQuerySchema.parse({ groupBy: "agent" })).toThrow();
-    expect(() => companyArtifactsQuerySchema.parse({ groupIssueId: "PAP-1" })).toThrow();
+    expect(() => companyArtifactsQuerySchema.parse({ groupTaskId: "PAP-1" })).toThrow();
   });
 });
 
 describe("companyArtifactsResponseSchema", () => {
   it("accepts grouped artifact responses with selected group metadata", () => {
     const group = {
-      id: `issue:${issue.id}`,
-      groupBy: "issue",
-      issue,
-      title: issue.title,
+      id: `task:${task.id}`,
+      groupBy: "task",
+      task,
+      title: task.title,
       count: 1,
       mediaKinds: ["document"],
       previewArtifacts: [artifact],
       updatedAt: "2026-06-06T12:00:00.000Z",
-      href: `/PAP/artifacts?groupBy=issue&groupIssueId=${issue.id}`,
+      href: `/PAP/artifacts?groupBy=task&groupTaskId=${task.id}`,
     };
 
     expect(

@@ -34,7 +34,7 @@ export function PluginPage() {
   const routeCompany = useMemo(() => {
     if (!routeCompanyPrefix) return null;
     const requested = routeCompanyPrefix.toUpperCase();
-    return companies.find((c) => c.issuePrefix.toUpperCase() === requested) ?? null;
+    return companies.find((c) => c.taskPrefix.toUpperCase() === requested) ?? null;
   }, [companies, routeCompanyPrefix]);
   const hasInvalidCompanyPrefix = Boolean(routeCompanyPrefix) && !routeCompany;
 
@@ -45,7 +45,7 @@ export function PluginPage() {
   }, [routeCompany, routeCompanyPrefix, selectedCompanyId]);
 
   const companyPrefix = useMemo(
-    () => (resolvedCompanyId ? companies.find((c) => c.id === resolvedCompanyId)?.issuePrefix ?? null : null),
+    () => (resolvedCompanyId ? companies.find((c) => c.id === resolvedCompanyId)?.taskPrefix ?? null : null),
     [companies, resolvedCompanyId],
   );
 

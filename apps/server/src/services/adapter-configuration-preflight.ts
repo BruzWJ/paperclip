@@ -6,7 +6,7 @@ import {
   type AdapterRuntimeReadinessIncompleteReason,
   type AdapterRuntimeReadinessScope,
   type AgentAdapterAcpConfiguration,
-  type IssueExecutionRunStatus,
+  type TaskExecutionRunStatus,
 } from "@paperclipai/shared";
 import {
   AcpxRuntimeReadinessCapabilityError,
@@ -15,20 +15,20 @@ import {
 } from "@paperclipai/adapter-utils/acpx-runtime";
 import { notFound } from "../errors.js";
 import {
-  createIssueExecutionTargetAcquirer,
-  type AcquiredIssueExecutionTarget,
-  type IssueExecutionTargetAcquirer,
-} from "./issue-execution-provider-configuration.js";
+  createTaskExecutionTargetAcquirer,
+  type AcquiredTaskExecutionTarget,
+  type TaskExecutionTargetAcquirer,
+} from "./task-execution-provider-configuration.js";
 import {
   LocalExecutionTargetError,
   type LocalExecutionOrchestrator,
 } from "./local-execution-orchestrator.js";
 import {
-  readIssueExecutionRuntimeReadinessBinding,
-  type IssueExecutionRuntimeReadinessBinding,
-} from "./issue-execution-run-service.js";
+  readTaskExecutionRuntimeReadinessBinding,
+  type TaskExecutionRuntimeReadinessBinding,
+} from "./task-execution-run-service.js";
 
-const PREFLIGHTABLE_RUN_STATUSES = new Set<IssueExecutionRunStatus>([
+const PREFLIGHTABLE_RUN_STATUSES = new Set<TaskExecutionRunStatus>([
   "queued",
   "scheduled_retry",
   "running",
@@ -36,18 +36,18 @@ const PREFLIGHTABLE_RUN_STATUSES = new Set<IssueExecutionRunStatus>([
 
 export interface AdapterRuntimeReadinessIdentity {
   readonly companyId: string;
-  readonly issueId: string;
+  readonly taskId: string;
   readonly runId: string;
 }
 
 export interface AdapterRuntimeReadinessRepository {
   loadExactBinding(
     identity: AdapterRuntimeReadinessIdentity,
-  ): Promise<IssueExecutionRuntimeReadinessBinding | null>;
+  ): Promise<TaskExecutionRuntimeReadinessBinding | null>;
 }
 
 export interface AdapterConfigurationPreflightRuntime {
-  readonly targetAcquirer: IssueExecutionTargetAcquirer;
+  readonly targetAcquirer: TaskExecutionTargetAcquirer;
 }
 
 export interface AdapterConfigurationPreflightService {
@@ -61,13 +61,13 @@ function createPostgresAdapterRuntimeReadinessRepository(
 ): AdapterRuntimeReadinessRepository {
   return {
     async loadExactBinding(identity) {
-      return readIssueExecutionRuntimeReadinessBinding(db, identity);
+      return readTaskExecutionRuntimeReadinessBinding(db, identity);
     },
   };
 }
 
 function readinessScope(
-  binding: IssueExecutionRuntimeReadinessBinding,
+  binding: TaskExecutionRuntimeReadinessBinding,
 ): AdapterRuntimeReadinessScope {
   return {
     runId: binding.runId,
@@ -113,7 +113,7 @@ function acquisitionFailureReason(
 }
 
 async function releaseReadinessTarget(
-  acquired: AcquiredIssueExecutionTarget,
+  acquired: AcquiredTaskExecutionTarget,
   failed: boolean,
 ): Promise<boolean> {
   return await acquired
@@ -130,7 +130,7 @@ export function createAdapterConfigurationPreflightService(options: {
     async inspect(identity) {
       const binding = await options.repository.loadExactBinding(identity);
       if (!binding) {
-        throw notFound("Issue execution run not found");
+        throw notFound("Task execution run not found");
       }
       const scope = readinessScope(binding);
       if (
@@ -158,11 +158,11 @@ export function createAdapterConfigurationPreflightService(options: {
         return incomplete(scope, "adapter_revision_invalid");
       }
 
-      let acquired: AcquiredIssueExecutionTarget;
+      let acquired: AcquiredTaskExecutionTarget;
       try {
         acquired = await options.runtime.targetAcquirer.acquire({
           companyId: binding.companyId,
-          issueId: binding.issueId,
+          taskId: binding.taskId,
           runId: binding.runId,
           targetAgentId: binding.agentId,
           adapterConfigRevisionId: binding.adapterConfigRevisionId,
@@ -220,7 +220,7 @@ export function createPostgresAdapterConfigurationPreflightService(
   return createAdapterConfigurationPreflightService({
     repository: createPostgresAdapterRuntimeReadinessRepository(db),
     runtime: {
-      targetAcquirer: createIssueExecutionTargetAcquirer({
+      targetAcquirer: createTaskExecutionTargetAcquirer({
         localExecutionOrchestrator: options.localExecutionOrchestrator,
       }),
     },

@@ -3,7 +3,7 @@ import {
   activityLog,
   authUsers,
   invites,
-  issues as issuesTable,
+  tasks as tasksTable,
   pluginLogs,
   principalPermissionGrants,
 } from "@paperclipai/db";
@@ -26,7 +26,7 @@ import {
   type AgentSuspensionService,
 } from "./agents.js";
 import { projectService, toPublicProject } from "./projects.js";
-import { issueService } from "./issues.js";
+import { taskService } from "./tasks.js";
 import { goalService } from "./goals.js";
 import { createCompanyInvite } from "./company-invite-creation.js";
 import { pluginRegistryService } from "./plugin-registry.js";
@@ -63,9 +63,9 @@ import { authorizationService, type AuthorizationActor } from "./authorization.j
 import { sanitizeRecord } from "../redaction.js";
 import {
   assertPluginInstallationRequestScope,
-  PluginIssueAuthorizationRejected,
-} from "./plugin-issue-authorization.js";
-import type { OrdinaryIssueRuntime } from "./ordinary-issue-runtime.js";
+  PluginTaskAuthorizationRejected,
+} from "./plugin-task-authorization.js";
+import type { OrdinaryTaskRuntime } from "./ordinary-task-runtime.js";
 import { badRequest } from "../errors.js";
 
 // ---------------------------------------------------------------------------
@@ -382,89 +382,89 @@ function sanitiseMeta(meta: Record<string, unknown> | null | undefined): Record<
  * @param eventBus - The system-wide event bus for publishing plugin events.
  * @returns An object implementing the HostServices interface for the plugin SDK.
  */
-type PluginIssueInstallationContext = {
+type PluginTaskInstallationContext = {
   pluginInstallationId: string;
   pluginKey: string;
 };
 
-type PluginIssueMutationContext = PluginIssueInstallationContext & {
+type PluginTaskMutationContext = PluginTaskInstallationContext & {
   hostRpcOperationId: string;
 };
 
 /**
- * Canonical installation-bound issue control plane. There is intentionally no
- * direct issue-service fallback: an unconfigured host fails closed instead of
- * bypassing issue ownership, creator, Session, or idempotency invariants.
+ * Canonical installation-bound task control plane. There is intentionally no
+ * direct task-service fallback: an unconfigured host fails closed instead of
+ * bypassing task ownership, creator, Session, or idempotency invariants.
  */
-export interface PluginIssueControlPlane {
+export interface PluginTaskControlPlane {
   list(
-    params: WorkerToHostMethods["issues.list"][0] & PluginIssueInstallationContext,
-  ): Promise<WorkerToHostMethods["issues.list"][1]>;
+    params: WorkerToHostMethods["tasks.list"][0] & PluginTaskInstallationContext,
+  ): Promise<WorkerToHostMethods["tasks.list"][1]>;
   get(
-    params: WorkerToHostMethods["issues.get"][0] & PluginIssueInstallationContext,
-  ): Promise<WorkerToHostMethods["issues.get"][1]>;
+    params: WorkerToHostMethods["tasks.get"][0] & PluginTaskInstallationContext,
+  ): Promise<WorkerToHostMethods["tasks.get"][1]>;
   create(
-    params: WorkerToHostMethods["issues.create"][0]
-      & PluginIssueMutationContext
+    params: WorkerToHostMethods["tasks.create"][0]
+      & PluginTaskMutationContext
       & { callbackRegistrationActive: true },
-  ): Promise<WorkerToHostMethods["issues.create"][1]>;
+  ): Promise<WorkerToHostMethods["tasks.create"][1]>;
   update(
-    params: WorkerToHostMethods["issues.update"][0] & PluginIssueMutationContext,
-  ): Promise<WorkerToHostMethods["issues.update"][1]>;
+    params: WorkerToHostMethods["tasks.update"][0] & PluginTaskMutationContext,
+  ): Promise<WorkerToHostMethods["tasks.update"][1]>;
   withdraw(
-    params: WorkerToHostMethods["issues.withdraw"][0] & PluginIssueMutationContext,
-  ): Promise<WorkerToHostMethods["issues.withdraw"][1]>;
+    params: WorkerToHostMethods["tasks.withdraw"][0] & PluginTaskMutationContext,
+  ): Promise<WorkerToHostMethods["tasks.withdraw"][1]>;
 }
 
-export interface PluginRunIssueContextReader {
+export interface PluginRunTaskContextReader {
   resolveContext(
     params: WorkerToHostMethods["run.context.resolve"][0]
-      & PluginIssueInstallationContext,
+      & PluginTaskInstallationContext,
   ): Promise<WorkerToHostMethods["run.context.resolve"][1]>;
-  issueReach(
-    params: WorkerToHostMethods["run.context.issueReach"][0]
-      & PluginIssueInstallationContext,
-  ): Promise<WorkerToHostMethods["run.context.issueReach"][1]>;
-  listCompanyIssues(
-    params: WorkerToHostMethods["run.issues.listCompanyIssues"][0]
-      & PluginIssueInstallationContext,
-  ): Promise<WorkerToHostMethods["run.issues.listCompanyIssues"][1]>;
-  listSubIssues(
-    params: WorkerToHostMethods["run.issues.listSubIssues"][0]
-      & PluginIssueInstallationContext,
-  ): Promise<WorkerToHostMethods["run.issues.listSubIssues"][1]>;
-  readIssueComments(
-    params: WorkerToHostMethods["run.issues.readIssueComments"][0]
-      & PluginIssueInstallationContext,
-  ): Promise<WorkerToHostMethods["run.issues.readIssueComments"][1]>;
-  readIssueAgentRun(
-    params: WorkerToHostMethods["run.issues.readIssueAgentRun"][0]
-      & PluginIssueInstallationContext,
-  ): Promise<WorkerToHostMethods["run.issues.readIssueAgentRun"][1]>;
+  taskReach(
+    params: WorkerToHostMethods["run.context.taskReach"][0]
+      & PluginTaskInstallationContext,
+  ): Promise<WorkerToHostMethods["run.context.taskReach"][1]>;
+  listCompanyTasks(
+    params: WorkerToHostMethods["run.tasks.listCompanyTasks"][0]
+      & PluginTaskInstallationContext,
+  ): Promise<WorkerToHostMethods["run.tasks.listCompanyTasks"][1]>;
+  listSubTasks(
+    params: WorkerToHostMethods["run.tasks.listSubTasks"][0]
+      & PluginTaskInstallationContext,
+  ): Promise<WorkerToHostMethods["run.tasks.listSubTasks"][1]>;
+  readTaskComments(
+    params: WorkerToHostMethods["run.tasks.readTaskComments"][0]
+      & PluginTaskInstallationContext,
+  ): Promise<WorkerToHostMethods["run.tasks.readTaskComments"][1]>;
+  readTaskAgentRun(
+    params: WorkerToHostMethods["run.tasks.readTaskAgentRun"][0]
+      & PluginTaskInstallationContext,
+  ): Promise<WorkerToHostMethods["run.tasks.readTaskAgentRun"][1]>;
 }
 
 export interface PluginRuntimeRecordsReader {
   readSession(
     params: WorkerToHostMethods["runtime.records.readSession"][0]
-      & PluginIssueInstallationContext,
+      & PluginTaskInstallationContext,
   ): Promise<WorkerToHostMethods["runtime.records.readSession"][1]>;
   readRun(
     params: WorkerToHostMethods["runtime.records.readRun"][0]
-      & PluginIssueInstallationContext,
+      & PluginTaskInstallationContext,
   ): Promise<WorkerToHostMethods["runtime.records.readRun"][1]>;
-  readIssueComments(
-    params: WorkerToHostMethods["runtime.records.readIssueComments"][0]
-      & PluginIssueInstallationContext,
-  ): Promise<WorkerToHostMethods["runtime.records.readIssueComments"][1]>;
+  readTaskComments(
+    params: WorkerToHostMethods["runtime.records.readTaskComments"][0]
+      & PluginTaskInstallationContext,
+  ): Promise<WorkerToHostMethods["runtime.records.readTaskComments"][1]>;
 }
 
 export interface PluginHostServicesOptions {
   manifest: import("@paperclipai/shared").PaperclipPluginManifestV1;
-  pluginIssueControlPlane: PluginIssueControlPlane;
-  pluginRunIssueContextReader: PluginRunIssueContextReader;
+  pluginTaskControlPlane: PluginTaskControlPlane;
+  pluginRunTaskContextReader: PluginRunTaskContextReader;
   pluginRuntimeRecordsReader: PluginRuntimeRecordsReader;
-  ordinaryIssues: OrdinaryIssueRuntime;
-  issueExecutionCancellation: AgentSuspensionService;
+  ordinaryTasks: OrdinaryTaskRuntime;
+  taskExecutionCancellation: AgentSuspensionService;
 }
 
 export function buildHostServices(
@@ -487,7 +487,7 @@ export function buildHostServices(
   const managedRoutines = pluginManagedRoutineService(db, {
     pluginId,
     manifest: options.manifest,
-    ordinaryIssues: options.ordinaryIssues,
+    ordinaryTasks: options.ordinaryTasks,
   });
   const managedSkills = pluginManagedSkillService(db, {
     pluginId,
@@ -495,13 +495,13 @@ export function buildHostServices(
   });
   const registeredCreatorCallbacks = new Set<string>();
   const projects = projectService(db);
-  const issues = issueService(db);
+  const tasks = taskService(db);
   const goals = goalService(db);
   const access = accessService(db);
   const authorization = authorizationService(db);
   const scopedBus = eventBus.forPlugin(pluginKey);
 
-  const pluginIssueRuntime = options.pluginIssueControlPlane;
+  const pluginTaskRuntime = options.pluginTaskControlPlane;
 
   const toPluginEntityRecord = (
     entity: NonNullable<Awaited<ReturnType<typeof registry.upsertEntity>>>,
@@ -569,7 +569,7 @@ export function buildHostServices(
       try {
         await ensurePluginAvailableForCompany(event.companyId);
       } catch (error) {
-        if (error instanceof PluginIssueAuthorizationRejected) return;
+        if (error instanceof PluginTaskAuthorizationRejected) return;
         throw error;
       }
     }
@@ -758,18 +758,18 @@ export function buildHostServices(
     };
   };
 
-  const policyPathForResource = (resourceType: "company" | "agent" | "issue") => {
+  const policyPathForResource = (resourceType: "company" | "agent" | "task") => {
     switch (resourceType) {
       case "agent":
         return { table: "agent" as const };
-      case "issue":
-        return { table: "issue" as const };
+      case "task":
+        return { table: "task" as const };
       case "company":
         return { table: "company" as const };
     }
   };
 
-  const readAuthorizationPolicy = async (companyId: string, resourceType: "company" | "agent" | "issue", resourceId: string) => {
+  const readAuthorizationPolicy = async (companyId: string, resourceType: "company" | "agent" | "task", resourceId: string) => {
     const pathInfo = policyPathForResource(resourceType);
     if (pathInfo.table === "agent") {
       const agent = await agents.getById(resourceId);
@@ -782,18 +782,18 @@ export function buildHostServices(
         updatedAt: agent.updatedAt,
       };
     }
-    if (pathInfo.table === "issue") {
-      const issue = await issues.getById(resourceId);
-      if (!inCompany(issue, companyId)) return null;
-      const policy = issue.executionPolicy && typeof issue.executionPolicy === "object"
-        ? (issue.executionPolicy as Record<string, unknown>).authorizationPolicy
+    if (pathInfo.table === "task") {
+      const task = await tasks.getById(resourceId);
+      if (!inCompany(task, companyId)) return null;
+      const policy = task.executionPolicy && typeof task.executionPolicy === "object"
+        ? (task.executionPolicy as Record<string, unknown>).authorizationPolicy
         : null;
       return {
         resourceType,
         resourceId,
         companyId,
         policy: policy && typeof policy === "object" ? sanitizeRecord(policy as Record<string, unknown>) : null,
-        updatedAt: issue.updatedAt,
+        updatedAt: task.updatedAt,
       };
     }
     const company = await companies.getById(resourceId);
@@ -1025,10 +1025,10 @@ export function buildHostServices(
           pluginKey,
         });
       },
-      async readIssueComments(params) {
+      async readTaskComments(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        return options.pluginRuntimeRecordsReader.readIssueComments({
+        return options.pluginRuntimeRecordsReader.readTaskComments({
           ...params,
           companyId,
           pluginInstallationId: pluginId,
@@ -1231,11 +1231,11 @@ export function buildHostServices(
       },
     },
 
-    issues: {
+    tasks: {
       async list(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        return pluginIssueRuntime.list({
+        return pluginTaskRuntime.list({
           ...params,
           companyId,
           pluginInstallationId: pluginId,
@@ -1245,7 +1245,7 @@ export function buildHostServices(
       async get(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        return pluginIssueRuntime.get({
+        return pluginTaskRuntime.get({
           ...params,
           companyId,
           pluginInstallationId: pluginId,
@@ -1277,7 +1277,7 @@ export function buildHostServices(
             `Creator callback is not registered: ${params.callbackKey}@${params.callbackVersion}`,
           );
         }
-        return pluginIssueRuntime.create({
+        return pluginTaskRuntime.create({
           ...params,
           companyId,
           pluginInstallationId: pluginId,
@@ -1289,7 +1289,7 @@ export function buildHostServices(
       async update(params, operation) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        return pluginIssueRuntime.update({
+        return pluginTaskRuntime.update({
           ...params,
           companyId,
           pluginInstallationId: pluginId,
@@ -1300,7 +1300,7 @@ export function buildHostServices(
       async withdraw(params, operation) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        return pluginIssueRuntime.withdraw({
+        return pluginTaskRuntime.withdraw({
           ...params,
           companyId,
           pluginInstallationId: pluginId,
@@ -1310,44 +1310,44 @@ export function buildHostServices(
       },
     },
 
-    runIssues: {
+    runTasks: {
       async resolveContext(params) {
-        return options.pluginRunIssueContextReader.resolveContext({
+        return options.pluginRunTaskContextReader.resolveContext({
           ...params,
           pluginInstallationId: pluginId,
           pluginKey,
         });
       },
-      async issueReach(params) {
-        return options.pluginRunIssueContextReader.issueReach({
+      async taskReach(params) {
+        return options.pluginRunTaskContextReader.taskReach({
           ...params,
           pluginInstallationId: pluginId,
           pluginKey,
         });
       },
-      async listCompanyIssues(params) {
-        return options.pluginRunIssueContextReader.listCompanyIssues({
+      async listCompanyTasks(params) {
+        return options.pluginRunTaskContextReader.listCompanyTasks({
           ...params,
           pluginInstallationId: pluginId,
           pluginKey,
         });
       },
-      async listSubIssues(params) {
-        return options.pluginRunIssueContextReader.listSubIssues({
+      async listSubTasks(params) {
+        return options.pluginRunTaskContextReader.listSubTasks({
           ...params,
           pluginInstallationId: pluginId,
           pluginKey,
         });
       },
-      async readIssueComments(params) {
-        return options.pluginRunIssueContextReader.readIssueComments({
+      async readTaskComments(params) {
+        return options.pluginRunTaskContextReader.readTaskComments({
           ...params,
           pluginInstallationId: pluginId,
           pluginKey,
         });
       },
-      async readIssueAgentRun(params) {
-        return options.pluginRunIssueContextReader.readIssueAgentRun({
+      async readTaskAgentRun(params) {
+        return options.pluginRunTaskContextReader.readTaskAgentRun({
           ...params,
           pluginInstallationId: pluginId,
           pluginKey,
@@ -1378,7 +1378,7 @@ export function buildHostServices(
         requireInCompany("Agent", agent, companyId);
         const updated = await agents.pause(params.agentId, {
           actor: { kind: "system" },
-          issueExecutionCancellation: options.issueExecutionCancellation,
+          taskExecutionCancellation: options.taskExecutionCancellation,
         });
         if (!updated) throw new Error("Agent not found after pause");
         return updated;
@@ -1676,22 +1676,22 @@ export function buildHostServices(
       async updatePolicy(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        if (params.resourceType !== "issue") {
+        if (params.resourceType !== "task") {
           throw new Error(
-            "Plugin authorization policy updates only support issue resources.",
+            "Plugin authorization policy updates only support task resources.",
           );
         }
         const policy = params.policy ? sanitizeRecord(params.policy) : null;
-        const issue = requireInCompany("Issue", await issues.getById(params.resourceId), companyId);
-        const executionPolicy = issue.executionPolicy && typeof issue.executionPolicy === "object"
-          ? { ...(issue.executionPolicy as Record<string, unknown>) }
+        const task = requireInCompany("Task", await tasks.getById(params.resourceId), companyId);
+        const executionPolicy = task.executionPolicy && typeof task.executionPolicy === "object"
+          ? { ...(task.executionPolicy as Record<string, unknown>) }
           : {};
         if (policy) executionPolicy.authorizationPolicy = policy;
         else delete executionPolicy.authorizationPolicy;
         await db
-          .update(issuesTable)
+          .update(tasksTable)
           .set({ executionPolicy, updatedAt: new Date() })
-          .where(eq(issuesTable.id, issue.id));
+          .where(eq(tasksTable.id, task.id));
         await logPluginActivity({
           companyId,
           action: "authorization.policy_updated_by_plugin",

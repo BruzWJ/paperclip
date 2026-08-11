@@ -22,7 +22,7 @@ vi.mock("../services/budgets.js", async () => ({
 
 const companyId = "00000000-0000-4000-8000-000000000001";
 const approvalId = "00000000-0000-4000-8000-000000000010";
-const reviewIssueId = "00000000-0000-4000-8000-000000000020";
+const reviewTaskId = "00000000-0000-4000-8000-000000000020";
 const at = new Date("2026-07-09T12:00:00.000Z");
 
 function emptyRuntimeDependencies() {
@@ -32,11 +32,11 @@ function emptyRuntimeDependencies() {
 function approvalOnlySelectPlan(input: {
   updatedAt?: Date;
   dismissal?: Record<string, unknown> | null;
-  linkedIssueRows?: Array<Record<string, unknown>>;
+  linkedTaskRows?: Array<Record<string, unknown>>;
 }) {
   const updatedAt = input.updatedAt ?? at;
   return [
-    [{ issuePrefix: "ATN" }],
+    [{ taskPrefix: "ATN" }],
     input.dismissal ? [input.dismissal] : [],
     [{
       id: approvalId,
@@ -48,7 +48,7 @@ function approvalOnlySelectPlan(input: {
       createdAt: at,
       updatedAt,
     }],
-    input.linkedIssueRows ?? [],
+    input.linkedTaskRows ?? [],
     [],
     [],
     [],
@@ -104,7 +104,7 @@ describe("attention service", () => {
       }],
     });
     const review = {
-      id: reviewIssueId,
+      id: reviewTaskId,
       companyId,
       identifier: "ATN-6",
       title: "Human review",
@@ -116,10 +116,10 @@ describe("attention service", () => {
       createdAt: at,
       updatedAt: new Date("2026-07-09T12:02:00.000Z"),
     };
-    const boardMentionIssueId = "00000000-0000-4000-8000-000000000021";
+    const boardMentionTaskId = "00000000-0000-4000-8000-000000000021";
     const boardMention = {
       id: "00000000-0000-4000-8000-000000000030",
-      issueId: boardMentionIssueId,
+      taskId: boardMentionTaskId,
       agentId: "00000000-0000-4000-8000-000000000031",
       ownershipEpoch: 1,
       message: "Which rollout should I use?",
@@ -127,7 +127,7 @@ describe("attention service", () => {
     };
     const harness = createMockDb({
       select: [
-        [{ issuePrefix: "ATN" }],
+        [{ taskPrefix: "ATN" }],
         [],
         [{
           id: approvalId,
@@ -139,7 +139,7 @@ describe("attention service", () => {
           createdAt: at,
           updatedAt: at,
         }],
-        [{ approvalId, issueId: reviewIssueId }],
+        [{ approvalId, taskId: reviewTaskId }],
         [{
           id: "join-1",
           requestType: "human",
@@ -167,7 +167,7 @@ describe("attention service", () => {
           ...boardMention,
         }],
         [{
-          id: boardMentionIssueId,
+          id: boardMentionTaskId,
           companyId,
           identifier: "ATN-7",
           title: "Choose rollout path",
@@ -221,7 +221,7 @@ describe("attention service", () => {
     const reopenFence = harness.calls.find((call) =>
       call.method === "where" &&
       new PgDialect().sqlToQuery(call.args[0] as never).sql
-        .includes("issue_board_reopen_commands")
+        .includes("task_board_reopen_commands")
     );
     expect(reopenFence).toBeDefined();
     expect(new PgDialect().sqlToQuery(reopenFence!.args[0] as never).sql)
@@ -268,14 +268,14 @@ describe("attention service", () => {
     });
   });
 
-  it("deduplicates an approval linked to multiple issues and selects the first ordered link", async () => {
-    const firstIssueId = "00000000-0000-4000-8000-000000000001";
-    const secondIssueId = "00000000-0000-4000-8000-000000000002";
+  it("deduplicates an approval linked to multiple tasks and selects the first ordered link", async () => {
+    const firstTaskId = "00000000-0000-4000-8000-000000000001";
+    const secondTaskId = "00000000-0000-4000-8000-000000000002";
     const harness = createMockDb({
       select: approvalOnlySelectPlan({
-        linkedIssueRows: [
-          { approvalId, issueId: firstIssueId },
-          { approvalId, issueId: secondIssueId },
+        linkedTaskRows: [
+          { approvalId, taskId: firstTaskId },
+          { approvalId, taskId: secondTaskId },
         ],
       }),
     });
@@ -285,12 +285,12 @@ describe("attention service", () => {
     expect(feed.items).toHaveLength(1);
     expect(feed.items[0]).toMatchObject({
       dedupKey: `approval:${approvalId}`,
-      subject: { metadata: { issueId: firstIssueId } },
+      subject: { metadata: { taskId: firstTaskId } },
     });
   });
 
   it("serves board users and rejects agent callers without database infrastructure", async () => {
-    const boardHarness = createMockDb({ select: [[{ issuePrefix: "ATN" }], [], [], [], [], []] });
+    const boardHarness = createMockDb({ select: [[{ taskPrefix: "ATN" }], [], [], [], [], []] });
     const agentHarness = createMockDb();
     const agent = {
       type: "agent",

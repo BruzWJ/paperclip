@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import type { Db } from "@paperclipai/db";
 import {
   agents as agentsTable,
-  issues as issuesTable,
+  tasks as tasksTable,
 } from "@paperclipai/db";
 import { and, eq } from "drizzle-orm";
 import {
@@ -17,7 +17,7 @@ import {
   runtimeAgentCreateConfigurationSchema,
   runtimeAgentUpdateConfigurationSchema,
   type AgentAdapterConfigRevision,
-  type InvokableIssueOwnerCatalogEntry,
+  type InvokableTaskOwnerCatalogEntry,
 } from "@paperclipai/shared";
 import { trackAgentCreated } from "@paperclipai/shared/telemetry";
 import { validate } from "../middleware/validate.js";
@@ -31,7 +31,7 @@ import {
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
-import type { OrdinaryIssueRuntime } from "../services/ordinary-issue-runtime.js";
+import type { OrdinaryTaskRuntime } from "../services/ordinary-task-runtime.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
 import {
   findServerAdapter,
@@ -57,9 +57,9 @@ import {
   terminatePluginManagedAgentFromBoard,
 } from "../services/plugin-managed-agents.js";
 import { createCompanyModelCatalog } from "../services/company-model-catalog.js";
-import type { IssueSessionStore } from "../services/issue-session/store.js";
-import type { IssueExecutionCancellationService } from "../services/issue-execution-cancellation.js";
-import { resolveInvokableIssueOwnerCatalogFromDb } from "../services/agent-invokability.js";
+import type { TaskSessionStore } from "../services/task-session/store.js";
+import type { TaskExecutionCancellationService } from "../services/task-execution-cancellation.js";
+import { resolveInvokableTaskOwnerCatalogFromDb } from "../services/agent-invokability.js";
 import {
   createAdapterConfigurationDraftTestService,
 } from "../services/adapter-configuration-draft-test.js";
@@ -68,10 +68,10 @@ export function agentRoutes(
   db: Db,
   options: {
     pluginWorkerManager?: PluginWorkerManager;
-    issueSessionStore?: IssueSessionStore;
-    ordinaryIssues: OrdinaryIssueRuntime;
-    issueExecutionCancellation: Pick<
-      IssueExecutionCancellationService,
+    taskSessionStore?: TaskSessionStore;
+    ordinaryTasks: OrdinaryTaskRuntime;
+    taskExecutionCancellation: Pick<
+      TaskExecutionCancellationService,
       | "requestAgentCancellationsInTransaction"
       | "reconcileRequestedCancellations"
       | "requestAgentSuspensionsInTransaction"
@@ -82,10 +82,10 @@ export function agentRoutes(
   const svc = agentService(db);
   const access = accessService(db);
   const approvalsSvc = approvalService(db, {
-    issueExecutionCancellation: options.issueExecutionCancellation,
+    taskExecutionCancellation: options.taskExecutionCancellation,
     terminateHireRejectionAgentInTransaction:
       terminateAgentForHireRejectionInTransaction,
-    dispatchRef: options.ordinaryIssues.dispatchRef,
+    dispatchRef: options.ordinaryTasks.dispatchRef,
   });
   const instanceSettings = instanceSettingsService(db);
   const runtimeAgentConfiguration =
@@ -491,14 +491,14 @@ export function agentRoutes(
     res.json(result.map((agent) => redactForRestrictedAgentView(agent)));
   });
 
-  router.get("/companies/:companyId/issue-owner-catalog", async (req, res) => {
+  router.get("/companies/:companyId/task-owner-catalog", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertBoard(req);
     assertCompanyAccess(req, companyId);
-    const catalog = await resolveInvokableIssueOwnerCatalogFromDb(db, {
+    const catalog = await resolveInvokableTaskOwnerCatalogFromDb(db, {
       companyId,
     });
-    const entries: InvokableIssueOwnerCatalogEntry[] = [...catalog.values()]
+    const entries: InvokableTaskOwnerCatalogEntry[] = [...catalog.values()]
       .map(({ owner }) => ({
         id: owner.id,
         name: owner.name,
@@ -961,8 +961,8 @@ export function agentRoutes(
           agentId: existing.id,
           actorUserId: req.actor.userId,
         }, {
-          issueExecutionCancellation: options.issueExecutionCancellation,
-          dispatchRef: options.ordinaryIssues.dispatchRef,
+          taskExecutionCancellation: options.taskExecutionCancellation,
+          dispatchRef: options.ordinaryTasks.dispatchRef,
         });
       if (!managedTermination) {
         const openApproval =
@@ -981,8 +981,8 @@ export function agentRoutes(
             id,
             {
               actor: { kind: "user", userId: req.actor.userId },
-              issueExecutionCancellation: options.issueExecutionCancellation,
-              dispatchRef: options.ordinaryIssues.dispatchRef,
+              taskExecutionCancellation: options.taskExecutionCancellation,
+              dispatchRef: options.ordinaryTasks.dispatchRef,
             },
           );
         }
@@ -1007,7 +1007,7 @@ export function agentRoutes(
     await assertNotPluginManagedTriage(existing);
     const agent = await svc.pause(id, {
       actor: { kind: "user", userId: req.actor.userId },
-      issueExecutionCancellation: options.issueExecutionCancellation,
+      taskExecutionCancellation: options.taskExecutionCancellation,
     });
     if (!agent) {
       res.status(404).json({ error: "Agent not found" });
@@ -1104,8 +1104,8 @@ export function agentRoutes(
       agentId: existing.id,
       actorUserId: req.actor.userId,
     }, {
-      issueExecutionCancellation: options.issueExecutionCancellation,
-      dispatchRef: options.ordinaryIssues.dispatchRef,
+      taskExecutionCancellation: options.taskExecutionCancellation,
+      dispatchRef: options.ordinaryTasks.dispatchRef,
     });
     if (managedTermination) {
       agent = await svc.getById(id);
@@ -1121,8 +1121,8 @@ export function agentRoutes(
         id,
         {
           actor: { kind: "user", userId: req.actor.userId },
-          issueExecutionCancellation: options.issueExecutionCancellation,
-          dispatchRef: options.ordinaryIssues.dispatchRef,
+          taskExecutionCancellation: options.taskExecutionCancellation,
+          dispatchRef: options.ordinaryTasks.dispatchRef,
         },
       );
     }

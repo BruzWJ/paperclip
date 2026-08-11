@@ -12,26 +12,26 @@ import { api } from "./client";
 export type DocumentAnnotationListFilter = "open" | "resolved" | "all";
 
 export type DocumentAnnotationTarget =
-  | { kind: "issue"; issueId: string; documentKey: string }
+  | { kind: "task"; taskId: string; documentKey: string }
   | { kind: "routine"; routineId: string; documentKey: "description" };
 
-function issueTarget(issueId: string, documentKey: string): DocumentAnnotationTarget {
-  return { kind: "issue", issueId, documentKey };
+function taskTarget(taskId: string, documentKey: string): DocumentAnnotationTarget {
+  return { kind: "task", taskId, documentKey };
 }
 
 function targetBasePath(target: DocumentAnnotationTarget) {
   if (target.kind === "routine") {
     return `/routines/${target.routineId}/description/annotations`;
   }
-  return `/issues/${target.issueId}/documents/${encodeURIComponent(target.documentKey)}/annotations`;
+  return `/tasks/${target.taskId}/documents/${encodeURIComponent(target.documentKey)}/annotations`;
 }
 
 export const documentAnnotationsApi = {
   list: (
-    issueId: string,
+    taskId: string,
     key: string,
     options: { status?: DocumentAnnotationListFilter; includeComments?: boolean } = {},
-  ) => documentAnnotationsApi.listForTarget(issueTarget(issueId, key), options),
+  ) => documentAnnotationsApi.listForTarget(taskTarget(taskId, key), options),
   listForTarget: (
     target: DocumentAnnotationTarget,
     options: { status?: DocumentAnnotationListFilter; includeComments?: boolean } = {},
@@ -44,25 +44,25 @@ export const documentAnnotationsApi = {
       `${targetBasePath(target)}${qs ? `?${qs}` : ""}`,
     );
   },
-  get: (issueId: string, key: string, threadId: string) =>
-    documentAnnotationsApi.getForTarget(issueTarget(issueId, key), threadId),
+  get: (taskId: string, key: string, threadId: string) =>
+    documentAnnotationsApi.getForTarget(taskTarget(taskId, key), threadId),
   getForTarget: (target: DocumentAnnotationTarget, threadId: string) =>
     api.get<DocumentAnnotationThreadWithComments>(
       `${targetBasePath(target)}/${threadId}`,
     ),
-  create: (issueId: string, key: string, data: CreateDocumentAnnotationThreadRequest) =>
-    documentAnnotationsApi.createForTarget(issueTarget(issueId, key), data),
+  create: (taskId: string, key: string, data: CreateDocumentAnnotationThreadRequest) =>
+    documentAnnotationsApi.createForTarget(taskTarget(taskId, key), data),
   createForTarget: (target: DocumentAnnotationTarget, data: CreateDocumentAnnotationThreadRequest) =>
     api.post<DocumentAnnotationThreadWithComments>(
       targetBasePath(target),
       data,
     ),
   addComment: (
-    issueId: string,
+    taskId: string,
     key: string,
     threadId: string,
     data: CreateDocumentAnnotationCommentRequest,
-  ) => documentAnnotationsApi.addCommentForTarget(issueTarget(issueId, key), threadId, data),
+  ) => documentAnnotationsApi.addCommentForTarget(taskTarget(taskId, key), threadId, data),
   addCommentForTarget: (
     target: DocumentAnnotationTarget,
     threadId: string,
@@ -73,11 +73,11 @@ export const documentAnnotationsApi = {
       data,
     ),
   updateStatus: (
-    issueId: string,
+    taskId: string,
     key: string,
     threadId: string,
     status: DocumentAnnotationThreadStatus,
-  ) => documentAnnotationsApi.updateStatusForTarget(issueTarget(issueId, key), threadId, status),
+  ) => documentAnnotationsApi.updateStatusForTarget(taskTarget(taskId, key), threadId, status),
   updateStatusForTarget: (
     target: DocumentAnnotationTarget,
     threadId: string,

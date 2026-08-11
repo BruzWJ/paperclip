@@ -17,8 +17,8 @@ function service(): PromptCapabilityGateway {
   return {
     listTools: vi.fn(async () => [
       {
-        name: "read_issue_comments",
-        title: "Read issue comments",
+        name: "read_task_comments",
+        title: "Read task comments",
         description: "Read an authorized thread",
         inputSchema: {
           type: "object",
@@ -52,7 +52,7 @@ function postToolCall(
       id,
       method: "tools/call",
       params: {
-        name: "read_issue_comments",
+        name: "read_task_comments",
         arguments: {},
         _meta: meta,
       },
@@ -69,7 +69,7 @@ describe("run-tools routes", () => {
     expect(response.status).toBe(200);
     expect(response.body.result.capabilities).toEqual({ tools: {} });
     expect(response.body.result.instructions).toBe(
-      "Paperclip-managed tools exposed by this server are already available in your tool catalog; invoke them directly without a separate discovery step. Use them for Paperclip company, issue, project, and agent state or mutations, and never substitute repository, catalog, or configuration-file edits for Paperclip actions.",
+      "Paperclip-managed tools exposed by this server are already available in your tool catalog; invoke them directly without a separate discovery step. Use them for Paperclip company, task, project, and agent state or mutations, and never substitute repository, catalog, or configuration-file edits for Paperclip actions.",
     );
   });
 
@@ -81,10 +81,10 @@ describe("run-tools routes", () => {
       .send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(response.status).toBe(200);
     expect(response.body.result.tools).toEqual([
-      expect.objectContaining({ name: "read_issue_comments" }),
+      expect.objectContaining({ name: "read_task_comments" }),
     ]);
     expect(JSON.stringify(response.body)).not.toContain("agentId");
-    expect(JSON.stringify(response.body)).not.toContain("issueId");
+    expect(JSON.stringify(response.body)).not.toContain("taskId");
     expect(runtime.listTools).toHaveBeenCalledWith("pc_run_v1_secret");
   });
 
@@ -101,7 +101,7 @@ describe("run-tools routes", () => {
   it("maps a removed or forged descriptor to a denied call", async () => {
     const runtime = service();
     runtime.callTool = vi.fn(async () => {
-      throw new RuntimeToolUnavailable("issue_create");
+      throw new RuntimeToolUnavailable("task_create");
     });
     const response = await request(app(runtime))
       .post("/api/run-tools")
@@ -111,7 +111,7 @@ describe("run-tools routes", () => {
         jsonrpc: "2.0",
         id: "call",
         method: "tools/call",
-        params: { name: "issue_create", arguments: {} },
+        params: { name: "task_create", arguments: {} },
       });
     expect(response.status).toBe(403);
     expect(response.body.error.data.code).toBe("runtime_tool_unavailable");
@@ -132,7 +132,7 @@ describe("run-tools routes", () => {
         jsonrpc: "2.0",
         id: "call-without-ingress",
         method: "tools/call",
-        params: { name: "issue_create", arguments: { request: "exact" } },
+        params: { name: "task_create", arguments: { request: "exact" } },
       });
     expect(withoutIngress.status).toBe(400);
     expect(runtime.callTool).not.toHaveBeenCalled();
@@ -145,7 +145,7 @@ describe("run-tools routes", () => {
         jsonrpc: "2.0",
         id: "call-with-ingress",
         method: "tools/call",
-        params: { name: "issue_create", arguments: { request: "exact" } },
+        params: { name: "task_create", arguments: { request: "exact" } },
       });
     expect(withIngress.status).toBe(200);
     expect(runtime.callTool).toHaveBeenCalledWith(
@@ -172,7 +172,7 @@ describe("run-tools routes", () => {
     expect(response.status).toBe(200);
     expect(runtime.callTool).toHaveBeenCalledWith({
       bearer: "pc_run_v1_secret",
-      toolName: "read_issue_comments",
+      toolName: "read_task_comments",
       arguments: {},
       ingressOrdinal: 0,
       callIdentity: { source: "jsonrpc", id: "call-with-progress" },
@@ -338,13 +338,13 @@ describe("run-tools routes", () => {
     await expect(post(0, {
       jsonrpc: "2.0",
       method: "tools/call",
-      params: { name: "read_issue_comments", arguments: {} },
+      params: { name: "read_task_comments", arguments: {} },
     }).then((response) => response.status)).resolves.toBe(400);
     await expect(post(1, {
       jsonrpc: "2.0",
       id: { invalid: true },
       method: "tools/call",
-      params: { name: "read_issue_comments", arguments: {} },
+      params: { name: "read_task_comments", arguments: {} },
     }).then((response) => response.status)).resolves.toBe(400);
     await expect(post(2, {
       jsonrpc: "2.0",
@@ -356,14 +356,14 @@ describe("run-tools routes", () => {
       jsonrpc: "1.0",
       id: "bad-envelope",
       method: "tools/call",
-      params: { name: "read_issue_comments", arguments: {} },
+      params: { name: "read_task_comments", arguments: {} },
     }).then((response) => response.status)).resolves.toBe(400);
 
     const valid = await post(4, {
       jsonrpc: "2.0",
       id: "valid-after-invalid",
       method: "tools/call",
-      params: { name: "read_issue_comments", arguments: {} },
+      params: { name: "read_task_comments", arguments: {} },
     });
     expect(valid.status).toBe(200);
     expect(runtime.registerTerminalInvalidToolCall).toHaveBeenCalledTimes(4);

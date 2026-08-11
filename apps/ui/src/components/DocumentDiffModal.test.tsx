@@ -45,7 +45,7 @@ function createRevision(overrides: Partial<DocumentRevision> = {}): DocumentRevi
     id: "revision-1",
     companyId: "company-1",
     documentId: "document-1",
-    issueId: "issue-1",
+    taskId: "task-1",
     key: "plan",
     revisionNumber: 1,
     title: "Plan",

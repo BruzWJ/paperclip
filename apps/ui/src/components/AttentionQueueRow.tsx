@@ -128,9 +128,9 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
   const detailLine = attentionDetailLine(item) ?? item.whyNow;
   const images = attentionDetailImages(item);
   const hasImages = images.length > 0;
-  // The issue (or source) this row points at — used as the target for the
+  // The task (or source) this row points at — used as the target for the
   // "n more" affordance in the expanded gallery.
-  const issueHref = item.relatedIssue?.href ?? href;
+  const taskHref = item.relatedTask?.href ?? href;
   // Inline-resolvable active rows expand to reveal their resolver; rows with
   // images expand to reveal a larger gallery (PAP-13544). Either case gives a
   // header/thumbnail click somewhere to go. Non-inline, image-less rows keep the
@@ -216,13 +216,13 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
                   {sevBadge.label}
                 </span>
               )}
-              {item.relatedIssue?.identifier && (
+              {item.relatedTask?.identifier && (
                 <Link
-                  to={item.relatedIssue.href ?? "#"}
+                  to={item.relatedTask.href ?? "#"}
                   className="font-mono text-(length:--text-nano) text-muted-foreground hover:text-foreground"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {item.relatedIssue.identifier}
+                  {item.relatedTask.identifier}
                 </Link>
               )}
             </div>
@@ -348,7 +348,7 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
 
       {expanded && (hasImages || inline) && (
         <div className="space-y-3 border-t border-border/60 bg-muted/20 px-4 py-3 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-200">
-          {hasImages && <ExpandedImages images={images} issueHref={issueHref} />}
+          {hasImages && <ExpandedImages images={images} taskHref={taskHref} />}
           {inline && (
             <InlineResolver
               item={item}
@@ -519,9 +519,9 @@ function ThumbnailStack({ images }: { images: AttentionDetailImage[] }) {
 /**
  * Larger image gallery shown when a row is expanded (PAP-13544). Shows the
  * first three screenshots at a readable size; if more exist, an "n more" tile
- * links through to the issue where the full set lives.
+ * links through to the task where the full set lives.
  */
-function ExpandedImages({ images, issueHref }: { images: AttentionDetailImage[]; issueHref: string | null }) {
+function ExpandedImages({ images, taskHref }: { images: AttentionDetailImage[]; taskHref: string | null }) {
   const visible = images.slice(0, 3);
   const extra = images.length - visible.length;
   return (
@@ -538,10 +538,10 @@ function ExpandedImages({ images, issueHref }: { images: AttentionDetailImage[];
             className="h-32 w-44 rounded-md border border-border bg-muted object-cover shadow-sm"
           />
         );
-        return issueHref ? (
+        return taskHref ? (
           <Link
             key={key}
-            to={issueHref}
+            to={taskHref}
             className="block rounded-md focus-visible:ring-ring focus-visible:ring-(length:--rad-3) focus-visible:outline-none"
             onClick={(e) => e.stopPropagation()}
           >
@@ -553,15 +553,15 @@ function ExpandedImages({ images, issueHref }: { images: AttentionDetailImage[];
           </span>
         );
       })}
-      {extra > 0 && (issueHref ? (
+      {extra > 0 && (taskHref ? (
         <Link
-          to={issueHref}
+          to={taskHref}
           onClick={(e) => e.stopPropagation()}
           className="flex h-32 w-24 flex-col items-center justify-center rounded-md border border-dashed border-border bg-muted/40 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-ring focus-visible:ring-(length:--rad-3) focus-visible:outline-none"
         >
           <span className="text-base font-semibold">{extra} more</span>
           <span className="mt-0.5 inline-flex items-center gap-1 text-(length:--text-nano)">
-            View issue
+            View task
             <ExternalLink className="h-3 w-3" />
           </span>
         </Link>

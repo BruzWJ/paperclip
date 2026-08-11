@@ -213,7 +213,7 @@ export function InstanceAccess() {
                       />
                       <span className="space-y-1">
                         <span className="block text-sm font-medium">{company.name}</span>
-                        <span className="block text-xs text-muted-foreground">{company.issuePrefix}</span>
+                        <span className="block text-xs text-muted-foreground">{company.taskPrefix}</span>
                       </span>
                     </label>
                   ))}

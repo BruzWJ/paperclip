@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import {
   createFinanceEventSchema,
-  normalizeIssueIdentifier,
+  normalizeTaskIdentifier,
   resolveBudgetIncidentSchema,
   updateCompanyBudgetSchema,
   upsertBudgetPolicySchema,
@@ -12,7 +12,7 @@ import {
   budgetService,
   costService,
   financeService,
-  issueService,
+  taskService,
   accessService,
   logActivity,
   createAgentOperationalConfigurationService,
@@ -20,7 +20,7 @@ import {
 import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz.js";
 import { badRequest } from "../errors.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
-import type { IssueExecutionCancellationService } from "../services/issue-execution-cancellation.js";
+import type { TaskExecutionCancellationService } from "../services/task-execution-cancellation.js";
 
 export function parseCostDateRange(query: Record<string, unknown>) {
   const fromRaw = query.from as string | undefined;
@@ -46,8 +46,8 @@ export function costRoutes(
   db: Db,
   options: {
     pluginWorkerManager?: PluginWorkerManager;
-    issueExecutionCancellation: Pick<
-      IssueExecutionCancellationService,
+    taskExecutionCancellation: Pick<
+      TaskExecutionCancellationService,
       "suspendBudgetScopeWork"
     >;
   },
@@ -55,22 +55,22 @@ export function costRoutes(
   const router = Router();
   const budgetHooks = {
     suspendWorkForScope:
-      options.issueExecutionCancellation.suspendBudgetScopeWork,
+      options.taskExecutionCancellation.suspendBudgetScopeWork,
   };
   const costs = costService(db);
   const finance = financeService(db);
   const budgets = budgetService(db, budgetHooks);
   const agentOperationalConfigurations =
     createAgentOperationalConfigurationService(db, budgetHooks);
-  const issues = issueService(db);
+  const tasks = taskService(db);
   const access = accessService(db);
 
-  async function resolveIssueByRef(rawId: string) {
-    const identifier = normalizeIssueIdentifier(rawId);
+  async function resolveTaskByRef(rawId: string) {
+    const identifier = normalizeTaskIdentifier(rawId);
     if (identifier) {
-      return issues.getByIdentifier(identifier);
+      return tasks.getByIdentifier(identifier);
     }
-    return issues.getById(rawId);
+    return tasks.getById(rawId);
   }
 
   async function assertCompanyCostReadAllowed(req: Parameters<typeof assertCompanyAccess>[0], res: any, companyId: string) {
@@ -84,7 +84,7 @@ export function costRoutes(
     return false;
   }
 
-  async function assertIssueCostReadAllowed(req: Parameters<typeof assertCompanyAccess>[0], res: any, issue: {
+  async function assertTaskCostReadAllowed(req: Parameters<typeof assertCompanyAccess>[0], res: any, task: {
     id: string;
     companyId: string;
     projectId: string | null;
@@ -95,19 +95,19 @@ export function costRoutes(
   }) {
     const decision = await access.decide({
       actor: req.actor,
-      action: "issue:read",
+      action: "task:read",
       resource: {
-        type: "issue",
-        companyId: issue.companyId,
-        issueId: issue.id,
-        projectId: issue.projectId,
-        parentIssueId: issue.parentId,
-        ownerAgentId: issue.ownerAgentId,
-        ownerUserId: issue.ownerUserId,
+        type: "task",
+        companyId: task.companyId,
+        taskId: task.id,
+        projectId: task.projectId,
+        parentTaskId: task.parentId,
+        ownerAgentId: task.ownerAgentId,
+        ownerUserId: task.ownerUserId,
       },
     });
     if (decision.allowed) return true;
-    res.status(403).json({ error: "Issue costs are outside this actor's authorization boundary" });
+    res.status(403).json({ error: "Task costs are outside this actor's authorization boundary" });
     return false;
   }
 
@@ -149,13 +149,13 @@ export function costRoutes(
     res.json(summary);
   });
 
-  router.get("/issues/:id/cost-summary", async (req, res) => {
+  router.get("/tasks/:id/cost-summary", async (req, res) => {
     const rawId = req.params.id as string;
-    const issue = await getAccessibleResource(req, res, resolveIssueByRef(rawId), "Issue not found");
-    if (!issue) return;
-    if (!(await assertIssueCostReadAllowed(req, res, issue))) return;
+    const task = await getAccessibleResource(req, res, resolveTaskByRef(rawId), "Task not found");
+    if (!task) return;
+    if (!(await assertTaskCostReadAllowed(req, res, task))) return;
     const excludeRoot = req.query.excludeRoot === "true" || req.query.excludeRoot === "1";
-    const summary = await costs.issueTreeSummary(issue.companyId, issue.id, { excludeRoot });
+    const summary = await costs.taskTreeSummary(task.companyId, task.id, { excludeRoot });
     res.json(summary);
   });
 

@@ -17,7 +17,7 @@ import { test, expect, request as pwRequest, type APIRequestContext } from "./fi
  * company-settings and plugin routes) and is covered by the unit tests in
  * `apps/ui/src/components/Layout.test.tsx`. A plugin-route browser check requires a
  * dedicated test-owned plugin fixture and is out of scope for this suite;
- * visual QA of both panes is delegated to the QA child issue.
+ * visual QA of both panes is delegated to the QA child task.
  */
 
 const PORT = Number(process.env.PAPERCLIP_E2E_PORT ?? 3199);
@@ -45,7 +45,7 @@ async function createCompany(board: APIRequestContext): Promise<{ id: string; pr
   const company = await companyRes.json();
   return {
     id: company.id,
-    prefix: company.issuePrefix ?? company.prefix ?? company.urlKey ?? "E2E",
+    prefix: company.taskPrefix ?? company.prefix ?? company.urlKey ?? "E2E",
   };
 }
 

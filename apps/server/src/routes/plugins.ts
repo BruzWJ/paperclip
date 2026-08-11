@@ -66,7 +66,7 @@ import {
 } from "../services/plugin-catalog.js";
 import type { PluginLifecycleManager } from "../services/plugin-lifecycle.js";
 import { logActivity } from "../services/activity-log.js";
-import { issueService } from "../services/issues.js";
+import { taskService } from "../services/tasks.js";
 import type { PluginJobScheduler } from "../services/plugin-job-scheduler.js";
 import type { PluginJobStore } from "../services/plugin-job-store.js";
 import {
@@ -136,9 +136,9 @@ function parsePluginRequest<T>(
   if (result.success) return result.data;
   throw badRequest(
     message,
-    result.error.errors.map((issue) => ({
-      path: issue.path,
-      message: issue.message,
+    result.error.errors.map((detail) => ({
+      path: detail.path,
+      message: detail.message,
     })),
   );
 }
@@ -302,7 +302,7 @@ export function pluginRoutes(
   const router = Router();
   const registry = pluginRegistryService(db);
   const catalog = pluginCatalogService();
-  const issuesSvc = issueService(db);
+  const tasksSvc = taskService(db);
 
   function matchScopedApiRoute(route: PluginApiRouteDeclaration, method: string, requestPath: string) {
     if (route.method !== method) return null;
@@ -393,15 +393,15 @@ export function pluginRoutes(
       return companyId;
     }
 
-    const issueId = params[resolution.param];
-    if (!issueId) {
+    const taskId = params[resolution.param];
+    if (!taskId) {
       throw new Error(
-        `Plugin API route ${route.routeKey} did not bind declared issue parameter ${resolution.param}`,
+        `Plugin API route ${route.routeKey} did not bind declared task parameter ${resolution.param}`,
       );
     }
-    const issue = await issuesSvc.getById(issueId);
-    if (!issue) throw badRequest(`Plugin API issue does not exist: ${issueId}`);
-    return issue.companyId;
+    const task = await tasksSvc.getById(taskId);
+    if (!task) throw badRequest(`Plugin API task does not exist: ${taskId}`);
+    return task.companyId;
   }
 
   async function resolvePluginAuditCompanyIds(): Promise<string[]> {

@@ -1,11 +1,11 @@
 import {
   COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS,
-  ISSUE_PRIORITIES,
-  ISSUE_STATUSES,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
   isUuidLike,
   normalizeAgentUrlKey,
-  type IssuePriority,
-  type IssueStatus,
+  type TaskPriority,
+  type TaskStatus,
 } from "@paperclipai/shared";
 import type { CompanySearchParams } from "@/api/search";
 
@@ -20,8 +20,8 @@ const SEARCH_FILTER_PARAM_KEYS = [
   "updatedAfter",
 ] as const;
 
-const OPEN_STATUSES: IssueStatus[] = ["backlog", "todo", "in_progress", "in_review", "blocked"];
-const CLOSED_STATUSES: IssueStatus[] = ["done", "cancelled"];
+const OPEN_STATUSES: TaskStatus[] = ["backlog", "todo", "in_progress", "in_review", "blocked"];
+const CLOSED_STATUSES: TaskStatus[] = ["done", "cancelled"];
 
 export type SearchOperatorKey = "status" | "owner" | "project" | "label" | "priority" | "updated" | "is";
 
@@ -44,7 +44,7 @@ export const SEARCH_OPERATOR_SUGGESTIONS: SearchOperatorSuggestion[] = [
   { token: "status:blocked", label: "Blocked tasks", description: "Find blocked work" },
   { token: "owner:me", label: "Owned by me", description: "Use your current board user" },
   { token: "project:\"Paperclip App\"", label: "Project name", description: "Quote multi-word project names" },
-  { token: "label:bug", label: "Label", description: "Filter by issue label" },
+  { token: "label:bug", label: "Label", description: "Filter by task label" },
   { token: "priority:high", label: "High priority", description: "Filter by priority" },
   { token: "updated:>7d", label: "Recently updated", description: "Updated in the last 7 days" },
 ];
@@ -166,12 +166,12 @@ function appendText(parts: string[], raw: string) {
   if (raw.trim().length > 0) parts.push(raw);
 }
 
-function parseStatus(value: string): IssueStatus | null {
-  return (ISSUE_STATUSES as readonly string[]).includes(value) ? value as IssueStatus : null;
+function parseStatus(value: string): TaskStatus | null {
+  return (TASK_STATUSES as readonly string[]).includes(value) ? value as TaskStatus : null;
 }
 
-function parsePriority(value: string): IssuePriority | null {
-  return (ISSUE_PRIORITIES as readonly string[]).includes(value) ? value as IssuePriority : null;
+function parsePriority(value: string): TaskPriority | null {
+  return (TASK_PRIORITIES as readonly string[]).includes(value) ? value as TaskPriority : null;
 }
 
 function parseUpdatedWithin(value: string): string | null {
@@ -341,8 +341,8 @@ function validValues<T extends string>(values: string[], allowed: readonly T[]):
 
 export function readSearchFiltersFromParams(search: URLSearchParams): ParsedSearchQuery["filters"] {
   const filters: ParsedSearchQuery["filters"] = {};
-  const statuses = validValues(search.getAll("status").flatMap((value) => value.split(",")), ISSUE_STATUSES);
-  const priorities = validValues(search.getAll("priority").flatMap((value) => value.split(",")), ISSUE_PRIORITIES);
+  const statuses = validValues(search.getAll("status").flatMap((value) => value.split(",")), TASK_STATUSES);
+  const priorities = validValues(search.getAll("priority").flatMap((value) => value.split(",")), TASK_PRIORITIES);
   const ownerAgentId = search.get("ownerAgentId");
   const ownerUserId = search.get("ownerUserId");
   const projectId = search.get("projectId");

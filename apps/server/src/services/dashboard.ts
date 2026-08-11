@@ -1,15 +1,15 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, approvals, companies, issues } from "@paperclipai/db";
+import { agents, approvals, companies, tasks } from "@paperclipai/db";
 import { notFound } from "../errors.js";
 import { budgetService } from "./budgets.js";
-import { visibleIssueCondition } from "./issue-visibility.js";
+import { visibleTaskCondition } from "./task-visibility.js";
 import { costService } from "./costs.js";
 import {
-  listIssueExecutionRunsForActivity,
-  type IssueExecutionRunEnvelope,
-  type IssueExecutionRunListCursor,
-} from "./issue-execution-run-service.js";
+  listTaskExecutionRunsForActivity,
+  type TaskExecutionRunEnvelope,
+  type TaskExecutionRunListCursor,
+} from "./task-execution-run-service.js";
 
 const DASHBOARD_RUN_ACTIVITY_DAYS = 14;
 
@@ -48,11 +48,11 @@ export function dashboardService(db: Db) {
         .where(eq(agents.companyId, companyId))
         .groupBy(agents.status);
 
-      const issueRows = await db
-        .select({ status: issues.boardPresentationStatus, count: sql<number>`count(*)` })
-        .from(issues)
-        .where(and(eq(issues.companyId, companyId), visibleIssueCondition()))
-        .groupBy(issues.boardPresentationStatus);
+      const taskRows = await db
+        .select({ status: tasks.boardPresentationStatus, count: sql<number>`count(*)` })
+        .from(tasks)
+        .where(and(eq(tasks.companyId, companyId), visibleTaskCondition()))
+        .groupBy(tasks.boardPresentationStatus);
 
       const pendingApprovals = await db
         .select({ count: sql<number>`count(*)` })
@@ -73,28 +73,28 @@ export function dashboardService(db: Db) {
         agentCounts[bucket] = (agentCounts[bucket] ?? 0) + count;
       }
 
-      const issueCounts: Record<string, number> = {
+      const taskCounts: Record<string, number> = {
         open: 0,
         inProgress: 0,
         blocked: 0,
         done: 0,
       };
-      for (const row of issueRows) {
+      for (const row of taskRows) {
         const count = Number(row.count);
-        if (row.status === "in_progress") issueCounts.inProgress += count;
-        if (row.status === "blocked") issueCounts.blocked += count;
-        if (row.status === "done") issueCounts.done += count;
-        if (row.status !== "done" && row.status !== "cancelled") issueCounts.open += count;
+        if (row.status === "in_progress") taskCounts.inProgress += count;
+        if (row.status === "blocked") taskCounts.blocked += count;
+        if (row.status === "done") taskCounts.done += count;
+        if (row.status !== "done" && row.status !== "cancelled") taskCounts.open += count;
       }
 
       const now = new Date();
       const runActivityDays = getRecentUtcDateKeys(now, DASHBOARD_RUN_ACTIVITY_DAYS);
       const runActivityStart = new Date(`${runActivityDays[0]}T00:00:00.000Z`);
       const costSummary = await costs.summary(companyId);
-      const companyRuns: IssueExecutionRunEnvelope[] = [];
-      let runCursor: IssueExecutionRunListCursor | null = null;
+      const companyRuns: TaskExecutionRunEnvelope[] = [];
+      let runCursor: TaskExecutionRunListCursor | null = null;
       do {
-        const page = await listIssueExecutionRunsForActivity(db, {
+        const page = await listTaskExecutionRunsForActivity(db, {
           companyId,
           cursor: runCursor,
           limit: 200,
@@ -162,7 +162,7 @@ export function dashboardService(db: Db) {
           paused: agentCounts.paused,
           error: agentCounts.error,
         },
-        issues: issueCounts,
+        tasks: taskCounts,
         costs: {
           budgetCurrency: costSummary.budgetCurrency,
           monthKnownSpendAmount: costSummary.knownSpendAmount,

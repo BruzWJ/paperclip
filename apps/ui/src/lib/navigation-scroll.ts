@@ -14,8 +14,8 @@ export function shouldResetScrollOnNavigation(params: {
   if (previousPathname === null) return false;
   if (previousPathname === pathname) return false;
   if (navigationType === "POP") return false;
-  if (isIssueIndexPath(pathname)) return true;
-  if (isIssueDetailPathChange(previousPathname, pathname)) return true;
+  if (isTaskIndexPath(pathname)) return true;
+  if (isTaskDetailPathChange(previousPathname, pathname)) return true;
   return hasSidebarScrollResetState(state);
 }
 
@@ -23,7 +23,7 @@ export function shouldResetScrollOnNavigation(params: {
 // back/forward (POP) navigation can be restored to where the user left off.
 // `#main-content` is a single element that survives route changes, so without
 // this the offset from the page we navigated away from (e.g. a deep
-// issue-detail scroll) bleeds into the page we return to (e.g. the inbox).
+// task-detail scroll) bleeds into the page we return to (e.g. the inbox).
 export class NavigationScrollMemory {
   private positions = new Map<string, number>();
 
@@ -70,26 +70,26 @@ function hasSidebarScrollResetState(state: unknown): boolean {
   return (state as Record<string, unknown>).paperclipSidebarScrollReset === true;
 }
 
-function isIssueDetailPathChange(previousPathname: string, pathname: string): boolean {
-  const previousIssueRef = readIssueDetailPathRef(previousPathname);
-  const nextIssueRef = readIssueDetailPathRef(pathname);
-  return previousIssueRef !== null && nextIssueRef !== null && previousIssueRef !== nextIssueRef;
+function isTaskDetailPathChange(previousPathname: string, pathname: string): boolean {
+  const previousTaskRef = readTaskDetailPathRef(previousPathname);
+  const nextTaskRef = readTaskDetailPathRef(pathname);
+  return previousTaskRef !== null && nextTaskRef !== null && previousTaskRef !== nextTaskRef;
 }
 
-function isIssueIndexPath(pathname: string): boolean {
+function isTaskIndexPath(pathname: string): boolean {
   const segments = pathname.split("/").filter(Boolean);
   return (
-    (segments.length === 1 && segments[0] === "issues")
-    || (segments.length === 2 && segments[1] === "issues")
+    (segments.length === 1 && segments[0] === "tasks")
+    || (segments.length === 2 && segments[1] === "tasks")
   );
 }
 
-function readIssueDetailPathRef(pathname: string): string | null {
+function readTaskDetailPathRef(pathname: string): string | null {
   const segments = pathname.split("/").filter(Boolean);
-  if (segments.length === 2 && segments[0] === "issues") {
+  if (segments.length === 2 && segments[0] === "tasks") {
     return segments[1] ?? null;
   }
-  if (segments.length === 3 && segments[1] === "issues") {
+  if (segments.length === 3 && segments[1] === "tasks") {
     return segments[2] ?? null;
   }
   return null;

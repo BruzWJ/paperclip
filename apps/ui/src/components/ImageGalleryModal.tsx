@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
-import { attachmentDownloadPath, attachmentFilename } from "@/lib/issue-attachments";
-import { isVideoLikeOutput } from "@/lib/issue-output";
+import { attachmentDownloadPath, attachmentFilename } from "@/lib/task-attachments";
+import { isVideoLikeOutput } from "@/lib/task-output";
 
 export interface GalleryMediaItem {
   id: string;

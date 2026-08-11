@@ -1,34 +1,34 @@
 import type {
   CostEvent,
-  IssueExecutionPromptOutcome,
-  IssueExecutionPromptTransmissionPhase,
-  IssueExecutionProtocolSettlementState,
-  IssueExecutionRunEnvelopeRecord,
-  IssueExecutionRunKind,
-  IssueExecutionRunListPageRecord,
-  IssueExecutionRunLivenessFact,
-  IssueExecutionRunStatus,
-  IssueExecutionSessionOperation,
+  TaskExecutionPromptOutcome,
+  TaskExecutionPromptTransmissionPhase,
+  TaskExecutionProtocolSettlementState,
+  TaskExecutionRunEnvelopeRecord,
+  TaskExecutionRunKind,
+  TaskExecutionRunListPageRecord,
+  TaskExecutionRunLivenessFact,
+  TaskExecutionRunStatus,
+  TaskExecutionSessionOperation,
 } from "@paperclipai/shared";
 import { api } from "./client";
 
-export const ACTIVE_ISSUE_EXECUTION_RUN_STATUSES = [
+export const ACTIVE_TASK_EXECUTION_RUN_STATUSES = [
   "queued",
   "scheduled_retry",
   "running",
-] as const satisfies readonly IssueExecutionRunStatus[];
+] as const satisfies readonly TaskExecutionRunStatus[];
 
-export function isIssueExecutionRunActive(
-  run: Pick<IssueExecutionRunEnvelopeRecord, "status">,
+export function isTaskExecutionRunActive(
+  run: Pick<TaskExecutionRunEnvelopeRecord, "status">,
 ): boolean {
-  return ACTIVE_ISSUE_EXECUTION_RUN_STATUSES.includes(
-    run.status as (typeof ACTIVE_ISSUE_EXECUTION_RUN_STATUSES)[number],
+  return ACTIVE_TASK_EXECUTION_RUN_STATUSES.includes(
+    run.status as (typeof ACTIVE_TASK_EXECUTION_RUN_STATUSES)[number],
   );
 }
 
-export interface IssueExecutionRunListFilters {
+export interface TaskExecutionRunListFilters {
   agentId?: string;
-  status?: readonly IssueExecutionRunStatus[];
+  status?: readonly TaskExecutionRunStatus[];
   cursor?: string | null;
   limit?: number;
 }
@@ -38,16 +38,16 @@ export interface BoundedRunRecords<T> {
   truncated: boolean;
 }
 
-export interface IssueExecutionRunControlRecord {
+export interface TaskExecutionRunControlRecord {
   runId: string;
   currentRefId: string | null;
   currentOrdinal: number | null;
   currentSegmentOrdinal: number | null;
 }
 
-interface IssueExecutionPromptRecord {
+interface TaskExecutionPromptRecord {
   companyId: string;
-  issueId: string;
+  taskId: string;
   sessionId: string;
   runId: string;
   refId: string;
@@ -56,10 +56,10 @@ interface IssueExecutionPromptRecord {
   attemptId: string | null;
   capabilityConnectionId: string | null;
   capabilityGeneration: number | null;
-  promptTransmissionPhase: IssueExecutionPromptTransmissionPhase;
-  outcome: IssueExecutionPromptOutcome | null;
+  promptTransmissionPhase: TaskExecutionPromptTransmissionPhase;
+  outcome: TaskExecutionPromptOutcome | null;
   outcomeReferenceId: string | null;
-  protocolSettlementState: IssueExecutionProtocolSettlementState | null;
+  protocolSettlementState: TaskExecutionProtocolSettlementState | null;
   accountingId: string | null;
   costEventId: string | null;
   settlementVersion: number;
@@ -67,13 +67,13 @@ interface IssueExecutionPromptRecord {
   createdAt: string;
 }
 
-export interface IssueExecutionRunRefRecord extends IssueExecutionPromptRecord {
+export interface TaskExecutionRunRefRecord extends TaskExecutionPromptRecord {
   admissionOrder: number;
   batchDigest: string;
 }
 
-export interface IssueExecutionPromptSegmentRecord
-  extends IssueExecutionPromptRecord {
+export interface TaskExecutionPromptSegmentRecord
+  extends TaskExecutionPromptRecord {
   segmentOrdinal: number;
   sourceCommentId: string;
   sourceRefId: string | null;
@@ -81,7 +81,7 @@ export interface IssueExecutionPromptSegmentRecord
   steeringState: "requested" | "sent" | "protocol_settled" | "rebound" | "resumed";
 }
 
-export interface IssueExecutionSessionEventRecord {
+export interface TaskExecutionSessionEventRecord {
   id: string;
   seq: number;
   type: string;
@@ -89,7 +89,7 @@ export interface IssueExecutionSessionEventRecord {
   createdAt: string;
 }
 
-export interface IssueExecutionSessionMessageRecord {
+export interface TaskExecutionSessionMessageRecord {
   id: string;
   seq: number;
   modelStateSeq: number;
@@ -106,15 +106,15 @@ export interface IssueExecutionSessionMessageRecord {
   timeUpdated: string;
 }
 
-export interface IssueExecutionAttemptRecord {
+export interface TaskExecutionAttemptRecord {
   id: string;
   companyId: string;
-  issueId: string;
+  taskId: string;
   sessionId: string;
   runId: string;
-  runKind: IssueExecutionRunKind;
+  runKind: TaskExecutionRunKind;
   promptKind: "base" | "steering";
-  sessionOperation: IssueExecutionSessionOperation;
+  sessionOperation: TaskExecutionSessionOperation;
   refId: string | null;
   refOrdinal: number | null;
   segmentOrdinal: number | null;
@@ -125,10 +125,10 @@ export interface IssueExecutionAttemptRecord {
   createdAt: string;
 }
 
-export interface IssueExecutionAttemptRetryScheduleRecord {
+export interface TaskExecutionAttemptRetryScheduleRecord {
   id: string;
   companyId: string;
-  issueId: string;
+  taskId: string;
   runId: string;
   predecessorAttemptId: string;
   reasonCode: string;
@@ -140,10 +140,10 @@ export interface IssueExecutionAttemptRetryScheduleRecord {
   createdAt: string;
 }
 
-export interface IssueExecutionLeaseRecord {
+export interface TaskExecutionLeaseRecord {
   id: string;
   companyId: string;
-  issueId: string;
+  taskId: string;
   runId: string;
   attemptId: string;
   leaseGeneration: number;
@@ -156,10 +156,10 @@ export interface IssueExecutionLeaseRecord {
   createdAt: string;
 }
 
-export interface IssueExecutionCancellationRecord {
+export interface TaskExecutionCancellationRecord {
   id: string;
   companyId: string;
-  issueId: string;
+  taskId: string;
   runId: string;
   attemptId: string;
   leaseId: string | null;
@@ -180,10 +180,10 @@ export interface IssueExecutionCancellationRecord {
 export interface AcpPromptAccountingRecord {
   id: string;
   companyId: string;
-  issueId: string;
+  taskId: string;
   agentId: string;
   runId: string;
-  runKind: IssueExecutionRunKind;
+  runKind: TaskExecutionRunKind;
   promptKind: "base" | "steering";
   refId: string | null;
   runOrdinal: number | null;
@@ -193,7 +193,7 @@ export interface AcpPromptAccountingRecord {
   createdAt: string;
 }
 
-export interface IssueExecutionActivityRecord {
+export interface TaskExecutionActivityRecord {
   id: string;
   actorType: string;
   actorId: string;
@@ -206,10 +206,10 @@ export interface IssueExecutionActivityRecord {
   createdAt: string;
 }
 
-export interface IssueExecutionFinalizationRecord {
+export interface TaskExecutionFinalizationRecord {
   id: string;
   companyId: string;
-  issueId: string;
+  taskId: string;
   runId: string;
   action: "comment_only" | "updates_committed" | "no_conversational_output";
   terminalSessionEventId: string | null;
@@ -218,9 +218,9 @@ export interface IssueExecutionFinalizationRecord {
   createdAt: string;
 }
 
-export interface IssueExecutionFinalizationPromptDependencyRecord {
+export interface TaskExecutionFinalizationPromptDependencyRecord {
   companyId: string;
-  issueId: string;
+  taskId: string;
   runId: string;
   finalizationId: string;
   dependencyOrdinal: number;
@@ -228,45 +228,45 @@ export interface IssueExecutionFinalizationPromptDependencyRecord {
   refId: string | null;
   refOrdinal: number | null;
   segmentOrdinal: number | null;
-  protocolSettlementState: IssueExecutionProtocolSettlementState;
+  protocolSettlementState: TaskExecutionProtocolSettlementState;
   settlementVersion: number;
   accountingId: string | null;
   costEventId: string | null;
 }
 
-export interface IssueExecutionFinalizationUpdateDependencyRecord {
+export interface TaskExecutionFinalizationUpdateDependencyRecord {
   companyId: string;
   runId: string;
   finalizationId: string;
   dependencyOrdinal: number;
-  issueUpdateId: string;
+  taskUpdateId: string;
 }
 
-export interface IssueExecutionJoinedFinalization {
-  record: IssueExecutionFinalizationRecord;
-  promptDependencies: BoundedRunRecords<IssueExecutionFinalizationPromptDependencyRecord>;
-  updateDependencies: BoundedRunRecords<IssueExecutionFinalizationUpdateDependencyRecord>;
-  liveness: (IssueExecutionRunLivenessFact & { id: string; runId: string }) | null;
+export interface TaskExecutionJoinedFinalization {
+  record: TaskExecutionFinalizationRecord;
+  promptDependencies: BoundedRunRecords<TaskExecutionFinalizationPromptDependencyRecord>;
+  updateDependencies: BoundedRunRecords<TaskExecutionFinalizationUpdateDependencyRecord>;
+  liveness: (TaskExecutionRunLivenessFact & { id: string; runId: string }) | null;
 }
 
-export interface IssueExecutionRunJoinedDetail {
-  run: IssueExecutionRunEnvelopeRecord;
-  control: IssueExecutionRunControlRecord | null;
-  refs: BoundedRunRecords<IssueExecutionRunRefRecord>;
-  segments: BoundedRunRecords<IssueExecutionPromptSegmentRecord>;
-  sessionEvents: BoundedRunRecords<IssueExecutionSessionEventRecord>;
-  sessionMessages: BoundedRunRecords<IssueExecutionSessionMessageRecord>;
-  attempts: BoundedRunRecords<IssueExecutionAttemptRecord>;
-  retrySchedules: BoundedRunRecords<IssueExecutionAttemptRetryScheduleRecord>;
-  leases: BoundedRunRecords<IssueExecutionLeaseRecord>;
-  cancellations: BoundedRunRecords<IssueExecutionCancellationRecord>;
+export interface TaskExecutionRunJoinedDetail {
+  run: TaskExecutionRunEnvelopeRecord;
+  control: TaskExecutionRunControlRecord | null;
+  refs: BoundedRunRecords<TaskExecutionRunRefRecord>;
+  segments: BoundedRunRecords<TaskExecutionPromptSegmentRecord>;
+  sessionEvents: BoundedRunRecords<TaskExecutionSessionEventRecord>;
+  sessionMessages: BoundedRunRecords<TaskExecutionSessionMessageRecord>;
+  attempts: BoundedRunRecords<TaskExecutionAttemptRecord>;
+  retrySchedules: BoundedRunRecords<TaskExecutionAttemptRetryScheduleRecord>;
+  leases: BoundedRunRecords<TaskExecutionLeaseRecord>;
+  cancellations: BoundedRunRecords<TaskExecutionCancellationRecord>;
   accounting: BoundedRunRecords<AcpPromptAccountingRecord>;
   costs: BoundedRunRecords<CostEvent>;
-  activity: BoundedRunRecords<IssueExecutionActivityRecord>;
-  finalization: IssueExecutionJoinedFinalization | null;
+  activity: BoundedRunRecords<TaskExecutionActivityRecord>;
+  finalization: TaskExecutionJoinedFinalization | null;
 }
 
-function runListQuery(filters: IssueExecutionRunListFilters = {}): string {
+function runListQuery(filters: TaskExecutionRunListFilters = {}): string {
   const searchParams = new URLSearchParams();
   if (filters.agentId) searchParams.set("agentId", filters.agentId);
   if (filters.status?.length) searchParams.set("status", filters.status.join(","));
@@ -279,20 +279,20 @@ function runListQuery(filters: IssueExecutionRunListFilters = {}): string {
 export const runsApi = {
   listForCompany: (
     companyId: string,
-    filters: IssueExecutionRunListFilters = {},
+    filters: TaskExecutionRunListFilters = {},
   ) =>
-    api.get<IssueExecutionRunListPageRecord>(
+    api.get<TaskExecutionRunListPageRecord>(
       `/companies/${companyId}/runs${runListQuery(filters)}`,
     ),
-  listForIssue: (
-    issueId: string,
-    filters: Omit<IssueExecutionRunListFilters, "agentId"> = {},
+  listForTask: (
+    taskId: string,
+    filters: Omit<TaskExecutionRunListFilters, "agentId"> = {},
   ) =>
-    api.get<IssueExecutionRunListPageRecord>(
-      `/issues/${issueId}/runs${runListQuery(filters)}`,
+    api.get<TaskExecutionRunListPageRecord>(
+      `/tasks/${taskId}/runs${runListQuery(filters)}`,
     ),
   get: (runId: string, limit = 200) =>
-    api.get<IssueExecutionRunJoinedDetail>(
+    api.get<TaskExecutionRunJoinedDetail>(
       `/runs/${runId}?limit=${encodeURIComponent(String(limit))}`,
     ),
 };

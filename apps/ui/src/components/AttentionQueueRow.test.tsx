@@ -99,7 +99,7 @@ function buildItem(overrides: Partial<AttentionItem> = {}): AttentionItem {
     activityAt: "2026-07-09T12:00:00Z",
     createdAt: "2026-07-09T12:00:00Z",
     updatedAt: "2026-07-09T12:00:00Z",
-    relatedIssue: null,
+    relatedTask: null,
     project: null,
     workspace: null,
     detail: null,
@@ -135,13 +135,13 @@ describe("AttentionQueueRow", () => {
           sourceKind: "review" as AttentionSourceKind,
           inlineResolvable: true,
           subject: {
-            kind: "issue",
-            id: "issue-1",
+            kind: "task",
+            id: "task-1",
             companyId: "c1",
             title: "PR ready for review",
             identifier: null,
             status: "in_review",
-            href: "/PAP/issues/PAP-1",
+            href: "/PAP/tasks/PAP-1",
             metadata: {},
           },
         })}
@@ -418,20 +418,20 @@ describe("AttentionQueueRow", () => {
     expect(container?.querySelector('[role="button"][aria-expanded]')).toBeNull();
   });
 
-  it("links an agent Board request to its issue", () => {
+  it("links an agent Board request to its task", () => {
     const el = render(
       <AttentionQueueRow
         item={buildItem({
           sourceKind: "mention_board",
           inlineResolvable: false,
           subject: {
-            kind: "issue",
-            id: "issue-1",
+            kind: "task",
+            id: "task-1",
             companyId: "c1",
-            title: "Idle issue",
+            title: "Idle task",
             identifier: "PAP-1",
             status: "in_progress",
-            href: "/PAP/issues/PAP-1",
+            href: "/PAP/tasks/PAP-1",
             metadata: {},
           },
         })}
@@ -475,20 +475,20 @@ describe("AttentionQueueRow", () => {
     expect(onToggleExpand).toHaveBeenCalledTimes(1);
   });
 
-  it("shows a larger gallery with an n-more link to the issue when expanded", () => {
+  it("shows a larger gallery with an n-more link to the task when expanded", () => {
     render(
       <AttentionQueueRow
         item={buildItem({
           sourceKind: "review" as AttentionSourceKind,
           inlineResolvable: false,
-          relatedIssue: {
-            kind: "issue",
-            id: "issue-1",
+          relatedTask: {
+            kind: "task",
+            id: "task-1",
             companyId: "c1",
             title: "Ship it",
             identifier: "PAP-42",
             status: "in_progress",
-            href: "/PAP/issues/PAP-42",
+            href: "/PAP/tasks/PAP-42",
             metadata: {},
           },
           detail: {
@@ -513,23 +513,23 @@ describe("AttentionQueueRow", () => {
     expect(gallery).not.toBeNull();
     // First three images render at the larger size.
     expect(gallery?.querySelectorAll("img")).toHaveLength(3);
-    // "n more" link points at the related issue (5 images − 3 shown = 2 more).
+    // "n more" link points at the related task (5 images − 3 shown = 2 more).
     const moreLink = Array.from(gallery?.querySelectorAll("a") ?? []).find((a) =>
       a.textContent?.includes("2 more"),
     );
     expect(moreLink).toBeDefined();
-    expect(moreLink?.getAttribute("href")).toBe("/PAP/issues/PAP-42");
+    expect(moreLink?.getAttribute("href")).toBe("/PAP/tasks/PAP-42");
   });
 
-  it("shows the remaining image count when no issue link is available", () => {
+  it("shows the remaining image count when no task link is available", () => {
     render(
       <AttentionQueueRow
         item={buildItem({
           sourceKind: "review" as AttentionSourceKind,
           inlineResolvable: false,
           subject: {
-            kind: "issue",
-            id: "issue-1",
+            kind: "task",
+            id: "task-1",
             companyId: "c1",
             title: "Unlinked review",
             identifier: null,

@@ -7,7 +7,7 @@ import { userProfilesApi } from "../api/userProfiles";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { IssueStatusBadge } from "../components/StatusBadge";
+import { TaskStatusBadge } from "../components/StatusBadge";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -16,7 +16,7 @@ import {
   formatMoneyAmount,
   formatNumber,
   formatShortDate,
-  issueUrl,
+  taskUrl,
   relativeTime,
 } from "../lib/utils";
 
@@ -36,8 +36,8 @@ function promptCount(
 }
 
 function completionRate(stats: UserProfileWindowStats) {
-  if (stats.touchedIssues === 0) return "0%";
-  return `${Math.round((stats.completedIssues / stats.touchedIssues) * 100)}%`;
+  if (stats.touchedTasks === 0) return "0%";
+  return `${Math.round((stats.completedTasks / stats.touchedTasks) * 100)}%`;
 }
 
 function HeroStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -65,8 +65,8 @@ function WindowColumn({
       </div>
 
       <div className="grid grid-cols-2 gap-x-5 gap-y-3">
-        <Metric value={formatNumber(stats.touchedIssues)} label="Touched" />
-        <Metric value={formatNumber(stats.completedIssues)} label="Completed" />
+        <Metric value={formatNumber(stats.touchedTasks)} label="Touched" />
+        <Metric value={formatNumber(stats.completedTasks)} label="Completed" />
         <Metric value={formatNumber(stats.commentCount)} label="Comments" />
         <Metric value={formatNumber(stats.activityCount)} label="Actions" />
       </div>
@@ -79,9 +79,9 @@ function WindowColumn({
         <span>Unpriced</span>
         <span className="text-right text-foreground">{formatNumber(stats.unpricedPromptCount)}</span>
         <span>Created</span>
-        <span className="text-right text-foreground">{formatNumber(stats.createdIssues)}</span>
+        <span className="text-right text-foreground">{formatNumber(stats.createdTasks)}</span>
         <span>Open</span>
-        <span className="text-right text-foreground">{formatNumber(stats.assignedOpenIssues)}</span>
+        <span className="text-right text-foreground">{formatNumber(stats.assignedOpenTasks)}</span>
       </div>
     </div>
   );
@@ -99,7 +99,7 @@ function Metric({ value, label }: { value: string; label: string }) {
 function UsageChart({ points }: { points: UserProfileDailyPoint[] }) {
   const totals = points.map((point) => point.pricedPromptCount + point.unpricedPromptCount);
   const maxPrompts = Math.max(1, ...totals);
-  const maxCompleted = Math.max(1, ...points.map((point) => point.completedIssues));
+  const maxCompleted = Math.max(1, ...points.map((point) => point.completedTasks));
   const totalPromptCount = totals.reduce((sum, value) => sum + value, 0);
 
   return (
@@ -115,15 +115,15 @@ function UsageChart({ points }: { points: UserProfileDailyPoint[] }) {
         {points.map((point) => {
           const prompts = point.pricedPromptCount + point.unpricedPromptCount;
           const heightPct = prompts === 0 ? 0 : Math.max(2, Math.round((prompts / maxPrompts) * 100));
-          const completedPct = point.completedIssues === 0
+          const completedPct = point.completedTasks === 0
             ? 0
-            : Math.max(8, Math.round((point.completedIssues / maxCompleted) * 36));
+            : Math.max(8, Math.round((point.completedTasks / maxCompleted) * 36));
           return (
             <div key={point.date} className="group flex h-36 flex-col justify-end">
               <div
                 className="w-full bg-foreground/80 transition-opacity group-hover:bg-foreground"
                 style={{ height: `${heightPct}%`, minHeight: prompts === 0 ? 1 : undefined }}
-                title={`${formatShortDate(point.date)}: ${formatNumber(prompts)} settled prompts, ${point.completedIssues} completed`}
+                title={`${formatShortDate(point.date)}: ${formatNumber(prompts)} settled prompts, ${point.completedTasks} completed`}
               />
               {completedPct > 0 ? (
                 <div
@@ -229,7 +229,7 @@ export function UserProfile() {
       (data?.topAgents ?? []).map((row) => ({
         key: row.agentId ?? "unknown",
         label: row.agentName ?? (row.agentId ? row.agentId.slice(0, 8) : "unknown"),
-        sublabel: "Issue-linked settled prompts",
+        sublabel: "Task-linked settled prompts",
         knownCostAmount: row.knownCostAmount,
         pricedPromptCount: row.pricedPromptCount,
         unpricedPromptCount: row.unpricedPromptCount,
@@ -282,8 +282,8 @@ export function UserProfile() {
             value={allTime ? formatMoneyAmount(allTime.knownCostAmount, data.budgetCurrency) : `${data.budgetCurrency} 0`}
             hint={`${formatNumber(allTime?.unpricedPromptCount ?? 0)} unpriced prompts`}
           />
-          <HeroStat label="Completed" value={formatNumber(allTime?.completedIssues ?? 0)} hint={allTime ? `${completionRate(allTime)} rate` : undefined} />
-          <HeroStat label="Open assigned" value={formatNumber(allTime?.assignedOpenIssues ?? 0)} hint={`${formatNumber(allTime?.createdIssues ?? 0)} created`} />
+          <HeroStat label="Completed" value={formatNumber(allTime?.completedTasks ?? 0)} hint={allTime ? `${completionRate(allTime)} rate` : undefined} />
+          <HeroStat label="Open assigned" value={formatNumber(allTime?.assignedOpenTasks ?? 0)} hint={`${formatNumber(allTime?.createdTasks ?? 0)} created`} />
           <HeroStat label="7-day actions" value={formatNumber(last7?.activityCount ?? 0)} hint={`${formatNumber(last7?.commentCount ?? 0)} comments`} />
         </div>
       </section>
@@ -304,23 +304,23 @@ export function UserProfile() {
         <section>
           <div className="flex items-baseline justify-between gap-3 border-b border-border pb-3">
             <h2 className="text-sm font-semibold">Recent tasks</h2>
-            <span className="text-xs text-muted-foreground tabular-nums">{data.recentIssues.length}</span>
+            <span className="text-xs text-muted-foreground tabular-nums">{data.recentTasks.length}</span>
           </div>
-          {data.recentIssues.length === 0 ? (
+          {data.recentTasks.length === 0 ? (
             <div className="pt-4 text-sm text-muted-foreground">No touched tasks yet.</div>
           ) : (
             <ul className="divide-y divide-border">
-              {data.recentIssues.map((issue) => (
-                <li key={issue.id}>
+              {data.recentTasks.map((task) => (
+                <li key={task.id}>
                   <Link
-                    to={issueUrl(issue)}
+                    to={taskUrl(task)}
                     className="grid gap-2 py-2.5 transition-colors hover:bg-accent/40 sm:grid-cols-(--gtc-58) sm:items-center"
                   >
-                    <span className="font-mono text-xs text-muted-foreground">{issue.identifier ?? issue.id.slice(0, 8)}</span>
-                    <span className="truncate text-sm">{issue.title}</span>
+                    <span className="font-mono text-xs text-muted-foreground">{task.identifier ?? task.id.slice(0, 8)}</span>
+                    <span className="truncate text-sm">{task.title}</span>
                     <span className="flex items-center gap-3 sm:justify-end">
-                      <IssueStatusBadge status={issue.boardPresentationStatus} />
-                      <span className="text-xs tabular-nums text-muted-foreground">{relativeTime(issue.updatedAt)}</span>
+                      <TaskStatusBadge status={task.boardPresentationStatus} />
+                      <span className="text-xs tabular-nums text-muted-foreground">{relativeTime(task.updatedAt)}</span>
                     </span>
                   </Link>
                 </li>
@@ -356,7 +356,7 @@ export function UserProfile() {
 
       <UsageList
         title="Agent attribution"
-        empty="No issue-linked settled prompts yet."
+        empty="No task-linked settled prompts yet."
         rows={agentUsageRows}
         budgetCurrency={data.budgetCurrency}
       />

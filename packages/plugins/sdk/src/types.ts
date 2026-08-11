@@ -16,7 +16,7 @@ import type {
   PluginEventType,
   Company,
   Project,
-  Issue,
+  Task,
   PluginManagedAgentResolution,
   PluginManagedProjectResolution,
   PluginManagedRoutineResolution,
@@ -33,11 +33,11 @@ import type {
   PermissionKey,
   PrincipalPermissionGrant,
   PrincipalType,
-  ProviderSafeIssueProjection,
+  ProviderSafeTaskProjection,
   ProviderSafeRunTrace,
   PluginLocalFolderProblem,
   PluginLocalFolderStatus,
-  IssueExecutionSessionOperation,
+  TaskExecutionSessionOperation,
   AgentContextGrantKey,
 } from "@paperclipai/shared";
 import type { PluginPerformActionContext } from "./protocol.js";
@@ -92,13 +92,13 @@ export type {
   PluginBridgeErrorCode,
   Company,
   Project,
-  Issue,
-  IssueComment,
-  IssueDocument,
-  IssueDocumentSummary,
-  IssueRelationIssueSummary,
-  PluginIssueOriginKind,
-  IssueSurfaceVisibility,
+  Task,
+  TaskComment,
+  TaskDocument,
+  TaskDocumentSummary,
+  TaskRelationTaskSummary,
+  PluginTaskOriginKind,
+  TaskSurfaceVisibility,
   Agent,
   Goal,
   HumanCompanyMembershipRole,
@@ -108,7 +108,7 @@ export type {
   PermissionKey,
   PrincipalPermissionGrant,
   PrincipalType,
-  IssueExecutionSessionOperation,
+  TaskExecutionSessionOperation,
 } from "@paperclipai/shared";
 
 // ---------------------------------------------------------------------------
@@ -122,7 +122,7 @@ export type {
  * Examples:
  * - `{ scopeKind: "instance" }` — single global value for the whole instance
  * - `{ scopeKind: "project", scopeId: "proj-uuid" }` — per-project state
- * - `{ scopeKind: "issue", scopeId: "iss-uuid" }` — per-issue state
+ * - `{ scopeKind: "task", scopeId: "task-uuid" }` — per-task state
  *
  * @see PLUGIN_SPEC.md §21.3 `plugin_state`
  */
@@ -176,7 +176,7 @@ export type PluginEventPattern = PluginEventType | `plugin.${string}`;
 export interface PluginEvent<TPayload = unknown> {
   /** Unique event identifier (UUID). */
   eventId: string;
-  /** The event type (e.g. `"issue.board.comment.created"`). */
+  /** The event type (e.g. `"task.board.comment.created"`). */
   eventType: PluginEventType | `plugin.${string}`;
   /** ISO 8601 timestamp when the event occurred. */
   occurredAt: string;
@@ -206,14 +206,14 @@ export interface PluginEvent<TPayload = unknown> {
  */
 export interface PluginBeforePromptInput {
   readonly companyId: string;
-  readonly issueId: string;
+  readonly taskId: string;
   readonly sessionId: string;
   readonly runId: string;
   readonly agentId: string;
   readonly projectId: string | null;
   readonly sourceText: string;
   readonly promptKind: "base" | "steering";
-  readonly sessionOperation: IssueExecutionSessionOperation;
+  readonly sessionOperation: TaskExecutionSessionOperation;
   readonly refId: string;
   readonly refOrdinal: number;
   readonly segmentOrdinal: number;
@@ -265,21 +265,21 @@ export interface PluginJobContext {
  *
  * The value has no client-derivable fields. Plugins may only echo it through
  * the active worker invocation; the host resolves and revalidates its live
- * company, issue, execution-ref, ownership-epoch, mode, lease, and tool scope.
+ * company, task, execution-ref, ownership-epoch, mode, lease, and tool scope.
  */
 export type PluginRunContextHandle = string;
 
 /**
- * Run-serving issue projection available only while handling a direct plugin
- * tool invocation. It is intentionally separate from `ctx.issues`,
+ * Run-serving task projection available only while handling a direct plugin
+ * tool invocation. It is intentionally separate from `ctx.tasks`,
  * which remains the installation control plane.
  */
-export type PluginRunIssueProjection =
-  ProviderSafeIssueProjection;
+export type PluginRunTaskProjection =
+  ProviderSafeTaskProjection;
 
-export interface PluginRunIssueCommentProjection {
+export interface PluginRunTaskCommentProjection {
   id: string;
-  issueId: string;
+  taskId: string;
   body: string;
   author:
     | { kind: "agent"; agentId: string }
@@ -297,24 +297,24 @@ export interface PluginRunPage<T> {
   nextCursor: string | null;
 }
 
-export interface PluginRunIssuesClient {
-  listCompanyIssues(input?: {
+export interface PluginRunTasksClient {
+  listCompanyTasks(input?: {
     status?: "open" | "blocked" | "done" | "cancelled";
     priority?: "critical" | "high" | "medium" | "low";
     cursor?: string;
     limit?: number;
-  }): Promise<PluginRunPage<PluginRunIssueProjection>>;
-  listSubIssues(input?: {
-    issueId?: string;
+  }): Promise<PluginRunPage<PluginRunTaskProjection>>;
+  listSubTasks(input?: {
+    taskId?: string;
     cursor?: string;
     limit?: number;
-  }): Promise<PluginRunPage<PluginRunIssueProjection>>;
-  readIssueComments(input?: {
-    issueId?: string;
+  }): Promise<PluginRunPage<PluginRunTaskProjection>>;
+  readTaskComments(input?: {
+    taskId?: string;
     cursor?: string;
     limit?: number;
-  }): Promise<PluginRunPage<PluginRunIssueCommentProjection>>;
-  readIssueAgentRun(
+  }): Promise<PluginRunPage<PluginRunTaskCommentProjection>>;
+  readTaskAgentRun(
     runId: string,
     input?: { cursor?: string },
   ): Promise<ProviderSafeRunTrace>;
@@ -323,14 +323,14 @@ export interface PluginRunIssuesClient {
 /** Trusted, host-resolved identity for the exact active agent tool call. */
 export interface PluginResolvedRunContext {
   companyId: string;
-  issueId: string;
+  taskId: string;
   agentId: string;
   runId: string;
   projectId: string | null;
   contextAccess: PluginContextAccess;
 }
 
-export interface PluginRunIssueReach {
+export interface PluginRunTaskReach {
   visible: boolean;
   relation: "active" | "descendant" | "company" | "outside";
 }
@@ -345,11 +345,11 @@ export interface PluginToolRunContext {
   /** Resolve canonical identity for this exact live tool invocation. */
   resolve(): Promise<PluginResolvedRunContext>;
   /**
-   * Resolve issue visibility from the active agent's existing context-access
+   * Resolve task visibility from the active agent's existing context-access
    * matrix. The host, rather than the plugin, owns the authorization decision.
    */
-  issueReach(issueId: string): Promise<PluginRunIssueReach>;
-  readonly issues: PluginRunIssuesClient;
+  taskReach(taskId: string): Promise<PluginRunTaskReach>;
+  readonly tasks: PluginRunTasksClient;
 }
 
 /**
@@ -387,9 +387,9 @@ export type ToolResult =
  * @see PLUGIN_SPEC.md §21.3 `plugin_entities`
  */
 export type PluginEntityUpsert = PluginDataScope & {
-  /** Plugin-defined entity type (e.g. `"linear-issue"`, `"github-pr"`). */
+  /** Plugin-defined entity type (e.g. `"linear-ticket"`, `"github-pr"`). */
   entityType: string;
-  /** External identifier in the remote system (e.g. Linear issue ID). */
+  /** External identifier in the remote system (e.g. Linear ticket ID). */
   externalId?: string;
   /** Human-readable title for display in the Paperclip UI. */
   title?: string;
@@ -526,7 +526,7 @@ export interface PluginEventsClient {
   /**
    * Subscribe to a core Paperclip domain event or a plugin-namespaced event.
    *
-   * @param name - Event type, e.g. `"issue.board.comment.created"` or `"plugin.@acme/linear.sync-done"`
+   * @param name - Event type, e.g. `"task.board.comment.created"` or `"plugin.@acme/linear.sync-done"`
    * @param fn - Async event handler
    */
   on(name: PluginEventPattern, fn: (event: PluginEvent) => Promise<void>): () => void;
@@ -624,13 +624,13 @@ export type PluginJsonValue =
   | { readonly [key: string]: PluginJsonValue };
 
 /**
- * Snapshot-safe identity for one canonical Paperclip issue Session.
+ * Snapshot-safe identity for one canonical Paperclip task Session.
  * Mutable head-derived metadata is deliberately excluded because it cannot be
  * represented truthfully at an older `snapshotHighWaterSeq`.
  */
 export interface PluginCanonicalSessionIdentity {
   readonly companyId: string;
-  readonly issueId: string;
+  readonly taskId: string;
   readonly sessionId: string;
   readonly parentSessionId: string | null;
   readonly projectId: string;
@@ -641,7 +641,7 @@ export interface PluginCanonicalSessionIdentity {
 export interface PluginCanonicalSessionMessageRow {
   readonly id: string;
   readonly companyId: string;
-  readonly issueId: string;
+  readonly taskId: string;
   readonly sessionId: string;
   readonly seq: number;
   readonly modelStateSeq: number;
@@ -664,7 +664,7 @@ export interface PluginCanonicalSessionMessage {
 export interface PluginCanonicalSessionEventRow {
   readonly id: string;
   readonly companyId: string;
-  readonly issueId: string;
+  readonly taskId: string;
   readonly sessionId: string;
   readonly seq: number;
   readonly versionedType: string;
@@ -735,12 +735,12 @@ export interface PluginRuntimeRecordsClient {
     runId: string;
     cursor?: string;
   }): Promise<ProviderSafeRunTrace>;
-  readIssueComments(input: {
+  readTaskComments(input: {
     companyId: string;
-    issueId: string;
+    taskId: string;
     cursor?: string;
     limit?: number;
-  }): Promise<PluginRunPage<PluginRunIssueCommentProjection>>;
+  }): Promise<PluginRunPage<PluginRunTaskCommentProjection>>;
 }
 
 export interface PluginRuntimeClient {
@@ -799,7 +799,7 @@ export interface PluginActivityClient {
  * | `"company"` | company UUID | Per-company sync cursors |
  * | `"project"` | project UUID | Per-project settings, branch tracking |
  * | `"agent"` | agent UUID | Per-agent checkpoints |
- * | `"issue"` | issue UUID | Idempotency keys, linked external IDs |
+ * | `"task"` | task UUID | Idempotency keys, linked external IDs |
  * | `"goal"` | goal UUID | Per-goal progress |
  * | `"run"` | run UUID | Per-run checkpoints |
  *
@@ -814,11 +814,11 @@ export interface PluginActivityClient {
  * // Instance-global flag
  * await ctx.state.set({ scopeKind: "instance", stateKey: "schema-version" }, 2);
  *
- * // Idempotency key per issue
- * const synced = await ctx.state.get({ scopeKind: "issue", scopeId: issueId, stateKey: "synced-to-linear" });
+ * // Idempotency key per task
+ * const synced = await ctx.state.get({ scopeKind: "task", scopeId: taskId, stateKey: "synced-to-linear" });
  * if (!synced) {
- *   await syncToLinear(issueId);
- *   await ctx.state.set({ scopeKind: "issue", scopeId: issueId, stateKey: "synced-to-linear" }, true);
+ *   await syncToLinear(taskId);
+ *   await ctx.state.set({ scopeKind: "task", scopeId: taskId, stateKey: "synced-to-linear" }, true);
  * }
  *
  * // Per-project, namespaced for two integrations
@@ -1114,7 +1114,7 @@ export type PluginContextAccess = Readonly<
   Record<AgentContextGrantKey, boolean>
 >;
 
-export interface PluginIssueCreateInput {
+export interface PluginTaskCreateInput {
   companyId: string;
   request: string;
   ownerAgentId: string;
@@ -1124,10 +1124,10 @@ export interface PluginIssueCreateInput {
   projectId?: string;
   goalId?: string;
   parentId?: string;
-  priority?: Issue["priority"];
+  priority?: Task["priority"];
 }
 
-export type PluginIssueUpdateInput =
+export type PluginTaskUpdateInput =
   | {
       kind: "message";
       message: string;
@@ -1137,9 +1137,9 @@ export type PluginIssueUpdateInput =
       ownerAgentId: string;
     };
 
-export interface PluginIssueWithdrawalResult {
+export interface PluginTaskWithdrawalResult {
   operationId: string;
-  issue: Issue;
+  task: Task;
   retried: boolean;
 }
 
@@ -1150,7 +1150,7 @@ export interface PluginCreatorCallbackRegistration {
 
 export interface PluginCreatorCallbackDelivery {
   deliveryId: string;
-  issueId: string;
+  taskId: string;
   companyId: string;
   ownershipEpoch: number;
   updateId: string;
@@ -1177,11 +1177,11 @@ export type PluginCreatorCallbackHandler = (
   | PluginCreatorCallbackAcknowledgement;
 
 /**
- * `ctx.issues` is a capability-gated control-plane surface. It is not an
+ * `ctx.tasks` is a capability-gated control-plane surface. It is not an
  * agent runtime/context API and it cannot wake an agent except by creating or
- * reassigning an ordinary issue through the canonical issue runtime.
+ * reassigning an ordinary task through the canonical task runtime.
  */
-export interface PluginIssuesClient {
+export interface PluginTasksClient {
   list(input: {
     companyId: string;
     projectId?: string;
@@ -1189,30 +1189,30 @@ export interface PluginIssuesClient {
     status?: "open" | "blocked" | "done" | "cancelled";
     limit?: number;
     offset?: number;
-  }): Promise<Issue[]>;
-  get(issueId: string, companyId: string): Promise<Issue | null>;
+  }): Promise<Task[]>;
+  get(taskId: string, companyId: string): Promise<Task | null>;
   registerCreatorCallback(
     registration: PluginCreatorCallbackRegistration,
     handler: PluginCreatorCallbackHandler,
   ): Promise<void>;
-  create(input: PluginIssueCreateInput): Promise<Issue>;
+  create(input: PluginTaskCreateInput): Promise<Task>;
   update(
-    issueId: string,
-    input: PluginIssueUpdateInput,
+    taskId: string,
+    input: PluginTaskUpdateInput,
     companyId: string,
-  ): Promise<Issue>;
+  ): Promise<Task>;
   withdraw(
-    issueId: string,
+    taskId: string,
     message: string,
     companyId: string,
-  ): Promise<PluginIssueWithdrawalResult>;
+  ): Promise<PluginTaskWithdrawalResult>;
 }
 
 /**
  * `ctx.agents` — read and manage agents.
  *
  * Requires `agents.read` for reads and `agents.pause` / `agents.resume` for
- * lifecycle operations. Provider invocation is issue-only.
+ * lifecycle operations. Provider invocation is task-only.
  */
 export interface PluginAgentsClient {
   list(input: { companyId: string; status?: Agent["status"]; limit?: number; offset?: number }): Promise<Agent[]>;
@@ -1344,7 +1344,7 @@ export interface PluginAuthorizationPolicySummary {
 }
 
 export interface PluginAuthorizationPolicyRecord {
-  resourceType: "company" | "agent" | "issue";
+  resourceType: "company" | "agent" | "task";
   resourceId: string;
   companyId: string;
   policy: Record<string, unknown> | null;
@@ -1400,7 +1400,7 @@ export interface PluginAuthorizationClient {
     get(input: { companyId: string; resourceType: PluginAuthorizationPolicyRecord["resourceType"]; resourceId: string }): Promise<PluginAuthorizationPolicyRecord | null>;
     update(input: {
       companyId: string;
-      resourceType: "issue";
+      resourceType: "task";
       resourceId: string;
       policy: Record<string, unknown> | null;
     }): Promise<PluginAuthorizationPolicyRecord>;
@@ -1438,8 +1438,8 @@ export interface PluginAuthorizationClient {
  *
  * export default definePlugin({
  *   async setup(ctx) {
- *     ctx.events.on("issue.board.comment.created", async (event) => {
- *       await ctx.logger.info("Issue created", { issueId: event.entityId });
+ *     ctx.events.on("task.board.comment.created", async (event) => {
+ *       await ctx.logger.info("Task created", { taskId: event.entityId });
  *     });
  *
  *     ctx.data.register("sync-health", async ({ companyId }) => {
@@ -1498,10 +1498,10 @@ export interface PluginContext {
   /** Read company metadata. Requires `companies.read`. */
   companies: PluginCompaniesClient;
 
-  /** Use the installation-bound issue control plane. */
-  issues: PluginIssuesClient;
+  /** Use the installation-bound task control plane. */
+  tasks: PluginTasksClient;
 
-  /** Read and manage agents. Provider invocation is issue-only. */
+  /** Read and manage agents. Provider invocation is task-only. */
   agents: PluginAgentsClient;
 
   /** Read and mutate goals. Requires `goals.read` for reads; `goals.create` / `goals.update` for write ops. */

@@ -3,9 +3,9 @@ import { Link } from "@/lib/router";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
-import type { Issue, IssueStatus } from "@paperclipai/shared";
-import { collectSubtreeLiveCounts } from "../lib/liveIssueIds";
-import { issueDisplayTitle } from "../lib/issue-display";
+import type { Task, TaskStatus } from "@paperclipai/shared";
+import { collectSubtreeLiveCounts } from "../lib/liveTaskIds";
+import { taskDisplayTitle } from "../lib/task-display";
 import { cn } from "../lib/utils";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +26,7 @@ export const boardStatuses = [
   "blocked",
   "done",
   "cancelled",
-] as const satisfies readonly IssueStatus[];
+] as const satisfies readonly TaskStatus[];
 
 const defaultKanbanColumnTone = {
   rail: "border-border bg-muted/20",
@@ -41,7 +41,7 @@ const defaultKanbanColumnTone = {
 // Every column carries a status-hued tint (matching the app-wide status
 // vocabulary: gray backlog, amber todo, blue in-progress, violet review,
 // red blocked, green done) so no column reads as accidentally unstyled.
-export const kanbanColumnTones: Partial<Record<IssueStatus, typeof defaultKanbanColumnTone>> = {
+export const kanbanColumnTones: Partial<Record<TaskStatus, typeof defaultKanbanColumnTone>> = {
   backlog: {
     rail: "border-border bg-muted/30",
     railOver: "bg-muted/50 ring-1 ring-neutral-400/25",
@@ -107,7 +107,7 @@ export const kanbanColumnTones: Partial<Record<IssueStatus, typeof defaultKanban
   },
 };
 
-export function getKanbanColumnTone(status: IssueStatus) {
+export function getKanbanColumnTone(status: TaskStatus) {
   return kanbanColumnTones[status] ?? defaultKanbanColumnTone;
 }
 
@@ -121,9 +121,9 @@ interface Agent {
 }
 
 interface KanbanBoardProps {
-  issues: Issue[];
+  tasks: Task[];
   agents?: Agent[];
-  liveIssueIds?: Set<string>;
+  liveTaskIds?: Set<string>;
   compactCards?: boolean;
   collapsedStatuses?: string[];
   initialVisibleCount?: number;
@@ -134,9 +134,9 @@ interface KanbanBoardProps {
 
 function KanbanColumn({
   status,
-  issues,
+  tasks,
   agents,
-  liveIssueIds,
+  liveTaskIds,
   subtreeLiveCounts,
   compactCards = false,
   collapsed = false,
@@ -144,10 +144,10 @@ function KanbanColumn({
   revealIncrement,
   onShowMore,
 }: {
-  status: IssueStatus;
-  issues: Issue[];
+  status: TaskStatus;
+  tasks: Task[];
   agents?: Agent[];
-  liveIssueIds?: Set<string>;
+  liveTaskIds?: Set<string>;
   subtreeLiveCounts?: ReadonlyMap<string, number>;
   compactCards?: boolean;
   collapsed?: boolean;
@@ -155,9 +155,9 @@ function KanbanColumn({
   revealIncrement: number;
   onShowMore: () => void;
 }) {
-  const isEmpty = issues.length === 0;
-  const visibleIssues = collapsed ? [] : issues.slice(0, visibleCount);
-  const hiddenCount = Math.max(issues.length - visibleIssues.length, 0);
+  const isEmpty = tasks.length === 0;
+  const visibleTasks = collapsed ? [] : tasks.slice(0, visibleCount);
+  const hiddenCount = Math.max(tasks.length - visibleTasks.length, 0);
   const nextRevealCount = Math.min(revealIncrement, hiddenCount);
   const tone = getKanbanColumnTone(status);
 
@@ -168,14 +168,14 @@ function KanbanColumn({
           "flex min-h-(--sz-220px) w-(--sz-52px) shrink-0 flex-col items-center rounded-md border px-1.5 py-2 transition-colors",
           tone.rail,
         )}
-        title={`${statusLabel(status)}: ${issues.length}`}
+        title={`${statusLabel(status)}: ${tasks.length}`}
       >
         <StatusIcon status={status} />
         <span className={cn("mt-2 [writing-mode:vertical-rl] rotate-180 text-(length:--text-nano) font-semibold uppercase tracking-wide", tone.header)}>
           {statusLabel(status)}
         </span>
         <Badge variant="ghost" className={cn("mt-auto bg-background px-1.5 text-(length:--text-nano) tabular-nums", tone.header)}>
-          {issues.length}
+          {tasks.length}
         </Badge>
       </div>
     );
@@ -189,7 +189,7 @@ function KanbanColumn({
           {statusLabel(status)}
         </span>
         <span className={cn("ml-auto text-xs tabular-nums", tone.count)}>
-          {issues.length}
+          {tasks.length}
         </span>
       </div>
       <div
@@ -198,13 +198,13 @@ function KanbanColumn({
           tone.body,
         )}
       >
-        {visibleIssues.map((issue) => (
+        {visibleTasks.map((task) => (
           <KanbanCard
-            key={issue.id}
-            issue={issue}
+            key={task.id}
+            task={task}
             agents={agents}
-            isLive={liveIssueIds?.has(issue.id)}
-            subtreeLiveCount={subtreeLiveCounts?.get(issue.id) ?? 0}
+            isLive={liveTaskIds?.has(task.id)}
+            subtreeLiveCount={subtreeLiveCounts?.get(task.id) ?? 0}
             compact={compactCards}
             className={tone.card}
           />
@@ -218,9 +218,9 @@ function KanbanColumn({
             Show {nextRevealCount} more
           </button>
         ) : null}
-        {issues.length > 0 && (hiddenCount > 0 || issues.length >= visibleCount) ? (
+        {tasks.length > 0 && (hiddenCount > 0 || tasks.length >= visibleCount) ? (
           <p className="px-1 pt-1 text-(length:--text-micro) text-muted-foreground">
-            Showing {visibleIssues.length} of {issues.length}
+            Showing {visibleTasks.length} of {tasks.length}
           </p>
         ) : null}
       </div>
@@ -231,14 +231,14 @@ function KanbanColumn({
 /* ── Draggable Card ── */
 
 function KanbanCard({
-  issue,
+  task,
   agents,
   isLive,
   subtreeLiveCount = 0,
   compact = false,
   className,
 }: {
-  issue: Issue;
+  task: Task;
   agents?: Agent[];
   isLive?: boolean;
   subtreeLiveCount?: number;
@@ -259,13 +259,13 @@ function KanbanCard({
       )}
     >
       <Link
-        to={`/issues/${issue.identifier ?? issue.id}`}
-        disableIssueQuicklook
+        to={`/tasks/${task.identifier ?? task.id}`}
+        disableTaskQuicklook
         className="block no-underline text-inherit"
       >
         <div className={`flex items-start gap-1.5 ${compact ? "mb-1" : "mb-1.5"}`}>
           <span className="text-xs text-muted-foreground font-mono shrink-0">
-            {issue.identifier ?? issue.id.slice(0, 8)}
+            {task.identifier ?? task.id.slice(0, 8)}
           </span>
           {isLive && (
             <span className="inline-flex shrink-0 items-center gap-1 text-(length:--text-nano) font-medium text-blue-600 dark:text-blue-400">
@@ -286,16 +286,16 @@ function KanbanCard({
             </Badge>
           )}
         </div>
-        <p className={`${compact ? "mb-1.5 text-xs" : "mb-2 text-sm"} leading-snug line-clamp-2`}>{issueDisplayTitle(issue)}</p>
+        <p className={`${compact ? "mb-1.5 text-xs" : "mb-2 text-sm"} leading-snug line-clamp-2`}>{taskDisplayTitle(task)}</p>
         <div className="flex items-center gap-2 min-w-0">
-          <PriorityIcon priority={issue.priority} />
-          {issue.ownerAgentId && (() => {
-            const name = agentName(issue.ownerAgentId);
+          <PriorityIcon priority={task.priority} />
+          {task.ownerAgentId && (() => {
+            const name = agentName(task.ownerAgentId);
             return name ? (
               <Identity name={name} size="xs" />
             ) : (
               <span className="text-xs text-muted-foreground font-mono">
-                {issue.ownerAgentId.slice(0, 8)}
+                {task.ownerAgentId.slice(0, 8)}
               </span>
             );
           })()}
@@ -308,9 +308,9 @@ function KanbanCard({
 /* ── Main Board ── */
 
 export function KanbanBoard({
-  issues,
+  tasks,
   agents,
-  liveIssueIds,
+  liveTaskIds,
   compactCards = false,
   collapsedStatuses = [],
   initialVisibleCount = KANBAN_COLUMN_INITIAL_VISIBLE_LIMIT,
@@ -324,22 +324,22 @@ export function KanbanBoard({
   const visibleCountByStatus = visibleState.paginationKey === paginationKey ? visibleState.counts : {};
   const collapsedStatusSet = useMemo(() => new Set(collapsedStatuses), [collapsedStatuses]);
 
-  const columnIssues = useMemo(() => {
-    const grouped: Record<IssueStatus, Issue[]> = {} as Record<IssueStatus, Issue[]>;
+  const columnTasks = useMemo(() => {
+    const grouped: Record<TaskStatus, Task[]> = {} as Record<TaskStatus, Task[]>;
     for (const status of boardStatuses) {
       grouped[status] = [];
     }
-    for (const issue of issues) {
-      if (grouped[issue.boardPresentationStatus]) {
-        grouped[issue.boardPresentationStatus].push(issue);
+    for (const task of tasks) {
+      if (grouped[task.boardPresentationStatus]) {
+        grouped[task.boardPresentationStatus].push(task);
       }
     }
     return grouped;
-  }, [issues]);
+  }, [tasks]);
 
   const subtreeLiveCounts = useMemo(
-    () => collectSubtreeLiveCounts(issues, liveIssueIds ?? new Set<string>()),
-    [issues, liveIssueIds],
+    () => collectSubtreeLiveCounts(tasks, liveTaskIds ?? new Set<string>()),
+    [tasks, liveTaskIds],
   );
 
   return (
@@ -348,15 +348,15 @@ export function KanbanBoard({
           <KanbanColumn
             key={status}
             status={status}
-            issues={columnIssues[status] ?? []}
+            tasks={columnTasks[status] ?? []}
             agents={agents}
-            liveIssueIds={liveIssueIds}
+            liveTaskIds={liveTaskIds}
             subtreeLiveCounts={subtreeLiveCounts}
             compactCards={compactCards}
             // Compact mode (any lane explicitly collapsed) also collapses
             // empty lanes to the same labeled rail, so an empty In Progress
             // reads like the other rails instead of a lone expanded column.
-            collapsed={collapsedStatusSet.has(status) || (collapsedStatusSet.size > 0 && columnIssues[status].length === 0)}
+            collapsed={collapsedStatusSet.has(status) || (collapsedStatusSet.size > 0 && columnTasks[status].length === 0)}
             visibleCount={visibleCountByStatus[status] ?? initialVisibleCount}
             revealIncrement={revealIncrement}
             onShowMore={() => {

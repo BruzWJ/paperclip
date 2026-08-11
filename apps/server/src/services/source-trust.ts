@@ -17,7 +17,7 @@ export type SourceTrustActor = {
   runId: string | null;
 };
 
-export type SourceTrustIssueContext = {
+export type SourceTrustTaskContext = {
   id: string;
   companyId: string;
   executionPolicy?: unknown;
@@ -55,22 +55,22 @@ export function sanitizeQuarantinedCommentForHigherTrust<
 }
 
 export function buildLowTrustSourceTrust(input: {
-  issueId: string;
+  taskId: string;
   runId?: string | null;
   agentId?: string | null;
 }): SourceTrustMetadata {
   return {
     preset: LOW_TRUST_REVIEW_PRESET,
     disposition: "quarantined",
-    sourceIssueId: input.issueId,
+    sourceTaskId: input.taskId,
     sourceRunId: input.runId ?? null,
     sourceAgentId: input.agentId ?? null,
   };
 }
 
 export function buildPromotedSourceTrust(input: {
-  sourceIssueId: string;
-  sourceArtifactKind: "comment" | "document" | "work_product" | "issue";
+  sourceTaskId: string;
+  sourceArtifactKind: "comment" | "document" | "work_product" | "task";
   sourceArtifactId: string;
   promotedByActorType: "agent" | "user" | "system";
   promotedByActorId: string;
@@ -79,11 +79,11 @@ export function buildPromotedSourceTrust(input: {
   return {
     preset: LOW_TRUST_REVIEW_PRESET,
     disposition: "promoted",
-    sourceIssueId: input.sourceIssueId,
+    sourceTaskId: input.sourceTaskId,
     promotedFrom: {
       artifactKind: input.sourceArtifactKind,
       artifactId: input.sourceArtifactId,
-      issueId: input.sourceIssueId,
+      taskId: input.sourceTaskId,
     },
     promotedByActorType: input.promotedByActorType,
     promotedByActorId: input.promotedByActorId,
@@ -91,9 +91,9 @@ export function buildPromotedSourceTrust(input: {
   };
 }
 
-export async function resolveActorSourceTrustForIssue(input: {
+export async function resolveActorSourceTrustForTask(input: {
   db: Db;
-  issue: SourceTrustIssueContext;
+  task: SourceTrustTaskContext;
   actor: SourceTrustActor;
 }): Promise<SourceTrustMetadata | null> {
   if (input.actor.actorType !== "agent" || !input.actor.agentId) return null;
@@ -101,34 +101,34 @@ export async function resolveActorSourceTrustForIssue(input: {
   const runLinkage = input.actor.runId
     ? await resolveProductiveRunLinkage(input.db, {
         runId: input.actor.runId,
-        companyId: input.issue.companyId,
+        companyId: input.task.companyId,
         agentId: input.actor.agentId,
       })
     : null;
 
   if (
     input.actor.runId
-    && (!runLinkage || runLinkage.issueId !== input.issue.id)
+    && (!runLinkage || runLinkage.taskId !== input.task.id)
   ) {
-    // Fail closed: only the exact persisted productive issue execution can
+    // Fail closed: only the exact persisted productive task execution can
     // establish the source run for an agent-authored write.
     return buildLowTrustSourceTrust({
-      issueId: input.issue.id,
+      taskId: input.task.id,
       runId: input.actor.runId,
       agentId: input.actor.agentId,
     });
   }
 
   const resolution = resolveCoreTrustPreset({
-    companyId: input.issue.companyId,
-    issue: {
-      companyId: input.issue.companyId,
-      executionPolicy: input.issue.executionPolicy,
+    companyId: input.task.companyId,
+    task: {
+      companyId: input.task.companyId,
+      executionPolicy: input.task.executionPolicy,
     },
     run: runLinkage
       ? {
           companyId: runLinkage.companyId,
-          executionPolicy: runLinkage.issueExecutionPolicy,
+          executionPolicy: runLinkage.taskExecutionPolicy,
         }
       : null,
   });
@@ -138,7 +138,7 @@ export async function resolveActorSourceTrustForIssue(input: {
   }
   if (resolution.kind !== "low_trust_review") return null;
   return buildLowTrustSourceTrust({
-    issueId: input.issue.id,
+    taskId: input.task.id,
     runId: input.actor.runId,
     agentId: input.actor.agentId,
   });

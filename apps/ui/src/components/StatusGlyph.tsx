@@ -14,7 +14,7 @@ import { taskStatusIconVar, taskStatusIconVarDefault } from "../lib/status-color
 
 /**
  * Unified task status glyph — the single source-of-truth icon for every
- * task/issue status. Each status maps to one Lucide icon (all drawn on the same
+ * task status. Each status maps to one Lucide icon (all drawn on the same
  * `viewBox="0 0 24 24"` so they scale proportionally at any size), so the whole
  * set reads as one consistent icon family:
  *

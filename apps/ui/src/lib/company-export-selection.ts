@@ -1,18 +1,18 @@
-import type { CompanyPortabilityIssueManifestEntry } from "@paperclipai/shared";
+import type { CompanyPortabilityTaskManifestEntry } from "@paperclipai/shared";
 
 function isTaskPath(filePath: string): boolean {
   return /(?:^|\/)tasks\//.test(filePath);
 }
 
 function buildRecurringTaskPrefixes(
-  issues: Array<Pick<CompanyPortabilityIssueManifestEntry, "path" | "recurring">>,
+  tasks: Array<Pick<CompanyPortabilityTaskManifestEntry, "path" | "recurring">>,
 ): Set<string> {
   const prefixes = new Set<string>();
 
-  for (const issue of issues) {
-    if (!issue.recurring) continue;
+  for (const task of tasks) {
+    if (!task.recurring) continue;
 
-    const filePath = issue.path.trim();
+    const filePath = task.path.trim();
     if (!filePath) continue;
 
     prefixes.add(filePath);
@@ -35,11 +35,11 @@ function isRecurringTaskFile(filePath: string, recurringTaskPrefixes: Set<string
 
 export function buildInitialExportCheckedFiles(
   filePaths: string[],
-  issues: Array<Pick<CompanyPortabilityIssueManifestEntry, "path" | "recurring">>,
+  tasks: Array<Pick<CompanyPortabilityTaskManifestEntry, "path" | "recurring">>,
   previousCheckedFiles: Set<string>,
 ): Set<string> {
   const next = new Set<string>();
-  const recurringTaskPrefixes = buildRecurringTaskPrefixes(issues);
+  const recurringTaskPrefixes = buildRecurringTaskPrefixes(tasks);
 
   for (const filePath of filePaths) {
     if (previousCheckedFiles.has(filePath)) {

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { INBOX_MINE_ISSUE_STATUS_FILTER } from "../constants.js";
+import { addValidationDetail } from "../validation-details.js";
+import { INBOX_MINE_TASK_STATUS_FILTER } from "../constants.js";
 import { envConfigSchema } from "./secret.js";
 import { isProviderChildReservedEnvironmentKey } from "../provider-child-boundary.js";
 
@@ -48,8 +49,7 @@ function rejectCompanySkillRevisionFields(
       normalizedAdapterConfigKey(key) === "paperclipskillsync" ||
       normalizedAdapterConfigKey(key) === "companyskillpins"
     ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "Company skill pins belong only to the immutable ACP revision",
         path: entryPath,
       });
@@ -84,16 +84,14 @@ function rejectAdapterBridgeFields(
       /^paperclip(?:api|bridge|runtime)/.test(normalizedKey) ||
       /^(?:agent|managed)home(?:dir|directory|path)?$/.test(normalizedKey)
     ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Adapter configuration field is server-owned or forbidden: ${key}`,
         path: [...path, key],
       });
       continue;
     }
     if (isEnvironmentEntry && isProviderChildReservedEnvironmentKey(key)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Adapter environment cannot contain control-plane state: ${key}`,
         path: [...path, key],
       });
@@ -108,8 +106,7 @@ const providerAdapterConfigSchema = z.record(z.string(), z.unknown()).superRefin
   if (envValue !== undefined) {
     const parsed = envConfigSchema.safeParse(envValue);
     if (!parsed.success) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "adapterConfig.env must be a map of valid env bindings",
         path: ["env"],
       });
@@ -145,7 +142,7 @@ export const agentRuntimeConfigSchema = z.object({
 
 export const agentMineInboxQuerySchema = z.object({
   userId: z.string().trim().min(1),
-  status: z.string().trim().min(1).optional().default(INBOX_MINE_ISSUE_STATUS_FILTER),
+  status: z.string().trim().min(1).optional().default(INBOX_MINE_TASK_STATUS_FILTER),
 });
 
 export type AgentMineInboxQuery = z.infer<typeof agentMineInboxQuerySchema>;

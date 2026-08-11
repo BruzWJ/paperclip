@@ -7,7 +7,7 @@ import {
 describe("parseDocumentAnnotationHash", () => {
   it("returns null for non-document hashes", () => {
     expect(parseDocumentAnnotationHash("")).toBeNull();
-    expect(parseDocumentAnnotationHash("#issue-foo")).toBeNull();
+    expect(parseDocumentAnnotationHash("#task-foo")).toBeNull();
   });
 
   it("parses document key only", () => {

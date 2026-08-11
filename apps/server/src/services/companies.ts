@@ -6,7 +6,7 @@ import {
   companyLogos,
   assets,
   agents,
-  issues,
+  tasks,
   projects,
 } from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
@@ -16,7 +16,7 @@ import {
   beginCompanyHardDeleteInTx,
   purgeCompanySessionGraphInTx,
   reactivateCompanySessionGraphInTx,
-} from "./issue-session-lifecycle.js";
+} from "./task-session-lifecycle.js";
 import {
   budgetService,
   type CanonicalCompanyCreation,
@@ -117,8 +117,8 @@ export function companyService(db: Db) {
     status: companies.status,
     pauseReason: companies.pauseReason,
     pausedAt: companies.pausedAt,
-    issuePrefix: companies.issuePrefix,
-    issueCounter: companies.issueCounter,
+    taskPrefix: companies.taskPrefix,
+    taskCounter: companies.taskCounter,
     budgetCurrency: companies.budgetCurrency,
     budgetMonthlyAmount: companies.budgetMonthlyAmount,
     attachmentMaxBytes: companies.attachmentMaxBytes,
@@ -400,19 +400,19 @@ export function companyService(db: Db) {
           .from(agents)
           .groupBy(agents.companyId),
         db
-          .select({ companyId: issues.companyId, count: count() })
-          .from(issues)
-          .groupBy(issues.companyId),
-      ]).then(([agentRows, issueRows]) => {
-        const result: Record<string, { agentCount: number; issueCount: number }> = {};
+          .select({ companyId: tasks.companyId, count: count() })
+          .from(tasks)
+          .groupBy(tasks.companyId),
+      ]).then(([agentRows, taskRows]) => {
+        const result: Record<string, { agentCount: number; taskCount: number }> = {};
         for (const row of agentRows) {
-          result[row.companyId] = { agentCount: row.count, issueCount: 0 };
+          result[row.companyId] = { agentCount: row.count, taskCount: 0 };
         }
-        for (const row of issueRows) {
+        for (const row of taskRows) {
           if (result[row.companyId]) {
-            result[row.companyId].issueCount = row.count;
+            result[row.companyId].taskCount = row.count;
           } else {
-            result[row.companyId] = { agentCount: 0, issueCount: row.count };
+            result[row.companyId] = { agentCount: 0, taskCount: row.count };
           }
         }
         return result;

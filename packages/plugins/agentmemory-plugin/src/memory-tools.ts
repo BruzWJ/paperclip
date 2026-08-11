@@ -18,18 +18,18 @@ const querySchema: PluginToolDeclaration["parametersSchema"] = {
   additionalProperties: false,
 };
 
-const issueQuerySchema: PluginToolDeclaration["parametersSchema"] = {
+const taskQuerySchema: PluginToolDeclaration["parametersSchema"] = {
   type: "object",
   properties: {
-    issueId: {
+    taskId: {
       type: "string",
       minLength: 1,
       description:
-        "Paperclip issue ID. Reach is enforced by the host from the current context-access matrix.",
+        "Paperclip task ID. Reach is enforced by the host from the current context-access matrix.",
     },
     query: queryProperty,
   },
-  required: ["issueId", "query"],
+  required: ["taskId", "query"],
   additionalProperties: false,
 };
 
@@ -40,23 +40,23 @@ interface MemoryToolDefinition {
 
 export const MEMORY_TOOL_DEFINITIONS = [
   {
-    partitionKind: "issue_agent",
+    partitionKind: "task_agent",
     declaration: {
-      name: "read_issue_agent_memory",
-      displayName: "Read issue agent memory",
+      name: "read_task_agent_memory",
+      displayName: "Read task agent memory",
       description:
-        "Recall private memory for this agent on an issue allowed by the matching current, sub-issue, or company run-detail context grant.",
-      parametersSchema: issueQuerySchema,
+        "Recall private memory for this agent on a task allowed by the matching current, sub-task, or company run-detail context grant.",
+      parametersSchema: taskQuerySchema,
     },
   },
   {
-    partitionKind: "issue_shared",
+    partitionKind: "task_shared",
     declaration: {
-      name: "read_issue_shared_memory",
-      displayName: "Read issue shared memory",
+      name: "read_task_shared_memory",
+      displayName: "Read task shared memory",
       description:
-        "Recall shared memory for an issue allowed by the matching current, sub-issue, or company comment-detail context grant.",
-      parametersSchema: issueQuerySchema,
+        "Recall shared memory for a task allowed by the matching current, sub-task, or company comment-detail context grant.",
+      parametersSchema: taskQuerySchema,
     },
   },
   {
@@ -65,7 +65,7 @@ export const MEMORY_TOOL_DEFINITIONS = [
       name: "read_company_agent_memory",
       displayName: "Read company agent memory",
       description:
-        "Recall this agent's private memory across company issues when company run-detail context access is enabled.",
+        "Recall this agent's private memory across company tasks when company run-detail context access is enabled.",
       parametersSchema: querySchema,
       bootstrapEnabled: true,
     },

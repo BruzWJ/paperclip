@@ -34,120 +34,120 @@ export { localExecutionLeases } from "./local_execution_leases.js";
 export { projectGoals } from "./project_goals.js";
 export { goals } from "./goals.js";
 export { folders } from "./folders.js";
-export { issues } from "./issues.js";
-export { issueReferenceMentions } from "./issue_reference_mentions.js";
-export { issueRelations } from "./issue_relations.js";
+export { tasks } from "./tasks.js";
+export { taskReferenceMentions } from "./task_reference_mentions.js";
+export { taskRelations } from "./task_relations.js";
 export { routines, routineRevisions, routineTriggers, routineRuns } from "./routines.js";
-export { issueWorkProducts } from "./issue_work_products.js";
+export { taskWorkProducts } from "./task_work_products.js";
 export { labels } from "./labels.js";
-export { issueLabels } from "./issue_labels.js";
-export { issueApprovals } from "./issue_approvals.js";
-export { issueComments } from "./issue_comments.js";
-export { issueCommentProjectionSources } from "./issue_comment_projection_sources.js";
+export { taskLabels } from "./task_labels.js";
+export { taskApprovals } from "./task_approvals.js";
+export { taskComments } from "./task_comments.js";
+export { taskCommentProjectionSources } from "./task_comment_projection_sources.js";
 export {
-  issueSessions,
-  issueSessionEventSequences,
-  issueSessionMessageIdAllocators,
-  issueSessionMessageIdReservations,
-  issueSessionEvents,
-  issueSessionMessages,
-  issueSessionInputs,
-  issueSessionInputDispositions,
-  issueSessionContextEpochs,
-  issueSessionSourceUserExecutions,
-  type IssueSessionModelRef,
-  type IssueSessionRevertState,
-} from "./issue_sessions.js";
+  taskSessions,
+  taskSessionEventSequences,
+  taskSessionMessageIdAllocators,
+  taskSessionMessageIdReservations,
+  taskSessionEvents,
+  taskSessionMessages,
+  taskSessionInputs,
+  taskSessionInputDispositions,
+  taskSessionContextEpochs,
+  taskSessionSourceUserExecutions,
+  type TaskSessionModelRef,
+  type TaskSessionRevertState,
+} from "./task_sessions.js";
 export {
-  issueExecutionAuthorities,
-  issueConsultExecutions,
-  issueExecutionLanes,
-  issueExecutionRefs,
-  issueExecutionHistoryViews,
-  issueExecutionHistoryViewMessages,
-  issueExecutionWorkspaceBindings,
-  type IssueExecutionLane,
-  type NewIssueExecutionLane,
-} from "./issue_execution_runtime.js";
+  taskExecutionAuthorities,
+  taskConsultExecutions,
+  taskExecutionLanes,
+  taskExecutionRefs,
+  taskExecutionHistoryViews,
+  taskExecutionHistoryViewMessages,
+  taskExecutionWorkspaceBindings,
+  type TaskExecutionLane,
+  type NewTaskExecutionLane,
+} from "./task_execution_runtime.js";
 export {
-  issueExecutionSessions,
-  issueExecutionPromptCapabilities,
-  type IssueExecutionSession,
-  type NewIssueExecutionSession,
-  type IssueExecutionPromptCapability,
-  type NewIssueExecutionPromptCapability,
-} from "./issue_execution_capabilities.js";
+  taskExecutionSessions,
+  taskExecutionPromptCapabilities,
+  type TaskExecutionSession,
+  type NewTaskExecutionSession,
+  type TaskExecutionPromptCapability,
+  type NewTaskExecutionPromptCapability,
+} from "./task_execution_capabilities.js";
 export {
-  issueCreatorEdgeReceivability,
-  issueUpdates,
+  taskCreatorEdgeReceivability,
+  taskUpdates,
   pluginWithdrawalOperations,
   systemEscalationIdentities,
-} from "./issue_creator_edge.js";
+} from "./task_creator_edge.js";
 export {
-  issueBoardReopenCommands,
-  issueBoardUserComments,
-} from "./issue_board_reopen_commands.js";
-export { issueBoardMentions } from "./issue_board_mentions.js";
+  taskBoardReopenCommands,
+  taskBoardUserComments,
+} from "./task_board_reopen_commands.js";
+export { taskBoardMentions } from "./task_board_mentions.js";
 export {
-  issueCreatorWithdrawalCommands,
-  issueBoardLifecycleCommands,
-  type IssueCreatorWithdrawalCommand,
-  type NewIssueCreatorWithdrawalCommand,
-  type IssueBoardLifecycleCommand,
-  type NewIssueBoardLifecycleCommand,
-} from "./issue_lifecycle_commands.js";
+  taskCreatorWithdrawalCommands,
+  taskBoardLifecycleCommands,
+  type TaskCreatorWithdrawalCommand,
+  type NewTaskCreatorWithdrawalCommand,
+  type TaskBoardLifecycleCommand,
+  type NewTaskBoardLifecycleCommand,
+} from "./task_lifecycle_commands.js";
 export {
-  issueExecutionRuns,
-  issueExecutionRunRefs,
-  issueExecutionPromptSegments,
-  issueExecutionRunControls,
-  issueExecutionAttempts,
-  issueExecutionAttemptRetrySchedules,
-  issueExecutionLeases,
-  issueExecutionCancellationIntents,
-  issueExecutionRunLivenessFacts,
-  issueExecutionFinalizations,
-  issueExecutionFinalizationPromptDependencies,
-  issueExecutionFinalizationUpdateDependencies,
-  type IssueExecutionMode,
-  type IssueExecutionRun,
-  type NewIssueExecutionRun,
-  type IssueExecutionRunRef,
-  type NewIssueExecutionRunRef,
-  type IssueExecutionPromptSegment,
-  type NewIssueExecutionPromptSegment,
-  type IssueExecutionRunControl,
-  type IssueExecutionAttempt,
-  type NewIssueExecutionAttempt,
-  type IssueExecutionAttemptRetrySchedule,
-  type NewIssueExecutionAttemptRetrySchedule,
-  type IssueExecutionLease,
-  type NewIssueExecutionLease,
-  type IssueExecutionCancellationIntent,
-  type NewIssueExecutionCancellationIntent,
-  type IssueExecutionRunLivenessFactRow,
-  type IssueExecutionFinalization,
-  type NewIssueExecutionFinalization,
-  type IssueExecutionFinalizationPromptDependency,
-  type NewIssueExecutionFinalizationPromptDependency,
-  type IssueExecutionFinalizationUpdateDependency,
-  type NewIssueExecutionFinalizationUpdateDependency,
-} from "./issue_execution_runs.js";
+  taskExecutionRuns,
+  taskExecutionRunRefs,
+  taskExecutionPromptSegments,
+  taskExecutionRunControls,
+  taskExecutionAttempts,
+  taskExecutionAttemptRetrySchedules,
+  taskExecutionLeases,
+  taskExecutionCancellationIntents,
+  taskExecutionRunLivenessFacts,
+  taskExecutionFinalizations,
+  taskExecutionFinalizationPromptDependencies,
+  taskExecutionFinalizationUpdateDependencies,
+  type TaskExecutionMode,
+  type TaskExecutionRun,
+  type NewTaskExecutionRun,
+  type TaskExecutionRunRef,
+  type NewTaskExecutionRunRef,
+  type TaskExecutionPromptSegment,
+  type NewTaskExecutionPromptSegment,
+  type TaskExecutionRunControl,
+  type TaskExecutionAttempt,
+  type NewTaskExecutionAttempt,
+  type TaskExecutionAttemptRetrySchedule,
+  type NewTaskExecutionAttemptRetrySchedule,
+  type TaskExecutionLease,
+  type NewTaskExecutionLease,
+  type TaskExecutionCancellationIntent,
+  type NewTaskExecutionCancellationIntent,
+  type TaskExecutionRunLivenessFactRow,
+  type TaskExecutionFinalization,
+  type NewTaskExecutionFinalization,
+  type TaskExecutionFinalizationPromptDependency,
+  type NewTaskExecutionFinalizationPromptDependency,
+  type TaskExecutionFinalizationUpdateDependency,
+  type NewTaskExecutionFinalizationUpdateDependency,
+} from "./task_execution_runs.js";
 export { companySessionLifecycleOperations } from "./company_session_lifecycle.js";
-export { issueCreateIdempotencyKeys } from "./issue_create_idempotency_keys.js";
+export { taskCreateIdempotencyKeys } from "./task_create_idempotency_keys.js";
 export { changeConsents } from "./change_consents.js";
-export { issueTreeHolds } from "./issue_tree_holds.js";
-export { issueTreeHoldMembers } from "./issue_tree_hold_members.js";
-export { issueExecutionDecisions } from "./issue_execution_decisions.js";
-export { issueInboxArchives } from "./issue_inbox_archives.js";
+export { taskTreeHolds } from "./task_tree_holds.js";
+export { taskTreeHoldMembers } from "./task_tree_hold_members.js";
+export { taskExecutionDecisions } from "./task_execution_decisions.js";
+export { taskInboxArchives } from "./task_inbox_archives.js";
 export { userInboxAgentPolicies } from "./user_inbox_agent_policies.js";
 export { inboxDismissals } from "./inbox_dismissals.js";
-export { issueReadStates } from "./issue_read_states.js";
+export { taskReadStates } from "./task_read_states.js";
 export { assets } from "./assets.js";
-export { issueAttachments } from "./issue_attachments.js";
+export { taskAttachments } from "./task_attachments.js";
 export { documents } from "./documents.js";
 export { documentRevisions } from "./document_revisions.js";
-export { issueDocuments } from "./issue_documents.js";
+export { taskDocuments } from "./task_documents.js";
 export { routineDocuments } from "./routine_documents.js";
 export { documentAnnotationThreads } from "./document_annotation_threads.js";
 export { documentAnnotationComments } from "./document_annotation_comments.js";

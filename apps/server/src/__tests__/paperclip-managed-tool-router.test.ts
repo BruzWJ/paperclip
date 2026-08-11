@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { OrdinaryIssueRuntime } from "../services/ordinary-issue-runtime.js";
+import type { OrdinaryTaskRuntime } from "../services/ordinary-task-runtime.js";
 import { parseBoardManagedTool } from "../services/paperclip-managed-tool-registry.js";
 import {
   createPaperclipManagedToolRouter,
@@ -18,7 +18,7 @@ vi.mock("../services/agents.js", () => ({
 }));
 
 const companyId = "00000000-0000-4000-8000-000000000001";
-const issueId = "00000000-0000-4000-8000-000000000002";
+const taskId = "00000000-0000-4000-8000-000000000002";
 const userId = "board-user-1";
 
 const boardAuthority: BoardUserToolAuthority = {
@@ -30,9 +30,9 @@ const boardAuthority: BoardUserToolAuthority = {
   requestId: 1,
 };
 
-function issueRow() {
+function taskRow() {
   return {
-    id: issueId,
+    id: taskId,
     companyId,
     ownershipEpoch: 1,
     boardPresentationStatus: "open",
@@ -42,26 +42,26 @@ function issueRow() {
 
 function setup(options: { lifecycle?: () => Promise<unknown> } = {}) {
   const db = createMockDb({
-    // `issueInBoardScope` and its canonical label enrichment.
-    select: [[issueRow()], [], []],
+    // `taskInBoardScope` and its canonical label enrichment.
+    select: [[taskRow()], [], []],
   });
   const commitOwnerFormUpdate = vi.fn(
     options.lifecycle ?? (async () => ({
-      issue: { id: issueId },
+      task: { id: taskId },
       comment: { id: "00000000-0000-4000-8000-000000000003" },
       retried: false,
     })),
   );
-  const ordinaryIssues = {
+  const ordinaryTasks = {
     commitOwnerFormUpdate,
     boardReopen: vi.fn(),
     userComment: vi.fn(),
-  } as unknown as OrdinaryIssueRuntime;
+  } as unknown as OrdinaryTaskRuntime;
   const publish = vi.fn();
   const router = createPaperclipManagedToolRouter({
     db: db.db,
     agentRunActions: {} as AgentRunManagedActionPort,
-    ordinaryIssues: () => ordinaryIssues,
+    ordinaryTasks: () => ordinaryTasks,
     retrieval: () => ({} as never),
     pluginDomainEvents: { publish } as never,
   });
@@ -74,15 +74,15 @@ function setup(options: { lifecycle?: () => Promise<unknown> } = {}) {
   };
 }
 
-describe("Paperclip managed-tool router Board issue_update", () => {
+describe("Paperclip managed-tool router Board task_update", () => {
   it("uses the canonical owner-form lifecycle transaction with Board authority", async () => {
     const { router, commitOwnerFormUpdate, publish } = setup();
     const structuredResult = { artifact: "report.json" };
 
     const result = await router.routeExecution(
-      parseBoardManagedTool("issue_update", {
+      parseBoardManagedTool("task_update", {
         companyId,
-        issueId,
+        taskId,
         status: "done",
         message: "The Board verified the result.",
         structuredResult,
@@ -91,15 +91,15 @@ describe("Paperclip managed-tool router Board issue_update", () => {
     );
 
     expect(result).toEqual({
-      issueId,
+      taskId,
       lifecycle: {
-        issue: { id: issueId },
+        task: { id: taskId },
         comment: { id: "00000000-0000-4000-8000-000000000003" },
         retried: false,
       },
     });
     expect(commitOwnerFormUpdate).toHaveBeenCalledWith(
-      issueId,
+      taskId,
       {
         status: "done",
         message: "The Board verified the result.",
@@ -110,17 +110,17 @@ describe("Paperclip managed-tool router Board issue_update", () => {
         companyId,
         actorUserId: userId,
         gatewayInvocationId: expect.stringContaining(
-          "paperclip-tool:issue_update:",
+          "paperclip-tool:task_update:",
         ),
       }),
     );
     expect(publish).toHaveBeenCalledWith(expect.objectContaining({
       eventId: "00000000-0000-4000-8000-000000000003",
-      eventType: "issue.board.comment.created",
+      eventType: "task.board.comment.created",
       companyId,
       payload: {
         companyId,
-        issueId,
+        taskId,
         commentId: "00000000-0000-4000-8000-000000000003",
       },
     }));
@@ -132,15 +132,15 @@ describe("Paperclip managed-tool router Board issue_update", () => {
     const router = createPaperclipManagedToolRouter({
       db: db.db,
       agentRunActions: {} as AgentRunManagedActionPort,
-      ordinaryIssues: () => ({
+      ordinaryTasks: () => ({
         commitOwnerFormUpdate,
-      }) as unknown as OrdinaryIssueRuntime,
+      }) as unknown as OrdinaryTaskRuntime,
       retrieval: () => ({} as never),
       pluginDomainEvents: { publish: vi.fn() } as never,
     });
-    expect(() => parseBoardManagedTool("issue_update", {
+    expect(() => parseBoardManagedTool("task_update", {
       companyId,
-      issueId,
+      taskId,
       title: "This must not be persisted",
       status: "blocked",
     })).toThrow("A lifecycle status update requires a message");
@@ -152,22 +152,22 @@ describe("Paperclip managed-tool router Board issue_update", () => {
   it("does not update a title before a canonical lifecycle transition rejects", async () => {
     const { db, router, commitOwnerFormUpdate } = setup({
       lifecycle: async () => {
-        throw new Error("Issue lifecycle transition is invalid");
+        throw new Error("Task lifecycle transition is invalid");
       },
     });
 
     await expect(
       router.routeExecution(
-        parseBoardManagedTool("issue_update", {
+        parseBoardManagedTool("task_update", {
           companyId,
-          issueId,
+          taskId,
           title: "This must not be persisted",
           status: "done",
           message: "Attempt a terminal transition.",
         }),
         { authority: boardAuthority },
       ),
-    ).rejects.toThrow("Issue lifecycle transition is invalid");
+    ).rejects.toThrow("Task lifecycle transition is invalid");
 
     expect(commitOwnerFormUpdate).toHaveBeenCalledTimes(1);
     expect(db.calls.some((call) => call.operation === "update")).toBe(false);
@@ -191,7 +191,7 @@ describe("Board managed list_agents", () => {
     const router = createPaperclipManagedToolRouter({
       db: createMockDb().db,
       agentRunActions: {} as AgentRunManagedActionPort,
-      ordinaryIssues: () => ({} as OrdinaryIssueRuntime),
+      ordinaryTasks: () => ({} as OrdinaryTaskRuntime),
       retrieval: () => ({} as never),
       pluginDomainEvents: { publish: vi.fn() } as never,
     });

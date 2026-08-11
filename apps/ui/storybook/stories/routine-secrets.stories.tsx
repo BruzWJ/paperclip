@@ -79,7 +79,7 @@ function SecretsTabSurface({
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-xs text-muted-foreground">
-          Routine secrets apply to every issue this routine creates. They override matching keys in
+          Routine secrets apply to every task this routine creates. They override matching keys in
           project and agent env. <span className="font-mono">PAPERCLIP_*</span> variables are reserved.
         </p>
         <EnvironmentVariablesEditor
@@ -148,7 +148,7 @@ function makeSnapshot(env: RoutineEnvConfig | null): RoutineRevisionSnapshotV1 {
       companyId: COMPANY_ID,
       projectId: null,
       goalId: null,
-      parentIssueId: null,
+      parentTaskId: null,
       responsibleUserId: null,
       title: "Nightly digest",
       description: "Summarize agent activity each night.",
@@ -170,7 +170,7 @@ function makeRoutine(latestRevisionId: string, latestRevisionNumber: number): Ro
     companyId: COMPANY_ID,
     projectId: null,
     goalId: null,
-    parentIssueId: null,
+    parentTaskId: null,
     responsibleUserId: null,
     title: "Nightly digest",
     description: "Summarize agent activity each night.",

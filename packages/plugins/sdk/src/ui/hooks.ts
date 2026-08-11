@@ -32,7 +32,7 @@ import { getSdkUiRuntimeValue } from "./runtime.js";
  *
  *   if (loading) return <div>Loading…</div>;
  *   if (error) return <div>Error: {error.message}</div>;
- *   return <div>Synced Issues: {data!.syncedCount}</div>;
+ *   return <div>Synced Tasks: {data!.syncedCount}</div>;
  * }
  * ```
  *
@@ -102,10 +102,10 @@ export function usePluginAction(key: string): PluginActionFn {
  *
  * @example
  * ```tsx
- * function IssueTab() {
+ * function TaskTab() {
  *   const { companyId, entityId } = useHostContext();
- *   const { data } = usePluginData("linear-link", { issueId: entityId });
- *   return <div>{data?.linearIssueUrl}</div>;
+ *   const { data } = usePluginData("linear-link", { taskId: entityId });
+ *   return <div>{data?.linearTicketUrl}</div>;
  * }
  * ```
  *

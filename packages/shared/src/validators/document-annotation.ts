@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addValidationDetail } from "../validation-details.js";
 import {
   DOCUMENT_ANNOTATION_ANCHOR_CONFIDENCES,
   DOCUMENT_ANNOTATION_ANCHOR_STATES,
@@ -23,15 +24,13 @@ export const documentAnnotationTextPositionSelectorSchema = z.object({
   markdownEnd: z.number().int().nonnegative(),
 }).strict().superRefine((value, ctx) => {
   if (value.normalizedEnd <= value.normalizedStart) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "normalizedEnd must be greater than normalizedStart",
       path: ["normalizedEnd"],
     });
   }
   if (value.markdownEnd <= value.markdownStart) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "markdownEnd must be greater than markdownStart",
       path: ["markdownEnd"],
     });
@@ -48,12 +47,12 @@ export const createDocumentAnnotationThreadSchema = z.object({
   baseRevisionNumber: z.number().int().positive(),
   selector: documentAnnotationAnchorSelectorSchema,
   body: multilineTextSchema.pipe(z.string().min(1).max(20_000)),
-  issueCommentId: z.string().uuid().nullable().optional(),
+  taskCommentId: z.string().uuid().nullable().optional(),
 }).strict();
 
 export const createDocumentAnnotationCommentSchema = z.object({
   body: multilineTextSchema.pipe(z.string().min(1).max(20_000)),
-  issueCommentId: z.string().uuid().nullable().optional(),
+  taskCommentId: z.string().uuid().nullable().optional(),
 }).strict();
 
 export const updateDocumentAnnotationThreadSchema = z.object({

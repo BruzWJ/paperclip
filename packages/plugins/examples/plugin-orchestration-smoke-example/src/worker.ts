@@ -3,20 +3,20 @@ import { definePlugin, runWorker, type PluginApiRequestInput } from "@paperclipa
 
 type SmokeInput = {
   companyId: string;
-  issueId: string;
+  taskId: string;
   ownerAgentId?: string | null;
 };
 
 type SmokeSummary = {
-  rootIssueId: string;
-  childIssueId: string | null;
+  rootTaskId: string;
+  childTaskId: string | null;
   ownerAgentId: string;
   request: string;
   childStatus: string | null;
   joinedRows: unknown[];
 };
 
-let readSmokeSummary: ((companyId: string, issueId: string) => Promise<SmokeSummary | null>) | null = null;
+let readSmokeSummary: ((companyId: string, taskId: string) => Promise<SmokeSummary | null>) | null = null;
 let initializeSmoke: ((input: SmokeInput) => Promise<SmokeSummary>) | null = null;
 
 function tableName(namespace: string) {
@@ -27,12 +27,12 @@ function stringField(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
-const CREATOR_CALLBACK_KEY = "issue-runtime-smoke";
+const CREATOR_CALLBACK_KEY = "task-runtime-smoke";
 const CREATOR_CALLBACK_VERSION = "1";
 
 const plugin = definePlugin({
   async setup(ctx) {
-    await ctx.issues.registerCreatorCallback(
+    await ctx.tasks.registerCreatorCallback(
       {
         key: CREATOR_CALLBACK_KEY,
         version: CREATOR_CALLBACK_VERSION,
@@ -43,28 +43,28 @@ const plugin = definePlugin({
       }),
     );
 
-    readSmokeSummary = async function readSummary(companyId: string, issueId: string): Promise<SmokeSummary | null> {
+    readSmokeSummary = async function readSummary(companyId: string, taskId: string): Promise<SmokeSummary | null> {
       const rows = await ctx.db.query<{
-        root_issue_id: string;
-        child_issue_id: string | null;
+        root_task_id: string;
+        child_task_id: string | null;
         owner_agent_id: string;
         request: string;
-        issue_title: string;
+        task_title: string;
       }>(
-        `SELECT s.root_issue_id, s.child_issue_id, s.owner_agent_id, s.request, i.title AS issue_title
+        `SELECT s.root_task_id, s.child_task_id, s.owner_agent_id, s.request, i.title AS task_title
          FROM ${tableName(ctx.db.namespace)} s
-         JOIN public.issues i ON i.id = s.root_issue_id
-         WHERE s.root_issue_id = $1`,
-        [issueId],
+         JOIN public.tasks i ON i.id = s.root_task_id
+         WHERE s.root_task_id = $1`,
+        [taskId],
       );
       const row = rows[0];
       if (!row) return null;
-      const child = row.child_issue_id
-        ? await ctx.issues.get(row.child_issue_id, companyId)
+      const child = row.child_task_id
+        ? await ctx.tasks.get(row.child_task_id, companyId)
         : null;
       return {
-        rootIssueId: row.root_issue_id,
-        childIssueId: row.child_issue_id,
+        rootTaskId: row.root_task_id,
+        childTaskId: row.child_task_id,
         ownerAgentId: row.owner_agent_id,
         request: row.request,
         childStatus: child?.lifecycleStatus ?? null,
@@ -73,19 +73,19 @@ const plugin = definePlugin({
     };
 
     initializeSmoke = async function runSmoke(input: SmokeInput): Promise<SmokeSummary> {
-      const root = await ctx.issues.get(input.issueId, input.companyId);
-      if (!root) throw new Error(`Issue not found: ${input.issueId}`);
+      const root = await ctx.tasks.get(input.taskId, input.companyId);
+      if (!root) throw new Error(`Task not found: ${input.taskId}`);
 
       const ownerAgentId = input.ownerAgentId ?? root.ownerAgentId;
       if (!ownerAgentId) {
-        throw new Error("ownerAgentId is required when the root issue has no assigned agent");
+        throw new Error("ownerAgentId is required when the root task has no assigned agent");
       }
-      const request = "Verify canonical plugin issue creation and issue updates.";
-      const child = await ctx.issues.create({
+      const request = "Verify canonical plugin task creation and task updates.";
+      const child = await ctx.tasks.create({
         companyId: input.companyId,
-        parentId: input.issueId,
+        parentId: input.taskId,
         projectId: root.projectId ?? undefined,
-        title: "Plugin issue runtime smoke child",
+        title: "Plugin task runtime smoke child",
         request,
         ownerAgentId,
         callbackKey: CREATOR_CALLBACK_KEY,
@@ -94,16 +94,16 @@ const plugin = definePlugin({
       });
 
       await ctx.db.execute(
-        `INSERT INTO ${tableName(ctx.db.namespace)} (id, root_issue_id, child_issue_id, owner_agent_id, request)
+        `INSERT INTO ${tableName(ctx.db.namespace)} (id, root_task_id, child_task_id, owner_agent_id, request)
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (id) DO UPDATE SET
-           child_issue_id = EXCLUDED.child_issue_id,
+           child_task_id = EXCLUDED.child_task_id,
            owner_agent_id = EXCLUDED.owner_agent_id,
            request = EXCLUDED.request,
            updated_at = now()`,
         [
           randomUUID(),
-          input.issueId,
+          input.taskId,
           child.id,
           ownerAgentId,
           request,
@@ -111,42 +111,42 @@ const plugin = definePlugin({
       );
 
       return {
-        rootIssueId: input.issueId,
-        childIssueId: child.id,
+        rootTaskId: input.taskId,
+        childTaskId: child.id,
         ownerAgentId,
         request,
         childStatus: child.lifecycleStatus,
         joinedRows: await ctx.db.query(
           `SELECT s.id, s.owner_agent_id, i.title AS root_title
            FROM ${tableName(ctx.db.namespace)} s
-           JOIN public.issues i ON i.id = s.root_issue_id
-           WHERE s.root_issue_id = $1`,
-          [input.issueId],
+           JOIN public.tasks i ON i.id = s.root_task_id
+           WHERE s.root_task_id = $1`,
+          [input.taskId],
         ),
       };
     };
 
     ctx.data.register("surface-status", async (params) => {
       const companyId = stringField(params.companyId);
-      const issueId = stringField(params.issueId);
+      const taskId = stringField(params.taskId);
       return {
         status: "ok",
         checkedAt: new Date().toISOString(),
         databaseNamespace: ctx.db.namespace,
         routeKeys: (ctx.manifest.apiRoutes ?? []).map((route) => route.routeKey),
         capabilities: ctx.manifest.capabilities,
-        summary: companyId && issueId ? await readSmokeSummary?.(companyId, issueId) ?? null : null,
+        summary: companyId && taskId ? await readSmokeSummary?.(companyId, taskId) ?? null : null,
       };
     });
 
     ctx.actions.register("initialize-smoke", async (params, context) => {
       const companyId = context.actor.companyId;
-      const issueId = stringField(params.issueId);
-      if (!companyId || !issueId) throw new Error("companyId and issueId are required");
+      const taskId = stringField(params.taskId);
+      if (!companyId || !taskId) throw new Error("companyId and taskId are required");
       if (!initializeSmoke) throw new Error("Smoke initializer is not ready");
       return initializeSmoke({
         companyId,
-        issueId,
+        taskId,
         ownerAgentId: stringField(params.ownerAgentId),
       });
     });
@@ -154,9 +154,9 @@ const plugin = definePlugin({
 
   async onApiRequest(input: PluginApiRequestInput) {
     if (input.routeKey === "summary") {
-      const issueId = input.params.issueId;
+      const taskId = input.params.taskId;
       return {
-        body: await readSmokeSummary?.(input.companyId, issueId) ?? null,
+        body: await readSmokeSummary?.(input.companyId, taskId) ?? null,
       };
     }
 
@@ -167,7 +167,7 @@ const plugin = definePlugin({
         status: 201,
         body: await initializeSmoke({
           companyId: input.companyId,
-          issueId: input.params.issueId,
+          taskId: input.params.taskId,
           ownerAgentId: stringField(body?.ownerAgentId),
         }),
       };
@@ -184,7 +184,7 @@ const plugin = definePlugin({
       status: "ok",
       message: "Orchestration smoke plugin worker is running",
       details: {
-        surfaces: ["database", "scoped-api-route", "issue-panel", "canonical-issue-control-plane"],
+        surfaces: ["database", "scoped-api-route", "task-panel", "canonical-task-control-plane"],
       },
     };
   }

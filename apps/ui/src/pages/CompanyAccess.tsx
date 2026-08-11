@@ -143,9 +143,9 @@ export function CompanyAccess() {
       setRemovingMemberId(null);
       await refreshAccessData();
       if (selectedCompanyId) {
-        await queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId) });
-        await queryClient.invalidateQueries({ queryKey: queryKeys.issues.listAssignedToMe(selectedCompanyId) });
-        await queryClient.invalidateQueries({ queryKey: queryKeys.issues.listTouchedByMe(selectedCompanyId) });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.tasks.list(selectedCompanyId) });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.tasks.listAssignedToMe(selectedCompanyId) });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.tasks.listTouchedByMe(selectedCompanyId) });
       }
       pushToast({
         title: "Member removed",

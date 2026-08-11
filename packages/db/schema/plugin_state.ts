@@ -24,7 +24,7 @@ import { plugins } from "./plugins.js";
  * - `project` — one value per project
  * - `project_workspace` — one value per project workspace
  * - `agent` — one value per agent
- * - `issue` — one value per issue
+ * - `task` — one value per task
  * - `goal` — one value per goal
  * - `run` — one value per agent run
  *
@@ -41,7 +41,7 @@ export const pluginState = pgTable(
     pluginId: uuid("plugin_id")
       .notNull()
       .references(() => plugins.id, { onDelete: "cascade" }),
-    /** Granularity of the scope (e.g. `"instance"`, `"project"`, `"issue"`). */
+    /** Granularity of the scope (e.g. `"instance"`, `"project"`, `"task"`). */
     scopeKind: text("scope_kind").$type<PluginStateScopeKind>().notNull(),
     /**
      * UUID or text identifier for the scoped object.

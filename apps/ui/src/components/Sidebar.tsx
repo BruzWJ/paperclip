@@ -30,7 +30,7 @@ import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import {
-  ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+  ACTIVE_TASK_EXECUTION_RUN_STATUSES,
   runsApi,
 } from "../api/runs";
 import { attentionApi } from "../api/attention";
@@ -46,7 +46,7 @@ import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 
 export function Sidebar() {
-  const { openNewIssue } = useDialogActions();
+  const { openNewTask } = useDialogActions();
   // Every labeled section is collapsible (session-scoped, default open) —
   // one policy across static nav groups and the data-driven sections.
   const [workOpen, setWorkOpen] = useState(true);
@@ -55,7 +55,7 @@ export function Sidebar() {
   const { isMobile, collapsed, collapseLocked, peeking, toggleCollapsed, setCollapsed } = useSidebar();
   const rail = collapsed && !peeking;
   const inboxBadge = useInboxBadge(selectedCompanyId);
-  const activeRunStatuses = ACTIVE_ISSUE_EXECUTION_RUN_STATUSES;
+  const activeRunStatuses = ACTIVE_TASK_EXECUTION_RUN_STATUSES;
   const activeRunsQueryKey = queryKeys.runs(selectedCompanyId!, {
     status: activeRunStatuses,
   });
@@ -93,7 +93,7 @@ export function Sidebar() {
 
   const pluginContext = {
     companyId: selectedCompanyId,
-    companyPrefix: selectedCompany?.issuePrefix ?? null,
+    companyPrefix: selectedCompany?.taskPrefix ?? null,
   };
 
   return (
@@ -162,7 +162,7 @@ export function Sidebar() {
           {(() => {
             const newTaskButton = (
               <button
-                onClick={() => openNewIssue()}
+                onClick={() => openNewTask()}
                 data-slot="icon-button"
                 aria-label={rail ? "New Task" : undefined}
                 className="flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium text-foreground/80 hover:bg-accent/50 hover:text-foreground transition-colors"
@@ -201,7 +201,7 @@ export function Sidebar() {
         </div>
 
         <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
-          <SidebarNavItem to="/issues" label="Tasks" icon={CircleDot} />
+          <SidebarNavItem to="/tasks" label="Tasks" icon={CircleDot} />
           <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />
           <SidebarNavItem to="/goals" label="Goals" icon={Target} />
           <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />

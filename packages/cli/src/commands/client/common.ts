@@ -126,7 +126,7 @@ export function apiPath(strings: TemplateStringsArray, ...values: Array<string |
 export function inferContentTypeFromPath(filePath: string): string | undefined {
   const ext = filePath.split(/[\\/]/).pop()?.split(".").pop()?.toLowerCase();
   if (!ext) return undefined;
-  // These MIME strings are matched against the server's issue-attachment
+  // These MIME strings are matched against the server's task-attachment
   // allowlist (apps/server/src/attachment-types.ts DEFAULT_ALLOWED_TYPES) by EXACT
   // string, so text types must carry no "; charset=..." parameter or the upload
   // is rejected with "422 Unsupported attachment content type". Keep this set in

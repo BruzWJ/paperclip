@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
-import type { Issue } from "@paperclipai/shared";
-import { issuesApi } from "../api/issues";
+import type { Task } from "@paperclipai/shared";
+import { tasksApi } from "../api/tasks";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
-import { applyIssueFilters, type IssueFilterState } from "../lib/issue-filters";
-import { resolveInboxIssueBlockerAttention } from "../lib/inbox-live-descendants";
+import { applyTaskFilters, type TaskFilterState } from "../lib/task-filters";
+import { resolveInboxTaskBlockerAttention } from "../lib/inbox-live-descendants";
 import {
   blockedRowMatchesSearch,
   buildBlockedInboxRows,
@@ -14,12 +14,12 @@ import {
   groupBlockedInboxRows,
   sortBlockedInboxRows,
   type BlockedInboxGroupBy,
-  type BlockedInboxIssueRow,
+  type BlockedInboxTaskRow,
   type BlockedInboxSort,
 } from "../lib/blockedInbox";
 import { BlockedReasonChip } from "./BlockedReasonChip";
-import { IssueGroupHeader } from "./IssueGroupHeader";
-import { IssueRow } from "./IssueRow";
+import { TaskGroupHeader } from "./TaskGroupHeader";
+import { TaskRow } from "./TaskRow";
 import { Identity } from "./Identity";
 import { StatusIcon } from "./StatusIcon";
 import { Button } from "@/components/ui/button";
@@ -30,12 +30,12 @@ interface BlockedInboxViewProps {
   searchQuery: string;
   agentNameById: ReadonlyMap<string, string>;
   userLabelById?: ReadonlyMap<string, string>;
-  issueLinkState: unknown;
+  taskLinkState: unknown;
   groupBy: BlockedInboxGroupBy;
   sortBy: BlockedInboxSort;
-  issueFilters: IssueFilterState;
+  taskFilters: TaskFilterState;
   currentUserId: string | null;
-  liveIssueIds: ReadonlySet<string>;
+  liveTaskIds: ReadonlySet<string>;
   subtreeLiveCounts: ReadonlyMap<string, number>;
   showStatusColumn: boolean;
   showIdentifierColumn: boolean;
@@ -49,12 +49,12 @@ export function BlockedInboxView({
   searchQuery,
   agentNameById,
   userLabelById,
-  issueLinkState,
+  taskLinkState,
   groupBy,
   sortBy,
-  issueFilters,
+  taskFilters,
   currentUserId,
-  liveIssueIds,
+  liveTaskIds,
   subtreeLiveCounts,
   showStatusColumn,
   showIdentifierColumn,
@@ -63,15 +63,15 @@ export function BlockedInboxView({
   const [collapsedVariants, setCollapsedVariants] = useState<Set<string>>(() => new Set());
 
   const {
-    data: issues = [] as Issue[],
+    data: tasks = [] as Task[],
     isLoading,
     isFetching,
     error,
     refetch,
   } = useQuery({
-    queryKey: [...queryKeys.issues.listBlockedAttention(companyId), "live-descendant-summary"],
+    queryKey: [...queryKeys.tasks.listBlockedAttention(companyId), "live-descendant-summary"],
     queryFn: () =>
-      issuesApi.list(companyId, {
+      tasksApi.list(companyId, {
         attention: "blocked",
         includeBlockedInboxAttention: true,
         includeBlockedBy: true,
@@ -80,27 +80,27 @@ export function BlockedInboxView({
       }),
   });
 
-  const allRows = useMemo(() => buildBlockedInboxRows(issues), [issues]);
+  const allRows = useMemo(() => buildBlockedInboxRows(tasks), [tasks]);
   const filteredRows = useMemo(
     () => allRows.filter((row) => blockedRowMatchesSearch(row, searchQuery)),
     [allRows, searchQuery],
   );
-  const issueFilteredRows = useMemo(() => {
-    const visibleIssueIds = new Set(
-      applyIssueFilters(
-        filteredRows.map((row) => row.issue),
-        issueFilters,
+  const taskFilteredRows = useMemo(() => {
+    const visibleTaskIds = new Set(
+      applyTaskFilters(
+        filteredRows.map((row) => row.task),
+        taskFilters,
         currentUserId,
         true,
-        liveIssueIds,
-      ).map((issue) => issue.id),
+        liveTaskIds,
+      ).map((task) => task.id),
     );
-    return filteredRows.filter((row) => visibleIssueIds.has(row.issue.id));
-  }, [currentUserId, filteredRows, issueFilters, liveIssueIds]);
-  const sortedRows = useMemo(() => sortBlockedInboxRows(issueFilteredRows, sortBy), [issueFilteredRows, sortBy]);
+    return filteredRows.filter((row) => visibleTaskIds.has(row.task.id));
+  }, [currentUserId, filteredRows, taskFilters, liveTaskIds]);
+  const sortedRows = useMemo(() => sortBlockedInboxRows(taskFilteredRows, sortBy), [taskFilteredRows, sortBy]);
   const groups = useMemo(
-    () => groupBlockedInboxRows(issueFilteredRows, sortBy),
-    [issueFilteredRows, sortBy],
+    () => groupBlockedInboxRows(taskFilteredRows, sortBy),
+    [taskFilteredRows, sortBy],
   );
 
   const toggleVariant = (variant: string) => {
@@ -191,12 +191,12 @@ export function BlockedInboxView({
         {groupBy === "none" ? (
           sortedRows.map((row) => (
             <BlockedInboxRow
-              key={row.issue.id}
+              key={row.task.id}
               row={row}
-              issueLinkState={issueLinkState}
+              taskLinkState={taskLinkState}
               agentNameById={agentNameById}
               userLabelById={userLabelById}
-              liveIssueIds={liveIssueIds}
+              liveTaskIds={liveTaskIds}
               subtreeLiveCounts={subtreeLiveCounts}
               showStatusColumn={showStatusColumn}
               showIdentifierColumn={showIdentifierColumn}
@@ -209,7 +209,7 @@ export function BlockedInboxView({
             return (
               <div key={group.variant} data-testid={`blocked-inbox-group-${group.variant}`}>
                 <div className="px-3 sm:px-4">
-                  <IssueGroupHeader
+                  <TaskGroupHeader
                     label={`${group.label} · ${group.rows.length}`}
                     collapsible
                     collapsed={isCollapsed}
@@ -220,12 +220,12 @@ export function BlockedInboxView({
                   <div>
                     {group.rows.map((row) => (
                       <BlockedInboxRow
-                        key={row.issue.id}
+                        key={row.task.id}
                         row={row}
-                        issueLinkState={issueLinkState}
+                        taskLinkState={taskLinkState}
                         agentNameById={agentNameById}
                         userLabelById={userLabelById}
-                        liveIssueIds={liveIssueIds}
+                        liveTaskIds={liveTaskIds}
                         subtreeLiveCounts={subtreeLiveCounts}
                         showStatusColumn={showStatusColumn}
                         showIdentifierColumn={showIdentifierColumn}
@@ -263,11 +263,11 @@ function BlockedInboxEmptyState() {
 }
 
 interface BlockedInboxRowProps {
-  row: BlockedInboxIssueRow;
-  issueLinkState: unknown;
+  row: BlockedInboxTaskRow;
+  taskLinkState: unknown;
   agentNameById: ReadonlyMap<string, string>;
   userLabelById?: ReadonlyMap<string, string>;
-  liveIssueIds: ReadonlySet<string>;
+  liveTaskIds: ReadonlySet<string>;
   subtreeLiveCounts: ReadonlyMap<string, number>;
   showStatusColumn: boolean;
   showIdentifierColumn: boolean;
@@ -275,7 +275,7 @@ interface BlockedInboxRowProps {
 }
 
 function resolveOwnerName(
-  row: BlockedInboxIssueRow,
+  row: BlockedInboxTaskRow,
   agentNameById: ReadonlyMap<string, string>,
   userLabelById?: ReadonlyMap<string, string>,
 ): { label: string | null; isAgent: boolean } {
@@ -292,10 +292,10 @@ function resolveOwnerName(
 
 function BlockedInboxRow({
   row,
-  issueLinkState,
+  taskLinkState,
   agentNameById,
   userLabelById,
-  liveIssueIds,
+  liveTaskIds,
   subtreeLiveCounts,
   showStatusColumn,
   showIdentifierColumn,
@@ -303,9 +303,9 @@ function BlockedInboxRow({
 }: BlockedInboxRowProps) {
   const { label: ownerName, isAgent } = resolveOwnerName(row, agentNameById, userLabelById);
   const stoppedAge = formatStoppedAge(row.attention.stoppedSinceAt);
-  const blockerAttention = resolveInboxIssueBlockerAttention(row.issue, {
-    isLive: liveIssueIds.has(row.issue.id),
-    loadedSubtreeLiveCount: subtreeLiveCounts.get(row.issue.id) ?? 0,
+  const blockerAttention = resolveInboxTaskBlockerAttention(row.task, {
+    isLive: liveTaskIds.has(row.task.id),
+    loadedSubtreeLiveCount: subtreeLiveCounts.get(row.task.id) ?? 0,
   });
 
   const desktopTrailing = (
@@ -357,9 +357,9 @@ function BlockedInboxRow({
   );
 
   return (
-    <IssueRow
-      issue={row.issue}
-      issueLinkState={issueLinkState}
+    <TaskRow
+      task={row.task}
+      taskLinkState={taskLinkState}
       desktopMetaLeading={
         <BlockedRowDesktopMeta
           row={row}
@@ -370,7 +370,7 @@ function BlockedInboxRow({
       }
       mobileLeading={
         <span className="flex shrink-0 items-center gap-1.5 pt-px">
-          <StatusIcon status={row.issue.boardPresentationStatus} blockerAttention={blockerAttention} />
+          <StatusIcon status={row.task.boardPresentationStatus} blockerAttention={blockerAttention} />
         </span>
       }
       titleSuffix={
@@ -392,15 +392,15 @@ function BlockedRowDesktopMeta({
   showStatusColumn,
   showIdentifierColumn,
 }: {
-  row: BlockedInboxIssueRow;
-  blockerAttention: Issue["blockerAttention"] | null;
+  row: BlockedInboxTaskRow;
+  blockerAttention: Task["blockerAttention"] | null;
   showStatusColumn: boolean;
   showIdentifierColumn: boolean;
 }) {
-  const identifier = row.issue.identifier ?? row.issue.id.slice(0, 8);
+  const identifier = row.task.identifier ?? row.task.id.slice(0, 8);
   return (
     <span className="hidden shrink-0 items-center gap-2 sm:inline-flex">
-      {showStatusColumn ? <StatusIcon status={row.issue.boardPresentationStatus} blockerAttention={blockerAttention} /> : null}
+      {showStatusColumn ? <StatusIcon status={row.task.boardPresentationStatus} blockerAttention={blockerAttention} /> : null}
       {showIdentifierColumn ? <span className="font-mono text-xs text-muted-foreground">{identifier}</span> : null}
     </span>
   );

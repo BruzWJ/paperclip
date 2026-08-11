@@ -40,7 +40,7 @@ const emptyTimeline: WorkTimelineResult = {
   pagination: {
     limit: 100,
     offset: 0,
-    totalIssues: 0,
+    totalTasks: 0,
     hasMore: false,
   },
   window: {
@@ -61,9 +61,9 @@ const populatedTimeline: WorkTimelineResult = {
       actorId: "agent:codex",
       runId: "run-1",
       kind: "productive",
-      issueId: "issue-1",
-      issueIdentifier: "PAP-1",
-      issueTitle: "Implement timeline stats",
+      taskId: "task-1",
+      taskIdentifier: "PAP-1",
+      taskTitle: "Implement timeline stats",
       start: "2026-07-02T10:00:00.000Z",
       end: "2026-07-02T10:30:00.000Z",
       status: "succeeded",
@@ -73,9 +73,9 @@ const populatedTimeline: WorkTimelineResult = {
       actorId: "agent:qa",
       runId: "run-2",
       kind: "productive",
-      issueId: "issue-2",
-      issueIdentifier: "PAP-2",
-      issueTitle: "Verify timeline stats",
+      taskId: "task-2",
+      taskIdentifier: "PAP-2",
+      taskTitle: "Verify timeline stats",
       start: "2026-07-02T11:00:00.000Z",
       end: "2026-07-02T11:15:00.000Z",
       status: "succeeded",
@@ -87,7 +87,7 @@ const populatedTimeline: WorkTimelineResult = {
   pagination: {
     limit: 100,
     offset: 0,
-    totalIssues: 2,
+    totalTasks: 2,
     hasMore: false,
   },
   window: {

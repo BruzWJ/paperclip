@@ -1,6 +1,6 @@
 import type {
-  IssueOriginKind,
-  IssuePriority,
+  TaskOriginKind,
+  TaskPriority,
   RoutineCatchUpPolicy,
   RoutineConcurrencyPolicy,
   RoutineStatus,
@@ -43,7 +43,7 @@ export interface RoutineAgentSummary {
   urlKey?: string | null;
 }
 
-export interface RoutineIssueSummary {
+export interface RoutineTaskSummary {
   id: string;
   identifier: string | null;
   title: string | null;
@@ -71,7 +71,7 @@ export interface Routine {
   projectId: string | null;
   folderId?: string | null;
   goalId: string | null;
-  parentIssueId: string | null;
+  parentTaskId: string | null;
   title: string;
   description: string | null;
   assigneeAgentId: string | null;
@@ -114,11 +114,11 @@ export interface RoutineRevisionSnapshotRoutineV1 {
   companyId: string;
   projectId: string | null;
   goalId: string | null;
-  parentIssueId: string | null;
+  parentTaskId: string | null;
   title: string;
   description: string | null;
   assigneeAgentId: string | null;
-  priority: IssuePriority;
+  priority: TaskPriority;
   status: RoutineStatus;
   concurrencyPolicy: RoutineConcurrencyPolicy;
   catchUpPolicy: RoutineCatchUpPolicy;
@@ -202,7 +202,7 @@ export interface RoutineRun {
   idempotencyKey: string | null;
   triggerPayload: Record<string, unknown> | null;
   dispatchFingerprint: string | null;
-  linkedIssueId: string | null;
+  linkedTaskId: string | null;
   coalescedIntoRunId: string | null;
   failureReason: string | null;
   completedAt: Date | null;
@@ -218,20 +218,20 @@ export interface RoutineTriggerSecretMaterial {
 export interface RoutineDetail extends Routine {
   project: RoutineProjectSummary | null;
   assignee: RoutineAgentSummary | null;
-  parentIssue: RoutineIssueSummary | null;
+  parentTask: RoutineTaskSummary | null;
   descriptionDocument?: RoutineDescriptionDocument | null;
   triggers: RoutineTrigger[];
   recentRuns: RoutineRunSummary[];
-  activeIssue: RoutineIssueSummary | null;
+  activeTask: RoutineTaskSummary | null;
 }
 
 export interface RoutineRunSummary extends RoutineRun {
-  linkedIssue: RoutineIssueSummary | null;
+  linkedTask: RoutineTaskSummary | null;
   trigger: Pick<RoutineTrigger, "id" | "kind" | "label"> | null;
 }
 
-export interface RoutineExecutionIssueOrigin {
-  kind: Extract<IssueOriginKind, "routine_execution">;
+export interface RoutineExecutionTaskOrigin {
+  kind: Extract<TaskOriginKind, "routine_execution">;
   routineId: string;
   runId: string | null;
 }
@@ -239,5 +239,5 @@ export interface RoutineExecutionIssueOrigin {
 export interface RoutineListItem extends Routine {
   triggers: Pick<RoutineTrigger, "id" | "kind" | "label" | "enabled" | "cronExpression" | "timezone" | "nextRunAt" | "lastFiredAt" | "lastResult">[];
   lastRun: RoutineRunSummary | null;
-  activeIssue: RoutineIssueSummary | null;
+  activeTask: RoutineTaskSummary | null;
 }

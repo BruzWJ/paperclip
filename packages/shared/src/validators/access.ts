@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addValidationDetail } from "../validation-details.js";
 import {
   HUMAN_COMPANY_MEMBERSHIP_ROLES,
   INVITE_JOIN_TYPES,
@@ -26,8 +27,7 @@ export const acceptInviteSchema = z.object({
 }).superRefine((value, ctx) => {
   if (value.requestType !== "agent") return;
   if (!value.adapterType) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "Agent onboarding requires an explicit adapter type",
       path: ["adapterType"],
     });
@@ -36,8 +36,7 @@ export const acceptInviteSchema = z.object({
     value.agentDefaultsPayload === undefined ||
     value.agentDefaultsPayload === null
   ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "Agent onboarding requires explicit adapter configuration",
       path: ["agentDefaultsPayload"],
     });

@@ -40,7 +40,7 @@ function capability() {
   return {
     companyId,
     targetAgentId: agentId,
-    issueId: "00000000-0000-4000-8000-000000000010",
+    taskId: "00000000-0000-4000-8000-000000000010",
     runId: "00000000-0000-4000-8000-000000000011",
     refId: "00000000-0000-4000-8000-000000000012",
   } as never;
@@ -81,8 +81,8 @@ function snapshot(): RuntimeAgentConfigurationSnapshot {
       reportsTo: null,
       instruction: null,
     },
-    contextGrants: { read_issue_comments: true },
-    actionGrants: { issue_create: true },
+    contextGrants: { read_task_comments: true },
+    actionGrants: { task_create: true },
     mentionReachGrants: { mention_any_ancestor: true },
   };
 }
@@ -96,11 +96,11 @@ describe("runtime-agent configuration canonical contracts", () => {
       reportsTo: null,
       instruction: null,
       contextGrants: {
-        read_issue_comments: true,
-        list_company_issues: false,
+        read_task_comments: true,
+        list_company_tasks: false,
       },
       actionGrants: {
-        issue_create: true,
+        task_create: true,
       },
       mentionReachGrants: { mention_any_ancestor: true },
     });
@@ -112,10 +112,10 @@ describe("runtime-agent configuration canonical contracts", () => {
       reportsTo: null,
       instruction: null,
       contextGrants: {
-        read_issue_comments: true,
-        list_company_issues: false,
+        read_task_comments: true,
+        list_company_tasks: false,
       },
-      actionGrants: { issue_create: true },
+      actionGrants: { task_create: true },
       mentionReachGrants: { mention_any_ancestor: true },
     });
     expect(JSON.stringify(parsed)).not.toMatch(
@@ -153,13 +153,13 @@ describe("runtime-agent configuration canonical contracts", () => {
       title: null,
       contextGrants: {
         carry_context: false,
-        read_issue_comments: true,
+        read_task_comments: true,
       },
     })).toEqual({
       title: null,
       contextGrants: {
         carry_context: false,
-        read_issue_comments: true,
+        read_task_comments: true,
       },
     });
   });
@@ -177,7 +177,7 @@ describe("runtime-agent configuration canonical contracts", () => {
     expect(diff).toBe([
       `--- agent:${agentId}:configuration`,
       `+++ agent:${agentId}:configuration`,
-      "-{\"contextGrants\":{\"read_issue_comments\":true},\"title\":\"Researcher\"}",
+      "-{\"contextGrants\":{\"read_task_comments\":true},\"title\":\"Researcher\"}",
       "+{\"contextGrants\":{\"carry_context\":true},\"title\":\"Board consented\"}",
     ].join("\n"));
     expect(diff).not.toContain("capabilities");
@@ -207,10 +207,10 @@ describe("runtime-agent action boundary", () => {
       capabilities: null,
       instruction: null,
       contextGrants: completeBooleanMap(AGENT_CONTEXT_GRANT_KEYS, {
-        read_issue_comments: true,
+        read_task_comments: true,
       }),
       actionGrants: completeBooleanMap(PAPERCLIP_ACTION_KEYS, {
-        issue_create: true,
+        task_create: true,
       }),
       mentionReachGrants: completeBooleanMap(AGENT_MENTION_REACH_GRANT_KEYS),
     };

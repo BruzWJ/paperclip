@@ -225,7 +225,7 @@ function buildPluginUiUrl(contribution: PluginUiContribution): string {
  * 3. Import the rewritten module via a blob URL
  *
  * This approach is compatible with all modern browsers and avoids import map
- * ordering issues.
+ * ordering tasks.
  */
 const shimBlobUrls: Record<string, string> = {};
 
@@ -576,7 +576,7 @@ function usePluginModuleLoader(contributions: PluginUiContribution[] | undefined
  *
  * Filtering rules:
  * - `slotTypes` must match one of the caller-requested host slot types.
- * - Entity-scoped slot types (`detailTab`, `issueDetailView`,
+ * - Entity-scoped slot types (`detailTab`, `taskDetailView`,
  *   `projectSidebarItem`, and `toolbarButton`)
  *   require `entityType` and must include it in `slot.entityTypes`.
  *

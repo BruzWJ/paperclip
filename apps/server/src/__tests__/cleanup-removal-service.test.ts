@@ -11,7 +11,7 @@ const lifecycleMocks = vi.hoisted(() => ({
   reactivateGraph: vi.fn(),
 }));
 
-vi.mock("../services/issue-session-lifecycle.js", () => ({
+vi.mock("../services/task-session-lifecycle.js", () => ({
   beginCompanyHardDeleteInTx: lifecycleMocks.beginHardDelete,
   purgeCompanySessionGraphInTx: lifecycleMocks.purgeGraph,
   archiveCompanySessionGraphInTx: lifecycleMocks.archiveGraph,
@@ -43,7 +43,7 @@ describe("cleanup removal services", () => {
     vi.clearAllMocks();
   });
 
-  it("returns an agent tombstone without issuing history deletes", async () => {
+  it("returns an agent tombstone without executing history deletes", async () => {
     const tombstone = {
       id: agentId,
       companyId,
@@ -63,7 +63,7 @@ describe("cleanup removal services", () => {
     (harness.db as unknown as { transaction: typeof transaction }).transaction = transaction;
     const postCommit = {
       actor: { kind: "system" },
-      issueExecutionCancellation: {
+      taskExecutionCancellation: {
         reconcileRequestedCancellations: vi.fn(),
       },
       dispatchRef: vi.fn(),

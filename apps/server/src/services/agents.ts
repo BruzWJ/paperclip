@@ -6,11 +6,11 @@ import {
   agentConfigRevisions,
   agentRuntimeState,
   approvals,
-  issueCreatorEdgeReceivability,
-  issueExecutionAuthorities,
-  issues,
-  issueSessions,
-  issueUpdates,
+  taskCreatorEdgeReceivability,
+  taskExecutionAuthorities,
+  tasks,
+  taskSessions,
+  taskUpdates,
 } from "@paperclipai/db";
 import {
   canonicalizeMoneyAmount,
@@ -22,12 +22,12 @@ import {
   type MoneyAmount,
 } from "@paperclipai/shared";
 import { conflict, notFound } from "../errors.js";
-import { createIssueSessionAdmissionService } from "./issue-session/admission.js";
+import { createTaskSessionAdmissionService } from "./task-session/admission.js";
 import { terminalizeAgentCreatorEdgesInTransaction } from "./system-escalation-postgres.js";
 import {
-  admitCounterpartIssueUpdate,
-  lockIssueMentionRecipient,
-} from "./runtime-issue-action-port.js";
+  admitCounterpartTaskUpdate,
+  lockTaskMentionRecipient,
+} from "./runtime-task-action-port.js";
 import {
   listCompanyAgentGraphDescendants,
   lockCompanyAgentGraph,
@@ -35,10 +35,10 @@ import {
 import { budgetService } from "./budgets.js";
 import { logActivity } from "./activity-log.js";
 import type {
-  IssueExecutionCancellationActor,
-  IssueExecutionCancellationService,
+  TaskExecutionCancellationActor,
+  TaskExecutionCancellationService,
   RequestedAgentRunCancellations,
-} from "./issue-execution-cancellation.js";
+} from "./task-execution-cancellation.js";
 
 export type AgentLifecycleTransaction =
   Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -51,30 +51,30 @@ export interface AgentTerminationCommit {
 }
 
 export type AgentLifecycleCancellationService = Pick<
-  IssueExecutionCancellationService,
+  TaskExecutionCancellationService,
   | "requestAgentCancellationsInTransaction"
   | "reconcileRequestedCancellations"
   | "requestAgentSuspensionsInTransaction"
 >;
 
 export type AgentSuspensionService = Pick<
-  IssueExecutionCancellationService,
+  TaskExecutionCancellationService,
   | "requestAgentSuspensionsInTransaction"
   | "reconcileRequestedCancellations"
 >;
 
 export interface AgentSuspensionPostCommit {
-  issueExecutionCancellation: AgentSuspensionService;
+  taskExecutionCancellation: AgentSuspensionService;
   actor: AgentTerminationActor;
 }
 
 export type AgentTerminationActor = Extract<
-  IssueExecutionCancellationActor,
+  TaskExecutionCancellationActor,
   { readonly kind: "system" } | { readonly kind: "user" }
 >;
 
 export interface AgentLifecyclePostCommit {
-  issueExecutionCancellation: AgentLifecycleCancellationService;
+  taskExecutionCancellation: AgentLifecycleCancellationService;
   dispatchRef(refId: string): Promise<void>;
 }
 
@@ -96,7 +96,7 @@ function lifecycleUuid(namespace: string, key: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-async function admitOwnedIssueTerminationRecoveryInTransaction(
+async function admitOwnedTaskTerminationRecoveryInTransaction(
   tx: AgentLifecycleTransaction,
   input: {
     companyId: string;
@@ -106,78 +106,78 @@ async function admitOwnedIssueTerminationRecoveryInTransaction(
     now: Date;
   },
 ): Promise<string[]> {
-  const sessions = createIssueSessionAdmissionService(
+  const sessions = createTaskSessionAdmissionService(
     tx as unknown as Db,
   );
-  const ownedIssues = await tx
+  const ownedTasks = await tx
     .select()
-    .from(issues)
+    .from(tasks)
     .where(
       and(
-        eq(issues.companyId, input.companyId),
-        eq(issues.ownerKind, "agent"),
-        eq(issues.ownerAgentId, input.agentId),
-        eq(issues.lifecycleStatus, "open"),
+        eq(tasks.companyId, input.companyId),
+        eq(tasks.ownerKind, "agent"),
+        eq(tasks.ownerAgentId, input.agentId),
+        eq(tasks.lifecycleStatus, "open"),
       ),
     )
-    .orderBy(issues.id)
+    .orderBy(tasks.id)
     .for("update");
-  if (ownedIssues.length === 0) return [];
+  if (ownedTasks.length === 0) return [];
 
   const dispatchRefIds: string[] = [];
-  for (const issue of ownedIssues) {
-    if (!issue.ownershipEpoch) {
+  for (const task of ownedTasks) {
+    if (!task.ownershipEpoch) {
       throw new Error(
-        `Owned issue ${issue.id} has no current ownership epoch`,
+        `Owned task ${task.id} has no current ownership epoch`,
       );
     }
     const session = await tx
       .select()
-      .from(issueSessions)
+      .from(taskSessions)
       .where(
         and(
-          eq(issueSessions.companyId, input.companyId),
-          eq(issueSessions.issueId, issue.id),
+          eq(taskSessions.companyId, input.companyId),
+          eq(taskSessions.taskId, task.id),
         ),
       )
       .for("update")
       .then((rows) => rows[0] ?? null);
     const authority = await tx
       .select()
-      .from(issueExecutionAuthorities)
+      .from(taskExecutionAuthorities)
       .where(
         and(
           eq(
-            issueExecutionAuthorities.companyId,
+            taskExecutionAuthorities.companyId,
             input.companyId,
           ),
-          eq(issueExecutionAuthorities.issueId, issue.id),
+          eq(taskExecutionAuthorities.taskId, task.id),
           eq(
-            issueExecutionAuthorities.ownershipEpoch,
-            issue.ownershipEpoch,
+            taskExecutionAuthorities.ownershipEpoch,
+            task.ownershipEpoch,
           ),
-          eq(issueExecutionAuthorities.agentId, input.agentId),
-          eq(issueExecutionAuthorities.state, "current"),
+          eq(taskExecutionAuthorities.agentId, input.agentId),
+          eq(taskExecutionAuthorities.state, "current"),
         ),
       )
       .for("update")
       .then((rows) => rows[0] ?? null);
     const edge = await tx
       .select()
-      .from(issueCreatorEdgeReceivability)
+      .from(taskCreatorEdgeReceivability)
       .where(
         and(
           eq(
-            issueCreatorEdgeReceivability.companyId,
+            taskCreatorEdgeReceivability.companyId,
             input.companyId,
           ),
           eq(
-            issueCreatorEdgeReceivability.issueId,
-            issue.id,
+            taskCreatorEdgeReceivability.taskId,
+            task.id,
           ),
           eq(
-            issueCreatorEdgeReceivability.ownershipEpoch,
-            issue.ownershipEpoch,
+            taskCreatorEdgeReceivability.ownershipEpoch,
+            task.ownershipEpoch,
           ),
         ),
       )
@@ -185,15 +185,15 @@ async function admitOwnedIssueTerminationRecoveryInTransaction(
       .then((rows) => rows[0] ?? null);
     if (!session || !authority || !edge) {
       throw new Error(
-        `Owned issue ${issue.id} is missing its canonical recovery graph`,
+        `Owned task ${task.id} is missing its canonical recovery graph`,
       );
     }
     const recoveryKey =
-      `${input.sourceId}:owned-issue:${issue.id}:${issue.ownershipEpoch}`;
+      `${input.sourceId}:owned-task:${task.id}:${task.ownershipEpoch}`;
     const exactText =
-      `Agent ${input.agentName} was terminated. This issue is blocked because its owner is no longer executable.`;
-    const blockedIssue = await tx
-      .update(issues)
+      `Agent ${input.agentName} was terminated. This task is blocked because its owner is no longer executable.`;
+    const blockedTask = await tx
+      .update(tasks)
       .set({
         lifecycleStatus: "blocked",
         boardPresentationStatus: "blocked",
@@ -204,33 +204,33 @@ async function admitOwnedIssueTerminationRecoveryInTransaction(
       })
       .where(
         and(
-          eq(issues.id, issue.id),
-          eq(issues.companyId, input.companyId),
-          eq(issues.ownershipEpoch, issue.ownershipEpoch),
-          eq(issues.lifecycleStatus, "open"),
+          eq(tasks.id, task.id),
+          eq(tasks.companyId, input.companyId),
+          eq(tasks.ownershipEpoch, task.ownershipEpoch),
+          eq(tasks.lifecycleStatus, "open"),
         ),
       )
-      .returning({ id: issues.id })
+      .returning({ id: tasks.id })
       .then((rows) => rows[0] ?? null);
-    if (!blockedIssue) {
+    if (!blockedTask) {
       throw conflict(
-        `Owned issue ${issue.id} lost its locked termination-recovery transition`,
+        `Owned task ${task.id} lost its locked termination-recovery transition`,
       );
     }
     const updateId = lifecycleUuid(
       "agent-termination-recovery-update",
       recoveryKey,
     );
-    const targetIssueId = issue.parentId ?? issue.id;
-    const admission = await admitCounterpartIssueUpdate(
+    const targetTaskId = task.parentId ?? task.id;
+    const admission = await admitCounterpartTaskUpdate(
       sessions,
       tx as never,
       {
         companyId: input.companyId,
-        target: await lockIssueMentionRecipient(
+        target: await lockTaskMentionRecipient(
           tx as never,
           input.companyId,
-          targetIssueId,
+          targetTaskId,
         ),
         actor: {
           kind: "system",
@@ -242,10 +242,10 @@ async function admitOwnedIssueTerminationRecoveryInTransaction(
           producingRun: null,
         },
         sourceAgentTarget: {
-          issueId: issue.id,
+          taskId: task.id,
           agentId: input.agentId,
         },
-        sourceKind: "issue_update",
+        sourceKind: "task_update",
         immutableSourceKey: recoveryKey,
         sourceRecordId: updateId,
         message: exactText,
@@ -253,17 +253,17 @@ async function admitOwnedIssueTerminationRecoveryInTransaction(
     );
     if (!admission.comment) {
       throw new Error(
-        `Owned issue ${issue.id} termination recovery has no canonical comment`,
+        `Owned task ${task.id} termination recovery has no canonical comment`,
       );
     }
     const update = await tx
-      .insert(issueUpdates)
+      .insert(taskUpdates)
       .values({
         id: updateId,
         companyId: input.companyId,
-        issueId: issue.id,
+        taskId: task.id,
         sessionId: session.id,
-        ownershipEpoch: issue.ownershipEpoch,
+        ownershipEpoch: task.ownershipEpoch,
         form: "owner",
         sourceKind: "system",
         sourceAuthorityId: authority.id,
@@ -286,7 +286,7 @@ async function admitOwnedIssueTerminationRecoveryInTransaction(
       .then((rows) => rows[0] ?? null);
     if (!update) {
       throw new Error(
-        `Owned issue ${issue.id} termination update was not persisted`,
+        `Owned task ${task.id} termination update was not persisted`,
       );
     }
     if (admission.ref) dispatchRefIds.push(admission.ref.id);
@@ -402,7 +402,7 @@ export async function terminateAgentToTombstoneInTransaction(
 
   const escalations = await terminalizeAgentCreatorEdgesInTransaction(
     tx,
-    createIssueSessionAdmissionService(tx as unknown as Db),
+    createTaskSessionAdmissionService(tx as unknown as Db),
     {
       companyId: tombstone.companyId,
       agentId: tombstone.id,
@@ -430,7 +430,7 @@ export async function terminateAgentToTombstoneInTransaction(
       })
     : null;
   const recoveryDispatchRefIds =
-    await admitOwnedIssueTerminationRecoveryInTransaction(tx, {
+    await admitOwnedTaskTerminationRecoveryInTransaction(tx, {
       companyId: existing.companyId,
       agentId: existing.id,
       agentName: existing.name,
@@ -690,7 +690,7 @@ export function agentService(db: Db) {
         }
 
         const suspensionRequests =
-          await postCommit.issueExecutionCancellation
+          await postCommit.taskExecutionCancellation
             .requestAgentSuspensionsInTransaction(tx, {
               companyId: existing.companyId,
               agentIds: [existing.id],
@@ -701,7 +701,7 @@ export function agentService(db: Db) {
         return { agentId: existing.id, suspensionRequests };
       });
       if (!committed) return null;
-      await postCommit.issueExecutionCancellation
+      await postCommit.taskExecutionCancellation
         .reconcileRequestedCancellations(committed.suspensionRequests);
       return getById(committed.agentId);
     },
@@ -843,17 +843,17 @@ export function agentService(db: Db) {
             actor: postCommit.actor,
             now,
           },
-          postCommit.issueExecutionCancellation,
+          postCommit.taskExecutionCancellation,
         );
       });
       if (committed?.cancellationRequests) {
-        await postCommit.issueExecutionCancellation
+        await postCommit.taskExecutionCancellation
           .reconcileRequestedCancellations(
             committed.cancellationRequests,
           );
       }
       if (committed?.suspensionRequests) {
-        await postCommit.issueExecutionCancellation
+        await postCommit.taskExecutionCancellation
           .reconcileRequestedCancellations(
             committed.suspensionRequests,
           );

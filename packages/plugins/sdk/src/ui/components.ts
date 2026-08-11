@@ -36,7 +36,7 @@ export interface MetricTrend {
 
 /** Props for `MetricCard`. */
 export interface MetricCardProps {
-  /** Short label describing the metric (e.g. `"Synced Issues"`). */
+  /** Short label describing the metric (e.g. `"Synced Tasks"`). */
   label: string;
   /** The metric value to display. */
   value: number | string;
@@ -244,7 +244,7 @@ export interface FileTreeProps {
   ariaLabel?: string;
 }
 
-export interface IssuesListFilters {
+export interface TasksListFilters {
   status?: "open" | "blocked" | "done" | "cancelled";
   projectId?: string;
   parentId?: string;
@@ -257,14 +257,14 @@ export interface IssuesListFilters {
   includeLiveDescendantSummary?: boolean;
 }
 
-export interface IssuesListProps {
+export interface TasksListProps {
   companyId: string | null;
   projectId?: string | null;
-  filters?: IssuesListFilters;
+  filters?: TasksListFilters;
   viewStateKey?: string;
   initialSearch?: string;
-  createIssueLabel?: string;
-  searchWithinLoadedIssues?: boolean;
+  createTaskLabel?: string;
+  searchWithinLoadedTasks?: boolean;
 }
 
 export interface OwnerPickerSelection {
@@ -468,19 +468,19 @@ export const ErrorBoundary = createSdkUiComponent<ErrorBoundaryProps>("ErrorBoun
 export const FileTree = createSdkUiComponent<FileTreeProps>("FileTree");
 
 /**
- * Renders Paperclip's native issue list component for company-scoped plugin
- * pages that need a standard board issue view.
+ * Renders Paperclip's native task list component for company-scoped plugin
+ * pages that need a standard board task view.
  */
-export const IssuesList = createSdkUiComponent<IssuesListProps>("IssuesList");
+export const TasksList = createSdkUiComponent<TasksListProps>("TasksList");
 
 /**
- * Renders an agent-only owner picker for canonical issue creation and
+ * Renders an agent-only owner picker for canonical task creation and
  * reassignment.
  */
 export const OwnerPicker = createSdkUiComponent<OwnerPickerProps>("OwnerPicker");
 
 /**
- * Renders the same host project picker used by the new issue pane.
+ * Renders the same host project picker used by the new task pane.
  */
 export const ProjectPicker = createSdkUiComponent<ProjectPickerProps>("ProjectPicker");
 

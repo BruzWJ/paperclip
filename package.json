@@ -45,7 +45,7 @@
     "test:e2e:multiuser-authenticated": "npx playwright test --config tests/e2e/playwright-multiuser-authenticated.config.ts",
     "evals:smoke": "cd evals/promptfoo && npx promptfoo@0.103.3 eval",
     "metrics:paperclip-commits": "tsx scripts/paperclip-commit-metrics.ts",
-    "perf:issue-chat-long-thread": "node scripts/measure-issue-chat-long-thread.mjs"
+    "perf:task-chat-long-thread": "node scripts/measure-task-chat-long-thread.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

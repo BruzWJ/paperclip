@@ -8,8 +8,8 @@ export interface Company {
   status: CompanyStatus;
   pauseReason: PauseReason | null;
   pausedAt: Date | null;
-  issuePrefix: string;
-  issueCounter: number;
+  taskPrefix: string;
+  taskCounter: number;
   budgetCurrency: BudgetCurrency;
   budgetMonthlyAmount: MoneyAmount;
   knownSpendAmount: MoneyAmount;

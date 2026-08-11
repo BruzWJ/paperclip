@@ -12,7 +12,7 @@ function createRoutine(overrides: Partial<RoutineListItem> = {}): RoutineListIte
     companyId: "company-1",
     projectId: "project-1",
     goalId: null,
-    parentIssueId: null,
+    parentTaskId: null,
     responsibleUserId: null,
     title: "Routine title",
     description: null,
@@ -34,7 +34,7 @@ function createRoutine(overrides: Partial<RoutineListItem> = {}): RoutineListIte
     updatedAt: new Date("2026-04-30T00:00:00.000Z"),
     triggers: [],
     lastRun: null,
-    activeIssue: null,
+    activeTask: null,
     ...overrides,
   };
 }

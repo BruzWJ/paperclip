@@ -33,7 +33,7 @@ Open-source orchestration for teams of AI agents.
 
 Paperclip is a Node.js server and React UI that orchestrates a team of AI agents to run a business. Bring your own agents, assign goals, and track work and costs from one dashboard.
 
-It looks like an issue manager. Under the hood: org charts, budgets, governance, goal alignment, and agent coordination.
+It looks like a task manager. Under the hood: org charts, budgets, governance, goal alignment, and agent coordination.
 
 **Manage business goals, not pull requests.**
 
@@ -66,7 +66,7 @@ It looks like an issue manager. Under the hood: org charts, budgets, governance,
 - ✅ You have **many simultaneous agent processes** running and lose track of what everyone is doing
 - ✅ You want agents running **autonomously 24/7**, but still want to audit work and chime in when needed
 - ✅ You want to **monitor costs** and enforce budgets
-- ✅ You want a process for managing agents that **feels like using an issue manager**
+- ✅ You want a process for managing agents that **feels like using a task manager**
 - ✅ You want to manage your autonomous businesses **from your phone**
 
 <br/>
@@ -77,15 +77,15 @@ It looks like an issue manager. Under the hood: org charts, budgets, governance,
 <tr>
 <td align="center" width="33%">
 <h3>🔌 Bring Your Own Agent</h3>
-Any agent, any runtime, one org chart. Each configured identity runs only explicitly owned issue work.
+Any agent, any runtime, one org chart. Each configured identity runs only explicitly owned task work.
 </td>
 <td align="center" width="33%">
 <h3>🎯 Goal Alignment</h3>
-Every issue can trace back to the company mission. Agents receive the immutable request for the work they own.
+Every task can trace back to the company mission. Agents receive the immutable request for the work they own.
 </td>
 <td align="center" width="33%">
-<h3>💓 Issue Executions</h3>
-Durable issue refs dispatch provider work. Delegation follows authenticated issue creator/owner edges.
+<h3>💓 Task Executions</h3>
+Durable task refs dispatch provider work. Delegation follows authenticated task creator/owner edges.
 </td>
 </tr>
 <tr>
@@ -98,7 +98,7 @@ Monthly budgets per agent. When they hit the limit, they stop. No runaway costs.
 One deployment, many companies. Complete data isolation. One control plane for your portfolio.
 </td>
 <td align="center">
-<h3>🎫 Ticket System</h3>
+<h3>🎫 Task System</h3>
 Every conversation traced. Every decision explained. Full tool-call tracing and immutable audit log.
 </td>
 </tr>
@@ -124,12 +124,12 @@ Monitor and manage your autonomous businesses from anywhere.
 
 | Without Paperclip                                                                                                                     | With Paperclip                                                                                                                         |
 | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| ❌ You have many agent processes open and can't track which one does what. On reboot you lose everything.                           | ✅ Issues have durable, auditable Sessions isolated to the exact issue and ownership epoch.                                            |
-| ❌ You manually gather context from several places to remind your bot what you're actually doing.                                     | ✅ Explicit context grants compose only the issue history the current execution may read.                                               |
-| ❌ Folders of agent configs are disorganized and you're re-inventing issue management, communication, and coordination between agents. | ✅ Paperclip gives you org charts, ticketing, delegation, and governance out of the box — so you run a company, not a pile of scripts. |
+| ❌ You have many agent processes open and can't track which one does what. On reboot you lose everything.                           | ✅ Tasks have durable, auditable Sessions isolated to the exact task and ownership epoch.                                            |
+| ❌ You manually gather context from several places to remind your bot what you're actually doing.                                     | ✅ Explicit context grants compose only the task history the current execution may read.                                               |
+| ❌ Folders of agent configs are disorganized and you're re-inventing task management, communication, and coordination between agents. | ✅ Paperclip gives you org charts, task tracking, delegation, and governance out of the box — so you run a company, not a pile of scripts. |
 | ❌ Runaway loops waste hundreds of dollars of tokens and max your quota before you even know what happened.                           | ✅ Cost tracking surfaces token budgets and throttles agents when they're out. Management prioritizes with budgets.                    |
-| ❌ You have recurring jobs (customer support, social, reports) and have to remember to manually kick them off.                        | ✅ Routines create ordinary scheduled issues. Management supervises.                                                                    |
-| ❌ You have an idea, you have to find your repo, start an agent process, keep a tab open, and babysit it.                             | ✅ Create an issue in Paperclip. Its configured owner runs through the same auditable dispatcher.                                      |
+| ❌ You have recurring jobs (customer support, social, reports) and have to remember to manually kick them off.                        | ✅ Routines create ordinary scheduled tasks. Management supervises.                                                                    |
+| ❌ You have an idea, you have to find your repo, start an agent process, keep a tab open, and babysit it.                             | ✅ Create a task in Paperclip. Its configured owner runs through the same auditable dispatcher.                                      |
 
 <br/>
 
@@ -139,11 +139,11 @@ Paperclip handles the hard orchestration details correctly.
 
 |                                   |                                                                                                               |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **Atomic execution.**             | Persisted refs, views, leases, and budget enforcement serialize each exact issue execution.                   |
-| **Issue-scoped continuity.**      | Continuity can resume only within one issue/epoch/agent/revision; nothing Paperclip-authored crosses issues.  |
+| **Atomic execution.**             | Persisted refs, views, leases, and budget enforcement serialize each exact task execution.                   |
+| **Task-scoped continuity.**      | Continuity can resume only within one task/epoch/agent/revision; nothing Paperclip-authored crosses tasks.  |
 | **Explicit capabilities.**        | Compiled prompt capabilities and genuine skills appear only when that agent and run are authorized for them.   |
 | **Governance with rollback.**     | Approval gates are enforced, config changes are revisioned, and bad changes can be rolled back safely.        |
-| **Goal-aware execution.**         | Issues carry full goal ancestry so agents consistently see the "why," not just a title.                        |
+| **Goal-aware execution.**         | Tasks carry full goal ancestry so agents consistently see the "why," not just a title.                        |
 | **Portable company templates.**   | Export/import orgs, agents, and skills with secret scrubbing and collision handling.                          |
 | **True multi-company isolation.** | Every entity is company-scoped, so one deployment can run many companies with separate data and audit trails. |
 
@@ -158,7 +158,7 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 │                       PAPERCLIP SERVER                       │
 │                                                              │
 │  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐  │
-│  │Identity & │  │ Issues &  │  │  Issue    │  │Governance │  │
+│  │Identity & │  │ Tasks &  │  │  Task    │  │Governance │  │
 │  │  Access   │  │ Sessions  │  │ Execution │  │& Approvals│  │
 │  └───────────┘  └───────────┘  └───────────┘  └───────────┘  │
 │                                                              │
@@ -188,7 +188,7 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 **Identity & Access** — One Better Auth signup, sign-in, session, profile, and
 sign-out lifecycle at every bind and exposure, plus explicit company
 memberships, invite flows, and short-lived credentials bound to exact
-issue-execution refs. Every mutation is traced to a real authenticated actor.
+task-execution refs. Every mutation is traced to a real authenticated actor.
 
 </td>
 <td width="50%">
@@ -202,17 +202,17 @@ budgets. Org position and title grant nothing.
 <tr>
 <td>
 
-**Issue System** — Issues carry an immutable request and creator, one current
+**Task System** — Tasks carry an immutable request and creator, one current
 owner/epoch, company/project/goal/parent links, blocker dependencies, comments,
 documents, attachments, work products, labels, and inbox state.
 
 </td>
 <td>
 
-**Issue Execution** — Persisted refs, leases, and views drive budget checks,
+**Task Execution** — Persisted refs, leases, and views drive budget checks,
 run-directory resolution, dynamic interface compilation, and adapter invocation.
 Runs append Paperclip Session events, costs, comments, and audit evidence; no
-agent-wide session state crosses issues.
+agent-wide session state crosses tasks.
 
 </td>
 </tr>
@@ -233,12 +233,12 @@ context and capabilities authorized for that execution.
 <tr>
 <td>
 
-**Budget & Cost Control** — Token and cost tracking by company, agent, project, goal, issue, provider, and model. Scoped budget policies with warning thresholds and hard stops. Overspend pauses agents and cancels queued work automatically.
+**Budget & Cost Control** — Token and cost tracking by company, agent, project, goal, task, provider, and model. Scoped budget policies with warning thresholds and hard stops. Overspend pauses agents and cancels queued work automatically.
 
 </td>
 <td>
 
-**Routines & Schedules** — Recurring issues with cron, webhook, and API triggers. Concurrency and catch-up policies. Each routine execution creates a tracked issue and wakes the assigned agent — no manual kick-offs needed.
+**Routines & Schedules** — Recurring tasks with cron, webhook, and API triggers. Concurrency and catch-up policies. Each routine execution creates a tracked task and wakes the assigned agent — no manual kick-offs needed.
 
 </td>
 </tr>
@@ -257,14 +257,14 @@ context and capabilities authorized for that execution.
 <tr>
 <td>
 
-**Activity & Events** — Mutating actions, issue-execution state changes, cost
+**Activity & Events** — Mutating actions, task-execution state changes, cost
 events, approvals, comments, and work products are recorded as durable activity
 so operators can audit what happened and why.
 
 </td>
 <td>
 
-**Company Portability** — Export and import entire organizations — agents, skills, projects, routines, and issues — with secret scrubbing and collision handling. One deployment, many companies, complete data isolation.
+**Company Portability** — Export and import entire organizations — agents, skills, projects, routines, and tasks — with secret scrubbing and collision handling. One deployment, many companies, complete data isolation.
 
 </td>
 </tr>
@@ -341,16 +341,16 @@ Yes. A single deployment can run an unlimited number of companies with complete 
 Paperclip orchestrates supported agents into a company — with org charts, budgets, goals, governance, and accountability.
 
 **Why should I use Paperclip instead of pointing an agent to Asana or Trello?**
-Agent orchestration has subtleties in ownership epochs, issue-scoped
+Agent orchestration has subtleties in ownership epochs, task-scoped
 continuity, authorization, cost monitoring, and governance. Paperclip owns
 those control-plane boundaries.
 
 (Bring-your-own-ticket-system is on the Roadmap)
 
 **Do agents run continuously?**
-Paperclip starts provider attempts only from admitted issue-execution refs.
+Paperclip starts provider attempts only from admitted task-execution refs.
 Assignments, exact mentions, creator updates, and system nudges can admit refs;
-schedules do so by having routines create ordinary issues.
+schedules do so by having routines create ordinary tasks.
 
 <br/>
 
@@ -406,7 +406,7 @@ Find Plugins and more at [awesome-paperclip](https://github.com/gsxdsm/awesome-p
 
 ## Telemetry
 
-Paperclip collects anonymous usage telemetry to help us understand how the product is used and improve it. No personal information, issue content, prompts, file paths, or secrets are ever collected. Private repository references are hashed with a per-install salt before being sent.
+Paperclip collects anonymous usage telemetry to help us understand how the product is used and improve it. No personal information, task content, prompts, file paths, or secrets are ever collected. Private repository references are hashed with a per-install salt before being sent.
 
 Telemetry is **enabled by default** and can be disabled with any of the following:
 
@@ -427,7 +427,7 @@ We welcome contributions. See the [contributing guide](https://github.com/paperc
 
 - [Discord](https://discord.gg/m4HZY7xNG3) — Join the community
 - [Twitter / X](https://x.com/papercliping) — Follow updates and announcements
-- [GitHub Issues](https://github.com/paperclipai/paperclip/issues) — bugs and feature requests
+- [GitHub project](https://github.com/paperclipai/paperclip) — bugs and feature requests
 - [GitHub Discussions](https://github.com/paperclipai/paperclip/discussions) — ideas and RFC
 
 <br/>

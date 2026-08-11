@@ -292,7 +292,7 @@ export interface SecretAccessEvent {
   consumerType: SecretBindingTargetType | "agent_api";
   consumerId: string;
   configPath: string | null;
-  issueId: string | null;
+  taskId: string | null;
   runId: string | null;
   pluginId: string | null;
   outcome: SecretAccessOutcome;

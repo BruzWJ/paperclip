@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "@paperclipai/db";
 import { buildHostServices } from "../services/plugin-host-services.js";
-import { PluginIssueAuthorizationRejected } from "../services/plugin-issue-authorization.js";
+import { PluginTaskAuthorizationRejected } from "../services/plugin-task-authorization.js";
 import { createMockDb } from "./helpers/mock-db.js";
 import {
   createPluginHostServicesTestOptions,
@@ -17,8 +17,8 @@ const mocks = vi.hoisted(() => ({
   logActivity: vi.fn(),
 }));
 
-vi.mock("../services/plugin-issue-authorization.js", async () => ({
-  ...await vi.importActual<typeof import("../services/plugin-issue-authorization.js")>("../services/plugin-issue-authorization.js"),
+vi.mock("../services/plugin-task-authorization.js", async () => ({
+  ...await vi.importActual<typeof import("../services/plugin-task-authorization.js")>("../services/plugin-task-authorization.js"),
   assertPluginInstallationRequestScope: mocks.assertPluginAvailable,
 }));
 
@@ -98,7 +98,7 @@ describe("plugin access and authorization host services", () => {
     };
 
     mocks.assertPluginAvailable.mockRejectedValueOnce(
-      new PluginIssueAuthorizationRejected(
+      new PluginTaskAuthorizationRejected(
         "not ready",
         "plugin_installation_not_ready",
         { companyId },
@@ -154,7 +154,7 @@ describe("plugin access and authorization host services", () => {
     });
 
     mocks.assertPluginAvailable.mockRejectedValueOnce(
-      new PluginIssueAuthorizationRejected(
+      new PluginTaskAuthorizationRejected(
         "not ready",
         "plugin_installation_not_ready",
         { companyId },
@@ -283,15 +283,15 @@ describe("plugin access and authorization host services", () => {
       agentId: actorAgentId,
       runId: null,
       action: "authorization.assignment_preview",
-      entityType: "issue",
-      entityId: "issue-1",
+      entityType: "task",
+      entityId: "task-1",
       details: { decision: "allow", secret: "do-not-leak" },
       createdAt,
     };
     const denyRow = {
       ...allowRow,
       id: "00000000-0000-4000-8000-000000000031",
-      entityId: "issue-2",
+      entityId: "task-2",
       details: { reason: "deny_scope", authorization: "Bearer should-not-leak" },
     };
     const harness = createMockDb({ select: [[allowRow], [denyRow]] });
@@ -310,9 +310,9 @@ describe("plugin access and authorization host services", () => {
     });
 
     expect(allowed).toHaveLength(1);
-    expect(allowed[0]).toMatchObject({ entityId: "issue-1", details: { decision: "allow", secret: "***REDACTED***" } });
+    expect(allowed[0]).toMatchObject({ entityId: "task-1", details: { decision: "allow", secret: "***REDACTED***" } });
     expect(denied).toHaveLength(1);
-    expect(denied[0]).toMatchObject({ entityId: "issue-2", details: { authorization: "***REDACTED***" } });
+    expect(denied[0]).toMatchObject({ entityId: "task-2", details: { authorization: "***REDACTED***" } });
     await host.dispose();
   });
 
@@ -373,7 +373,7 @@ describe("plugin access and authorization host services", () => {
         nested: { authorization: "Bearer should-not-persist", safeLabel: "kept" },
       },
     } as never)).rejects.toThrow(
-      "Plugin authorization policy updates only support issue resources.",
+      "Plugin authorization policy updates only support task resources.",
     );
 
     expect(harness.calls).toEqual([]);

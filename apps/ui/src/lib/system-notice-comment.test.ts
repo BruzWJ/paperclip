@@ -12,7 +12,7 @@ describe("mapCommentMetadataToSystemNoticeSections", () => {
           {
             title: "Required action",
             rows: [
-              { type: "issue_link", label: "Source issue", issueId: "i1", identifier: "PAP-3440", title: "Recovery" },
+              { type: "task_link", label: "Source task", taskId: "i1", identifier: "PAP-3440", title: "Recovery" },
               { type: "agent_link", label: "Responsible", agentId: "agent-1", name: "CodexCoder" },
               { type: "key_value", label: "Status before", value: "in_progress" },
               { type: "code", label: "Cause code", code: "workspace_validation_failed" },
@@ -31,10 +31,10 @@ describe("mapCommentMetadataToSystemNoticeSections", () => {
     const rows = sections[0]!.rows;
     expect(rows).toEqual([
       {
-        kind: "issue",
-        label: "Source issue",
+        kind: "task",
+        label: "Source task",
         identifier: "PAP-3440",
-        href: "/issues/PAP-3440",
+        href: "/tasks/PAP-3440",
         title: "Recovery",
       },
       { kind: "agent", label: "Responsible", name: "CodexCoder", href: "/agents/agent-1" },

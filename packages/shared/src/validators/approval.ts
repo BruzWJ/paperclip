@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addValidationDetail } from "../validation-details.js";
 import { APPROVAL_TYPES } from "../constants.js";
 import { runtimeAgentCreateConfigurationSchema } from "./runtime-agent-configuration.js";
 import { multilineTextSchema } from "./text.js";
@@ -14,7 +15,7 @@ export const createApprovalSchema = z.object({
   type: genericApprovalTypeSchema,
   requestedByAgentId: z.string().uuid().optional().nullable(),
   payload: z.record(z.string(), z.unknown()),
-  issueIds: z.array(z.string().uuid()).optional(),
+  taskIds: z.array(z.string().uuid()).optional(),
 }).strict();
 
 export type CreateApproval = z.infer<typeof createApprovalSchema>;
@@ -22,9 +23,9 @@ export type CreateApproval = z.infer<typeof createApprovalSchema>;
 const hireAgentApprovalRunSourceSchema = z
   .object({
     kind: z.literal("agent_run"),
-    issueId: z.string().uuid(),
+    taskId: z.string().uuid(),
     runId: z.string().uuid(),
-    issueExecutionRefId: z.string().uuid(),
+    taskExecutionRefId: z.string().uuid(),
   })
   .strict();
 
@@ -99,8 +100,7 @@ export const resubmitApprovalSchema = z
   .strict()
   .superRefine((value, ctx) => {
     if (value.payload !== undefined && value.hireAgent !== undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "payload and hireAgent are mutually exclusive",
       });
     }

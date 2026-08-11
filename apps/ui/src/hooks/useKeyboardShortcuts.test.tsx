@@ -9,19 +9,19 @@ import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 function TestHarness({
-  onNewIssue,
+  onNewTask,
   onSearch,
   onToggleCollapse,
   onGoToInbox,
 }: {
-  onNewIssue: () => void;
+  onNewTask: () => void;
   onSearch?: () => void;
   onToggleCollapse?: () => void;
   onGoToInbox?: () => void;
 }) {
   useKeyboardShortcuts({
     enabled: true,
-    onNewIssue,
+    onNewTask,
     onSearch,
     onToggleCollapse,
     onGoToInbox,
@@ -44,10 +44,10 @@ describe("useKeyboardShortcuts", () => {
 
   it("ignores events already claimed by another handler", () => {
     const root = createRoot(container);
-    const onNewIssue = vi.fn();
+    const onNewTask = vi.fn();
 
     act(() => {
-      root.render(<TestHarness onNewIssue={onNewIssue} />);
+      root.render(<TestHarness onNewTask={onNewTask} />);
     });
 
     const event = new KeyboardEvent("keydown", {
@@ -58,7 +58,7 @@ describe("useKeyboardShortcuts", () => {
     event.preventDefault();
     document.dispatchEvent(event);
 
-    expect(onNewIssue).not.toHaveBeenCalled();
+    expect(onNewTask).not.toHaveBeenCalled();
 
     act(() => {
       root.unmount();
@@ -74,7 +74,7 @@ describe("useKeyboardShortcuts", () => {
     document.body.appendChild(input);
 
     act(() => {
-      root.render(<TestHarness onNewIssue={vi.fn()} onSearch={onSearch} />);
+      root.render(<TestHarness onNewTask={vi.fn()} onSearch={onSearch} />);
     });
 
     document.dispatchEvent(new KeyboardEvent("keydown", {
@@ -97,7 +97,7 @@ describe("useKeyboardShortcuts", () => {
     const onSearch = vi.fn();
 
     act(() => {
-      root.render(<TestHarness onNewIssue={vi.fn()} onSearch={onSearch} />);
+      root.render(<TestHarness onNewTask={vi.fn()} onSearch={onSearch} />);
     });
 
     document.dispatchEvent(new KeyboardEvent("keydown", {
@@ -118,7 +118,7 @@ describe("useKeyboardShortcuts", () => {
     const onToggleCollapse = vi.fn();
 
     act(() => {
-      root.render(<TestHarness onNewIssue={vi.fn()} onToggleCollapse={onToggleCollapse} />);
+      root.render(<TestHarness onNewTask={vi.fn()} onToggleCollapse={onToggleCollapse} />);
     });
 
     document.dispatchEvent(new KeyboardEvent("keydown", {
@@ -151,10 +151,10 @@ describe("useKeyboardShortcuts", () => {
   it("navigates to the inbox on the g \u2192 i chord", () => {
     const root = createRoot(container);
     const onGoToInbox = vi.fn();
-    const onNewIssue = vi.fn();
+    const onNewTask = vi.fn();
 
     act(() => {
-      root.render(<TestHarness onNewIssue={onNewIssue} onGoToInbox={onGoToInbox} />);
+      root.render(<TestHarness onNewTask={onNewTask} onGoToInbox={onGoToInbox} />);
     });
 
     // Bare "i" does nothing.
@@ -169,7 +169,7 @@ describe("useKeyboardShortcuts", () => {
     // Chord disarms after firing.
     pressKey("i");
     expect(onGoToInbox).toHaveBeenCalledTimes(1);
-    expect(onNewIssue).not.toHaveBeenCalled();
+    expect(onNewTask).not.toHaveBeenCalled();
 
     act(() => {
       root.unmount();
@@ -179,22 +179,22 @@ describe("useKeyboardShortcuts", () => {
   it("swallows armed chord keys instead of firing bare shortcuts", () => {
     const root = createRoot(container);
     const onGoToInbox = vi.fn();
-    const onNewIssue = vi.fn();
+    const onNewTask = vi.fn();
 
     act(() => {
-      root.render(<TestHarness onNewIssue={onNewIssue} onGoToInbox={onGoToInbox} />);
+      root.render(<TestHarness onNewTask={onNewTask} onGoToInbox={onGoToInbox} />);
     });
 
-    // g \u2192 c is the issue-detail focus-comment chord; globally it must not
-    // open the new-issue dialog.
+    // g \u2192 c is the task-detail focus-comment chord; globally it must not
+    // open the new-task dialog.
     pressKey("g");
     pressKey("c");
-    expect(onNewIssue).not.toHaveBeenCalled();
+    expect(onNewTask).not.toHaveBeenCalled();
     expect(onGoToInbox).not.toHaveBeenCalled();
 
     // Bare "c" still creates.
     pressKey("c");
-    expect(onNewIssue).toHaveBeenCalledTimes(1);
+    expect(onNewTask).toHaveBeenCalledTimes(1);
 
     act(() => {
       root.unmount();
@@ -206,7 +206,7 @@ describe("useKeyboardShortcuts", () => {
     const onToggleCollapse = vi.fn();
 
     act(() => {
-      root.render(<TestHarness onNewIssue={vi.fn()} onToggleCollapse={onToggleCollapse} />);
+      root.render(<TestHarness onNewTask={vi.fn()} onToggleCollapse={onToggleCollapse} />);
     });
 
     document.dispatchEvent(new KeyboardEvent("keydown", {

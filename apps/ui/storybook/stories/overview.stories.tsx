@@ -28,13 +28,13 @@ const storyGroups = [
   {
     title: "Control Plane Surfaces",
     icon: ShieldCheck,
-    stories: "Issue rows, approvals, budget cards, activity rows, metrics",
+    stories: "Task rows, approvals, budget cards, activity rows, metrics",
     why: "The V1 board UI depends on these dense operational patterns staying legible.",
   },
   {
     title: "UX Labs",
     icon: FlaskConical,
-    stories: "Issue chat, run transcripts, invite/access flows",
+    stories: "Task chat, run transcripts, invite/access flows",
     why: "The old `/tests/ux/*` pages are fixture-backed Storybook stories now.",
   },
   {
@@ -50,10 +50,10 @@ const storyGroups = [
     why: "Agent lifecycle is the primary governance surface for operators.",
   },
   {
-    title: "Issue Management",
+    title: "Task Management",
     icon: ListTodo,
-    stories: "Issue lists, filters, properties, documents, run ledger, workspace cards",
-    why: "Issues are the core work unit — every view state matters for scan speed.",
+    stories: "Task lists, filters, properties, documents, run ledger, workspace cards",
+    why: "Tasks are the core work unit — every view state matters for scan speed.",
   },
   {
     title: "Forms & Editors",
@@ -70,7 +70,7 @@ const storyGroups = [
   {
     title: "Dialogs & Modals",
     icon: LayoutDashboard,
-    stories: "New issue/agent/goal/project dialogs, diff modal, image gallery",
+    stories: "New task/agent/goal/project dialogs, diff modal, image gallery",
     why: "Dialogs interrupt flow — they must be scannable and self-explanatory.",
   },
   {
@@ -82,14 +82,14 @@ const storyGroups = [
   {
     title: "Chat & Comments",
     icon: MessageSquare,
-    stories: "Comment threads, run chat, issue chat with timeline events",
+    stories: "Comment threads, run chat, task chat with timeline events",
     why: "Threaded conversations mix agent/user/system authors and need density review.",
   },
 ];
 
 const coverageRows = [
   ["System primitives", "Covered", "State matrix across size, variant, disabled, icon, and overlay behavior"],
-  ["Status language", "Covered", "Issue/agent lifecycle badges, priorities, quota thresholds, and empty states"],
+  ["Status language", "Covered", "Task/agent lifecycle badges, priorities, quota thresholds, and empty states"],
   ["Task surfaces", "Covered", "Inbox-style rows with unread, selected, archive, and trailing metadata states"],
   ["Governance", "Covered", "Pending, revision-requested, approved, and budget-specific approval payloads"],
   ["Budget controls", "Covered", "Healthy, warning, hard-stop, compact, plain, and editable card variants"],
@@ -97,12 +97,12 @@ const coverageRows = [
   ["Invite UX", "Covered", "Fixture-backed access roles, invite landing, pending, accepted, expired, and error states"],
   ["Navigation & layout", "Planned", "Sidebar, breadcrumbs, command palette, company rail, mobile nav"],
   ["Agent management", "Planned", "Agent properties, config forms, icon picker, action buttons, active panel"],
-  ["Issue management", "Planned", "Issue lists, filters, properties, documents, run ledger, workspace cards"],
+  ["Task management", "Planned", "Task lists, filters, properties, documents, run ledger, workspace cards"],
   ["Forms & editors", "Planned", "Markdown editor, JSON schema, env vars, schedule editor, pickers"],
   ["Budget & finance", "Planned", "Incident cards, provider spend, biller spend, and finance ledgers"],
-  ["Dialogs & modals", "Planned", "New issue/agent/goal/project dialogs, diff modal, image gallery"],
+  ["Dialogs & modals", "Planned", "New task/agent/goal/project dialogs, diff modal, image gallery"],
   ["Projects & goals", "Planned", "Project properties, workspace cards, goal trees, runtime controls"],
-  ["Chat & comments", "Covered", "Comment threads, run chat, issue chat with timeline events"],
+  ["Chat & comments", "Covered", "Comment threads, run chat, task chat with timeline events"],
   ["Data viz & misc", "Planned", "Activity charts, kanban, filter bar, live widget, onboarding, skeletons"],
   ["Full app pages", "Deferred", "API-driven route stories after page data loaders can be fixture-injected"],
 ];

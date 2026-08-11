@@ -40,7 +40,7 @@ describe("plugin init", () => {
         template: "standard",
         category: "automation",
         displayName: "Linear Bridge",
-        description: "Syncs Linear issues",
+        description: "Syncs Linear tickets",
         author: "Acme",
         sdkPath: "../paperclip/packages/plugins/sdk",
       },
@@ -53,7 +53,7 @@ describe("plugin init", () => {
       template: "standard",
       category: "automation",
       displayName: "Linear Bridge",
-      description: "Syncs Linear issues",
+      description: "Syncs Linear tickets",
       author: "Acme",
       sdkPath: "../paperclip/packages/plugins/sdk",
     });

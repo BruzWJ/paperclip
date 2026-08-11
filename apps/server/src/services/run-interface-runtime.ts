@@ -1,4 +1,4 @@
-import { issues, type Db } from "@paperclipai/db";
+import { tasks, type Db } from "@paperclipai/db";
 import { and, eq } from "drizzle-orm";
 import { AGENT_CONTEXT_GRANT_KEYS } from "@paperclipai/shared";
 import {
@@ -27,21 +27,21 @@ import {
   createRuntimeToolCallLedger,
 } from "./runtime-tool-call-ledger.js";
 import type {
-  PluginRunIssueContextReader,
+  PluginRunTaskContextReader,
   PluginRuntimeRecordsReader,
 } from "./plugin-host-services.js";
-import type { IssueExecutionRunService } from "./issue-execution-run-service.js";
-import type { IssueSessionStore } from "./issue-session/store.js";
+import type { TaskExecutionRunService } from "./task-execution-run-service.js";
+import type { TaskSessionStore } from "./task-session/store.js";
 import { createPluginCanonicalSessionReader } from "./plugin-canonical-session-reader.js";
 
 export interface PostgresPromptCapabilityRuntimeOptions {
   /**
    * Canonical run reader. The capability repository may inspect every other
    * separately owned authority row directly, but never bypasses this owner for
-   * the issue-execution run envelope.
+   * the task-execution run envelope.
    */
   runService: Pick<
-    IssueExecutionRunService,
+    TaskExecutionRunService,
     "readRun" | "readJoinedRunDetail"
   >;
   /**
@@ -50,7 +50,7 @@ export interface PostgresPromptCapabilityRuntimeOptions {
    */
   cursorSecret: string;
   /** Canonical redacted Session read authority shared with runtime plugins. */
-  issueSessionStore: IssueSessionStore;
+  taskSessionStore: TaskSessionStore;
   managedTools: PaperclipManagedToolRouter;
   pluginTools: RuntimePluginToolPort;
   now?: () => Date;
@@ -115,39 +115,39 @@ export function createPostgresPromptCapabilityRuntime(
     };
   }
 
-  const pluginRunIssueContextReader: PluginRunIssueContextReader = {
+  const pluginRunTaskContextReader: PluginRunTaskContextReader = {
     async resolveContext(input) {
       const { capability, scope } = await resolvePluginScope(input);
-      const [issue] = await db
-        .select({ projectId: issues.projectId })
-        .from(issues)
+      const [task] = await db
+        .select({ projectId: tasks.projectId })
+        .from(tasks)
         .where(
           and(
-            eq(issues.companyId, capability.companyId),
-            eq(issues.id, capability.issueId),
+            eq(tasks.companyId, capability.companyId),
+            eq(tasks.id, capability.taskId),
           ),
         )
         .limit(1);
-      if (!issue) {
+      if (!task) {
         throw new PromptCapabilityAuthenticationError(
-          "Plugin run-context issue no longer exists",
+          "Plugin run-context task no longer exists",
         );
       }
       return {
         companyId: capability.companyId,
-        issueId: capability.issueId,
+        taskId: capability.taskId,
         agentId: capability.targetAgentId,
         runId: capability.runId,
-        projectId: issue.projectId,
+        projectId: task.projectId,
         contextAccess: { ...scope.dial },
       };
     },
-    async issueReach(input) {
+    async taskReach(input) {
       const { scope } = await resolvePluginScope(input);
-      const reach = await retrievalRepository.issueReach({
+      const reach = await retrievalRepository.taskReach({
         companyId: scope.companyId,
-        activeIssueId: scope.activeIssueId,
-        issueId: input.issueId,
+        activeTaskId: scope.activeTaskId,
+        taskId: input.taskId,
       });
       if (!reach?.sameCompany) {
         return { visible: false, relation: "outside" };
@@ -158,18 +158,18 @@ export function createPostgresPromptCapabilityRuntime(
       if (reach.descendant) {
         return {
           visible:
-            scope.dial.list_sub_issues || scope.dial.list_company_issues,
+            scope.dial.list_sub_tasks || scope.dial.list_company_tasks,
           relation: "descendant",
         };
       }
       return {
-        visible: scope.dial.list_company_issues,
+        visible: scope.dial.list_company_tasks,
         relation: "company",
       };
     },
-    async listCompanyIssues(input) {
+    async listCompanyTasks(input) {
       const { scope } = await resolvePluginScope(input);
-      return retrieval.listCompanyIssues(scope, {
+      return retrieval.listCompanyTasks(scope, {
         filters: {
           ...(input.status ? { status: input.status } : {}),
           ...(input.priority ? { priority: input.priority } : {}),
@@ -178,25 +178,25 @@ export function createPostgresPromptCapabilityRuntime(
         limit: input.limit,
       });
     },
-    async listSubIssues(input) {
+    async listSubTasks(input) {
       const { scope } = await resolvePluginScope(input);
-      return retrieval.listSubIssues(scope, {
-        issueId: input.issueId,
+      return retrieval.listSubTasks(scope, {
+        taskId: input.taskId,
         cursor: input.cursor,
         limit: input.limit,
       });
     },
-    async readIssueComments(input) {
+    async readTaskComments(input) {
       const { scope } = await resolvePluginScope(input);
-      return retrieval.readIssueComments(scope, {
-        issueId: input.issueId,
+      return retrieval.readTaskComments(scope, {
+        taskId: input.taskId,
         cursor: input.cursor,
         limit: input.limit,
       });
     },
-    async readIssueAgentRun(input) {
+    async readTaskAgentRun(input) {
       const { scope } = await resolvePluginScope(input);
-      return retrieval.readIssueAgentRun(scope, {
+      return retrieval.readTaskAgentRun(scope, {
         runId: input.runId,
         cursor: input.cursor,
       });
@@ -208,14 +208,14 @@ export function createPostgresPromptCapabilityRuntime(
   ) as Record<(typeof AGENT_CONTEXT_GRANT_KEYS)[number], boolean>;
   const canonicalSessions = createPluginCanonicalSessionReader(
     db,
-    options.issueSessionStore,
+    options.taskSessionStore,
   );
   const pluginRuntimeRecordsReader: PluginRuntimeRecordsReader = {
     readSession(input) {
       return canonicalSessions.readSession(input);
     },
     async readRun(input) {
-      const run = await retrievalRepository.runIssue({
+      const run = await retrievalRepository.runTask({
         companyId: input.companyId,
         runId: input.runId,
       });
@@ -224,24 +224,24 @@ export function createPostgresPromptCapabilityRuntime(
           "Runtime record is unavailable in the requested company",
         );
       }
-      return retrieval.readIssueAgentRun(
+      return retrieval.readTaskAgentRun(
         {
           companyId: input.companyId,
-          activeIssueId: run.issueId,
+          activeTaskId: run.taskId,
           dial: privilegedRuntimeDial,
         },
         { runId: input.runId, cursor: input.cursor },
       );
     },
-    async readIssueComments(input) {
-      return retrieval.readIssueComments(
+    async readTaskComments(input) {
+      return retrieval.readTaskComments(
         {
           companyId: input.companyId,
-          activeIssueId: input.issueId,
+          activeTaskId: input.taskId,
           dial: privilegedRuntimeDial,
         },
         {
-          issueId: input.issueId,
+          taskId: input.taskId,
           cursor: input.cursor,
           limit: input.limit,
         },
@@ -256,7 +256,7 @@ export function createPostgresPromptCapabilityRuntime(
     executor: runtimeToolGateway,
     repository,
     gateway,
-    pluginRunIssueContextReader,
+    pluginRunTaskContextReader,
     pluginRuntimeRecordsReader,
   };
 }

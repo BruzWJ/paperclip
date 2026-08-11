@@ -34,7 +34,7 @@ vi.mock(
 );
 
 const COMPANY_ID = "00000000-0000-4000-8000-000000000001";
-const ISSUE_ID = "00000000-0000-4000-8000-000000000002";
+const TASK_ID = "00000000-0000-4000-8000-000000000002";
 const RUN_ID = "00000000-0000-4000-8000-000000000003";
 const AGENT_ID = "00000000-0000-4000-8000-000000000004";
 const REVISION_ID = "00000000-0000-4000-8000-000000000005";
@@ -62,7 +62,7 @@ const ACP_CONFIGURATION: AgentAdapterAcpConfiguration = {
     },
   },
   workspaceSelector: {
-    kind: "issue_execution_workspace",
+    kind: "task_execution_workspace",
   },
   companySkillPins: [],
 };
@@ -75,7 +75,7 @@ const TARGET: AcpxLocalWorkspaceTarget = Object.freeze({
 function persistedBinding(overrides: Record<string, unknown> = {}) {
   return Object.freeze({
     companyId: COMPANY_ID,
-    issueId: ISSUE_ID,
+    taskId: TASK_ID,
     runId: RUN_ID,
     runKind: "productive" as const,
     runStatus: "queued" as const,
@@ -153,7 +153,7 @@ function createHarness(options: HarnessOptions = {}) {
 
 const IDENTITY = Object.freeze({
   companyId: COMPANY_ID,
-  issueId: ISSUE_ID,
+  taskId: TASK_ID,
   runId: RUN_ID,
 });
 
@@ -194,7 +194,7 @@ describe("adapter runtime readiness", () => {
     });
     expect(harness.acquisitionInputs).toEqual([{
       companyId: COMPANY_ID,
-      issueId: ISSUE_ID,
+      taskId: TASK_ID,
       runId: RUN_ID,
       targetAgentId: AGENT_ID,
       adapterConfigRevisionId: REVISION_ID,

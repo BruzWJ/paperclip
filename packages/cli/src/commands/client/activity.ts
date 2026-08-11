@@ -91,13 +91,13 @@ export function registerActivityCommands(program: Command): void {
 
   addCommonClientOptions(
     activity
-      .command("issue")
-      .description("List activity for an issue")
-      .argument("<issueId>", "Issue ID")
-      .action(async (issueId: string, opts: BaseClientOptions) => {
+      .command("task")
+      .description("List activity for a task")
+      .argument("<taskId>", "Task ID")
+      .action(async (taskId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.get(apiPath`/api/issues/${issueId}/activity`), { json: ctx.json });
+          printOutput(await ctx.api.get(apiPath`/api/tasks/${taskId}/activity`), { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
         }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
+import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 import {
   AcpPromptSettlementRejected,
   resolveAcpPromptAccountingModel,
@@ -7,13 +7,13 @@ import {
   type SettleAcpPromptInTransactionInput,
 } from "./acp-prompt-settlement.js";
 
-const noDatabase = {} as IssueSessionDbTransaction;
+const noDatabase = {} as TaskSessionDbTransaction;
 
 function validInput(): SettleAcpPromptInTransactionInput {
   return {
     identity: {
       companyId: "00000000-0000-4000-8000-000000000001",
-      issueId: "00000000-0000-4000-8000-000000000002",
+      taskId: "00000000-0000-4000-8000-000000000002",
       sessionId: "ses_settlement",
       agentId: "00000000-0000-4000-8000-000000000003",
       runId: "00000000-0000-4000-8000-000000000004",

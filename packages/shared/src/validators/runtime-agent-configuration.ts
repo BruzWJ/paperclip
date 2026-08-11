@@ -6,7 +6,7 @@ import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
-} from "../issue-runtime.js";
+} from "../task-runtime.js";
 import {
   adapterConfigSchema,
   agentRuntimeConfigSchema,

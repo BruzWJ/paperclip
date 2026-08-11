@@ -4,7 +4,7 @@ import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
-} from "../issue-runtime.js";
+} from "../task-runtime.js";
 import {
   adapterConfigSchema,
   agentRuntimeConfigSchema,
@@ -96,19 +96,19 @@ describe("runtime-agent control-plane validators", () => {
     ).toBe(false);
   });
 
-  it("rejects relationship-derived issue actions as configurable grants", () => {
+  it("rejects relationship-derived task actions as configurable grants", () => {
     const grants = falseMap(PAPERCLIP_ACTION_KEYS);
 
     expect(
       paperclipActionGrantMapSchema.safeParse({
         ...grants,
-        issue_assign: false,
+        task_assign: false,
       }).success,
     ).toBe(false);
     expect(
       paperclipActionGrantMapSchema.safeParse({
         ...grants,
-        issue_update: false,
+        task_update: false,
       }).success,
     ).toBe(false);
   });
@@ -149,7 +149,7 @@ describe("runtime-agent control-plane validators", () => {
   it("builds a nonempty id-only configure action contract", () => {
     const schema = runtimeAgentConfigureActionSchemaForTargets([AGENT_ID]);
     const contextGrants = falseMap(AGENT_CONTEXT_GRANT_KEYS);
-    contextGrants.read_issue_comments = true;
+    contextGrants.read_task_comments = true;
     const input = {
       agentId: AGENT_ID,
       title: null,

@@ -8,7 +8,7 @@ import {
   companySecrets,
   companySecretVersions,
   companyMemberships,
-  issues,
+  tasks,
   projects,
   routines,
   secretAccessEvents,
@@ -66,9 +66,9 @@ import {
   appendAdapterConfigPathKey,
 } from "./adapter-config-path.js";
 import {
-  readIssueExecutionRun,
-  resolveIssueExecutionRunIdentityById,
-} from "./issue-execution-run-service.js";
+  readTaskExecutionRun,
+  resolveTaskExecutionRunIdentityById,
+} from "./task-execution-run-service.js";
 
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SENSITIVE_ENV_KEY_RE =
@@ -510,7 +510,7 @@ type SecretConsumerContext = {
   actorType?: "agent" | "user" | "system" | "plugin";
   actorId?: string | null;
   actorSource?: "session" | "board_key" | "internal";
-  issueId?: string | null;
+  taskId?: string | null;
   runId?: string | null;
   pluginId?: string | null;
   allowedBindingIds?: string[] | null;
@@ -985,7 +985,7 @@ export function secretService(db: Db) {
       consumerType: input.context.consumerType,
       consumerId: input.context.consumerId,
       configPath: input.context.configPath ?? null,
-      issueId: input.context.issueId ?? null,
+      taskId: input.context.taskId ?? null,
       runId: input.context.runId ?? null,
       pluginId: input.context.pluginId ?? null,
       outcome: input.outcome,
@@ -1635,23 +1635,23 @@ export function secretService(db: Db) {
       }
     }
 
-    const issueIds = collectTargetIds(bindings, "issue", { uuidOnly: true });
-    if (issueIds.length > 0) {
+    const taskIds = collectTargetIds(bindings, "task", { uuidOnly: true });
+    if (taskIds.length > 0) {
       const rows = await db
         .select({
-          id: issues.id,
-          identifier: issues.identifier,
-          title: issues.title,
-          boardPresentationStatus: issues.boardPresentationStatus,
+          id: tasks.id,
+          identifier: tasks.identifier,
+          title: tasks.title,
+          boardPresentationStatus: tasks.boardPresentationStatus,
         })
-        .from(issues)
-        .where(and(eq(issues.companyId, companyId), inArray(issues.id, issueIds)));
+        .from(tasks)
+        .where(and(eq(tasks.companyId, companyId), inArray(tasks.id, taskIds)));
       for (const row of rows) {
         setTarget({
-          type: "issue",
+          type: "task",
           id: row.id,
-          label: row.title ?? row.identifier ?? `Issue ${row.id}`,
-          href: `/issues/${row.identifier ?? row.id}`,
+          label: row.title ?? row.identifier ?? `Task ${row.id}`,
+          href: `/tasks/${row.identifier ?? row.id}`,
           status: row.boardPresentationStatus,
         });
       }
@@ -1660,9 +1660,9 @@ export function secretService(db: Db) {
     const runIds = collectTargetIds(bindings, "run", { uuidOnly: true });
     if (runIds.length > 0) {
       const runs = await Promise.all(runIds.map(async (runId) => {
-        const identity = await resolveIssueExecutionRunIdentityById(db, runId);
+        const identity = await resolveTaskExecutionRunIdentityById(db, runId);
         if (!identity || identity.companyId !== companyId) return null;
-        return readIssueExecutionRun(db, identity);
+        return readTaskExecutionRun(db, identity);
       }));
       for (const run of runs) {
         if (!run) continue;

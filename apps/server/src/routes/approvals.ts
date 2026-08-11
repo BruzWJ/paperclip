@@ -11,7 +11,7 @@ import { validate } from "../middleware/validate.js";
 import {
   approvalService,
   accessService,
-  issueApprovalService,
+  taskApprovalService,
   logActivity,
 } from "../services/index.js";
 import {
@@ -22,7 +22,7 @@ import {
 } from "./authz.js";
 import { redactEventPayload } from "../redaction.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
-import type { OrdinaryIssueRuntime } from "../services/ordinary-issue-runtime.js";
+import type { OrdinaryTaskRuntime } from "../services/ordinary-task-runtime.js";
 import type { AgentLifecycleCancellationService } from "../services/agents.js";
 import {
   terminateAgentForHireRejectionInTransaction,
@@ -40,8 +40,8 @@ export function approvalRoutes(
   db: Db,
   options: {
     pluginWorkerManager?: PluginWorkerManager;
-    ordinaryIssues: OrdinaryIssueRuntime;
-    issueExecutionCancellation: AgentLifecycleCancellationService;
+    ordinaryTasks: OrdinaryTaskRuntime;
+    taskExecutionCancellation: AgentLifecycleCancellationService;
   },
 ) {
   const router = Router();
@@ -52,13 +52,13 @@ export function approvalRoutes(
   router.use("/approvals", requireBoard);
   router.use("/companies/:companyId/approvals", requireBoard);
   const svc = approvalService(db, {
-    issueExecutionCancellation: options.issueExecutionCancellation,
+    taskExecutionCancellation: options.taskExecutionCancellation,
     terminateHireRejectionAgentInTransaction:
       terminateAgentForHireRejectionInTransaction,
-    dispatchRef: options.ordinaryIssues.dispatchRef,
+    dispatchRef: options.ordinaryTasks.dispatchRef,
   });
   const access = accessService(db);
-  const issueApprovalsSvc = issueApprovalService(db);
+  const taskApprovalsSvc = taskApprovalService(db);
 
   async function requireApprovalAccess(req: Request, res: Response, id: string) {
     return getAccessibleResource(req, res, svc.getById(id), "Approval not found");
@@ -96,12 +96,12 @@ export function approvalRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     if (!(await assertApprovalAccessAllowed(req, res, companyId))) return;
-    const rawIssueIds = req.body.issueIds;
-    const issueIds = Array.isArray(rawIssueIds)
-      ? rawIssueIds.filter((value: unknown): value is string => typeof value === "string")
+    const rawTaskIds = req.body.taskIds;
+    const taskIds = Array.isArray(rawTaskIds)
+      ? rawTaskIds.filter((value: unknown): value is string => typeof value === "string")
       : [];
-    const uniqueIssueIds = Array.from(new Set(issueIds));
-    const { issueIds: _issueIds, ...approvalInput } = req.body;
+    const uniqueTaskIds = Array.from(new Set(taskIds));
+    const { taskIds: _taskIds, ...approvalInput } = req.body;
     const approval = await svc.create(companyId, {
       ...approvalInput,
       requestedByUserId: req.actor.userId,
@@ -113,8 +113,8 @@ export function approvalRoutes(
       updatedAt: new Date(),
     });
 
-    if (uniqueIssueIds.length > 0) {
-      await issueApprovalsSvc.linkManyForApproval(approval.id, uniqueIssueIds, {
+    if (uniqueTaskIds.length > 0) {
+      await taskApprovalsSvc.linkManyForApproval(approval.id, uniqueTaskIds, {
         userId: req.actor.userId,
       });
     }
@@ -126,19 +126,19 @@ export function approvalRoutes(
       action: "approval.created",
       entityType: "approval",
       entityId: approval.id,
-      details: { type: approval.type, issueIds: uniqueIssueIds },
+      details: { type: approval.type, taskIds: uniqueTaskIds },
     });
 
     res.status(201).json(redactApprovalPayload(approval));
   });
 
-  router.get("/approvals/:id/issues", async (req, res) => {
+  router.get("/approvals/:id/tasks", async (req, res) => {
     const id = req.params.id as string;
     const approval = await getAccessibleResource(req, res, svc.getById(id), "Approval not found");
     if (!approval) return;
     if (!(await assertApprovalAccessAllowed(req, res, approval.companyId))) return;
-    const issues = await issueApprovalsSvc.listIssuesForApproval(id);
-    res.json(issues);
+    const tasks = await taskApprovalsSvc.listTasksForApproval(id);
+    res.json(tasks);
   });
 
   router.post("/approvals/:id/approve", validate(resolveApprovalSchema), async (req, res) => {
@@ -149,8 +149,8 @@ export function approvalRoutes(
     const { approval, applied } = await svc.approve(id, decidedByUserId, req.body.decisionNote);
 
     if (applied) {
-      const linkedIssues = await issueApprovalsSvc.listIssuesForApproval(approval.id);
-      const linkedIssueIds = linkedIssues.map((issue) => issue.id);
+      const linkedTasks = await taskApprovalsSvc.listTasksForApproval(approval.id);
+      const linkedTaskIds = linkedTasks.map((task) => task.id);
       await logActivity(db, {
         companyId: approval.companyId,
         actorType: "user",
@@ -161,7 +161,7 @@ export function approvalRoutes(
         details: {
           type: approval.type,
           requestedByAgentId: approval.requestedByAgentId,
-          linkedIssueIds,
+          linkedTaskIds,
         },
       });
 

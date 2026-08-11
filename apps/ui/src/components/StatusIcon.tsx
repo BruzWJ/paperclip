@@ -1,4 +1,4 @@
-import type { IssueBlockerAttention } from "@paperclipai/shared";
+import type { TaskBlockerAttention } from "@paperclipai/shared";
 import { cn } from "../lib/utils";
 import { StatusGlyph, type StatusGlyphSize } from "./StatusGlyph";
 import {
@@ -17,7 +17,7 @@ function statusLabel(status: string): string {
 
 interface StatusIconProps {
   status: string;
-  blockerAttention?: IssueBlockerAttention | null;
+  blockerAttention?: TaskBlockerAttention | null;
   onChange?: (status: string) => void;
   className?: string;
   showLabel?: boolean;
@@ -25,7 +25,7 @@ interface StatusIconProps {
   size?: StatusGlyphSize;
 }
 
-function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | null | undefined) {
+function blockedAttentionLabel(blockerAttention: TaskBlockerAttention | null | undefined) {
   if (!blockerAttention || blockerAttention.state === "none") return "Blocked";
 
   if (blockerAttention.reason === "active_child") {
@@ -68,7 +68,7 @@ function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | null | 
 }
 
 /**
- * Task/issue status indicator — renders the unified, color-blind-safe
+ * Task status indicator — renders the unified, color-blind-safe
  * {@link StatusGlyph} (one distinct shape per status). With `onChange` it also
  * acts as a status picker (popover). This one component drives every standalone
  * status surface: list, kanban, detail header, properties row + picker flyout,

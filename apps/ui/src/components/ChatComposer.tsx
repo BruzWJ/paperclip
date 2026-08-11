@@ -15,7 +15,7 @@ import { cn } from "../lib/utils";
 /**
  * Shared chat composer (PAP-95a / PAP-96).
  *
- * One reusable input shell for issue comments and related messaging flows. It
+ * One reusable input shell for task comments and related messaging flows. It
  * is intentionally a *plain textarea* —
  * **no formatting toolbar** — with attach + send. The focus state is a neutral
  * border darkening (no blue focus ring) so the box reads as calm chrome in both
@@ -58,14 +58,14 @@ export interface ChatComposerProps {
   submitKey?: "enter" | "mod-enter";
   /** Collapse to a single visual line — strips newlines and disables wrapping. */
   singleLine?: boolean;
-  /** Visual tone. Task issue modes tint the box for planning and ask flows. */
+  /** Visual tone. Task composer modes tint the box for planning and ask flows. */
   tone?: "standard" | "ask" | "planning";
   /**
    * Surface treatment (PAP-128 A / PAP-131).
    * - `"card"`: opaque `bg-card` box (default).
    * - `"translucent"`: the task-comments glass recipe — translucent background,
    *   backdrop blur, and a soft upward shadow — so chat text reads through the
-   *   box as it scrolls behind (mirrors `IssueChatThread.tsx` composer shell).
+   *   box as it scrolls behind (mirrors `TaskChatThread.tsx` composer shell).
    */
   surface?: "card" | "translucent";
   autoFocus?: boolean;
@@ -229,7 +229,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
       data-surface={surface}
       className={cn(
         "relative rounded-xl border px-3 pt-2.5 pb-2 transition-colors duration-150 focus-within:border-muted-foreground/40",
-        // Surface: opaque card vs the task glass recipe (IssueChatThread.tsx shell).
+        // Surface: opaque card vs the task glass recipe (TaskChatThread.tsx shell).
         surface === "translucent"
           ? "border-border/70 bg-background/95 shadow-(--shadow-extract-4) backdrop-blur supports-[backdrop-filter]:bg-background/85 dark:shadow-(--shadow-extract-5)"
           : "border-border bg-card",

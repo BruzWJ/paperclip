@@ -12,7 +12,7 @@ import {
 import { secretsApi } from "../api/secrets";
 import { type RoutineHistoryDirtyFieldDescriptor } from "../components/RoutineHistoryTab";
 import {
-  ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+  ACTIVE_TASK_EXECUTION_RUN_STATUSES,
   runsApi,
 } from "../api/runs";
 import { agentsApi } from "../api/agents";
@@ -178,17 +178,17 @@ export function RoutineDetail() {
     queryFn: () => routinesApi.get(routineId!),
     enabled: !!routineId,
   });
-  const activeIssueId = routine?.activeIssue?.id;
+  const activeTaskId = routine?.activeTask?.id;
   const { data: activeRunPage } = useQuery({
-    queryKey: queryKeys.issues.runs(
-      activeIssueId!,
-      ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+    queryKey: queryKeys.tasks.runs(
+      activeTaskId!,
+      ACTIVE_TASK_EXECUTION_RUN_STATUSES,
     ),
-    queryFn: () => runsApi.listForIssue(activeIssueId!, {
-      status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+    queryFn: () => runsApi.listForTask(activeTaskId!, {
+      status: ACTIVE_TASK_EXECUTION_RUN_STATUSES,
       limit: 200,
     }),
-    enabled: !!activeIssueId,
+    enabled: !!activeTaskId,
     refetchInterval: 3000,
   });
   const hasLiveRun = (activeRunPage?.items.length ?? 0) > 0;
@@ -657,7 +657,7 @@ export function RoutineDetail() {
   }
 
   if (isLoading) {
-    return <PageSkeleton variant="issues-list" />;
+    return <PageSkeleton variant="tasks-list" />;
   }
 
   if (error || !routine || !routineDefaults) {
@@ -743,7 +743,7 @@ export function RoutineDetail() {
     routineRuns,
     activity,
     hasLiveRun,
-    activeIssueId,
+    activeTaskId,
     titleInputRef,
     descriptionEditorRef,
     assigneeSelectorRef,

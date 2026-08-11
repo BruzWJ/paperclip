@@ -1,23 +1,23 @@
 import { describe, expect, it } from "vitest";
-import type { Issue, IssueBlockerAttention } from "@paperclipai/shared";
+import type { Task, TaskBlockerAttention } from "@paperclipai/shared";
 import {
-  resolveInboxIssueBlockerAttention,
-  resolveIssueLiveDescendantCount,
+  resolveInboxTaskBlockerAttention,
+  resolveTaskLiveDescendantCount,
 } from "./inbox-live-descendants";
 
-function makeIssue(overrides: Partial<Issue>): Issue {
+function makeTask(overrides: Partial<Task>): Task {
   return {
-    id: "issue-1",
+    id: "task-1",
     boardPresentationStatus: "blocked",
     blockerAttention: null,
     liveDescendantCount: 0,
     ...overrides,
-  } as unknown as Issue;
+  } as unknown as Task;
 }
 
 function makeBlockerAttention(
-  overrides: Partial<IssueBlockerAttention> = {},
-): IssueBlockerAttention {
+  overrides: Partial<TaskBlockerAttention> = {},
+): TaskBlockerAttention {
   return {
     state: "none",
     reason: null,
@@ -33,14 +33,14 @@ function makeBlockerAttention(
 
 describe("inbox live descendant status helpers", () => {
   it("combines server and loaded live descendant counts without double-counting", () => {
-    expect(resolveIssueLiveDescendantCount(makeIssue({ liveDescendantCount: 3 }), 1)).toBe(3);
-    expect(resolveIssueLiveDescendantCount(makeIssue({ liveDescendantCount: 0 }), 2)).toBe(2);
-    expect(resolveIssueLiveDescendantCount(makeIssue({ liveDescendantCount: -1 }), 2.7)).toBe(2);
+    expect(resolveTaskLiveDescendantCount(makeTask({ liveDescendantCount: 3 }), 1)).toBe(3);
+    expect(resolveTaskLiveDescendantCount(makeTask({ liveDescendantCount: 0 }), 2)).toBe(2);
+    expect(resolveTaskLiveDescendantCount(makeTask({ liveDescendantCount: -1 }), 2.7)).toBe(2);
   });
 
   it("synthesizes covered blocker attention for a blocked row with live descendants", () => {
-    const attention = resolveInboxIssueBlockerAttention(
-      makeIssue({ liveDescendantCount: 2 }),
+    const attention = resolveInboxTaskBlockerAttention(
+      makeTask({ liveDescendantCount: 2 }),
       { isLive: false },
     );
 
@@ -52,8 +52,8 @@ describe("inbox live descendant status helpers", () => {
   });
 
   it("uses loaded live descendants when the server count is absent", () => {
-    const attention = resolveInboxIssueBlockerAttention(
-      makeIssue({ liveDescendantCount: undefined }),
+    const attention = resolveInboxTaskBlockerAttention(
+      makeTask({ liveDescendantCount: undefined }),
       { isLive: false, loadedSubtreeLiveCount: 1 },
     );
 
@@ -64,8 +64,8 @@ describe("inbox live descendant status helpers", () => {
   it("keeps urgent blocked attention red even when descendants are live", () => {
     for (const state of ["needs_attention", "stalled"] as const) {
       const original = makeBlockerAttention({ state, reason: "attention_required" });
-      const attention = resolveInboxIssueBlockerAttention(
-        makeIssue({ blockerAttention: original, liveDescendantCount: 4 }),
+      const attention = resolveInboxTaskBlockerAttention(
+        makeTask({ blockerAttention: original, liveDescendantCount: 4 }),
         { isLive: false },
       );
 
@@ -75,14 +75,14 @@ describe("inbox live descendant status helpers", () => {
 
   it("does not synthesize covered attention for the live row itself or non-blocked parents", () => {
     expect(
-      resolveInboxIssueBlockerAttention(
-        makeIssue({ boardPresentationStatus: "blocked", liveDescendantCount: 2 }),
+      resolveInboxTaskBlockerAttention(
+        makeTask({ boardPresentationStatus: "blocked", liveDescendantCount: 2 }),
         { isLive: true },
       ),
     ).toBeNull();
     expect(
-      resolveInboxIssueBlockerAttention(
-        makeIssue({ boardPresentationStatus: "done", liveDescendantCount: 2 }),
+      resolveInboxTaskBlockerAttention(
+        makeTask({ boardPresentationStatus: "done", liveDescendantCount: 2 }),
         { isLive: false },
       ),
     ).toBeNull();

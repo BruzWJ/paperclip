@@ -18,7 +18,7 @@ import {
 
 function readString(
   params: unknown,
-  key: "query" | "issueId",
+  key: "query" | "taskId",
 ): string | null {
   if (!params || typeof params !== "object" || Array.isArray(params)) return null;
   const value = (params as Record<string, unknown>)[key];
@@ -29,27 +29,27 @@ export function memoryGrantCandidates(
   kind: MemoryPartitionKind,
   relation?: "active" | "descendant" | "company" | "outside",
 ): Array<keyof PluginContextAccess> {
-  const companyGrant = kind === "issue_agent" || kind === "company_agent"
-    ? "read_company_issue_agent_run"
-    : "read_company_issue_comments";
+  const companyGrant = kind === "task_agent" || kind === "company_agent"
+    ? "read_company_task_agent_run"
+    : "read_company_task_comments";
   if (kind === "company_agent" || kind === "company_shared") return [companyGrant];
   if (relation === "active") {
     return [
-      kind === "issue_agent" ? "read_issue_agent_run" : "read_issue_comments",
+      kind === "task_agent" ? "read_task_agent_run" : "read_task_comments",
       companyGrant,
     ];
   }
   if (relation === "descendant") {
     return [
-      kind === "issue_agent" ? "read_sub_issue_agent_run" : "read_sub_issue_comments",
+      kind === "task_agent" ? "read_sub_task_agent_run" : "read_sub_task_comments",
       companyGrant,
     ];
   }
   return relation === "company" ? [companyGrant] : [];
 }
 
-export function canReadIssueMemory(
-  kind: "issue_agent" | "issue_shared",
+export function canReadTaskMemory(
+  kind: "task_agent" | "task_shared",
   reach: { visible: boolean; relation: "active" | "descendant" | "company" | "outside" },
   contextAccess: PluginContextAccess,
 ): boolean {
@@ -67,40 +67,40 @@ export async function recall(input: {
   const query = readString(input.params, "query");
   if (!query) return { ok: false, error: "query is required" };
   const resolved = await input.runContext.resolve();
-  let issueId: string | undefined;
-  if (input.kind === "issue_agent" || input.kind === "issue_shared") {
-    issueId = readString(input.params, "issueId") ?? undefined;
-    if (!issueId) return { ok: false, error: "issueId is required" };
-    const reach = await input.runContext.issueReach(issueId);
+  let taskId: string | undefined;
+  if (input.kind === "task_agent" || input.kind === "task_shared") {
+    taskId = readString(input.params, "taskId") ?? undefined;
+    if (!taskId) return { ok: false, error: "taskId is required" };
+    const reach = await input.runContext.taskReach(taskId);
     const candidates = memoryGrantCandidates(input.kind, reach.relation);
-    if (!canReadIssueMemory(input.kind, reach, resolved.contextAccess)) {
+    if (!canReadTaskMemory(input.kind, reach, resolved.contextAccess)) {
       return {
         ok: false,
         error: reach.visible
-          ? `Issue memory requires one of ${candidates.join(", ")} in the current context-access matrix`
-          : "Issue memory is outside the current issue-listing reach",
+          ? `Task memory requires one of ${candidates.join(", ")} in the current context-access matrix`
+          : "Task memory is outside the current task-listing reach",
       };
     }
   } else {
     const requiredGrant = input.kind === "company_agent"
-      ? "read_company_issue_agent_run"
-      : "read_company_issue_comments";
+      ? "read_company_task_agent_run"
+      : "read_company_task_comments";
     if (
-      resolved.contextAccess.list_company_issues !== true
+      resolved.contextAccess.list_company_tasks !== true
       || resolved.contextAccess[requiredGrant] !== true
     ) {
       return {
         ok: false,
-        error: `Company-wide memory requires list_company_issues and ${requiredGrant} in the current context-access matrix`,
+        error: `Company-wide memory requires list_company_tasks and ${requiredGrant} in the current context-access matrix`,
       };
     }
   }
 
   const partition = memoryPartition(input.kind, {
     companyId: resolved.companyId,
-    issueId,
+    taskId,
     agentId:
-      input.kind === "issue_agent" || input.kind === "company_agent"
+      input.kind === "task_agent" || input.kind === "company_agent"
         ? resolved.agentId
         : undefined,
   });
@@ -134,7 +134,7 @@ export async function beforePrompt(
     ctx,
     client,
     companyId: input.companyId,
-    issueId: input.issueId,
+    taskId: input.taskId,
     snapshotHighWaterSeq: input.snapshotHighWaterSeq,
   });
   return null;

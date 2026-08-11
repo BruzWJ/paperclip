@@ -7,17 +7,17 @@ import {
   assets,
   companies,
   documents,
-  issueAttachments,
-  issueDocuments,
-  issues,
-  issueWorkProducts,
+  taskAttachments,
+  taskDocuments,
+  tasks,
+  taskWorkProducts,
   projects,
 } from "@paperclipai/db";
 import {
   attachmentArtifactWorkProductMetadataSchema,
   COMPANY_ARTIFACTS_MAX_LIMIT,
   companyArtifactsQuerySchema,
-  SYSTEM_ISSUE_DOCUMENT_KEYS,
+  SYSTEM_TASK_DOCUMENT_KEYS,
   type CompanyArtifact,
   type CompanyArtifactGroup,
   type CompanyArtifactGroupBy,
@@ -28,9 +28,9 @@ import {
 import { badRequest, notFound } from "../errors.js";
 import type { StorageService } from "../storage/types.js";
 import {
-  readIssueExecutionRun,
-  resolveIssueExecutionRunIdentityById,
-} from "./issue-execution-run-service.js";
+  readTaskExecutionRun,
+  resolveTaskExecutionRunIdentityById,
+} from "./task-execution-run-service.js";
 
 const TEXT_PREVIEW_BYTES = 4096;
 const PREVIEW_TEXT_MAX_LENGTH = 280;
@@ -44,7 +44,7 @@ type ArtifactCursor = {
 
 type ArtifactGroupBy = Exclude<CompanyArtifactGroupBy, "none">;
 
-type IssueGroupingRow = {
+type TaskGroupingRow = {
   id: string;
   parentId: string | null;
   identifier: string | null;
@@ -135,19 +135,19 @@ function contentTypeKindCondition(contentTypeExpression: SQL<string>, kind: Comp
   return undefined;
 }
 
-function buildIssueHref(companyPrefix: string, identifier: string, anchor: string) {
-  return `/${encodeURIComponent(companyPrefix)}/issues/${encodeURIComponent(identifier)}#${anchor}`;
+function buildTaskHref(companyPrefix: string, identifier: string, anchor: string) {
+  return `/${encodeURIComponent(companyPrefix)}/tasks/${encodeURIComponent(identifier)}#${anchor}`;
 }
 
 function buildArtifactsGroupHref(
   companyPrefix: string,
   query: CompanyArtifactsQuery,
   groupBy: ArtifactGroupBy,
-  groupIssueId: string,
+  groupTaskId: string,
 ) {
   const params = new URLSearchParams();
   params.set("groupBy", groupBy);
-  params.set("groupIssueId", groupIssueId);
+  params.set("groupTaskId", groupTaskId);
   if (query.kind !== "all") params.set("kind", query.kind);
   if (query.projectId) params.set("projectId", query.projectId);
   if (query.q) params.set("q", query.q);
@@ -195,21 +195,21 @@ function pageByCursor<T extends { id: string; updatedAt: string }>(
   return { page, nextCursor };
 }
 
-async function loadIssueGroupingRows(db: Db, companyId: string, seedIssueIds: Iterable<string>) {
-  const rowsById = new Map<string, IssueGroupingRow>();
-  let pending = [...new Set(seedIssueIds)];
+async function loadTaskGroupingRows(db: Db, companyId: string, seedTaskIds: Iterable<string>) {
+  const rowsById = new Map<string, TaskGroupingRow>();
+  let pending = [...new Set(seedTaskIds)];
 
   while (pending.length > 0) {
     const rows = await db
       .select({
-        id: issues.id,
-        parentId: issues.parentId,
-        identifier: issues.identifier,
-        title: issues.title,
-        updatedAt: issues.updatedAt,
+        id: tasks.id,
+        parentId: tasks.parentId,
+        identifier: tasks.identifier,
+        title: tasks.title,
+        updatedAt: tasks.updatedAt,
       })
-      .from(issues)
-      .where(and(eq(issues.companyId, companyId), inArray(issues.id, pending)));
+      .from(tasks)
+      .where(and(eq(tasks.companyId, companyId), inArray(tasks.id, pending)));
 
     const nextPending = new Set<string>();
     for (const row of rows) {
@@ -224,48 +224,48 @@ async function loadIssueGroupingRows(db: Db, companyId: string, seedIssueIds: It
   return rowsById;
 }
 
-function getIssueSummary(issue: IssueGroupingRow) {
+function getTaskSummary(task: TaskGroupingRow) {
   return {
-    id: issue.id,
-    identifier: issue.identifier ?? issue.id,
-    title: issue.title,
+    id: task.id,
+    identifier: task.identifier ?? task.id,
+    title: task.title,
   };
 }
 
-function resolveRootIssueId(issueId: string, issueRows: Map<string, IssueGroupingRow>) {
-  let current = issueRows.get(issueId);
-  if (!current) return issueId;
+function resolveRootTaskId(taskId: string, taskRows: Map<string, TaskGroupingRow>) {
+  let current = taskRows.get(taskId);
+  if (!current) return taskId;
   const seen = new Set<string>();
   while (current.parentId && !seen.has(current.id)) {
     seen.add(current.id);
-    const parent = issueRows.get(current.parentId);
+    const parent = taskRows.get(current.parentId);
     if (!parent) break;
     current = parent;
   }
   return current.id;
 }
 
-function resolveGroupIssueId(groupBy: ArtifactGroupBy, issueId: string, issueRows: Map<string, IssueGroupingRow>) {
-  return groupBy === "issue" ? issueId : resolveRootIssueId(issueId, issueRows);
+function resolveGroupTaskId(groupBy: ArtifactGroupBy, taskId: string, taskRows: Map<string, TaskGroupingRow>) {
+  return groupBy === "task" ? taskId : resolveRootTaskId(taskId, taskRows);
 }
 
 function emptyGroup(input: {
   companyPrefix: string;
   query: CompanyArtifactsQuery;
   groupBy: ArtifactGroupBy;
-  issue: IssueGroupingRow;
+  task: TaskGroupingRow;
 }): CompanyArtifactGroup {
-  const summary = getIssueSummary(input.issue);
+  const summary = getTaskSummary(input.task);
   return {
-    id: `${input.groupBy}:${input.issue.id}`,
+    id: `${input.groupBy}:${input.task.id}`,
     groupBy: input.groupBy,
-    issue: summary,
+    task: summary,
     title: summary.title ?? summary.identifier,
     count: 0,
     mediaKinds: [],
     previewArtifacts: [],
-    updatedAt: input.issue.updatedAt.toISOString(),
-    href: buildArtifactsGroupHref(input.companyPrefix, input.query, input.groupBy, input.issue.id),
+    updatedAt: input.task.updatedAt.toISOString(),
+    href: buildArtifactsGroupHref(input.companyPrefix, input.query, input.groupBy, input.task.id),
   };
 }
 
@@ -274,26 +274,26 @@ function buildArtifactGroups(input: {
   companyPrefix: string;
   query: CompanyArtifactsQuery;
   groupBy: ArtifactGroupBy;
-  issueRows: Map<string, IssueGroupingRow>;
+  taskRows: Map<string, TaskGroupingRow>;
 }) {
   const groups = new Map<string, CompanyArtifactGroup>();
 
   for (const artifact of input.artifacts) {
-    const groupIssueId = resolveGroupIssueId(input.groupBy, artifact.issue.id, input.issueRows);
-    const groupIssue = input.issueRows.get(groupIssueId) ?? {
-      id: artifact.issue.id,
+    const groupTaskId = resolveGroupTaskId(input.groupBy, artifact.task.id, input.taskRows);
+    const groupTask = input.taskRows.get(groupTaskId) ?? {
+      id: artifact.task.id,
       parentId: null,
-      identifier: artifact.issue.identifier,
-      title: artifact.issue.title,
+      identifier: artifact.task.identifier,
+      title: artifact.task.title,
       updatedAt: new Date(artifact.updatedAt),
     };
-    const groupId = `${input.groupBy}:${groupIssueId}`;
+    const groupId = `${input.groupBy}:${groupTaskId}`;
     const existing = groups.get(groupId);
     const group = existing ?? emptyGroup({
       companyPrefix: input.companyPrefix,
       query: input.query,
       groupBy: input.groupBy,
-      issue: groupIssue,
+      task: groupTask,
     });
     if (!existing) groups.set(groupId, group);
 
@@ -321,13 +321,13 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
     list: async (
       companyId: string,
       rawQuery: Partial<CompanyArtifactsQuery> = {},
-      options: { issueConditions?: SQL[] } = {},
+      options: { taskConditions?: SQL[] } = {},
     ): Promise<CompanyArtifactsResponse> => {
       const query = companyArtifactsQuerySchema.parse(rawQuery);
       const cursor = decodeCursor(query.cursor);
       const groupBy = query.groupBy === "none" ? null : query.groupBy;
       const company = await db
-        .select({ id: companies.id, issuePrefix: companies.issuePrefix })
+        .select({ id: companies.id, taskPrefix: companies.taskPrefix })
         .from(companies)
         .where(eq(companies.id, companyId))
         .then((rows) => rows[0] ?? null);
@@ -336,10 +336,10 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
       const fetchLimit = Math.min(query.limit + 1, COMPANY_ARTIFACTS_MAX_LIMIT + 1);
       const sourceFetchLimit = groupBy ? GROUPED_ARTIFACT_FETCH_LIMIT : fetchLimit;
       const q = query.q ? `%${escapeLikePattern(query.q)}%` : null;
-      const issueConditions: SQL[] = [
-        isNull(issues.hiddenAt),
-        isNull(issues.harnessKind),
-        ...(options.issueConditions ?? []),
+      const taskConditions: SQL[] = [
+        isNull(tasks.hiddenAt),
+        isNull(tasks.harnessKind),
+        ...(options.taskConditions ?? []),
       ];
       const artifacts: CompanyArtifact[] = [];
       const workProductAttachmentIds = new Set<string>();
@@ -349,22 +349,22 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
         const updatedAgent = alias(agents, "document_updated_agent");
         const documentArtifactId = sql<string>`concat('document:', ${documents.id})`;
         const documentConditions: SQL[] = [
-          eq(issueDocuments.companyId, companyId),
+          eq(taskDocuments.companyId, companyId),
           eq(documents.companyId, companyId),
           or(isNotNull(documents.createdByAgentId), isNotNull(documents.updatedByAgentId))!,
-          notInArray(issueDocuments.key, [...SYSTEM_ISSUE_DOCUMENT_KEYS]),
-          ...issueConditions,
+          notInArray(taskDocuments.key, [...SYSTEM_TASK_DOCUMENT_KEYS]),
+          ...taskConditions,
         ];
         const documentCursor = groupBy ? undefined : cursorCondition(sql<Date>`${documents.updatedAt}`, documentArtifactId, cursor);
         if (documentCursor) documentConditions.push(documentCursor);
-        if (groupBy === "issue" && query.groupIssueId) documentConditions.push(eq(issues.id, query.groupIssueId));
-        if (query.projectId) documentConditions.push(eq(issues.projectId, query.projectId));
+        if (groupBy === "task" && query.groupTaskId) documentConditions.push(eq(tasks.id, query.groupTaskId));
+        if (query.projectId) documentConditions.push(eq(tasks.projectId, query.projectId));
         if (q) {
           documentConditions.push(sql`(
             coalesce(${documents.title}, '') ILIKE ${q} ESCAPE '\\'
             OR ${documents.latestBody} ILIKE ${q} ESCAPE '\\'
-            OR coalesce(${issues.identifier}, '') ILIKE ${q} ESCAPE '\\'
-            OR ${issues.title} ILIKE ${q} ESCAPE '\\'
+            OR coalesce(${tasks.identifier}, '') ILIKE ${q} ESCAPE '\\'
+            OR ${tasks.title} ILIKE ${q} ESCAPE '\\'
           )`);
         }
 
@@ -372,38 +372,38 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
           .select({
             artifactId: documentArtifactId,
             documentId: documents.id,
-            issueId: issues.id,
-            issueIdentifier: issues.identifier,
-            issueTitle: issues.title,
+            taskId: tasks.id,
+            taskIdentifier: tasks.identifier,
+            taskTitle: tasks.title,
             projectId: projects.id,
             projectName: projects.name,
-            key: issueDocuments.key,
+            key: taskDocuments.key,
             title: documents.title,
             latestBody: documents.latestBody,
             createdByAgentId: sql<string | null>`coalesce(${createdAgent.id}, ${updatedAgent.id})`,
             createdByAgentName: sql<string | null>`coalesce(${createdAgent.name}, ${updatedAgent.name})`,
             updatedAt: documents.updatedAt,
           })
-          .from(issueDocuments)
+          .from(taskDocuments)
           .innerJoin(
             documents,
             and(
-              eq(issueDocuments.documentId, documents.id),
-              eq(documents.companyId, issueDocuments.companyId),
+              eq(taskDocuments.documentId, documents.id),
+              eq(documents.companyId, taskDocuments.companyId),
             ),
           )
           .innerJoin(
-            issues,
+            tasks,
             and(
-              eq(issueDocuments.issueId, issues.id),
-              eq(issues.companyId, issueDocuments.companyId),
+              eq(taskDocuments.taskId, tasks.id),
+              eq(tasks.companyId, taskDocuments.companyId),
             ),
           )
           .leftJoin(
             projects,
             and(
-              eq(issues.projectId, projects.id),
-              eq(projects.companyId, issues.companyId),
+              eq(tasks.projectId, projects.id),
+              eq(projects.companyId, tasks.companyId),
             ),
           )
           .leftJoin(
@@ -425,7 +425,7 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
         const documentRows = await documentRowsQuery.limit(sourceFetchLimit);
 
         for (const row of documentRows) {
-          const identifier = row.issueIdentifier ?? row.issueId;
+          const identifier = row.taskIdentifier ?? row.taskId;
           artifacts.push({
             id: row.artifactId,
             source: "document",
@@ -436,52 +436,52 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             contentPath: null,
             openPath: null,
             downloadPath: null,
-            issue: { id: row.issueId, identifier, title: row.issueTitle },
+            task: { id: row.taskId, identifier, title: row.taskTitle },
             project: row.projectId && row.projectName ? { id: row.projectId, name: row.projectName } : null,
             createdByAgent: row.createdByAgentId && row.createdByAgentName
               ? { id: row.createdByAgentId, name: row.createdByAgentName }
               : null,
             updatedAt: row.updatedAt.toISOString(),
-            href: buildIssueHref(company.issuePrefix, identifier, `document-${row.key}`),
+            href: buildTaskHref(company.taskPrefix, identifier, `document-${row.key}`),
           });
         }
       }
 
       if (query.kind !== "document") {
-        const workProductArtifactId = sql<string>`concat('work_product:', ${issueWorkProducts.id})`;
-        const workProductContentType = sql<string>`coalesce(${issueWorkProducts.metadata}->>'contentType', '')`;
+        const workProductArtifactId = sql<string>`concat('work_product:', ${taskWorkProducts.id})`;
+        const workProductContentType = sql<string>`coalesce(${taskWorkProducts.metadata}->>'contentType', '')`;
         const workProductBaseConditions: SQL[] = [
-          eq(issueWorkProducts.companyId, companyId),
-          eq(issueWorkProducts.type, "artifact"),
-          eq(issueWorkProducts.provider, "paperclip"),
-          ...issueConditions,
+          eq(taskWorkProducts.companyId, companyId),
+          eq(taskWorkProducts.type, "artifact"),
+          eq(taskWorkProducts.provider, "paperclip"),
+          ...taskConditions,
         ];
         const workProductConditions: SQL[] = [...workProductBaseConditions];
         const workProductCursor = groupBy
           ? undefined
-          : cursorCondition(sql<Date>`${issueWorkProducts.updatedAt}`, workProductArtifactId, cursor);
+          : cursorCondition(sql<Date>`${taskWorkProducts.updatedAt}`, workProductArtifactId, cursor);
         const workProductKind = contentTypeKindCondition(workProductContentType, query.kind);
         if (workProductCursor) workProductConditions.push(workProductCursor);
-        if (groupBy === "issue" && query.groupIssueId) {
-          const selectedIssueCondition = eq(issues.id, query.groupIssueId);
-          workProductBaseConditions.push(selectedIssueCondition);
-          workProductConditions.push(selectedIssueCondition);
+        if (groupBy === "task" && query.groupTaskId) {
+          const selectedTaskCondition = eq(tasks.id, query.groupTaskId);
+          workProductBaseConditions.push(selectedTaskCondition);
+          workProductConditions.push(selectedTaskCondition);
         }
         if (workProductKind) {
           workProductBaseConditions.push(workProductKind);
           workProductConditions.push(workProductKind);
         }
         if (query.projectId) {
-          const projectCondition = eq(issues.projectId, query.projectId);
+          const projectCondition = eq(tasks.projectId, query.projectId);
           workProductBaseConditions.push(projectCondition);
           workProductConditions.push(projectCondition);
         }
         if (q) {
           const searchCondition = sql`(
-            ${issueWorkProducts.title} ILIKE ${q} ESCAPE '\\'
-            OR coalesce(${issueWorkProducts.summary}, '') ILIKE ${q} ESCAPE '\\'
-            OR coalesce(${issues.identifier}, '') ILIKE ${q} ESCAPE '\\'
-            OR ${issues.title} ILIKE ${q} ESCAPE '\\'
+            ${taskWorkProducts.title} ILIKE ${q} ESCAPE '\\'
+            OR coalesce(${taskWorkProducts.summary}, '') ILIKE ${q} ESCAPE '\\'
+            OR coalesce(${tasks.identifier}, '') ILIKE ${q} ESCAPE '\\'
+            OR ${tasks.title} ILIKE ${q} ESCAPE '\\'
           )`;
           workProductBaseConditions.push(searchCondition);
           workProductConditions.push(searchCondition);
@@ -490,35 +490,35 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
         const workProductRowsQuery = db
           .select({
             artifactId: workProductArtifactId,
-            workProductId: issueWorkProducts.id,
-            issueId: issues.id,
-            issueIdentifier: issues.identifier,
-            issueTitle: issues.title,
+            workProductId: taskWorkProducts.id,
+            taskId: tasks.id,
+            taskIdentifier: tasks.identifier,
+            taskTitle: tasks.title,
             projectId: projects.id,
             projectName: projects.name,
-            title: issueWorkProducts.title,
-            summary: issueWorkProducts.summary,
-            metadata: issueWorkProducts.metadata,
-            createdByRunId: issueWorkProducts.createdByRunId,
-            updatedAt: issueWorkProducts.updatedAt,
+            title: taskWorkProducts.title,
+            summary: taskWorkProducts.summary,
+            metadata: taskWorkProducts.metadata,
+            createdByRunId: taskWorkProducts.createdByRunId,
+            updatedAt: taskWorkProducts.updatedAt,
           })
-          .from(issueWorkProducts)
+          .from(taskWorkProducts)
           .innerJoin(
-            issues,
+            tasks,
             and(
-              eq(issueWorkProducts.issueId, issues.id),
-              eq(issues.companyId, issueWorkProducts.companyId),
+              eq(taskWorkProducts.taskId, tasks.id),
+              eq(tasks.companyId, taskWorkProducts.companyId),
             ),
           )
           .leftJoin(
             projects,
             and(
-              eq(issues.projectId, projects.id),
-              eq(projects.companyId, issueWorkProducts.companyId),
+              eq(tasks.projectId, projects.id),
+              eq(projects.companyId, taskWorkProducts.companyId),
             ),
           )
           .where(and(...workProductConditions))
-          .orderBy(desc(issueWorkProducts.updatedAt), desc(workProductArtifactId));
+          .orderBy(desc(taskWorkProducts.updatedAt), desc(workProductArtifactId));
         const workProductRows = await workProductRowsQuery.limit(sourceFetchLimit);
         const workProductRunIds = [...new Set(
           workProductRows
@@ -527,9 +527,9 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
         )];
         const workProductRuns = await Promise.all(
           workProductRunIds.map(async (runId) => {
-            const identity = await resolveIssueExecutionRunIdentityById(db, runId);
+            const identity = await resolveTaskExecutionRunIdentityById(db, runId);
             if (!identity || identity.companyId !== companyId) return null;
-            return readIssueExecutionRun(db, identity);
+            return readTaskExecutionRun(db, identity);
           }),
         );
         const workProductAgentIdByRunId = new Map<string, string>();
@@ -554,17 +554,17 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
 
         const workProductAttachmentRows = await db
           .select({
-            attachmentId: sql<string | null>`${issueWorkProducts.metadata}->>'attachmentId'`,
+            attachmentId: sql<string | null>`${taskWorkProducts.metadata}->>'attachmentId'`,
           })
-          .from(issueWorkProducts)
+          .from(taskWorkProducts)
           .innerJoin(
-            issues,
+            tasks,
             and(
-              eq(issueWorkProducts.issueId, issues.id),
-              eq(issues.companyId, issueWorkProducts.companyId),
+              eq(taskWorkProducts.taskId, tasks.id),
+              eq(tasks.companyId, taskWorkProducts.companyId),
             ),
           )
-          .where(and(...workProductBaseConditions, sql`${issueWorkProducts.metadata}->>'attachmentId' IS NOT NULL`))
+          .where(and(...workProductBaseConditions, sql`${taskWorkProducts.metadata}->>'attachmentId' IS NOT NULL`))
           .limit(sourceFetchLimit);
 
         for (const row of workProductAttachmentRows) {
@@ -586,7 +586,7 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             workProductAttachmentIds.add(attachmentMetadata.attachmentId);
           }
           const contentType = attachmentMetadata?.contentType ?? null;
-          const identifier = row.issueIdentifier ?? row.issueId;
+          const identifier = row.taskIdentifier ?? row.taskId;
           artifacts.push({
             id: row.artifactId,
             source: "work_product",
@@ -597,48 +597,48 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             contentPath: attachmentMetadata?.contentPath ?? null,
             openPath: attachmentMetadata?.openPath ?? (typeof row.metadata?.openPath === "string" ? row.metadata.openPath : null),
             downloadPath: attachmentMetadata?.downloadPath ?? null,
-            issue: { id: row.issueId, identifier, title: row.issueTitle },
+            task: { id: row.taskId, identifier, title: row.taskTitle },
             project: row.projectId && row.projectName ? { id: row.projectId, name: row.projectName } : null,
             createdByAgent: createdByAgent
               ? { id: createdByAgent.id, name: createdByAgent.name }
               : null,
             updatedAt: row.updatedAt.toISOString(),
-            href: buildIssueHref(company.issuePrefix, identifier, `work-product-${row.workProductId}`),
+            href: buildTaskHref(company.taskPrefix, identifier, `work-product-${row.workProductId}`),
           });
         }
 
         const attachmentAgent = alias(agents, "attachment_agent");
-        const attachmentArtifactId = sql<string>`concat('attachment:', ${issueAttachments.id})`;
+        const attachmentArtifactId = sql<string>`concat('attachment:', ${taskAttachments.id})`;
         const attachmentConditions: SQL[] = [
-          eq(issueAttachments.companyId, companyId),
-          isNull(issueAttachments.issueCommentId),
+          eq(taskAttachments.companyId, companyId),
+          isNull(taskAttachments.taskCommentId),
           isNotNull(assets.createdByAgentId),
-          ...issueConditions,
+          ...taskConditions,
         ];
         const attachmentCursor = groupBy
           ? undefined
-          : cursorCondition(sql<Date>`${issueAttachments.updatedAt}`, attachmentArtifactId, cursor);
+          : cursorCondition(sql<Date>`${taskAttachments.updatedAt}`, attachmentArtifactId, cursor);
         const attachmentKind = contentTypeKindCondition(sql<string>`${assets.contentType}`, query.kind);
         if (attachmentCursor) attachmentConditions.push(attachmentCursor);
-        if (groupBy === "issue" && query.groupIssueId) attachmentConditions.push(eq(issues.id, query.groupIssueId));
+        if (groupBy === "task" && query.groupTaskId) attachmentConditions.push(eq(tasks.id, query.groupTaskId));
         if (attachmentKind) attachmentConditions.push(attachmentKind);
-        if (query.projectId) attachmentConditions.push(eq(issues.projectId, query.projectId));
+        if (query.projectId) attachmentConditions.push(eq(tasks.projectId, query.projectId));
         if (q) {
           attachmentConditions.push(sql`(
             coalesce(${assets.originalFilename}, '') ILIKE ${q} ESCAPE '\\'
-            OR coalesce(${issues.identifier}, '') ILIKE ${q} ESCAPE '\\'
-            OR ${issues.title} ILIKE ${q} ESCAPE '\\'
+            OR coalesce(${tasks.identifier}, '') ILIKE ${q} ESCAPE '\\'
+            OR ${tasks.title} ILIKE ${q} ESCAPE '\\'
           )`);
         }
 
         const attachmentRowsQuery = db
           .select({
             artifactId: attachmentArtifactId,
-            attachmentId: issueAttachments.id,
-            companyId: issueAttachments.companyId,
-            issueId: issues.id,
-            issueIdentifier: issues.identifier,
-            issueTitle: issues.title,
+            attachmentId: taskAttachments.id,
+            companyId: taskAttachments.companyId,
+            taskId: tasks.id,
+            taskIdentifier: tasks.identifier,
+            taskTitle: tasks.title,
             projectId: projects.id,
             projectName: projects.name,
             objectKey: assets.objectKey,
@@ -647,28 +647,28 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             originalFilename: assets.originalFilename,
             createdByAgentId: attachmentAgent.id,
             createdByAgentName: attachmentAgent.name,
-            updatedAt: issueAttachments.updatedAt,
+            updatedAt: taskAttachments.updatedAt,
           })
-          .from(issueAttachments)
+          .from(taskAttachments)
           .innerJoin(
             assets,
             and(
-              eq(issueAttachments.assetId, assets.id),
-              eq(assets.companyId, issueAttachments.companyId),
+              eq(taskAttachments.assetId, assets.id),
+              eq(assets.companyId, taskAttachments.companyId),
             ),
           )
           .innerJoin(
-            issues,
+            tasks,
             and(
-              eq(issueAttachments.issueId, issues.id),
-              eq(issues.companyId, issueAttachments.companyId),
+              eq(taskAttachments.taskId, tasks.id),
+              eq(tasks.companyId, taskAttachments.companyId),
             ),
           )
           .leftJoin(
             projects,
             and(
-              eq(issues.projectId, projects.id),
-              eq(projects.companyId, issues.companyId),
+              eq(tasks.projectId, projects.id),
+              eq(projects.companyId, tasks.companyId),
             ),
           )
           .leftJoin(
@@ -679,14 +679,14 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             ),
           )
           .where(and(...attachmentConditions))
-          .orderBy(desc(issueAttachments.updatedAt), desc(attachmentArtifactId));
+          .orderBy(desc(taskAttachments.updatedAt), desc(attachmentArtifactId));
         const attachmentRows = await attachmentRowsQuery.limit(sourceFetchLimit);
 
         const attachmentArtifacts = await Promise.all(attachmentRows.map(async (row): Promise<CompanyArtifact | null> => {
           if (workProductAttachmentIds.has(row.attachmentId)) return null;
           const mediaKind = classifyMediaKind(row.contentType);
           const contentPath = attachmentContentPath(row.attachmentId);
-          const identifier = row.issueIdentifier ?? row.issueId;
+          const identifier = row.taskIdentifier ?? row.taskId;
           return {
             id: row.artifactId,
             source: "attachment",
@@ -703,13 +703,13 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             contentPath,
             openPath: contentPath,
             downloadPath: `${contentPath}?download=1`,
-            issue: { id: row.issueId, identifier, title: row.issueTitle },
+            task: { id: row.taskId, identifier, title: row.taskTitle },
             project: row.projectId && row.projectName ? { id: row.projectId, name: row.projectName } : null,
             createdByAgent: row.createdByAgentId && row.createdByAgentName
               ? { id: row.createdByAgentId, name: row.createdByAgentName }
               : null,
             updatedAt: row.updatedAt.toISOString(),
-            href: buildIssueHref(company.issuePrefix, identifier, `attachment-${row.attachmentId}`),
+            href: buildTaskHref(company.taskPrefix, identifier, `attachment-${row.attachmentId}`),
           };
         }));
 
@@ -726,33 +726,33 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
         return { artifacts: page, nextCursor };
       }
 
-      const issueSeedIds = new Set(artifacts.map((artifact) => artifact.issue.id));
-      if (query.groupIssueId) issueSeedIds.add(query.groupIssueId);
-      const issueRows = await loadIssueGroupingRows(db, companyId, issueSeedIds);
+      const taskSeedIds = new Set(artifacts.map((artifact) => artifact.task.id));
+      if (query.groupTaskId) taskSeedIds.add(query.groupTaskId);
+      const taskRows = await loadTaskGroupingRows(db, companyId, taskSeedIds);
       const groups = buildArtifactGroups({
         artifacts: sorted,
-        companyPrefix: company.issuePrefix,
+        companyPrefix: company.taskPrefix,
         query,
         groupBy,
-        issueRows,
+        taskRows,
       });
 
-      if (query.groupIssueId) {
-        const selectedIssue = issueRows.get(query.groupIssueId);
-        if (!selectedIssue) {
+      if (query.groupTaskId) {
+        const selectedTask = taskRows.get(query.groupTaskId);
+        if (!selectedTask) {
           return { artifacts: [], selectedGroup: null, nextCursor: null };
         }
 
-        const selectedGroupIssueId = resolveGroupIssueId(groupBy, selectedIssue.id, issueRows);
-        const selectedGroup = groups.find((group) => group.issue.id === selectedGroupIssueId)
+        const selectedGroupTaskId = resolveGroupTaskId(groupBy, selectedTask.id, taskRows);
+        const selectedGroup = groups.find((group) => group.task.id === selectedGroupTaskId)
           ?? emptyGroup({
-            companyPrefix: company.issuePrefix,
+            companyPrefix: company.taskPrefix,
             query,
             groupBy,
-            issue: issueRows.get(selectedGroupIssueId) ?? selectedIssue,
+            task: taskRows.get(selectedGroupTaskId) ?? selectedTask,
           });
         const selectedArtifacts = sorted.filter((artifact) =>
-          resolveGroupIssueId(groupBy, artifact.issue.id, issueRows) === selectedGroupIssueId
+          resolveGroupTaskId(groupBy, artifact.task.id, taskRows) === selectedGroupTaskId
         );
         const { page, nextCursor } = pageByCursor(selectedArtifacts, query.limit, cursor);
         return { artifacts: page, selectedGroup, nextCursor };

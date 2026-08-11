@@ -5,7 +5,7 @@ import {
 import type { ParsedSearchQuery } from "./search-query-parser";
 
 /**
- * The issue-scoped filter model for /search. This is the SAME shape the query
+ * The task-scoped filter model for /search. This is the SAME shape the query
  * parser (search-query-parser.ts) and the URL round-trip already use — we build
  * the P2 filter-bar UI directly on top of it rather than inventing a second
  * scheme. `sort` lives alongside the filters but is tracked separately (it is not

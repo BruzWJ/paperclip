@@ -11,7 +11,7 @@ import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
-} from "../issue-runtime.js";
+} from "../task-runtime.js";
 
 describe("approval validators", () => {
   it("passes real line breaks through unchanged", () => {
@@ -61,9 +61,9 @@ describe("approval validators", () => {
       runtimeAgentConfigurationRequestDigest: "a".repeat(64),
       source: {
         kind: "agent_run" as const,
-        issueId: "33333333-3333-4333-8333-333333333333",
+        taskId: "33333333-3333-4333-8333-333333333333",
         runId: "44444444-4444-4444-8444-444444444444",
-        issueExecutionRefId:
+        taskExecutionRefId:
           "55555555-5555-4555-8555-555555555555",
       },
     };

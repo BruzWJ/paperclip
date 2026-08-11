@@ -12,7 +12,7 @@ import type { ContextDial } from "../services/context-dial-resolver.js";
 
 const companyId = "00000000-0000-4000-8000-000000000001";
 const agentId = "00000000-0000-4000-8000-000000000002";
-const issueId = "00000000-0000-4000-8000-000000000003";
+const taskId = "00000000-0000-4000-8000-000000000003";
 
 const fullContextDial = Object.fromEntries(
   AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, true]),
@@ -25,8 +25,8 @@ describe("Paperclip managed-tool registry", () => {
       contextDial: fullContextDial,
       actionGrants: {},
       isCurrentOwner: false,
-      issueCreateDirectChildren: [],
-      issueAssignTargets: [],
+      taskCreateDirectChildren: [],
+      taskAssignTargets: [],
       creatorUpdateTargets: [],
       mentionTargets: [],
       configureTargets: [],
@@ -49,13 +49,13 @@ describe("Paperclip managed-tool registry", () => {
     const names = BOARD_MANAGED_TOOLS.map((tool) => tool.name);
 
     expect(names).toEqual([
-      "list_company_issues",
-      "list_sub_issues",
-      "read_issue_comments",
-      "read_issue_agent_run",
-      "issue_create",
-      "issue_assign",
-      "issue_update",
+      "list_company_tasks",
+      "list_sub_tasks",
+      "read_task_comments",
+      "read_task_agent_run",
+      "task_create",
+      "task_assign",
+      "task_update",
       "mention_agent",
       "agent_hire",
       "agent_configure",
@@ -64,7 +64,7 @@ describe("Paperclip managed-tool registry", () => {
     ]);
     expect(names).not.toContain("mention_board");
     expect(
-      BOARD_MANAGED_TOOLS.find((tool) => tool.name === "issue_create")
+      BOARD_MANAGED_TOOLS.find((tool) => tool.name === "task_create")
         ?.inputSchema.safeParse({
           companyId,
           request: "Implement the board task",
@@ -79,16 +79,16 @@ describe("Paperclip managed-tool registry", () => {
       turn: "work",
       contextDial: fullContextDial,
       actionGrants: {
-        issue_create: true,
+        task_create: true,
         mention_board: true,
         agent_hire: true,
         agent_configure: true,
         list_all_agents: true,
       },
       isCurrentOwner: true,
-      issueCreateDirectChildren: [{ id: agentId, name: "Agent", capabilities: null, kind: "agent" }],
-      issueAssignTargets: [{
-        issueId,
+      taskCreateDirectChildren: [{ id: agentId, name: "Agent", capabilities: null, kind: "agent" }],
+      taskAssignTargets: [{
+        taskId,
         identifier: "PC-1",
         owners: [{ kind: "self" }],
       }],
@@ -99,9 +99,9 @@ describe("Paperclip managed-tool registry", () => {
     });
 
     for (const name of [
-      "issue_create",
-      "issue_assign",
-      "issue_update",
+      "task_create",
+      "task_assign",
+      "task_update",
       "mention_agent",
       "mention_board",
       "agent_hire",

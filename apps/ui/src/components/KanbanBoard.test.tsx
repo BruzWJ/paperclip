@@ -2,20 +2,20 @@
 
 import { createRoot, type Root } from "react-dom/client";
 import { flushSync } from "react-dom";
-import type { Issue, IssueStatus } from "@paperclipai/shared";
+import type { Task, TaskStatus } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getKanbanColumnTone, KanbanBoard } from "./KanbanBoard";
-import { createTestIssue } from "../test-utils/issue";
+import { createTestTask } from "../test-utils/task";
 
 vi.mock("@/lib/router", () => ({
   Link: ({
     children,
     to,
-    disableIssueQuicklook: _disableIssueQuicklook,
+    disableTaskQuicklook: _disableTaskQuicklook,
     ...props
   }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
     to: string;
-    disableIssueQuicklook?: boolean;
+    disableTaskQuicklook?: boolean;
   }) => (
     <a href={to} {...props}>{children}</a>
   ),
@@ -30,14 +30,14 @@ function act(callback: () => void): void {
   flushSync(callback);
 }
 
-function createIssue(index: number, status: IssueStatus): Issue {
-  return createTestIssue({
-    id: `issue-${status}-${index}`,
+function createTask(index: number, status: TaskStatus): Task {
+  return createTestTask({
+    id: `task-${status}-${index}`,
     identifier: `PAP-${index}`,
-    title: `Issue ${index}`,
+    title: `Task ${index}`,
     boardPresentationStatus: status,
     ownerAgentId: index === 1 ? "agent-1" : null,
-    issueNumber: index,
+    taskNumber: index,
     createdAt: new Date("2026-05-05T00:00:00.000Z"),
     updatedAt: new Date("2026-05-05T00:00:00.000Z"),
     labels: [],
@@ -49,24 +49,24 @@ function createIssue(index: number, status: IssueStatus): Issue {
   });
 }
 
-function createIssues(count: number, status: IssueStatus): Issue[] {
-  return Array.from({ length: count }, (_, index) => createIssue(index + 1, status));
+function createTasks(count: number, status: TaskStatus): Task[] {
+  return Array.from({ length: count }, (_, index) => createTask(index + 1, status));
 }
 
 function renderBoard(
-  props: Partial<React.ComponentProps<typeof KanbanBoard>> & { issues: Issue[] },
+  props: Partial<React.ComponentProps<typeof KanbanBoard>> & { tasks: Task[] },
 ) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   mountedRoots.push(root);
 
-  const render = (nextProps: Partial<React.ComponentProps<typeof KanbanBoard>> & { issues: Issue[] }) => {
+  const render = (nextProps: Partial<React.ComponentProps<typeof KanbanBoard>> & { tasks: Task[] }) => {
     act(() => {
       root.render(
         <KanbanBoard
           agents={[{ id: "agent-1", name: "Codex" }]}
-          liveIssueIds={new Set(["issue-todo-1"])}
+          liveTaskIds={new Set(["task-todo-1"])}
           {...nextProps}
         />,
       );
@@ -95,7 +95,7 @@ describe("KanbanBoard", () => {
 
   it("limits visible cards and reveals more cards per column", () => {
     const { container } = renderBoard({
-      issues: createIssues(60, "todo"),
+      tasks: createTasks(60, "todo"),
       compactCards: true,
       initialVisibleCount: 50,
       revealIncrement: 50,
@@ -103,8 +103,8 @@ describe("KanbanBoard", () => {
 
     expect(container.textContent).toContain("Showing 50 of 60");
     expect(container.textContent).toContain("Show 10 more");
-    expect(container.textContent).toContain("Issue 50");
-    expect(container.textContent).not.toContain("Issue 51");
+    expect(container.textContent).toContain("Task 50");
+    expect(container.textContent).not.toContain("Task 51");
 
     const showMoreButton = Array.from(container.querySelectorAll("button")).find((button) =>
       button.textContent?.includes("Show 10 more"),
@@ -115,14 +115,14 @@ describe("KanbanBoard", () => {
       showMoreButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(container.textContent).toContain("Issue 60");
+    expect(container.textContent).toContain("Task 60");
     expect(container.textContent).not.toContain("Show 10 more");
   });
 
   it("resets visible counts when the column page size changes", () => {
-    const issues = createIssues(60, "todo");
+    const tasks = createTasks(60, "todo");
     const { container, render } = renderBoard({
-      issues,
+      tasks,
       initialVisibleCount: 50,
       revealIncrement: 50,
     });
@@ -136,29 +136,29 @@ describe("KanbanBoard", () => {
       showMoreButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(container.textContent).toContain("Issue 60");
+    expect(container.textContent).toContain("Task 60");
 
     render({
-      issues,
+      tasks,
       initialVisibleCount: 10,
       revealIncrement: 10,
     });
 
     expect(container.textContent).toContain("Showing 10 of 60");
     expect(container.textContent).toContain("Show 10 more");
-    expect(container.textContent).toContain("Issue 10");
-    expect(container.textContent).not.toContain("Issue 11");
+    expect(container.textContent).toContain("Task 10");
+    expect(container.textContent).not.toContain("Task 11");
   });
 
   it("renders collapsed statuses as rails without cards", () => {
     const { container } = renderBoard({
-      issues: createIssues(3, "done"),
+      tasks: createTasks(3, "done"),
       collapsedStatuses: ["done"],
     });
 
     expect(container.textContent).toContain("Done");
     expect(container.textContent).toContain("3");
-    expect(container.textContent).not.toContain("Issue 1");
+    expect(container.textContent).not.toContain("Task 1");
   });
 
   it("gives every column a status-hued tone", () => {
@@ -174,23 +174,23 @@ describe("KanbanBoard", () => {
 
   it("ghosts cancelled lane cards", () => {
     const { container } = renderBoard({
-      issues: createIssues(1, "cancelled"),
+      tasks: createTasks(1, "cancelled"),
     });
 
-    const card = container.querySelector('a[href="/issues/PAP-1"]')?.parentElement;
+    const card = container.querySelector('a[href="/tasks/PAP-1"]')?.parentElement;
 
     expect(card?.className).toContain("bg-muted/35");
     expect(card?.className).toContain("opacity-80");
   });
 
-  it("keeps core issue signals in compact cards", () => {
+  it("keeps core task signals in compact cards", () => {
     const { container } = renderBoard({
-      issues: createIssues(1, "todo"),
+      tasks: createTasks(1, "todo"),
       compactCards: true,
     });
 
     expect(container.textContent).toContain("PAP-1");
-    expect(container.textContent).toContain("Issue 1");
+    expect(container.textContent).toContain("Task 1");
     expect(container.textContent).toContain("Codex");
     expect(container.textContent).toContain("Live");
   });

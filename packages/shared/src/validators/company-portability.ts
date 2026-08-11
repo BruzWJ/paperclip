@@ -1,18 +1,19 @@
 import { z } from "zod";
+import { addValidationDetail } from "../validation-details.js";
 import { PERMISSION_KEYS } from "../constants.js";
 import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
-  AGENT_VISIBLE_ISSUE_STATUSES,
+  AGENT_VISIBLE_TASK_STATUSES,
   PAPERCLIP_ACTION_KEYS,
-} from "../issue-runtime.js";
+} from "../task-runtime.js";
 import { MAX_COMPANY_ATTACHMENT_MAX_BYTES } from "../constants.js";
 import {
-  issueCommentAuthorTypeSchema,
-  issueCommentMetadataSchema,
-  issueCommentPresentationSchema,
-  issueDispositionSchema,
-} from "./issue.js";
+  taskCommentAuthorTypeSchema,
+  taskCommentMetadataSchema,
+  taskCommentPresentationSchema,
+  taskDispositionSchema,
+} from "./task.js";
 import { routineVariableSchema } from "./routine.js";
 import {
   agentRuntimeConfigSchema,
@@ -24,7 +25,7 @@ export const portabilityIncludeSchema = z
     company: z.boolean().optional(),
     agents: z.boolean().optional(),
     projects: z.boolean().optional(),
-    issues: z.boolean().optional(),
+    tasks: z.boolean().optional(),
     skills: z.boolean().optional(),
   })
   .partial();
@@ -133,8 +134,7 @@ function rejectRetiredPortabilityAdapterConfig(
 
   const record = value as Record<string, unknown>;
   if (record.type === "secret_ref" || record.type === "user_secret_ref") {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(context, {
       message: "Portable ACP adapter configuration cannot contain secret bindings",
       path,
     });
@@ -148,8 +148,7 @@ function rejectRetiredPortabilityAdapterConfig(
         normalizedPortabilityAdapterConfigKey(key),
       )
     ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(context, {
         message: `Portable ACP adapter configuration cannot contain retired provider field: ${key}`,
         path: entryPath,
       });
@@ -223,7 +222,7 @@ export const portabilityProjectManifestEntrySchema = z.object({
   metadata: z.record(z.string(), z.unknown()).nullable(),
 }).strict();
 
-export const portabilityIssueRoutineTriggerManifestEntrySchema = z.object({
+export const portabilityTaskRoutineTriggerManifestEntrySchema = z.object({
   kind: z.string().min(1),
   label: z.string().nullable(),
   enabled: z.boolean(),
@@ -233,24 +232,24 @@ export const portabilityIssueRoutineTriggerManifestEntrySchema = z.object({
   replayWindowSec: z.number().int().nullable(),
 }).strict();
 
-export const portabilityIssueRoutineManifestEntrySchema = z.object({
+export const portabilityTaskRoutineManifestEntrySchema = z.object({
   concurrencyPolicy: z.string().nullable(),
   catchUpPolicy: z.string().nullable(),
   variables: z.array(routineVariableSchema).nullable().optional(),
-  triggers: z.array(portabilityIssueRoutineTriggerManifestEntrySchema),
+  triggers: z.array(portabilityTaskRoutineTriggerManifestEntrySchema),
 }).strict();
 
-export const portabilityIssueCommentManifestEntrySchema = z.object({
+export const portabilityTaskCommentManifestEntrySchema = z.object({
   body: z.string().min(1),
-  authorType: issueCommentAuthorTypeSchema,
+  authorType: taskCommentAuthorTypeSchema,
   authorAgentSlug: z.string().min(1).nullable(),
   authorUserId: z.string().nullable(),
-  presentation: issueCommentPresentationSchema.nullable(),
-  metadata: issueCommentMetadataSchema.nullable(),
+  presentation: taskCommentPresentationSchema.nullable(),
+  metadata: taskCommentMetadataSchema.nullable(),
   createdAt: z.string().datetime().nullable(),
 }).strict();
 
-export const portabilityIssueManifestEntrySchema = z.object({
+export const portabilityTaskManifestEntrySchema = z.object({
   slug: z.string().min(1),
   identifier: z.string().min(1).nullable(),
   title: z.string().min(1).nullable(),
@@ -259,27 +258,26 @@ export const portabilityIssueManifestEntrySchema = z.object({
   ownerAgentSlug: z.string().min(1),
   request: z.string().min(1),
   recurring: z.boolean(),
-  routine: portabilityIssueRoutineManifestEntrySchema.nullable(),
-  lifecycleStatus: z.enum(AGENT_VISIBLE_ISSUE_STATUSES),
-  disposition: issueDispositionSchema.nullable(),
+  routine: portabilityTaskRoutineManifestEntrySchema.nullable(),
+  lifecycleStatus: z.enum(AGENT_VISIBLE_TASK_STATUSES),
+  disposition: taskDispositionSchema.nullable(),
   boardPresentationStatus: z.string().min(1),
   priority: z.string().nullable(),
   labelIds: z.array(z.string().min(1)),
   billingCode: z.string().nullable(),
-  comments: z.array(portabilityIssueCommentManifestEntrySchema),
+  comments: z.array(portabilityTaskCommentManifestEntrySchema),
   metadata: z.record(z.string(), z.unknown()).nullable(),
 })
   .strict()
-  .superRefine((issue, context) => {
+  .superRefine((task, context) => {
     const terminal =
-      issue.lifecycleStatus === "done" ||
-      issue.lifecycleStatus === "cancelled";
-    if (terminal !== (issue.disposition !== null)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
+      task.lifecycleStatus === "done" ||
+      task.lifecycleStatus === "cancelled";
+    if (terminal !== (task.disposition !== null)) {
+      addValidationDetail(context, {
         path: ["disposition"],
         message:
-          "Terminal issues require a disposition and nonterminal issues must omit it",
+          "Terminal tasks require a disposition and nonterminal tasks must omit it",
       });
     }
   });
@@ -297,7 +295,7 @@ export const portabilityManifestSchema = z.object({
     company: z.boolean(),
     agents: z.boolean(),
     projects: z.boolean(),
-    issues: z.boolean(),
+    tasks: z.boolean(),
     skills: z.boolean(),
   }),
   company: portabilityCompanyManifestEntrySchema.nullable(),
@@ -305,7 +303,7 @@ export const portabilityManifestSchema = z.object({
   agents: z.array(portabilityAgentManifestEntrySchema),
   skills: z.array(portabilitySkillManifestEntrySchema),
   projects: z.array(portabilityProjectManifestEntrySchema),
-  issues: z.array(portabilityIssueManifestEntrySchema),
+  tasks: z.array(portabilityTaskManifestEntrySchema),
   envInputs: z.array(portabilityEnvInputSchema),
 }).strict();
 
@@ -344,8 +342,8 @@ export const companyPortabilityExportSchema = z.object({
   agents: z.array(z.string().min(1)).optional(),
   skills: z.array(z.string().min(1)).optional(),
   projects: z.array(z.string().min(1)).optional(),
-  issues: z.array(z.string().min(1)).optional(),
-  projectIssues: z.array(z.string().min(1)).optional(),
+  tasks: z.array(z.string().min(1)).optional(),
+  projectTasks: z.array(z.string().min(1)).optional(),
   selectedFiles: z.array(z.string().min(1)).optional(),
   expandReferencedSkills: z.boolean().optional(),
   sidebarOrder: portabilitySidebarOrderSchema.partial().optional(),

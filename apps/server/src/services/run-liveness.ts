@@ -1,6 +1,6 @@
 import type {
-  AgentVisibleIssueStatus,
-  IssueExecutionRunStatus,
+  AgentVisibleTaskStatus,
+  TaskExecutionRunStatus,
   RunLivenessState,
 } from "@paperclipai/shared";
 
@@ -21,9 +21,9 @@ export interface RunLivenessEvidenceInput {
 }
 
 export interface RunLivenessClassificationInput {
-  runStatus: IssueExecutionRunStatus;
+  runStatus: TaskExecutionRunStatus;
   /** Typed lifecycle fact read inside canonical finalization. */
-  issueLifecycleStatus: AgentVisibleIssueStatus;
+  taskLifecycleStatus: AgentVisibleTaskStatus;
   /** Canonical completed Session assistant text parts for this exact run. */
   assistantTextParts: readonly string[];
   /** Typed terminal facts; never projected comments or process output. */
@@ -94,7 +94,7 @@ export function hasUsefulOutput(input: RunLivenessClassificationInput) {
 }
 
 export function declaredBlocker(input: RunLivenessClassificationInput) {
-  if (input.issueLifecycleStatus === "blocked") return true;
+  if (input.taskLifecycleStatus === "blocked") return true;
   const actionability = classifyRunActionability(input);
   return actionability === "blocked_external" || actionability === "approval_required";
 }
@@ -118,7 +118,7 @@ function normalizeEvidence(evidence: Partial<RunLivenessEvidenceInput> | null | 
 
 export function hasConcreteActionEvidence(evidence: Partial<RunLivenessEvidenceInput> | null | undefined) {
   const normalized = normalizeEvidence(evidence);
-  // Workspace creation is setup evidence, not issue progress by itself. It can
+  // Workspace creation is setup evidence, not task progress by itself. It can
   // appear in reasons alongside durable activity, but it must not prevent a
   // planning-only or empty run from receiving a bounded continuation.
   return (
@@ -202,7 +202,7 @@ export function classifyRunLiveness(input: RunLivenessClassificationInput): RunL
   const continuationAttempt = normalizeContinuationAttempt(input.continuationAttempt);
   const actionability = classifyRunActionability(input);
   const nextAction = extractNextAction(input);
-  const issueStatus = input.issueLifecycleStatus;
+  const taskStatus = input.taskLifecycleStatus;
   const usefulOutput = hasUsefulOutput(input);
   const concreteEvidence = hasConcreteActionEvidence(evidence);
   const lastUsefulActionAt = concreteEvidence ? evidence.latestEvidenceAt : null;
@@ -242,12 +242,12 @@ export function classifyRunLiveness(input: RunLivenessClassificationInput): RunL
     );
   }
 
-  if (issueStatus === "done" || issueStatus === "cancelled") {
-    return output("completed", `Issue is ${issueStatus}`);
+  if (taskStatus === "done" || taskStatus === "cancelled") {
+    return output("completed", `Task is ${taskStatus}`);
   }
 
   if (declaredBlocker(input)) {
-    return output("blocked", issueStatus === "blocked" ? "Issue status is blocked" : "Run output declared a concrete blocker", nextAction);
+    return output("blocked", taskStatus === "blocked" ? "Task status is blocked" : "Run output declared a concrete blocker", nextAction);
   }
 
   if (!usefulOutput && !concreteEvidence) {

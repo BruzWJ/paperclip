@@ -1,15 +1,15 @@
 import * as React from "react";
 import * as RouterDom from "react-router-dom";
 import type { NavigateOptions, To } from "react-router-dom";
-import type { Issue } from "@paperclipai/shared";
+import type { Task } from "@paperclipai/shared";
 import { useCompany } from "@/context/CompanyContext";
-import { IssueLinkQuicklook } from "@/components/IssueLinkQuicklook";
+import { TaskLinkQuicklook } from "@/components/TaskLinkQuicklook";
 import {
   applyCompanyPrefix,
   extractCompanyPrefixFromPath,
   normalizeCompanyPrefix,
 } from "@/lib/company-routes";
-import { parseIssuePathIdFromPath } from "@/lib/issue-reference";
+import { parseTaskPathIdFromPath } from "@/lib/task-reference";
 
 function resolveTo(to: To, companyPrefix: string | null): To {
   if (typeof to === "string") {
@@ -38,41 +38,41 @@ export function useActiveCompanyPrefix(): string | null {
   const pathPrefix = extractCompanyPrefixFromPath(location.pathname);
   if (pathPrefix) return pathPrefix;
 
-  return selectedCompany ? normalizeCompanyPrefix(selectedCompany.issuePrefix) : null;
+  return selectedCompany ? normalizeCompanyPrefix(selectedCompany.taskPrefix) : null;
 }
 
 export * from "react-router-dom";
 
 type CompanyLinkProps = React.ComponentProps<typeof RouterDom.Link> & {
-  disableIssueQuicklook?: boolean;
-  issuePrefetch?: Issue | null;
-  issueQuicklookSide?: React.ComponentProps<typeof IssueLinkQuicklook>["issueQuicklookSide"];
-  issueQuicklookAlign?: React.ComponentProps<typeof IssueLinkQuicklook>["issueQuicklookAlign"];
+  disableTaskQuicklook?: boolean;
+  taskPrefetch?: Task | null;
+  taskQuicklookSide?: React.ComponentProps<typeof TaskLinkQuicklook>["taskQuicklookSide"];
+  taskQuicklookAlign?: React.ComponentProps<typeof TaskLinkQuicklook>["taskQuicklookAlign"];
 };
 
 export const Link = React.forwardRef<HTMLAnchorElement, CompanyLinkProps>(
   function CompanyLink({
     to,
-    disableIssueQuicklook = false,
-    issuePrefetch = null,
-    issueQuicklookSide,
-    issueQuicklookAlign,
+    disableTaskQuicklook = false,
+    taskPrefetch = null,
+    taskQuicklookSide,
+    taskQuicklookAlign,
     ...props
   }, ref) {
     const companyPrefix = useActiveCompanyPrefix();
     const resolvedTo = resolveTo(to, companyPrefix);
-    const issuePathId = parseIssuePathIdFromPath(typeof resolvedTo === "string" ? resolvedTo : resolvedTo.pathname);
+    const taskPathId = parseTaskPathIdFromPath(typeof resolvedTo === "string" ? resolvedTo : resolvedTo.pathname);
 
-    if (issuePathId) {
+    if (taskPathId) {
       return (
-        <IssueLinkQuicklook
+        <TaskLinkQuicklook
           ref={ref}
           to={resolvedTo}
-          issuePathId={issuePathId}
-          disableIssueQuicklook={disableIssueQuicklook}
-          issuePrefetch={issuePrefetch}
-          issueQuicklookSide={issueQuicklookSide}
-          issueQuicklookAlign={issueQuicklookAlign}
+          taskPathId={taskPathId}
+          disableTaskQuicklook={disableTaskQuicklook}
+          taskPrefetch={taskPrefetch}
+          taskQuicklookSide={taskQuicklookSide}
+          taskQuicklookAlign={taskQuicklookAlign}
           {...props}
         />
       );

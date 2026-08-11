@@ -9,7 +9,7 @@ function leaseRow(overrides: Record<string, unknown> = {}) {
     id: "lease-1",
     companyId: "company-1",
     executionWorkspaceId: "workspace-1",
-    issueId: "issue-1",
+    taskId: "task-1",
     runId: "run-1",
     status: "active",
     acquiredAt: now,
@@ -29,7 +29,7 @@ describe("localRunLeaseService", () => {
     await expect(localRunLeaseService(db.db).acquireRunLease({
       companyId: "company-1",
       executionWorkspaceId: "workspace-1",
-      issueId: "issue-1",
+      taskId: "task-1",
       runId: "run-1",
     })).resolves.toEqual({
       lease: active,

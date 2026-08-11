@@ -2,7 +2,7 @@ import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import {
   executionWorkspaces,
-  issueExecutionWorkspaceBindings,
+  taskExecutionWorkspaceBindings,
   type Db,
 } from "@paperclipai/db";
 import type { AcpxLocalWorkspaceTarget } from "@paperclipai/adapter-utils/acpx-runtime";
@@ -53,7 +53,7 @@ export interface ManagedLocalWorkspaceSafeguardInput {
     readonly cwd: string;
     readonly branchName: string;
   };
-  readonly issueId: string;
+  readonly taskId: string;
   readonly runId: string;
 }
 
@@ -73,8 +73,8 @@ async function enforceManagedLocalWorkspaceSafeguards(
       repoRoot: input.workspace.cwd,
       worktreePath: input.workspace.cwd,
       expectedBranchName: input.workspace.branchName,
-      sourceIssue: {
-        id: input.issueId,
+      sourceTask: {
+        id: input.taskId,
         identifier: null,
       },
       executionWorkspaceId: input.workspace.id,
@@ -97,7 +97,7 @@ async function enforceManagedLocalWorkspaceSafeguards(
 }
 
 /**
- * Acquires the invariant local execution target for an exact persisted issue
+ * Acquires the invariant local execution target for an exact persisted task
  * workspace binding. No configurable target catalog participates in this path.
  */
 export function localExecutionOrchestrator(
@@ -117,26 +117,26 @@ export function localExecutionOrchestrator(
 
   async function resolveExecutionWorkspaceBinding(input: {
     companyId: string;
-    issueId: string;
+    taskId: string;
     executionWorkspaceBindingId: string;
   }) {
     const row = await db
       .select({
         executionWorkspaceId:
-          issueExecutionWorkspaceBindings.executionWorkspaceId,
-        absoluteCwd: issueExecutionWorkspaceBindings.absoluteCwd,
+          taskExecutionWorkspaceBindings.executionWorkspaceId,
+        absoluteCwd: taskExecutionWorkspaceBindings.absoluteCwd,
         workspaceId: executionWorkspaces.id,
         workspaceCompanyId: executionWorkspaces.companyId,
         workspaceCwd: executionWorkspaces.cwd,
         workspaceBranchName: executionWorkspaces.branchName,
       })
-      .from(issueExecutionWorkspaceBindings)
+      .from(taskExecutionWorkspaceBindings)
       .innerJoin(
         executionWorkspaces,
         and(
           eq(
             executionWorkspaces.id,
-            issueExecutionWorkspaceBindings.executionWorkspaceId,
+            taskExecutionWorkspaceBindings.executionWorkspaceId,
           ),
           eq(executionWorkspaces.companyId, input.companyId),
         ),
@@ -144,11 +144,11 @@ export function localExecutionOrchestrator(
       .where(
         and(
           eq(
-            issueExecutionWorkspaceBindings.id,
+            taskExecutionWorkspaceBindings.id,
             input.executionWorkspaceBindingId,
           ),
-          eq(issueExecutionWorkspaceBindings.companyId, input.companyId),
-          eq(issueExecutionWorkspaceBindings.issueId, input.issueId),
+          eq(taskExecutionWorkspaceBindings.companyId, input.companyId),
+          eq(taskExecutionWorkspaceBindings.taskId, input.taskId),
         ),
       )
       .limit(1)
@@ -163,7 +163,7 @@ export function localExecutionOrchestrator(
     ) {
       throw new LocalExecutionTargetError(
         "workspace_binding_unavailable",
-        "Provider execution requires its exact persisted issue execution workspace binding.",
+        "Provider execution requires its exact persisted task execution workspace binding.",
       );
     }
     return {
@@ -206,10 +206,10 @@ export function localExecutionOrchestrator(
           action: "execution.local_lease_released",
           entityType: "local_run_lease",
           entityId: released.lease.id,
-          issueId: released.lease.issueId,
+          taskId: released.lease.taskId,
           details: {
             executionWorkspaceId: released.lease.executionWorkspaceId,
-            issueId: released.lease.issueId,
+            taskId: released.lease.taskId,
             status: released.lease.status,
             failureReason:
               input.failureReason ?? released.lease.failureReason,
@@ -225,7 +225,7 @@ export function localExecutionOrchestrator(
 
   async function acquireExecutionTargetForRun(input: {
     companyId: string;
-    issueId: string;
+    taskId: string;
     runId: string;
     agentId: string;
     executionWorkspaceBindingId: string;
@@ -239,7 +239,7 @@ export function localExecutionOrchestrator(
           cwd: persistedExecutionWorkspace.cwd,
           branchName: persistedExecutionWorkspace.branchName,
         },
-        issueId: input.issueId,
+        taskId: input.taskId,
         runId: input.runId,
       });
     }
@@ -249,7 +249,7 @@ export function localExecutionOrchestrator(
       acquired = await localRunLeases.acquireRunLease({
         companyId: input.companyId,
         executionWorkspaceId: persistedExecutionWorkspace.id,
-        issueId: input.issueId,
+        taskId: input.taskId,
         runId: input.runId,
       });
     } catch (error) {
@@ -273,10 +273,10 @@ export function localExecutionOrchestrator(
         action: "execution.local_lease_acquired",
         entityType: "local_run_lease",
         entityId: acquired.lease.id,
-        issueId: input.issueId,
+        taskId: input.taskId,
         details: {
           executionWorkspaceId: acquired.lease.executionWorkspaceId,
-          issueId: input.issueId,
+          taskId: input.taskId,
         },
       });
 

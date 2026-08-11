@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { drizzle } from "drizzle-orm/pg-proxy";
-import { decodeIssueSessionMessage } from "@paperclipai/shared/issue-session";
+import { decodeTaskSessionMessage } from "@paperclipai/shared/task-session";
 import {
   createContextRetrievalDbRepository,
   mapContextCommentAuthor,
-  mapContextIssueRow,
+  mapContextTaskRow,
   sanitizeCanonicalMessage,
 } from "../services/context-retrieval-db.js";
 
@@ -18,7 +18,7 @@ describe("context retrieval DB projection", () => {
         statementCount += 1;
         return {
           rows: statementCount === 1
-            ? [["company", "issue", "run"]]
+            ? [["company", "task", "run"]]
             : [],
         };
       }) as never,
@@ -27,7 +27,7 @@ describe("context retrieval DB projection", () => {
           async readJoinedRunDetail() {
             return {
               run: {
-                issueId: "issue",
+                taskId: "task",
                 sessionId: "session",
                 kind: "productive",
                 status: "succeeded",
@@ -61,7 +61,7 @@ describe("context retrieval DB projection", () => {
   it("maps the exact four comment-author shapes and fails closed otherwise", () => {
     const base = {
       id: "comment",
-      issueId: "issue",
+      taskId: "task",
       body: "body",
       authorType: "system",
       authorAgentId: null,
@@ -106,9 +106,9 @@ describe("context retrieval DB projection", () => {
     }
   });
 
-  it("maps only the canonical minimal issue contract", () => {
-    const result = mapContextIssueRow({
-      id: "issue",
+  it("maps only the canonical minimal task contract", () => {
+    const result = mapContextTaskRow({
+      id: "task",
       identifier: "PAP-1",
       title: null,
       request: "Immutable request",
@@ -136,7 +136,7 @@ describe("context retrieval DB projection", () => {
       updatedAt: "2026-07-25T00:00:00.000Z",
     });
     expect(result).toEqual({
-      id: "issue",
+      id: "task",
       identifier: "PAP-1",
       title: null,
       request: "Immutable request",
@@ -156,7 +156,7 @@ describe("context retrieval DB projection", () => {
 
   it("projects schema-validated V2 turns without tokens, cost, or provider metadata", () => {
     const turn = sanitizeCanonicalMessage(
-      decodeIssueSessionMessage({
+      decodeTaskSessionMessage({
         id: "msg_assistant",
         type: "assistant",
         agent: "agent-1",

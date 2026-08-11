@@ -4,7 +4,7 @@ import {
   agents,
   companies,
   costEvents,
-  issues,
+  tasks,
   projects,
 } from "@paperclipai/db";
 import {
@@ -19,12 +19,12 @@ import {
   type MoneyAmount,
 } from "@paperclipai/shared";
 import { notFound } from "../errors.js";
-import { visibleIssueCondition } from "./issue-visibility.js";
+import { visibleTaskCondition } from "./task-visibility.js";
 import {
-  listIssueExecutionRunsForIssue,
-  type IssueExecutionRunEnvelope,
-  type IssueExecutionRunListCursor,
-} from "./issue-execution-run-service.js";
+  listTaskExecutionRunsForTask,
+  type TaskExecutionRunEnvelope,
+  type TaskExecutionRunListCursor,
+} from "./task-execution-run-service.js";
 
 export interface CostDateRange {
   from?: Date;
@@ -153,66 +153,66 @@ export function costService(db: Db) {
       };
     },
 
-    issueTreeSummary: async (
+    taskTreeSummary: async (
       companyId: string,
-      issueId: string,
+      taskId: string,
       options: { excludeRoot?: boolean } = {},
     ) => {
       const { budgetCurrency } = await requireCompanyAccounting(db, companyId);
-      const visibleIssues = await db
-        .select({ id: issues.id, parentId: issues.parentId })
-        .from(issues)
-        .where(and(eq(issues.companyId, companyId), visibleIssueCondition()));
-      const visibleIssueIds = new Set(visibleIssues.map((issue) => issue.id));
+      const visibleTasks = await db
+        .select({ id: tasks.id, parentId: tasks.parentId })
+        .from(tasks)
+        .where(and(eq(tasks.companyId, companyId), visibleTaskCondition()));
+      const visibleTaskIds = new Set(visibleTasks.map((task) => task.id));
       const childrenByParentId = new Map<string, string[]>();
-      for (const issue of visibleIssues) {
-        if (!issue.parentId) continue;
-        const children = childrenByParentId.get(issue.parentId) ?? [];
-        children.push(issue.id);
-        childrenByParentId.set(issue.parentId, children);
+      for (const task of visibleTasks) {
+        if (!task.parentId) continue;
+        const children = childrenByParentId.get(task.parentId) ?? [];
+        children.push(task.id);
+        childrenByParentId.set(task.parentId, children);
       }
       const pending = options.excludeRoot
-        ? [...(childrenByParentId.get(issueId) ?? [])]
-        : visibleIssueIds.has(issueId) ? [issueId] : [];
-      const issueTreeIds: string[] = [];
+        ? [...(childrenByParentId.get(taskId) ?? [])]
+        : visibleTaskIds.has(taskId) ? [taskId] : [];
+      const taskTreeIds: string[] = [];
       const visited = new Set<string>();
       while (pending.length > 0) {
         const currentId = pending.pop()!;
         if (visited.has(currentId)) continue;
         visited.add(currentId);
-        issueTreeIds.push(currentId);
+        taskTreeIds.push(currentId);
         pending.push(...(childrenByParentId.get(currentId) ?? []));
       }
 
-      const costRows = issueTreeIds.length === 0
+      const costRows = taskTreeIds.length === 0
         ? []
         : await db
           .select({
-            issueCount: sql<number>`count(distinct ${issues.id})::int`,
+            taskCount: sql<number>`count(distinct ${tasks.id})::int`,
             ...costAggregateSelection(),
           })
-          .from(issues)
+          .from(tasks)
           .leftJoin(
             costEvents,
             and(
               eq(costEvents.companyId, companyId),
-              eq(costEvents.issueId, issues.id),
+              eq(costEvents.taskId, tasks.id),
             ),
           )
           .where(
             and(
-              eq(issues.companyId, companyId),
-              visibleIssueCondition(),
-              inArray(issues.id, issueTreeIds),
+              eq(tasks.companyId, companyId),
+              visibleTaskCondition(),
+              inArray(tasks.id, taskTreeIds),
             ),
           );
-      const runPages = await Promise.all(issueTreeIds.map(async (treeIssueId) => {
-        const runs: IssueExecutionRunEnvelope[] = [];
-        let cursor: IssueExecutionRunListCursor | null = null;
+      const runPages = await Promise.all(taskTreeIds.map(async (treeTaskId) => {
+        const runs: TaskExecutionRunEnvelope[] = [];
+        let cursor: TaskExecutionRunListCursor | null = null;
         do {
-          const page = await listIssueExecutionRunsForIssue(db, {
+          const page = await listTaskExecutionRunsForTask(db, {
             companyId,
-            issueId: treeIssueId,
+            taskId: treeTaskId,
             cursor,
             limit: 200,
           });
@@ -225,8 +225,8 @@ export function costService(db: Db) {
       const runtimeCutoff = new Date();
       const costRow = costRows[0];
       return {
-        issueId,
-        issueCount: Number(costRow?.issueCount ?? 0),
+        taskId,
+        taskCount: Number(costRow?.taskCount ?? 0),
         includeDescendants: true,
         budgetCurrency,
         knownCostAmount: trustedAmount(costRow?.knownAmount),
@@ -275,21 +275,21 @@ export function costService(db: Db) {
       const { budgetCurrency } = await requireCompanyAccounting(db, companyId);
       const rows = await db
         .select({
-          projectId: issues.projectId,
+          projectId: tasks.projectId,
           projectName: projects.name,
           ...costAggregateSelection(),
         })
         .from(costEvents)
         .innerJoin(
-          issues,
+          tasks,
           and(
-            eq(issues.id, costEvents.issueId),
-            eq(issues.companyId, costEvents.companyId),
+            eq(tasks.id, costEvents.taskId),
+            eq(tasks.companyId, costEvents.companyId),
           ),
         )
-        .leftJoin(projects, eq(projects.id, issues.projectId))
+        .leftJoin(projects, eq(projects.id, tasks.projectId))
         .where(and(...dateConditions(companyId, range)))
-        .groupBy(issues.projectId, projects.name)
+        .groupBy(tasks.projectId, projects.name)
         .orderBy(
           desc(
             sql`coalesce(sum(${costEvents.knownDeltaAmount}) filter (where ${costEvents.kind} = 'known'), 0)`,

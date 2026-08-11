@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { activityLog, companies, issues } from "@paperclipai/db";
+import { activityLog, companies, tasks } from "@paperclipai/db";
 import { isUuidLike } from "@paperclipai/shared";
 import { publishLiveEvent } from "./live-events.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
@@ -16,7 +16,7 @@ export interface LogActivityInput {
   entityId: string;
   agentId?: string | null;
   runId?: string | null;
-  issueId?: string | null;
+  taskId?: string | null;
   details?: Record<string, unknown> | null;
 }
 
@@ -27,21 +27,21 @@ function readNonEmptyString(value: unknown) {
 export async function resolveResponsibleUserIdForActivity(db: Db, input: LogActivityInput) {
   if (input.actorType === "user") return readNonEmptyString(input.actorId);
 
-  const issueIdCandidate = readNonEmptyString(input.issueId)
-    ?? (input.entityType === "issue" ? readNonEmptyString(input.entityId) : null);
-  const issueId = isUuidLike(issueIdCandidate) ? issueIdCandidate : null;
-  if (issueId) {
-    const issue = await db
+  const taskIdCandidate = readNonEmptyString(input.taskId)
+    ?? (input.entityType === "task" ? readNonEmptyString(input.entityId) : null);
+  const taskId = isUuidLike(taskIdCandidate) ? taskIdCandidate : null;
+  if (taskId) {
+    const task = await db
       .select({
-        responsibleUserId: issues.responsibleUserId,
-        creatorUserId: issues.creatorUserId,
+        responsibleUserId: tasks.responsibleUserId,
+        creatorUserId: tasks.creatorUserId,
       })
-      .from(issues)
-      .where(and(eq(issues.companyId, input.companyId), eq(issues.id, issueId)))
+      .from(tasks)
+      .where(and(eq(tasks.companyId, input.companyId), eq(tasks.id, taskId)))
       .then((rows) => rows[0] ?? null);
-    const issueResponsibleUserId = readNonEmptyString(issue?.responsibleUserId)
-      ?? readNonEmptyString(issue?.creatorUserId);
-    if (issueResponsibleUserId) return issueResponsibleUserId;
+    const taskResponsibleUserId = readNonEmptyString(task?.responsibleUserId)
+      ?? readNonEmptyString(task?.creatorUserId);
+    if (taskResponsibleUserId) return taskResponsibleUserId;
   }
 
   const company = await db

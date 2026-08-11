@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { validationDetails } from "../validation-details.js";
 import {
   MCP_TOOL_NAME_MAX_LENGTH,
   PLUGIN_CAPABILITIES,
@@ -312,7 +313,7 @@ describe("plugin manifest validators", () => {
       });
       expect(parsed.success, field).toBe(false);
       if (!parsed.success) {
-        expect(parsed.error.issues.some((issue) => issue.path[0] === field), field).toBe(true);
+        expect(validationDetails(parsed.error).some((detail) => detail.path[0] === field), field).toBe(true);
       }
     }
   });
@@ -328,8 +329,8 @@ describe("plugin manifest validators", () => {
       expect(parsed.success, field).toBe(false);
       if (!parsed.success) {
         expect(
-          parsed.error.issues.some((issue) =>
-            issue.path[0] === "ui" && issue.path[1] === field
+          validationDetails(parsed.error).some((detail) =>
+            detail.path[0] === "ui" && detail.path[1] === field
           ),
           field,
         ).toBe(true);
@@ -407,8 +408,8 @@ describe("plugin manifest validators", () => {
     const missing = pluginManifestV1Schema.safeParse(manifest);
     expect(missing.success).toBe(false);
     if (!missing.success) {
-      expect(missing.error.issues.some((issue) =>
-        issue.message.includes("ui.page.register")
+      expect(validationDetails(missing.error).some((detail) =>
+        detail.message.includes("ui.page.register")
       )).toBe(true);
     }
 
@@ -435,8 +436,8 @@ describe("plugin manifest validators", () => {
     const missing = pluginManifestV1Schema.safeParse(manifest);
     expect(missing.success).toBe(false);
     if (!missing.success) {
-      expect(missing.error.issues.some((issue) =>
-        issue.message.includes("ui.sidebar.register")
+      expect(validationDetails(missing.error).some((detail) =>
+        detail.message.includes("ui.sidebar.register")
       )).toBe(true);
     }
 
@@ -606,10 +607,10 @@ describe("plugin nested declaration lists", () => {
 
 describe("plugin API route validators", () => {
   const route = {
-    routeKey: "issue.summary",
+    routeKey: "task.summary",
     method: "GET",
-    path: "/issues/:issueId/summary",
-    companyResolution: { from: "issue", param: "issueId" },
+    path: "/tasks/:taskId/summary",
+    companyResolution: { from: "task", param: "taskId" },
   } as const;
 
   it("uses one board-authenticated route contract without a manifest auth switch", () => {
@@ -629,10 +630,10 @@ describe("plugin API route validators", () => {
     expect(pluginApiRouteDeclarationSchema.safeParse(withoutResolution).success).toBe(false);
   });
 
-  it("requires issue resolution to reference an exact path parameter", () => {
+  it("requires task resolution to reference an exact path parameter", () => {
     expect(pluginApiRouteDeclarationSchema.safeParse({
       ...route,
-      companyResolution: { from: "issue", param: "otherIssueId" },
+      companyResolution: { from: "task", param: "otherTaskId" },
     }).success).toBe(false);
     expect(pluginApiRouteDeclarationSchema.safeParse(route).success).toBe(true);
   });
@@ -651,21 +652,21 @@ describe("plugin API route validators", () => {
 });
 
 describe("plugin managed routine validators", () => {
-  it("accepts core issue surface visibility values in routine templates", () => {
+  it("accepts core task surface visibility values in routine templates", () => {
     const parsed = pluginManagedRoutineDeclarationSchema.parse({
       routineKey: "wiki.refresh",
       title: "Refresh Wiki",
-      issueTemplate: { surfaceVisibility: "default" },
+      taskTemplate: { surfaceVisibility: "default" },
     });
 
-    expect(parsed.issueTemplate?.surfaceVisibility).toBe("default");
+    expect(parsed.taskTemplate?.surfaceVisibility).toBe("default");
   });
 
-  it("rejects non-core issue surface visibility values in routine templates", () => {
+  it("rejects non-core task surface visibility values in routine templates", () => {
     const parsed = pluginManagedRoutineDeclarationSchema.safeParse({
       routineKey: "wiki.refresh",
       title: "Refresh Wiki",
-      issueTemplate: { surfaceVisibility: "normal" },
+      taskTemplate: { surfaceVisibility: "normal" },
     });
 
     expect(parsed.success).toBe(false);
@@ -693,7 +694,7 @@ describe("plugin managed skill validators", () => {
 
     expect(parsed.success).toBe(false);
     if (parsed.success) return;
-    expect(parsed.error.issues.some((issue) => issue.message.includes("skills.managed"))).toBe(true);
+    expect(validationDetails(parsed.error).some((detail) => detail.message.includes("skills.managed"))).toBe(true);
   });
 
   it("accepts managed skills with the skills.managed capability", () => {
@@ -722,7 +723,7 @@ describe("plugin UI slot validators", () => {
     expect(PLUGIN_UI_SLOT_TYPES).toEqual([
       "page",
       "detailTab",
-      "issueDetailView",
+      "taskDetailView",
       "dashboardWidget",
       "sidebar",
       "routeSidebar",
@@ -749,7 +750,7 @@ describe("plugin UI slot validators", () => {
       "org",
       "agents",
       "projects",
-      "issues",
+      "tasks",
       "search",
       "routines",
       "artifacts",
@@ -769,7 +770,7 @@ describe("plugin UI slot validators", () => {
     ]);
     expect(PLUGIN_UI_SLOT_ENTITY_TYPES).toEqual([
       "project",
-      "issue",
+      "task",
     ]);
   });
 
@@ -783,7 +784,7 @@ describe("plugin UI slot validators", () => {
 
     expect(parsed.success).toBe(false);
     if (parsed.success) return;
-    expect(parsed.error.issues[0]?.message).toBe("page slots require routePath");
+    expect(validationDetails(parsed.error)[0]?.message).toBe("page slots require routePath");
   });
 
   it("accepts route-scoped sidebar slots with a routePath", () => {
@@ -808,7 +809,7 @@ describe("plugin UI slot validators", () => {
 
     expect(parsed.success).toBe(false);
     if (parsed.success) return;
-    expect(parsed.error.issues[0]?.message).toBe("routeSidebar slots require routePath");
+    expect(validationDetails(parsed.error)[0]?.message).toBe("routeSidebar slots require routePath");
   });
 
   it("keeps reserved company route protection for route-scoped sidebars", () => {
@@ -822,7 +823,7 @@ describe("plugin UI slot validators", () => {
 
     expect(parsed.success).toBe(false);
     if (parsed.success) return;
-    expect(parsed.error.issues.some((issue) => issue.message.includes("reserved by the host"))).toBe(true);
+    expect(validationDetails(parsed.error).some((detail) => detail.message.includes("reserved by the host"))).toBe(true);
   });
 
   it("rejects retired workspace entity types", () => {
@@ -840,7 +841,7 @@ describe("plugin UI slot validators", () => {
   it("rejects entity targets that have no mount for the selected slot", () => {
     for (const declaration of [
       {
-        type: "issueDetailView",
+        type: "taskDetailView",
         id: "project-inline",
         displayName: "Project inline",
         exportName: "ProjectInline",
@@ -848,10 +849,10 @@ describe("plugin UI slot validators", () => {
       },
       {
         type: "projectSidebarItem",
-        id: "issue-sidebar",
-        displayName: "Issue sidebar",
-        exportName: "IssueSidebar",
-        entityTypes: ["issue"],
+        id: "task-sidebar",
+        displayName: "Task sidebar",
+        exportName: "TaskSidebar",
+        entityTypes: ["task"],
       },
       {
         type: "toolbarButton",
@@ -871,13 +872,13 @@ describe("plugin UI slot validators", () => {
       id: "scoped-dashboard",
       displayName: "Scoped dashboard",
       exportName: "ScopedDashboard",
-      entityTypes: ["issue"],
+      entityTypes: ["task"],
     }).success).toBe(false);
     expect(pluginLauncherDeclarationSchema.safeParse({
       id: "scoped-sidebar",
       displayName: "Scoped sidebar",
       placementZone: "sidebar",
-      entityTypes: ["issue"],
+      entityTypes: ["task"],
       action: { type: "navigate", target: "/canonical" },
     }).success).toBe(false);
   });
@@ -891,10 +892,10 @@ describe("plugin UI slot validators", () => {
       action: { type: "navigate", target: "/canonical" },
     }).success).toBe(false);
     expect(pluginLauncherDeclarationSchema.safeParse({
-      id: "issue-launcher",
-      displayName: "Issue launcher",
+      id: "task-launcher",
+      displayName: "Task launcher",
       placementZone: "toolbarButton",
-      entityTypes: ["issue"],
+      entityTypes: ["task"],
       action: { type: "navigate", target: "/canonical" },
     }).success).toBe(true);
   });
@@ -987,7 +988,7 @@ describe("plugin UI slot validators", () => {
 
     expect(parsed.success).toBe(false);
     if (parsed.success) return;
-    expect(parsed.error.issues.some((issue) => issue.message.includes("reserved by the host"))).toBe(true);
+    expect(validationDetails(parsed.error).some((detail) => detail.message.includes("reserved by the host"))).toBe(true);
   });
 
   it("requires each routeSidebar to pair with exactly one page route", () => {
@@ -1008,8 +1009,8 @@ describe("plugin UI slot validators", () => {
 
     expect(parsed.success).toBe(false);
     if (parsed.success) return;
-    expect(parsed.error.issues.some((issue) =>
-      issue.message.includes("paired with one page")
+    expect(validationDetails(parsed.error).some((detail) =>
+      detail.message.includes("paired with one page")
     )).toBe(true);
   });
 
@@ -1066,8 +1067,8 @@ describe("plugin UI slot validators", () => {
 
     expect(parsed.success).toBe(false);
     if (parsed.success) return;
-    expect(parsed.error.issues.some((issue) =>
-      issue.message.includes("sole sidebar")
+    expect(validationDetails(parsed.error).some((detail) =>
+      detail.message.includes("sole sidebar")
     )).toBe(true);
   });
 
@@ -1089,8 +1090,8 @@ describe("plugin UI slot validators", () => {
 
     expect(parsed.success).toBe(false);
     if (parsed.success) return;
-    expect(parsed.error.issues.some((issue) =>
-      issue.message.includes("Duplicate page routePath")
+    expect(validationDetails(parsed.error).some((detail) =>
+      detail.message.includes("Duplicate page routePath")
     )).toBe(true);
   });
 });

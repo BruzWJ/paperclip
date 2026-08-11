@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const GOAL_STATUSES = ["planned", "active", "achieved", "cancelled"] as const satisfies readonly GoalStatus[];
-const GOAL_LEVELS = ["company", "team", "agent", "issue"] as const satisfies readonly GoalLevel[];
+const GOAL_LEVELS = ["company", "team", "agent", "task"] as const satisfies readonly GoalLevel[];
 
 interface GoalPropertiesProps {
   goal: Goal;

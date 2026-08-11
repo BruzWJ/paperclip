@@ -1,18 +1,18 @@
 import { and, asc, eq } from "drizzle-orm";
 import {
-  issueSessionMessages,
-  issueSessions,
+  taskSessionMessages,
+  taskSessions,
   pluginConfig,
   plugins,
-  issues,
+  tasks,
   type Db,
 } from "@paperclipai/db";
 import type {
   PluginBeforePromptInput,
   PluginBeforePromptResult,
 } from "@paperclipai/plugin-sdk";
-import { issueSessionMessageFromRow } from "./issue-session/projector.js";
-import { canonicalIssueSessionJson } from "./issue-session/store.js";
+import { taskSessionMessageFromRow } from "./task-session/projector.js";
+import { canonicalTaskSessionJson } from "./task-session/store.js";
 import { pluginManifestIdentity } from "./plugin-manifest-identity.js";
 import type {
   PluginWorkerManager,
@@ -149,10 +149,10 @@ function sameInstallationSnapshot(
     before.configId === after.configId &&
     (before.configUpdatedAt?.getTime() ?? null) ===
       (after.configUpdatedAt?.getTime() ?? null) &&
-    canonicalIssueSessionJson(before.configJson) ===
-      canonicalIssueSessionJson(after.configJson) &&
-    canonicalIssueSessionJson(before.manifestJson) ===
-      canonicalIssueSessionJson(after.manifestJson) &&
+    canonicalTaskSessionJson(before.configJson) ===
+      canonicalTaskSessionJson(after.configJson) &&
+    canonicalTaskSessionJson(before.manifestJson) ===
+      canonicalTaskSessionJson(after.manifestJson) &&
     hasPromptObserveCapability(after) &&
     after.manifestJson.id === after.pluginKey;
 }
@@ -225,7 +225,7 @@ export function createPostgresPluginBeforePromptSourceReader(
       ) {
         fail("Before-prompt source boundary is invalid", {
           companyId: input.companyId,
-          issueId: input.issueId,
+          taskId: input.taskId,
           sessionId: input.sessionId,
           sourceMessageId: input.sourceMessageId,
         });
@@ -233,40 +233,40 @@ export function createPostgresPluginBeforePromptSourceReader(
 
       const rows = await db
         .select({
-          session: issueSessions,
-          message: issueSessionMessages,
-          projectId: issues.projectId,
+          session: taskSessions,
+          message: taskSessionMessages,
+          projectId: tasks.projectId,
         })
-        .from(issueSessions)
+        .from(taskSessions)
         .innerJoin(
-          issues,
+          tasks,
           and(
-            eq(issues.companyId, issueSessions.companyId),
-            eq(issues.id, issueSessions.issueId),
+            eq(tasks.companyId, taskSessions.companyId),
+            eq(tasks.id, taskSessions.taskId),
           ),
         )
         .innerJoin(
-          issueSessionMessages,
+          taskSessionMessages,
           and(
-            eq(issueSessionMessages.companyId, issueSessions.companyId),
-            eq(issueSessionMessages.issueId, issueSessions.issueId),
-            eq(issueSessionMessages.sessionId, issueSessions.id),
-            eq(issueSessionMessages.id, input.sourceMessageId),
-            eq(issueSessionMessages.seq, input.sourceMessageSeq),
+            eq(taskSessionMessages.companyId, taskSessions.companyId),
+            eq(taskSessionMessages.taskId, taskSessions.taskId),
+            eq(taskSessionMessages.sessionId, taskSessions.id),
+            eq(taskSessionMessages.id, input.sourceMessageId),
+            eq(taskSessionMessages.seq, input.sourceMessageSeq),
           ),
         )
         .where(
           and(
-            eq(issueSessions.companyId, input.companyId),
-            eq(issueSessions.issueId, input.issueId),
-            eq(issueSessions.id, input.sessionId),
+            eq(taskSessions.companyId, input.companyId),
+            eq(taskSessions.taskId, input.taskId),
+            eq(taskSessions.id, input.sessionId),
           ),
         )
         .limit(2);
       if (rows.length !== 1) {
         fail("Before-prompt source is not one exact canonical Session message", {
           companyId: input.companyId,
-          issueId: input.issueId,
+          taskId: input.taskId,
           sessionId: input.sessionId,
           sourceMessageId: input.sourceMessageId,
           sourceMessageSeq: input.sourceMessageSeq,
@@ -281,7 +281,7 @@ export function createPostgresPluginBeforePromptSourceReader(
       ) {
         fail("Before-prompt source is outside the readable Session projection", {
           companyId: input.companyId,
-          issueId: input.issueId,
+          taskId: input.taskId,
           sessionId: input.sessionId,
           sourceMessageSeq: input.sourceMessageSeq,
           projectedEventSeq: row.session.projectedEventSeq,
@@ -291,11 +291,11 @@ export function createPostgresPluginBeforePromptSourceReader(
 
       let sourceMessage;
       try {
-        sourceMessage = issueSessionMessageFromRow(row.message);
+        sourceMessage = taskSessionMessageFromRow(row.message);
       } catch (cause) {
         fail("Before-prompt source message failed canonical decoding", {
           companyId: input.companyId,
-          issueId: input.issueId,
+          taskId: input.taskId,
           sessionId: input.sessionId,
           sourceMessageId: input.sourceMessageId,
         }, cause);
@@ -306,7 +306,7 @@ export function createPostgresPluginBeforePromptSourceReader(
       ) {
         fail("Before-prompt source text does not match its canonical Session message", {
           companyId: input.companyId,
-          issueId: input.issueId,
+          taskId: input.taskId,
           sessionId: input.sessionId,
           sourceMessageId: input.sourceMessageId,
           sourceMessageType: sourceMessage.type,
@@ -351,14 +351,14 @@ export function createPluginBeforePromptDispatcher(options: {
       if (source.sourceMessageSeq !== input.sourceMessageSeq) {
         fail("Before-prompt source reader returned a different Session boundary", {
           companyId: input.companyId,
-          issueId: input.issueId,
+          taskId: input.taskId,
           sessionId: input.sessionId,
           sourceMessageId: input.sourceMessageId,
         });
       }
       const hookInput: PluginBeforePromptInput = Object.freeze({
         companyId: input.companyId,
-        issueId: input.issueId,
+        taskId: input.taskId,
         sessionId: input.sessionId,
         runId: input.runId,
         agentId: input.agentId,
@@ -394,7 +394,7 @@ export function createPluginBeforePromptDispatcher(options: {
             {
               companyId: input.companyId,
               canonicalSession: {
-                issueId: input.issueId,
+                taskId: input.taskId,
                 sessionId: input.sessionId,
                 snapshotHighWaterSeq: source.sourceMessageSeq,
               },

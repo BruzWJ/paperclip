@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertBoardOrgAccess,
   assertCompanyAccess,
-  authorizeHumanIssueSteering,
+  authorizeHumanTaskSteering,
   getAccessibleResource,
   hasBoardOrgAccess,
 } from "../routes/authz.js";
@@ -274,7 +274,7 @@ describe("assertBoardOrgAccess", () => {
   });
 });
 
-describe("authorizeHumanIssueSteering", () => {
+describe("authorizeHumanTaskSteering", () => {
   const operator = {
     companyId: "company-1",
     membershipRole: "operator" as const,
@@ -291,7 +291,7 @@ describe("authorizeHumanIssueSteering", () => {
       }),
     });
 
-    await expect(authorizeHumanIssueSteering(
+    await expect(authorizeHumanTaskSteering(
       steeringDb([
         [{ id: "user-1" }],
         [{ id: "membership-1", status: "active", membershipRole: "operator" }],
@@ -311,7 +311,7 @@ describe("authorizeHumanIssueSteering", () => {
       }),
     });
 
-    await expect(authorizeHumanIssueSteering(
+    await expect(authorizeHumanTaskSteering(
       steeringDb([
         [{ id: "user-1" }],
         [{ id: "membership-1", status: "active", membershipRole: "operator" }],
@@ -331,7 +331,7 @@ describe("authorizeHumanIssueSteering", () => {
       }),
     });
 
-    await expect(authorizeHumanIssueSteering(
+    await expect(authorizeHumanTaskSteering(
       steeringDb([
         [],
         [{ id: "membership-1", status: "active", membershipRole: "operator" }],
@@ -351,7 +351,7 @@ describe("authorizeHumanIssueSteering", () => {
       }),
     });
 
-    await expect(authorizeHumanIssueSteering(
+    await expect(authorizeHumanTaskSteering(
       steeringDb([
         [{ id: "user-1" }],
         [{ id: "membership-1", status: "active", membershipRole: "viewer" }],
@@ -373,7 +373,7 @@ describe("authorizeHumanIssueSteering", () => {
       },
     });
 
-    await expect(authorizeHumanIssueSteering(
+    await expect(authorizeHumanTaskSteering(
       steeringDb([]),
       req,
       "company-1",

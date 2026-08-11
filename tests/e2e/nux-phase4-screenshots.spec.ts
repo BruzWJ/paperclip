@@ -12,7 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * screenshots of every surface integrated by NUX Phases 1–3:
  *   - "Build a new company" step 1 (company name) + step 2 (mission)
  *   - Ordinary top-level agent identity and declarative ACP configuration
- *   - Board-authored first-issue review
+ *   - Board-authored first-task review
  *   - Onboarding front door (path picker)
  *   - "Add agents to your org" growth intake
  *   - Artifacts page
@@ -23,13 +23,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  */
 
 // Write under the gitignored test-results dir so re-runs leave no untracked
-// noise; screenshots are uploaded to the issue as QA evidence, not committed.
+// noise; screenshots are uploaded to the task as QA evidence, not committed.
 const SHOT_DIR = path.join(__dirname, "test-results", "nux-phase4-shots");
 const COMPANY_NAME = "QA Robotics";
 const AGENT_NAME = "QA coordinator";
 const CODEX_MODEL = "gpt-5.6";
-const ISSUE_TITLE = "Verify the onboarding surfaces";
-const ISSUE_REQUEST =
+const TASK_TITLE = "Verify the onboarding surfaces";
+const TASK_REQUEST =
   "  Verify the integrated onboarding surfaces and record the visual evidence.\nDo not normalize this request.  ";
 
 function shot(name: string) {
@@ -53,7 +53,7 @@ test.describe("NUX Phase 4 visual QA", () => {
     });
     page.on("pageerror", (err) => consoleErrors.push("PAGEERROR: " + err.message));
 
-    // ── Section A: company → mission → ordinary agent → issue ─────────────
+    // ── Section A: company → mission → ordinary agent → task ─────────────
     await openWizard(page);
     // Front door shows when the wizard doesn't open directly on the create
     // path (e.g. another spec already created a company on this instance).
@@ -88,7 +88,7 @@ test.describe("NUX Phase 4 visual QA", () => {
       .getByPlaceholder(
         "What work can another agent select this agent to handle?",
       )
-      .fill("Verifies onboarding, issue, and collaboration interfaces.");
+      .fill("Verifies onboarding, task, and collaboration interfaces.");
     await page.screenshot({ path: shot("04-configure-agent.png") });
     await page.getByRole("button", { name: /^Next/ }).click();
 
@@ -118,7 +118,7 @@ test.describe("NUX Phase 4 visual QA", () => {
       qaCompany,
       `wizard should have created ${COMPANY_NAME}`,
     ).toBeTruthy();
-    const prefix: string = qaCompany.issuePrefix;
+    const prefix: string = qaCompany.taskPrefix;
 
     const agentsResponse = await request.get(
       `/api/companies/${qaCompany.id}/agents`,
@@ -141,38 +141,38 @@ test.describe("NUX Phase 4 visual QA", () => {
         model: CODEX_MODEL,
       },
     });
-    const runsBeforeIssue = await request.get(
+    const runsBeforeTask = await request.get(
       `/api/companies/${qaCompany.id}/runs?agentId=${agent!.id}`,
     );
-    expect(runsBeforeIssue.ok()).toBe(true);
-    expect(await runsBeforeIssue.json()).toEqual({
+    expect(runsBeforeTask.ok()).toBe(true);
+    expect(await runsBeforeTask.json()).toEqual({
       items: [],
       nextCursor: null,
     });
 
-    await page.getByPlaceholder("Issue title (optional)").fill(ISSUE_TITLE);
+    await page.getByPlaceholder("Task title (optional)").fill(TASK_TITLE);
     await page
       .getByPlaceholder(/Describe .* first concrete assignment/)
-      .fill(ISSUE_REQUEST);
-    await page.screenshot({ path: shot("06-review-first-issue.png") });
+      .fill(TASK_REQUEST);
+    await page.screenshot({ path: shot("06-review-first-task.png") });
     await page.getByRole("button", { name: "Get started" }).click();
     await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 });
 
-    const issuesResponse = await request.get(
-      `/api/companies/${qaCompany.id}/issues`,
+    const tasksResponse = await request.get(
+      `/api/companies/${qaCompany.id}/tasks`,
     );
-    expect(issuesResponse.ok()).toBe(true);
-    const issue = (
-      (await issuesResponse.json()) as Array<{
+    expect(tasksResponse.ok()).toBe(true);
+    const task = (
+      (await tasksResponse.json()) as Array<{
         title: string | null;
         request: string;
         ownerAgentId: string | null;
       }>
-    ).find((candidate) => candidate.title === ISSUE_TITLE);
-    expect(issue).toEqual(
+    ).find((candidate) => candidate.title === TASK_TITLE);
+    expect(task).toEqual(
       expect.objectContaining({
-        title: ISSUE_TITLE,
-        request: ISSUE_REQUEST,
+        title: TASK_TITLE,
+        request: TASK_REQUEST,
         ownerAgentId: agent!.id,
       }),
     );
@@ -221,7 +221,7 @@ test.describe("NUX Phase 4 visual QA", () => {
       "03-create-mission.png",
       "04-configure-agent.png",
       "05-connect-codex-agent.png",
-      "06-review-first-issue.png",
+      "06-review-first-task.png",
       "07-growth-intake.png",
       "09-artifacts.png",
     ]) {

@@ -10,12 +10,12 @@ import { createPluginEventBus } from "./plugin-event-bus.js";
 
 const event = {
   eventId: "comment-1",
-  eventType: "issue.board.comment.created" as const,
+  eventType: "task.board.comment.created" as const,
   occurredAt: "2026-08-06T00:00:00.000Z",
   companyId: "company-1",
   entityId: "comment-1",
-  entityType: "issue_comment",
-  payload: { issueId: "issue-1", commentId: "comment-1" },
+  entityType: "task_comment",
+  payload: { taskId: "task-1", commentId: "comment-1" },
 };
 
 describe("plugin domain event publisher", () => {
@@ -27,14 +27,14 @@ describe("plugin domain event publisher", () => {
     });
     const completed = vi.fn();
     bus.forPlugin("paperclip.blocked").subscribe(
-      "issue.board.comment.created",
+      "task.board.comment.created",
       async () => {
         await blocked;
         completed();
       },
     );
     bus.forPlugin("paperclip.failed").subscribe(
-      "issue.board.comment.created",
+      "task.board.comment.created",
       async () => {
         throw new Error("handler failed");
       },
@@ -55,7 +55,7 @@ describe("plugin domain event publisher", () => {
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         pluginId: "paperclip.failed",
-        eventType: "issue.board.comment.created",
+        eventType: "task.board.comment.created",
       }),
       "plugin event handler failed",
     );

@@ -7,7 +7,7 @@ export interface LocalRunLease {
   readonly id: string;
   readonly companyId: string;
   readonly executionWorkspaceId: string;
-  readonly issueId: string;
+  readonly taskId: string;
   readonly runId: string;
   readonly status: LocalRunLeaseStatus;
   readonly acquiredAt: Date;
@@ -31,7 +31,7 @@ function toLocalRunLease(row: LocalRunLeaseRow): LocalRunLease {
     id: row.id,
     companyId: row.companyId,
     executionWorkspaceId: row.executionWorkspaceId,
-    issueId: row.issueId,
+    taskId: row.taskId,
     runId: row.runId,
     status: row.status,
     acquiredAt: row.acquiredAt,
@@ -56,7 +56,7 @@ export function localRunLeaseService(db: Db) {
     async acquireRunLease(input: {
       companyId: string;
       executionWorkspaceId: string;
-      issueId: string;
+      taskId: string;
       runId: string;
     }): Promise<LocalRunLeaseRecord> {
       const now = new Date();
@@ -65,7 +65,7 @@ export function localRunLeaseService(db: Db) {
         .values({
           companyId: input.companyId,
           executionWorkspaceId: input.executionWorkspaceId,
-          issueId: input.issueId,
+          taskId: input.taskId,
           runId: input.runId,
           status: "active",
           acquiredAt: now,
@@ -81,7 +81,7 @@ export function localRunLeaseService(db: Db) {
           ],
           set: {
             executionWorkspaceId: input.executionWorkspaceId,
-            issueId: input.issueId,
+            taskId: input.taskId,
             status: "active",
             acquiredAt: now,
             lastUsedAt: now,

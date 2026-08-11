@@ -1,23 +1,23 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { AGENT_STATUSES, ISSUE_PRIORITIES, ISSUE_STATUSES } from "@paperclipai/shared";
+import { AGENT_STATUSES, TASK_PRIORITIES, TASK_STATUSES } from "@paperclipai/shared";
 import type {
-  IssueBlockerAttention,
-  IssueRelationIssueSummary,
+  TaskBlockerAttention,
+  TaskRelationTaskSummary,
 } from "@paperclipai/shared";
 import { Bot, CheckCircle2, Clock3, DollarSign, FolderKanban, Inbox, MessageSquare, Users } from "lucide-react";
 import { CopyText } from "@/components/CopyText";
 import { EmptyState } from "@/components/EmptyState";
 import { Identity } from "@/components/Identity";
-import { IssueBlockedNotice } from "@/components/IssueBlockedNotice";
-import { IssueRow } from "@/components/IssueRow";
+import { TaskBlockedNotice } from "@/components/TaskBlockedNotice";
+import { TaskRow } from "@/components/TaskRow";
 import { MetricCard } from "@/components/MetricCard";
 import { PriorityIcon } from "@/components/PriorityIcon";
 import { QuotaBar } from "@/components/QuotaBar";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatusIcon } from "@/components/StatusIcon";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { createIssue } from "../fixtures/paperclipData";
+import { createTask } from "../fixtures/paperclipData";
 
 function Section({
   eyebrow,
@@ -42,14 +42,14 @@ function Section({
 type CoveredBlockedCell = {
   label: string;
   status: string;
-  blockerAttention: IssueBlockerAttention | null;
+  blockerAttention: TaskBlockerAttention | null;
   expectedVisual: string;
   expectedCopy: string;
 };
 
 function attention(
-  partial: Partial<IssueBlockerAttention> & Pick<IssueBlockerAttention, "state" | "reason">,
-): IssueBlockerAttention {
+  partial: Partial<TaskBlockerAttention> & Pick<TaskBlockerAttention, "state" | "reason">,
+): TaskBlockerAttention {
   return {
     state: partial.state,
     reason: partial.reason,
@@ -81,7 +81,7 @@ const coveredBlockedMatrix: CoveredBlockedCell[] = [
       sampleBlockerIdentifier: "PAP-2175",
     }),
     expectedVisual: "cyan ring",
-    expectedCopy: "Blocked · waiting on active sub-issue PAP-2175",
+    expectedCopy: "Blocked · waiting on active sub-task PAP-2175",
   },
   {
     label: "Covered by N active children",
@@ -93,7 +93,7 @@ const coveredBlockedMatrix: CoveredBlockedCell[] = [
       coveredBlockerCount: 3,
     }),
     expectedVisual: "cyan ring",
-    expectedCopy: "Blocked · waiting on 3 active sub-issues",
+    expectedCopy: "Blocked · waiting on 3 active sub-tasks",
   },
   {
     label: "Covered by active dependency",
@@ -188,10 +188,10 @@ const coveredBlockedMatrix: CoveredBlockedCell[] = [
   },
 ];
 
-const coveredBlockedIssue = createIssue({
-  id: "issue-covered-blocked-story",
+const coveredBlockedTask = createTask({
+  id: "task-covered-blocked-story",
   identifier: "PAP-2178",
-  issueNumber: 2178,
+  taskNumber: 2178,
   title: "Covered blocked visual state: final acceptance",
   boardPresentationStatus: "blocked",
   priority: "medium",
@@ -201,9 +201,9 @@ const coveredBlockedIssue = createIssue({
 });
 
 function summaryBlocker(
-  partial: Partial<IssueRelationIssueSummary> &
-    Pick<IssueRelationIssueSummary, "id" | "title" | "boardPresentationStatus">,
-): IssueRelationIssueSummary {
+  partial: Partial<TaskRelationTaskSummary> &
+    Pick<TaskRelationTaskSummary, "id" | "title" | "boardPresentationStatus">,
+): TaskRelationTaskSummary {
   return {
     id: partial.id,
     identifier: partial.identifier ?? null,
@@ -224,26 +224,26 @@ type BlockedNoticeStateLabel =
 type BlockedNoticeFixture = {
   label: BlockedNoticeStateLabel;
   caption: string;
-  blockers: IssueRelationIssueSummary[];
-  blockerAttention: IssueBlockerAttention;
+  blockers: TaskRelationTaskSummary[];
+  blockerAttention: TaskBlockerAttention;
 };
 
 const stalledLeafSingle = summaryBlocker({
-  id: "issue-stalled-leaf-single",
+  id: "task-stalled-leaf-single",
   identifier: "PAP-2279",
   title: "Stage gate review for export pipeline",
   boardPresentationStatus: "in_review",
 });
 
 const stalledLeafMultiPrimary = summaryBlocker({
-  id: "issue-stalled-leaf-multi-1",
+  id: "task-stalled-leaf-multi-1",
   identifier: "PAP-2284",
   title: "Approve schema migration",
   boardPresentationStatus: "in_review",
 });
 
 const stalledLeafMultiSecondary = summaryBlocker({
-  id: "issue-stalled-leaf-multi-2",
+  id: "task-stalled-leaf-multi-2",
   identifier: "PAP-2291",
   title: "Sign off on rollout copy",
   boardPresentationStatus: "in_review",
@@ -252,10 +252,10 @@ const stalledLeafMultiSecondary = summaryBlocker({
 const blockedNoticeFixtures: BlockedNoticeFixture[] = [
   {
     label: "Default covered",
-    caption: "Active sub-issue covers the chain — informational only.",
+    caption: "Active sub-task covers the chain — informational only.",
     blockers: [
       summaryBlocker({
-        id: "issue-active-child",
+        id: "task-active-child",
         identifier: "PAP-2175",
         title: "Wire export pipeline preview",
         boardPresentationStatus: "in_progress",
@@ -274,7 +274,7 @@ const blockedNoticeFixtures: BlockedNoticeFixture[] = [
     caption: "Chain stalled on one leaf review — copy names the leaf and shows the chip strip.",
     blockers: [
       summaryBlocker({
-        id: "issue-stalled-parent-single",
+        id: "task-stalled-parent-single",
         identifier: "PAP-2278",
         title: "Ship rollout dashboard",
         boardPresentationStatus: "blocked",
@@ -295,14 +295,14 @@ const blockedNoticeFixtures: BlockedNoticeFixture[] = [
     caption: "Multiple stalled reviews — body uses plural agreement (\"reviews\"/\"them\") to match the chip strip.",
     blockers: [
       summaryBlocker({
-        id: "issue-stalled-parent-multi-a",
+        id: "task-stalled-parent-multi-a",
         identifier: "PAP-2283",
         title: "Coordinate billing change rollout",
         boardPresentationStatus: "blocked",
         terminalBlockers: [stalledLeafMultiPrimary],
       }),
       summaryBlocker({
-        id: "issue-stalled-parent-multi-b",
+        id: "task-stalled-parent-multi-b",
         identifier: "PAP-2290",
         title: "Coordinate marketing transfer",
         boardPresentationStatus: "blocked",
@@ -340,8 +340,8 @@ function BlockedNoticeSurface({
           </span>
         </div>
         <div className={isMobile ? "max-w-[358px] px-3 py-3" : "min-w-[620px] px-4 py-3"}>
-          <IssueBlockedNotice
-            issueStatus="blocked"
+          <TaskBlockedNotice
+            taskStatus="blocked"
             blockers={fixture.blockers}
             blockerAttention={fixture.blockerAttention}
           />
@@ -363,9 +363,9 @@ function CoveredBlockedSurface({ mode, size }: { mode: "light" | "dark"; size: "
           {size} · {mode}
         </div>
         <div className={isMobile ? "max-w-[340px]" : "min-w-[620px]"}>
-          <IssueRow
-            issue={coveredBlockedIssue}
-            mobileMeta={<StatusBadge status={coveredBlockedIssue.boardPresentationStatus} />}
+          <TaskRow
+            task={coveredBlockedTask}
+            mobileMeta={<StatusBadge status={coveredBlockedTask.boardPresentationStatus} />}
             trailingMeta="waiting on PAP-2175"
           />
         </div>
@@ -389,15 +389,15 @@ function StatusLanguage() {
           </p>
         </section>
 
-        <Section eyebrow="Lifecycle" title="Issue and agent statuses">
+        <Section eyebrow="Lifecycle" title="Task and agent statuses">
           <div className="grid gap-4 md:grid-cols-2">
             <Card className="shadow-none">
               <CardHeader>
-                <CardTitle>Issue statuses</CardTitle>
-                <CardDescription>Every task transition state in the V1 issue lifecycle.</CardDescription>
+                <CardTitle>Task statuses</CardTitle>
+                <CardDescription>Every task transition state in the V1 task lifecycle.</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-wrap gap-2">
-                {ISSUE_STATUSES.map((status) => (
+                {TASK_STATUSES.map((status) => (
                   <StatusBadge key={status} status={status} />
                 ))}
               </CardContent>
@@ -443,7 +443,7 @@ function StatusLanguage() {
           </p>
         </Section>
 
-        <Section eyebrow="Covered blocked" title="IssueRow desktop and mobile surfaces">
+        <Section eyebrow="Covered blocked" title="TaskRow desktop and mobile surfaces">
           <div className="grid gap-4 xl:grid-cols-2">
             <CoveredBlockedSurface mode="light" size="desktop" />
             <CoveredBlockedSurface mode="dark" size="desktop" />
@@ -452,7 +452,7 @@ function StatusLanguage() {
           </div>
         </Section>
 
-        <Section eyebrow="Covered blocked" title="IssueBlockedNotice in chat thread">
+        <Section eyebrow="Covered blocked" title="TaskBlockedNotice in chat thread">
           <div className="space-y-5">
             {blockedNoticeFixtures.map((fixture) => (
               <div key={fixture.label} className="grid gap-4 xl:grid-cols-2">
@@ -473,7 +473,7 @@ function StatusLanguage() {
         <Section eyebrow="Priority" title="Static labels and editable popover trigger">
           <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
             <div className="grid gap-3 sm:grid-cols-2">
-              {ISSUE_PRIORITIES.map((item) => (
+              {TASK_PRIORITIES.map((item) => (
                 <div key={item} className="flex items-center justify-between rounded-lg border border-border bg-background/70 p-4">
                   <PriorityIcon priority={item} showLabel />
                   <span className="font-mono text-xs text-muted-foreground">{item}</span>
@@ -483,7 +483,7 @@ function StatusLanguage() {
             <Card className="shadow-none">
               <CardHeader>
                 <CardTitle>Editable priority</CardTitle>
-                <CardDescription>Click the control to inspect the same popover used in issue rows.</CardDescription>
+                <CardDescription>Click the control to inspect the same popover used in task rows.</CardDescription>
               </CardHeader>
               <CardContent>
                 <PriorityIcon priority={priority} onChange={setPriority} showLabel />
@@ -534,7 +534,7 @@ function StatusLanguage() {
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard icon={Users} value={8} label="Active agents" description="3 running right now" to="/agents/active" />
-              <MetricCard icon={FolderKanban} value={27} label="Open issues" description="5 in review" to="/issues" />
+              <MetricCard icon={FolderKanban} value={27} label="Open tasks" description="5 in review" to="/tasks" />
               <MetricCard icon={DollarSign} value="$675" label="MTD spend" description="27% of budget" to="/costs" />
               <MetricCard icon={Clock3} value="14m" label="P95 run age" description="last 24 hours" />
             </div>
@@ -546,7 +546,7 @@ function StatusLanguage() {
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">Issue</span>
+                  <span className="text-muted-foreground">Task</span>
                   <CopyText text="PAP-1641" className="font-mono">PAP-1641</CopyText>
                 </div>
                 <div className="flex items-center justify-between gap-3">
@@ -578,7 +578,7 @@ function StatusLanguage() {
                 <CardDescription>Used when a list has no meaningful rows yet.</CardDescription>
               </CardHeader>
               <CardContent>
-                <EmptyState icon={Inbox} message="No assigned work is waiting in this queue." action="Create issue" onAction={() => undefined} />
+                <EmptyState icon={Inbox} message="No assigned work is waiting in this queue." action="Create task" onAction={() => undefined} />
               </CardContent>
             </Card>
           </div>

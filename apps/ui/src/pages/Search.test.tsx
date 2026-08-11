@@ -17,7 +17,7 @@ const breadcrumbState = vi.hoisted(() => ({
 }));
 
 const dialogState = vi.hoisted(() => ({
-  openNewIssue: vi.fn(),
+  openNewTask: vi.fn(),
 }));
 
 const navigateMock = vi.hoisted(() => vi.fn());
@@ -34,7 +34,7 @@ const projectsApiMock = vi.hoisted(() => ({
   list: vi.fn(),
 }));
 
-const issuesApiMock = vi.hoisted(() => ({
+const tasksApiMock = vi.hoisted(() => ({
   listLabels: vi.fn(),
 }));
 
@@ -70,8 +70,8 @@ vi.mock("../api/projects", () => ({
   projectsApi: projectsApiMock,
 }));
 
-vi.mock("../api/issues", () => ({
-  issuesApi: issuesApiMock,
+vi.mock("../api/tasks", () => ({
+  tasksApi: tasksApiMock,
 }));
 
 vi.mock("../api/auth", () => ({
@@ -147,12 +147,12 @@ describe("buildSearchUrl", () => {
   });
 
   it("clears q when empty and omits scope when scope=all", () => {
-    expect(buildSearchUrl("http://x/search?q=stale&scope=issues", "", "all")).toBe("/search");
+    expect(buildSearchUrl("http://x/search?q=stale&scope=tasks", "", "all")).toBe("/search");
   });
 
   it("preserves the existing pathname and hash", () => {
-    expect(buildSearchUrl("http://x/PAP/search?q=x#anchor", "y", "issues")).toBe(
-      "/PAP/search?q=y&scope=issues#anchor",
+    expect(buildSearchUrl("http://x/PAP/search?q=x#anchor", "y", "tasks")).toBe(
+      "/PAP/search?q=y&scope=tasks#anchor",
     );
   });
 });
@@ -164,16 +164,16 @@ describe("Search page", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     breadcrumbState.setBreadcrumbs.mockReset();
-    dialogState.openNewIssue.mockReset();
+    dialogState.openNewTask.mockReset();
     navigateMock.mockReset();
     searchApiMock.search.mockReset();
     agentsApiMock.list.mockReset();
     projectsApiMock.list.mockReset();
-    issuesApiMock.listLabels.mockReset();
+    tasksApiMock.listLabels.mockReset();
     authApiMock.getSession.mockReset();
     agentsApiMock.list.mockResolvedValue([]);
     projectsApiMock.list.mockResolvedValue([]);
-    issuesApiMock.listLabels.mockResolvedValue([]);
+    tasksApiMock.listLabels.mockResolvedValue([]);
     authApiMock.getSession.mockResolvedValue({ user: { id: "user-1" }, session: { userId: "user-1" } });
     window.localStorage.clear();
   });
@@ -182,7 +182,7 @@ describe("Search page", () => {
     container.remove();
   });
 
-  it("issues a search request when ?q is in the URL and renders the result", async () => {
+  it("sends a search request when ?q is in the URL and renders the result", async () => {
     searchApiMock.search.mockResolvedValueOnce({
       query: "auth flake",
       normalizedQuery: "auth flake",
@@ -190,7 +190,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 1, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { task: 1, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -204,11 +204,11 @@ describe("Search page", () => {
       hasMore: false,
       results: [
         {
-          id: "issue-1",
-          type: "issue",
+          id: "task-1",
+          type: "task",
           score: 100,
           title: "PAP-3142 Auth middleware flakes",
-          href: "/PAP/issues/PAP-3142",
+          href: "/PAP/tasks/PAP-3142",
           matchedFields: ["title", "comment"],
           sourceLabel: "Comment",
           snippet: "we hit another flake",
@@ -226,8 +226,8 @@ describe("Search page", () => {
               highlights: [{ start: 16, end: 21 }],
             },
           ],
-          issue: {
-            id: "issue-1",
+          task: {
+            id: "task-1",
             identifier: "PAP-3142",
             title: "Auth middleware flakes",
             status: "in_progress",
@@ -271,7 +271,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 1, agent: 0, project: 0 },
+      countsByType: { task: 0, comment: 0, document: 0, artifact: 1, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -289,7 +289,7 @@ describe("Search page", () => {
           type: "artifact",
           score: 140,
           title: "Launch Artifact Brief",
-          href: "/PAP/issues/PAP-42#document-brief",
+          href: "/PAP/tasks/PAP-42#document-brief",
           matchedFields: ["artifact"],
           sourceLabel: "Artifact",
           snippet: "launch brief preview text",
@@ -305,9 +305,9 @@ describe("Search page", () => {
             id: "document:artifact-1",
             source: "document",
             mediaKind: "document",
-            issueId: "issue-42",
-            issueIdentifier: "PAP-42",
-            issueTitle: "Ship launch artifacts",
+            taskId: "task-42",
+            taskIdentifier: "PAP-42",
+            taskTitle: "Ship launch artifacts",
             projectId: null,
             projectName: null,
             updatedAt: new Date().toISOString(),
@@ -347,7 +347,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 1, document: 1, artifact: 0, agent: 0, project: 0 },
+      countsByType: { task: 0, comment: 1, document: 1, artifact: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -361,11 +361,11 @@ describe("Search page", () => {
       hasMore: false,
       results: [
         {
-          id: "issue-comment",
-          type: "issue",
+          id: "task-comment",
+          type: "task",
           score: 180,
           title: "PAP-77 Comment source",
-          href: "/PAP/issues/PAP-77#comment-comment-77",
+          href: "/PAP/tasks/PAP-77#comment-comment-77",
           matchedFields: ["comment"],
           sourceLabel: "Comment",
           snippet: "thread needle evidence",
@@ -377,8 +377,8 @@ describe("Search page", () => {
               highlights: [{ start: 7, end: 13 }],
             },
           ],
-          issue: {
-            id: "issue-comment",
+          task: {
+            id: "task-comment",
             identifier: "PAP-77",
             title: "Comment source",
             status: "todo",
@@ -392,11 +392,11 @@ describe("Search page", () => {
           previewImageUrl: null,
         },
         {
-          id: "issue-document",
-          type: "issue",
+          id: "task-document",
+          type: "task",
           score: 170,
           title: "PAP-78 Document source",
-          href: "/PAP/issues/PAP-78#document-plan",
+          href: "/PAP/tasks/PAP-78#document-plan",
           matchedFields: ["document"],
           sourceLabel: "Plan",
           snippet: "plan needle evidence",
@@ -408,8 +408,8 @@ describe("Search page", () => {
               highlights: [{ start: 5, end: 11 }],
             },
           ],
-          issue: {
-            id: "issue-document",
+          task: {
+            id: "task-document",
             identifier: "PAP-78",
             title: "Document source",
             status: "todo",
@@ -428,8 +428,8 @@ describe("Search page", () => {
     const { root } = renderSearch("/search?q=needle", container);
 
     await waitForAssertion(() => {
-      expect(container.querySelector('a[href="/PAP/issues/PAP-77#comment-comment-77"]')).not.toBeNull();
-      expect(container.querySelector('a[href="/PAP/issues/PAP-78#document-plan"]')).not.toBeNull();
+      expect(container.querySelector('a[href="/PAP/tasks/PAP-77#comment-comment-77"]')).not.toBeNull();
+      expect(container.querySelector('a[href="/PAP/tasks/PAP-78#document-plan"]')).not.toBeNull();
       expect(container.textContent).toContain("Comment");
       expect(container.textContent).toContain("Doc");
       expect(container.querySelectorAll("mark")).toHaveLength(2);
@@ -479,7 +479,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { task: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -526,7 +526,7 @@ describe("Search page", () => {
     });
   });
 
-  it("auto-redirects an exact identifier match to the issue root, dropping any deep-link suffix", async () => {
+  it("auto-redirects an exact identifier match to the task root, dropping any deep-link suffix", async () => {
     searchApiMock.search.mockResolvedValueOnce({
       query: "PAP-3366",
       normalizedQuery: "pap-3366",
@@ -534,7 +534,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 1, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { task: 1, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -548,11 +548,11 @@ describe("Search page", () => {
       hasMore: false,
       results: [
         {
-          id: "issue-3366",
-          type: "issue",
+          id: "task-3366",
+          type: "task",
           score: 1300,
           title: "PAP-3366 Continuation summary",
-          href: "/PAP/issues/PAP-3366#document-run-summary",
+          href: "/PAP/tasks/PAP-3366#document-run-summary",
           matchedFields: ["identifier", "document"],
           sourceLabel: "Document",
           snippet: "Continuation summary excerpt",
@@ -564,8 +564,8 @@ describe("Search page", () => {
               highlights: [],
             },
           ],
-          issue: {
-            id: "issue-3366",
+          task: {
+            id: "task-3366",
             identifier: "PAP-3366",
             title: "Continuation summary",
             status: "in_progress",
@@ -583,7 +583,7 @@ describe("Search page", () => {
     const { root } = renderSearch("/search?q=PAP-3366", container);
 
     await waitForAssertion(() => {
-      expect(navigateMock).toHaveBeenCalledWith("/PAP/issues/PAP-3366", { replace: true });
+      expect(navigateMock).toHaveBeenCalledWith("/PAP/tasks/PAP-3366", { replace: true });
     });
 
     flushSync(() => {
@@ -599,7 +599,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { task: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -635,7 +635,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { task: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -680,7 +680,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { task: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -819,7 +819,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { task: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -878,7 +878,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { task: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},

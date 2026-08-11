@@ -4,7 +4,7 @@ import type { MentionOption } from "@/components/MarkdownEditor";
 import {
   isAgentStatusInvokable,
   type Agent,
-  type Issue,
+  type Task,
   type Project,
 } from "@paperclipai/shared";
 
@@ -109,7 +109,7 @@ export function isAgentTaskTarget(
   );
 }
 
-export function isAgentIssueOwnerTarget(
+export function isAgentTaskOwnerTarget(
   agent: Pick<Agent, "status" | "currentAdapterConfigRevisionId"> &
     Partial<Pick<Agent, "orgChainHealth">>,
 ): boolean {
@@ -120,22 +120,22 @@ export function isAgentIssueOwnerTarget(
   );
 }
 
-export function buildIssueMentionOptions(
-  issues?: Array<Pick<Issue, "id" | "identifier" | "title">> | null | undefined,
+export function buildTaskMentionOptions(
+  tasks?: Array<Pick<Task, "id" | "identifier" | "title">> | null | undefined,
 ): MentionOption[] {
   const options: MentionOption[] = [];
-  for (const issue of issues ?? []) {
-    const identifier = issue.identifier?.trim();
+  for (const task of tasks ?? []) {
+    const identifier = task.identifier?.trim();
     if (!identifier) continue;
-    const title = issue.title?.trim() ?? "";
+    const title = task.title?.trim() ?? "";
     options.push({
-      id: `issue:${issue.id}`,
+      id: `task:${task.id}`,
       // `name` carries identifier + title so the picker matches either when
       // filtering; the dropdown renders the identifier and title separately.
       name: title ? `${identifier} ${title}` : identifier,
-      kind: "issue",
-      issueId: issue.id,
-      issueIdentifier: identifier,
+      kind: "task",
+      taskId: task.id,
+      taskIdentifier: identifier,
     });
   }
   return options;
@@ -151,7 +151,7 @@ export function buildMarkdownMentionOptions(args: {
     | undefined;
   projects?: Array<Pick<Project, "id" | "name" | "color">> | null | undefined;
   members?: CompanyUserRecord[] | null | undefined;
-  issues?: Array<Pick<Issue, "id" | "identifier" | "title">> | null | undefined;
+  tasks?: Array<Pick<Task, "id" | "identifier" | "title">> | null | undefined;
 }): MentionOption[] {
   const options: MentionOption[] = [
     ...buildCompanyUserMentionOptions(args.members),
@@ -174,9 +174,9 @@ export function buildMarkdownMentionOptions(args: {
         projectId: project.id,
         projectColor: project.color,
       })),
-    // Issues keep their incoming order (callers pass most-recently-updated first)
+    // Tasks keep their incoming order (callers pass most-recently-updated first)
     // so the picker surfaces the freshest tasks before any query is typed.
-    ...buildIssueMentionOptions(args.issues),
+    ...buildTaskMentionOptions(args.tasks),
   ];
 
   return options;

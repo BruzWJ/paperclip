@@ -3,7 +3,7 @@ import { AgentIcon } from "./AgentIconPicker";
 import { timeAgo } from "../lib/timeAgo";
 import { cn } from "../lib/utils";
 import { deriveProjectUrlKey, type ActivityEvent, type Agent } from "@paperclipai/shared";
-import { issueStatusIcon, issueStatusIconDefault } from "../lib/status-colors";
+import { taskStatusIcon, taskStatusIconDefault } from "../lib/status-colors";
 import {
   FileText,
   UserPlus,
@@ -40,33 +40,33 @@ function formatVerb(
   context: VerbContext = "chronological",
 ): string {
   switch (action) {
-    case "issue.created":
+    case "task.created":
       return "opened";
-    case "issue.updated": {
+    case "task.updated": {
       const status = details?.status;
       if (typeof status === "string") return `moved to ${humanize(status)}`;
       const priority = details?.priority;
       if (typeof priority === "string") return `set priority to ${humanize(priority)} on`;
       return "updated";
     }
-    case "issue.document_created":
+    case "task.document_created":
       return "wrote doc on";
-    case "issue.document_updated":
+    case "task.document_updated":
       return "edited doc on";
-    case "issue.document_deleted":
+    case "task.document_deleted":
       return "deleted doc from";
-    case "issue.work_product_created":
+    case "task.work_product_created":
       return "delivered work on";
-    case "issue.work_product_updated":
+    case "task.work_product_updated":
       return "updated work on";
-    case "issue.work_product_deleted":
+    case "task.work_product_deleted":
       return "removed work from";
-    case "issue.commented":
-    case "issue.comment_added":
+    case "task.commented":
+    case "task.comment_added":
       return "commented on";
-    case "issue.attachment_added":
+    case "task.attachment_added":
       return "attached a file to";
-    case "issue.attachment_removed":
+    case "task.attachment_removed":
       return "removed attachment from";
 
     case "approval.created":
@@ -116,7 +116,7 @@ function formatVerb(
 }
 
 /* ------------------------------------------------------------------ */
-/*  Event-time task status (for issue events without a lifecycle wrap) */
+/*  Event-time task status (for task events without a lifecycle wrap) */
 /* ------------------------------------------------------------------ */
 
 function deriveTaskStatus(
@@ -124,16 +124,16 @@ function deriveTaskStatus(
   details: Record<string, unknown> | null | undefined,
 ): string | null {
   switch (action) {
-    case "issue.created":
+    case "task.created":
       return "todo";
-    case "issue.updated": {
+    case "task.updated": {
       const status = details?.status;
       return typeof status === "string" ? status : null;
     }
-    case "issue.document_created":
-    case "issue.document_updated":
+    case "task.document_created":
+    case "task.document_updated":
       return "in_progress";
-    case "issue.work_product_created":
+    case "task.work_product_created":
       return "in_review";
     case "approval.created":
       return "in_review";
@@ -187,23 +187,23 @@ function getIconSpec(
       return { kind: "lucide", Icon: Settings, color: "text-muted-foreground" };
   }
 
-  // Document on issue
-  if (action === "issue.document_created" || action === "issue.document_updated") {
+  // Document on task
+  if (action === "task.document_created" || action === "task.document_updated") {
     return { kind: "lucide", Icon: FileText, color: "text-blue-600 dark:text-blue-400" };
   }
 
-  // Work product / artifact on issue
-  if (action.startsWith("issue.work_product_")) {
+  // Work product / artifact on task
+  if (action.startsWith("task.work_product_")) {
     return { kind: "lucide", Icon: Package, color: "text-indigo-600 dark:text-indigo-400" };
   }
 
   // Comments
-  if (action === "issue.commented" || action === "issue.comment_added") {
+  if (action === "task.commented" || action === "task.comment_added") {
     return { kind: "lucide", Icon: MessageCircle, color: "text-muted-foreground" };
   }
 
-  // Generic issue lifecycle → StatusCircle with event-derived status
-  if (event.entityType === "issue") {
+  // Generic task lifecycle → StatusCircle with event-derived status
+  if (event.entityType === "task") {
     const status = deriveTaskStatus(action, details) ?? "backlog";
     return { kind: "status-circle", status };
   }
@@ -216,7 +216,7 @@ function getIconSpec(
 }
 
 function StatusCircle({ status }: { status: string }) {
-  const colorClass = issueStatusIcon[status] ?? issueStatusIconDefault;
+  const colorClass = taskStatusIcon[status] ?? taskStatusIconDefault;
   const isFilled = status === "done";
   return (
     <span className={cn("relative inline-flex h-4 w-4 shrink-0 rounded-full border-2", colorClass)}>
@@ -273,7 +273,7 @@ function resolveContent(
 
   const entityTitle = entityTitleMap?.get(`${event.entityType}:${event.entityId}`) ?? null;
 
-  const isRunEvent = event.entityType === "issue_execution_run";
+  const isRunEvent = event.entityType === "task_execution_run";
   const runAgentId = isRunEvent
     ? event.agentId ?? (details?.targetAgentId as string | undefined)
     : undefined;
@@ -285,8 +285,8 @@ function resolveContent(
 
   const docKey = details?.key as string | undefined;
   const isDocEvent =
-    event.action === "issue.document_created" || event.action === "issue.document_updated";
-  const issueSlug = entityName ?? event.entityId;
+    event.action === "task.document_created" || event.action === "task.document_updated";
+  const taskSlug = entityName ?? event.entityId;
   const hiredAgentId = details?.hiredAgentId as string | undefined;
   const approvalAgentId = details?.requestedByAgentId as string | undefined;
   const approvalAgentName = approvalAgentId ? agentMap.get(approvalAgentId)?.name ?? null : null;
@@ -294,10 +294,10 @@ function resolveContent(
 
   const link = isRunEvent && runAgentId
     ? `/agents/${runAgentId}/runs/${event.entityId}`
-    : event.entityType === "issue"
+    : event.entityType === "task"
       ? isDocEvent && docKey
-        ? `/issues/${issueSlug}#document-${encodeURIComponent(docKey)}`
-        : `/issues/${issueSlug}`
+        ? `/tasks/${taskSlug}#document-${encodeURIComponent(docKey)}`
+        : `/tasks/${taskSlug}`
       : event.entityType === "agent"
         ? `/agents/${event.entityId}`
         : event.entityType === "approval"
@@ -314,7 +314,7 @@ function resolveContent(
   let identifierMono = true;
   let title: string | null = null;
 
-  if (event.entityType === "issue") {
+  if (event.entityType === "task") {
     // Docs (e.g. FOA-2#hiring-plan) previously showed the doc key, but it
     // duplicates the human-readable title that follows. Show just the task
     // slug; the title carries the document name.
@@ -448,7 +448,7 @@ export function FeedCard({
       <Link
         to={content.link}
         className="block no-underline text-inherit"
-        issueQuicklookSide="left"
+        taskQuicklookSide="left"
       >
         {card}
       </Link>

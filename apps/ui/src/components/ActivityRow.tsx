@@ -1,7 +1,7 @@
 import { Link } from "@/lib/router";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { deriveInitials } from "./Identity";
-import { IssueReferenceActivitySummary } from "./IssueReferenceActivitySummary";
+import { TaskReferenceActivitySummary } from "./TaskReferenceActivitySummary";
 import { timeAgo } from "../lib/timeAgo";
 import { cn } from "../lib/utils";
 import { formatActivityVerb } from "../lib/activity-format";
@@ -10,7 +10,7 @@ import type { CompanyUserProfile } from "../lib/company-members";
 
 function entityLink(entityType: string, entityId: string, name?: string | null): string | null {
   switch (entityType) {
-    case "issue": return `/issues/${name ?? entityId}`;
+    case "task": return `/tasks/${name ?? entityId}`;
     case "agent": return `/agents/${entityId}`;
     case "project": return `/projects/${deriveProjectUrlKey(name, entityId)}`;
     case "goal": return `/goals/${entityId}`;
@@ -31,7 +31,7 @@ interface ActivityRowProps {
 export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, entityTitleMap, className }: ActivityRowProps) {
   const verb = formatActivityVerb(event.action, event.details, { agentMap, userProfileMap });
 
-  const isRunEvent = event.entityType === "issue_execution_run";
+  const isRunEvent = event.entityType === "task_execution_run";
   const runAgentId = isRunEvent
     ? event.agentId ?? (event.details as Record<string, unknown> | null)?.targetAgentId as string | undefined
     : undefined;
@@ -68,7 +68,7 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
         </div>
         <span className="text-xs text-muted-foreground shrink-0">{timeAgo(event.createdAt)}</span>
       </div>
-      <IssueReferenceActivitySummary event={event} />
+      <TaskReferenceActivitySummary event={event} />
     </div>
   );
 

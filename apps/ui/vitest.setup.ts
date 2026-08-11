@@ -32,7 +32,7 @@ if (typeof window !== "undefined" && window.localStorage !== globalThis.localSto
 }
 
 // jsdom does not implement Element.prototype.scrollIntoView. Several surfaces
-// (e.g. IssueChatThread's auto-scroll-to-latest) call it during normal render,
+// (e.g. TaskChatThread's auto-scroll-to-latest) call it during normal render,
 // so provide a no-op default. Tests that assert on scroll behaviour override
 // this on the prototype themselves and restore it afterwards.
 if (typeof Element !== "undefined" && typeof Element.prototype.scrollIntoView !== "function") {

@@ -25,7 +25,7 @@ vi.mock("../services/budgets.js", async (importOriginal) => {
 
 vi.mock("../services/activity-log.js", () => ({ logActivity: mocks.logActivity }));
 
-vi.mock("../services/issue-session-lifecycle.js", () => ({
+vi.mock("../services/task-session-lifecycle.js", () => ({
   archiveCompanySessionGraphInTx: mocks.archiveCompanySessionGraphInTx,
   reactivateCompanySessionGraphInTx: mocks.reactivateCompanySessionGraphInTx,
   beginCompanyHardDeleteInTx: mocks.beginCompanyHardDeleteInTx,
@@ -42,8 +42,8 @@ function companyRow(overrides: Record<string, unknown> = {}) {
     status: "active",
     pauseReason: null,
     pausedAt: null,
-    issuePrefix: "PAP",
-    issueCounter: 12,
+    taskPrefix: "PAP",
+    taskCounter: 12,
     budgetCurrency: "USD",
     budgetMonthlyAmount: "1000",
     attachmentMaxBytes: 10_000_000,
@@ -177,7 +177,7 @@ describe("companyService", () => {
     }));
   });
 
-  it("aggregates per-company agent and issue counts", async () => {
+  it("aggregates per-company agent and task counts", async () => {
     const mock = createMockDb({
       select: [
         [{ companyId: "company-1", count: 3 }, { companyId: "company-2", count: 1 }],
@@ -186,9 +186,9 @@ describe("companyService", () => {
     });
 
     await expect(companyService(mock.db).stats()).resolves.toEqual({
-      "company-1": { agentCount: 3, issueCount: 8 },
-      "company-2": { agentCount: 1, issueCount: 0 },
-      "company-3": { agentCount: 0, issueCount: 2 },
+      "company-1": { agentCount: 3, taskCount: 8 },
+      "company-2": { agentCount: 1, taskCount: 0 },
+      "company-3": { agentCount: 0, taskCount: 2 },
     });
   });
 });

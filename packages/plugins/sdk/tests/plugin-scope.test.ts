@@ -10,11 +10,11 @@ describe("normalizePluginScopeId", () => {
   });
 
   it("requires canonical object scope identifiers", () => {
-    expect(normalizePluginScopeId("issue", "issue-id")).toBe("issue-id");
-    expect(() => normalizePluginScopeId("issue", undefined)).toThrow(
+    expect(normalizePluginScopeId("task", "task-id")).toBe("task-id");
+    expect(() => normalizePluginScopeId("task", undefined)).toThrow(
       "requires a canonical non-empty scopeId",
     );
-    expect(() => normalizePluginScopeId("issue", " issue-id ")).toThrow(
+    expect(() => normalizePluginScopeId("task", " task-id ")).toThrow(
       "requires a canonical non-empty scopeId",
     );
   });

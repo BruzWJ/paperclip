@@ -26,7 +26,7 @@ const GROUPS: Group[] = [
     label: "Board UI",
     items: [
       { id: "r1", title: "Weekly digest", status: "active", projectId: "p1", assigneeAgentId: "a2", lastRun: { triggeredAt: "2026-06-09T08:00:00Z", status: "succeeded" } },
-      { id: "r2", title: "Triage stale issues", status: "active", projectId: "p1", assigneeAgentId: "a1", lastRun: { triggeredAt: "2026-06-08T08:00:00Z", status: "succeeded" } },
+      { id: "r2", title: "Triage stale tasks", status: "active", projectId: "p1", assigneeAgentId: "a1", lastRun: { triggeredAt: "2026-06-08T08:00:00Z", status: "succeeded" } },
       { id: "r3", title: "Nightly changelog draft", status: "paused", projectId: "p1", assigneeAgentId: "a1", lastRun: null },
     ],
   },

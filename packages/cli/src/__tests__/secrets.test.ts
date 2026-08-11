@@ -92,7 +92,7 @@ describe("secrets CLI helpers", () => {
       company: true,
       agents: false,
       projects: true,
-      issues: false,
+      tasks: false,
       skills: false,
     });
     expect(() => parseSecretsInclude("agents")).toThrow(

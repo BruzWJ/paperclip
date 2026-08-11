@@ -17,7 +17,7 @@ export const goals = pgTable(
     companyId: uuid("company_id").notNull().references(() => companies.id),
     title: text("title").notNull(),
     description: text("description"),
-    level: text("level").$type<GoalLevel>().notNull().default("issue"),
+    level: text("level").$type<GoalLevel>().notNull().default("task"),
     status: text("status").$type<GoalStatus>().notNull().default("planned"),
     parentId: uuid("parent_id").references((): AnyPgColumn => goals.id),
     ownerAgentId: uuid("owner_agent_id").references(() => agents.id),

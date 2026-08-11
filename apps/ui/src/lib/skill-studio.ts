@@ -8,15 +8,15 @@ import type {
   CompanySkillTestRunHarnessContentUnavailableReason,
   CompanySkillTestRunStatus,
   CompanySkillTestRunTemplate,
-  IssueAttachment,
-  IssueDocument,
+  TaskAttachment,
+  TaskDocument,
 } from "@paperclipai/shared";
 import {
-  getIssueOutputs,
+  getTaskOutputs,
   getPromotedOutputAttachmentIds,
   isImageContentType,
   isVideoLikeOutput,
-} from "./issue-output";
+} from "./task-output";
 
 /**
  * Pure logic for the Skill Studio UI (PAP-12962). Kept free of React so the
@@ -84,14 +84,14 @@ export function showRunErrorCard(status: CompanySkillTestRunStatus): boolean {
 
 /**
  * Whether the "Open test task ↗" deep link is live. A retention-expired or
- * hard-deleted harness issue leaves the run row intact (self-contained
+ * hard-deleted harness task leaves the run row intact (self-contained
  * snapshots) but disables the link with a "Test task expired" tooltip.
  */
-export function testIssueLinkState(run: {
-  issueExpired: boolean;
-  harnessIssue?: { id: string } | null;
+export function testTaskLinkState(run: {
+  taskExpired: boolean;
+  harnessTask?: { id: string } | null;
 }): { enabled: boolean; reason: string | null } {
-  if (run.issueExpired || !run.harnessIssue) {
+  if (run.taskExpired || !run.harnessTask) {
     return { enabled: false, reason: "Test task expired" };
   }
   return { enabled: true, reason: null };
@@ -340,11 +340,11 @@ export function runHarnessUnavailableCopy(
   };
 }
 
-export function findRunOutputDocument(detail: RunRichOutputDetail): IssueDocument | null {
+export function findRunOutputDocument(detail: RunRichOutputDetail): TaskDocument | null {
   return detail.harnessContent.documents.find((doc) => doc.key === detail.outputDocumentKey) ?? null;
 }
 
-export function getRunAdditionalDocuments(detail: RunRichOutputDetail): IssueDocument[] {
+export function getRunAdditionalDocuments(detail: RunRichOutputDetail): TaskDocument[] {
   const outputDocument = findRunOutputDocument(detail);
   return detail.harnessContent.documents.filter((doc) => {
     if (doc.key === detail.outputDocumentKey) return false;
@@ -353,7 +353,7 @@ export function getRunAdditionalDocuments(detail: RunRichOutputDetail): IssueDoc
   });
 }
 
-export function getRunRawAttachments(detail: RunRichOutputDetail): IssueAttachment[] {
+export function getRunRawAttachments(detail: RunRichOutputDetail): TaskAttachment[] {
   const promotedOutputAttachmentIds = getPromotedOutputAttachmentIds(detail.harnessContent.workProducts);
   return detail.harnessContent.attachments.filter((attachment) => !promotedOutputAttachmentIds.has(attachment.id));
 }
@@ -382,7 +382,7 @@ export function getRunMediaGalleryItems(detail: RunRichOutputDetail): RunMediaGa
     mark(attachment.id, attachment.contentPath);
   }
 
-  for (const output of getIssueOutputs(detail.harnessContent.workProducts).items) {
+  for (const output of getTaskOutputs(detail.harnessContent.workProducts).items) {
     const meta = output.metadata;
     if (!meta) continue;
     const isMedia = isImageContentType(meta.contentType) ||

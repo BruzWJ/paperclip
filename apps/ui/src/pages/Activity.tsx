@@ -33,14 +33,14 @@ function detailString(event: ActivityEvent, ...keys: string[]) {
 }
 
 function activityEntityName(event: ActivityEvent) {
-  if (event.entityType === "issue") return detailString(event, "identifier", "issueIdentifier");
+  if (event.entityType === "task") return detailString(event, "identifier", "taskIdentifier");
   if (event.entityType === "project") return detailString(event, "projectName", "name", "title");
   if (event.entityType === "goal") return detailString(event, "goalTitle", "title", "name");
   return detailString(event, "name", "title");
 }
 
 function activityEntityTitle(event: ActivityEvent) {
-  if (event.entityType === "issue") return detailString(event, "issueTitle", "title");
+  if (event.entityType === "task") return detailString(event, "taskTitle", "title");
   return null;
 }
 

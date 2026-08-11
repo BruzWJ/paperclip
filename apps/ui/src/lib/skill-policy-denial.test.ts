@@ -20,7 +20,7 @@ describe("classifySkillDenial", () => {
   });
 
   it("returns null for transient errors so the caller keeps the retry toast (State D)", () => {
-    expect(classifySkillDenial(apiError(409, { code: "issue_run_conflict" }))).toBeNull();
+    expect(classifySkillDenial(apiError(409, { code: "task_run_conflict" }))).toBeNull();
     expect(classifySkillDenial(apiError(500, { error: "Internal error" }))).toBeNull();
     expect(classifySkillDenial(apiError(422, { error: "This skill does not support updates." }))).toBeNull();
   });

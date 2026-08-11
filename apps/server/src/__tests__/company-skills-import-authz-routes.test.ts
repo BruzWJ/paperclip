@@ -34,8 +34,8 @@ describe("company skill import authorization routes", () => {
     });
     app.use("/api", denyGenericAgentRest("REST"));
     app.use("/api", companySkillRoutes(harness.db, {
-      ordinaryIssues: {} as never,
-      issueExecutionCancellation: {
+      ordinaryTasks: {} as never,
+      taskExecutionCancellation: {
         cancelRun: async () => null,
       },
     }));

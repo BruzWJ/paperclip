@@ -16,7 +16,7 @@ const routine = {
   companyId,
   projectId,
   goalId: null,
-  parentIssueId: null,
+  parentTaskId: null,
   title: "Daily routine",
   description: null,
   assigneeAgentId: agentId,
@@ -51,7 +51,7 @@ const revision = {
       companyId,
       projectId,
       goalId: null,
-      parentIssueId: null,
+      parentTaskId: null,
       title: "Daily routine",
       description: null,
       assigneeAgentId: agentId,
@@ -180,7 +180,7 @@ async function createApp(actor: Record<string, unknown>) {
   });
   app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", routineRoutes({} as any, {
-    ordinaryIssues: {} as never,
+    ordinaryTasks: {} as never,
   }));
   app.use(errorHandler);
   return app;
@@ -217,7 +217,7 @@ describe("routine routes", () => {
     mockRoutineService.runRoutine.mockResolvedValue({
       id: "run-1",
       source: "manual",
-      status: "issue_created",
+      status: "task_created",
     });
     mockAccessService.decide.mockResolvedValue({
       allowed: false,
@@ -246,7 +246,7 @@ describe("routine routes", () => {
     const annotationThread = {
       id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       companyId,
-      issueId: null,
+      taskId: null,
       routineId,
       documentId: "99999999-9999-4999-8999-999999999999",
       documentKey: "description",
@@ -279,7 +279,7 @@ describe("routine routes", () => {
         id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         companyId,
         threadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        issueId: null,
+        taskId: null,
         routineId,
         documentId: "99999999-9999-4999-8999-999999999999",
         body: "Please review",
@@ -287,7 +287,7 @@ describe("routine routes", () => {
         authorAgentId: null,
         authorUserId: "board-user",
         createdByRunId: null,
-        issueCommentId: null,
+        taskCommentId: null,
         createdAt: new Date("2026-03-20T00:00:00.000Z"),
         updatedAt: new Date("2026-03-20T00:00:00.000Z"),
       }],
@@ -297,7 +297,7 @@ describe("routine routes", () => {
       id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       companyId,
       threadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      issueId: null,
+      taskId: null,
       routineId,
       documentId: "99999999-9999-4999-8999-999999999999",
       body: "Reply",
@@ -305,7 +305,7 @@ describe("routine routes", () => {
       authorAgentId: null,
       authorUserId: "board-user",
       createdByRunId: null,
-      issueCommentId: null,
+      taskCommentId: null,
       createdAt: new Date("2026-03-20T00:00:00.000Z"),
       updatedAt: new Date("2026-03-20T00:00:00.000Z"),
     });
@@ -376,7 +376,7 @@ describe("routine routes", () => {
     expect(created.body).toMatchObject({
       id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       routineId,
-      issueId: null,
+      taskId: null,
       documentKey: "description",
     });
     expect(mockAnnotationService.createRoutineThread).toHaveBeenCalledWith(
@@ -666,7 +666,7 @@ describe("routine routes", () => {
     });
   });
 
-  it("allows routine creation with board issue-mutation authority", async () => {
+  it("allows routine creation with board task-mutation authority", async () => {
     mockAccessService.decide.mockResolvedValue({
       allowed: true,
       explanation: "Active board membership",

@@ -188,7 +188,7 @@ describe("resource membership routes", () => {
     expect(routeMocks.logActivity).not.toHaveBeenCalled();
   });
 
-  it("rejects agent API-key actors without issuing a query", async () => {
+  it("rejects agent API-key actors without sending a query", async () => {
     const harness = createMockDb();
     const actor = { type: "agent", agentId, companyId, source: "internal" } as const;
 

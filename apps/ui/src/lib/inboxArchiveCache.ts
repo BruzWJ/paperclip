@@ -1,16 +1,16 @@
 import { useSyncExternalStore } from "react";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
-import type { Issue } from "@paperclipai/shared";
+import type { Task } from "@paperclipai/shared";
 import { queryKeys } from "./queryKeys";
 
-export type InboxIssueCacheSnapshot = Array<readonly [QueryKey, Issue[] | undefined]>;
+export type InboxTaskCacheSnapshot = Array<readonly [QueryKey, Task[] | undefined]>;
 
 const INBOX_ARCHIVE_CONFIRMATION_GRACE_MS = 5_000;
 const INBOX_ARCHIVE_MAX_GUARD_MS = 30_000;
-const EMPTY_ARCHIVED_ISSUE_IDS: ReadonlySet<string> = new Set();
+const EMPTY_ARCHIVED_TASK_IDS: ReadonlySet<string> = new Set();
 
 type InboxArchiveGuardState = {
-  issueIds: ReadonlySet<string>;
+  taskIds: ReadonlySet<string>;
   listeners: Set<() => void>;
   confirmationTimers: Map<string, ReturnType<typeof setTimeout>>;
   maximumTimers: Map<string, ReturnType<typeof setTimeout>>;
@@ -20,7 +20,7 @@ const inboxArchiveGuards = new Map<string, InboxArchiveGuardState>();
 
 function pruneInboxArchiveGuard(companyId: string, state: InboxArchiveGuardState) {
   if (
-    state.issueIds.size === 0
+    state.taskIds.size === 0
     && state.listeners.size === 0
     && state.confirmationTimers.size === 0
     && state.maximumTimers.size === 0
@@ -35,7 +35,7 @@ function getInboxArchiveGuard(companyId: string): InboxArchiveGuardState {
   if (existing) return existing;
 
   const created: InboxArchiveGuardState = {
-    issueIds: EMPTY_ARCHIVED_ISSUE_IDS,
+    taskIds: EMPTY_ARCHIVED_TASK_IDS,
     listeners: new Set(),
     confirmationTimers: new Map(),
     maximumTimers: new Map(),
@@ -44,72 +44,72 @@ function getInboxArchiveGuard(companyId: string): InboxArchiveGuardState {
   return created;
 }
 
-function publishInboxArchiveGuard(state: InboxArchiveGuardState, issueIds: Set<string>) {
-  state.issueIds = issueIds.size > 0 ? issueIds : EMPTY_ARCHIVED_ISSUE_IDS;
+function publishInboxArchiveGuard(state: InboxArchiveGuardState, taskIds: Set<string>) {
+  state.taskIds = taskIds.size > 0 ? taskIds : EMPTY_ARCHIVED_TASK_IDS;
   for (const listener of state.listeners) listener();
 }
 
 function clearArchiveGuardTimer(
   timers: Map<string, ReturnType<typeof setTimeout>>,
-  issueId: string,
+  taskId: string,
 ) {
-  const timer = timers.get(issueId);
+  const timer = timers.get(taskId);
   if (timer) clearTimeout(timer);
-  timers.delete(issueId);
+  timers.delete(taskId);
 }
 
-export function beginLocalInboxArchive(companyId: string, issueId: string) {
+export function beginLocalInboxArchive(companyId: string, taskId: string) {
   const state = getInboxArchiveGuard(companyId);
-  clearArchiveGuardTimer(state.confirmationTimers, issueId);
-  clearArchiveGuardTimer(state.maximumTimers, issueId);
+  clearArchiveGuardTimer(state.confirmationTimers, taskId);
+  clearArchiveGuardTimer(state.maximumTimers, taskId);
 
-  const issueIds = new Set(state.issueIds);
-  issueIds.add(issueId);
-  publishInboxArchiveGuard(state, issueIds);
+  const taskIds = new Set(state.taskIds);
+  taskIds.add(taskId);
+  publishInboxArchiveGuard(state, taskIds);
 }
 
-export function boundLocalInboxArchive(companyId: string, issueId: string) {
+export function boundLocalInboxArchive(companyId: string, taskId: string) {
   const state = inboxArchiveGuards.get(companyId);
-  if (!state?.issueIds.has(issueId)) return;
+  if (!state?.taskIds.has(taskId)) return;
 
-  clearArchiveGuardTimer(state.maximumTimers, issueId);
-  state.maximumTimers.set(issueId, setTimeout(() => {
-    clearLocalInboxArchive(companyId, issueId);
+  clearArchiveGuardTimer(state.maximumTimers, taskId);
+  state.maximumTimers.set(taskId, setTimeout(() => {
+    clearLocalInboxArchive(companyId, taskId);
   }, INBOX_ARCHIVE_MAX_GUARD_MS));
 }
 
-export function confirmLocalInboxArchive(companyId: string, issueId: string) {
+export function confirmLocalInboxArchive(companyId: string, taskId: string) {
   const state = inboxArchiveGuards.get(companyId);
-  if (!state?.issueIds.has(issueId)) return;
+  if (!state?.taskIds.has(taskId)) return;
 
-  clearArchiveGuardTimer(state.confirmationTimers, issueId);
-  state.confirmationTimers.set(issueId, setTimeout(() => {
-    clearLocalInboxArchive(companyId, issueId);
+  clearArchiveGuardTimer(state.confirmationTimers, taskId);
+  state.confirmationTimers.set(taskId, setTimeout(() => {
+    clearLocalInboxArchive(companyId, taskId);
   }, INBOX_ARCHIVE_CONFIRMATION_GRACE_MS));
 }
 
-export function clearLocalInboxArchive(companyId: string, issueId: string) {
+export function clearLocalInboxArchive(companyId: string, taskId: string) {
   const state = inboxArchiveGuards.get(companyId);
   if (!state) return;
-  clearArchiveGuardTimer(state.confirmationTimers, issueId);
-  clearArchiveGuardTimer(state.maximumTimers, issueId);
-  if (!state.issueIds.has(issueId)) {
+  clearArchiveGuardTimer(state.confirmationTimers, taskId);
+  clearArchiveGuardTimer(state.maximumTimers, taskId);
+  if (!state.taskIds.has(taskId)) {
     pruneInboxArchiveGuard(companyId, state);
     return;
   }
 
-  const issueIds = new Set(state.issueIds);
-  issueIds.delete(issueId);
-  publishInboxArchiveGuard(state, issueIds);
+  const taskIds = new Set(state.taskIds);
+  taskIds.delete(taskId);
+  publishInboxArchiveGuard(state, taskIds);
   pruneInboxArchiveGuard(companyId, state);
 }
 
-export function getLocalInboxArchiveIssueIds(companyId: string | null | undefined): ReadonlySet<string> {
-  if (!companyId) return EMPTY_ARCHIVED_ISSUE_IDS;
-  return inboxArchiveGuards.get(companyId)?.issueIds ?? EMPTY_ARCHIVED_ISSUE_IDS;
+export function getLocalInboxArchiveTaskIds(companyId: string | null | undefined): ReadonlySet<string> {
+  if (!companyId) return EMPTY_ARCHIVED_TASK_IDS;
+  return inboxArchiveGuards.get(companyId)?.taskIds ?? EMPTY_ARCHIVED_TASK_IDS;
 }
 
-export function useLocalInboxArchiveIssueIds(companyId: string | null | undefined): ReadonlySet<string> {
+export function useLocalInboxArchiveTaskIds(companyId: string | null | undefined): ReadonlySet<string> {
   return useSyncExternalStore(
     (listener) => {
       if (!companyId) return () => undefined;
@@ -120,24 +120,24 @@ export function useLocalInboxArchiveIssueIds(companyId: string | null | undefine
         pruneInboxArchiveGuard(companyId, state);
       };
     },
-    () => getLocalInboxArchiveIssueIds(companyId),
-    () => EMPTY_ARCHIVED_ISSUE_IDS,
+    () => getLocalInboxArchiveTaskIds(companyId),
+    () => EMPTY_ARCHIVED_TASK_IDS,
   );
 }
 
-export function filterLocalInboxArchivedIssues(
+export function filterLocalInboxArchivedTasks(
   companyId: string | null | undefined,
-  issues: Issue[],
-): Issue[] {
-  const issueIds = getLocalInboxArchiveIssueIds(companyId);
-  if (issueIds.size === 0) return issues;
-  return issues.filter((issue) => !issueIds.has(issue.id));
+  tasks: Task[],
+): Task[] {
+  const taskIds = getLocalInboxArchiveTaskIds(companyId);
+  if (taskIds.size === 0) return tasks;
+  return tasks.filter((task) => !taskIds.has(task.id));
 }
 
-function inboxIssueCompanyIdFromQueryKey(queryKey: QueryKey): string | null {
+function inboxTaskCompanyIdFromQueryKey(queryKey: QueryKey): string | null {
   const inboxQueryKind = String(queryKey[2]);
   if (
-    queryKey[0] !== "issues"
+    queryKey[0] !== "tasks"
     || typeof queryKey[1] !== "string"
     || !["compact", "mine-by-me", "touched-by-me", "unread-touched-by-me"].includes(inboxQueryKind)
   ) {
@@ -147,100 +147,100 @@ function inboxIssueCompanyIdFromQueryKey(queryKey: QueryKey): string | null {
 }
 
 export function filterLocalInboxArchivedQueryData<TData>(queryKey: QueryKey, data: TData): TData {
-  const companyId = inboxIssueCompanyIdFromQueryKey(queryKey);
+  const companyId = inboxTaskCompanyIdFromQueryKey(queryKey);
   if (!companyId || !Array.isArray(data)) return data;
-  return filterLocalInboxArchivedIssues(companyId, data as Issue[]) as TData;
+  return filterLocalInboxArchivedTasks(companyId, data as Task[]) as TData;
 }
 
-function inboxIssueQueryPrefixes(companyId: string) {
+function inboxTaskQueryPrefixes(companyId: string) {
   return [
-    queryKeys.issues.listMineByMe(companyId),
-    queryKeys.issues.listTouchedByMe(companyId),
-    queryKeys.issues.listUnreadTouchedByMe(companyId),
+    queryKeys.tasks.listMineByMe(companyId),
+    queryKeys.tasks.listTouchedByMe(companyId),
+    queryKeys.tasks.listUnreadTouchedByMe(companyId),
   ] as const;
 }
 
-function resolveRestoreIndex(currentData: Issue[], previousData: Issue[], previousIndex: number) {
+function resolveRestoreIndex(currentData: Task[], previousData: Task[], previousIndex: number) {
   for (let index = previousIndex - 1; index >= 0; index -= 1) {
-    const beforeIndex = currentData.findIndex((issue) => issue.id === previousData[index]?.id);
+    const beforeIndex = currentData.findIndex((task) => task.id === previousData[index]?.id);
     if (beforeIndex >= 0) return beforeIndex + 1;
   }
 
   for (let index = previousIndex + 1; index < previousData.length; index += 1) {
-    const afterIndex = currentData.findIndex((issue) => issue.id === previousData[index]?.id);
+    const afterIndex = currentData.findIndex((task) => task.id === previousData[index]?.id);
     if (afterIndex >= 0) return afterIndex;
   }
 
   return Math.min(previousIndex, currentData.length);
 }
 
-export async function cancelInboxIssueQueries(queryClient: QueryClient, companyId: string) {
+export async function cancelInboxTaskQueries(queryClient: QueryClient, companyId: string) {
   await Promise.all(
-    inboxIssueQueryPrefixes(companyId).map((queryKey) =>
+    inboxTaskQueryPrefixes(companyId).map((queryKey) =>
       queryClient.cancelQueries({ queryKey }),
     ),
   );
 }
 
-export function snapshotInboxIssueCaches(
+export function snapshotInboxTaskCaches(
   queryClient: QueryClient,
   companyId: string,
-): InboxIssueCacheSnapshot {
-  return inboxIssueQueryPrefixes(companyId).flatMap((queryKey) =>
-    queryClient.getQueriesData<Issue[]>({ queryKey }),
+): InboxTaskCacheSnapshot {
+  return inboxTaskQueryPrefixes(companyId).flatMap((queryKey) =>
+    queryClient.getQueriesData<Task[]>({ queryKey }),
   );
 }
 
-export function removeIssueFromInboxCaches(
+export function removeTaskFromInboxCaches(
   queryClient: QueryClient,
   companyId: string,
-  issueId: string,
+  taskId: string,
 ) {
-  for (const queryKey of inboxIssueQueryPrefixes(companyId)) {
-    queryClient.setQueriesData<Issue[]>(
+  for (const queryKey of inboxTaskQueryPrefixes(companyId)) {
+    queryClient.setQueriesData<Task[]>(
       { queryKey },
-      (cached) => cached?.filter((issue) => issue.id !== issueId),
+      (cached) => cached?.filter((task) => task.id !== taskId),
     );
   }
 }
 
-export function restoreIssueToInboxCaches(
+export function restoreTaskToInboxCaches(
   queryClient: QueryClient,
-  snapshot: InboxIssueCacheSnapshot,
-  issueId: string,
+  snapshot: InboxTaskCacheSnapshot,
+  taskId: string,
 ) {
   for (const [queryKey, previousData] of snapshot) {
     if (!previousData) continue;
 
-    const previousIndex = previousData.findIndex((issue) => issue.id === issueId);
+    const previousIndex = previousData.findIndex((task) => task.id === taskId);
     if (previousIndex < 0) continue;
 
-    const issueToRestore = previousData[previousIndex];
-    queryClient.setQueryData<Issue[]>(queryKey, (currentData) => {
-      if (currentData?.some((issue) => issue.id === issueId)) return currentData;
+    const taskToRestore = previousData[previousIndex];
+    queryClient.setQueryData<Task[]>(queryKey, (currentData) => {
+      if (currentData?.some((task) => task.id === taskId)) return currentData;
 
       const nextData = [...(currentData ?? [])];
-      nextData.splice(resolveRestoreIndex(nextData, previousData, previousIndex), 0, issueToRestore);
+      nextData.splice(resolveRestoreIndex(nextData, previousData, previousIndex), 0, taskToRestore);
       return nextData;
     });
   }
 }
 
-export function invalidateInboxIssueQueries(queryClient: QueryClient, companyId: string) {
+export function invalidateInboxTaskQueries(queryClient: QueryClient, companyId: string) {
   return Promise.all([
-    ...inboxIssueQueryPrefixes(companyId).map((queryKey) =>
+    ...inboxTaskQueryPrefixes(companyId).map((queryKey) =>
       queryClient.invalidateQueries({ queryKey }),
     ),
     queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(companyId) }),
   ]);
 }
 
-export function getIssuePresenceInActiveInboxCaches(
+export function getTaskPresenceInActiveInboxCaches(
   queryClient: QueryClient,
   companyId: string,
-  issueId: string,
+  taskId: string,
 ): "absent" | "present" | "unknown" {
-  const activeQueries = inboxIssueQueryPrefixes(companyId).flatMap((queryKey) =>
+  const activeQueries = inboxTaskQueryPrefixes(companyId).flatMap((queryKey) =>
     queryClient.getQueryCache().findAll({ queryKey })
       .filter((query) => query.getObserversCount() > 0),
   );
@@ -248,7 +248,7 @@ export function getIssuePresenceInActiveInboxCaches(
 
   const isPresent = activeQueries.some((query) => {
     const data = query.state.data;
-    return Array.isArray(data) && data.some((issue) => (issue as Issue).id === issueId);
+    return Array.isArray(data) && data.some((task) => (task as Task).id === taskId);
   });
   return isPresent ? "present" : "absent";
 }

@@ -6,16 +6,16 @@
  */
 
 // ---------------------------------------------------------------------------
-// Issue status colors
+// Task status colors
 // ---------------------------------------------------------------------------
 
 // PAP-75 brand mapping ("blue = liveness"): todo → amber (queued), in_progress
-// → blue (live). See `issueStatusColor` below for the canonical chip palette.
+// → blue (live). See `taskStatusColor` below for the canonical chip palette.
 //
 // The brand mapping is the default status palette and does not vary by view.
 
 /** StatusIcon circle: text + border classes */
-export const issueStatusIcon: Record<string, string> = {
+export const taskStatusIcon: Record<string, string> = {
   backlog: "text-muted-foreground border-muted-foreground",
   todo: "text-amber-600 border-amber-600 dark:text-amber-400 dark:border-amber-400",
   in_progress: "text-blue-600 border-blue-600 dark:text-blue-400 dark:border-blue-400",
@@ -25,10 +25,10 @@ export const issueStatusIcon: Record<string, string> = {
   blocked: "text-red-600 border-red-600 dark:text-red-400 dark:border-red-400",
 };
 
-export const issueStatusIconDefault = "text-muted-foreground border-muted-foreground";
+export const taskStatusIconDefault = "text-muted-foreground border-muted-foreground";
 
-/** Text-only color for issue statuses (dropdowns, labels) */
-export const issueStatusText: Record<string, string> = {
+/** Text-only color for task statuses (dropdowns, labels) */
+export const taskStatusText: Record<string, string> = {
   backlog: "text-muted-foreground",
   todo: "text-amber-600 dark:text-amber-400",
   in_progress: "text-blue-600 dark:text-blue-400",
@@ -38,14 +38,14 @@ export const issueStatusText: Record<string, string> = {
   blocked: "text-red-600 dark:text-red-400",
 };
 
-export const issueStatusTextDefault = "text-muted-foreground";
+export const taskStatusTextDefault = "text-muted-foreground";
 
 // ---------------------------------------------------------------------------
 // Brand `.task-chip` status palette (PAP-75 / status-reference.html)
 //
 // Colour-named, 1px border, light + dark — values straight from paperclip.ing
 // `brand.css`. Shared by the agents section (PAP-80) and the All Projects page
-// (PAP-91); PAP-99 brings it to issue/task status chips, adding `violet` for
+// (PAP-91); PAP-99 brings it to task status chips, adding `violet` for
 // `in_review`.
 // ---------------------------------------------------------------------------
 
@@ -106,7 +106,7 @@ export const statusBadge: Record<string, string> = {
   // `backlog`/`planned`.
   draft: "bg-muted text-muted-foreground",
 
-  // Issue statuses — consistent hues with issueStatusIcon above (PAP-75 brand
+  // Task statuses — consistent hues with taskStatusIcon above (PAP-75 brand
   // mapping: todo → amber, in_progress → blue "liveness").
   backlog: "bg-muted text-muted-foreground",
   todo: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
@@ -177,7 +177,7 @@ export const runningLabelText = "text-[#1D4ED8] dark:text-[#2563EB]";
 export const liveBlueBadge = "bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400";
 
 /**
- * Issue/task status → brand colour name (PAP-75). `in_progress` is blue
+ * Task status → brand colour name (PAP-75). `in_progress` is blue
  * (liveness), `todo` amber (queued), `in_review` violet (awaiting review),
  * `done` green, `blocked` red, `backlog`/`cancelled` gray (inert).
  */
@@ -205,7 +205,7 @@ export const brandBanner: Record<BannerTone, string> = {
   danger: "border-destructive/40 bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
 };
 
-export const issueStatusColor: Record<string, BrandChipColor> = {
+export const taskStatusColor: Record<string, BrandChipColor> = {
   backlog: "gray",
   todo: "amber",
   in_progress: "blue",
@@ -235,7 +235,7 @@ export const agentStatusVar: Record<string, string> = {
 };
 export const agentStatusVarDefault = "--status-agent-idle";
 
-/** Task/issue status → base-hue CSS var (drives both the chip and the icon). */
+/** Task status → base-hue CSS var (drives both the chip and the icon). */
 export const taskStatusVar: Record<string, string> = {
   backlog: "--status-task-backlog",
   todo: "--status-task-todo",
@@ -248,7 +248,7 @@ export const taskStatusVar: Record<string, string> = {
 export const taskStatusVarDefault = "--status-task-backlog";
 
 /**
- * Task/issue status → AA-tuned ICON-hue CSS var (PAP-238). Drives the standalone
+ * Task status → AA-tuned ICON-hue CSS var (PAP-238). Drives the standalone
  * {@link StatusGlyph} colour. Separate from {@link taskStatusVar} (the chip base
  * hue) because a bare glyph next to text needs a stronger hue to clear WCAG 3:1;
  * see the `--status-task-icon-*` block in `index.css`. `in_queue` is the blocked

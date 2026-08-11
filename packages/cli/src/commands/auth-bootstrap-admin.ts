@@ -76,7 +76,7 @@ export type BootstrapAdminCapabilityResult =
   | { status: "created"; expiresAt: Date }
   | { status: "closed" };
 
-export async function issueBootstrapAdminCapability(
+export async function createBootstrapAdminCapability(
   db: Db,
   input: {
     tokenHash: string;
@@ -87,7 +87,7 @@ export async function issueBootstrapAdminCapability(
   return db.transaction(async (tx) => {
     // This lock matches first-admin redemption's lock order. It makes the
     // eligibility check atomic with capability replacement and prevents a
-    // concurrent claim from racing issuance.
+    // concurrent claim from racing creation.
     await tx.execute(sql`lock table ${instanceUserRoles} in share row exclusive mode`);
     await tx.execute(sql`lock table ${invites} in share row exclusive mode`);
 
@@ -153,7 +153,7 @@ export async function bootstrapAdminInvite(opts: {
     };
   }) | undefined;
   try {
-    // Resolve every origin input before opening the database or its issuance
+    // Resolve every origin input before opening the database or its creation
     // transaction. A bad public URL must never revoke or create a capability.
     const baseUrl = resolveBootstrapAdminInviteBaseUrl({
       config,
@@ -173,21 +173,21 @@ export async function bootstrapAdminInvite(opts: {
 
     const now = new Date();
     const token = createInviteToken();
-    const issued = await issueBootstrapAdminCapability(db, {
+    const capability = await createBootstrapAdminCapability(db, {
       tokenHash: hashToken(token),
       now,
       expiresAt: new Date(now.getTime() + expiresHours * 60 * 60 * 1000),
     });
 
-    if (issued.status === "closed") {
-      p.log.info("Instance already has an admin user. Bootstrap capability issuance is closed.");
+    if (capability.status === "closed") {
+      p.log.info("Instance already has an admin user. Bootstrap capability creation is closed.");
       return;
     }
 
     const inviteUrl = `${baseUrl}/invite/${token}`;
     p.log.success("Created bootstrap admin invite.");
     p.log.message(`Invite URL: ${pc.cyan(inviteUrl)}`);
-    p.log.message(`Expires: ${pc.dim(issued.expiresAt.toISOString())}`);
+    p.log.message(`Expires: ${pc.dim(capability.expiresAt.toISOString())}`);
   } catch (err) {
     throw new Error(
       `Could not create bootstrap invite: ${err instanceof Error ? err.message : String(err)}`,

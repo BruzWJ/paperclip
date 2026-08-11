@@ -46,8 +46,8 @@ interface CompanyExportOptions extends BaseClientOptions {
   include?: string;
   skills?: string;
   projects?: string;
-  issues?: string;
-  projectIssues?: string;
+  tasks?: string;
+  projectTasks?: string;
   expandReferencedSkills?: boolean;
 }
 
@@ -70,7 +70,7 @@ const DEFAULT_EXPORT_INCLUDE: CompanyPortabilityInclude = {
   company: true,
   agents: true,
   projects: false,
-  issues: false,
+  tasks: false,
   skills: false,
 };
 
@@ -78,7 +78,7 @@ const DEFAULT_IMPORT_INCLUDE: CompanyPortabilityInclude = {
   company: true,
   agents: true,
   projects: true,
-  issues: true,
+  tasks: true,
   skills: true,
 };
 
@@ -89,7 +89,7 @@ const IMPORT_INCLUDE_OPTIONS: Array<{
 }> = [
   { value: "company", label: "Company", hint: "name, branding, and company settings" },
   { value: "projects", label: "Projects", hint: "project metadata" },
-  { value: "issues", label: "Issues", hint: "issues and recurring routines" },
+  { value: "tasks", label: "Tasks", hint: "tasks and recurring routines" },
   { value: "agents", label: "Agents", hint: "agent records and org structure" },
   { value: "skills", label: "Skills", hint: "company skill packages and references" },
 ];
@@ -100,7 +100,7 @@ function collectOptionValue(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
 
-type ImportSelectableGroup = "projects" | "issues" | "agents" | "skills";
+type ImportSelectableGroup = "projects" | "tasks" | "agents" | "skills";
 
 type ImportSelectionCatalog = {
   company: {
@@ -108,7 +108,7 @@ type ImportSelectionCatalog = {
     files: string[];
   };
   projects: Array<{ key: string; label: string; hint?: string; files: string[] }>;
-  issues: Array<{ key: string; label: string; hint?: string; files: string[] }>;
+  tasks: Array<{ key: string; label: string; hint?: string; files: string[] }>;
   agents: Array<{ key: string; label: string; hint?: string; files: string[] }>;
   skills: Array<{ key: string; label: string; hint?: string; files: string[] }>;
   extensionPath: string | null;
@@ -117,7 +117,7 @@ type ImportSelectionCatalog = {
 type ImportSelectionState = {
   company: boolean;
   projects: Set<string>;
-  issues: Set<string>;
+  tasks: Set<string>;
   agents: Set<string>;
   skills: Set<string>;
 };
@@ -155,11 +155,11 @@ function parseInclude(
     company: values.includes("company"),
     agents: values.includes("agents"),
     projects: values.includes("projects"),
-    issues: values.includes("issues"),
+    tasks: values.includes("tasks"),
     skills: values.includes("skills"),
   };
-  if (!include.company && !include.agents && !include.projects && !include.issues && !include.skills) {
-    throw new Error("Invalid --include value. Use one or more of: company,agents,projects,issues,skills");
+  if (!include.company && !include.agents && !include.projects && !include.tasks && !include.skills) {
+    throw new Error("Invalid --include value. Use one or more of: company,agents,projects,tasks,skills");
   }
   return include;
 }
@@ -265,15 +265,15 @@ export function buildImportSelectionCatalog(preview: CompanyPortabilityPreviewRe
         label: project.name,
         hint: project.slug,
         files: collectEntityFiles(preview.files, projectPath, {
-          excludePrefixes: projectDir ? [`${projectDir}/issues`] : [],
+          excludePrefixes: projectDir ? [`${projectDir}/tasks`] : [],
         }),
       };
     }),
-    issues: preview.manifest.issues.map((issue) => ({
-      key: issue.slug,
-      label: issue.title ?? issue.identifier ?? `Issue ${issue.slug}`,
-      hint: issue.identifier ?? issue.slug,
-      files: collectEntityFiles(preview.files, normalizePortablePath(issue.path)),
+    tasks: preview.manifest.tasks.map((task) => ({
+      key: task.slug,
+      label: task.title ?? task.identifier ?? `Task ${task.slug}`,
+      hint: task.identifier ?? task.slug,
+      files: collectEntityFiles(preview.files, normalizePortablePath(task.path)),
     })),
     agents: preview.manifest.agents
       .filter((agent) => selectedAgentSlugs.size === 0 || selectedAgentSlugs.has(agent.slug))
@@ -301,7 +301,7 @@ export function buildDefaultImportSelectionState(catalog: ImportSelectionCatalog
   return {
     company: catalog.company.includedByDefault,
     projects: toKeySet(catalog.projects),
-    issues: toKeySet(catalog.issues),
+    tasks: toKeySet(catalog.tasks),
     agents: toKeySet(catalog.agents),
     skills: toKeySet(catalog.skills),
   };
@@ -323,8 +323,8 @@ function getGroupLabel(group: ImportSelectableGroup): string {
   switch (group) {
     case "projects":
       return "Projects";
-    case "issues":
-      return "Issues";
+    case "tasks":
+      return "Tasks";
     case "agents":
       return "Agents";
     case "skills":
@@ -344,7 +344,7 @@ export function buildSelectedFilesFromImportSelection(
     }
   }
 
-  for (const group of ["projects", "issues", "agents", "skills"] as const) {
+  for (const group of ["projects", "tasks", "agents", "skills"] as const) {
     const selectedKeys = state[group];
     for (const item of catalog[group]) {
       if (!selectedKeys.has(item.key)) continue;
@@ -380,9 +380,9 @@ async function promptForImportSelection(preview: CompanyPortabilityPreviewResult
           hint: summarizeGroupSelection(catalog, state, "projects"),
         },
         {
-          value: "issues",
-          label: "Select Issues",
-          hint: summarizeGroupSelection(catalog, state, "issues"),
+          value: "tasks",
+          label: "Select Tasks",
+          hint: summarizeGroupSelection(catalog, state, "tasks"),
         },
         {
           value: "agents",
@@ -584,7 +584,7 @@ export function renderCompanyImportPreview(
     `- company: ${preview.manifest.company?.name ?? preview.manifest.source?.companyName ?? "not included"}`,
     `- agents: ${preview.manifest.agents.length}`,
     `- projects: ${preview.manifest.projects.length}`,
-    `- issues: ${preview.manifest.issues.length}`,
+    `- tasks: ${preview.manifest.tasks.length}`,
     `- skills: ${preview.manifest.skills.length}`,
   ];
 
@@ -598,7 +598,7 @@ export function renderCompanyImportPreview(
   lines.push(`- company: ${actionChip(preview.plan.companyAction === "none" ? "unchanged" : preview.plan.companyAction)}`);
   lines.push(`- agents: ${summarizePlanCounts(preview.plan.agentPlans, "agent")}`);
   lines.push(`- projects: ${summarizePlanCounts(preview.plan.projectPlans, "project")}`);
-  lines.push(`- issues: ${summarizePlanCounts(preview.plan.issuePlans, "issue")}`);
+  lines.push(`- tasks: ${summarizePlanCounts(preview.plan.taskPlans, "task")}`);
   if (preview.include.skills) {
     lines.push(`- skills: ${preview.manifest.skills.length} ${pluralize(preview.manifest.skills.length, "skill")} packaged`);
   }
@@ -623,8 +623,8 @@ export function renderCompanyImportPreview(
   );
   appendPreviewExamples(
     lines,
-    "Issue examples",
-    preview.plan.issuePlans.map((plan) => ({
+    "Task examples",
+    preview.plan.taskPlans.map((plan) => ({
       action: plan.action,
       label: `${plan.slug} -> ${plan.plannedTitle}`,
       reason: plan.reason,
@@ -713,9 +713,9 @@ export function resolveCompanyImportApiPath(input: {
   return input.dryRun ? "/api/companies/imports/preview" : "/api/companies/imports";
 }
 
-export function buildCompanyDashboardUrl(apiBase: string, issuePrefix: string): string {
+export function buildCompanyDashboardUrl(apiBase: string, taskPrefix: string): string {
   const url = new URL(apiBase);
-  const normalizedPrefix = issuePrefix.trim().replace(/^\/+|\/+$/g, "");
+  const normalizedPrefix = taskPrefix.trim().replace(/^\/+|\/+$/g, "");
   url.pathname = `${url.pathname.replace(/\/+$/, "")}/${normalizedPrefix}/dashboard`;
   url.search = "";
   url.hash = "";
@@ -965,7 +965,7 @@ async function confirmOverwriteExportDirectory(outDir: string): Promise<void> {
 }
 
 function matchesPrefix(company: Company, selector: string): boolean {
-  return company.issuePrefix.toUpperCase() === selector.toUpperCase();
+  return company.taskPrefix.toUpperCase() === selector.toUpperCase();
 }
 
 export function resolveCompanyForDeletion(
@@ -1005,7 +1005,7 @@ export function resolveCompanyForDeletion(
   if (prefixMatch) return prefixMatch;
 
   throw new Error(
-    `No company found for selector '${selector}'. Use company ID or issue prefix (for example PAP).`,
+    `No company found for selector '${selector}'. Use company ID or task prefix (for example PAP).`,
   );
 }
 
@@ -1017,15 +1017,15 @@ export function assertDeleteConfirmation(company: Company, opts: CompanyDeleteOp
   const confirm = opts.confirm?.trim();
   if (!confirm) {
     throw new Error(
-      "Deletion requires --confirm <value> where value matches the company ID or issue prefix.",
+      "Deletion requires --confirm <value> where value matches the company ID or task prefix.",
     );
   }
 
   const confirmsById = confirm === company.id;
-  const confirmsByPrefix = confirm.toUpperCase() === company.issuePrefix.toUpperCase();
+  const confirmsByPrefix = confirm.toUpperCase() === company.taskPrefix.toUpperCase();
   if (!confirmsById && !confirmsByPrefix) {
     throw new Error(
-      `Confirmation '${confirm}' does not match target company. Expected ID '${company.id}' or prefix '${company.issuePrefix}'.`,
+      `Confirmation '${confirm}' does not match target company. Expected ID '${company.id}' or prefix '${company.taskPrefix}'.`,
     );
   }
 }
@@ -1036,7 +1036,7 @@ function assertDeleteFlags(opts: CompanyDeleteOptions): void {
   }
   if (!opts.confirm?.trim()) {
     throw new Error(
-      "Deletion requires --confirm <value> where value matches the company ID or issue prefix.",
+      "Deletion requires --confirm <value> where value matches the company ID or task prefix.",
     );
   }
 }
@@ -1200,11 +1200,11 @@ export function registerCompanyCommands(program: Command): void {
       .description("Export a company into a portable markdown package")
       .argument("<companyId>", "Company ID")
       .requiredOption("--out <path>", "Output directory")
-      .option("--include <values>", "Comma-separated include set: company,agents,projects,issues,skills", "company,agents")
+      .option("--include <values>", "Comma-separated include set: company,agents,projects,tasks,skills", "company,agents")
       .option("--skills <values>", "Comma-separated skill slugs/keys to export")
       .option("--projects <values>", "Comma-separated project shortnames/ids to export")
-      .option("--issues <values>", "Comma-separated issue identifiers/ids to export")
-      .option("--project-issues <values>", "Comma-separated project shortnames/ids whose issues should be exported")
+      .option("--tasks <values>", "Comma-separated task identifiers/ids to export")
+      .option("--project-tasks <values>", "Comma-separated project shortnames/ids whose tasks should be exported")
       .option("--expand-referenced-skills", "Vendor skill contents instead of exporting upstream references", false)
       .action(async (companyId: string, opts: CompanyExportOptions) => {
         try {
@@ -1216,8 +1216,8 @@ export function registerCompanyCommands(program: Command): void {
               include,
               skills: parseCsvValues(opts.skills),
               projects: parseCsvValues(opts.projects),
-              issues: parseCsvValues(opts.issues),
-              projectIssues: parseCsvValues(opts.projectIssues),
+              tasks: parseCsvValues(opts.tasks),
+              projectTasks: parseCsvValues(opts.projectTasks),
               expandReferencedSkills: Boolean(opts.expandReferencedSkills),
             },
           );
@@ -1253,7 +1253,7 @@ export function registerCompanyCommands(program: Command): void {
       .command("import")
       .description("Import a portable markdown company package from local path, URL, or GitHub")
       .argument("<fromPathOrUrl>", "Source path or URL")
-      .option("--include <values>", "Comma-separated include set: company,agents,projects,issues,skills")
+      .option("--include <values>", "Comma-separated include set: company,agents,projects,tasks,skills")
       .option("--target <mode>", "Target mode: new | existing")
       .option("-C, --company-id <id>", "Existing target company ID")
       .option("--new-company-name <name>", "Name override for --target new")
@@ -1435,9 +1435,9 @@ export function registerCompanyCommands(program: Command): void {
           if (!ctx.json) {
             try {
               const importedCompany = await ctx.api.get<Company>(apiPath`/api/companies/${imported.company.id}`);
-              const issuePrefix = importedCompany?.issuePrefix?.trim();
-              if (issuePrefix) {
-                companyUrl = buildCompanyDashboardUrl(ctx.api.apiBase, issuePrefix);
+              const taskPrefix = importedCompany?.taskPrefix?.trim();
+              if (taskPrefix) {
+                companyUrl = buildCompanyDashboardUrl(ctx.api.apiBase, taskPrefix);
               }
             } catch {
               companyUrl = undefined;
@@ -1478,7 +1478,7 @@ export function registerCompanyCommands(program: Command): void {
     company
       .command("delete")
       .description("Delete a company by ID or shortname/prefix (destructive)")
-      .argument("<selector>", "Company ID or issue prefix (for example PAP)")
+      .argument("<selector>", "Company ID or task prefix (for example PAP)")
       .option(
         "--by <mode>",
         "Selector mode: auto | id | prefix",
@@ -1549,7 +1549,7 @@ export function registerCompanyCommands(program: Command): void {
               ok: true,
               deletedCompanyId: target.id,
               deletedCompanyName: target.name,
-              deletedCompanyPrefix: target.issuePrefix,
+              deletedCompanyPrefix: target.taskPrefix,
             },
             { json: ctx.json },
           );

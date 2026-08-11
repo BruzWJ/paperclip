@@ -11,7 +11,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   compareMoneyAmounts,
   deriveOriginatingActor,
-  INBOX_MINE_ISSUE_STATUS_FILTER,
+  INBOX_MINE_TASK_STATUS_FILTER,
   parseMoneyAmount,
 } from "@paperclipai/shared";
 import {
@@ -23,10 +23,10 @@ import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { ApiError } from "../api/client";
 import { dashboardApi } from "../api/dashboard";
-import { issuesApi } from "../api/issues";
+import { tasksApi } from "../api/tasks";
 import { agentsApi } from "../api/agents";
 import {
-  ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+  ACTIVE_TASK_EXECUTION_RUN_STATUSES,
   runsApi,
 } from "../api/runs";
 import { projectsApi } from "../api/projects";
@@ -43,27 +43,27 @@ import { useSidebar } from "../context/SidebarContext";
 import { queryKeys } from "../lib/queryKeys";
 import { useDialogActions } from "../context/DialogContext";
 import {
-  applyIssueFilters,
-  countActiveIssueFilters,
-  type IssueFilterState,
-} from "../lib/issue-filters";
+  applyTaskFilters,
+  countActiveTaskFilters,
+  type TaskFilterState,
+} from "../lib/task-filters";
 import {
-  collectLiveIssueIds,
+  collectLiveTaskIds,
   collectSubtreeLiveCounts,
-} from "../lib/liveIssueIds";
-import { formatOwnerUserLabel } from "../lib/issue-owners";
+} from "../lib/liveTaskIds";
+import { formatOwnerUserLabel } from "../lib/task-owners";
 import {
   buildCompanyUserLabelMap,
   buildCompanyUserProfileMap,
 } from "../lib/company-members";
 import {
-  armIssueDetailInboxQuickArchive,
-  createIssueDetailLocationState,
-  createIssueDetailPath,
-  rememberIssueDetailLocationState,
-  withIssueDetailHeaderSeed,
-} from "../lib/issueDetailBreadcrumb";
-import { prefetchIssueDetail } from "../lib/issueDetailCache";
+  armTaskDetailInboxQuickArchive,
+  createTaskDetailLocationState,
+  createTaskDetailPath,
+  rememberTaskDetailLocationState,
+  withTaskDetailHeaderSeed,
+} from "../lib/taskDetailBreadcrumb";
+import { prefetchTaskDetail } from "../lib/taskDetailCache";
 import {
   hasBlockingShortcutDialog,
   isKeyboardShortcutTextInputTarget,
@@ -72,35 +72,35 @@ import {
   shouldBlurPageSearchOnEscape,
 } from "../lib/keyboardShortcuts";
 import {
-  resolveInboxIssueBlockerAttention,
-  resolveIssueLiveDescendantCount,
+  resolveInboxTaskBlockerAttention,
+  resolveTaskLiveDescendantCount,
 } from "../lib/inbox-live-descendants";
 import {
   beginLocalInboxArchive,
   boundLocalInboxArchive,
-  cancelInboxIssueQueries,
+  cancelInboxTaskQueries,
   clearLocalInboxArchive,
   confirmLocalInboxArchive,
-  invalidateInboxIssueQueries,
-  getIssuePresenceInActiveInboxCaches,
-  removeIssueFromInboxCaches,
-  restoreIssueToInboxCaches,
-  snapshotInboxIssueCaches,
-  type InboxIssueCacheSnapshot,
-  useLocalInboxArchiveIssueIds,
+  invalidateInboxTaskQueries,
+  getTaskPresenceInActiveInboxCaches,
+  removeTaskFromInboxCaches,
+  restoreTaskToInboxCaches,
+  snapshotInboxTaskCaches,
+  type InboxTaskCacheSnapshot,
+  useLocalInboxArchiveTaskIds,
 } from "../lib/inboxArchiveCache";
 import { EmptyState } from "../components/EmptyState";
-import { IssueGroupHeader } from "../components/IssueGroupHeader";
+import { TaskGroupHeader } from "../components/TaskGroupHeader";
 import { PageSkeleton } from "../components/PageSkeleton";
 import {
-  InboxIssueMetaLeading,
-  InboxIssueTrailingColumns,
-  IssueColumnPicker,
-  issueActivityText,
-  issueTrailingColumns,
-} from "../components/IssueColumns";
-import { IssueFiltersPopover } from "../components/IssueFiltersPopover";
-import { IssueRow } from "../components/IssueRow";
+  InboxTaskMetaLeading,
+  InboxTaskTrailingColumns,
+  TaskColumnPicker,
+  taskActivityText,
+  taskTrailingColumns,
+} from "../components/TaskColumns";
+import { TaskFiltersPopover } from "../components/TaskFiltersPopover";
+import { TaskRow } from "../components/TaskRow";
 import { BlockedInboxView } from "../components/BlockedInboxView";
 import { SwipeToArchive } from "../components/SwipeToArchive";
 import { JoinRequestApprovalControls } from "../components/JoinRequestApprovalControls";
@@ -155,45 +155,45 @@ import { Input } from "@/components/ui/input";
 import { PageTabBar } from "../components/PageTabBar";
 import type {
   Approval,
-  IssueExecutionRunEnvelopeRecord,
-  Issue,
+  TaskExecutionRunEnvelopeRecord,
+  Task,
   JoinRequest,
 } from "@paperclipai/shared";
 import {
   ACTIONABLE_APPROVAL_STATUSES,
-  DEFAULT_INBOX_ISSUE_COLUMNS,
+  DEFAULT_INBOX_TASK_COLUMNS,
   buildGroupedInboxSections,
-  buildInboxIssueGroupCreateDefaults,
+  buildInboxTaskGroupCreateDefaults,
   buildInboxKeyboardNavEntries,
   getInboxWorkItemKey,
   getApprovalsForTab,
-  getArchivedInboxSearchIssues,
+  getArchivedInboxSearchTasks,
   getInboxKeyboardSelectionIndex,
   getInboxWorkItems,
-  getInboxSearchSupplementIssues,
+  getInboxSearchSupplementTasks,
   getLatestFailedRunsByAgent,
-  matchesInboxIssueSearch,
-  getRecentTouchedIssues,
+  matchesInboxTaskSearch,
+  getRecentTouchedTasks,
   isInboxEntityDismissed,
   isMineInboxTab,
   loadCollapsedInboxGroupKeys,
   loadInboxFilterPreferences,
-  loadInboxIssueColumns,
+  loadInboxTaskColumns,
   loadInboxNesting,
   loadInboxWorkItemGroupBy,
-  normalizeInboxIssueColumns,
+  normalizeInboxTaskColumns,
   resolveInboxNestingEnabled,
   resolveInboxSelectionIndex,
   saveInboxFilterPreferences,
   saveCollapsedInboxGroupKeys,
-  saveInboxIssueColumns,
+  saveInboxTaskColumns,
   saveInboxNesting,
   saveInboxWorkItemGroupBy,
-  inboxIssueColumns,
+  inboxTaskColumns,
   type InboxApprovalFilter,
   type InboxCategoryFilter,
   type InboxFilterPreferences,
-  type InboxIssueColumn,
+  type InboxTaskColumn,
   type InboxKeyboardNavEntry,
   saveLastInboxTab,
   shouldShowCompanyAlerts,
@@ -211,14 +211,14 @@ import {
 
 const ZERO_AMOUNT = parseMoneyAmount("0");
 const INBOX_RUN_LIMIT = 200;
-const INBOX_ISSUE_LIST_LIMIT = 500;
+const INBOX_TASK_LIST_LIMIT = 500;
 const INBOX_HOT_PATH_STALE_MS = 30_000;
 
 export {
-  InboxIssueMetaLeading,
-  InboxIssueTrailingColumns,
-} from "../components/IssueColumns";
-export { IssueGroupHeader as InboxGroupHeader } from "../components/IssueGroupHeader";
+  InboxTaskMetaLeading,
+  InboxTaskTrailingColumns,
+} from "../components/TaskColumns";
+export { TaskGroupHeader as InboxGroupHeader } from "../components/TaskGroupHeader";
 type SectionKey = "work_items" | "alerts";
 
 /** A flat navigation entry for keyboard j/k traversal that includes expanded children. */
@@ -232,7 +232,7 @@ const navEntryKey = (entry: NavEntry | undefined): string | null =>
     : entry.type === "top"
       ? `top:${entry.itemKey}`
       : entry.type === "child"
-        ? `child:${entry.issueId}`
+        ? `child:${entry.taskId}`
         : `group:${entry.groupKey}`;
 type CreatorOption = {
   id: string;
@@ -241,7 +241,7 @@ type CreatorOption = {
   searchText?: string;
 };
 
-function runFailureMessage(run: IssueExecutionRunEnvelopeRecord): string {
+function runFailureMessage(run: TaskExecutionRunEnvelopeRecord): string {
   return run.terminalReasonCode?.replace(/_/g, " ") ?? "Run exited with an error.";
 }
 
@@ -249,8 +249,8 @@ function approvalStatusLabel(status: Approval["status"]): string {
   return status.replaceAll("_", " ");
 }
 
-function readIssueIdFromRun(run: IssueExecutionRunEnvelopeRecord): string {
-  return run.issueId;
+function readTaskIdFromRun(run: TaskExecutionRunEnvelopeRecord): string {
+  return run.taskId;
 }
 
 function nonEmptyLabel(value: string | null | undefined): string | null {
@@ -287,7 +287,7 @@ export function formatJoinRequestInboxLabel(
   return "Human join request";
 }
 
-type NonIssueUnreadState = "visible" | "fading" | "hidden" | null;
+type NonTaskUnreadState = "visible" | "fading" | "hidden" | null;
 
 // Rows outside SwipeToArchive (non-archivable tabs/sections) still need the
 // hover-follows-selection band that SwipeToArchive's surface normally paints.
@@ -303,14 +303,14 @@ function InboxRowSurface({
   );
 }
 
-/** Shared unread-dot / mark-read / dismiss slot for non-issue inbox rows. */
+/** Shared unread-dot / mark-read / dismiss slot for non-task inbox rows. */
 function InboxRowUnreadSlot({
   unreadState,
   onMarkRead,
   onArchive,
   archiveDisabled,
 }: {
-  unreadState: NonIssueUnreadState;
+  unreadState: NonTaskUnreadState;
   onMarkRead?: () => void;
   onArchive?: () => void;
   archiveDisabled?: boolean;
@@ -356,9 +356,9 @@ function InboxRowUnreadSlot({
 
 export function FailedRunInboxRow({
   run,
-  issueById,
+  taskById,
   agentName: linkedAgentName,
-  issueLinkState,
+  taskLinkState,
   onDismiss,
   unreadState = null,
   onMarkRead,
@@ -367,20 +367,20 @@ export function FailedRunInboxRow({
   selected = false,
   className,
 }: {
-  run: IssueExecutionRunEnvelopeRecord;
-  issueById: Map<string, Issue>;
+  run: TaskExecutionRunEnvelopeRecord;
+  taskById: Map<string, Task>;
   agentName: string | null;
-  issueLinkState: unknown;
+  taskLinkState: unknown;
   onDismiss: () => void;
-  unreadState?: NonIssueUnreadState;
+  unreadState?: NonTaskUnreadState;
   onMarkRead?: () => void;
   onArchive?: () => void;
   archiveDisabled?: boolean;
   selected?: boolean;
   className?: string;
 }) {
-  const issueId = readIssueIdFromRun(run);
-  const issue = issueId ? (issueById.get(issueId) ?? null) : null;
+  const taskId = readTaskIdFromRun(run);
+  const task = taskId ? (taskById.get(taskId) ?? null) : null;
   const displayError = runFailureMessage(run);
   const showUnreadSlot = unreadState !== null;
 
@@ -422,12 +422,12 @@ export function FailedRunInboxRow({
           </span>
           <span className="min-w-0 flex-1">
             <span className="line-clamp-2 text-sm font-medium sm:truncate sm:line-clamp-none">
-              {issue ? (
+              {task ? (
                 <>
                   <span className="font-mono text-muted-foreground mr-1.5">
-                    {issue.identifier ?? issue.id.slice(0, 8)}
+                    {task.identifier ?? task.id.slice(0, 8)}
                   </span>
-                  {issue.title}
+                  {task.title}
                 </>
               ) : (
                 <>Failed run{linkedAgentName ? ` — ${linkedAgentName}` : ""}</>
@@ -435,7 +435,7 @@ export function FailedRunInboxRow({
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
               <StatusBadge status={run.status} />
-              {linkedAgentName && issue ? <span>{linkedAgentName}</span> : null}
+              {linkedAgentName && task ? <span>{linkedAgentName}</span> : null}
               <span className="truncate max-w-(--sz-300px)">
                 {displayError}
               </span>
@@ -490,7 +490,7 @@ function ApprovalInboxRow({
   onApprove: () => void;
   onReject: () => void;
   isPending: boolean;
-  unreadState?: NonIssueUnreadState;
+  unreadState?: NonTaskUnreadState;
   onMarkRead?: () => void;
   onArchive?: () => void;
   archiveDisabled?: boolean;
@@ -619,7 +619,7 @@ function JoinRequestInboxRow({
   onApprove: () => void;
   onReject: () => void;
   isPending: boolean;
-  unreadState?: NonIssueUnreadState;
+  unreadState?: NonTaskUnreadState;
   onMarkRead?: () => void;
   onArchive?: () => void;
   archiveDisabled?: boolean;
@@ -689,7 +689,7 @@ function JoinRequestInboxRow({
 export function Inbox() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const { openNewIssue } = useDialogActions();
+  const { openNewTask } = useDialogActions();
   const { isMobile } = useSidebar();
   const navigate = useNavigate();
   const location = useLocation();
@@ -709,9 +709,9 @@ export function Inbox() {
     useState<BlockedInboxGroupBy>("none");
   const [blockedSortBy, setBlockedSortBy] =
     useState<BlockedInboxSort>("most_recent");
-  const [visibleIssueColumns, setVisibleIssueColumns] = useState<
-    InboxIssueColumn[]
-  >(loadInboxIssueColumns);
+  const [visibleTaskColumns, setVisibleTaskColumns] = useState<
+    InboxTaskColumn[]
+  >(loadInboxTaskColumns);
   const { dismissed: dismissedAlerts, dismiss: dismissAlert } =
     useDismissedInboxAlerts();
   const { dismissedAtByKey, dismiss: dismissInboxItem } =
@@ -721,7 +721,7 @@ export function Inbox() {
     markRead: markItemRead,
     markUnread: markItemUnread,
   } = useReadInboxItems();
-  const { allCategoryFilter, allApprovalFilter, issueFilters } =
+  const { allCategoryFilter, allApprovalFilter, taskFilters } =
     filterPreferences;
 
   const pathSegment = location.pathname.split("/").pop() ?? "mine";
@@ -734,9 +734,9 @@ export function Inbox() {
       ? pathSegment
       : "mine";
   const canArchiveFromTab = isMineInboxTab(tab);
-  const issueLinkState = useMemo(
+  const taskLinkState = useMemo(
     () =>
-      createIssueDetailLocationState(
+      createTaskDetailLocationState(
         "Inbox",
         `${location.pathname}${location.search}${location.hash}`,
         "inbox",
@@ -761,8 +761,8 @@ export function Inbox() {
     enabled: !!selectedCompanyId,
   });
   const { data: labels } = useQuery({
-    queryKey: queryKeys.issues.labels(selectedCompanyId!),
-    queryFn: () => issuesApi.listLabels(selectedCompanyId!),
+    queryKey: queryKeys.tasks.labels(selectedCompanyId!),
+    queryFn: () => tasksApi.listLabels(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
   useEffect(() => {
@@ -835,126 +835,126 @@ export function Inbox() {
   });
   usePublishSharedQueryData(sharedDashboard, dashboard, dashboardUpdatedAt);
 
-  const inboxIssuesQueryKey = [
-    ...queryKeys.issues.list(selectedCompanyId!),
+  const inboxTasksQueryKey = [
+    ...queryKeys.tasks.list(selectedCompanyId!),
     "compact",
     "with-routine-executions",
     "live-descendant-summary",
-    INBOX_ISSUE_LIST_LIMIT,
+    INBOX_TASK_LIST_LIMIT,
   ] as const;
-  const sharedInboxIssues = useSharedPollingQuery<Issue[]>({
+  const sharedInboxTasks = useSharedPollingQuery<Task[]>({
     companyId: selectedCompanyId,
-    resourceKey: "inbox:issues",
-    queryKey: inboxIssuesQueryKey,
+    resourceKey: "inbox:tasks",
+    queryKey: inboxTasksQueryKey,
     enabled: !!selectedCompanyId,
   });
   const {
-    data: issues,
-    isLoading: isIssuesLoading,
-    dataUpdatedAt: issuesUpdatedAt,
+    data: tasks,
+    isLoading: isTasksLoading,
+    dataUpdatedAt: tasksUpdatedAt,
   } = useQuery({
-    queryKey: inboxIssuesQueryKey,
+    queryKey: inboxTasksQueryKey,
     queryFn: () =>
-      issuesApi
+      tasksApi
         .listCompact(selectedCompanyId!, {
           includeRoutineExecutions: true,
           includeLiveDescendantSummary: true,
-          limit: INBOX_ISSUE_LIST_LIMIT,
+          limit: INBOX_TASK_LIST_LIMIT,
         })
-        .then((rows) => rows as Issue[]),
+        .then((rows) => rows as Task[]),
     enabled: !!selectedCompanyId,
     refetchOnWindowFocus: false,
     staleTime: INBOX_HOT_PATH_STALE_MS,
   });
-  usePublishSharedQueryData(sharedInboxIssues, issues, issuesUpdatedAt);
+  usePublishSharedQueryData(sharedInboxTasks, tasks, tasksUpdatedAt);
   const {
-    data: mineIssuesRaw = [],
-    isLoading: isMineIssuesLoading,
-    dataUpdatedAt: mineIssuesUpdatedAt,
+    data: mineTasksRaw = [],
+    isLoading: isMineTasksLoading,
+    dataUpdatedAt: mineTasksUpdatedAt,
   } = useQuery({
     queryKey: [
-      ...queryKeys.issues.listMineByMe(selectedCompanyId!),
+      ...queryKeys.tasks.listMineByMe(selectedCompanyId!),
       "compact",
       "with-routine-executions",
       "live-descendant-summary",
-      INBOX_ISSUE_LIST_LIMIT,
+      INBOX_TASK_LIST_LIMIT,
     ] as const,
     queryFn: () =>
-      issuesApi
+      tasksApi
         .listCompact(selectedCompanyId!, {
           touchedByUserId: "me",
           inboxArchivedByUserId: "me",
-          status: INBOX_MINE_ISSUE_STATUS_FILTER,
+          status: INBOX_MINE_TASK_STATUS_FILTER,
           includeRoutineExecutions: true,
           includeLiveDescendantSummary: true,
-          limit: INBOX_ISSUE_LIST_LIMIT,
+          limit: INBOX_TASK_LIST_LIMIT,
         })
-        .then((rows) => rows as Issue[]),
+        .then((rows) => rows as Task[]),
     enabled: !!selectedCompanyId,
     refetchOnWindowFocus: false,
     staleTime: INBOX_HOT_PATH_STALE_MS,
   });
-  const mineIssuesQueryKey = [
-    ...queryKeys.issues.listMineByMe(selectedCompanyId!),
+  const mineTasksQueryKey = [
+    ...queryKeys.tasks.listMineByMe(selectedCompanyId!),
     "compact",
     "with-routine-executions",
     "live-descendant-summary",
-    INBOX_ISSUE_LIST_LIMIT,
+    INBOX_TASK_LIST_LIMIT,
   ] as const;
-  const sharedMineIssues = useSharedPollingQuery<Issue[]>({
+  const sharedMineTasks = useSharedPollingQuery<Task[]>({
     companyId: selectedCompanyId,
-    resourceKey: "inbox:mine-issues",
-    queryKey: mineIssuesQueryKey,
+    resourceKey: "inbox:mine-tasks",
+    queryKey: mineTasksQueryKey,
     enabled: !!selectedCompanyId,
   });
   usePublishSharedQueryData(
-    sharedMineIssues,
-    mineIssuesRaw,
-    mineIssuesUpdatedAt,
+    sharedMineTasks,
+    mineTasksRaw,
+    mineTasksUpdatedAt,
   );
   const {
-    data: touchedIssuesRaw = [],
-    isLoading: isTouchedIssuesLoading,
-    dataUpdatedAt: touchedIssuesUpdatedAt,
+    data: touchedTasksRaw = [],
+    isLoading: isTouchedTasksLoading,
+    dataUpdatedAt: touchedTasksUpdatedAt,
   } = useQuery({
     queryKey: [
-      ...queryKeys.issues.listTouchedByMe(selectedCompanyId!),
+      ...queryKeys.tasks.listTouchedByMe(selectedCompanyId!),
       "compact",
       "with-routine-executions",
       "live-descendant-summary",
-      INBOX_ISSUE_LIST_LIMIT,
+      INBOX_TASK_LIST_LIMIT,
     ] as const,
     queryFn: () =>
-      issuesApi
+      tasksApi
         .listCompact(selectedCompanyId!, {
           touchedByUserId: "me",
-          status: INBOX_MINE_ISSUE_STATUS_FILTER,
+          status: INBOX_MINE_TASK_STATUS_FILTER,
           includeRoutineExecutions: true,
           includeLiveDescendantSummary: true,
-          limit: INBOX_ISSUE_LIST_LIMIT,
+          limit: INBOX_TASK_LIST_LIMIT,
         })
-        .then((rows) => rows as Issue[]),
+        .then((rows) => rows as Task[]),
     enabled: !!selectedCompanyId,
     refetchOnWindowFocus: false,
     staleTime: INBOX_HOT_PATH_STALE_MS,
   });
-  const touchedIssuesQueryKey = [
-    ...queryKeys.issues.listTouchedByMe(selectedCompanyId!),
+  const touchedTasksQueryKey = [
+    ...queryKeys.tasks.listTouchedByMe(selectedCompanyId!),
     "compact",
     "with-routine-executions",
     "live-descendant-summary",
-    INBOX_ISSUE_LIST_LIMIT,
+    INBOX_TASK_LIST_LIMIT,
   ] as const;
-  const sharedTouchedIssues = useSharedPollingQuery<Issue[]>({
+  const sharedTouchedTasks = useSharedPollingQuery<Task[]>({
     companyId: selectedCompanyId,
-    resourceKey: "inbox:touched-issues",
-    queryKey: touchedIssuesQueryKey,
+    resourceKey: "inbox:touched-tasks",
+    queryKey: touchedTasksQueryKey,
     enabled: !!selectedCompanyId,
   });
   usePublishSharedQueryData(
-    sharedTouchedIssues,
-    touchedIssuesRaw,
-    touchedIssuesUpdatedAt,
+    sharedTouchedTasks,
+    touchedTasksRaw,
+    touchedTasksUpdatedAt,
   );
 
   const { data: runPage, isLoading: isRunsLoading } = useQuery({
@@ -967,7 +967,7 @@ export function Inbox() {
     staleTime: INBOX_HOT_PATH_STALE_MS,
   });
   const activeRunsQueryKey = queryKeys.runs(selectedCompanyId!, {
-    status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+    status: ACTIVE_TASK_EXECUTION_RUN_STATUSES,
   });
   const sharedActiveRuns = useSharedPollingQuery({
     companyId: selectedCompanyId,
@@ -981,15 +981,15 @@ export function Inbox() {
   const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
     queryKey: activeRunsQueryKey,
     queryFn: () => runsApi.listForCompany(selectedCompanyId!, {
-      status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+      status: ACTIVE_TASK_EXECUTION_RUN_STATUSES,
       limit: 200,
     }),
     enabled: sharedActiveRuns.enabled,
     refetchInterval: sharedActiveRuns.refetchInterval,
   });
   usePublishSharedQueryData(sharedActiveRuns, activeRunPage, activeRunsUpdatedAt);
-  const liveIssueIds = useMemo(
-    () => collectLiveIssueIds(activeRunPage?.items),
+  const liveTaskIds = useMemo(
+    () => collectLiveTaskIds(activeRunPage?.items),
     [activeRunPage?.items],
   );
   const { data: companyMembers } = useQuery({
@@ -998,28 +998,28 @@ export function Inbox() {
     enabled: !!selectedCompanyId,
   });
   const currentUserId = session?.user.id ?? session?.session.userId ?? null;
-  const [archivingIssueIds, setArchivingIssueIds] = useState<Set<string>>(
+  const [archivingTaskIds, setArchivingTaskIds] = useState<Set<string>>(
     new Set(),
   );
-  const [undoableArchiveIssueIds, setUndoableArchiveIssueIds] = useState<
+  const [undoableArchiveTaskIds, setUndoableArchiveTaskIds] = useState<
     string[]
   >([]);
-  const [unarchivingIssueIds, setUnarchivingIssueIds] = useState<Set<string>>(
+  const [unarchivingTaskIds, setUnarchivingTaskIds] = useState<Set<string>>(
     new Set(),
   );
-  const guardedArchiveIssueIds =
-    useLocalInboxArchiveIssueIds(selectedCompanyId);
-  const locallyArchivedIssueIds = useMemo(() => {
-    const issueIds = new Set(guardedArchiveIssueIds);
-    for (const issueId of undoableArchiveIssueIds) issueIds.add(issueId);
-    for (const issueId of archivingIssueIds) issueIds.add(issueId);
-    for (const issueId of unarchivingIssueIds) issueIds.delete(issueId);
-    return issueIds;
+  const guardedArchiveTaskIds =
+    useLocalInboxArchiveTaskIds(selectedCompanyId);
+  const locallyArchivedTaskIds = useMemo(() => {
+    const taskIds = new Set(guardedArchiveTaskIds);
+    for (const taskId of undoableArchiveTaskIds) taskIds.add(taskId);
+    for (const taskId of archivingTaskIds) taskIds.add(taskId);
+    for (const taskId of unarchivingTaskIds) taskIds.delete(taskId);
+    return taskIds;
   }, [
-    archivingIssueIds,
-    guardedArchiveIssueIds,
-    undoableArchiveIssueIds,
-    unarchivingIssueIds,
+    archivingTaskIds,
+    guardedArchiveTaskIds,
+    undoableArchiveTaskIds,
+    unarchivingTaskIds,
   ]);
 
   const companyUserLabelMap = useMemo(
@@ -1031,25 +1031,25 @@ export function Inbox() {
     [companyMembers?.users],
   );
 
-  const mineIssues = useMemo(
+  const mineTasks = useMemo(
     () =>
-      getRecentTouchedIssues(mineIssuesRaw).filter(
-        (issue) => !locallyArchivedIssueIds.has(issue.id),
+      getRecentTouchedTasks(mineTasksRaw).filter(
+        (task) => !locallyArchivedTaskIds.has(task.id),
       ),
-    [locallyArchivedIssueIds, mineIssuesRaw],
+    [locallyArchivedTaskIds, mineTasksRaw],
   );
-  const touchedIssues = useMemo(
+  const touchedTasks = useMemo(
     () =>
-      getRecentTouchedIssues(touchedIssuesRaw).filter(
-        (issue) => !locallyArchivedIssueIds.has(issue.id),
+      getRecentTouchedTasks(touchedTasksRaw).filter(
+        (task) => !locallyArchivedTaskIds.has(task.id),
       ),
-    [locallyArchivedIssueIds, touchedIssuesRaw],
+    [locallyArchivedTaskIds, touchedTasksRaw],
   );
-  const shouldUseIssueSearchSupplement =
+  const shouldUseTaskSearchSupplement =
     !!selectedCompanyId && normalizedSearchQuery.length > 0;
-  const { data: remoteIssueSearchResults = [] } = useQuery({
+  const { data: remoteTaskSearchResults = [] } = useQuery({
     queryKey: [
-      ...queryKeys.issues.search(
+      ...queryKeys.tasks.search(
         selectedCompanyId!,
         normalizedSearchQuery,
         undefined,
@@ -1060,51 +1060,51 @@ export function Inbox() {
       "live-descendant-summary",
     ],
     queryFn: () =>
-      issuesApi
+      tasksApi
         .listCompact(selectedCompanyId!, {
           q: normalizedSearchQuery,
           limit: 25,
           includeRoutineExecutions: true,
           includeLiveDescendantSummary: true,
         })
-        .then((rows) => rows as Issue[]),
-    enabled: shouldUseIssueSearchSupplement,
+        .then((rows) => rows as Task[]),
+    enabled: shouldUseTaskSearchSupplement,
     placeholderData: (previousData) => previousData,
   });
-  const visibleMineIssues = useMemo(
+  const visibleMineTasks = useMemo(
     () =>
-      applyIssueFilters(
-        mineIssues,
-        issueFilters,
+      applyTaskFilters(
+        mineTasks,
+        taskFilters,
         currentUserId,
         true,
-        liveIssueIds,
+        liveTaskIds,
       ),
-    [mineIssues, issueFilters, currentUserId, liveIssueIds],
+    [mineTasks, taskFilters, currentUserId, liveTaskIds],
   );
-  const visibleTouchedIssues = useMemo(
+  const visibleTouchedTasks = useMemo(
     () =>
-      applyIssueFilters(
-        touchedIssues,
-        issueFilters,
+      applyTaskFilters(
+        touchedTasks,
+        taskFilters,
         currentUserId,
         true,
-        liveIssueIds,
+        liveTaskIds,
       ),
     [
-      touchedIssues,
-      issueFilters,
+      touchedTasks,
+      taskFilters,
       currentUserId,
-      liveIssueIds,
+      liveTaskIds,
     ],
   );
-  const unreadTouchedIssues = useMemo(
-    () => visibleTouchedIssues.filter((issue) => issue.isUnreadForMe),
-    [visibleTouchedIssues],
+  const unreadTouchedTasks = useMemo(
+    () => visibleTouchedTasks.filter((task) => task.isUnreadForMe),
+    [visibleTouchedTasks],
   );
   const creatorOptions = useMemo<CreatorOption[]>(() => {
     const options = new Map<string, CreatorOption>();
-    const sourceIssues = [...mineIssues, ...touchedIssues];
+    const sourceTasks = [...mineTasks, ...touchedTasks];
 
     if (currentUserId) {
       options.set(`user:${currentUserId}`, {
@@ -1115,8 +1115,8 @@ export function Inbox() {
       });
     }
 
-    for (const issue of sourceIssues) {
-      const creator = deriveOriginatingActor(issue);
+    for (const task of sourceTasks) {
+      const creator = deriveOriginatingActor(task);
       if (creator?.kind === "user") {
         const id = `user:${creator.id}`;
         if (!options.has(id)) {
@@ -1146,8 +1146,8 @@ export function Inbox() {
       }
     }
 
-    for (const issue of sourceIssues) {
-      const creator = deriveOriginatingActor(issue);
+    for (const task of sourceTasks) {
+      const creator = deriveOriginatingActor(task);
       if (creator?.kind === "agent" && !knownAgentIds.has(creator.id)) {
         const id = `agent:${creator.id}`;
         if (!options.has(id)) {
@@ -1165,12 +1165,12 @@ export function Inbox() {
       if (a.kind !== b.kind) return a.kind === "user" ? -1 : 1;
       return a.label.localeCompare(b.label);
     });
-  }, [agents, currentUserId, mineIssues, touchedIssues]);
-  const issuesToRender = useMemo(() => {
-    if (tab === "mine") return visibleMineIssues;
-    if (tab === "unread") return unreadTouchedIssues;
-    return visibleTouchedIssues;
-  }, [tab, visibleMineIssues, visibleTouchedIssues, unreadTouchedIssues]);
+  }, [agents, currentUserId, mineTasks, touchedTasks]);
+  const tasksToRender = useMemo(() => {
+    if (tab === "mine") return visibleMineTasks;
+    if (tab === "unread") return unreadTouchedTasks;
+    return visibleTouchedTasks;
+  }, [tab, visibleMineTasks, visibleTouchedTasks, unreadTouchedTasks]);
 
   const agentById = useMemo(() => {
     const map = new Map<string, string>();
@@ -1178,11 +1178,11 @@ export function Inbox() {
     return map;
   }, [agents]);
 
-  const issueById = useMemo(() => {
-    const map = new Map<string, Issue>();
-    for (const issue of issues ?? []) map.set(issue.id, issue);
+  const taskById = useMemo(() => {
+    const map = new Map<string, Task>();
+    for (const task of tasks ?? []) map.set(task.id, task);
     return map;
-  }, [issues]);
+  }, [tasks]);
   const projectById = useMemo(() => {
     const map = new Map<string, { name: string; color: string | null }>();
     for (const project of projects ?? []) {
@@ -1204,23 +1204,23 @@ export function Inbox() {
       projectById,
     ],
   );
-  const visibleIssueColumnSet = useMemo(
-    () => new Set(visibleIssueColumns),
-    [visibleIssueColumns],
+  const visibleTaskColumnSet = useMemo(
+    () => new Set(visibleTaskColumns),
+    [visibleTaskColumns],
   );
-  const availableIssueColumns = inboxIssueColumns;
-  const availableIssueColumnSet = useMemo(
-    () => new Set(availableIssueColumns),
-    [availableIssueColumns],
+  const availableTaskColumns = inboxTaskColumns;
+  const availableTaskColumnSet = useMemo(
+    () => new Set(availableTaskColumns),
+    [availableTaskColumns],
   );
-  const visibleTrailingIssueColumns = useMemo(
+  const visibleTrailingTaskColumns = useMemo(
     () =>
-      issueTrailingColumns.filter(
+      taskTrailingColumns.filter(
         (column) =>
-          visibleIssueColumnSet.has(column) &&
-          availableIssueColumnSet.has(column),
+          visibleTaskColumnSet.has(column) &&
+          availableTaskColumnSet.has(column),
       ),
-    [availableIssueColumnSet, visibleIssueColumnSet],
+    [availableTaskColumnSet, visibleTaskColumnSet],
   );
 
   const failedRuns = useMemo(
@@ -1254,7 +1254,7 @@ export function Inbox() {
     allCategoryFilter === "everything" || allCategoryFilter === "join_requests";
   const showTouchedCategory =
     allCategoryFilter === "everything" ||
-    allCategoryFilter === "issues_i_touched";
+    allCategoryFilter === "tasks_i_touched";
   const showApprovalsCategory =
     allCategoryFilter === "everything" || allCategoryFilter === "approvals";
   const showFailedRunsCategory =
@@ -1284,7 +1284,7 @@ export function Inbox() {
   const workItemsToRender = useMemo(
     () =>
       getInboxWorkItems({
-        issues: tab === "all" && !showTouchedCategory ? [] : issuesToRender,
+        tasks: tab === "all" && !showTouchedCategory ? [] : tasksToRender,
         approvals:
           tab === "all" && !showApprovalsCategory ? [] : approvalsToRender,
         failedRuns: failedRunsForTab,
@@ -1292,7 +1292,7 @@ export function Inbox() {
       }),
     [
       approvalsToRender,
-      issuesToRender,
+      tasksToRender,
       showApprovalsCategory,
       showTouchedCategory,
       tab,
@@ -1305,8 +1305,8 @@ export function Inbox() {
     const q = normalizedSearchQuery.toLowerCase();
     if (!q) return workItemsToRender;
     return workItemsToRender.filter((item) => {
-      if (item.kind === "issue") {
-        return matchesInboxIssueSearch(item.issue, q);
+      if (item.kind === "task") {
+        return matchesInboxTaskSearch(item.task, q);
       }
       if (item.kind === "approval") {
         const a = item.approval;
@@ -1324,11 +1324,11 @@ export function Inbox() {
         if (name?.toLowerCase().includes(q)) return true;
         const msg = runFailureMessage(run);
         if (msg.toLowerCase().includes(q)) return true;
-        const issueId = readIssueIdFromRun(run);
-        if (issueId) {
-          const issue = issueById.get(issueId);
-          if (issue?.title?.toLowerCase().includes(q)) return true;
-          if (issue?.identifier?.toLowerCase().includes(q)) return true;
+        const taskId = readTaskIdFromRun(run);
+        if (taskId) {
+          const task = taskById.get(taskId);
+          if (task?.title?.toLowerCase().includes(q)) return true;
+          if (task?.identifier?.toLowerCase().includes(q)) return true;
         }
         return false;
       }
@@ -1343,58 +1343,58 @@ export function Inbox() {
   }, [
     workItemsToRender,
     agentById,
-    issueById,
+    taskById,
     normalizedSearchQuery,
   ]);
 
-  const archivedSearchIssues = useMemo(
+  const archivedSearchTasks = useMemo(
     () =>
       tab === "mine"
-        ? getArchivedInboxSearchIssues({
-            visibleIssues: visibleMineIssues,
-            searchableIssues: visibleTouchedIssues,
+        ? getArchivedInboxSearchTasks({
+            visibleTasks: visibleMineTasks,
+            searchableTasks: visibleTouchedTasks,
             query: normalizedSearchQuery,
           })
         : [],
     [
       normalizedSearchQuery,
       tab,
-      visibleMineIssues,
-      visibleTouchedIssues,
+      visibleMineTasks,
+      visibleTouchedTasks,
     ],
   );
-  const issueSearchSupplementResults = useMemo(
+  const taskSearchSupplementResults = useMemo(
     () =>
-      getInboxSearchSupplementIssues({
+      getInboxSearchSupplementTasks({
         query: normalizedSearchQuery,
         filteredWorkItems,
-        archivedSearchIssues,
-        remoteIssues: remoteIssueSearchResults,
-        issueFilters,
+        archivedSearchTasks,
+        remoteTasks: remoteTaskSearchResults,
+        taskFilters,
         currentUserId,
         enableRoutineVisibilityFilter: true,
-        liveIssueIds,
+        liveTaskIds,
       }),
     [
-      archivedSearchIssues,
+      archivedSearchTasks,
       currentUserId,
       filteredWorkItems,
-      issueFilters,
-      liveIssueIds,
+      taskFilters,
+      liveTaskIds,
       normalizedSearchQuery,
-      remoteIssueSearchResults,
+      remoteTaskSearchResults,
     ],
   );
-  const nonInboxSearchIssueIds = useMemo(
+  const nonInboxSearchTaskIds = useMemo(
     () =>
       new Set([
-        ...archivedSearchIssues.map((issue) => issue.id),
-        ...issueSearchSupplementResults.map((issue) => issue.id),
+        ...archivedSearchTasks.map((task) => task.id),
+        ...taskSearchSupplementResults.map((task) => task.id),
       ]),
-    [archivedSearchIssues, issueSearchSupplementResults],
+    [archivedSearchTasks, taskSearchSupplementResults],
   );
 
-  // --- Parent-child nesting for inbox issues ---
+  // --- Parent-child nesting for inbox tasks ---
   const [nestingPreferenceEnabled, setNestingPreferenceEnabled] = useState(() =>
     loadInboxNesting(),
   );
@@ -1449,7 +1449,7 @@ export function Inbox() {
         { nestingEnabled },
       ),
       ...buildGroupedInboxSections(
-        getInboxWorkItems({ issues: archivedSearchIssues, approvals: [] }),
+        getInboxWorkItems({ tasks: archivedSearchTasks, approvals: [] }),
         groupBy,
         inboxGrouping,
         {
@@ -1460,7 +1460,7 @@ export function Inbox() {
       ),
       ...buildGroupedInboxSections(
         getInboxWorkItems({
-          issues: issueSearchSupplementResults,
+          tasks: taskSearchSupplementResults,
           approvals: [],
         }),
         groupBy,
@@ -1469,27 +1469,27 @@ export function Inbox() {
       ),
     ],
     [
-      archivedSearchIssues,
+      archivedSearchTasks,
       filteredWorkItems,
       groupBy,
       inboxGrouping,
-      issueSearchSupplementResults,
+      taskSearchSupplementResults,
       nestingEnabled,
     ],
   );
 
-  const openCreateIssueForGroup = useCallback(
+  const openCreateTaskForGroup = useCallback(
     (group: InboxGroupedSection) => {
-      const defaults = buildInboxIssueGroupCreateDefaults(
+      const defaults = buildInboxTaskGroupCreateDefaults(
         group.key,
         groupBy,
         group.displayItems,
         inboxGrouping,
       );
       if (!defaults) return;
-      openNewIssue(defaults);
+      openNewTask(defaults);
     },
-    [groupBy, inboxGrouping, openNewIssue],
+    [groupBy, inboxGrouping, openNewTask],
   );
   const totalVisibleWorkItems = useMemo(
     () =>
@@ -1537,21 +1537,21 @@ export function Inbox() {
   const subtreeLiveCounts = useMemo(() => {
     const nodes: { id: string; parentId: string | null }[] = [];
     const seen = new Set<string>();
-    const pushIssue = (issue: Issue) => {
-      if (seen.has(issue.id)) return;
-      seen.add(issue.id);
-      nodes.push({ id: issue.id, parentId: issue.parentId });
+    const pushTask = (task: Task) => {
+      if (seen.has(task.id)) return;
+      seen.add(task.id);
+      nodes.push({ id: task.id, parentId: task.parentId });
     };
     for (const group of groupedSections) {
       for (const item of group.displayItems) {
-        if (item.kind === "issue") pushIssue(item.issue);
+        if (item.kind === "task") pushTask(item.task);
       }
-      for (const children of group.childrenByIssueId.values()) {
-        for (const child of children) pushIssue(child);
+      for (const children of group.childrenByTaskId.values()) {
+        for (const child of children) pushTask(child);
       }
     }
-    return collectSubtreeLiveCounts(nodes, liveIssueIds);
-  }, [groupedSections, liveIssueIds]);
+    return collectSubtreeLiveCounts(nodes, liveTaskIds);
+  }, [groupedSections, liveTaskIds]);
   const topFlatIndex = useMemo(() => {
     const map = new Map<string, number>();
     flatNavItems.forEach((entry, index) => {
@@ -1562,7 +1562,7 @@ export function Inbox() {
   const childFlatIndex = useMemo(() => {
     const map = new Map<string, number>();
     flatNavItems.forEach((entry, index) => {
-      if (entry.type === "child") map.set(entry.issueId, index);
+      if (entry.type === "child") map.set(entry.taskId, index);
     });
     return map;
   }, [flatNavItems]);
@@ -1578,20 +1578,20 @@ export function Inbox() {
     if (!id) return null;
     return agentById.get(id) ?? null;
   };
-  const setIssueColumns = useCallback((next: InboxIssueColumn[]) => {
-    const normalized = normalizeInboxIssueColumns(next);
-    setVisibleIssueColumns(normalized);
-    saveInboxIssueColumns(normalized);
+  const setTaskColumns = useCallback((next: InboxTaskColumn[]) => {
+    const normalized = normalizeInboxTaskColumns(next);
+    setVisibleTaskColumns(normalized);
+    saveInboxTaskColumns(normalized);
   }, []);
-  const toggleIssueColumn = useCallback(
-    (column: InboxIssueColumn, enabled: boolean) => {
+  const toggleTaskColumn = useCallback(
+    (column: InboxTaskColumn, enabled: boolean) => {
       if (enabled) {
-        setIssueColumns([...visibleIssueColumns, column]);
+        setTaskColumns([...visibleTaskColumns, column]);
         return;
       }
-      setIssueColumns(visibleIssueColumns.filter((value) => value !== column));
+      setTaskColumns(visibleTaskColumns.filter((value) => value !== column));
     },
-    [setIssueColumns, visibleIssueColumns],
+    [setTaskColumns, visibleTaskColumns],
   );
   const updateFilterPreferences = useCallback(
     (updater: (previous: InboxFilterPreferences) => InboxFilterPreferences) => {
@@ -1603,11 +1603,11 @@ export function Inbox() {
     },
     [selectedCompanyId],
   );
-  const updateIssueFilters = useCallback(
-    (patch: Partial<IssueFilterState>) => {
+  const updateTaskFilters = useCallback(
+    (patch: Partial<TaskFilterState>) => {
       updateFilterPreferences((previous) => ({
         ...previous,
-        issueFilters: { ...previous.issueFilters, ...patch },
+        taskFilters: { ...previous.taskFilters, ...patch },
       }));
     },
     [updateFilterPreferences],
@@ -1704,14 +1704,14 @@ export function Inbox() {
     },
   });
 
-  const [fadingOutIssues, setFadingOutIssues] = useState<Set<string>>(
+  const [fadingOutTasks, setFadingOutTasks] = useState<Set<string>>(
     new Set(),
   );
   const [showMarkAllReadConfirm, setShowMarkAllReadConfirm] = useState(false);
-  const [fadingNonIssueItems, setFadingNonIssueItems] = useState<Set<string>>(
+  const [fadingNonTaskItems, setFadingNonTaskItems] = useState<Set<string>>(
     new Set(),
   );
-  const [archivingNonIssueIds, setArchivingNonIssueIds] = useState<Set<string>>(
+  const [archivingNonTaskIds, setArchivingNonTaskIds] = useState<Set<string>>(
     new Set(),
   );
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
@@ -1728,7 +1728,7 @@ export function Inbox() {
     return () => window.removeEventListener("mousemove", handlePointerMove);
   }, []);
   // Which row the cursor is over, tracked WITHOUT React state so scrubbing the
-  // list costs zero re-renders (hover paints via CSS `:hover`, see IssueRow).
+  // list costs zero re-renders (hover paints via CSS `:hover`, see TaskRow).
   // Keyboard nav reads this to continue from the hovered row.
   const hoveredIndexRef = useRef<number | null>(null);
   // The hovered row's stable key, kept alongside the numeric index so a poll
@@ -1745,27 +1745,27 @@ export function Inbox() {
     setSelectedIndex((prev) => (prev < 0 ? prev : -1));
   }, []);
 
-  const invalidateInboxIssueQueryCaches = () => {
+  const invalidateInboxTaskQueryCaches = () => {
     if (!selectedCompanyId) return;
-    invalidateInboxIssueQueries(queryClient, selectedCompanyId);
+    invalidateInboxTaskQueries(queryClient, selectedCompanyId);
   };
 
-  const archiveIssueMutation = useMutation({
-    mutationFn: (id: string) => issuesApi.archiveFromInbox(id),
+  const archiveTaskMutation = useMutation({
+    mutationFn: (id: string) => tasksApi.archiveFromInbox(id),
     onMutate: async (id) => {
       setActionError(null);
-      setArchivingIssueIds((prev) => new Set(prev).add(id));
+      setArchivingTaskIds((prev) => new Set(prev).add(id));
 
       if (!selectedCompanyId)
-        return { previousData: [] as InboxIssueCacheSnapshot };
+        return { previousData: [] as InboxTaskCacheSnapshot };
       beginLocalInboxArchive(selectedCompanyId, id);
 
-      await cancelInboxIssueQueries(queryClient, selectedCompanyId);
-      const previousData = snapshotInboxIssueCaches(
+      await cancelInboxTaskQueries(queryClient, selectedCompanyId);
+      const previousData = snapshotInboxTaskCaches(
         queryClient,
         selectedCompanyId,
       );
-      removeIssueFromInboxCaches(queryClient, selectedCompanyId, id);
+      removeTaskFromInboxCaches(queryClient, selectedCompanyId, id);
 
       return { companyId: selectedCompanyId, previousData };
     },
@@ -1774,28 +1774,28 @@ export function Inbox() {
         err instanceof Error ? err.message : "Failed to archive task",
       );
       if (context?.companyId) clearLocalInboxArchive(context.companyId, id);
-      setArchivingIssueIds((prev) => {
+      setArchivingTaskIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
         return next;
       });
       // Restore only this failed archive so overlapping archive mutations stay removed.
       if (context?.previousData) {
-        restoreIssueToInboxCaches(queryClient, context.previousData, id);
+        restoreTaskToInboxCaches(queryClient, context.previousData, id);
       }
     },
     onSettled: async (_data, error, id, context) => {
       // Clean up archiving state and refetch to sync with server
-      setArchivingIssueIds((prev) => {
+      setArchivingTaskIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
         return next;
       });
       if (!context?.companyId) return;
       if (!error) boundLocalInboxArchive(context.companyId, id);
-      await invalidateInboxIssueQueries(queryClient, context.companyId);
+      await invalidateInboxTaskQueries(queryClient, context.companyId);
       if (!error) {
-        const presence = getIssuePresenceInActiveInboxCaches(
+        const presence = getTaskPresenceInActiveInboxCaches(
           queryClient,
           context.companyId,
           id,
@@ -1805,18 +1805,18 @@ export function Inbox() {
       }
     },
     onSuccess: (_data, id) => {
-      setUndoableArchiveIssueIds((prev) => [
-        ...prev.filter((issueId) => issueId !== id),
+      setUndoableArchiveTaskIds((prev) => [
+        ...prev.filter((taskId) => taskId !== id),
         id,
       ]);
     },
   });
 
-  const unarchiveIssueMutation = useMutation({
-    mutationFn: (id: string) => issuesApi.unarchiveFromInbox(id),
+  const unarchiveTaskMutation = useMutation({
+    mutationFn: (id: string) => tasksApi.unarchiveFromInbox(id),
     onMutate: (id) => {
       setActionError(null);
-      setUnarchivingIssueIds((prev) => new Set(prev).add(id));
+      setUnarchivingTaskIds((prev) => new Set(prev).add(id));
       if (selectedCompanyId) clearLocalInboxArchive(selectedCompanyId, id);
       return { companyId: selectedCompanyId };
     },
@@ -1830,32 +1830,32 @@ export function Inbox() {
       }
     },
     onSuccess: (_data, id) => {
-      setUndoableArchiveIssueIds((prev) => {
-        const next = prev.filter((issueId) => issueId !== id);
+      setUndoableArchiveTaskIds((prev) => {
+        const next = prev.filter((taskId) => taskId !== id);
         return next;
       });
     },
     onSettled: (_data, _error, id) => {
-      setUnarchivingIssueIds((prev) => {
+      setUnarchivingTaskIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
         return next;
       });
-      invalidateInboxIssueQueryCaches();
+      invalidateInboxTaskQueryCaches();
     },
   });
 
   const markReadMutation = useMutation({
-    mutationFn: (id: string) => issuesApi.markRead(id),
+    mutationFn: (id: string) => tasksApi.markRead(id),
     onMutate: (id) => {
-      setFadingOutIssues((prev) => new Set(prev).add(id));
+      setFadingOutTasks((prev) => new Set(prev).add(id));
     },
     onSuccess: () => {
-      invalidateInboxIssueQueryCaches();
+      invalidateInboxTaskQueryCaches();
     },
     onSettled: (_data, _error, id) => {
       setTimeout(() => {
-        setFadingOutIssues((prev) => {
+        setFadingOutTasks((prev) => {
           const next = new Set(prev);
           next.delete(id);
           return next;
@@ -1865,24 +1865,24 @@ export function Inbox() {
   });
 
   const markAllReadMutation = useMutation({
-    mutationFn: async (issueIds: string[]) => {
-      await Promise.all(issueIds.map((issueId) => issuesApi.markRead(issueId)));
+    mutationFn: async (taskIds: string[]) => {
+      await Promise.all(taskIds.map((taskId) => tasksApi.markRead(taskId)));
     },
-    onMutate: (issueIds) => {
-      setFadingOutIssues((prev) => {
+    onMutate: (taskIds) => {
+      setFadingOutTasks((prev) => {
         const next = new Set(prev);
-        for (const issueId of issueIds) next.add(issueId);
+        for (const taskId of taskIds) next.add(taskId);
         return next;
       });
     },
     onSuccess: () => {
-      invalidateInboxIssueQueryCaches();
+      invalidateInboxTaskQueryCaches();
     },
-    onSettled: (_data, _error, issueIds) => {
+    onSettled: (_data, _error, taskIds) => {
       setTimeout(() => {
-        setFadingOutIssues((prev) => {
+        setFadingOutTasks((prev) => {
           const next = new Set(prev);
-          for (const issueId of issueIds) next.delete(issueId);
+          for (const taskId of taskIds) next.delete(taskId);
           return next;
         });
       }, 300);
@@ -1890,18 +1890,18 @@ export function Inbox() {
   });
 
   const markUnreadMutation = useMutation({
-    mutationFn: (id: string) => issuesApi.markUnread(id),
+    mutationFn: (id: string) => tasksApi.markUnread(id),
     onSuccess: () => {
-      invalidateInboxIssueQueryCaches();
+      invalidateInboxTaskQueryCaches();
     },
   });
 
-  const handleMarkNonIssueRead = useCallback(
+  const handleMarkNonTaskRead = useCallback(
     (key: string) => {
-      setFadingNonIssueItems((prev) => new Set(prev).add(key));
+      setFadingNonTaskItems((prev) => new Set(prev).add(key));
       markItemRead(key);
       setTimeout(() => {
-        setFadingNonIssueItems((prev) => {
+        setFadingNonTaskItems((prev) => {
           const next = new Set(prev);
           next.delete(key);
           return next;
@@ -1911,16 +1911,16 @@ export function Inbox() {
     [markItemRead],
   );
 
-  const handleArchiveNonIssue = useCallback(
+  const handleArchiveNonTask = useCallback(
     (key: string) => {
-      setArchivingNonIssueIds((prev) => new Set(prev).add(key));
+      setArchivingNonTaskIds((prev) => new Set(prev).add(key));
       setTimeout(() => {
         if (key.startsWith("alert:")) {
           dismissAlert(key);
         } else {
           dismissInboxItem(key);
         }
-        setArchivingNonIssueIds((prev) => {
+        setArchivingNonTaskIds((prev) => {
           const next = new Set(prev);
           next.delete(key);
           return next;
@@ -1930,10 +1930,10 @@ export function Inbox() {
     [dismissAlert, dismissInboxItem],
   );
 
-  const nonIssueUnreadState = (key: string): NonIssueUnreadState => {
+  const nonTaskUnreadState = (key: string): NonTaskUnreadState => {
     if (!canArchiveFromTab) return null;
     const isRead = readItems.has(key);
-    const isFading = fadingNonIssueItems.has(key);
+    const isFading = fadingNonTaskItems.has(key);
     if (isFading) return "fading";
     if (!isRead) return "visible";
     return "hidden";
@@ -1975,18 +1975,18 @@ export function Inbox() {
   }, [flatNavItems, selectedIndex]);
 
   useEffect(() => {
-    setUndoableArchiveIssueIds((prev) =>
+    setUndoableArchiveTaskIds((prev) =>
       prev.filter(
-        (issueId) =>
-          guardedArchiveIssueIds.has(issueId) ||
-          unarchivingIssueIds.has(issueId),
+        (taskId) =>
+          guardedArchiveTaskIds.has(taskId) ||
+          unarchivingTaskIds.has(taskId),
       ),
     );
-  }, [guardedArchiveIssueIds, unarchivingIssueIds]);
+  }, [guardedArchiveTaskIds, unarchivingTaskIds]);
 
   useEffect(() => {
-    setUndoableArchiveIssueIds([]);
-    setUnarchivingIssueIds(new Set());
+    setUndoableArchiveTaskIds([]);
+    setUnarchivingTaskIds(new Set());
   }, [selectedCompanyId]);
 
   // Use refs for keyboard handler to avoid stale closures
@@ -1995,12 +1995,12 @@ export function Inbox() {
     flatNavItems,
     selectedIndex,
     canArchive: canArchiveFromTab,
-    nonInboxSearchIssueIds,
-    archivingIssueIds,
-    undoableArchiveIssueIds,
-    unarchivingIssueIds,
-    archivingNonIssueIds,
-    fadingOutIssues,
+    nonInboxSearchTaskIds,
+    archivingTaskIds,
+    undoableArchiveTaskIds,
+    unarchivingTaskIds,
+    archivingNonTaskIds,
+    fadingOutTasks,
     readItems,
   });
   kbStateRef.current = {
@@ -2008,35 +2008,35 @@ export function Inbox() {
     flatNavItems,
     selectedIndex,
     canArchive: canArchiveFromTab,
-    nonInboxSearchIssueIds,
-    archivingIssueIds,
-    undoableArchiveIssueIds,
-    unarchivingIssueIds,
-    archivingNonIssueIds,
-    fadingOutIssues,
+    nonInboxSearchTaskIds,
+    archivingTaskIds,
+    undoableArchiveTaskIds,
+    unarchivingTaskIds,
+    archivingNonTaskIds,
+    fadingOutTasks,
     readItems,
   };
 
   const kbActionsRef = useRef({
-    archiveIssue: (id: string) => archiveIssueMutation.mutate(id),
-    undoArchiveIssue: (id: string) => unarchiveIssueMutation.mutate(id),
-    archiveNonIssue: handleArchiveNonIssue,
+    archiveTask: (id: string) => archiveTaskMutation.mutate(id),
+    undoArchiveTask: (id: string) => unarchiveTaskMutation.mutate(id),
+    archiveNonTask: handleArchiveNonTask,
     markRead: (id: string) => markReadMutation.mutate(id),
-    markUnreadIssue: (id: string) => markUnreadMutation.mutate(id),
-    markNonIssueRead: handleMarkNonIssueRead,
-    markNonIssueUnread: markItemUnread,
+    markUnreadTask: (id: string) => markUnreadMutation.mutate(id),
+    markNonTaskRead: handleMarkNonTaskRead,
+    markNonTaskUnread: markItemUnread,
     setGroupCollapsed,
     setInboxParentCollapsed,
     navigate,
   });
   kbActionsRef.current = {
-    archiveIssue: (id: string) => archiveIssueMutation.mutate(id),
-    undoArchiveIssue: (id: string) => unarchiveIssueMutation.mutate(id),
-    archiveNonIssue: handleArchiveNonIssue,
+    archiveTask: (id: string) => archiveTaskMutation.mutate(id),
+    undoArchiveTask: (id: string) => unarchiveTaskMutation.mutate(id),
+    archiveNonTask: handleArchiveNonTask,
     markRead: (id: string) => markReadMutation.mutate(id),
-    markUnreadIssue: (id: string) => markUnreadMutation.mutate(id),
-    markNonIssueRead: handleMarkNonIssueRead,
-    markNonIssueUnread: markItemUnread,
+    markUnreadTask: (id: string) => markUnreadMutation.mutate(id),
+    markNonTaskRead: handleMarkNonTaskRead,
+    markNonTaskUnread: markItemUnread,
     setGroupCollapsed,
     setInboxParentCollapsed,
     navigate,
@@ -2070,7 +2070,7 @@ export function Inbox() {
       const undoArchiveAction = !st.canArchive
         ? "none"
         : resolveInboxUndoArchiveKeyAction({
-            hasUndoableArchive: st.undoableArchiveIssueIds.length > 0,
+            hasUndoableArchive: st.undoableArchiveTaskIds.length > 0,
             defaultPrevented: e.defaultPrevented,
             key: e.key,
             metaKey: e.metaKey,
@@ -2080,11 +2080,11 @@ export function Inbox() {
             hasOpenDialog: hasBlockingShortcutDialog(document),
           });
       if (undoArchiveAction === "undo_archive") {
-        const issueId =
-          st.undoableArchiveIssueIds[st.undoableArchiveIssueIds.length - 1];
-        if (!issueId || st.unarchivingIssueIds.has(issueId)) return;
+        const taskId =
+          st.undoableArchiveTaskIds[st.undoableArchiveTaskIds.length - 1];
+        if (!taskId || st.unarchivingTaskIds.has(taskId)) return;
         e.preventDefault();
-        act.undoArchiveIssue(issueId);
+        act.undoArchiveTask(taskId);
         return;
       }
 
@@ -2092,13 +2092,13 @@ export function Inbox() {
       const navCount = navItems.length;
       if (navCount === 0) return;
 
-      /** Resolve the nav entry at an index to an issue (for child entries) or work item. */
+      /** Resolve the nav entry at an index to a child task or top-level inbox item. */
       const resolveNavEntry = (
         idx: number,
-      ): { issue?: Issue; item?: InboxWorkItem } => {
+      ): { task?: Task; item?: InboxWorkItem } => {
         const entry = navItems[idx];
         if (!entry) return {};
-        if (entry.type === "child") return { issue: entry.issue };
+        if (entry.type === "child") return { task: entry.task };
         if (entry.type === "top") return { item: entry.item };
         return {};
       };
@@ -2151,19 +2151,19 @@ export function Inbox() {
             break;
           }
           // Parent tasks collapse/expand with the same keys as groups.
-          const { issue, item } = resolveNavEntry(effectiveIndex);
-          const targetIssue =
-            issue ?? (item?.kind === "issue" ? item.issue : null);
-          if (!targetIssue) return;
+          const { task, item } = resolveNavEntry(effectiveIndex);
+          const targetTask =
+            task ?? (item?.kind === "task" ? item.task : null);
+          if (!targetTask) return;
           const hasChildren = st.workItems.some(
             (group) =>
-              (group.childrenByIssueId.get(targetIssue.id)?.length ?? 0) > 0,
+              (group.childrenByTaskId.get(targetTask.id)?.length ?? 0) > 0,
           );
           if (!hasChildren) return;
           e.preventDefault();
           pointerMovedSinceKeyNavRef.current = false;
           setSelectedIndex(effectiveIndex);
-          act.setInboxParentCollapsed(targetIssue.id, e.key === "ArrowLeft");
+          act.setInboxParentCollapsed(targetTask.id, e.key === "ArrowLeft");
           break;
         }
         case "a":
@@ -2171,24 +2171,24 @@ export function Inbox() {
           if (!st.canArchive) return;
           if (effectiveIndex < 0 || effectiveIndex >= navCount) return;
           e.preventDefault();
-          const { issue, item } = resolveNavEntry(effectiveIndex);
-          if (issue) {
+          const { task, item } = resolveNavEntry(effectiveIndex);
+          if (task) {
             if (
-              !st.nonInboxSearchIssueIds.has(issue.id) &&
-              !st.archivingIssueIds.has(issue.id)
+              !st.nonInboxSearchTaskIds.has(task.id) &&
+              !st.archivingTaskIds.has(task.id)
             )
-              act.archiveIssue(issue.id);
+              act.archiveTask(task.id);
           } else if (item) {
-            if (item.kind === "issue") {
+            if (item.kind === "task") {
               if (
-                !st.nonInboxSearchIssueIds.has(item.issue.id) &&
-                !st.archivingIssueIds.has(item.issue.id)
+                !st.nonInboxSearchTaskIds.has(item.task.id) &&
+                !st.archivingTaskIds.has(item.task.id)
               ) {
-                act.archiveIssue(item.issue.id);
+                act.archiveTask(item.task.id);
               }
             } else {
               const key = getInboxWorkItemKey(item);
-              if (!st.archivingNonIssueIds.has(key)) act.archiveNonIssue(key);
+              if (!st.archivingNonTaskIds.has(key)) act.archiveNonTask(key);
             }
           }
           break;
@@ -2197,12 +2197,12 @@ export function Inbox() {
           if (!st.canArchive) return;
           if (effectiveIndex < 0 || effectiveIndex >= navCount) return;
           e.preventDefault();
-          const { issue, item } = resolveNavEntry(effectiveIndex);
-          if (issue) {
-            act.markUnreadIssue(issue.id);
+          const { task, item } = resolveNavEntry(effectiveIndex);
+          if (task) {
+            act.markUnreadTask(task.id);
           } else if (item) {
-            if (item.kind === "issue") act.markUnreadIssue(item.issue.id);
-            else act.markNonIssueUnread(getInboxWorkItemKey(item));
+            if (item.kind === "task") act.markUnreadTask(item.task.id);
+            else act.markNonTaskUnread(getInboxWorkItemKey(item));
           }
           break;
         }
@@ -2210,20 +2210,20 @@ export function Inbox() {
           if (!st.canArchive) return;
           if (effectiveIndex < 0 || effectiveIndex >= navCount) return;
           e.preventDefault();
-          const { issue, item } = resolveNavEntry(effectiveIndex);
-          if (issue) {
-            if (issue.isUnreadForMe && !st.fadingOutIssues.has(issue.id))
-              act.markRead(issue.id);
+          const { task, item } = resolveNavEntry(effectiveIndex);
+          if (task) {
+            if (task.isUnreadForMe && !st.fadingOutTasks.has(task.id))
+              act.markRead(task.id);
           } else if (item) {
-            if (item.kind === "issue") {
+            if (item.kind === "task") {
               if (
-                item.issue.isUnreadForMe &&
-                !st.fadingOutIssues.has(item.issue.id)
+                item.task.isUnreadForMe &&
+                !st.fadingOutTasks.has(item.task.id)
               )
-                act.markRead(item.issue.id);
+                act.markRead(item.task.id);
             } else {
               const key = getInboxWorkItemKey(item);
-              if (!st.readItems.has(key)) act.markNonIssueRead(key);
+              if (!st.readItems.has(key)) act.markNonTaskRead(key);
             }
           }
           break;
@@ -2231,26 +2231,26 @@ export function Inbox() {
         case "Enter": {
           if (effectiveIndex < 0 || effectiveIndex >= navCount) return;
           e.preventDefault();
-          const { issue, item } = resolveNavEntry(effectiveIndex);
-          if (issue) {
-            const pathId = issue.identifier ?? issue.id;
-            const detailState = armIssueDetailInboxQuickArchive(
-              withIssueDetailHeaderSeed(issueLinkState, issue),
+          const { task, item } = resolveNavEntry(effectiveIndex);
+          if (task) {
+            const pathId = task.identifier ?? task.id;
+            const detailState = armTaskDetailInboxQuickArchive(
+              withTaskDetailHeaderSeed(taskLinkState, task),
             );
-            rememberIssueDetailLocationState(pathId, detailState);
-            void prefetchIssueDetail(queryClient, pathId, { issue });
-            act.navigate(createIssueDetailPath(pathId), { state: detailState });
+            rememberTaskDetailLocationState(pathId, detailState);
+            void prefetchTaskDetail(queryClient, pathId, { task });
+            act.navigate(createTaskDetailPath(pathId), { state: detailState });
           } else if (item) {
-            if (item.kind === "issue") {
-              const pathId = item.issue.identifier ?? item.issue.id;
-              const detailState = armIssueDetailInboxQuickArchive(
-                withIssueDetailHeaderSeed(issueLinkState, item.issue),
+            if (item.kind === "task") {
+              const pathId = item.task.identifier ?? item.task.id;
+              const detailState = armTaskDetailInboxQuickArchive(
+                withTaskDetailHeaderSeed(taskLinkState, item.task),
               );
-              rememberIssueDetailLocationState(pathId, detailState);
-              void prefetchIssueDetail(queryClient, pathId, {
-                issue: item.issue,
+              rememberTaskDetailLocationState(pathId, detailState);
+              void prefetchTaskDetail(queryClient, pathId, {
+                task: item.task,
               });
-              act.navigate(createIssueDetailPath(pathId), {
+              act.navigate(createTaskDetailPath(pathId), {
                 state: detailState,
               });
             } else if (item.kind === "approval") {
@@ -2267,7 +2267,7 @@ export function Inbox() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [issueLinkState, keyboardShortcutsEnabled]);
+  }, [taskLinkState, keyboardShortcutsEnabled]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -2317,25 +2317,25 @@ export function Inbox() {
     !isJoinRequestsLoading &&
     !isApprovalsLoading &&
     !isDashboardLoading &&
-    !isIssuesLoading &&
-    !isMineIssuesLoading &&
-    !isTouchedIssuesLoading &&
+    !isTasksLoading &&
+    !isMineTasksLoading &&
+    !isTouchedTasksLoading &&
     !isRunsLoading;
 
   const showSeparatorBefore = (key: SectionKey) =>
     visibleSections.indexOf(key) > 0;
-  const markAllReadIssues = (
-    tab === "mine" ? visibleMineIssues : unreadTouchedIssues
+  const markAllReadTasks = (
+    tab === "mine" ? visibleMineTasks : unreadTouchedTasks
   ).filter(
-    (issue) =>
-      issue.isUnreadForMe &&
-      !fadingOutIssues.has(issue.id) &&
-      !archivingIssueIds.has(issue.id),
+    (task) =>
+      task.isUnreadForMe &&
+      !fadingOutTasks.has(task.id) &&
+      !archivingTaskIds.has(task.id),
   );
-  const unreadIssueIds = markAllReadIssues.map((issue) => issue.id);
-  const canMarkAllRead = unreadIssueIds.length > 0;
-  const activeIssueFilterCount = countActiveIssueFilters(issueFilters, true);
-  const showGeneralIssueToolbarControls = tab !== "blocked";
+  const unreadTaskIds = markAllReadTasks.map((task) => task.id);
+  const canMarkAllRead = unreadTaskIds.length > 0;
+  const activeTaskFilterCount = countActiveTaskFilters(taskFilters, true);
+  const showGeneralTaskToolbarControls = tab !== "blocked";
   return (
     <div className="space-y-6">
       {markAllReadMutation.isPending ? (
@@ -2436,10 +2436,10 @@ export function Inbox() {
             </div>
             {tab === "blocked" ? (
               <>
-                <IssueFiltersPopover
-                  state={issueFilters}
-                  onChange={updateIssueFilters}
-                  activeFilterCount={activeIssueFilterCount}
+                <TaskFiltersPopover
+                  state={taskFilters}
+                  onChange={updateTaskFilters}
+                  activeFilterCount={activeTaskFilterCount}
                   agents={agents}
                   creators={creatorOptions}
                   projects={projects?.map((project) => ({
@@ -2494,12 +2494,12 @@ export function Inbox() {
                     </div>
                   </PopoverContent>
                 </Popover>
-                <IssueColumnPicker
-                  availableColumns={availableIssueColumns}
-                  visibleColumnSet={visibleIssueColumnSet}
-                  onToggleColumn={toggleIssueColumn}
+                <TaskColumnPicker
+                  availableColumns={availableTaskColumns}
+                  visibleColumnSet={visibleTaskColumnSet}
+                  onToggleColumn={toggleTaskColumn}
                   onResetColumns={() =>
-                    setIssueColumns(DEFAULT_INBOX_ISSUE_COLUMNS)
+                    setTaskColumns(DEFAULT_INBOX_TASK_COLUMNS)
                   }
                   title="Choose which inbox columns stay visible"
                   iconOnly
@@ -2540,7 +2540,7 @@ export function Inbox() {
                   </PopoverContent>
                 </Popover>
               </>
-            ) : showGeneralIssueToolbarControls ? (
+            ) : showGeneralTaskToolbarControls ? (
               <>
                 <Button
                   type="button"
@@ -2559,10 +2559,10 @@ export function Inbox() {
                 >
                   <ListTree className="h-3.5 w-3.5" />
                 </Button>
-                <IssueFiltersPopover
-                  state={issueFilters}
-                  onChange={updateIssueFilters}
-                  activeFilterCount={activeIssueFilterCount}
+                <TaskFiltersPopover
+                  state={taskFilters}
+                  onChange={updateTaskFilters}
+                  activeFilterCount={activeTaskFilterCount}
                   agents={agents}
                   creators={creatorOptions}
                   projects={projects?.map((project) => ({
@@ -2624,12 +2624,12 @@ export function Inbox() {
                     </div>
                   </PopoverContent>
                 </Popover>
-                <IssueColumnPicker
-                  availableColumns={availableIssueColumns}
-                  visibleColumnSet={visibleIssueColumnSet}
-                  onToggleColumn={toggleIssueColumn}
+                <TaskColumnPicker
+                  availableColumns={availableTaskColumns}
+                  visibleColumnSet={visibleTaskColumnSet}
+                  onToggleColumn={toggleTaskColumn}
                   onResetColumns={() =>
-                    setIssueColumns(DEFAULT_INBOX_ISSUE_COLUMNS)
+                    setTaskColumns(DEFAULT_INBOX_TASK_COLUMNS)
                   }
                   title="Choose which inbox columns stay visible"
                   iconOnly
@@ -2656,8 +2656,8 @@ export function Inbox() {
                         <DialogHeader>
                           <DialogTitle>Mark all as read?</DialogTitle>
                           <DialogDescription>
-                            This will mark {unreadIssueIds.length} unread{" "}
-                            {unreadIssueIds.length === 1 ? "item" : "items"} as
+                            This will mark {unreadTaskIds.length} unread{" "}
+                            {unreadTaskIds.length === 1 ? "item" : "items"} as
                             read.
                           </DialogDescription>
                         </DialogHeader>
@@ -2671,7 +2671,7 @@ export function Inbox() {
                           <Button
                             onClick={() => {
                               setShowMarkAllReadConfirm(false);
-                              markAllReadMutation.mutate(unreadIssueIds);
+                              markAllReadMutation.mutate(unreadTaskIds);
                             }}
                           >
                             Mark all as read
@@ -2700,7 +2700,7 @@ export function Inbox() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="everything">All categories</SelectItem>
-              <SelectItem value="issues_i_touched">My recent tasks</SelectItem>
+              <SelectItem value="tasks_i_touched">My recent tasks</SelectItem>
               <SelectItem value="join_requests">Join requests</SelectItem>
               <SelectItem value="approvals">Approvals</SelectItem>
               <SelectItem value="failed_runs">Failed runs</SelectItem>
@@ -2739,23 +2739,23 @@ export function Inbox() {
           searchQuery={searchQuery}
           agentNameById={agentById}
           userLabelById={companyUserLabelMap}
-          issueLinkState={issueLinkState}
+          taskLinkState={taskLinkState}
           groupBy={blockedGroupBy}
           sortBy={blockedSortBy}
-          issueFilters={issueFilters}
+          taskFilters={taskFilters}
           currentUserId={currentUserId}
-          liveIssueIds={liveIssueIds}
+          liveTaskIds={liveTaskIds}
           subtreeLiveCounts={subtreeLiveCounts}
           showStatusColumn={
-            visibleIssueColumnSet.has("status") &&
-            availableIssueColumnSet.has("status")
+            visibleTaskColumnSet.has("status") &&
+            availableTaskColumnSet.has("status")
           }
           showIdentifierColumn={
-            visibleIssueColumnSet.has("id") && availableIssueColumnSet.has("id")
+            visibleTaskColumnSet.has("id") && availableTaskColumnSet.has("id")
           }
           showUpdatedColumn={
-            visibleIssueColumnSet.has("updated") &&
-            availableIssueColumnSet.has("updated")
+            visibleTaskColumnSet.has("updated") &&
+            availableTaskColumnSet.has("updated")
           }
         />
       ) : null}
@@ -2787,8 +2787,8 @@ export function Inbox() {
           <div>
             <div ref={listRef} className="overflow-hidden">
               {(() => {
-                const renderInboxIssue = ({
-                  issue,
+                const renderInboxTask = ({
+                  task,
                   depth,
                   selected,
                   hasChildren = false,
@@ -2797,7 +2797,7 @@ export function Inbox() {
                   collapseParentId = null,
                   allowArchive = canArchiveFromTab,
                 }: {
-                  issue: Issue;
+                  task: Task;
                   depth: number;
                   selected: boolean;
                   hasChildren?: boolean;
@@ -2807,16 +2807,16 @@ export function Inbox() {
                   allowArchive?: boolean;
                 }) => {
                   const isUnread =
-                    issue.isUnreadForMe && !fadingOutIssues.has(issue.id);
-                  const isFading = fadingOutIssues.has(issue.id);
-                  const isArchiving = archivingIssueIds.has(issue.id);
-                  const project = issue.projectId
-                    ? (projectById.get(issue.projectId) ?? null)
+                    task.isUnreadForMe && !fadingOutTasks.has(task.id);
+                  const isFading = fadingOutTasks.has(task.id);
+                  const isArchiving = archivingTaskIds.has(task.id);
+                  const project = task.projectId
+                    ? (projectById.get(task.projectId) ?? null)
                     : null;
-                  const ownerUserProfile = issue.ownerUserId
-                    ? (companyUserProfileMap.get(issue.ownerUserId) ?? null)
+                  const ownerUserProfile = task.ownerUserId
+                    ? (companyUserProfileMap.get(task.ownerUserId) ?? null)
                     : null;
-                  const originatingActor = deriveOriginatingActor(issue);
+                  const originatingActor = deriveOriginatingActor(task);
                   const originatingAgentId =
                     originatingActor?.kind === "agent"
                       ? originatingActor.id
@@ -2829,40 +2829,40 @@ export function Inbox() {
                     originatingActor?.kind === "user"
                       ? (originatingActor.viaAgentId ?? null)
                       : null;
-                  const isLive = liveIssueIds.has(issue.id);
+                  const isLive = liveTaskIds.has(task.id);
                   const loadedSubtreeLiveCount =
-                    subtreeLiveCounts.get(issue.id) ?? 0;
-                  const liveDescendantCount = resolveIssueLiveDescendantCount(
-                    issue,
+                    subtreeLiveCounts.get(task.id) ?? 0;
+                  const liveDescendantCount = resolveTaskLiveDescendantCount(
+                    task,
                     loadedSubtreeLiveCount,
                   );
-                  const blockerAttention = resolveInboxIssueBlockerAttention(
-                    issue,
+                  const blockerAttention = resolveInboxTaskBlockerAttention(
+                    task,
                     {
                       isLive,
                       loadedSubtreeLiveCount,
                     },
                   );
                   const showStatus =
-                    visibleIssueColumnSet.has("status") &&
-                    availableIssueColumnSet.has("status");
+                    visibleTaskColumnSet.has("status") &&
+                    availableTaskColumnSet.has("status");
                   const showSubtreeLiveChip = !(
                     showStatus &&
-                    issue.boardPresentationStatus === "blocked" &&
+                    task.boardPresentationStatus === "blocked" &&
                     blockerAttention?.state === "covered"
                   );
                   const rowStatusIcon = (
                     <StatusIcon
-                      status={issue.boardPresentationStatus}
+                      status={task.boardPresentationStatus}
                       blockerAttention={blockerAttention}
                       size="md"
                     />
                   );
                   return (
-                    <IssueRow
-                      key={`issue:${issue.id}`}
-                      issue={issue}
-                      issueLinkState={issueLinkState}
+                    <TaskRow
+                      key={`task:${task.id}`}
+                      task={task}
+                      taskLinkState={taskLinkState}
                       treeGuides={depth}
                       hideDivider={hasChildren && isExpanded}
                       selected={selected}
@@ -2898,20 +2898,20 @@ export function Inbox() {
                               // Every non-chevron row reserves this spacer so the
                               // status column lines up under the parent rows'
                               // collapse chevron. (The unread mark-read dot has
-                              // its own reserved leading slot in IssueRow, to the
+                              // its own reserved leading slot in TaskRow, to the
                               // left of this spacer.)
                               <span className="hidden w-4 shrink-0 sm:block" />
                             )
                           ) : null}
-                          <InboxIssueMetaLeading
-                            issue={issue}
+                          <InboxTaskMetaLeading
+                            task={task}
                             isLive={isLive}
                             subtreeLiveCount={liveDescendantCount}
                             showSubtreeLiveChip={showSubtreeLiveChip}
                             showStatus={showStatus}
                             showIdentifier={
-                              visibleIssueColumnSet.has("id") &&
-                              availableIssueColumnSet.has("id")
+                              visibleTaskColumnSet.has("id") &&
+                              availableTaskColumnSet.has("id")
                             }
                             statusSlot={rowStatusIcon}
                           />
@@ -2924,7 +2924,7 @@ export function Inbox() {
                           </span>
                         ) : undefined
                       }
-                      mobileMeta={issueActivityText(issue).toLowerCase()}
+                      mobileMeta={taskActivityText(task).toLowerCase()}
                       mobileLeading={
                         depth === 0 && hasChildren && collapseParentId ? (
                           <button
@@ -2947,7 +2947,7 @@ export function Inbox() {
                           </button>
                         ) : (
                           <StatusIcon
-                            status={issue.boardPresentationStatus}
+                            status={task.boardPresentationStatus}
                             blockerAttention={blockerAttention}
                             size="md"
                           />
@@ -2956,24 +2956,24 @@ export function Inbox() {
                       unreadState={
                         isUnread ? "visible" : isFading ? "fading" : "hidden"
                       }
-                      onMarkRead={() => markReadMutation.mutate(issue.id)}
+                      onMarkRead={() => markReadMutation.mutate(task.id)}
                       onArchive={
                         allowArchive
-                          ? () => archiveIssueMutation.mutate(issue.id)
+                          ? () => archiveTaskMutation.mutate(task.id)
                           : undefined
                       }
                       archiveDisabled={isArchiving}
                       desktopTrailing={
-                        visibleTrailingIssueColumns.length > 0 ? (
-                          <InboxIssueTrailingColumns
-                            issue={issue}
-                            columns={visibleTrailingIssueColumns}
+                        visibleTrailingTaskColumns.length > 0 ? (
+                          <InboxTaskTrailingColumns
+                            task={task}
+                            columns={visibleTrailingTaskColumns}
                             projectName={project?.name ?? null}
                             projectColor={project?.color ?? null}
-                            ownerName={agentName(issue.ownerAgentId)}
+                            ownerName={agentName(task.ownerAgentId)}
                             ownerUserName={
                               formatOwnerUserLabel(
-                                issue.ownerUserId,
+                                task.ownerUserId,
                                 currentUserId,
                                 companyUserLabelMap,
                               ) ??
@@ -3001,14 +3001,14 @@ export function Inbox() {
                             }
                             currentUserId={currentUserId}
                             parentIdentifier={
-                              issue.parentId
-                                ? (issueById.get(issue.parentId)?.identifier ??
+                              task.parentId
+                                ? (taskById.get(task.parentId)?.identifier ??
                                   null)
                                 : null
                             }
                             parentTitle={
-                              issue.parentId
-                                ? (issueById.get(issue.parentId)?.title ?? null)
+                              task.parentId
+                                ? (taskById.get(task.parentId)?.title ?? null)
                                 : null
                             }
                           />
@@ -3046,8 +3046,8 @@ export function Inbox() {
                     const groupNavIdx = groupFlatIndex.get(group.key) ?? -1;
                     const isGroupSelected =
                       groupNavIdx >= 0 && selectedIndex === groupNavIdx;
-                    const canCreateIssueInGroup = group.displayItems.some(
-                      (item) => item.kind === "issue",
+                    const canCreateTaskInGroup = group.displayItems.some(
+                      (item) => item.kind === "task",
                     );
                     elements.push(
                       <div
@@ -3074,13 +3074,13 @@ export function Inbox() {
                               : "hover:bg-accent/50",
                           )}
                         >
-                          <IssueGroupHeader
+                          <TaskGroupHeader
                             label={group.label}
                             collapsible
                             collapsed={isGroupCollapsed}
                             onToggle={() => toggleGroupCollapse(group.key)}
                             trailing={
-                              canCreateIssueInGroup ? (
+                              canCreateTaskInGroup ? (
                                 <Button
                                   variant="ghost"
                                   size="icon-xs"
@@ -3089,7 +3089,7 @@ export function Inbox() {
                                   aria-label={`New task in ${group.label}`}
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    openCreateIssueForGroup(group);
+                                    openCreateTaskForGroup(group);
                                   }}
                                 >
                                   <Plus className="h-3 w-3" />
@@ -3153,7 +3153,7 @@ export function Inbox() {
 
                     if (item.kind === "approval") {
                       const approvalKey = `approval:${item.approval.id}`;
-                      const isArchiving = archivingNonIssueIds.has(approvalKey);
+                      const isArchiving = archivingNonTaskIds.has(approvalKey);
                       const row = (
                         <ApprovalInboxRow
                           key={approvalKey}
@@ -3172,11 +3172,11 @@ export function Inbox() {
                             approveMutation.isPending ||
                             rejectMutation.isPending
                           }
-                          unreadState={nonIssueUnreadState(approvalKey)}
-                          onMarkRead={() => handleMarkNonIssueRead(approvalKey)}
+                          unreadState={nonTaskUnreadState(approvalKey)}
+                          onMarkRead={() => handleMarkNonTaskRead(approvalKey)}
                           onArchive={
                             canArchiveFromTab
-                              ? () => handleArchiveNonIssue(approvalKey)
+                              ? () => handleArchiveNonTask(approvalKey)
                               : undefined
                           }
                           archiveDisabled={isArchiving}
@@ -3197,7 +3197,7 @@ export function Inbox() {
                               selected={isSelected}
                               disabled={isArchiving}
                               onArchive={() =>
-                                handleArchiveNonIssue(approvalKey)
+                                handleArchiveNonTask(approvalKey)
                               }
                             >
                               {row}
@@ -3214,21 +3214,21 @@ export function Inbox() {
 
                     if (item.kind === "failed_run") {
                       const runKey = `run:${item.run.id}`;
-                      const isArchiving = archivingNonIssueIds.has(runKey);
+                      const isArchiving = archivingNonTaskIds.has(runKey);
                       const row = (
                         <FailedRunInboxRow
                           key={runKey}
                           run={item.run}
                           selected={isSelected}
-                          issueById={issueById}
+                          taskById={taskById}
                           agentName={agentName(item.run.targetAgentId)}
-                          issueLinkState={issueLinkState}
+                          taskLinkState={taskLinkState}
                           onDismiss={() => dismissInboxItem(runKey)}
-                          unreadState={nonIssueUnreadState(runKey)}
-                          onMarkRead={() => handleMarkNonIssueRead(runKey)}
+                          unreadState={nonTaskUnreadState(runKey)}
+                          onMarkRead={() => handleMarkNonTaskRead(runKey)}
                           onArchive={
                             canArchiveFromTab
-                              ? () => handleArchiveNonIssue(runKey)
+                              ? () => handleArchiveNonTask(runKey)
                               : undefined
                           }
                           archiveDisabled={isArchiving}
@@ -3248,7 +3248,7 @@ export function Inbox() {
                               key={runKey}
                               selected={isSelected}
                               disabled={isArchiving}
-                              onArchive={() => handleArchiveNonIssue(runKey)}
+                              onArchive={() => handleArchiveNonTask(runKey)}
                             >
                               {row}
                             </SwipeToArchive>
@@ -3264,7 +3264,7 @@ export function Inbox() {
 
                     if (item.kind === "join_request") {
                       const joinKey = `join:${item.joinRequest.id}`;
-                      const isArchiving = archivingNonIssueIds.has(joinKey);
+                      const isArchiving = archivingNonTaskIds.has(joinKey);
                       const row = (
                         <JoinRequestInboxRow
                           key={joinKey}
@@ -3278,11 +3278,11 @@ export function Inbox() {
                             approveJoinMutation.isPending ||
                             rejectJoinMutation.isPending
                           }
-                          unreadState={nonIssueUnreadState(joinKey)}
-                          onMarkRead={() => handleMarkNonIssueRead(joinKey)}
+                          unreadState={nonTaskUnreadState(joinKey)}
+                          onMarkRead={() => handleMarkNonTaskRead(joinKey)}
                           onArchive={
                             canArchiveFromTab
-                              ? () => handleArchiveNonIssue(joinKey)
+                              ? () => handleArchiveNonTask(joinKey)
                               : undefined
                           }
                           archiveDisabled={isArchiving}
@@ -3302,7 +3302,7 @@ export function Inbox() {
                               key={joinKey}
                               selected={isSelected}
                               disabled={isArchiving}
-                              onArchive={() => handleArchiveNonIssue(joinKey)}
+                              onArchive={() => handleArchiveNonTask(joinKey)}
                             >
                               {row}
                             </SwipeToArchive>
@@ -3316,16 +3316,16 @@ export function Inbox() {
                       continue;
                     }
 
-                    const issue = item.issue;
-                    const childIssues =
-                      group.childrenByIssueId.get(issue.id) ?? [];
-                    const hasChildren = childIssues.length > 0;
+                    const task = item.task;
+                    const childTasks =
+                      group.childrenByTaskId.get(task.id) ?? [];
+                    const hasChildren = childTasks.length > 0;
                     const isExpanded =
-                      hasChildren && !collapsedInboxParents.has(issue.id);
-                    const canArchiveIssue =
+                      hasChildren && !collapsedInboxParents.has(task.id);
+                    const canArchiveTask =
                       canArchiveFromTab && group.searchSection === "none";
-                    const renderChildIssueRows = (
-                      children: Issue[],
+                    const renderChildTaskRows = (
+                      children: Task[],
                       depth: number,
                       seen: ReadonlySet<string>,
                     ): ReactNode[] =>
@@ -3335,28 +3335,28 @@ export function Inbox() {
                         nextSeen.add(child.id);
                         const childNavIdx = childFlatIndex.get(child.id) ?? -1;
                         const isChildSelected = selectedIndex === childNavIdx;
-                        const grandchildIssues =
-                          group.childrenByIssueId.get(child.id) ?? [];
-                        const childHasChildren = grandchildIssues.length > 0;
+                        const grandchildTasks =
+                          group.childrenByTaskId.get(child.id) ?? [];
+                        const childHasChildren = grandchildTasks.length > 0;
                         const childIsExpanded =
                           childHasChildren &&
                           !collapsedInboxParents.has(child.id);
-                        const childRow = renderInboxIssue({
-                          issue: child,
+                        const childRow = renderInboxTask({
+                          task: child,
                           depth,
                           selected: isChildSelected,
                           hasChildren: childHasChildren,
                           isExpanded: childIsExpanded,
-                          childCount: grandchildIssues.length,
+                          childCount: grandchildTasks.length,
                           collapseParentId: child.id,
-                          allowArchive: canArchiveIssue,
+                          allowArchive: canArchiveTask,
                         });
-                        const isChildArchiving = archivingIssueIds.has(
+                        const isChildArchiving = archivingTaskIds.has(
                           child.id,
                         );
                         const row = (
                           <div
-                            key={`sel-issue:${child.id}`}
+                            key={`sel-task:${child.id}`}
                             data-inbox-item
                             className="relative"
                             onFocusCapture={() => {
@@ -3368,13 +3368,13 @@ export function Inbox() {
                                 setSelectedIndexFromPointer(childNavIdx);
                             }}
                           >
-                            {canArchiveIssue ? (
+                            {canArchiveTask ? (
                               <SwipeToArchive
-                                key={`issue:${child.id}`}
+                                key={`task:${child.id}`}
                                 selected={isChildSelected}
                                 disabled={isChildArchiving}
                                 onArchive={() =>
-                                  archiveIssueMutation.mutate(child.id)
+                                  archiveTaskMutation.mutate(child.id)
                                 }
                               >
                                 {childRow}
@@ -3390,36 +3390,36 @@ export function Inbox() {
                         return childIsExpanded
                           ? [
                               row,
-                              ...renderChildIssueRows(
-                                grandchildIssues,
+                              ...renderChildTaskRows(
+                                grandchildTasks,
                                 depth + 1,
                                 nextSeen,
                               ),
                             ]
                           : [row];
                       });
-                    const parentRow = renderInboxIssue({
-                      issue,
+                    const parentRow = renderInboxTask({
+                      task,
                       depth: 0,
                       selected: isSelected,
                       hasChildren,
                       isExpanded,
-                      childCount: childIssues.length,
-                      collapseParentId: issue.id,
-                      allowArchive: canArchiveIssue,
+                      childCount: childTasks.length,
+                      collapseParentId: task.id,
+                      allowArchive: canArchiveTask,
                     });
 
                     elements.push(
                       wrapItem(
-                        `issue:${issue.id}`,
+                        `task:${task.id}`,
                         isSelected,
-                        canArchiveIssue ? (
+                        canArchiveTask ? (
                           <SwipeToArchive
-                            key={`issue:${issue.id}`}
+                            key={`task:${task.id}`}
                             selected={isSelected}
-                            disabled={archivingIssueIds.has(issue.id)}
+                            disabled={archivingTaskIds.has(task.id)}
                             onArchive={() =>
-                              archiveIssueMutation.mutate(issue.id)
+                              archiveTaskMutation.mutate(task.id)
                             }
                           >
                             {parentRow}
@@ -3434,10 +3434,10 @@ export function Inbox() {
 
                     if (isExpanded) {
                       elements.push(
-                        ...renderChildIssueRows(
-                          childIssues,
+                        ...renderChildTaskRows(
+                          childTasks,
                           1,
-                          new Set([issue.id]),
+                          new Set([task.id]),
                         ),
                       );
                     }

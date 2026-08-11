@@ -4,18 +4,22 @@ import {
   documentAnnotationComments,
   documentRevisions,
   documents,
-  issueDocuments,
-  issues,
+  taskDocuments,
+  tasks,
 } from "@paperclipai/db";
-import { isSystemIssueDocumentKey, issueDocumentKeySchema } from "@paperclipai/shared";
+import {
+  isSystemTaskDocumentKey,
+  taskDocumentKeySchema,
+  validationDetails,
+} from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
-import { issueReferenceService } from "./issue-references.js";
+import { taskReferenceService } from "./task-references.js";
 
 function normalizeDocumentKey(key: string) {
   const normalized = key.trim().toLowerCase();
-  const parsed = issueDocumentKeySchema.safeParse(normalized);
+  const parsed = taskDocumentKeySchema.safeParse(normalized);
   if (!parsed.success) {
-    throw unprocessable("Invalid document key", parsed.error.issues);
+    throw unprocessable("Invalid document key", validationDetails(parsed.error));
   }
   return parsed.data;
 }
@@ -31,18 +35,18 @@ function nextAvailableDocumentKey(sourceKey: string, existingKeys: string[]) {
     const baseMaxLength = 64 - suffix.length;
     const base = sourceKey.slice(0, baseMaxLength).replace(/[-_]+$/g, "") || "document";
     const candidate = `${base}${suffix}`;
-    if (!usedKeys.has(candidate) && issueDocumentKeySchema.safeParse(candidate).success) {
+    if (!usedKeys.has(candidate) && taskDocumentKeySchema.safeParse(candidate).success) {
       return candidate;
     }
   }
   throw conflict("Unable to choose a new document key for locked document", { key: sourceKey });
 }
 
-export function mapIssueDocumentRow(
+export function mapTaskDocumentRow(
   row: {
     id: string;
     companyId: string;
-    issueId: string;
+    taskId: string;
     key: string;
     title: string | null;
     format: string;
@@ -65,7 +69,7 @@ export function mapIssueDocumentRow(
   return {
     id: row.id,
     companyId: row.companyId,
-    issueId: row.issueId,
+    taskId: row.taskId,
     key: row.key,
     title: row.title,
     format: row.format,
@@ -85,11 +89,11 @@ export function mapIssueDocumentRow(
   };
 }
 
-export const issueDocumentSelect = {
+export const taskDocumentSelect = {
   id: documents.id,
   companyId: documents.companyId,
-  issueId: issueDocuments.issueId,
-  key: issueDocuments.key,
+  taskId: taskDocuments.taskId,
+  key: taskDocuments.key,
   title: documents.title,
   format: documents.format,
   latestBody: documents.latestBody,
@@ -109,66 +113,66 @@ export const issueDocumentSelect = {
 
 export function documentService(db: Db) {
   const filterSystemDocuments = <T extends { key: string }>(rows: T[], includeSystem: boolean) =>
-    includeSystem ? rows : rows.filter((row) => !isSystemIssueDocumentKey(row.key));
-  const issueReferences = issueReferenceService(db);
+    includeSystem ? rows : rows.filter((row) => !isSystemTaskDocumentKey(row.key));
+  const taskReferences = taskReferenceService(db);
 
   return {
-    getIssueDocumentPayload: async (
-      issue: { id: string },
+    getTaskDocumentPayload: async (
+      task: { id: string },
       options: { includeSystem?: boolean } = {},
     ) => {
       const [planDocument, documentSummaries] = await Promise.all([
         db
-          .select(issueDocumentSelect)
-          .from(issueDocuments)
-          .innerJoin(documents, eq(issueDocuments.documentId, documents.id))
-          .where(and(eq(issueDocuments.issueId, issue.id), eq(issueDocuments.key, "plan")))
+          .select(taskDocumentSelect)
+          .from(taskDocuments)
+          .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
+          .where(and(eq(taskDocuments.taskId, task.id), eq(taskDocuments.key, "plan")))
           .then((rows) => rows[0] ?? null),
         db
-          .select(issueDocumentSelect)
-          .from(issueDocuments)
-          .innerJoin(documents, eq(issueDocuments.documentId, documents.id))
-          .where(eq(issueDocuments.issueId, issue.id))
-          .orderBy(asc(issueDocuments.key), desc(documents.updatedAt)),
+          .select(taskDocumentSelect)
+          .from(taskDocuments)
+          .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
+          .where(eq(taskDocuments.taskId, task.id))
+          .orderBy(asc(taskDocuments.key), desc(documents.updatedAt)),
       ]);
 
       return {
-        planDocument: planDocument ? mapIssueDocumentRow(planDocument, true) : null,
+        planDocument: planDocument ? mapTaskDocumentRow(planDocument, true) : null,
         documentSummaries: filterSystemDocuments(documentSummaries, options.includeSystem ?? false)
-          .map((row) => mapIssueDocumentRow(row, false)),
+          .map((row) => mapTaskDocumentRow(row, false)),
       };
     },
 
-    listIssueDocuments: async (issueId: string, options: { includeSystem?: boolean } = {}) => {
+    listTaskDocuments: async (taskId: string, options: { includeSystem?: boolean } = {}) => {
       const rows = await db
-        .select(issueDocumentSelect)
-        .from(issueDocuments)
-        .innerJoin(documents, eq(issueDocuments.documentId, documents.id))
-        .where(eq(issueDocuments.issueId, issueId))
-        .orderBy(asc(issueDocuments.key), desc(documents.updatedAt));
-      return filterSystemDocuments(rows, options.includeSystem ?? false).map((row) => mapIssueDocumentRow(row, true));
+        .select(taskDocumentSelect)
+        .from(taskDocuments)
+        .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
+        .where(eq(taskDocuments.taskId, taskId))
+        .orderBy(asc(taskDocuments.key), desc(documents.updatedAt));
+      return filterSystemDocuments(rows, options.includeSystem ?? false).map((row) => mapTaskDocumentRow(row, true));
     },
 
-    getIssueDocumentByKey: async (issueId: string, rawKey: string) => {
+    getTaskDocumentByKey: async (taskId: string, rawKey: string) => {
       const key = normalizeDocumentKey(rawKey);
       const row = await db
-        .select(issueDocumentSelect)
-        .from(issueDocuments)
-        .innerJoin(documents, eq(issueDocuments.documentId, documents.id))
-        .where(and(eq(issueDocuments.issueId, issueId), eq(issueDocuments.key, key)))
+        .select(taskDocumentSelect)
+        .from(taskDocuments)
+        .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
+        .where(and(eq(taskDocuments.taskId, taskId), eq(taskDocuments.key, key)))
         .then((rows) => rows[0] ?? null);
-      return row ? mapIssueDocumentRow(row, true) : null;
+      return row ? mapTaskDocumentRow(row, true) : null;
     },
 
-    listIssueDocumentRevisions: async (issueId: string, rawKey: string) => {
+    listTaskDocumentRevisions: async (taskId: string, rawKey: string) => {
       const key = normalizeDocumentKey(rawKey);
       return db
         .select({
           id: documentRevisions.id,
           companyId: documentRevisions.companyId,
           documentId: documentRevisions.documentId,
-          issueId: issueDocuments.issueId,
-          key: issueDocuments.key,
+          taskId: taskDocuments.taskId,
+          key: taskDocuments.key,
           revisionNumber: documentRevisions.revisionNumber,
           title: documentRevisions.title,
           format: documentRevisions.format,
@@ -178,15 +182,15 @@ export function documentService(db: Db) {
           createdByUserId: documentRevisions.createdByUserId,
           createdAt: documentRevisions.createdAt,
         })
-        .from(issueDocuments)
-        .innerJoin(documents, eq(issueDocuments.documentId, documents.id))
+        .from(taskDocuments)
+        .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
         .innerJoin(documentRevisions, eq(documentRevisions.documentId, documents.id))
-        .where(and(eq(issueDocuments.issueId, issueId), eq(issueDocuments.key, key)))
+        .where(and(eq(taskDocuments.taskId, taskId), eq(taskDocuments.key, key)))
         .orderBy(desc(documentRevisions.revisionNumber));
     },
 
-    upsertIssueDocument: async (input: {
-      issueId: string;
+    upsertTaskDocument: async (input: {
+      taskId: string;
       key: string;
       title?: string | null;
       format: string;
@@ -200,12 +204,12 @@ export function documentService(db: Db) {
       lockedDocumentStrategy?: "conflict" | "create_new_document";
     }) => {
       const key = normalizeDocumentKey(input.key);
-      const issue = await db
-        .select({ id: issues.id, companyId: issues.companyId })
-        .from(issues)
-        .where(eq(issues.id, input.issueId))
+      const task = await db
+        .select({ id: tasks.id, companyId: tasks.companyId })
+        .from(tasks)
+        .where(eq(tasks.id, input.taskId))
         .then((rows) => rows[0] ?? null);
-      if (!issue) throw notFound("Issue not found");
+      if (!task) throw notFound("Task not found");
 
       const maxAttempts = input.lockedDocumentStrategy === "create_new_document" ? 3 : 1;
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -216,8 +220,8 @@ export function documentService(db: Db) {
             .select({
               id: documents.id,
               companyId: documents.companyId,
-              issueId: issueDocuments.issueId,
-              key: issueDocuments.key,
+              taskId: taskDocuments.taskId,
+              key: taskDocuments.key,
               title: documents.title,
               format: documents.format,
               latestBody: documents.latestBody,
@@ -234,24 +238,24 @@ export function documentService(db: Db) {
               createdAt: documents.createdAt,
               updatedAt: documents.updatedAt,
             })
-            .from(issueDocuments)
-            .innerJoin(documents, eq(issueDocuments.documentId, documents.id))
-            .where(and(eq(issueDocuments.issueId, issue.id), eq(issueDocuments.key, key)))
+            .from(taskDocuments)
+            .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
+            .where(and(eq(taskDocuments.taskId, task.id), eq(taskDocuments.key, key)))
             .then((rows) => rows[0] ?? null);
 
           if (existing) {
             if (existing.lockedAt) {
               if (input.lockedDocumentStrategy === "create_new_document") {
-                const issueDocumentKeys = await tx
-                  .select({ key: issueDocuments.key })
-                  .from(issueDocuments)
-                  .where(eq(issueDocuments.issueId, issue.id));
-                const fallbackKey = nextAvailableDocumentKey(key, issueDocumentKeys.map((row) => row.key));
+                const taskDocumentKeys = await tx
+                  .select({ key: taskDocuments.key })
+                  .from(taskDocuments)
+                  .where(eq(taskDocuments.taskId, task.id));
+                const fallbackKey = nextAvailableDocumentKey(key, taskDocumentKeys.map((row) => row.key));
 
                 const [document] = await tx
                   .insert(documents)
                   .values({
-                    companyId: issue.companyId,
+                    companyId: task.companyId,
                     title: input.title ?? null,
                     format: input.format,
                     latestBody: input.body,
@@ -273,7 +277,7 @@ export function documentService(db: Db) {
                 const [revision] = await tx
                   .insert(documentRevisions)
                   .values({
-                    companyId: issue.companyId,
+                    companyId: task.companyId,
                     documentId: document.id,
                     revisionNumber: 1,
                     title: input.title ?? null,
@@ -292,15 +296,15 @@ export function documentService(db: Db) {
                   .set({ latestRevisionId: revision.id })
                   .where(eq(documents.id, document.id));
 
-                await tx.insert(issueDocuments).values({
-                  companyId: issue.companyId,
-                  issueId: issue.id,
+                await tx.insert(taskDocuments).values({
+                  companyId: task.companyId,
+                  taskId: task.id,
                   documentId: document.id,
                   key: fallbackKey,
                   createdAt: now,
                   updatedAt: now,
                 });
-                await issueReferences.syncDocument(document.id, tx);
+                await taskReferences.syncDocument(document.id, tx);
 
                 return {
                   created: true as const,
@@ -310,8 +314,8 @@ export function documentService(db: Db) {
                   },
                   document: {
                     id: document.id,
-                    companyId: issue.companyId,
-                    issueId: issue.id,
+                    companyId: task.companyId,
+                    taskId: task.id,
                     key: fallbackKey,
                     title: document.title,
                     format: document.format,
@@ -354,7 +358,7 @@ export function documentService(db: Db) {
             const [revision] = await tx
               .insert(documentRevisions)
               .values({
-                companyId: issue.companyId,
+                companyId: task.companyId,
                 documentId: existing.id,
                 revisionNumber: nextRevisionNumber,
                 title: input.title ?? null,
@@ -384,10 +388,10 @@ export function documentService(db: Db) {
               .where(eq(documents.id, existing.id));
 
             await tx
-              .update(issueDocuments)
+              .update(taskDocuments)
               .set({ updatedAt: now })
-              .where(eq(issueDocuments.documentId, existing.id));
-            await issueReferences.syncDocument(existing.id, tx);
+              .where(eq(taskDocuments.documentId, existing.id));
+            await taskReferences.syncDocument(existing.id, tx);
 
             return {
               created: false as const,
@@ -416,7 +420,7 @@ export function documentService(db: Db) {
           const [document] = await tx
             .insert(documents)
             .values({
-              companyId: issue.companyId,
+              companyId: task.companyId,
               title: input.title ?? null,
               format: input.format,
               latestBody: input.body,
@@ -438,7 +442,7 @@ export function documentService(db: Db) {
           const [revision] = await tx
             .insert(documentRevisions)
             .values({
-              companyId: issue.companyId,
+              companyId: task.companyId,
               documentId: document.id,
               revisionNumber: 1,
               title: input.title ?? null,
@@ -457,22 +461,22 @@ export function documentService(db: Db) {
             .set({ latestRevisionId: revision.id })
             .where(eq(documents.id, document.id));
 
-          await tx.insert(issueDocuments).values({
-            companyId: issue.companyId,
-            issueId: issue.id,
+          await tx.insert(taskDocuments).values({
+            companyId: task.companyId,
+            taskId: task.id,
             documentId: document.id,
             key,
             createdAt: now,
             updatedAt: now,
           });
-          await issueReferences.syncDocument(document.id, tx);
+          await taskReferences.syncDocument(document.id, tx);
 
           return {
             created: true as const,
             document: {
               id: document.id,
-              companyId: issue.companyId,
-              issueId: issue.id,
+              companyId: task.companyId,
+              taskId: task.id,
               key,
               title: document.title,
               format: document.format,
@@ -497,7 +501,7 @@ export function documentService(db: Db) {
             if (input.lockedDocumentStrategy === "create_new_document" && attempt < maxAttempts - 1) {
               continue;
             }
-            throw conflict("Document key already exists on this issue", { key });
+            throw conflict("Document key already exists on this task", { key });
           }
           throw error;
         }
@@ -506,8 +510,8 @@ export function documentService(db: Db) {
       throw conflict("Unable to choose a new document key for locked document", { key });
     },
 
-    restoreIssueDocumentRevision: async (input: {
-      issueId: string;
+    restoreTaskDocumentRevision: async (input: {
+      taskId: string;
       key: string;
       revisionId: string;
       createdByAgentId?: string | null;
@@ -516,10 +520,10 @@ export function documentService(db: Db) {
       const key = normalizeDocumentKey(input.key);
       return db.transaction(async (tx) => {
         const existing = await tx
-          .select(issueDocumentSelect)
-          .from(issueDocuments)
-          .innerJoin(documents, eq(issueDocuments.documentId, documents.id))
-          .where(and(eq(issueDocuments.issueId, input.issueId), eq(issueDocuments.key, key)))
+          .select(taskDocumentSelect)
+          .from(taskDocuments)
+          .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
+          .where(and(eq(taskDocuments.taskId, input.taskId), eq(taskDocuments.key, key)))
           .then((rows) => rows[0] ?? null);
 
         if (!existing) throw notFound("Document not found");
@@ -585,10 +589,10 @@ export function documentService(db: Db) {
           .where(eq(documents.id, existing.id));
 
         await tx
-          .update(issueDocuments)
+          .update(taskDocuments)
           .set({ updatedAt: now })
-          .where(eq(issueDocuments.documentId, existing.id));
-        await issueReferences.syncDocument(existing.id, tx);
+          .where(eq(taskDocuments.documentId, existing.id));
+        await taskReferences.syncDocument(existing.id, tx);
 
         return {
           restoredFromRevisionId: revision.id,
@@ -608,8 +612,8 @@ export function documentService(db: Db) {
       });
     },
 
-    lockIssueDocument: async (input: {
-      issueId: string;
+    lockTaskDocument: async (input: {
+      taskId: string;
       key: string;
       lockedByAgentId?: string | null;
       lockedByUserId?: string | null;
@@ -617,17 +621,17 @@ export function documentService(db: Db) {
       const key = normalizeDocumentKey(input.key);
       return db.transaction(async (tx) => {
         const existing = await tx
-          .select(issueDocumentSelect)
-          .from(issueDocuments)
-          .innerJoin(documents, eq(issueDocuments.documentId, documents.id))
-          .where(and(eq(issueDocuments.issueId, input.issueId), eq(issueDocuments.key, key)))
+          .select(taskDocumentSelect)
+          .from(taskDocuments)
+          .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
+          .where(and(eq(taskDocuments.taskId, input.taskId), eq(taskDocuments.key, key)))
           .then((rows) => rows[0] ?? null);
 
         if (!existing) throw notFound("Document not found");
         if (existing.lockedAt) {
           return {
             changed: false as const,
-            document: mapIssueDocumentRow(existing, true),
+            document: mapTaskDocumentRow(existing, true),
           };
         }
 
@@ -643,14 +647,14 @@ export function documentService(db: Db) {
           .where(eq(documents.id, existing.id));
 
         await tx
-          .update(issueDocuments)
+          .update(taskDocuments)
           .set({ updatedAt: now })
-          .where(eq(issueDocuments.documentId, existing.id));
+          .where(eq(taskDocuments.documentId, existing.id));
 
         return {
           changed: true as const,
           document: {
-            ...mapIssueDocumentRow(existing, true),
+            ...mapTaskDocumentRow(existing, true),
             lockedAt: now,
             lockedByAgentId: input.lockedByAgentId ?? null,
             lockedByUserId: input.lockedByUserId ?? null,
@@ -660,21 +664,21 @@ export function documentService(db: Db) {
       });
     },
 
-    unlockIssueDocument: async (issueId: string, rawKey: string) => {
+    unlockTaskDocument: async (taskId: string, rawKey: string) => {
       const key = normalizeDocumentKey(rawKey);
       return db.transaction(async (tx) => {
         const existing = await tx
-          .select(issueDocumentSelect)
-          .from(issueDocuments)
-          .innerJoin(documents, eq(issueDocuments.documentId, documents.id))
-          .where(and(eq(issueDocuments.issueId, issueId), eq(issueDocuments.key, key)))
+          .select(taskDocumentSelect)
+          .from(taskDocuments)
+          .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
+          .where(and(eq(taskDocuments.taskId, taskId), eq(taskDocuments.key, key)))
           .then((rows) => rows[0] ?? null);
 
         if (!existing) throw notFound("Document not found");
         if (!existing.lockedAt) {
           return {
             changed: false as const,
-            document: mapIssueDocumentRow(existing, true),
+            document: mapTaskDocumentRow(existing, true),
           };
         }
 
@@ -690,14 +694,14 @@ export function documentService(db: Db) {
           .where(eq(documents.id, existing.id));
 
         await tx
-          .update(issueDocuments)
+          .update(taskDocuments)
           .set({ updatedAt: now })
-          .where(eq(issueDocuments.documentId, existing.id));
+          .where(eq(taskDocuments.documentId, existing.id));
 
         return {
           changed: true as const,
           document: {
-            ...mapIssueDocumentRow(existing, true),
+            ...mapTaskDocumentRow(existing, true),
             lockedAt: null,
             lockedByAgentId: null,
             lockedByUserId: null,
@@ -707,14 +711,14 @@ export function documentService(db: Db) {
       });
     },
 
-    deleteIssueDocument: async (issueId: string, rawKey: string) => {
+    deleteTaskDocument: async (taskId: string, rawKey: string) => {
       const key = normalizeDocumentKey(rawKey);
       return db.transaction(async (tx) => {
         const existing = await tx
-          .select(issueDocumentSelect)
-          .from(issueDocuments)
-          .innerJoin(documents, eq(issueDocuments.documentId, documents.id))
-          .where(and(eq(issueDocuments.issueId, issueId), eq(issueDocuments.key, key)))
+          .select(taskDocumentSelect)
+          .from(taskDocuments)
+          .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
+          .where(and(eq(taskDocuments.taskId, taskId), eq(taskDocuments.key, key)))
           .then((rows) => rows[0] ?? null);
 
         if (!existing) return null;
@@ -731,10 +735,10 @@ export function documentService(db: Db) {
           .from(documentAnnotationComments)
           .where(eq(documentAnnotationComments.documentId, existing.id));
         for (const annotationComment of annotationCommentIds) {
-          await issueReferences.deleteCommentSource(annotationComment.id, tx);
+          await taskReferences.deleteCommentSource(annotationComment.id, tx);
         }
-        await issueReferences.deleteDocumentSource(existing.id, tx);
-        await tx.delete(issueDocuments).where(eq(issueDocuments.documentId, existing.id));
+        await taskReferences.deleteDocumentSource(existing.id, tx);
+        await tx.delete(taskDocuments).where(eq(taskDocuments.documentId, existing.id));
         await tx.delete(documents).where(eq(documents.id, existing.id));
 
         return {

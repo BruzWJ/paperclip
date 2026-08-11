@@ -1,6 +1,6 @@
-# Plugin Issue Runtime Smoke Example
+# Plugin Task Runtime Smoke Example
 
-This first-party example validates the canonical plugin issue control plane.
+This first-party example validates the canonical plugin task control plane.
 It is intentionally small and exists as an acceptance fixture rather than a
 product plugin.
 
@@ -8,11 +8,11 @@ product plugin.
 
 - `apiRoutes` under `/api/plugins/:pluginId/api/*`
 - restricted database migrations and runtime `ctx.db`
-- plugin-owned rows joined to `public.issues`
-- plugin-created ordinary child issues with a required invokable owner and
+- plugin-owned rows joined to `public.tasks`
+- plugin-created ordinary child tasks with a required invokable owner and
   durable callback identity
-- canonical issue reads, creator messages, reassignment, and withdrawal
-- issue detail and settings UI slots that surface route, capability, namespace,
+- canonical task reads, creator messages, reassignment, and withdrawal
+- task detail and settings UI slots that surface route, capability, namespace,
   and smoke status
 
 ## Development
@@ -41,14 +41,14 @@ board builds the workspace package before installing its canonical local path.
 
 ## Scoped Route Smoke
 
-After the plugin is ready, run the scoped route against an existing issue:
+After the plugin is ready, run the scoped route against an existing task:
 
 ```bash
-curl -X POST http://127.0.0.1:3100/api/plugins/<plugin-installation-id>/api/issues/<issue-id>/smoke \
+curl -X POST http://127.0.0.1:3100/api/plugins/<plugin-installation-id>/api/tasks/<task-id>/smoke \
   -H "Authorization: Bearer <board-key>" \
   -H "Content-Type: application/json" \
   -d '{"ownerAgentId":"<agent-id>"}'
 ```
 
-The route returns the generated ordinary child issue, its owner, current
+The route returns the generated ordinary child task, its owner, current
 status, and creator request.

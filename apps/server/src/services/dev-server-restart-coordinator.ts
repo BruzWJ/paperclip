@@ -8,9 +8,9 @@ import {
 } from "../dev-server-status.js";
 import { logger } from "../middleware/logger.js";
 import {
-  listIssueExecutionRunsForActivity,
-  type IssueExecutionRunListCursor,
-} from "./issue-execution-run-service.js";
+  listTaskExecutionRunsForActivity,
+  type TaskExecutionRunListCursor,
+} from "./task-execution-run-service.js";
 import { instanceSettingsService } from "./instance-settings.js";
 
 const DEFAULT_CHECK_INTERVAL_MS = 2_500;
@@ -20,13 +20,13 @@ const ACTIVE_RUN_STATUSES = [
   "running",
 ] as const;
 
-async function countActiveIssueExecutionRuns(db: Db): Promise<number> {
+async function countActiveTaskExecutionRuns(db: Db): Promise<number> {
   const companyRows = await db.select({ id: companies.id }).from(companies);
   let total = 0;
   for (const company of companyRows) {
-    let cursor: IssueExecutionRunListCursor | null = null;
+    let cursor: TaskExecutionRunListCursor | null = null;
     do {
-      const page = await listIssueExecutionRunsForActivity(db, {
+      const page = await listTaskExecutionRunsForActivity(db, {
         companyId: company.id,
         statuses: ACTIVE_RUN_STATUSES,
         cursor,
@@ -72,7 +72,7 @@ export function createDevServerRestartCoordinator(
     getAutoRestartEnabled: async () =>
       (await instanceSettingsService(db).getGeneral())
         .autoRestartDevServerWhenIdle === true,
-    getActiveRunCount: () => countActiveIssueExecutionRuns(db),
+    getActiveRunCount: () => countActiveTaskExecutionRuns(db),
     now: () => new Date(),
     ...opts.dependencies,
   };

@@ -26,8 +26,8 @@ import { folderRoutes } from "./routes/folders.js";
 
 import { agentRoutes } from "./routes/agents.js";
 import { projectRoutes } from "./routes/projects.js";
-import { issueRoutes } from "./routes/issues.js";
-import { issueTreeControlRoutes } from "./routes/issue-tree-control.js";
+import { taskRoutes } from "./routes/tasks.js";
+import { taskTreeControlRoutes } from "./routes/task-tree-control.js";
 
 import { routineRoutes } from "./routes/routines.js";
 import { goalRoutes } from "./routes/goals.js";
@@ -63,19 +63,19 @@ import type { PluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
 import { pluginJobStore } from "./services/plugin-job-store.js";
 import type { PromptCapabilityGateway } from "./services/prompt-capability-gateway.js";
-import type { IssueExecutionRunService } from "./services/issue-execution-run-service.js";
+import type { TaskExecutionRunService } from "./services/task-execution-run-service.js";
 import { pluginLifecycleManager } from "./services/plugin-lifecycle.js";
 import {
   buildHostServices,
-  type PluginRunIssueContextReader,
+  type PluginRunTaskContextReader,
   type PluginRuntimeRecordsReader,
 } from "./services/plugin-host-services.js";
-import { createPluginIssueControlPlane } from "./services/plugin-issue-control-plane.js";
+import { createPluginTaskControlPlane } from "./services/plugin-task-control-plane.js";
 import type { PluginEventBus } from "./services/plugin-event-bus.js";
 import type { PluginDomainEventPublisher } from "./services/plugin-domain-event-publisher.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
-import type { OrdinaryIssueRuntime } from "./services/ordinary-issue-runtime.js";
+import type { OrdinaryTaskRuntime } from "./services/ordinary-task-runtime.js";
 import type { PaperclipManagedToolRouter } from "./services/paperclip-managed-tool-router.js";
 import {
   createHostClientHandlers,
@@ -88,8 +88,8 @@ import { COMPANY_IMPORTS_API_PATH } from "./routes/company-import-paths.js";
 import { apiCompression } from "./middleware/api-compression.js";
 import { denyGenericAgentRest } from "./routes/compiled-interface-only.js";
 import { rejectRunInterfaceBearerFromGenericApi } from "./middleware/prompt-capability-boundary.js";
-import type { IssueSessionStore } from "./services/issue-session/store.js";
-import type { IssueExecutionCancellationService } from "./services/issue-execution-cancellation.js";
+import type { TaskSessionStore } from "./services/task-session/store.js";
+import type { TaskExecutionCancellationService } from "./services/task-execution-cancellation.js";
 import {
   localExecutionOrchestrator,
   type LocalExecutionOrchestrator,
@@ -162,22 +162,22 @@ export async function createApp(
     promptCapabilityGateway: PromptCapabilityGateway;
     /** One app-owned managed-tool router shared by ACPX and Board MCP. */
     paperclipManagedTools: PaperclipManagedToolRouter;
-    pluginRunIssueContextReader: PluginRunIssueContextReader;
+    pluginRunTaskContextReader: PluginRunTaskContextReader;
     pluginRuntimeRecordsReader: PluginRuntimeRecordsReader;
-    issueSessionStore?: IssueSessionStore;
-    ordinaryIssueRuntime: OrdinaryIssueRuntime;
-    issueExecutionRunService: Pick<
-      IssueExecutionRunService,
+    taskSessionStore?: TaskSessionStore;
+    ordinaryTaskRuntime: OrdinaryTaskRuntime;
+    taskExecutionRunService: Pick<
+      TaskExecutionRunService,
       "readJoinedRunDetail"
     >;
-    issueExecutionCancellation: Pick<
-      IssueExecutionCancellationService,
+    taskExecutionCancellation: Pick<
+      TaskExecutionCancellationService,
       | "suspendBudgetScopeWork"
       | "cancelRun"
       | "requestAgentCancellationsInTransaction"
       | "reconcileRequestedCancellations"
       | "requestAgentSuspensionsInTransaction"
-      | "requestRunningIssueInterruptionsInTransaction"
+      | "requestRunningTaskInterruptionsInTransaction"
       | "requestScopeCancellationsInTransaction"
     >;
     adapterReadinessLocalExecutionOrchestrator?: Pick<
@@ -187,10 +187,10 @@ export async function createApp(
   },
 ) {
   const app = express();
-  const ordinaryIssues = opts.ordinaryIssueRuntime;
-  const pluginIssueControlPlane = createPluginIssueControlPlane(
+  const ordinaryTasks = opts.ordinaryTaskRuntime;
+  const pluginTaskControlPlane = createPluginTaskControlPlane(
     db,
-    ordinaryIssues,
+    ordinaryTasks,
   );
   app.locals.paperclipDb = db;
   const captureRawBody = (req: express.Request, _res: express.Response, buf: Buffer) => {
@@ -275,12 +275,12 @@ export async function createApp(
     }),
   );
   api.use(openApiRoutes());
-  api.use("/companies", companyRoutes(db, opts.storageService, ordinaryIssues));
+  api.use("/companies", companyRoutes(db, opts.storageService, ordinaryTasks));
   api.use(llmRoutes(db));
   api.use(folderRoutes(db));
   api.use(companySkillRoutes(db, {
-    ordinaryIssues,
-    issueExecutionCancellation: opts.issueExecutionCancellation,
+    ordinaryTasks,
+    taskExecutionCancellation: opts.taskExecutionCancellation,
   }));
   api.use(companySkillPolicyRoutes(db));
   api.use(changeConsentRoutes(db));
@@ -288,18 +288,18 @@ export async function createApp(
   api.use(
     agentRoutes(db, {
       pluginWorkerManager: workerManager,
-      issueSessionStore: opts.issueSessionStore,
-      ordinaryIssues,
-      issueExecutionCancellation: opts.issueExecutionCancellation,
+      taskSessionStore: opts.taskSessionStore,
+      ordinaryTasks,
+      taskExecutionCancellation: opts.taskExecutionCancellation,
     }),
   );
   api.use(assetRoutes(db, opts.storageService));
   api.use(projectRoutes(db));
-  api.use(issueTreeControlRoutes(
+  api.use(taskTreeControlRoutes(
     db,
-    opts.issueExecutionCancellation,
+    opts.taskExecutionCancellation,
   ));
-  api.use(routineRoutes(db, { ordinaryIssues }));
+  api.use(routineRoutes(db, { ordinaryTasks }));
   api.use(goalRoutes(db));
   api.use(
     accessRoutes(db, {
@@ -308,19 +308,19 @@ export async function createApp(
   );
   api.use(approvalRoutes(db, {
     pluginWorkerManager: workerManager,
-    ordinaryIssues,
-    issueExecutionCancellation: opts.issueExecutionCancellation,
+    ordinaryTasks,
+    taskExecutionCancellation: opts.taskExecutionCancellation,
   }));
   api.use(secretRoutes(db));
   api.use(costRoutes(db, {
     pluginWorkerManager: workerManager,
-    issueExecutionCancellation: opts.issueExecutionCancellation,
+    taskExecutionCancellation: opts.taskExecutionCancellation,
   }));
   api.use(activityRoutes(db));
   api.use(
     runRoutes(
       db,
-      opts.issueExecutionRunService,
+      opts.taskExecutionRunService,
       adapterConfigurationPreflight,
     ),
   );
@@ -345,8 +345,8 @@ export async function createApp(
   });
   const lifecycle = pluginLifecycleManager(db, {
     loader,
-    dispatchRef: ordinaryIssues.dispatchRef,
-    issueExecutionCancellation: opts.issueExecutionCancellation,
+    dispatchRef: ordinaryTasks.dispatchRef,
+    taskExecutionCancellation: opts.taskExecutionCancellation,
   });
   const scheduler = createPluginJobScheduler({
     db,
@@ -368,11 +368,11 @@ export async function createApp(
         workerManager.call(pluginId, "onEvent", params, 15 * 60 * 1_000);
       const services = buildHostServices(db, pluginId, eventBus, deliverEvent, {
         manifest,
-        pluginIssueControlPlane,
-        pluginRunIssueContextReader: opts.pluginRunIssueContextReader,
+        pluginTaskControlPlane,
+        pluginRunTaskContextReader: opts.pluginRunTaskContextReader,
         pluginRuntimeRecordsReader: opts.pluginRuntimeRecordsReader,
-        ordinaryIssues,
-        issueExecutionCancellation: opts.issueExecutionCancellation,
+        ordinaryTasks,
+        taskExecutionCancellation: opts.taskExecutionCancellation,
       });
       return {
         handlers: createHostClientHandlers({
@@ -384,9 +384,9 @@ export async function createApp(
       };
     },
   });
-  api.use(issueRoutes(db, opts.storageService, {
+  api.use(taskRoutes(db, opts.storageService, {
     pluginWorkerManager: workerManager,
-    ordinaryIssues,
+    ordinaryTasks,
     pluginDomainEvents: opts.pluginDomainEvents,
   }));
   let viteHtmlRenderer: ReturnType<typeof createCachedViteHtmlRenderer> | null = null;

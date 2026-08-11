@@ -190,26 +190,26 @@ function serializeForm(form: FormModel): string {
 
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
-interface ValidationIssue {
+interface ValidationFinding {
   field: string;
   message: string;
 }
 
-function collectValidation(form: FormModel, isSkillFile: boolean): ValidationIssue[] {
-  const issues: ValidationIssue[] = [];
+function collectValidationFindings(form: FormModel, isSkillFile: boolean): ValidationFinding[] {
+  const findings: ValidationFinding[] = [];
   const name = form.name.trim();
   const description = form.description.trim();
-  if (isSkillFile && !name) issues.push({ field: "name", message: "SKILL.md needs a name." });
+  if (isSkillFile && !name) findings.push({ field: "name", message: "SKILL.md needs a name." });
   if (name && !SLUG_RE.test(name)) {
-    issues.push({ field: "name", message: "Use lowercase letters, numbers and hyphens." });
+    findings.push({ field: "name", message: "Use lowercase letters, numbers and hyphens." });
   }
   if (isSkillFile && !description) {
-    issues.push({ field: "description", message: "SKILL.md needs a description." });
+    findings.push({ field: "description", message: "SKILL.md needs a description." });
   }
   if (form.allowedToolsPresent && form.allowedTools === null) {
-    issues.push({ field: "allowed-tools", message: "Expected a list — edit in YAML." });
+    findings.push({ field: "allowed-tools", message: "Expected a list — edit in YAML." });
   }
-  return issues;
+  return findings;
 }
 
 function isSkillMarkdown(fileName: string): boolean {
@@ -243,8 +243,8 @@ export function FrontmatterPanel({
   const canUseFields = present && analysis.canRoundTrip;
   const effectiveMode: FrontmatterMode = mode === "fields" && !canUseFields ? "yaml" : mode;
 
-  const validation = useMemo(
-    () => (effectiveMode === "fields" ? collectValidation(form, isSkillFile) : []),
+  const validationFindings = useMemo(
+    () => (effectiveMode === "fields" ? collectValidationFindings(form, isSkillFile) : []),
     [effectiveMode, form, isSkillFile],
   );
 
@@ -314,7 +314,7 @@ export function FrontmatterPanel({
   }, [emit, isSkillFile, skillSlug]);
 
   const summary = useMemo(() => buildSummary(analysis.parsed), [analysis.parsed]);
-  const warningCount = validation.length;
+  const warningCount = validationFindings.length;
 
   const chevron = open ? (
     <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -394,7 +394,7 @@ export function FrontmatterPanel({
           {present && effectiveMode === "fields" && warningCount > 0 ? (
             <Badge variant="outline" className="gap-1 text-amber-500" data-testid="frontmatter-warning-chip">
               <AlertTriangle className="h-3.5 w-3.5" />
-              {warningCount} {warningCount === 1 ? "issue" : "issues"}
+              {warningCount} {warningCount === 1 ? "warning" : "warnings"}
             </Badge>
           ) : null}
         </div>
@@ -405,7 +405,7 @@ export function FrontmatterPanel({
               {effectiveMode === "fields" ? (
                 <FieldsForm
                   form={form}
-                  validation={validation}
+                  validationFindings={validationFindings}
                   readOnly={readOnly}
                   onCommit={commitForm}
                 />
@@ -414,7 +414,7 @@ export function FrontmatterPanel({
                   value={yamlText}
                   readOnly={readOnly}
                   canReturnToFields={canUseFields}
-                  parseError={present && !analysis.canRoundTrip && analysis.issues.length === 0}
+                  parseError={present && !analysis.canRoundTrip && analysis.diagnostics.length === 0}
                   onChange={handleYamlChange}
                 />
               )}
@@ -442,8 +442,8 @@ function buildSummary(parsed: Record<string, unknown>): string {
   return parts.join(" · ");
 }
 
-function fieldWarning(validation: ValidationIssue[], field: string): string | null {
-  return validation.find((issue) => issue.field === field)?.message ?? null;
+function fieldWarning(findings: ValidationFinding[], field: string): string | null {
+  return findings.find((finding) => finding.field === field)?.message ?? null;
 }
 
 function FieldWarning({ message, id }: { message: string; id?: string }) {
@@ -457,18 +457,18 @@ function FieldWarning({ message, id }: { message: string; id?: string }) {
 
 function FieldsForm({
   form,
-  validation,
+  validationFindings,
   readOnly,
   onCommit,
 }: {
   form: FormModel;
-  validation: ValidationIssue[];
+  validationFindings: ValidationFinding[];
   readOnly: boolean;
   onCommit: (form: FormModel) => void;
 }) {
-  const nameWarning = fieldWarning(validation, "name");
-  const descriptionWarning = fieldWarning(validation, "description");
-  const toolsWarning = fieldWarning(validation, "allowed-tools");
+  const nameWarning = fieldWarning(validationFindings, "name");
+  const descriptionWarning = fieldWarning(validationFindings, "description");
+  const toolsWarning = fieldWarning(validationFindings, "allowed-tools");
   const nameWarningId = "fm-name-warning";
   const descriptionWarningId = "fm-description-warning";
 

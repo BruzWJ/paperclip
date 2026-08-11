@@ -63,9 +63,9 @@ function timelineSample(): WorkTimelineResult {
         actorId: "agent:codex",
         runId: "run-1",
         kind: "productive",
-        issueId: "issue-1",
-        issueIdentifier: "PAP-12443",
-        issueTitle: "Work Timeline sticky gutter",
+        taskId: "task-1",
+        taskIdentifier: "PAP-12443",
+        taskTitle: "Work Timeline sticky gutter",
         start: "2026-07-02T09:00:00.000Z",
         end: "2026-07-02T10:00:00.000Z",
         status: "succeeded",
@@ -75,9 +75,9 @@ function timelineSample(): WorkTimelineResult {
         actorId: "agent:qa",
         runId: "run-2",
         kind: "productive",
-        issueId: "issue-2",
-        issueIdentifier: "PAP-12426",
-        issueTitle: "QA validation",
+        taskId: "task-2",
+        taskIdentifier: "PAP-12426",
+        taskTitle: "QA validation",
         start: "2026-07-02T11:00:00.000Z",
         end: "2026-07-02T11:30:00.000Z",
         status: "succeeded",
@@ -86,7 +86,7 @@ function timelineSample(): WorkTimelineResult {
     ],
     events: [],
     edges: [],
-    pagination: { limit: 200, offset: 0, totalIssues: 2, hasMore: false },
+    pagination: { limit: 200, offset: 0, totalTasks: 2, hasMore: false },
     window: {
       from: "2026-07-02T00:00:00.000Z",
       to: "2026-07-03T00:00:00.000Z",
@@ -192,9 +192,9 @@ describe("WorkTimelineChart", () => {
     const data = timelineSample();
     data.actors.push({ id: "user:dotta", type: "user", name: "Dotta" });
     data.events = [
-      { actorId: "user:dotta", kind: "created", issueId: "issue-1", at: "2026-07-02T08:30:00.000Z" },
-      { actorId: "user:dotta", kind: "commented", issueId: "issue-2", at: "2026-07-02T09:15:00.000Z" },
-      { actorId: "user:dotta", kind: "approved", issueId: "issue-1", at: "2026-07-02T10:05:00.000Z" },
+      { actorId: "user:dotta", kind: "created", taskId: "task-1", at: "2026-07-02T08:30:00.000Z" },
+      { actorId: "user:dotta", kind: "commented", taskId: "task-2", at: "2026-07-02T09:15:00.000Z" },
+      { actorId: "user:dotta", kind: "approved", taskId: "task-1", at: "2026-07-02T10:05:00.000Z" },
     ];
     renderChart(data);
 
@@ -212,9 +212,9 @@ describe("WorkTimelineChart", () => {
         actorId: "agent:architect",
         runId: "run-3",
         kind: "productive",
-        issueId: "issue-3",
-        issueIdentifier: "PAP-12427",
-        issueTitle: "Follow-up validation",
+        taskId: "task-3",
+        taskIdentifier: "PAP-12427",
+        taskTitle: "Follow-up validation",
         start: "2026-07-02T11:45:00.000Z",
         end: "2026-07-02T12:00:00.000Z",
         status: "succeeded",
@@ -224,9 +224,9 @@ describe("WorkTimelineChart", () => {
         actorId: "agent:codex",
         runId: "run-4",
         kind: "productive",
-        issueId: "issue-4",
-        issueIdentifier: "PAP-12428",
-        issueTitle: "Unrelated work",
+        taskId: "task-4",
+        taskIdentifier: "PAP-12428",
+        taskTitle: "Unrelated work",
         start: "2026-07-02T13:00:00.000Z",
         end: "2026-07-02T14:00:00.000Z",
         status: "succeeded",
@@ -237,14 +237,14 @@ describe("WorkTimelineChart", () => {
       {
         fromActorId: "agent:codex",
         toActorId: "agent:qa",
-        issueId: "issue-2",
+        taskId: "task-2",
         at: "2026-07-02T10:45:00.000Z",
         kind: "delegation",
       },
       {
         fromActorId: "agent:qa",
         toActorId: "agent:architect",
-        issueId: "issue-3",
+        taskId: "task-3",
         at: "2026-07-02T11:35:00.000Z",
         kind: "delegation",
       },
@@ -300,14 +300,14 @@ describe("WorkTimelineChart", () => {
       {
         fromActorId: "user:dotta",
         toActorId: "agent:codex",
-        issueId: "issue-1",
+        taskId: "task-1",
         at: "2026-07-02T08:45:00.000Z",
         kind: "delegation",
       },
       {
         fromActorId: "agent:codex",
         toActorId: "agent:qa",
-        issueId: "issue-2",
+        taskId: "task-2",
         at: "2026-07-02T10:45:00.000Z",
         kind: "delegation",
       },
@@ -346,7 +346,7 @@ describe("WorkTimelineChart", () => {
       bar.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(open).toHaveBeenCalledWith("/PAP/issues/issue-1", "_blank", "noopener,noreferrer");
+    expect(open).toHaveBeenCalledWith("/PAP/tasks/task-1", "_blank", "noopener,noreferrer");
   });
 
   it("lets minimap edge handles resize the visible range and update zoom", () => {

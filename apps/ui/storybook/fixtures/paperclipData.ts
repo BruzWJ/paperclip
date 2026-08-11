@@ -11,10 +11,10 @@ import {
   type CompanySecretProviderConfig,
   type DashboardSummary,
   type Goal,
-  type Issue,
-  type IssueExecutionRunEnvelopeRecord,
-  type IssueDocument,
-  type IssueLabel,
+  type Task,
+  type TaskExecutionRunEnvelopeRecord,
+  type TaskDocument,
+  type TaskLabel,
   type Project,
   type SecretAccessEvent,
   type SecretProviderConfigDiscoveryPreviewResult,
@@ -33,8 +33,8 @@ export const storybookCompanies: Company[] = [
     status: "active",
     pauseReason: null,
     pausedAt: null,
-    issuePrefix: "PAP",
-    issueCounter: 1641,
+    taskPrefix: "PAP",
+    taskCounter: 1641,
     budgetCurrency: "USD",
     budgetMonthlyAmount: canonicalizeMoneyAmount("2500"),
     knownSpendAmount: canonicalizeMoneyAmount("675"),
@@ -54,8 +54,8 @@ export const storybookCompanies: Company[] = [
     status: "active",
     pauseReason: null,
     pausedAt: null,
-    issuePrefix: "RES",
-    issueCounter: 88,
+    taskPrefix: "RES",
+    taskCounter: 88,
     budgetCurrency: "EUR",
     budgetMonthlyAmount: canonicalizeMoneyAmount("1800"),
     knownSpendAmount: canonicalizeMoneyAmount("395"),
@@ -75,8 +75,8 @@ export const storybookCompanies: Company[] = [
     status: "paused",
     pauseReason: "manual",
     pausedAt: recent(240),
-    issuePrefix: "OPS",
-    issueCounter: 204,
+    taskPrefix: "OPS",
+    taskCounter: 204,
     budgetCurrency: "USD",
     budgetMonthlyAmount: canonicalizeMoneyAmount("900"),
     knownSpendAmount: canonicalizeMoneyAmount("912"),
@@ -175,7 +175,7 @@ export const storybookAgents: Agent[] = [
 
 export const storybookAgentMap = new Map(storybookAgents.map((agent) => [agent.id, agent]));
 
-export const storybookIssueLabels: IssueLabel[] = [
+export const storybookTaskLabels: TaskLabel[] = [
   {
     id: "label-ui",
     companyId: "company-storybook",
@@ -210,10 +210,10 @@ export const storybookIssueLabels: IssueLabel[] = [
   },
 ];
 
-const storybookIssueLabelMap = new Map(storybookIssueLabels.map((label) => [label.id, label]));
+const storybookTaskLabelMap = new Map(storybookTaskLabels.map((label) => [label.id, label]));
 
 function labelsFor(ids: string[]) {
-  return ids.map((id) => storybookIssueLabelMap.get(id)).filter((label): label is IssueLabel => Boolean(label));
+  return ids.map((id) => storybookTaskLabelMap.get(id)).filter((label): label is TaskLabel => Boolean(label));
 }
 
 export const storybookGoals: Goal[] = [
@@ -258,7 +258,7 @@ export const storybookGoals: Goal[] = [
     companyId: "company-storybook",
     title: "Complete Storybook review coverage",
     description: "Capture dense board UI states in fixture-backed stories before release review.",
-    level: "issue",
+    level: "task",
     status: "active",
     parentId: "goal-board-ux",
     ownerAgentId: "agent-codex",
@@ -282,7 +282,7 @@ export const storybookGoals: Goal[] = [
     companyId: "company-storybook",
     title: "Retire old import wizard",
     description: "Legacy import wizard work is preserved for audit only.",
-    level: "issue",
+    level: "task",
     status: "cancelled",
     parentId: "goal-board-ux",
     ownerAgentId: null,
@@ -357,13 +357,13 @@ export const storybookProjects: Project[] = [
   }),
 ];
 
-type StorybookIssueOwner =
+type StorybookTaskOwner =
   | { kind: "agent"; agentId: string }
   | { kind: "user"; userId: string }
   | { kind: "board" };
 
-type StorybookIssueOverrides = Partial<Omit<
-  Issue,
+type StorybookTaskOverrides = Partial<Omit<
+  Task,
   | "ownerKind"
   | "ownerAgentId"
   | "ownerUserId"
@@ -382,13 +382,13 @@ type StorybookIssueOverrides = Partial<Omit<
   | "creatorSystemSourceKind"
   | "creatorSystemSourceId"
 >> & {
-  owner?: StorybookIssueOwner;
+  owner?: StorybookTaskOwner;
 };
 
-export function createIssue(overrides: StorybookIssueOverrides = {}): Issue {
-  const { owner = { kind: "agent", agentId: "agent-codex" }, ...issueOverrides } = overrides;
-  const boardPresentationStatus = issueOverrides.boardPresentationStatus ?? "in_progress";
-  const lifecycleStatus = issueOverrides.lifecycleStatus
+export function createTask(overrides: StorybookTaskOverrides = {}): Task {
+  const { owner = { kind: "agent", agentId: "agent-codex" }, ...taskOverrides } = overrides;
+  const boardPresentationStatus = taskOverrides.boardPresentationStatus ?? "in_progress";
+  const lifecycleStatus = taskOverrides.lifecycleStatus
     ?? (boardPresentationStatus === "done" || boardPresentationStatus === "cancelled"
       ? boardPresentationStatus
       : boardPresentationStatus === "blocked"
@@ -416,7 +416,7 @@ export function createIssue(overrides: StorybookIssueOverrides = {}): Issue {
         };
 
   return {
-    id: "issue-storybook-1",
+    id: "task-storybook-1",
     companyId: "company-storybook",
     projectId: "project-board-ui",
     projectWorkspaceId: null,
@@ -440,7 +440,7 @@ export function createIssue(overrides: StorybookIssueOverrides = {}): Issue {
     creatorRoutineDispatchId: null,
     creatorSystemSourceKind: null,
     creatorSystemSourceId: null,
-    issueNumber: 1641,
+    taskNumber: 1641,
     identifier: "PAP-1641",
     requestDepth: 0,
     billingCode: "product",
@@ -464,17 +464,17 @@ export function createIssue(overrides: StorybookIssueOverrides = {}): Issue {
     isUnreadForMe: true,
     createdAt: recent(90),
     updatedAt: recent(3),
-    ...issueOverrides,
+    ...taskOverrides,
     boardPresentationStatus,
     lifecycleStatus,
-    workMode: issueOverrides.workMode ?? "standard",
+    workMode: taskOverrides.workMode ?? "standard",
   };
 }
 
-export const storybookIssues: Issue[] = [
-  createIssue(),
-  createIssue({
-    id: "issue-storybook-2",
+export const storybookTasks: Task[] = [
+  createTask(),
+  createTask({
+    id: "task-storybook-2",
     title: "Add budget hard-stop incident review",
     request: "Trace why a hard stop paused the agent and add a board-facing incident summary.",
     boardPresentationStatus: "blocked",
@@ -482,14 +482,14 @@ export const storybookIssues: Issue[] = [
     owner: { kind: "agent", agentId: "agent-qa" },
     startedAt: null,
     identifier: "PAP-1528",
-    issueNumber: 1528,
+    taskNumber: 1528,
     billingCode: "reliability",
     projectId: "project-budget",
     labelIds: ["label-risk", "label-backend"],
     labels: labelsFor(["label-risk", "label-backend"]),
     blockedBy: [
       {
-        id: "issue-storybook-7",
+        id: "task-storybook-7",
         identifier: "PAP-1591",
         title: "Confirm project budget override policy",
         boardPresentationStatus: "in_review",
@@ -500,66 +500,66 @@ export const storybookIssues: Issue[] = [
     ],
     lastActivityAt: recent(18),
   }),
-  createIssue({
-    id: "issue-storybook-3",
+  createTask({
+    id: "task-storybook-3",
     title: "QA invite flow on authenticated private mode",
     boardPresentationStatus: "in_review",
     priority: "medium",
     owner: { kind: "user", userId: "user-board" },
     identifier: "PAP-1602",
-    issueNumber: 1602,
+    taskNumber: 1602,
     completedAt: null,
     lastActivityAt: recent(49),
     isUnreadForMe: false,
   }),
-  createIssue({
-    id: "issue-storybook-4",
-    parentId: "issue-storybook-1",
-    title: "Extract issue row density fixtures",
-    request: "Create fixture-backed rows for unread, selected, nested, and grouped issue management views.",
+  createTask({
+    id: "task-storybook-4",
+    parentId: "task-storybook-1",
+    title: "Extract task row density fixtures",
+    request: "Create fixture-backed rows for unread, selected, nested, and grouped task management views.",
     boardPresentationStatus: "todo",
     priority: "medium",
     startedAt: null,
     identifier: "PAP-1668",
-    issueNumber: 1668,
+    taskNumber: 1668,
     labelIds: ["label-ui"],
     labels: labelsFor(["label-ui"]),
     lastActivityAt: recent(31),
     isUnreadForMe: true,
   }),
-  createIssue({
-    id: "issue-storybook-5",
-    parentId: "issue-storybook-1",
+  createTask({
+    id: "task-storybook-5",
+    parentId: "task-storybook-1",
     title: "Review document editor empty states",
-    request: "Validate plan and notes documents in issue detail before handing the Storybook preview to QA.",
+    request: "Validate plan and notes documents in task detail before handing the Storybook preview to QA.",
     boardPresentationStatus: "done",
     priority: "low",
     owner: { kind: "agent", agentId: "agent-qa" },
     completedAt: recent(22),
     identifier: "PAP-1669",
-    issueNumber: 1669,
+    taskNumber: 1669,
     labelIds: ["label-docs"],
     labels: labelsFor(["label-docs"]),
     lastActivityAt: recent(22),
     isUnreadForMe: false,
   }),
-  createIssue({
-    id: "issue-storybook-6",
+  createTask({
+    id: "task-storybook-6",
     title: "Publish static Storybook preview",
-    request: "Build the static preview and attach the generated artifact to the parent issue.",
+    request: "Build the static preview and attach the generated artifact to the parent task.",
     boardPresentationStatus: "todo",
     priority: "high",
     owner: { kind: "board" },
     startedAt: null,
     identifier: "PAP-1670",
-    issueNumber: 1670,
+    taskNumber: 1670,
     labelIds: ["label-ui", "label-risk"],
     labels: labelsFor(["label-ui", "label-risk"]),
     lastActivityAt: recent(64),
     isUnreadForMe: false,
   }),
-  createIssue({
-    id: "issue-storybook-7",
+  createTask({
+    id: "task-storybook-7",
     title: "Confirm project budget override policy",
     request: "Board review needed before increasing the project budget for long-running browser verification.",
     boardPresentationStatus: "in_review",
@@ -567,7 +567,7 @@ export const storybookIssues: Issue[] = [
     owner: { kind: "user", userId: "user-board" },
     startedAt: null,
     identifier: "PAP-1591",
-    issueNumber: 1591,
+    taskNumber: 1591,
     billingCode: "governance",
     projectId: "project-budget",
     labelIds: ["label-risk"],
@@ -575,15 +575,15 @@ export const storybookIssues: Issue[] = [
     lastActivityAt: recent(85),
     isUnreadForMe: false,
   }),
-  createIssue({
-    id: "issue-storybook-8",
+  createTask({
+    id: "task-storybook-8",
     title: "Clean up release smoke artifacts",
     request: "Remove release smoke artifacts after static preview review.",
     boardPresentationStatus: "blocked",
     priority: "medium",
     startedAt: recent(260),
     identifier: "PAP-1608",
-    issueNumber: 1608,
+    taskNumber: 1608,
     projectId: "project-board-ui",
     labelIds: ["label-ui", "label-risk"],
     labels: labelsFor(["label-ui", "label-risk"]),
@@ -592,18 +592,18 @@ export const storybookIssues: Issue[] = [
   }),
 ];
 
-export const storybookIssueDocuments: IssueDocument[] = [
+export const storybookTaskDocuments: TaskDocument[] = [
   {
     id: "document-plan-storybook",
     companyId: "company-storybook",
-    issueId: "issue-storybook-1",
+    taskId: "task-storybook-1",
     key: "plan",
     title: "Plan",
     format: "markdown",
     body: [
       "# Plan",
       "",
-      "- Add issue-management stories for list, filters, detail, documents, and runs.",
+      "- Add task-management stories for list, filters, detail, documents, and runs.",
       "- Use existing product components instead of mock-only approximations.",
       "- Verify the Storybook build after the fixture expansion.",
     ].join("\n"),
@@ -622,14 +622,14 @@ export const storybookIssueDocuments: IssueDocument[] = [
   {
     id: "document-notes-storybook",
     companyId: "company-storybook",
-    issueId: "issue-storybook-1",
+    taskId: "task-storybook-1",
     key: "notes",
     title: "Review Notes",
     format: "markdown",
     body: [
       "# Review Notes",
       "",
-      "- The issue list needs group headers and dense trailing columns.",
+      "- The task list needs group headers and dense trailing columns.",
       "- The filters popover should show selected status, priority, and assignee filters.",
       "- Project copy should make ownership and current status clear.",
     ].join("\n"),
@@ -647,25 +647,25 @@ export const storybookIssueDocuments: IssueDocument[] = [
   },
 ];
 
-export function createIssueExecutionRun(
-  overrides: Partial<IssueExecutionRunEnvelopeRecord> = {},
-): IssueExecutionRunEnvelopeRecord {
+export function createTaskExecutionRun(
+  overrides: Partial<TaskExecutionRunEnvelopeRecord> = {},
+): TaskExecutionRunEnvelopeRecord {
   const id = overrides.id ?? "run-storybook";
-  const issueId = overrides.issueId ?? "issue-storybook-1";
+  const taskId = overrides.taskId ?? "task-storybook-1";
   const createdAt = overrides.createdAt ?? recent(28).toISOString();
   return {
     id,
     companyId: "company-storybook",
-    issueId,
+    taskId,
     sessionId: `session-${id}`,
-    executionScopeId: `scope-${issueId}`,
+    executionScopeId: `scope-${taskId}`,
     kind: "productive",
     status: "running",
     ownershipEpoch: 1,
     targetAgentId: "agent-codex",
     adapterConfigRevisionId: "adapter-revision-storybook",
     executionMode: "owner",
-    issueExecutionAuthorityId: "authority-storybook",
+    taskExecutionAuthorityId: "authority-storybook",
     consultExecutionId: null,
     parentRunId: null,
     retryOfRunId: null,
@@ -683,9 +683,9 @@ export function createIssueExecutionRun(
   };
 }
 
-export const storybookIssueRuns: IssueExecutionRunEnvelopeRecord[] = [
-  createIssueExecutionRun(),
-  createIssueExecutionRun({
+export const storybookTaskRuns: TaskExecutionRunEnvelopeRecord[] = [
+  createTaskExecutionRun(),
+  createTaskExecutionRun({
     id: "run-storybook-qa",
     status: "succeeded",
     targetAgentId: "agent-qa",
@@ -698,7 +698,7 @@ export const storybookIssueRuns: IssueExecutionRunEnvelopeRecord[] = [
     createdAt: recent(110).toISOString(),
     updatedAt: recent(94).toISOString(),
   }),
-  createIssueExecutionRun({
+  createTaskExecutionRun({
     id: "run-storybook-plan",
     status: "succeeded",
     currentAttemptId: null,
@@ -764,7 +764,7 @@ export const storybookApprovals: Approval[] = [
     status: "approved",
     payload: {
       title: "Publish the Storybook preview for design review",
-      summary: "Build the static Storybook and attach the generated URL to the release issue.",
+      summary: "Build the static Storybook and attach the generated URL to the release task.",
       recommendedAction: "Approve publishing the preview for internal board review.",
       nextActionOnApproval: "Run build-storybook, upload the static artifact, and request QA visual review.",
       risks: [
@@ -855,9 +855,9 @@ export const storybookActivityEvents: ActivityEvent[] = [
     companyId: "company-storybook",
     actorType: "agent",
     actorId: "agent-codex",
-    action: "issue.status_changed",
-    entityType: "issue",
-    entityId: "issue-storybook-1",
+    action: "task.status_changed",
+    entityType: "task",
+    entityId: "task-storybook-1",
     agentId: "agent-codex",
     runId: "run-storybook",
     details: { from: "todo", to: "in_progress" },
@@ -896,13 +896,13 @@ export const storybookActivityEvents: ActivityEvent[] = [
 ];
 
 export const storybookEntityNameMap = new Map<string, string>([
-  ["issue:issue-storybook-1", "PAP-1641"],
-  ["issue:issue-storybook-2", "PAP-1528"],
-  ["issue:issue-storybook-3", "PAP-1602"],
-  ["issue:issue-storybook-4", "PAP-1668"],
-  ["issue:issue-storybook-5", "PAP-1669"],
-  ["issue:issue-storybook-6", "PAP-1670"],
-  ["issue:issue-storybook-7", "PAP-1591"],
+  ["task:task-storybook-1", "PAP-1641"],
+  ["task:task-storybook-2", "PAP-1528"],
+  ["task:task-storybook-3", "PAP-1602"],
+  ["task:task-storybook-4", "PAP-1668"],
+  ["task:task-storybook-5", "PAP-1669"],
+  ["task:task-storybook-6", "PAP-1670"],
+  ["task:task-storybook-7", "PAP-1591"],
   ["approval:approval-budget", "Budget override"],
   ["agent:agent-codex", "CodexCoder"],
   ["agent:agent-qa", "QAChecker"],
@@ -910,13 +910,13 @@ export const storybookEntityNameMap = new Map<string, string>([
 ]);
 
 export const storybookEntityTitleMap = new Map<string, string>([
-  ["issue:issue-storybook-1", "Create super-detailed storybooks for the project"],
-  ["issue:issue-storybook-2", "Add budget hard-stop incident review"],
-  ["issue:issue-storybook-3", "QA invite flow on authenticated private mode"],
-  ["issue:issue-storybook-4", "Extract issue row density fixtures"],
-  ["issue:issue-storybook-5", "Review document editor empty states"],
-  ["issue:issue-storybook-6", "Publish static Storybook preview"],
-  ["issue:issue-storybook-7", "Confirm project budget override policy"],
+  ["task:task-storybook-1", "Create super-detailed storybooks for the project"],
+  ["task:task-storybook-2", "Add budget hard-stop incident review"],
+  ["task:task-storybook-3", "QA invite flow on authenticated private mode"],
+  ["task:task-storybook-4", "Extract task row density fixtures"],
+  ["task:task-storybook-5", "Review document editor empty states"],
+  ["task:task-storybook-6", "Publish static Storybook preview"],
+  ["task:task-storybook-7", "Confirm project budget override policy"],
 ]);
 
 export const storybookSidebarBadges: SidebarBadges = {
@@ -934,7 +934,7 @@ export const storybookDashboardSummary: DashboardSummary = {
     paused: 0,
     error: 0,
   },
-  issues: {
+  tasks: {
     open: 12,
     inProgress: 4,
     blocked: 1,
@@ -1252,7 +1252,7 @@ export const storybookSecretAccessEvents: SecretAccessEvent[] = [
     consumerType: "agent",
     consumerId: "agent-codex",
     configPath: "env.OPENAI_API_KEY",
-    issueId: "issue-storybook-1",
+    taskId: "task-storybook-1",
     runId: "run-storybook",
     pluginId: null,
     outcome: "success",
@@ -1276,7 +1276,7 @@ export const storybookSecretAccessEvents: SecretAccessEvent[] = [
     consumerType: "project",
     consumerId: "project-app",
     configPath: "env.OPENAI_API_KEY",
-    issueId: null,
+    taskId: null,
     runId: null,
     pluginId: null,
     outcome: "success",
@@ -1300,7 +1300,7 @@ export const storybookSecretAccessEvents: SecretAccessEvent[] = [
     consumerType: "agent",
     consumerId: "agent-codex",
     configPath: "env.OPENAI_API_KEY",
-    issueId: "issue-storybook-1",
+    taskId: "task-storybook-1",
     runId: "run-storybook",
     pluginId: null,
     outcome: "failure",

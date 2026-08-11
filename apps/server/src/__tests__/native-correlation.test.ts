@@ -18,7 +18,7 @@ function scope(
 ): AcpCorrelationScope {
   const common = {
     companyId: "company-1",
-    issueId: "issue-1",
+    taskId: "task-1",
     ownershipEpoch: 2,
     targetAgentId: "agent-1",
     adapterConfigIdentity: "revision-1",

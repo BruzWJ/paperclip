@@ -5,7 +5,7 @@ const SILENCED_SUCCESS_API_PATHS = [
   /^\/api\/companies\/[^/]+\/activity(?:\/|$)/,
   /^\/api\/companies\/[^/]+\/dashboard(?:\/|$)/,
   /^\/api\/companies\/[^/]+\/runs(?:\/|$)/,
-  /^\/api\/companies\/[^/]+\/issues(?:\/|$)/,
+  /^\/api\/companies\/[^/]+\/tasks(?:\/|$)/,
   /^\/api\/companies\/[^/]+\/sidebar-badges(?:\/|$)/,
   /^\/api\/runs\/[^/]+(?:\/|$)/,
 ];

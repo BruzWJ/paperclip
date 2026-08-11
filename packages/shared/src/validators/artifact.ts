@@ -8,14 +8,14 @@ export const companyArtifactSourceSchema = z.enum(["document", "attachment", "wo
 
 export const companyArtifactMediaKindSchema = z.enum(["image", "video", "text", "document", "file", "empty"]);
 
-export const companyArtifactGroupBySchema = z.enum(["none", "issue", "parent_issue"]);
+export const companyArtifactGroupBySchema = z.enum(["none", "task", "parent_task"]);
 
 export const companyArtifactsQuerySchema = z.object({
   kind: z.enum(["image", "video", "text", "document", "file", "all"]).optional().default("all"),
   projectId: z.string().uuid().optional(),
   q: z.string().trim().max(COMPANY_ARTIFACTS_MAX_QUERY_LENGTH).optional(),
   groupBy: companyArtifactGroupBySchema.optional().default("none"),
-  groupIssueId: z.string().uuid().optional(),
+  groupTaskId: z.string().uuid().optional(),
   limit: z.coerce
     .number()
     .int()
@@ -36,7 +36,7 @@ export const companyArtifactSchema = z.object({
   contentPath: z.string().nullable(),
   openPath: z.string().nullable(),
   downloadPath: z.string().nullable(),
-  issue: z.object({
+  task: z.object({
     id: z.string().uuid(),
     identifier: z.string(),
     title: z.string().nullable(),
@@ -56,7 +56,7 @@ export const companyArtifactSchema = z.object({
 export const companyArtifactGroupSchema = z.object({
   id: z.string().min(1),
   groupBy: companyArtifactGroupBySchema.exclude(["none"]),
-  issue: z.object({
+  task: z.object({
     id: z.string().uuid(),
     identifier: z.string(),
     title: z.string().nullable(),

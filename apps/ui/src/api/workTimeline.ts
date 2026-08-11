@@ -8,7 +8,7 @@ export interface WorkTimelineParams {
   userId?: string;
   goalId?: string;
   projectId?: string;
-  issueId?: string;
+  taskId?: string;
   limit?: number;
 }
 
@@ -19,7 +19,7 @@ function query(params: WorkTimelineParams): string {
   if (params.userId) search.set("userId", params.userId);
   if (params.goalId) search.set("goalId", params.goalId);
   if (params.projectId) search.set("projectId", params.projectId);
-  if (params.issueId) search.set("issueId", params.issueId);
+  if (params.taskId) search.set("taskId", params.taskId);
   if (params.limit) search.set("limit", String(params.limit));
   const qs = search.toString();
   return qs ? `?${qs}` : "";

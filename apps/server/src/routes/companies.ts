@@ -24,19 +24,19 @@ import {
   workTimelineService,
 } from "../services/index.js";
 import type { StorageService } from "../storage/types.js";
-import type { OrdinaryIssueRuntime } from "../services/ordinary-issue-runtime.js";
+import type { OrdinaryTaskRuntime } from "../services/ordinary-task-runtime.js";
 import { assertBoard, assertCompanyAccess, assertInstanceAdmin } from "./authz.js";
 import { COMPANY_IMPORTS_ROUTE_PATH } from "./company-import-paths.js";
 
 export function companyRoutes(
   db: Db,
   storage: StorageService | undefined,
-  ordinaryIssues: OrdinaryIssueRuntime,
+  ordinaryTasks: OrdinaryTaskRuntime,
 ) {
   const router = Router();
   const svc = companyService(db);
   const agents = agentService(db);
-  const portability = companyPortabilityService(db, storage, ordinaryIssues);
+  const portability = companyPortabilityService(db, storage, ordinaryTasks);
   const access = accessService(db);
   const artifacts = companyArtifactsService(db, storage);
 
@@ -68,7 +68,7 @@ export function companyRoutes(
     userId: z.string().min(1).optional(),
     goalId: z.string().uuid().optional(),
     projectId: z.string().uuid().optional(),
-    issueId: z.string().uuid().optional(),
+    taskId: z.string().uuid().optional(),
     limit: z.string().optional(),
     offset: z.string().optional(),
   }).passthrough();
@@ -144,28 +144,28 @@ export function companyRoutes(
       userId: query.userId,
       goalId: query.goalId,
       projectId: query.projectId,
-      issueId: query.issueId,
+      taskId: query.taskId,
       limit: parseIntegerQuery(query.limit, "limit"),
       offset: parseIntegerQuery(query.offset, "offset"),
-      canReadIssue: async (issue) => {
+      canReadTask: async (task) => {
         const decision = await access.decide({
           actor: req.actor,
-          action: "issue:read",
+          action: "task:read",
           resource: {
-            type: "issue",
-            companyId: issue.companyId,
-            issueId: issue.id,
-            projectId: issue.projectId,
-            parentIssueId: issue.parentId,
-            ownerAgentId: issue.ownerAgentId,
-            ownerUserId: issue.ownerUserId,
+            type: "task",
+            companyId: task.companyId,
+            taskId: task.id,
+            projectId: task.projectId,
+            parentTaskId: task.parentId,
+            ownerAgentId: task.ownerAgentId,
+            ownerUserId: task.ownerUserId,
           },
           scope: {
-            issueId: issue.id,
-            projectId: issue.projectId,
-            parentIssueId: issue.parentId,
-            ownerAgentId: issue.ownerAgentId,
-            ownerUserId: issue.ownerUserId,
+            taskId: task.id,
+            projectId: task.projectId,
+            parentTaskId: task.parentId,
+            ownerAgentId: task.ownerAgentId,
+            ownerUserId: task.ownerUserId,
           },
         });
         return decision.allowed;

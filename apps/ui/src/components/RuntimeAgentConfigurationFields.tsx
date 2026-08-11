@@ -33,14 +33,14 @@ const ACTION_LABELS: Record<
   PaperclipActionKey,
   { label: string; description: string }
 > = {
-  issue_create: {
-    label: "Create and assign issues",
+  task_create: {
+    label: "Create and assign tasks",
     description:
-      "Create direct child issues and reassign eligible direct children created by this execution.",
+      "Create direct child tasks and reassign eligible direct children created by this execution.",
   },
   mention_board: {
     label: "Can mention Board",
-    description: "Post a canonical issue comment to the collective Board.",
+    description: "Post a canonical task comment to the collective Board.",
   },
   agent_hire: {
     label: "Hire direct-child agents",
@@ -66,11 +66,11 @@ const MENTION_LABELS: Record<
 > = {
   mention_any_descendant: {
     label: "Mention any descendant",
-    description: "Add eligible descendants that own work in the current issue tree.",
+    description: "Add eligible descendants that own work in the current task tree.",
   },
   mention_any_ancestor: {
     label: "Mention any ancestor",
-    description: "Add ancestors up to the current root issue owner.",
+    description: "Add ancestors up to the current root task owner.",
   },
 };
 
@@ -99,28 +99,28 @@ const CONTEXT_ACCESS_PRESETS: Record<
   heads_down: booleanMap(AGENT_CONTEXT_GRANT_KEYS),
   focused: booleanMap(AGENT_CONTEXT_GRANT_KEYS, [
     "carry_context",
-    "read_issue_comments",
+    "read_task_comments",
   ]),
   supervisor: booleanMap(AGENT_CONTEXT_GRANT_KEYS, [
     "carry_context",
-    "read_issue_comments",
-    "list_sub_issues",
-    "read_sub_issue_comments",
+    "read_task_comments",
+    "list_sub_tasks",
+    "read_sub_task_comments",
   ]),
   investigator: booleanMap(AGENT_CONTEXT_GRANT_KEYS, [
     "carry_context",
-    "read_issue_comments",
-    "list_sub_issues",
-    "read_sub_issue_comments",
-    "read_issue_agent_run",
+    "read_task_comments",
+    "list_sub_tasks",
+    "read_sub_task_comments",
+    "read_task_agent_run",
   ]),
   situational: booleanMap(AGENT_CONTEXT_GRANT_KEYS, [
     "carry_context",
-    "read_issue_comments",
-    "list_sub_issues",
-    "read_sub_issue_comments",
-    "read_issue_agent_run",
-    "list_company_issues",
+    "read_task_comments",
+    "list_sub_tasks",
+    "read_sub_task_comments",
+    "read_task_agent_run",
+    "list_company_tasks",
   ]),
 };
 
@@ -257,8 +257,8 @@ export function RuntimeAgentConfigurationFields({
           Paperclip actions
         </h4>
         <p className="mb-3 text-xs text-muted-foreground">
-          Issue updates are relationship-derived: the owner updates its active
-          issue, and the creator can message or set open/blocked on eligible
+          Task updates are relationship-derived: the owner updates its active
+          task, and the creator can message or set open/blocked on eligible
           direct children through the same canonical action. Terminal updates
           remain owner-only. Each update canonically mentions its counterpart
           automatically, so no lifecycle or separate comment control is

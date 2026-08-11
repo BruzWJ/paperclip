@@ -9,11 +9,11 @@ import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockActivityService = vi.hoisted(() => ({
   list: vi.fn(),
-  forIssue: vi.fn(),
+  forTask: vi.fn(),
   create: vi.fn(),
 }));
 
-const mockIssueService = vi.hoisted(() => ({
+const mockTaskService = vi.hoisted(() => ({
   getById: vi.fn(),
   getByIdentifier: vi.fn(),
 }));
@@ -30,7 +30,7 @@ vi.mock("../services/activity.js", () => ({
 
 vi.mock("../services/index.js", () => ({
   accessService: () => mockAccessService,
-  issueService: () => mockIssueService,
+  taskService: () => mockTaskService,
 }));
 
 function createApp(
@@ -83,7 +83,7 @@ async function requestApp(
 describe.sequential("activity routes", () => {
   beforeEach(() => {
     for (const mock of Object.values(mockActivityService)) mock.mockReset();
-    for (const mock of Object.values(mockIssueService)) mock.mockReset();
+    for (const mock of Object.values(mockTaskService)) mock.mockReset();
     mockAccessService.decide.mockReset();
     mockAccessService.decide.mockResolvedValue({
       allowed: true,
@@ -115,7 +115,7 @@ describe.sequential("activity routes", () => {
     const app = createApp();
     const response = await requestApp(app, (baseUrl) =>
       request(baseUrl).get(
-        "/api/companies/company-1/activity?limit=5000&entityType=issue",
+        "/api/companies/company-1/activity?limit=5000&entityType=task",
       ),
     );
 
@@ -123,7 +123,7 @@ describe.sequential("activity routes", () => {
     expect(mockActivityService.list).toHaveBeenCalledWith({
       companyId: "company-1",
       agentId: undefined,
-      entityType: "issue",
+      entityType: "task",
       entityId: undefined,
       limit: 500,
     });
@@ -154,8 +154,8 @@ describe.sequential("activity routes", () => {
         .send({
           actorId: "user-1",
           action: "test.event",
-          entityType: "issue",
-          entityId: "issue-1",
+          entityType: "task",
+          entityId: "task-1",
         }),
     );
 

@@ -22,7 +22,7 @@ const hostMocks = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock("../services/plugin-issue-authorization.js", () => ({
+vi.mock("../services/plugin-task-authorization.js", () => ({
     assertPluginInstallationRequestScope:
       hostMocks.assertPluginInstallationRequestScope,
 }));
@@ -42,7 +42,7 @@ vi.mock("../services/projects.js", () => ({
 
 import {
   buildHostServices,
-  type PluginIssueControlPlane,
+  type PluginTaskControlPlane,
 } from "../services/plugin-host-services.js";
 
 function createEventBusStub() {
@@ -56,20 +56,20 @@ function createEventBusStub() {
   } as never;
 }
 
-function createPluginIssueControlPlaneStub(
-  overrides: Partial<PluginIssueControlPlane> = {},
-): PluginIssueControlPlane {
+function createPluginTaskControlPlaneStub(
+  overrides: Partial<PluginTaskControlPlane> = {},
+): PluginTaskControlPlane {
   return {
     list: vi.fn(async () => []),
     get: vi.fn(async () => null),
     create: vi.fn(async () => {
-      throw new Error("Unexpected plugin issue creation");
+      throw new Error("Unexpected plugin task creation");
     }),
     update: vi.fn(async () => {
-      throw new Error("Unexpected plugin issue update");
+      throw new Error("Unexpected plugin task update");
     }),
     withdraw: vi.fn(async () => {
-      throw new Error("Unexpected plugin issue withdrawal");
+      throw new Error("Unexpected plugin task withdrawal");
     }),
     ...overrides,
   };
@@ -82,7 +82,7 @@ const agentId = "00000000-0000-4000-8000-000000000003";
 function services(input: {
   pluginKey?: string;
   manifest?: Record<string, unknown>;
-  pluginIssueControlPlane?: PluginIssueControlPlane;
+  pluginTaskControlPlane?: PluginTaskControlPlane;
 } = {}) {
   return buildHostServices(
     createMockDb().db,
@@ -95,8 +95,8 @@ function services(input: {
         : createPluginManifestFake({
             id: input.pluginKey ?? "paperclip.missions",
           }),
-      pluginIssueControlPlane:
-        input.pluginIssueControlPlane ?? createPluginIssueControlPlaneStub(),
+      pluginTaskControlPlane:
+        input.pluginTaskControlPlane ?? createPluginTaskControlPlaneStub(),
     }),
   );
 }
@@ -113,10 +113,10 @@ describe("plugin orchestration APIs without a database process", () => {
     );
   });
 
-  it("exposes only the retained plugin issue control-plane surface", () => {
+  it("exposes only the retained plugin task control-plane surface", () => {
     const host = services();
 
-    expect(Object.keys(host.issues).sort()).toEqual([
+    expect(Object.keys(host.tasks).sort()).toEqual([
       "create",
       "get",
       "list",
@@ -124,14 +124,14 @@ describe("plugin orchestration APIs without a database process", () => {
       "update",
       "withdraw",
     ]);
-    const issueSurface = host.issues as unknown as Record<string, unknown>;
-    expect(issueSurface.requestWakeup).toBeUndefined();
-    expect(issueSurface.requestWakeups).toBeUndefined();
-    expect(issueSurface.getOrchestrationSummary).toBeUndefined();
-    expect(issueSurface.assertCheckoutOwner).toBeUndefined();
-    expect(issueSurface.createComment).toBeUndefined();
-    expect(issueSurface.setStatus).toBeUndefined();
-    expect(issueSurface.updateDescription).toBeUndefined();
+    const taskSurface = host.tasks as unknown as Record<string, unknown>;
+    expect(taskSurface.requestWakeup).toBeUndefined();
+    expect(taskSurface.requestWakeups).toBeUndefined();
+    expect(taskSurface.getOrchestrationSummary).toBeUndefined();
+    expect(taskSurface.assertCheckoutOwner).toBeUndefined();
+    expect(taskSurface.createComment).toBeUndefined();
+    expect(taskSurface.setStatus).toBeUndefined();
+    expect(taskSurface.updateDescription).toBeUndefined();
 
     const hostSurface = host as unknown as Record<string, unknown>;
     expect(hostSurface.agentSessions).toBeUndefined();
@@ -140,15 +140,15 @@ describe("plugin orchestration APIs without a database process", () => {
   });
 
   it("requires a registered callback before forwarding immutable creation", async () => {
-    const createdIssue = {
+    const createdTask = {
       id: randomUUID(),
       companyId,
       request: "Investigate mission alpha",
       ownerAgentId: agentId,
-    } as Awaited<ReturnType<PluginIssueControlPlane["create"]>>;
-    const create = vi.fn(async () => createdIssue);
+    } as Awaited<ReturnType<PluginTaskControlPlane["create"]>>;
+    const create = vi.fn(async () => createdTask);
     const host = services({
-      pluginIssueControlPlane: createPluginIssueControlPlaneStub({ create }),
+      pluginTaskControlPlane: createPluginTaskControlPlaneStub({ create }),
     });
     const input = {
       companyId,
@@ -160,12 +160,12 @@ describe("plugin orchestration APIs without a database process", () => {
     };
     const operation = { hostRpcOperationId: "rpc-create-1" };
 
-    await expect(host.issues.create(input, operation)).rejects.toThrow(
+    await expect(host.tasks.create(input, operation)).rejects.toThrow(
       "Creator callback is not registered: mission-progress@1",
     );
     expect(create).not.toHaveBeenCalled();
 
-    await expect(host.issues.registerCreatorCallback({
+    await expect(host.tasks.registerCreatorCallback({
       callbackKey: " mission-progress ",
       callbackVersion: " 1 ",
     })).resolves.toEqual({
@@ -173,7 +173,7 @@ describe("plugin orchestration APIs without a database process", () => {
       callbackVersion: "1",
       registered: true,
     });
-    await expect(host.issues.create(input, operation)).resolves.toBe(createdIssue);
+    await expect(host.tasks.create(input, operation)).resolves.toBe(createdTask);
     expect(create).toHaveBeenCalledExactlyOnceWith({
       ...input,
       pluginInstallationId: pluginId,
@@ -184,60 +184,60 @@ describe("plugin orchestration APIs without a database process", () => {
   });
 
   it("forwards only creator-message, reassignment, and withdrawal mutations", async () => {
-    const issueId = randomUUID();
-    const updatedIssue = {
-      id: issueId,
+    const taskId = randomUUID();
+    const updatedTask = {
+      id: taskId,
       companyId,
       request: "Investigate mission alpha",
       ownerAgentId: agentId,
-    } as Awaited<ReturnType<PluginIssueControlPlane["update"]>>;
-    const update = vi.fn(async () => updatedIssue);
+    } as Awaited<ReturnType<PluginTaskControlPlane["update"]>>;
+    const update = vi.fn(async () => updatedTask);
     const withdrawResult = {
       operationId: "rpc-withdraw-1",
-      issue: { ...updatedIssue, status: "cancelled", lifecycleStatus: "cancelled" },
+      task: { ...updatedTask, status: "cancelled", lifecycleStatus: "cancelled" },
       retried: false,
-    } as Awaited<ReturnType<PluginIssueControlPlane["withdraw"]>>;
+    } as Awaited<ReturnType<PluginTaskControlPlane["withdraw"]>>;
     const withdraw = vi.fn(async () => withdrawResult);
     const host = services({
-      pluginIssueControlPlane: createPluginIssueControlPlaneStub({
+      pluginTaskControlPlane: createPluginTaskControlPlaneStub({
         update,
         withdraw,
       }),
     });
 
-    await expect(host.issues.update({
-      issueId,
+    await expect(host.tasks.update({
+      taskId,
       companyId,
       input: { kind: "message", message: "Use the durable creator thread." },
     }, { hostRpcOperationId: "rpc-update-message-1" }))
-      .resolves.toBe(updatedIssue);
-    await expect(host.issues.update({
-      issueId,
+      .resolves.toBe(updatedTask);
+    await expect(host.tasks.update({
+      taskId,
       companyId,
       input: { kind: "reassign", ownerAgentId: agentId },
     }, { hostRpcOperationId: "rpc-update-reassign-1" }))
-      .resolves.toBe(updatedIssue);
-    await expect(host.issues.withdraw({
-      issueId,
+      .resolves.toBe(updatedTask);
+    await expect(host.tasks.withdraw({
+      taskId,
       companyId,
-      message: "Withdraw this plugin-created issue.",
+      message: "Withdraw this plugin-created task.",
     }, { hostRpcOperationId: "rpc-withdraw-1" }))
       .resolves.toBe(withdrawResult);
 
     expect(update).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      issueId,
+      taskId,
       input: { kind: "message", message: "Use the durable creator thread." },
       pluginInstallationId: pluginId,
       hostRpcOperationId: "rpc-update-message-1",
     }));
     expect(update).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      issueId,
+      taskId,
       input: { kind: "reassign", ownerAgentId: agentId },
       pluginInstallationId: pluginId,
       hostRpcOperationId: "rpc-update-reassign-1",
     }));
     expect(withdraw).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-      issueId,
+      taskId,
       pluginInstallationId: pluginId,
       hostRpcOperationId: "rpc-withdraw-1",
     }));

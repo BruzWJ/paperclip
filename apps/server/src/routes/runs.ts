@@ -1,24 +1,24 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import {
-  ISSUE_EXECUTION_RUN_STATUSES,
-  normalizeIssueIdentifier,
-  type IssueExecutionRunEnvelopeRecord,
-  type IssueExecutionRunListPageRecord,
-  type IssueExecutionRunStatus,
+  TASK_EXECUTION_RUN_STATUSES,
+  normalizeTaskIdentifier,
+  type TaskExecutionRunEnvelopeRecord,
+  type TaskExecutionRunListPageRecord,
+  type TaskExecutionRunStatus,
 } from "@paperclipai/shared";
 import {
-  listIssueExecutionRunsForActivity,
-  listIssueExecutionRunsForAgent,
-  listIssueExecutionRunsForIssue,
-  resolveIssueExecutionRunIdentityById,
-  type IssueExecutionRunEnvelope,
-  type IssueExecutionRunListCursor,
-  type IssueExecutionRunService,
-} from "../services/issue-execution-run-service.js";
+  listTaskExecutionRunsForActivity,
+  listTaskExecutionRunsForAgent,
+  listTaskExecutionRunsForTask,
+  resolveTaskExecutionRunIdentityById,
+  type TaskExecutionRunEnvelope,
+  type TaskExecutionRunListCursor,
+  type TaskExecutionRunService,
+} from "../services/task-execution-run-service.js";
 import {
   accessService,
-  issueService,
+  taskService,
 } from "../services/index.js";
 import type {
   AdapterConfigurationPreflightService,
@@ -31,9 +31,9 @@ import {
 
 const MAX_RUN_DETAIL_LIMIT = 500;
 const MAX_RUN_LIST_LIMIT = 200;
-const RUN_STATUSES = new Set<string>(ISSUE_EXECUTION_RUN_STATUSES);
+const RUN_STATUSES = new Set<string>(TASK_EXECUTION_RUN_STATUSES);
 
-function encodeRunListCursor(cursor: IssueExecutionRunListCursor | null) {
+function encodeRunListCursor(cursor: TaskExecutionRunListCursor | null) {
   if (!cursor) return null;
   return Buffer.from(
     JSON.stringify({
@@ -45,7 +45,7 @@ function encodeRunListCursor(cursor: IssueExecutionRunListCursor | null) {
   ).toString("base64url");
 }
 
-function decodeRunListCursor(value: unknown): IssueExecutionRunListCursor | null {
+function decodeRunListCursor(value: unknown): TaskExecutionRunListCursor | null {
   if (value === undefined) return null;
   if (typeof value !== "string" || value.length === 0 || value.length > 1000) {
     return null;
@@ -78,7 +78,7 @@ function runListLimit(value: unknown): number {
     : 100;
 }
 
-function runStatuses(value: unknown): readonly IssueExecutionRunStatus[] | null {
+function runStatuses(value: unknown): readonly TaskExecutionRunStatus[] | null {
   if (value === undefined) return null;
   const source = Array.isArray(value) ? value : [value];
   const statuses = source.flatMap((entry) =>
@@ -91,16 +91,16 @@ function runStatuses(value: unknown): readonly IssueExecutionRunStatus[] | null 
   ) {
     return null;
   }
-  return statuses as IssueExecutionRunStatus[];
+  return statuses as TaskExecutionRunStatus[];
 }
 
 function serializeRunEnvelope(
-  run: IssueExecutionRunEnvelope,
-): IssueExecutionRunEnvelopeRecord {
+  run: TaskExecutionRunEnvelope,
+): TaskExecutionRunEnvelopeRecord {
   return {
     id: run.runId,
     companyId: run.companyId,
-    issueId: run.issueId,
+    taskId: run.taskId,
     sessionId: run.sessionId,
     executionScopeId: run.executionScopeId,
     kind: run.kind,
@@ -109,7 +109,7 @@ function serializeRunEnvelope(
     targetAgentId: run.targetAgentId,
     adapterConfigRevisionId: run.adapterConfigRevisionId,
     executionMode: run.executionMode,
-    issueExecutionAuthorityId: run.issueExecutionAuthorityId,
+    taskExecutionAuthorityId: run.taskExecutionAuthorityId,
     consultExecutionId: run.consultExecutionId,
     parentRunId: run.parentRunId,
     retryOfRunId: run.retryOfRunId,
@@ -136,23 +136,23 @@ function runDetailLimit(value: unknown): number {
 
 export function runRoutes(
   db: Db,
-  runService: Pick<IssueExecutionRunService, "readJoinedRunDetail">,
+  runService: Pick<TaskExecutionRunService, "readJoinedRunDetail">,
   adapterConfigurationPreflight: AdapterConfigurationPreflightService,
 ) {
   const router = Router();
-  const issues = issueService(db);
+  const tasks = taskService(db);
   const access = accessService(db);
 
-  async function resolveIssueByRef(rawId: string) {
-    const identifier = normalizeIssueIdentifier(rawId);
+  async function resolveTaskByRef(rawId: string) {
+    const identifier = normalizeTaskIdentifier(rawId);
     return identifier
-      ? issues.getByIdentifier(identifier)
-      : issues.getById(rawId);
+      ? tasks.getByIdentifier(identifier)
+      : tasks.getById(rawId);
   }
 
-  async function issueReadAllowed(
+  async function taskReadAllowed(
     req: Parameters<typeof assertCompanyAccess>[0],
-    issue: {
+    task: {
       id: string;
       companyId: string;
       projectId: string | null;
@@ -163,15 +163,15 @@ export function runRoutes(
   ) {
     return access.decide({
       actor: req.actor,
-      action: "issue:read",
+      action: "task:read",
       resource: {
-        type: "issue",
-        companyId: issue.companyId,
-        issueId: issue.id,
-        projectId: issue.projectId,
-        parentIssueId: issue.parentId,
-        ownerAgentId: issue.ownerAgentId,
-        ownerUserId: issue.ownerUserId,
+        type: "task",
+        companyId: task.companyId,
+        taskId: task.id,
+        projectId: task.projectId,
+        parentTaskId: task.parentId,
+        ownerAgentId: task.ownerAgentId,
+        ownerUserId: task.ownerUserId,
       },
     });
   }
@@ -194,38 +194,38 @@ export function runRoutes(
       return;
     }
     const page = agentId
-      ? await listIssueExecutionRunsForAgent(db, {
+      ? await listTaskExecutionRunsForAgent(db, {
           companyId,
           targetAgentId: agentId,
           cursor,
           limit: runListLimit(req.query.limit),
           statuses: statuses ?? undefined,
         })
-      : await listIssueExecutionRunsForActivity(db, {
+      : await listTaskExecutionRunsForActivity(db, {
           companyId,
           cursor,
           limit: runListLimit(req.query.limit),
           statuses: statuses ?? undefined,
         });
-    const response: IssueExecutionRunListPageRecord = {
+    const response: TaskExecutionRunListPageRecord = {
       items: page.items.map(serializeRunEnvelope),
       nextCursor: encodeRunListCursor(page.nextCursor),
     };
     res.json(response);
   });
 
-  router.get("/issues/:id/runs", async (req, res) => {
-    const issue = await getAccessibleResource(
+  router.get("/tasks/:id/runs", async (req, res) => {
+    const task = await getAccessibleResource(
       req,
       res,
-      resolveIssueByRef(req.params.id as string),
-      "Issue not found",
+      resolveTaskByRef(req.params.id as string),
+      "Task not found",
     );
-    if (!issue) return;
-    const decision = await issueReadAllowed(req, issue);
+    if (!task) return;
+    const decision = await taskReadAllowed(req, task);
     if (!decision.allowed) {
       res.status(403).json({
-        error: "Issue runs are outside this actor's authorization boundary",
+        error: "Task runs are outside this actor's authorization boundary",
       });
       return;
     }
@@ -239,14 +239,14 @@ export function runRoutes(
       res.status(400).json({ error: "Invalid run status filter" });
       return;
     }
-    const page = await listIssueExecutionRunsForIssue(db, {
-      companyId: issue.companyId,
-      issueId: issue.id,
+    const page = await listTaskExecutionRunsForTask(db, {
+      companyId: task.companyId,
+      taskId: task.id,
       cursor,
       limit: runListLimit(req.query.limit),
       statuses: statuses ?? undefined,
     });
-    const response: IssueExecutionRunListPageRecord = {
+    const response: TaskExecutionRunListPageRecord = {
       items: page.items.map(serializeRunEnvelope),
       nextCursor: encodeRunListCursor(page.nextCursor),
     };
@@ -263,8 +263,8 @@ export function runRoutes(
     return getAccessibleResource(
       req,
       res,
-      resolveIssueExecutionRunIdentityById(db, runId),
-      "Issue execution run not found",
+      resolveTaskExecutionRunIdentityById(db, runId),
+      "Task execution run not found",
     );
   }
 
@@ -286,7 +286,7 @@ export function runRoutes(
           : null,
     });
     if (!detail) {
-      res.status(404).json({ error: "Issue execution run not found" });
+      res.status(404).json({ error: "Task execution run not found" });
       return;
     }
     res.json({

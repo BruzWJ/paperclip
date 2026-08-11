@@ -1,12 +1,12 @@
-import type { DocumentRevision, IssueDocument } from "@paperclipai/shared";
+import type { DocumentRevision, TaskDocument } from "@paperclipai/shared";
 import { describe, expect, it } from "vitest";
 import { deriveDocumentRevisionState } from "./document-revisions";
 
-function createDocument(overrides: Partial<IssueDocument> = {}): IssueDocument {
+function createDocument(overrides: Partial<TaskDocument> = {}): TaskDocument {
   return {
     id: "document-1",
     companyId: "company-1",
-    issueId: "issue-1",
+    taskId: "task-1",
     key: "plan",
     title: "Plan",
     format: "markdown",
@@ -31,7 +31,7 @@ function createRevision(overrides: Partial<DocumentRevision> = {}): DocumentRevi
     id: "revision-1",
     companyId: "company-1",
     documentId: "document-1",
-    issueId: "issue-1",
+    taskId: "task-1",
     key: "plan",
     revisionNumber: 1,
     title: "Plan",

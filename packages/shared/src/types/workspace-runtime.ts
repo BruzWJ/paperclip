@@ -1,5 +1,5 @@
 /**
- * Persisted local working-directory identity for an issue ownership epoch.
+ * Persisted local working-directory identity for a task ownership epoch.
  *
  * Ordinary reservations always use `shared_workspace`. Branch fields exist
  * only so the explicitly retained managed-worktree safeguards can validate a

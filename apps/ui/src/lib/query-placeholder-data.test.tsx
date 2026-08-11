@@ -18,22 +18,22 @@ function createDeferred<T>() {
 }
 
 function Harness({
-  issueId,
-  fetchIssueRuns,
+  taskId,
+  fetchTaskRuns,
 }: {
-  issueId: string;
-  fetchIssueRuns: (issueId: string) => Promise<string[]>;
+  taskId: string;
+  fetchTaskRuns: (taskId: string) => Promise<string[]>;
 }) {
   const { data, isLoading } = useQuery({
-    queryKey: ["issues", "live-runs", issueId],
-    queryFn: () => fetchIssueRuns(issueId),
-    placeholderData: keepPreviousDataForSameQueryTail(issueId),
+    queryKey: ["tasks", "live-runs", taskId],
+    queryFn: () => fetchTaskRuns(taskId),
+    placeholderData: keepPreviousDataForSameQueryTail(taskId),
   });
 
   return (
     <div data-testid="query-state">
       {JSON.stringify({
-        issueId,
+        taskId,
         runs: data ?? null,
         isLoading,
       })}
@@ -53,7 +53,7 @@ describe("keepPreviousDataForSameQueryTail", () => {
     container.remove();
   });
 
-  it("clears issue-scoped placeholder data when the query tail changes", async () => {
+  it("clears task-scoped placeholder data when the query tail changes", async () => {
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -63,27 +63,27 @@ describe("keepPreviousDataForSameQueryTail", () => {
       },
     });
     const root = createRoot(container);
-    const issueBRuns = createDeferred<string[]>();
+    const taskBRuns = createDeferred<string[]>();
 
-    queryClient.setQueryData(["issues", "live-runs", "issue-a"], ["run-a"]);
+    queryClient.setQueryData(["tasks", "live-runs", "task-a"], ["run-a"]);
 
-    const fetchIssueRuns = (issueId: string) => {
-      if (issueId === "issue-a") return Promise.resolve(["run-a"]);
-      if (issueId === "issue-b") return issueBRuns.promise;
+    const fetchTaskRuns = (taskId: string) => {
+      if (taskId === "task-a") return Promise.resolve(["run-a"]);
+      if (taskId === "task-b") return taskBRuns.promise;
       return Promise.resolve([]);
     };
 
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <Harness issueId="issue-a" fetchIssueRuns={fetchIssueRuns} />
+          <Harness taskId="task-a" fetchTaskRuns={fetchTaskRuns} />
         </QueryClientProvider>,
       );
       await Promise.resolve();
     });
 
     expect(container.textContent).toBe(JSON.stringify({
-      issueId: "issue-a",
+      taskId: "task-a",
       runs: ["run-a"],
       isLoading: false,
     }));
@@ -91,14 +91,14 @@ describe("keepPreviousDataForSameQueryTail", () => {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <Harness issueId="issue-b" fetchIssueRuns={fetchIssueRuns} />
+          <Harness taskId="task-b" fetchTaskRuns={fetchTaskRuns} />
         </QueryClientProvider>,
       );
       await Promise.resolve();
     });
 
     expect(container.textContent).toBe(JSON.stringify({
-      issueId: "issue-b",
+      taskId: "task-b",
       runs: null,
       isLoading: true,
     }));

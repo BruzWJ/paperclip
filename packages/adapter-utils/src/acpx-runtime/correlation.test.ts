@@ -22,7 +22,7 @@ describe("ACP session correlation", () => {
     (payload) => {
       expect(() =>
         parseAcpSessionCorrelation({
-          version: "issue-execution-native/v1",
+          version: "task-execution-native/v1",
           kind: ACP_SESSION_CORRELATION_KIND,
           payload,
         }),

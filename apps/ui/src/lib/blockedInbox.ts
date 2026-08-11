@@ -1,10 +1,10 @@
 import type {
-  Issue,
-  IssueBlockedInboxAttention,
-  IssueBlockedInboxReason,
-  IssueBlockedInboxSeverity,
+  Task,
+  TaskBlockedInboxAttention,
+  TaskBlockedInboxReason,
+  TaskBlockedInboxSeverity,
 } from "@paperclipai/shared";
-import { issueDisplayTitle } from "./issue-display";
+import { taskDisplayTitle } from "./task-display";
 
 export type BlockedReasonVariant =
   | "needs_decision"
@@ -12,7 +12,7 @@ export type BlockedReasonVariant =
   | "needs_attention"
   | "external_wait";
 
-const VARIANT_BY_REASON: Record<IssueBlockedInboxReason, BlockedReasonVariant> = {
+const VARIANT_BY_REASON: Record<TaskBlockedInboxReason, BlockedReasonVariant> = {
   pending_board_decision: "needs_decision",
   pending_user_decision: "needs_decision",
   blocked_chain_stalled: "stalled",
@@ -33,14 +33,14 @@ export const BLOCKED_VARIANT_LABELS: Record<BlockedReasonVariant, string> = {
   external_wait: "External wait",
 };
 
-const REASON_LABELS: Record<IssueBlockedInboxReason, string> = {
+const REASON_LABELS: Record<TaskBlockedInboxReason, string> = {
   pending_board_decision: "Pending board decision",
   pending_user_decision: "Pending user decision",
   blocked_chain_stalled: "Blocked chain stalled",
   external_owner_action: "External owner action",
 };
 
-const SEVERITY_RANK: Record<IssueBlockedInboxSeverity, number> = {
+const SEVERITY_RANK: Record<TaskBlockedInboxSeverity, number> = {
   critical: 0,
   high: 1,
   medium: 2,
@@ -49,11 +49,11 @@ const SEVERITY_RANK: Record<IssueBlockedInboxSeverity, number> = {
 
 export type BlockedInboxBadgeTone = "muted" | "amber" | "red";
 
-export function blockedReasonVariant(reason: IssueBlockedInboxReason): BlockedReasonVariant {
+export function blockedReasonVariant(reason: TaskBlockedInboxReason): BlockedReasonVariant {
   return VARIANT_BY_REASON[reason] ?? "needs_attention";
 }
 
-export function blockedReasonLabel(reason: IssueBlockedInboxReason): string {
+export function blockedReasonLabel(reason: TaskBlockedInboxReason): string {
   return REASON_LABELS[reason] ?? "Stopped";
 }
 
@@ -61,13 +61,13 @@ export function blockedVariantLabel(variant: BlockedReasonVariant): string {
   return BLOCKED_VARIANT_LABELS[variant];
 }
 
-export function blockedSeverityRank(severity: IssueBlockedInboxSeverity): number {
+export function blockedSeverityRank(severity: TaskBlockedInboxSeverity): number {
   return SEVERITY_RANK[severity] ?? 9;
 }
 
 export function compareBlockedAttention(
-  a: IssueBlockedInboxAttention,
-  b: IssueBlockedInboxAttention,
+  a: TaskBlockedInboxAttention,
+  b: TaskBlockedInboxAttention,
 ): number {
   const sevDiff = blockedSeverityRank(a.severity) - blockedSeverityRank(b.severity);
   if (sevDiff !== 0) return sevDiff;
@@ -77,9 +77,9 @@ export function compareBlockedAttention(
   return Number.isFinite(sinceDiff) ? sinceDiff : 0;
 }
 
-export interface BlockedInboxIssueRow {
-  issue: Issue;
-  attention: IssueBlockedInboxAttention;
+export interface BlockedInboxTaskRow {
+  task: Task;
+  attention: TaskBlockedInboxAttention;
   variant: BlockedReasonVariant;
   reasonLabel: string;
   stoppedAtMs: number | null;
@@ -102,16 +102,16 @@ export const BLOCKED_SORT_OPTIONS: readonly [BlockedInboxSort, string][] = [
 export interface BlockedInboxGroup {
   variant: BlockedReasonVariant;
   label: string;
-  rows: BlockedInboxIssueRow[];
+  rows: BlockedInboxTaskRow[];
 }
 
-export function buildBlockedInboxRows(issues: readonly Issue[]): BlockedInboxIssueRow[] {
-  const rows: BlockedInboxIssueRow[] = [];
-  for (const issue of issues) {
-    const attention = issue.blockedInboxAttention;
+export function buildBlockedInboxRows(tasks: readonly Task[]): BlockedInboxTaskRow[] {
+  const rows: BlockedInboxTaskRow[] = [];
+  for (const task of tasks) {
+    const attention = task.blockedInboxAttention;
     if (!attention) continue;
     rows.push({
-      issue,
+      task,
       attention,
       variant: blockedReasonVariant(attention.reason),
       reasonLabel: blockedReasonLabel(attention.reason),
@@ -121,25 +121,25 @@ export function buildBlockedInboxRows(issues: readonly Issue[]): BlockedInboxIss
   return rows;
 }
 
-function issueTimestampMs(value: Date | string | null | undefined): number | null {
+function taskTimestampMs(value: Date | string | null | undefined): number | null {
   if (!value) return null;
   const timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
-function blockedRowRecencyMs(row: BlockedInboxIssueRow): number {
-  return row.stoppedAtMs ?? issueTimestampMs(row.issue.updatedAt) ?? 0;
+function blockedRowRecencyMs(row: BlockedInboxTaskRow): number {
+  return row.stoppedAtMs ?? taskTimestampMs(row.task.updatedAt) ?? 0;
 }
 
-function compareBlockedRowsByTitle(a: BlockedInboxIssueRow, b: BlockedInboxIssueRow): number {
-  const byTitle = issueDisplayTitle(a.issue).localeCompare(issueDisplayTitle(b.issue));
+function compareBlockedRowsByTitle(a: BlockedInboxTaskRow, b: BlockedInboxTaskRow): number {
+  const byTitle = taskDisplayTitle(a.task).localeCompare(taskDisplayTitle(b.task));
   if (byTitle !== 0) return byTitle;
-  return a.issue.id.localeCompare(b.issue.id);
+  return a.task.id.localeCompare(b.task.id);
 }
 
 export function compareBlockedRows(
-  a: BlockedInboxIssueRow,
-  b: BlockedInboxIssueRow,
+  a: BlockedInboxTaskRow,
+  b: BlockedInboxTaskRow,
   sort: BlockedInboxSort = "urgency",
 ): number {
   if (sort === "most_recent") {
@@ -168,17 +168,17 @@ export function compareBlockedRows(
 }
 
 export function sortBlockedInboxRows(
-  rows: readonly BlockedInboxIssueRow[],
+  rows: readonly BlockedInboxTaskRow[],
   sort: BlockedInboxSort = "urgency",
-): BlockedInboxIssueRow[] {
+): BlockedInboxTaskRow[] {
   return [...rows].sort((a, b) => compareBlockedRows(a, b, sort));
 }
 
 export function groupBlockedInboxRows(
-  rows: readonly BlockedInboxIssueRow[],
+  rows: readonly BlockedInboxTaskRow[],
   sort: BlockedInboxSort = "urgency",
 ): BlockedInboxGroup[] {
-  const buckets = new Map<BlockedReasonVariant, BlockedInboxIssueRow[]>();
+  const buckets = new Map<BlockedReasonVariant, BlockedInboxTaskRow[]>();
   for (const row of rows) {
     const list = buckets.get(row.variant) ?? [];
     list.push(row);
@@ -194,27 +194,27 @@ export function groupBlockedInboxRows(
   return groups;
 }
 
-export function blockedRowMatchesSearch(row: BlockedInboxIssueRow, query: string): boolean {
+export function blockedRowMatchesSearch(row: BlockedInboxTaskRow, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   const haystack = [
-    row.issue.title,
-    row.issue.identifier ?? "",
+    row.task.title,
+    row.task.identifier ?? "",
     row.attention.owner.label ?? "",
     row.attention.action.label,
     row.attention.action.detail ?? "",
     row.reasonLabel,
-    row.attention.leafIssue?.identifier ?? "",
-    row.attention.leafIssue?.title ?? "",
+    row.attention.leafTask?.identifier ?? "",
+    row.attention.leafTask?.title ?? "",
   ]
     .join(" ")
     .toLowerCase();
   return haystack.includes(q);
 }
 
-export function blockedBadgeTone(rows: readonly BlockedInboxIssueRow[]): BlockedInboxBadgeTone {
+export function blockedBadgeTone(rows: readonly BlockedInboxTaskRow[]): BlockedInboxBadgeTone {
   if (rows.length === 0) return "muted";
-  let highest: IssueBlockedInboxSeverity = "low";
+  let highest: TaskBlockedInboxSeverity = "low";
   for (const row of rows) {
     if (blockedSeverityRank(row.attention.severity) < blockedSeverityRank(highest)) {
       highest = row.attention.severity;

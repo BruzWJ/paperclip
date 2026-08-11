@@ -242,7 +242,7 @@ export function SidebarAccountMenu({
               />
               <MenuAction
                 label="Feedback"
-                description="Share feedback or report an issue."
+                description="Share feedback or report a problem."
                 icon={Megaphone}
                 href={FEEDBACK_URL}
                 external

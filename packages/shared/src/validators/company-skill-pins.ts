@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addValidationDetail } from "../validation-details.js";
 
 const canonicalCompanySkillKeySchema = z
   .string()
@@ -25,8 +26,7 @@ export const companySkillPinsSchema = z
         firstIndexByKey.set(pin.key, index);
         return;
       }
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: `Duplicate company skill key (first supplied at index ${firstIndex})`,
         path: [index, "key"],
       });

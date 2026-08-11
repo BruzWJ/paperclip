@@ -9,7 +9,7 @@ type ActivityParticipant = {
   userId?: string | null;
 };
 
-type ActivityIssueReference = {
+type ActivityTaskReference = {
   id?: string | null;
   identifier?: string | null;
   title?: string | null;
@@ -22,17 +22,17 @@ interface ActivityFormatOptions {
 }
 
 const ACTIVITY_ROW_VERBS: Record<string, string> = {
-  "issue.created": "created",
-  "issue.updated": "updated",
-  "issue.comment_added": "commented on",
-  "issue.attachment_added": "attached file to",
-  "issue.attachment_removed": "removed attachment from",
-  "issue.document_created": "created document for",
-  "issue.document_updated": "updated document on",
-  "issue.document_locked": "locked document on",
-  "issue.document_unlocked": "unlocked document on",
-  "issue.document_deleted": "deleted document from",
-  "issue.commented": "commented on",
+  "task.created": "created",
+  "task.updated": "updated",
+  "task.comment_added": "commented on",
+  "task.attachment_added": "attached file to",
+  "task.attachment_removed": "removed attachment from",
+  "task.document_created": "created document for",
+  "task.document_updated": "updated document on",
+  "task.document_locked": "locked document on",
+  "task.document_unlocked": "unlocked document on",
+  "task.document_deleted": "deleted document from",
+  "task.commented": "commented on",
   "agent.created": "created",
   "agent.updated": "updated",
   "agent.paused": "paused",
@@ -58,17 +58,17 @@ const ACTIVITY_ROW_VERBS: Record<string, string> = {
   "company.budget_updated": "updated budget for",
 };
 
-const ISSUE_ACTIVITY_LABELS: Record<string, string> = {
-  "issue.created": "created the issue",
-  "issue.updated": "updated the issue",
-  "issue.comment_added": "added a comment",
-  "issue.attachment_added": "added an attachment",
-  "issue.attachment_removed": "removed an attachment",
-  "issue.document_created": "created a document",
-  "issue.document_updated": "updated a document",
-  "issue.document_locked": "locked a document",
-  "issue.document_unlocked": "unlocked a document",
-  "issue.document_deleted": "deleted a document",
+const TASK_ACTIVITY_LABELS: Record<string, string> = {
+  "task.created": "created the task",
+  "task.updated": "updated the task",
+  "task.comment_added": "added a comment",
+  "task.attachment_added": "added an attachment",
+  "task.attachment_removed": "removed an attachment",
+  "task.document_created": "created a document",
+  "task.document_updated": "updated a document",
+  "task.document_locked": "locked a document",
+  "task.document_unlocked": "unlocked a document",
+  "task.document_deleted": "deleted a document",
   "agent.created": "created an agent",
   "agent.updated": "updated the agent",
   "agent.paused": "paused the agent",
@@ -96,9 +96,9 @@ function isActivityParticipant(value: unknown): value is ActivityParticipant {
   return record.type === "agent" || record.type === "user";
 }
 
-function isActivityIssueReference(
+function isActivityTaskReference(
   value: unknown,
-): value is ActivityIssueReference {
+): value is ActivityTaskReference {
   return asRecord(value) !== null;
 }
 
@@ -111,13 +111,13 @@ function readParticipants(
   return value.filter(isActivityParticipant);
 }
 
-function readIssueReferences(
+function readTaskReferences(
   details: ActivityDetails,
   key: string,
-): ActivityIssueReference[] {
+): ActivityTaskReference[] {
   const value = details?.[key];
   if (!Array.isArray(value)) return [];
-  return value.filter(isActivityIssueReference);
+  return value.filter(isActivityTaskReference);
 }
 
 function formatUserLabel(
@@ -142,7 +142,7 @@ function formatParticipantLabel(
   return formatUserLabel(participant.userId, options);
 }
 
-function formatIssueReferenceLabel(reference: ActivityIssueReference): string {
+function formatTaskReferenceLabel(reference: ActivityTaskReference): string {
   if (reference.identifier) return reference.identifier;
   if (reference.title) return reference.title;
   if (reference.id) return reference.id.slice(0, 8);
@@ -159,7 +159,7 @@ function formatChangedEntityLabel(
   return `${labels.length} ${plural}`;
 }
 
-function formatIssueUpdatedVerb(details: ActivityDetails): string | null {
+function formatTaskUpdatedVerb(details: ActivityDetails): string | null {
   if (!details) return null;
   const previous = asRecord(details._previous) ?? {};
   if (details.lifecycleStatus !== undefined) {
@@ -193,7 +193,7 @@ function formatOwnerName(
   return "the board";
 }
 
-function formatIssueUpdatedAction(
+function formatTaskUpdatedAction(
   details: ActivityDetails,
   options: ActivityFormatOptions = {},
 ): string | null {
@@ -229,38 +229,38 @@ function formatIssueUpdatedAction(
   return parts.length > 0 ? parts.join(", ") : null;
 }
 
-function formatStructuredIssueChange(input: {
+function formatStructuredTaskChange(input: {
   action: string;
   details: ActivityDetails;
   options: ActivityFormatOptions;
-  forIssueDetail: boolean;
+  forTaskDetail: boolean;
 }): string | null {
   const details = input.details;
   if (!details) return null;
 
-  if (input.action === "issue.blockers_updated") {
-    const added = readIssueReferences(details, "addedBlockedByIssues").map(
-      formatIssueReferenceLabel,
+  if (input.action === "task.blockers_updated") {
+    const added = readTaskReferences(details, "addedBlockedByTasks").map(
+      formatTaskReferenceLabel,
     );
-    const removed = readIssueReferences(details, "removedBlockedByIssues").map(
-      formatIssueReferenceLabel,
+    const removed = readTaskReferences(details, "removedBlockedByTasks").map(
+      formatTaskReferenceLabel,
     );
     if (added.length > 0 && removed.length === 0) {
       const changed = formatChangedEntityLabel("blocker", "blockers", added);
-      return input.forIssueDetail ? `added ${changed}` : `added ${changed} to`;
+      return input.forTaskDetail ? `added ${changed}` : `added ${changed} to`;
     }
     if (removed.length > 0 && added.length === 0) {
       const changed = formatChangedEntityLabel("blocker", "blockers", removed);
-      return input.forIssueDetail
+      return input.forTaskDetail
         ? `removed ${changed}`
         : `removed ${changed} from`;
     }
-    return input.forIssueDetail ? "updated blockers" : "updated blockers on";
+    return input.forTaskDetail ? "updated blockers" : "updated blockers on";
   }
 
   if (
-    input.action === "issue.reviewers_updated" ||
-    input.action === "issue.approvers_updated"
+    input.action === "task.reviewers_updated" ||
+    input.action === "task.approvers_updated"
   ) {
     const added = readParticipants(details, "addedParticipants").map(
       (participant) => formatParticipantLabel(participant, input.options),
@@ -269,20 +269,20 @@ function formatStructuredIssueChange(input: {
       (participant) => formatParticipantLabel(participant, input.options),
     );
     const singular =
-      input.action === "issue.reviewers_updated" ? "reviewer" : "approver";
+      input.action === "task.reviewers_updated" ? "reviewer" : "approver";
     const plural =
-      input.action === "issue.reviewers_updated" ? "reviewers" : "approvers";
+      input.action === "task.reviewers_updated" ? "reviewers" : "approvers";
     if (added.length > 0 && removed.length === 0) {
       const changed = formatChangedEntityLabel(singular, plural, added);
-      return input.forIssueDetail ? `added ${changed}` : `added ${changed} to`;
+      return input.forTaskDetail ? `added ${changed}` : `added ${changed} to`;
     }
     if (removed.length > 0 && added.length === 0) {
       const changed = formatChangedEntityLabel(singular, plural, removed);
-      return input.forIssueDetail
+      return input.forTaskDetail
         ? `removed ${changed}`
         : `removed ${changed} from`;
     }
-    return input.forIssueDetail ? `updated ${plural}` : `updated ${plural} on`;
+    return input.forTaskDetail ? `updated ${plural}` : `updated ${plural} on`;
   }
 
   return null;
@@ -293,46 +293,46 @@ export function formatActivityVerb(
   details?: Record<string, unknown> | null,
   options: ActivityFormatOptions = {},
 ): string {
-  if (action === "issue.updated") {
-    const issueUpdatedVerb = formatIssueUpdatedVerb(details);
-    if (issueUpdatedVerb) return issueUpdatedVerb;
+  if (action === "task.updated") {
+    const taskUpdatedVerb = formatTaskUpdatedVerb(details);
+    if (taskUpdatedVerb) return taskUpdatedVerb;
   }
 
-  const structuredChange = formatStructuredIssueChange({
+  const structuredChange = formatStructuredTaskChange({
     action,
     details,
     options,
-    forIssueDetail: false,
+    forTaskDetail: false,
   });
   if (structuredChange) return structuredChange;
 
   return ACTIVITY_ROW_VERBS[action] ?? action.replace(/[._]/g, " ");
 }
 
-export function formatIssueActivityAction(
+export function formatTaskActivityAction(
   action: string,
   details?: Record<string, unknown> | null,
   options: ActivityFormatOptions = {},
 ): string {
-  if (action === "issue.updated") {
-    const issueUpdatedAction = formatIssueUpdatedAction(details, options);
-    if (issueUpdatedAction) return issueUpdatedAction;
+  if (action === "task.updated") {
+    const taskUpdatedAction = formatTaskUpdatedAction(details, options);
+    if (taskUpdatedAction) return taskUpdatedAction;
   }
 
-  const structuredChange = formatStructuredIssueChange({
+  const structuredChange = formatStructuredTaskChange({
     action,
     details,
     options,
-    forIssueDetail: true,
+    forTaskDetail: true,
   });
   if (structuredChange) return structuredChange;
 
   if (
-    (action === "issue.document_created" ||
-      action === "issue.document_updated" ||
-      action === "issue.document_locked" ||
-      action === "issue.document_unlocked" ||
-      action === "issue.document_deleted") &&
+    (action === "task.document_created" ||
+      action === "task.document_updated" ||
+      action === "task.document_locked" ||
+      action === "task.document_unlocked" ||
+      action === "task.document_deleted") &&
     details
   ) {
     const key = typeof details.key === "string" ? details.key : "document";
@@ -340,8 +340,8 @@ export function formatIssueActivityAction(
       typeof details.title === "string" && details.title
         ? ` (${details.title})`
         : "";
-    return `${ISSUE_ACTIVITY_LABELS[action] ?? action} ${key}${title}`;
+    return `${TASK_ACTIVITY_LABELS[action] ?? action} ${key}${title}`;
   }
 
-  return ISSUE_ACTIVITY_LABELS[action] ?? action.replace(/[._]/g, " ");
+  return TASK_ACTIVITY_LABELS[action] ?? action.replace(/[._]/g, " ");
 }

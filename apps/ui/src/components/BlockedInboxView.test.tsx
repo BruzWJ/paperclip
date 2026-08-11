@@ -3,29 +3,29 @@
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue, IssueBlockedInboxAttention } from "@paperclipai/shared";
+import type { Task, TaskBlockedInboxAttention } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestIssue } from "../test-utils/issue";
+import { createTestTask } from "../test-utils/task";
 
-const mockIssuesApi = vi.hoisted(() => ({
+const mockTasksApi = vi.hoisted(() => ({
   list: vi.fn(),
   count: vi.fn(),
 }));
 
-vi.mock("../api/issues", () => ({
-  issuesApi: mockIssuesApi,
+vi.mock("../api/tasks", () => ({
+  tasksApi: mockTasksApi,
 }));
 
 vi.mock("@/lib/router", () => ({
   Link: ({
     children,
     className,
-    disableIssueQuicklook: _disableIssueQuicklook,
-    issuePrefetch: _issuePrefetch,
+    disableTaskQuicklook: _disableTaskQuicklook,
+    taskPrefetch: _taskPrefetch,
     ...props
   }: React.ComponentProps<"a"> & {
-    disableIssueQuicklook?: boolean;
-    issuePrefetch?: Issue | null;
+    disableTaskQuicklook?: boolean;
+    taskPrefetch?: Task | null;
   }) => (
     <a className={className} {...props}>
       {children}
@@ -46,11 +46,11 @@ function act(callback: () => void | Promise<void>) {
 }
 
 import { BlockedInboxView } from "./BlockedInboxView";
-import { defaultIssueFilterState } from "../lib/issue-filters";
+import { defaultTaskFilterState } from "../lib/task-filters";
 
 function attention(
-  overrides: Partial<IssueBlockedInboxAttention> = {},
-): IssueBlockedInboxAttention {
+  overrides: Partial<TaskBlockedInboxAttention> = {},
+): TaskBlockedInboxAttention {
   return {
     kind: "blocked",
     state: "needs_attention",
@@ -59,22 +59,22 @@ function attention(
     stoppedSinceAt: "2026-05-08T10:00:00.000Z",
     owner: { type: "agent", agentId: "agent-1", userId: null, label: null },
     action: { label: "Resolve PAP-77", detail: null },
-    sourceIssue: null,
-    leafIssue: null,
+    sourceTask: null,
+    leafTask: null,
     approvalId: null,
-    sampleIssueIdentifier: null,
+    sampleTaskIdentifier: null,
     redaction: { externalDetailsRedacted: false, secretFieldsOmitted: true },
     ...overrides,
   };
 }
 
-function makeIssue(
+function makeTask(
   id: string,
   identifier: string,
   title: string,
-  attentionPayload: IssueBlockedInboxAttention,
-): Issue {
-  return createTestIssue({
+  attentionPayload: TaskBlockedInboxAttention,
+): Task {
+  return createTestTask({
     id,
     title,
     boardPresentationStatus: "in_progress",
@@ -103,12 +103,12 @@ const blockedViewProps = {
   companyId: "company-1",
   searchQuery: "",
   agentNameById: new Map<string, string>(),
-  issueLinkState: null,
+  taskLinkState: null,
   groupBy: "none" as const,
   sortBy: "most_recent" as const,
-  issueFilters: defaultIssueFilterState,
+  taskFilters: defaultTaskFilterState,
   currentUserId: "user-1",
-  liveIssueIds: new Set<string>(),
+  liveTaskIds: new Set<string>(),
   subtreeLiveCounts: new Map<string, number>(),
   workspaceFilterContext: {},
   showStatusColumn: true,
@@ -132,15 +132,15 @@ describe("BlockedInboxView", () => {
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
-    mockIssuesApi.list.mockReset();
+    mockTasksApi.list.mockReset();
   });
 
   afterEach(() => {
     container.remove();
   });
 
-  it("shows the empty state when no blocked issues are returned", async () => {
-    mockIssuesApi.list.mockResolvedValue([]);
+  it("shows the empty state when no blocked tasks are returned", async () => {
+    mockTasksApi.list.mockResolvedValue([]);
     const { root } = renderWithClient(
       <BlockedInboxView {...blockedViewProps} />,
       container,
@@ -160,15 +160,15 @@ describe("BlockedInboxView", () => {
   });
 
   it("defaults to no grouping and orders rows by most recent stopped item first", async () => {
-    const issues: Issue[] = [
-      makeIssue(
-        "issue-low",
+    const tasks: Task[] = [
+      makeTask(
+        "task-low",
         "PAP-1",
         "External wait row",
         attention({ reason: "external_owner_action", severity: "low" }),
       ),
-      makeIssue(
-        "issue-stalled-high",
+      makeTask(
+        "task-stalled-high",
         "PAP-2",
         "Stalled chain row",
         attention({
@@ -178,8 +178,8 @@ describe("BlockedInboxView", () => {
           action: { label: "Resolve PAP-9", detail: null },
         }),
       ),
-      makeIssue(
-        "issue-stalled-critical",
+      makeTask(
+        "task-stalled-critical",
         "PAP-3",
         "Critical stalled row",
         attention({
@@ -189,8 +189,8 @@ describe("BlockedInboxView", () => {
           action: { label: "Resolve PAP-10", detail: null },
         }),
       ),
-      makeIssue(
-        "issue-decision",
+      makeTask(
+        "task-decision",
         "PAP-4",
         "Pending board decision",
         attention({
@@ -201,7 +201,7 @@ describe("BlockedInboxView", () => {
         }),
       ),
     ];
-    mockIssuesApi.list.mockResolvedValue(issues);
+    mockTasksApi.list.mockResolvedValue(tasks);
 
     const { root } = renderWithClient(
       <BlockedInboxView
@@ -211,7 +211,7 @@ describe("BlockedInboxView", () => {
       container,
     );
     await waitFor(
-      () => container.querySelectorAll("a[data-inbox-issue-link]").length === 4,
+      () => container.querySelectorAll("a[data-inbox-task-link]").length === 4,
     );
 
     expect(
@@ -219,14 +219,14 @@ describe("BlockedInboxView", () => {
     ).toHaveLength(0);
 
     const titles = Array.from(
-      container.querySelectorAll<HTMLAnchorElement>("a[data-inbox-issue-link]"),
+      container.querySelectorAll<HTMLAnchorElement>("a[data-inbox-task-link]"),
     ).map(
       (link) => link.parentElement?.textContent ?? "",
     );
     expect(titles[0]).toContain("Critical stalled row");
     expect(titles[1]).toContain("Stalled chain row");
 
-    expect(mockIssuesApi.list).toHaveBeenCalledWith(
+    expect(mockTasksApi.list).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
         attention: "blocked",
@@ -239,9 +239,9 @@ describe("BlockedInboxView", () => {
   });
 
   it("places blocker reason chips with the title before owner and timestamp metadata", async () => {
-    mockIssuesApi.list.mockResolvedValue([
-      makeIssue(
-        "issue-decision",
+    mockTasksApi.list.mockResolvedValue([
+      makeTask(
+        "task-decision",
         "PAP-4",
         "Pending board decision",
         attention({
@@ -257,9 +257,9 @@ describe("BlockedInboxView", () => {
       <BlockedInboxView {...blockedViewProps} />,
       container,
     );
-    await waitFor(() => container.querySelector("a[data-inbox-issue-link]") !== null);
+    await waitFor(() => container.querySelector("a[data-inbox-task-link]") !== null);
 
-    const rowText = container.querySelector("a[data-inbox-issue-link]")?.parentElement?.textContent ?? "";
+    const rowText = container.querySelector("a[data-inbox-task-link]")?.parentElement?.textContent ?? "";
     expect(rowText.indexOf("Pending board decision")).toBeGreaterThanOrEqual(0);
     expect(rowText.indexOf("Needs decision")).toBeGreaterThan(
       rowText.indexOf("Pending board decision"),
@@ -277,9 +277,9 @@ describe("BlockedInboxView", () => {
   });
 
   it("filters rows by search query against title, identifier, owner and action", async () => {
-    const issues: Issue[] = [
-      makeIssue(
-        "issue-1",
+    const tasks: Task[] = [
+      makeTask(
+        "task-1",
         "PAP-77",
         "Resume parked work",
         attention({
@@ -293,8 +293,8 @@ describe("BlockedInboxView", () => {
           action: { label: "Resume parked blocker", detail: null },
         }),
       ),
-      makeIssue(
-        "issue-2",
+      makeTask(
+        "task-2",
         "PAP-99",
         "Other unrelated thing",
         attention({
@@ -309,15 +309,15 @@ describe("BlockedInboxView", () => {
         }),
       ),
     ];
-    mockIssuesApi.list.mockResolvedValue(issues);
+    mockTasksApi.list.mockResolvedValue(tasks);
 
     const { root } = renderWithClient(
       <BlockedInboxView {...blockedViewProps} searchQuery="charlie" />,
       container,
     );
-    await waitFor(() => container.querySelectorAll("a[data-inbox-issue-link]").length > 0);
+    await waitFor(() => container.querySelectorAll("a[data-inbox-task-link]").length > 0);
 
-    const links = container.querySelectorAll<HTMLAnchorElement>("a[data-inbox-issue-link]");
+    const links = container.querySelectorAll<HTMLAnchorElement>("a[data-inbox-task-link]");
     const titles = Array.from(links).map((link) => link.parentElement?.textContent ?? "");
     expect(titles.some((t) => t.includes("Resume parked work"))).toBe(true);
     expect(titles.some((t) => t.includes("Other unrelated thing"))).toBe(false);
@@ -326,9 +326,9 @@ describe("BlockedInboxView", () => {
   });
 
   it("uses loaded live descendants when blocked inbox rows do not have a server summary", async () => {
-    mockIssuesApi.list.mockResolvedValue([
+    mockTasksApi.list.mockResolvedValue([
       {
-        ...makeIssue(
+        ...makeTask(
           "blocked-parent",
           "PAP-77",
           "Blocked parent with active child",
@@ -337,7 +337,7 @@ describe("BlockedInboxView", () => {
         boardPresentationStatus: "blocked",
         blockerAttention: null,
         liveDescendantCount: undefined,
-      } as unknown as Issue,
+      } as unknown as Task,
     ]);
 
     const { root } = renderWithClient(
@@ -347,7 +347,7 @@ describe("BlockedInboxView", () => {
       />,
       container,
     );
-    await waitFor(() => container.querySelector("a[data-inbox-issue-link]") !== null);
+    await waitFor(() => container.querySelector("a[data-inbox-task-link]") !== null);
 
     expect(
       container.querySelector(
@@ -359,7 +359,7 @@ describe("BlockedInboxView", () => {
   });
 
   it("renders the visible error banner with retry when the query fails", async () => {
-    mockIssuesApi.list.mockRejectedValue(new Error("network down"));
+    mockTasksApi.list.mockRejectedValue(new Error("network down"));
 
     const { root } = renderWithClient(
       <BlockedInboxView {...blockedViewProps} />,

@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { addValidationDetail } from "../validation-details.js";
 
 function attachmentContentPath(attachmentId: string): string {
   return `/api/attachments/${attachmentId}/content`;
 }
 
-export const issueWorkProductTypeSchema = z.enum([
+export const taskWorkProductTypeSchema = z.enum([
   "preview_url",
   "pull_request",
   "branch",
@@ -13,7 +14,7 @@ export const issueWorkProductTypeSchema = z.enum([
   "document",
 ]);
 
-export const issueWorkProductStatusSchema = z.enum([
+export const taskWorkProductStatusSchema = z.enum([
   "active",
   "ready_for_review",
   "approved",
@@ -25,7 +26,7 @@ export const issueWorkProductStatusSchema = z.enum([
   "draft",
 ]);
 
-export const issueWorkProductReviewStateSchema = z.enum([
+export const taskWorkProductReviewStateSchema = z.enum([
   "none",
   "needs_board_review",
   "approved",
@@ -43,22 +44,19 @@ export const attachmentArtifactWorkProductMetadataSchema = z.object({
 }).superRefine((value, ctx) => {
   const contentPath = attachmentContentPath(value.attachmentId);
   if (value.contentPath !== contentPath) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       path: ["contentPath"],
       message: "contentPath must point to the same-origin attachment content route",
     });
   }
   if (value.openPath !== contentPath) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       path: ["openPath"],
       message: "openPath must point to the same-origin attachment content route",
     });
   }
   if (value.downloadPath !== `${contentPath}?download=1`) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       path: ["downloadPath"],
       message: "downloadPath must point to the same-origin attachment download route",
     });
@@ -67,30 +65,30 @@ export const attachmentArtifactWorkProductMetadataSchema = z.object({
 
 export type AttachmentArtifactWorkProductMetadata = z.infer<typeof attachmentArtifactWorkProductMetadataSchema>;
 
-export const issueWorkProductMetadataSchema = z
+export const taskWorkProductMetadataSchema = z
   .object({})
   .passthrough();
 
-export type IssueWorkProductMetadata = z.infer<typeof issueWorkProductMetadataSchema>;
+export type TaskWorkProductMetadata = z.infer<typeof taskWorkProductMetadataSchema>;
 
-export const createIssueWorkProductSchema = z.object({
+export const createTaskWorkProductSchema = z.object({
   projectId: z.string().uuid().optional().nullable(),
-  type: issueWorkProductTypeSchema,
+  type: taskWorkProductTypeSchema,
   provider: z.string().min(1),
   externalId: z.string().optional().nullable(),
   title: z.string().min(1),
   url: z.string().url().optional().nullable(),
-  status: issueWorkProductStatusSchema.default("active"),
-  reviewState: issueWorkProductReviewStateSchema.optional().default("none"),
+  status: taskWorkProductStatusSchema.default("active"),
+  reviewState: taskWorkProductReviewStateSchema.optional().default("none"),
   isPrimary: z.boolean().optional().default(false),
   healthStatus: z.enum(["unknown", "healthy", "unhealthy"]).optional().default("unknown"),
   summary: z.string().optional().nullable(),
-  metadata: issueWorkProductMetadataSchema.optional().nullable(),
+  metadata: taskWorkProductMetadataSchema.optional().nullable(),
   createdByRunId: z.string().uuid().optional().nullable(),
 });
 
-export type CreateIssueWorkProduct = z.infer<typeof createIssueWorkProductSchema>;
+export type CreateTaskWorkProduct = z.infer<typeof createTaskWorkProductSchema>;
 
-export const updateIssueWorkProductSchema = createIssueWorkProductSchema.partial();
+export const updateTaskWorkProductSchema = createTaskWorkProductSchema.partial();
 
-export type UpdateIssueWorkProduct = z.infer<typeof updateIssueWorkProductSchema>;
+export type UpdateTaskWorkProduct = z.infer<typeof updateTaskWorkProductSchema>;

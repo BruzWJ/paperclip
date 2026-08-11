@@ -15,7 +15,7 @@ import type {
   Project,
   Routine,
   RoutineRun,
-  Issue,
+  Task,
   Agent,
   Goal,
   PluginWorkerLogLevel,
@@ -82,11 +82,11 @@ export interface TestHarnessPerformActionOptions {
 export interface TestHarness {
   /** Fully-typed in-memory plugin context passed to `plugin.setup(ctx)`. */
   ctx: PluginContext;
-  /** Seed host entities for `ctx.companies/projects/issues/agents/goals/access/authorization` reads. */
+  /** Seed host entities for `ctx.companies/projects/tasks/agents/goals/access/authorization` reads. */
   seed(input: {
     companies?: Company[];
     projects?: Project[];
-    issues?: Issue[];
+    tasks?: Task[];
     agents?: Agent[];
     goals?: Goal[];
     accessMembers?: PluginAccessMember[];
@@ -195,9 +195,9 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
   const projects = new Map<string, Project>();
   const routines = new Map<string, Routine>();
   const routineRuns = new Map<string, RoutineRun>();
-  const issues = new Map<string, Issue>();
-  const pluginOwnedIssueIds = new Set<string>();
-  const pluginIssueMessages = new Map<string, string[]>();
+  const tasks = new Map<string, Task>();
+  const pluginOwnedTaskIds = new Set<string>();
+  const pluginTaskMessages = new Map<string, string[]>();
   const pluginCreatorCallbacks = new Map<
     string,
     import("./types.js").PluginCreatorCallbackHandler
@@ -380,30 +380,30 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       approvalId: null,
     };
   }
-  function assertInvokableIssueOwner(ownerAgentId: string, companyId: string): Agent {
+  function assertInvokableTaskOwner(ownerAgentId: string, companyId: string): Agent {
     const owner = agents.get(ownerAgentId);
     if (!isInCompany(owner, companyId)) {
-      throw new Error(`Issue owner agent not found: ${ownerAgentId}`);
+      throw new Error(`Task owner agent not found: ${ownerAgentId}`);
     }
     if (
       owner.status === "paused"
       || owner.status === "terminated"
       || owner.status === "pending_approval"
     ) {
-      throw new Error(`Issue owner agent is not invokable: ${owner.status}`);
+      throw new Error(`Task owner agent is not invokable: ${owner.status}`);
     }
     return owner;
   }
 
-  function assertMutablePluginIssue(issueId: string, companyId: string): Issue {
-    const issue = issues.get(issueId);
-    if (!isInCompany(issue, companyId) || !pluginOwnedIssueIds.has(issueId)) {
-      throw new Error(`Plugin-owned issue not found: ${issueId}`);
+  function assertMutablePluginTask(taskId: string, companyId: string): Task {
+    const task = tasks.get(taskId);
+    if (!isInCompany(task, companyId) || !pluginOwnedTaskIds.has(taskId)) {
+      throw new Error(`Plugin-owned task not found: ${taskId}`);
     }
-    if (issue.lifecycleStatus === "done" || issue.lifecycleStatus === "cancelled") {
-      throw new Error(`Plugin-owned issue is terminal: ${issue.lifecycleStatus}`);
+    if (task.lifecycleStatus === "done" || task.lifecycleStatus === "cancelled") {
+      throw new Error(`Plugin-owned task is terminal: ${task.lifecycleStatus}`);
     }
-    return issue;
+    return task;
   }
 
   function previewTargetAgentManagement(input: import("./types.js").PluginAssignmentPreviewInput) {
@@ -676,7 +676,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
             "No runtime run record is configured in the plugin test harness",
           );
         },
-        async readIssueComments() {
+        async readTaskComments() {
           requireCapability(manifest, capabilitySet, "runtime.records.read");
           return { items: [], nextCursor: null };
         },
@@ -990,7 +990,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
             companyId,
             projectId,
             goalId: declaration.goalId ?? null,
-            parentIssueId: null,
+            parentTaskId: null,
             title: declaration.title,
             description: declaration.description ?? null,
             responsibleUserId: null,
@@ -1017,7 +1017,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
               pluginDisplayName: manifest.displayName,
               resourceKind: "routine",
               resourceKey: routineKey,
-              defaultsJson: { title: declaration.title, issueTemplate: declaration.issueTemplate ?? null },
+              defaultsJson: { title: declaration.title, taskTemplate: declaration.taskTemplate ?? null },
               createdAt: now,
               updatedAt: now,
             },
@@ -1078,7 +1078,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
             idempotencyKey: null,
             triggerPayload: null,
             dispatchFingerprint: null,
-            linkedIssueId: null,
+            linkedTaskId: null,
             coalescedIntoRunId: null,
             failureReason: null,
             completedAt: null,
@@ -1305,27 +1305,27 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         return companies.get(companyId) ?? null;
       },
     },
-    issues: {
+    tasks: {
       async list(input) {
-        requireCapability(manifest, capabilitySet, "issues.read");
+        requireCapability(manifest, capabilitySet, "tasks.read");
         const companyId = requireCompanyId(input.companyId);
-        let out = [...issues.values()].filter((issue) => issue.companyId === companyId);
-        if (input.projectId) out = out.filter((issue) => issue.projectId === input.projectId);
+        let out = [...tasks.values()].filter((task) => task.companyId === companyId);
+        if (input.projectId) out = out.filter((task) => task.projectId === input.projectId);
         if (input.ownerAgentId) {
-          out = out.filter((issue) => issue.ownerAgentId === input.ownerAgentId);
+          out = out.filter((task) => task.ownerAgentId === input.ownerAgentId);
         }
-        if (input.status) out = out.filter((issue) => issue.lifecycleStatus === input.status);
+        if (input.status) out = out.filter((task) => task.lifecycleStatus === input.status);
         if (input.offset) out = out.slice(input.offset);
         if (input.limit) out = out.slice(0, input.limit);
         return out;
       },
-      async get(issueId, companyId) {
-        requireCapability(manifest, capabilitySet, "issues.read");
-        const issue = issues.get(issueId);
-        return isInCompany(issue, companyId) ? issue : null;
+      async get(taskId, companyId) {
+        requireCapability(manifest, capabilitySet, "tasks.read");
+        const task = tasks.get(taskId);
+        return isInCompany(task, companyId) ? task : null;
       },
       async registerCreatorCallback(registration, handler) {
-        requireCapability(manifest, capabilitySet, "issues.create");
+        requireCapability(manifest, capabilitySet, "tasks.create");
         const key = registration.key.trim();
         const version = registration.version.trim();
         if (!key || !version) {
@@ -1338,18 +1338,18 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         pluginCreatorCallbacks.set(identity, handler);
       },
       async create(input) {
-        requireCapability(manifest, capabilitySet, "issues.create");
+        requireCapability(manifest, capabilitySet, "tasks.create");
         if (!pluginCreatorCallbacks.has(`${input.callbackKey}\u0000${input.callbackVersion}`)) {
           throw new Error(
             `Creator callback is not registered: ${input.callbackKey}@${input.callbackVersion}`,
           );
         }
-        assertInvokableIssueOwner(input.ownerAgentId, input.companyId);
+        assertInvokableTaskOwner(input.ownerAgentId, input.companyId);
         const now = new Date();
         const title = input.title?.trim()
           || input.request.trim().split(/\r?\n/, 1)[0]?.slice(0, 200)
           || "Plugin request";
-        const record: Issue = {
+        const record: Task = {
           id: randomUUID(),
           companyId: input.companyId,
           projectId: input.projectId ?? null,
@@ -1380,7 +1380,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           creatorSystemSourceKind: null,
           creatorSystemSourceId: null,
           responsibleUserId: null,
-          issueNumber: null,
+          taskNumber: null,
           identifier: null,
           requestDepth: 0,
           billingCode: null,
@@ -1391,23 +1391,23 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           createdAt: now,
           updatedAt: now,
         };
-        issues.set(record.id, record);
-        pluginOwnedIssueIds.add(record.id);
-        pluginIssueMessages.set(record.id, [input.request]);
+        tasks.set(record.id, record);
+        pluginOwnedTaskIds.add(record.id);
+        pluginTaskMessages.set(record.id, [input.request]);
         return record;
       },
-      async update(issueId, input, companyId) {
-        requireCapability(manifest, capabilitySet, "issues.update");
-        const record = assertMutablePluginIssue(issueId, companyId);
+      async update(taskId, input, companyId) {
+        requireCapability(manifest, capabilitySet, "tasks.update");
+        const record = assertMutablePluginTask(taskId, companyId);
         if (input.kind === "message") {
-          const messages = pluginIssueMessages.get(issueId) ?? [];
+          const messages = pluginTaskMessages.get(taskId) ?? [];
           messages.push(input.message);
-          pluginIssueMessages.set(issueId, messages);
+          pluginTaskMessages.set(taskId, messages);
           const updated = { ...record, updatedAt: new Date() };
-          issues.set(issueId, updated);
+          tasks.set(taskId, updated);
           return updated;
         }
-        assertInvokableIssueOwner(input.ownerAgentId, companyId);
+        assertInvokableTaskOwner(input.ownerAgentId, companyId);
         const updated = {
           ...record,
           ownerKind: "agent" as const,
@@ -1417,17 +1417,17 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           ownershipEpoch: record.ownershipEpoch + 1,
           updatedAt: new Date(),
         };
-        issues.set(issueId, updated);
+        tasks.set(taskId, updated);
         return updated;
       },
-      async withdraw(issueId, message, companyId) {
-        requireCapability(manifest, capabilitySet, "issues.withdraw");
-        const record = assertMutablePluginIssue(issueId, companyId);
-        const messages = pluginIssueMessages.get(issueId) ?? [];
+      async withdraw(taskId, message, companyId) {
+        requireCapability(manifest, capabilitySet, "tasks.withdraw");
+        const record = assertMutablePluginTask(taskId, companyId);
+        const messages = pluginTaskMessages.get(taskId) ?? [];
         messages.push(message);
-        pluginIssueMessages.set(issueId, messages);
+        pluginTaskMessages.set(taskId, messages);
         const now = new Date();
-        const issue = {
+        const task = {
           ...record,
           lifecycleStatus: "cancelled" as const,
           boardPresentationStatus: "cancelled" as const,
@@ -1435,10 +1435,10 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           cancelledAt: now,
           updatedAt: now,
         };
-        issues.set(issueId, issue);
+        tasks.set(taskId, task);
         return {
           operationId: randomUUID(),
-          issue,
+          task,
           retried: false,
         };
       },
@@ -1555,7 +1555,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           companyId: input.companyId,
           title: input.title,
           description: input.description ?? null,
-          level: input.level ?? "issue",
+          level: input.level ?? "task",
           status: input.status ?? "planned",
           parentId: input.parentId ?? null,
           ownerAgentId: input.ownerAgentId ?? null,
@@ -1843,10 +1843,10 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
     seed(input) {
       for (const row of input.companies ?? []) companies.set(row.id, row);
       for (const row of input.projects ?? []) projects.set(row.id, row);
-      for (const row of input.issues ?? []) {
-        issues.set(row.id, row);
+      for (const row of input.tasks ?? []) {
+        tasks.set(row.id, row);
         if (row.originKind === `plugin:${manifest.id}`) {
-          pluginOwnedIssueIds.add(row.id);
+          pluginOwnedTaskIds.add(row.id);
         }
       }
       for (const row of input.agents ?? []) agents.set(row.id, row);
@@ -1922,33 +1922,33 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           requireCapability(manifest, capabilitySet, "runtime.context.read");
           return {
             companyId: "00000000-0000-4000-8000-000000000001",
-            issueId: "00000000-0000-4000-8000-000000000002",
+            taskId: "00000000-0000-4000-8000-000000000002",
             agentId: "00000000-0000-4000-8000-000000000003",
             runId: "00000000-0000-4000-8000-000000000004",
             projectId: null,
             contextAccess: TEST_CONTEXT_ACCESS,
           };
         },
-        async issueReach(issueId) {
+        async taskReach(taskId) {
           requireCapability(manifest, capabilitySet, "runtime.context.read");
-          const activeIssueId = "00000000-0000-4000-8000-000000000002";
-          return issueId === activeIssueId
+          const activeTaskId = "00000000-0000-4000-8000-000000000002";
+          return taskId === activeTaskId
             ? { visible: true, relation: "active" }
             : { visible: false, relation: "outside" };
         },
-        issues: {
-          async listCompanyIssues() {
+        tasks: {
+          async listCompanyTasks() {
             return { items: [], nextCursor: null };
           },
-          async listSubIssues() {
+          async listSubTasks() {
             return { items: [], nextCursor: null };
           },
-          async readIssueComments() {
+          async readTaskComments() {
             return { items: [], nextCursor: null };
           },
-          async readIssueAgentRun() {
+          async readTaskAgentRun() {
             throw new Error(
-              "No run-serving issue trace is configured in the plugin test harness",
+              "No run-serving task trace is configured in the plugin test harness",
             );
           },
         },

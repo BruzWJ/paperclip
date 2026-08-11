@@ -14,20 +14,20 @@ function testRunRow(overrides: Record<string, unknown> = {}) {
     skillVersionId: "version-1",
     agentId: "agent-1",
     agentConfigSnapshot: { model: "reviewer" },
-    issueId: "issue-1",
+    taskId: "task-1",
     templateId: null,
     templateName: null,
     templateBody: null,
     renderedTemplateBody: null,
-    harnessIssueRequest: "Review this change.",
+    harnessTaskRequest: "Review this change.",
     status: "queued",
     outputDocumentKey: "output",
     outputSnapshot: "",
     error: null,
     deletedAt: null,
     supersededAt: null,
-    harnessIssueExpiresAt: null,
-    harnessIssueDeletedAt: null,
+    harnessTaskExpiresAt: null,
+    harnessTaskDeletedAt: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -43,13 +43,13 @@ describe("companySkillService skill test runs", () => {
     });
 
     const result = await companySkillService(mock.db)
-      .markTestRunRunning("company-1", "issue-1");
+      .markTestRunRunning("company-1", "task-1");
 
     expect(result).toMatchObject({
       id: "run-1",
-      issueId: "issue-1",
+      taskId: "task-1",
       status: "running",
-      harnessIssueRequest: "Review this change.",
+      harnessTaskRequest: "Review this change.",
       cost: {
         budgetCurrency: "USD",
         knownCostAmount: "0",
@@ -63,62 +63,62 @@ describe("companySkillService skill test runs", () => {
 
   it("requires cancellation before deleting an in-flight run", async () => {
     const mock = createMockDb({ select: [[testRunRow({ status: "running" })]] });
-    const hideHarnessIssue = vi.fn();
+    const hideHarnessTask = vi.fn();
 
     await expect(companySkillService(mock.db).deleteTestRun(
       "company-1",
       "skill-1",
       "run-1",
-      { hideHarnessIssue },
+      { hideHarnessTask },
     )).rejects.toMatchObject({ status: 422 });
 
-    expect(hideHarnessIssue).not.toHaveBeenCalled();
+    expect(hideHarnessTask).not.toHaveBeenCalled();
     expect(mock.calls.some((call) => call.operation === "update")).toBe(false);
   });
 
-  it("soft-deletes terminal history and hides its harness issue best-effort", async () => {
+  it("soft-deletes terminal history and hides its harness task best-effort", async () => {
     const terminal = testRunRow({ status: "succeeded", outputSnapshot: "Reviewed." });
     const deleted = testRunRow({
       status: "succeeded",
       outputSnapshot: "Reviewed.",
       deletedAt: now,
-      harnessIssueDeletedAt: now,
+      harnessTaskDeletedAt: now,
     });
     const mock = createMockDb({
       select: [[terminal], [{ budgetCurrency: "USD" }], []],
       update: [[deleted]],
     });
-    const hideHarnessIssue = vi.fn().mockRejectedValue(new Error("already retained away"));
+    const hideHarnessTask = vi.fn().mockRejectedValue(new Error("already retained away"));
 
     const result = await companySkillService(mock.db).deleteTestRun(
       "company-1",
       "skill-1",
       "run-1",
-      { hideHarnessIssue },
+      { hideHarnessTask },
     );
 
     expect(result).toMatchObject({
       id: "run-1",
       status: "succeeded",
       outputSnapshot: "Reviewed.",
-      issueExpired: true,
+      taskExpired: true,
     });
-    expect(hideHarnessIssue).toHaveBeenCalledWith("issue-1");
+    expect(hideHarnessTask).toHaveBeenCalledWith("task-1");
     expect(mock.remaining("select")).toBe(0);
     expect(mock.remaining("update")).toBe(0);
   });
 
-  it("prunes each expired harness issue and records retention on the run", async () => {
+  it("prunes each expired harness task and records retention on the run", async () => {
     const mock = createMockDb({
       select: [[
-        { id: "run-1", issueId: "issue-1" },
-        { id: "run-2", issueId: "issue-2" },
+        { id: "run-1", taskId: "task-1" },
+        { id: "run-2", taskId: "task-2" },
       ]],
       update: [[], [], [], []],
     });
 
     await expect(companySkillService(mock.db)
-      .pruneExpiredTestHarnessIssues("company-1", now))
+      .pruneExpiredTestHarnessTasks("company-1", now))
       .resolves.toEqual({ pruned: 2 });
 
     const updateTargets = mock.calls

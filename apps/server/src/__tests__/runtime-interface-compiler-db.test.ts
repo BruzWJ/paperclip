@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { issueExecutionRefs, type Db } from "@paperclipai/db";
+import { taskExecutionRefs, type Db } from "@paperclipai/db";
 import {
   AGENT_CONTEXT_GRANT_KEYS,
   type PaperclipPluginManifestV1,
@@ -12,12 +12,12 @@ import {
   type RuntimeInterfaceCompilerSnapshot,
 } from "../services/runtime-interface-compiler-db.ts";
 import { compileRuntimeInterface } from "../services/runtime-interface-compiler.ts";
-import type { InvokableIssueOwnerRevision } from "../services/agent-invokability.ts";
+import type { InvokableTaskOwnerRevision } from "../services/agent-invokability.ts";
 
 function revision(
   id: string,
   agentId: string,
-): InvokableIssueOwnerRevision {
+): InvokableTaskOwnerRevision {
   return {
     id,
     companyId: "company",
@@ -30,8 +30,8 @@ function capability(
 ): PromptCapabilityCompileScope {
   return {
     companyId: "company",
-    issueId: "issue",
-    issueExecutionAuthorityId: "authority",
+    taskId: "task",
+    taskExecutionAuthorityId: "authority",
     consultExecutionId: null,
     executionMode: "owner",
     ownershipEpoch: 4,
@@ -46,7 +46,7 @@ function snapshot(
   return {
     capability: capability(),
     turn: "work",
-    issue: {
+    task: {
       companyId: "company",
       ownerKind: "agent",
       ownerAgentId: "owner",
@@ -138,11 +138,11 @@ function snapshot(
       revision("peer-revision", "peer"),
     ],
     contextGrantKeys: [
-      "read_issue_comments",
-      "list_company_issues",
+      "read_task_comments",
+      "list_company_tasks",
     ],
     actionGrantKeys: [
-      "issue_create",
+      "task_create",
       "mention_agent",
       "agent_configure",
     ],
@@ -154,7 +154,7 @@ function snapshot(
       permissionKey: "agents:configure",
       scope: { targetAgentIds: ["peer"] },
     }],
-    childIssues: [
+    childTasks: [
       {
         id: "eligible-child",
         identifier: "PAP-2",
@@ -177,22 +177,22 @@ function snapshot(
         creatorAuthorityId: "authority",
       },
     ],
-    issueTree: [
+    taskTree: [
       {
-        id: "root-issue",
+        id: "root-task",
         parentId: null,
         ownerKind: "agent",
         ownerAgentId: "ancestor",
       },
       {
-        id: "issue",
-        parentId: "root-issue",
+        id: "task",
+        parentId: "root-task",
         ownerKind: "agent",
         ownerAgentId: "owner",
       },
       {
-        id: "descendant-issue",
-        parentId: "issue",
+        id: "descendant-task",
+        parentId: "task",
         ownerKind: "agent",
         ownerAgentId: "grandchild",
       },
@@ -207,7 +207,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
     const ref = (overrides: Record<string, unknown> = {}) => ({
       id: "instruction",
       companyId: "company",
-      issueId: "issue",
+      taskId: "task",
       sessionId: "session",
       ownershipEpoch: 1,
       previousOwnershipEpoch: null,
@@ -215,21 +215,21 @@ describe("Postgres runtime-interface compile snapshot", () => {
       executionLineageId: "lineage",
       mode: "owner",
       sourceKind: "system_nudge",
-      sourceRecordId: "issue",
+      sourceRecordId: "task",
       messageKind: "user",
       targetAgentId: "owner",
       laneOrdinal: 0,
-      issueExecutionAuthorityId: "authority",
+      taskExecutionAuthorityId: "authority",
       consultExecutionId: null,
       adapterConfigRevisionId: "revision",
       contextEpoch: 0,
-      counterpartIssueId: null,
+      counterpartTaskId: null,
       counterpartAuthorityId: null,
       counterpartOwnershipEpoch: null,
       consultCallerRefId: null,
       consultChainToken: null,
       ...overrides,
-    }) as typeof issueExecutionRefs.$inferSelect;
+    }) as typeof taskExecutionRefs.$inferSelect;
     const instruction = ref();
     const work = ref({ id: "work", messageKind: "user", laneOrdinal: 1 });
     const db = (responses: readonly (readonly unknown[])[]) => {
@@ -315,23 +315,23 @@ describe("Postgres runtime-interface compile snapshot", () => {
     }])).toThrow("declares agent tools without agent.tools.register");
   });
 
-  it("gives the current owner current and sub-issue context while preserving company grants", () => {
+  it("gives the current owner current and sub-task context while preserving company grants", () => {
     const compiled = buildRuntimeInterfaceCompileInput(snapshot({
-      contextGrantKeys: ["list_company_issues", "read_company_issue_agent_run"],
+      contextGrantKeys: ["list_company_tasks", "read_company_task_agent_run"],
     }));
 
     expect(compiled.contextDial).toEqual({
       carry_context: true,
-      read_issue_comments: true,
-      read_issue_agent_run: true,
-      list_sub_issues: true,
-      read_sub_issue_comments: true,
-      read_sub_issue_agent_run: true,
-      list_company_issues: true,
-      read_company_issue_comments: false,
-      read_company_issue_agent_run: true,
+      read_task_comments: true,
+      read_task_agent_run: true,
+      list_sub_tasks: true,
+      read_sub_task_comments: true,
+      read_sub_task_agent_run: true,
+      list_company_tasks: true,
+      read_company_task_comments: false,
+      read_company_task_agent_run: true,
     });
-    expect(compiled.issueCreateDirectChildren).toEqual([
+    expect(compiled.taskCreateDirectChildren).toEqual([
       {
         kind: "agent",
         id: "child",
@@ -339,9 +339,9 @@ describe("Postgres runtime-interface compile snapshot", () => {
         capabilities: "Test",
       },
     ]);
-    expect(compiled.issueAssignTargets).toEqual([
+    expect(compiled.taskAssignTargets).toEqual([
       {
-        issueId: "eligible-child",
+        taskId: "eligible-child",
         identifier: "PAP-2",
         owners: [
           { kind: "self" },
@@ -355,7 +355,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
       },
     ]);
     expect(compiled.creatorUpdateTargets).toEqual([
-      { issueId: "eligible-child" },
+      { taskId: "eligible-child" },
     ]);
     expect(compiled.mentionTargets.map((agent) => agent.id)).toEqual([
       "ancestor",
@@ -375,7 +375,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
       snapshot({
         capability: capability({
           executionMode: "consult",
-          issueExecutionAuthorityId: null,
+          taskExecutionAuthorityId: null,
           consultExecutionId: "consult",
         }),
         contextGrantKeys: [],
@@ -387,7 +387,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
         AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false]),
       ),
     );
-    expect(compiled.issueAssignTargets).toEqual([]);
+    expect(compiled.taskAssignTargets).toEqual([]);
     expect(compiled.creatorUpdateTargets).toEqual([]);
   });
 
@@ -425,8 +425,8 @@ describe("Postgres runtime-interface compile snapshot", () => {
       capability: capability({
         targetAgentId: "grandchild",
       }),
-      issue: {
-        ...snapshot().issue,
+      task: {
+        ...snapshot().task,
         ownerAgentId: "grandchild",
       },
       mentionReachGrantKeys: [],
@@ -457,14 +457,14 @@ describe("Postgres runtime-interface compile snapshot", () => {
       capability: capability({
         targetAgentId: "grandchild",
       }),
-      issue: {
-        ...snapshot().issue,
+      task: {
+        ...snapshot().task,
         ownerAgentId: "grandchild",
       },
       mentionReachGrantKeys: [],
-      issueTree: [
+      taskTree: [
         {
-          id: "issue",
+          id: "task",
           parentId: null,
           ownerKind: "agent",
           ownerAgentId: "grandchild",
@@ -490,14 +490,14 @@ describe("Postgres runtime-interface compile snapshot", () => {
     }
   });
 
-  it("extends downward only to org descendants owning work in the active issue tree", () => {
+  it("extends downward only to org descendants owning work in the active task tree", () => {
     const withoutGrandchildOwnership =
       buildRuntimeInterfaceCompileInput(
         snapshot({
-          issueTree: snapshot().issueTree.map((issue) =>
-            issue.id === "descendant-issue"
-              ? { ...issue, ownerAgentId: "peer" }
-              : issue,
+          taskTree: snapshot().taskTree.map((task) =>
+            task.id === "descendant-task"
+              ? { ...task, ownerAgentId: "peer" }
+              : task,
           ),
           mentionReachGrantKeys: ["mention_any_descendant"],
         }),
@@ -508,12 +508,12 @@ describe("Postgres runtime-interface compile snapshot", () => {
     ).toEqual(["child"]);
   });
 
-  it("fails closed when issue scope or target invokability changes", () => {
+  it("fails closed when task scope or target invokability changes", () => {
     expect(() =>
       buildRuntimeInterfaceCompileInput(
         snapshot({
-          issue: {
-            ...snapshot().issue,
+          task: {
+            ...snapshot().task,
             ownershipEpoch: 5,
           },
         }),
@@ -542,7 +542,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
       }),
     );
 
-    expect(compiled.issueCreateDirectChildren).toEqual([]);
+    expect(compiled.taskCreateDirectChildren).toEqual([]);
     expect(compiled.mentionTargets.map((agent) => agent.id)).not.toContain(
       "child",
     );
@@ -558,7 +558,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
           : agent,
       ),
     });
-    expect(dangling.issueCreateDirectChildren).toEqual([]);
+    expect(dangling.taskCreateDirectChildren).toEqual([]);
 
     const crossAgent = buildRuntimeInterfaceCompileInput({
       ...base,
@@ -568,14 +568,14 @@ describe("Postgres runtime-interface compile snapshot", () => {
           : agent,
       ),
     });
-    expect(crossAgent.issueCreateDirectChildren).toEqual([]);
+    expect(crossAgent.taskCreateDirectChildren).toEqual([]);
   });
 
-  it("allows execution-mode policy to deny an otherwise eligible issue owner", () => {
+  it("allows execution-mode policy to deny an otherwise eligible task owner", () => {
     const compiled = buildRuntimeInterfaceCompileInput(
       snapshot({
-        issue: {
-          ...snapshot().issue,
+        task: {
+          ...snapshot().task,
           workMode: "skill_test",
         },
       }),
@@ -586,7 +586,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
     );
   });
 
-  it("does not give an owner-mode non-owner the issue baseline", () => {
+  it("does not give an owner-mode non-owner the task baseline", () => {
     const compiled = buildRuntimeInterfaceCompileInput(snapshot({
       capability: capability({ targetAgentId: "child" }),
       contextGrantKeys: [],

@@ -61,11 +61,11 @@ function makeArtifact(overrides: Partial<CompanyArtifact>): CompanyArtifact {
     contentPath: null,
     openPath: null,
     downloadPath: null,
-    issue: { id: "issue-1", identifier: "PAP-10306", title: "Landing visuals refresh" },
+    task: { id: "task-1", identifier: "PAP-10306", title: "Landing visuals refresh" },
     project: { id: "proj-1", name: "Paperclip App" },
     createdByAgent: { id: "agent-1", name: "ClaudeCoder" },
     updatedAt: new Date("2026-06-04T12:00:00Z").toISOString(),
-    href: "/issues/PAP-10306#attachment-art",
+    href: "/tasks/PAP-10306#attachment-art",
     ...overrides,
   };
 }
@@ -80,8 +80,8 @@ const ARTIFACTS: CompanyArtifact[] = [
     contentPath: null,
     openPath: "/files/demo.mp4",
     downloadPath: "/files/demo.mp4?download=1",
-    issue: { id: "issue-2", identifier: "PAP-10205", title: "Record the launch walkthrough" },
-    href: "/issues/PAP-10205#work-product-wp-video",
+    task: { id: "task-2", identifier: "PAP-10205", title: "Record the launch walkthrough" },
+    href: "/tasks/PAP-10205#work-product-wp-video",
   }),
   makeArtifact({
     id: "img-hero",
@@ -100,20 +100,20 @@ const ARTIFACTS: CompanyArtifact[] = [
     previewText:
       "Build a company-level Artifacts page at /{companyPrefix}/artifacts, with a sidebar item below Goals and a three-column artifact grid. The page should make agent-produced work easy to find without becoming another attachment dump.",
     contentType: "text/markdown",
-    issue: { id: "issue-3", identifier: "PAP-10341", title: "Draft the rollout plan" },
+    task: { id: "task-3", identifier: "PAP-10341", title: "Draft the rollout plan" },
     createdByAgent: { id: "agent-2", name: "CodexCoder" },
-    href: "/issues/PAP-10341#document-plan",
+    href: "/tasks/PAP-10341#document-plan",
   }),
   makeArtifact({
     id: "txt-notes",
     mediaKind: "text",
     title: "review-notes.txt",
     previewText:
-      "Reviewed the primary cut. Color grade looks good; trim the first 1.2s of dead air. Re-export at 1080p and attach the final to the issue.",
+      "Reviewed the primary cut. Color grade looks good; trim the first 1.2s of dead air. Re-export at 1080p and attach the final to the task.",
     contentType: "text/plain",
     openPath: "/files/review-notes.txt",
     downloadPath: "/files/review-notes.txt?download=1",
-    issue: { id: "issue-2", identifier: "PAP-10205", title: "Record the launch walkthrough" },
+    task: { id: "task-2", identifier: "PAP-10205", title: "Record the launch walkthrough" },
   }),
   makeArtifact({
     id: "file-zip",
@@ -122,7 +122,7 @@ const ARTIFACTS: CompanyArtifact[] = [
     contentType: "application/zip",
     openPath: "/files/design-assets.zip",
     downloadPath: "/files/design-assets.zip?download=1",
-    issue: { id: "issue-1", identifier: "PAP-10306", title: "Landing visuals refresh" },
+    task: { id: "task-1", identifier: "PAP-10306", title: "Landing visuals refresh" },
   }),
   makeArtifact({
     id: "img-broken",
@@ -249,8 +249,8 @@ function ArtifactsToolbar({
 interface MockGroup {
   id: string;
   groupBy: Exclude<StoryArtifactGroupBy, "none">;
-  issueIdentifier: string;
-  issueTitle: string;
+  taskIdentifier: string;
+  taskTitle: string;
   count: number;
   preview: CompanyArtifact;
   updatedAt: string;
@@ -268,7 +268,7 @@ interface MockGroup {
  *    offset by 4px / 8px on both axes, with reduced opacity. This produces a
  *    subtle "stack" without competing with the preview content.
  *  - Stack count badge sits in the top-right of the preview as a small pill.
- *  - The body line replaces the artifact title with the issue identifier and
+ *  - The body line replaces the artifact title with the task identifier and
  *    title; metadata line shows the artifact count and most-recent-edit time.
  */
 function ArtifactStackCard({ group }: { group: MockGroup }) {
@@ -316,13 +316,13 @@ function ArtifactStackCard({ group }: { group: MockGroup }) {
         <div className="flex flex-1 flex-col gap-1 p-3">
           <div className="flex h-7 items-center gap-2">
             <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-              {group.issueIdentifier}
+              {group.taskIdentifier}
             </span>
             <h3
               className="min-w-0 flex-1 truncate text-sm font-medium leading-7 text-foreground/85"
-              title={group.issueTitle}
+              title={group.taskTitle}
             >
-              {group.issueTitle}
+              {group.taskTitle}
             </h3>
           </div>
 
@@ -339,97 +339,97 @@ function ArtifactStackCard({ group }: { group: MockGroup }) {
 
 const TASK_GROUPS: MockGroup[] = [
   {
-    id: "issue:issue-1",
-    groupBy: "issue",
-    issueIdentifier: "PAP-10306",
-    issueTitle: "Landing visuals refresh",
+    id: "task:task-1",
+    groupBy: "task",
+    taskIdentifier: "PAP-10306",
+    taskTitle: "Landing visuals refresh",
     count: 5,
     preview: makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE }),
     updatedAt: new Date("2026-06-04T12:00:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=issue&groupIssueId=issue-1",
+    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-1",
   },
   {
-    id: "issue:issue-2",
-    groupBy: "issue",
-    issueIdentifier: "PAP-10205",
-    issueTitle: "Record the launch walkthrough",
+    id: "task:task-2",
+    groupBy: "task",
+    taskIdentifier: "PAP-10205",
+    taskTitle: "Record the launch walkthrough",
     count: 3,
     preview: makeArtifact({ mediaKind: "video", contentPath: null }),
     updatedAt: new Date("2026-06-03T09:30:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=issue&groupIssueId=issue-2",
+    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-2",
   },
   {
-    id: "issue:issue-3",
-    groupBy: "issue",
-    issueIdentifier: "PAP-10341",
-    issueTitle: "Draft the rollout plan",
+    id: "task:task-3",
+    groupBy: "task",
+    taskIdentifier: "PAP-10341",
+    taskTitle: "Draft the rollout plan",
     count: 2,
     preview: makeArtifact({ mediaKind: "document", contentPath: null }),
     updatedAt: new Date("2026-06-02T18:15:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=issue&groupIssueId=issue-3",
+    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-3",
   },
   {
-    id: "issue:issue-4",
-    groupBy: "issue",
-    issueIdentifier: "PAP-10412",
-    issueTitle: "Investigate paywall regression",
+    id: "task:task-4",
+    groupBy: "task",
+    taskIdentifier: "PAP-10412",
+    taskTitle: "Investigate paywall regression",
     count: 1,
     preview: makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE_AMBER }),
     updatedAt: new Date("2026-06-02T11:00:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=issue&groupIssueId=issue-4",
+    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-4",
   },
   {
-    id: "issue:issue-5",
-    groupBy: "issue",
-    issueIdentifier: "PAP-10391",
-    issueTitle: "Iterate on nav",
+    id: "task:task-5",
+    groupBy: "task",
+    taskIdentifier: "PAP-10391",
+    taskTitle: "Iterate on nav",
     count: 4,
     preview: makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE_TEAL }),
     updatedAt: new Date("2026-06-01T16:42:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=issue&groupIssueId=issue-5",
+    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-5",
   },
   {
-    id: "issue:issue-6",
-    groupBy: "issue",
-    issueIdentifier: "PAP-10377",
-    issueTitle: "QA: empty states",
+    id: "task:task-6",
+    groupBy: "task",
+    taskIdentifier: "PAP-10377",
+    taskTitle: "QA: empty states",
     count: 1,
     preview: makeArtifact({ mediaKind: "text", previewText: "All empty states green except onboarding-step-3." }),
     updatedAt: new Date("2026-05-31T10:00:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=issue&groupIssueId=issue-6",
+    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-6",
   },
 ];
 
 const PARENT_TASK_GROUPS: MockGroup[] = [
   {
-    id: "parent_issue:root-1",
-    groupBy: "parent_issue",
-    issueIdentifier: "PAP-10300",
-    issueTitle: "Launch readiness epic",
+    id: "parent_task:root-1",
+    groupBy: "parent_task",
+    taskIdentifier: "PAP-10300",
+    taskTitle: "Launch readiness epic",
     count: 14,
     preview: makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE }),
     updatedAt: new Date("2026-06-04T12:00:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=parent_issue&groupIssueId=root-1",
+    href: "/PAP/artifacts?groupBy=parent_task&groupTaskId=root-1",
   },
   {
-    id: "parent_issue:root-2",
-    groupBy: "parent_issue",
-    issueIdentifier: "PAP-10200",
-    issueTitle: "Marketing site rebuild",
+    id: "parent_task:root-2",
+    groupBy: "parent_task",
+    taskIdentifier: "PAP-10200",
+    taskTitle: "Marketing site rebuild",
     count: 9,
     preview: makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE_TEAL }),
     updatedAt: new Date("2026-06-03T14:25:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=parent_issue&groupIssueId=root-2",
+    href: "/PAP/artifacts?groupBy=parent_task&groupTaskId=root-2",
   },
   {
-    id: "parent_issue:root-3",
-    groupBy: "parent_issue",
-    issueIdentifier: "PAP-10180",
-    issueTitle: "Pricing experiment",
+    id: "parent_task:root-3",
+    groupBy: "parent_task",
+    taskIdentifier: "PAP-10180",
+    taskTitle: "Pricing experiment",
     count: 1,
     preview: makeArtifact({ mediaKind: "document", previewText: "Decision log" }),
     updatedAt: new Date("2026-05-30T08:11:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=parent_issue&groupIssueId=root-3",
+    href: "/PAP/artifacts?groupBy=parent_task&groupTaskId=root-3",
   },
 ];
 
@@ -508,7 +508,7 @@ export const Grid: Story = {
 };
 
 /**
- * Grouped by Task — the production default. Every stack is one issue's
+ * Grouped by Task — the production default. Every stack is one task's
  * artifacts. Counts > 1 show the subtle stack effect; the lone `count = 1`
  * stacks render flat to keep the grid honest about depth.
  */
@@ -516,7 +516,7 @@ export const GroupedByTask: Story = {
   render: () => {
     const [query, setQuery] = useState("");
     const [kind, setKind] = useState<StoryArtifactKindFilter>("all");
-    const [groupBy, setGroupBy] = useState<StoryArtifactGroupBy>("issue");
+    const [groupBy, setGroupBy] = useState<StoryArtifactGroupBy>("task");
     return (
       <div className="mx-auto w-full max-w-6xl space-y-5 p-6">
         <ArtifactsToolbar
@@ -539,13 +539,13 @@ export const GroupedByTask: Story = {
 
 /**
  * Grouped by Parent task — stacks cluster all descendants under the root
- * issue identifier. Same visual contract as task grouping.
+ * task identifier. Same visual contract as task grouping.
  */
 export const GroupedByParentTask: Story = {
   render: () => {
     const [query, setQuery] = useState("");
     const [kind, setKind] = useState<StoryArtifactKindFilter>("all");
-    const [groupBy, setGroupBy] = useState<StoryArtifactGroupBy>("parent_issue");
+    const [groupBy, setGroupBy] = useState<StoryArtifactGroupBy>("parent_task");
     return (
       <div className="mx-auto w-full max-w-6xl space-y-5 p-6">
         <ArtifactsToolbar
@@ -567,7 +567,7 @@ export const GroupedByParentTask: Story = {
 };
 
 /**
- * Selected stack — drilled into a single issue's artifacts. The header row
+ * Selected stack — drilled into a single task's artifacts. The header row
  * is the back affordance plus the selected-group label; media filter and
  * search remain available and still apply within the stack.
  */
@@ -575,7 +575,7 @@ export const SelectedStack: Story = {
   render: () => {
     const [query, setQuery] = useState("");
     const [kind, setKind] = useState<StoryArtifactKindFilter>("all");
-    const [groupBy, setGroupBy] = useState<StoryArtifactGroupBy>("issue");
+    const [groupBy, setGroupBy] = useState<StoryArtifactGroupBy>("task");
     return (
       <div className="mx-auto w-full max-w-6xl space-y-5 p-6">
         <ArtifactsToolbar
@@ -590,7 +590,7 @@ export const SelectedStack: Story = {
         <div className="flex flex-col gap-2 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 min-w-0">
             <a
-              href="/PAP/artifacts?groupBy=issue"
+              href="/PAP/artifacts?groupBy=task"
               className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
@@ -625,7 +625,7 @@ export const MobileGrouping: Story = {
   render: () => {
     const [query, setQuery] = useState("");
     const [kind, setKind] = useState<StoryArtifactKindFilter>("all");
-    const [groupBy, setGroupBy] = useState<StoryArtifactGroupBy>("issue");
+    const [groupBy, setGroupBy] = useState<StoryArtifactGroupBy>("task");
     return (
       <div className="mx-auto w-full max-w-md space-y-5 p-4">
         <ArtifactsToolbar

@@ -27,7 +27,7 @@ const DATE_WINDOW_OPTIONS: { value: string; label: string; ms: number | null }[]
 
 export function RunsSection() {
   const ctx = useRoutineDetail();
-  const { routine, routineRuns, hasLiveRun, activeIssueId, onOpenRunDialog } = ctx;
+  const { routine, routineRuns, hasLiveRun, activeTaskId, onOpenRunDialog } = ctx;
   const runs = useMemo(() => routineRuns ?? [], [routineRuns]);
 
   const [sourceFilter, setSourceFilter] = useState("any");
@@ -81,8 +81,8 @@ export function RunsSection() {
 
   return (
     <div className="space-y-4">
-      {hasLiveRun && activeIssueId ? (
-        <LiveRunWidget issueId={activeIssueId} companyId={routine.companyId} />
+      {hasLiveRun && activeTaskId ? (
+        <LiveRunWidget taskId={activeTaskId} companyId={routine.companyId} />
       ) : null}
 
       {runs.length === 0 ? (
@@ -153,7 +153,7 @@ export function RunsSection() {
             <div className="rounded-lg border border-border">
               {filtered.map((run) => {
                 const label = dedupedTriggerLabel(run.trigger);
-                const title = run.linkedIssue?.title ?? label ?? "Run";
+                const title = run.linkedTask?.title ?? label ?? "Run";
                 return (
                   <EntityRow
                     key={run.id}
@@ -171,8 +171,8 @@ export function RunsSection() {
                       </>
                     }
                     identifier={
-                      run.linkedIssue
-                        ? run.linkedIssue.identifier ?? run.linkedIssue.id.slice(0, 8)
+                      run.linkedTask
+                        ? run.linkedTask.identifier ?? run.linkedTask.id.slice(0, 8)
                         : undefined
                     }
                     title={title}
@@ -182,8 +182,8 @@ export function RunsSection() {
                       <span className="text-xs text-muted-foreground">{timeAgo(run.triggeredAt)}</span>
                     }
                     to={
-                      run.linkedIssue
-                        ? `/issues/${run.linkedIssue.identifier ?? run.linkedIssue.id}`
+                      run.linkedTask
+                        ? `/tasks/${run.linkedTask.identifier ?? run.linkedTask.id}`
                         : undefined
                     }
                   />

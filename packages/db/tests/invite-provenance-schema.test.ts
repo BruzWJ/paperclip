@@ -15,7 +15,7 @@ function renderedCheck(name: string): string {
 }
 
 describe("invite provenance schema", () => {
-  it("requires one closed, explicit issuance source", () => {
+  it("requires one closed, explicit creation source", () => {
     expect(INVITE_SOURCES).toBe(SHARED_INVITE_SOURCES);
     expect(INVITE_SOURCES).toEqual([
       "board_api",
@@ -32,7 +32,7 @@ describe("invite provenance schema", () => {
     );
   });
 
-  it("keeps bootstrap issuance principal-free and structurally distinct", () => {
+  it("keeps bootstrap creation principal-free and structurally distinct", () => {
     const principalCheck = renderedCheck("invites_source_principal_check");
     expect(principalCheck).toContain(
       `"invites"."source" = 'board_api' AND "invites"."invited_by_user_id" IS NOT NULL`,

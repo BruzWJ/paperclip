@@ -4,10 +4,10 @@ import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tansta
 import { agentsApi } from "../api/agents";
 import { companySkillsApi } from "../api/companySkills";
 import { budgetsApi } from "../api/budgets";
-import { isIssueExecutionRunActive, runsApi, type IssueExecutionRunJoinedDetail } from "../api/runs";
+import { isTaskExecutionRunActive, runsApi, type TaskExecutionRunJoinedDetail } from "../api/runs";
 import { ApiError } from "../api/client";
-import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
-import { issuesApi } from "../api/issues";
+import { ChartCard, RunActivityChart, PriorityChart, TaskStatusChart, SuccessRateChart } from "../components/ActivityCharts";
+import { tasksApi } from "../api/tasks";
 import { usePanel } from "../context/PanelContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useCompany } from "../context/CompanyContext";
@@ -28,7 +28,7 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentActionButtons } from "../components/AgentActionButtons";
 import { InlineBanner } from "../components/InlineBanner";
 import { BudgetPolicyCard } from "../components/BudgetPolicyCard";
-import { issueDisplayTitle } from "../lib/issue-display";
+import { taskDisplayTitle } from "../lib/task-display";
 import { cn, formatDate, formatMoneyAmount, formatTokens, relativeTime } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
@@ -51,8 +51,8 @@ import {
   type BudgetCurrency,
   type BudgetPolicySummary,
   type AgentRuntimeState,
-  type IssueExecutionRunEnvelopeRecord,
-  type IssueExecutionRunListPageRecord,
+  type TaskExecutionRunEnvelopeRecord,
+  type TaskExecutionRunListPageRecord,
   type MoneyAmount,
 } from "@paperclipai/shared";
 import { agentRouteRef } from "../lib/utils";
@@ -113,7 +113,7 @@ export function AgentDetail() {
   const routeCompanyId = useMemo(() => {
     if (!companyPrefix) return null;
     const requestedPrefix = companyPrefix.toUpperCase();
-    return companies.find((company) => company.issuePrefix.toUpperCase() === requestedPrefix)?.id ?? null;
+    return companies.find((company) => company.taskPrefix.toUpperCase() === requestedPrefix)?.id ?? null;
   }, [companies, companyPrefix]);
   const lookupCompanyId = routeCompanyId ?? selectedCompanyId ?? undefined;
   const canFetchAgent = routeAgentRef.length > 0 && (isUuidLike(routeAgentRef) || Boolean(lookupCompanyId));
@@ -141,7 +141,7 @@ export function AgentDetail() {
     enabled: Boolean(resolvedAgentId) && needsDashboardData,
   });
 
-  const { data: runPage } = useQuery<IssueExecutionRunListPageRecord>({
+  const { data: runPage } = useQuery<TaskExecutionRunListPageRecord>({
     queryKey: queryKeys.runs(resolvedCompanyId!, { agentId: agent?.id }),
     queryFn: () => runsApi.listForCompany(resolvedCompanyId!, {
       agentId: agent!.id,
@@ -152,9 +152,9 @@ export function AgentDetail() {
   });
   const runs = runPage?.items ?? [];
 
-  const { data: allIssues } = useQuery({
-    queryKey: [...queryKeys.issues.list(resolvedCompanyId!), "participant-agent", resolvedAgentId ?? "__none__"],
-    queryFn: () => issuesApi.list(resolvedCompanyId!, { participantAgentId: resolvedAgentId! }),
+  const { data: allTasks } = useQuery({
+    queryKey: [...queryKeys.tasks.list(resolvedCompanyId!), "participant-agent", resolvedAgentId ?? "__none__"],
+    queryFn: () => tasksApi.list(resolvedCompanyId!, { participantAgentId: resolvedAgentId! }),
     enabled: !!resolvedCompanyId && !!resolvedAgentId && needsDashboardData,
   });
 
@@ -172,7 +172,7 @@ export function AgentDetail() {
     staleTime: 5_000,
   });
 
-  const assignedIssues = (allIssues ?? [])
+  const assignedTasks = (allTasks ?? [])
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   const reportsToAgent = (allAgents ?? []).find((a) => a.id === agent?.reportsTo);
   const directReports = (allAgents ?? []).filter((a) => a.reportsTo === agent?.id && a.status !== "terminated");
@@ -229,7 +229,7 @@ export function AgentDetail() {
     } satisfies BudgetPolicySummary;
   }, [agent, budgetOverview, companies, resolvedCompanyId, routeAgentRef]);
   const mobileLiveRun = useMemo(
-    () => runs.find(isIssueExecutionRunActive) ?? null,
+    () => runs.find(isTaskExecutionRunActive) ?? null,
     [runs],
   );
 
@@ -677,7 +677,7 @@ export function AgentDetail() {
         <AgentOverview
           agent={agent}
           runs={runs}
-          assignedIssues={assignedIssues}
+          assignedTasks={assignedTasks}
           runtimeState={runtimeState}
           budgetCurrency={
             budgetOverview?.budgetCurrency
@@ -747,7 +747,7 @@ function LatestRunCard({
   runs,
   agentId,
 }: {
-  runs: IssueExecutionRunEnvelopeRecord[];
+  runs: TaskExecutionRunEnvelopeRecord[];
   agentId: string;
 }) {
   if (runs.length === 0) return null;
@@ -756,8 +756,8 @@ function LatestRunCard({
     (left, right) =>
       new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
   );
-  const run = sorted.find(isIssueExecutionRunActive) ?? sorted[0]!;
-  const isLive = isIssueExecutionRunActive(run);
+  const run = sorted.find(isTaskExecutionRunActive) ?? sorted[0]!;
+  const isLive = isTaskExecutionRunActive(run);
   const terminalSummary = run.terminalReasonCode
     ? run.terminalReasonCode.replace(/_/g, " ")
     : null;
@@ -815,15 +815,15 @@ function LatestRunCard({
 function AgentOverview({
   agent,
   runs,
-  assignedIssues,
+  assignedTasks,
   runtimeState,
   budgetCurrency,
   agentId,
   agentRouteId,
 }: {
   agent: AgentDetailRecord;
-  runs: IssueExecutionRunEnvelopeRecord[];
-  assignedIssues: { id: string; title: string | null; boardPresentationStatus: string; priority: string; identifier?: string | null; request?: string | null; createdAt: Date }[];
+  runs: TaskExecutionRunEnvelopeRecord[];
+  assignedTasks: { id: string; title: string | null; boardPresentationStatus: string; priority: string; identifier?: string | null; request?: string | null; createdAt: Date }[];
   runtimeState?: AgentRuntimeState | null;
   budgetCurrency?: BudgetCurrency;
   agentId: string;
@@ -840,43 +840,43 @@ function AgentOverview({
           <RunActivityChart runs={runs} />
         </ChartCard>
         <ChartCard title="Tasks by Priority" subtitle="Last 14 days">
-          <PriorityChart issues={assignedIssues} />
+          <PriorityChart tasks={assignedTasks} />
         </ChartCard>
         <ChartCard title="Tasks by Status" subtitle="Last 14 days">
-          <IssueStatusChart issues={assignedIssues} />
+          <TaskStatusChart tasks={assignedTasks} />
         </ChartCard>
         <ChartCard title="Success Rate" subtitle="Last 14 days">
           <SuccessRateChart runs={runs} />
         </ChartCard>
       </div>
 
-      {/* Recent Issues */}
+      {/* Recent Tasks */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium">Recent Tasks</h3>
           <Link
-            to={`/issues?participantAgentId=${agentId}`}
+            to={`/tasks?participantAgentId=${agentId}`}
             className="text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             See All &rarr;
           </Link>
         </div>
-        {assignedIssues.length === 0 ? (
+        {assignedTasks.length === 0 ? (
           <p className="text-sm text-muted-foreground">No recent tasks.</p>
         ) : (
           <div className="border border-border rounded-lg">
-            {assignedIssues.slice(0, 10).map((issue) => (
+            {assignedTasks.slice(0, 10).map((task) => (
               <EntityRow
-                key={issue.id}
-                identifier={issue.identifier ?? issue.id.slice(0, 8)}
-                title={issueDisplayTitle(issue)}
-                to={`/issues/${issue.identifier ?? issue.id}`}
-                trailing={<StatusBadge status={issue.boardPresentationStatus} />}
+                key={task.id}
+                identifier={task.identifier ?? task.id.slice(0, 8)}
+                title={taskDisplayTitle(task)}
+                to={`/tasks/${task.identifier ?? task.id}`}
+                trailing={<StatusBadge status={task.boardPresentationStatus} />}
               />
             ))}
-            {assignedIssues.length > 10 && (
+            {assignedTasks.length > 10 && (
               <div className="px-3 py-2 text-xs text-muted-foreground text-center border-t border-border">
-                +{assignedIssues.length - 10} more tasks
+                +{assignedTasks.length - 10} more tasks
               </div>
             )}
           </div>
@@ -1234,7 +1234,7 @@ function ConfigurationTab({
 
 /* ---- Runs Tab ---- */
 
-function runDuration(run: IssueExecutionRunEnvelopeRecord) {
+function runDuration(run: TaskExecutionRunEnvelopeRecord) {
   if (!run.startedAt) return null;
   const startedAt = new Date(run.startedAt).getTime();
   const finishedAt = run.finishedAt ? new Date(run.finishedAt).getTime() : Date.now();
@@ -1253,7 +1253,7 @@ function RunListItem({
   isSelected,
   agentId,
 }: {
-  run: IssueExecutionRunEnvelopeRecord;
+  run: TaskExecutionRunEnvelopeRecord;
   isSelected: boolean;
   agentId: string;
 }) {
@@ -1291,7 +1291,7 @@ function RunsTab({
   agentRouteId,
   selectedRunId,
 }: {
-  runs: IssueExecutionRunEnvelopeRecord[];
+  runs: TaskExecutionRunEnvelopeRecord[];
   agentRouteId: string;
   selectedRunId: string | null;
 }) {
@@ -1406,11 +1406,11 @@ function JsonData({ value }: { value: unknown }) {
   );
 }
 
-function RunDetail({ run: initialRun }: { run: IssueExecutionRunEnvelopeRecord }) {
-  const { data: detail, isLoading, error } = useQuery<IssueExecutionRunJoinedDetail>({
+function RunDetail({ run: initialRun }: { run: TaskExecutionRunEnvelopeRecord }) {
+  const { data: detail, isLoading, error } = useQuery<TaskExecutionRunJoinedDetail>({
     queryKey: queryKeys.runDetail(initialRun.id),
     queryFn: () => runsApi.get(initialRun.id),
-    refetchInterval: isIssueExecutionRunActive(initialRun) ? 3_000 : false,
+    refetchInterval: isTaskExecutionRunActive(initialRun) ? 3_000 : false,
   });
   const run = detail?.run ?? initialRun;
   const duration = runDuration(run);
@@ -1424,9 +1424,9 @@ function RunDetail({ run: initialRun }: { run: IssueExecutionRunEnvelopeRecord }
           <span className="font-mono text-xs text-muted-foreground">{run.id}</span>
         </div>
         <div className="grid gap-2 text-xs sm:grid-cols-2">
-          <SummaryRow label="Issue">
-            <Link to={"/issues/" + run.issueId} className="font-mono hover:underline">
-              {run.issueId.slice(0, 8)}
+          <SummaryRow label="Task">
+            <Link to={"/tasks/" + run.taskId} className="font-mono hover:underline">
+              {run.taskId.slice(0, 8)}
             </Link>
           </SummaryRow>
           <SummaryRow label="Session">

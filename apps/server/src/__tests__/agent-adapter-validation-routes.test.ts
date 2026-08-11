@@ -65,7 +65,7 @@ vi.mock("../services/index.js", () => ({
     findOpenHireApprovalForAgent: vi.fn(),
     reject: vi.fn(),
   }),
-  issueService: () => ({}),
+  taskService: () => ({}),
   createRuntimeAgentConfigurationService: () =>
     mockRuntimeAgentConfiguration,
   logActivity: mockLogActivity,
@@ -188,7 +188,7 @@ function createApp(actorType: "board" | "agent" = "board") {
   });
   app.use("/api", denyGenericAgentRest("control-plane"));
   app.use("/api", agentRoutes({} as never, {
-    ordinaryIssues: {} as never,
+    ordinaryTasks: {} as never,
   }));
   app.use(errorHandler);
   return app;

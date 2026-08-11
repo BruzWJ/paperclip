@@ -11,7 +11,7 @@ import { authUsers } from "./auth.js";
 import { companies } from "./companies.js";
 import { documentRevisions } from "./document_revisions.js";
 import { documents } from "./documents.js";
-import { issues } from "./issues.js";
+import { tasks } from "./tasks.js";
 import { routines } from "./routines.js";
 
 export const documentAnnotationThreads = pgTable(
@@ -19,7 +19,7 @@ export const documentAnnotationThreads = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id),
-    issueId: uuid("issue_id").references(() => issues.id, { onDelete: "cascade" }),
+    taskId: uuid("task_id").references(() => tasks.id, { onDelete: "cascade" }),
     routineId: uuid("routine_id").references(() => routines.id, { onDelete: "cascade" }),
     documentId: uuid("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
     documentKey: text("document_key").notNull(),
@@ -59,9 +59,9 @@ export const documentAnnotationThreads = pgTable(
       table.documentId,
       table.status,
     ),
-    companyIssueStatusIdx: index("document_annotation_threads_company_issue_status_idx").on(
+    companyTaskStatusIdx: index("document_annotation_threads_company_task_status_idx").on(
       table.companyId,
-      table.issueId,
+      table.taskId,
       table.status,
     ),
     companyRoutineStatusIdx: index("document_annotation_threads_company_routine_status_idx").on(
@@ -81,7 +81,7 @@ export const documentAnnotationThreads = pgTable(
     ),
     exactlyOneOwnerChk: check(
       "document_annotation_threads_exactly_one_owner_chk",
-      sql`num_nonnulls(${table.issueId}, ${table.routineId}) = 1`,
+      sql`num_nonnulls(${table.taskId}, ${table.routineId}) = 1`,
     ),
   }),
 );

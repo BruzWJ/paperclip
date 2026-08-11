@@ -54,9 +54,9 @@ export type AuthorizationAction =
   | "skill_config:update"
   | "agent:read"
   | "company_scope:read"
-  | "issue:comment"
-  | "issue:mutate"
-  | "issue:read"
+  | "task:comment"
+  | "task:mutate"
+  | "task:read"
   | "project:read"
   | "runtime:manage"
   | "secrets:read";
@@ -66,11 +66,11 @@ export type AuthorizationResource =
   | { type: "agent"; companyId: string; agentId?: string | null }
   | { type: "project"; companyId: string; projectId?: string | null }
   | {
-      type: "issue";
+      type: "task";
       companyId: string;
-      issueId?: string | null;
+      taskId?: string | null;
       projectId?: string | null;
-      parentIssueId?: string | null;
+      parentTaskId?: string | null;
       ownerKind?: "agent" | "user" | "board" | null;
       ownerAgentId?: string | null;
       ownerUserId?: string | null;
@@ -144,9 +144,9 @@ const responsibleUserSnapshotCache = new Map<
 const GENERIC_AGENT_REST_ACTIONS = new Set<AuthorizationAction>([
   "agent:read",
   "company_scope:read",
-  "issue:comment",
-  "issue:mutate",
-  "issue:read",
+  "task:comment",
+  "task:mutate",
+  "task:read",
   "project:read",
   "runtime:manage",
   "secrets:read",
@@ -163,9 +163,9 @@ function permissionForAction(action: AuthorizationAction): PermissionKey | null 
     action === "skill_config:update" ||
     action === "agent:read" ||
     action === "company_scope:read" ||
-    action === "issue:comment" ||
-    action === "issue:mutate" ||
-    action === "issue:read" ||
+    action === "task:comment" ||
+    action === "task:mutate" ||
+    action === "task:read" ||
     action === "project:read" ||
     action === "runtime:manage" ||
     action === "secrets:read"
@@ -709,8 +709,8 @@ export function authorizationService(db: Db) {
         }
 
         const requiresNonViewer =
-          input.action === "issue:comment" ||
-          input.action === "issue:mutate" ||
+          input.action === "task:comment" ||
+          input.action === "task:mutate" ||
           input.action === "runtime:manage" ||
           input.action === "secrets:read";
         if (requiresNonViewer && membership.membershipRole === "viewer") {
@@ -724,9 +724,9 @@ export function authorizationService(db: Db) {
         if (
           input.action === "agent:read" ||
           input.action === "company_scope:read" ||
-          input.action === "issue:comment" ||
-          input.action === "issue:mutate" ||
-          input.action === "issue:read" ||
+          input.action === "task:comment" ||
+          input.action === "task:mutate" ||
+          input.action === "task:read" ||
           input.action === "project:read" ||
           input.action === "runtime:manage" ||
           input.action === "secrets:read"

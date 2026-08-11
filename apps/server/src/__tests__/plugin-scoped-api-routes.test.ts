@@ -1,7 +1,11 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { pluginManifestV1Schema, type PaperclipPluginManifestV1 } from "@paperclipai/shared";
+import {
+  pluginManifestV1Schema,
+  validationDetails,
+  type PaperclipPluginManifestV1,
+} from "@paperclipai/shared";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockRegistry = vi.hoisted(() => ({
@@ -13,7 +17,7 @@ const mockLifecycle = vi.hoisted(() => ({
   upgrade: vi.fn(),
 }));
 
-const mockIssueService = vi.hoisted(() => ({
+const mockTaskService = vi.hoisted(() => ({
   getById: vi.fn(),
 }));
 
@@ -21,8 +25,8 @@ vi.mock("../services/plugin-registry.js", () => ({
   pluginRegistryService: () => mockRegistry,
 }));
 
-vi.mock("../services/issues.js", () => ({
-  issueService: () => mockIssueService,
+vi.mock("../services/tasks.js", () => ({
+  taskService: () => mockTaskService,
 }));
 
 vi.mock("../services/activity-log.js", () => ({
@@ -87,7 +91,7 @@ describe.sequential("plugin scoped API routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIssueService.getById.mockResolvedValue(null);
+    mockTaskService.getById.mockResolvedValue(null);
   });
 
   it("dispatches a board GET route with params, query, actor, and company context", async () => {
@@ -267,14 +271,14 @@ describe.sequential("plugin scoped API routes", () => {
       {
         routeKey: "bad.shadow",
         method: "POST",
-        path: "/api/issues/:issueId",
-        companyResolution: { from: "issue", param: "issueId" },
+        path: "/api/tasks/:taskId",
+        companyResolution: { from: "task", param: "taskId" },
       },
     ]));
 
     expect(result.success).toBe(false);
     if (result.success) throw new Error("Expected manifest validation to fail");
-    expect(result.error.issues.map((issue) => issue.message).join("\n")).toContain(
+    expect(validationDetails(result.error).map((detail) => detail.message).join("\n")).toContain(
       "path must stay inside the plugin api namespace",
     );
   });

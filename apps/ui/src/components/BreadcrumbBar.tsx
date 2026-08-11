@@ -36,9 +36,9 @@ export function BreadcrumbBar() {
   const globalToolbarSlotContext = useMemo(
     () => ({
       companyId: selectedCompanyId ?? null,
-      companyPrefix: selectedCompany?.issuePrefix ?? null,
+      companyPrefix: selectedCompany?.taskPrefix ?? null,
     }),
-    [selectedCompanyId, selectedCompany?.issuePrefix],
+    [selectedCompanyId, selectedCompany?.taskPrefix],
   );
 
   const globalToolbarSlots = <GlobalToolbar context={globalToolbarSlotContext} />;

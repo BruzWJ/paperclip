@@ -5,20 +5,20 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
-const TIER_LABELS = ["Current issue", "Sub-issues", "Company issues"] as const;
+const TIER_LABELS = ["Current task", "Sub-tasks", "Company tasks"] as const;
 const DEPTH_LABELS = ["Content", "Comments", "Agent runs"] as const;
 
 const CELL_DESCRIPTIONS: Record<AgentContextGrantKey, string> = {
   carry_context:
-    "Resume the current issue's eligible native session; otherwise start fresh.",
-  read_issue_comments: "Read the current issue's chronological thread.",
-  read_issue_agent_run: "Inspect runs referenced by the current issue.",
-  list_sub_issues: "List issues beneath the active issue with their content.",
-  read_sub_issue_comments: "Read comments on issues beneath the active issue.",
-  read_sub_issue_agent_run: "Inspect runs on issues beneath the active issue.",
-  list_company_issues: "List same-company issues with their content.",
-  read_company_issue_comments: "Read comments on same-company issues.",
-  read_company_issue_agent_run: "Inspect runs on same-company issues.",
+    "Resume the current task's eligible native session; otherwise start fresh.",
+  read_task_comments: "Read the current task's chronological thread.",
+  read_task_agent_run: "Inspect runs referenced by the current task.",
+  list_sub_tasks: "List tasks beneath the active task with their content.",
+  read_sub_task_comments: "Read comments on tasks beneath the active task.",
+  read_sub_task_agent_run: "Inspect runs on tasks beneath the active task.",
+  list_company_tasks: "List same-company tasks with their content.",
+  read_company_task_comments: "Read comments on same-company tasks.",
+  read_company_task_agent_run: "Inspect runs on same-company tasks.",
 };
 
 const MATRIX_ROWS = TIER_LABELS.map((tier, tierIndex) => ({

@@ -42,7 +42,7 @@ function buildItem(overrides: Partial<AttentionItem> = {}): AttentionItem {
     activityAt: "2026-07-09T12:00:00Z",
     createdAt: "2026-07-09T12:00:00Z",
     updatedAt: "2026-07-09T12:00:00Z",
-    relatedIssue: null,
+    relatedTask: null,
     project: null,
     workspace: null,
     detail: null,

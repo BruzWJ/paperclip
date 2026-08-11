@@ -98,9 +98,9 @@ describe("plugin bridge parameter serialization", () => {
   });
 
   it("distinguishes nested keys and values", () => {
-    const baseline = serializePluginBridgeParams({ query: { issueId: "issue-1" } });
-    expect(serializePluginBridgeParams({ query: { issueId: "issue-2" } })).not.toBe(baseline);
-    expect(serializePluginBridgeParams({ query: { runId: "issue-1" } })).not.toBe(baseline);
+    const baseline = serializePluginBridgeParams({ query: { taskId: "task-1" } });
+    expect(serializePluginBridgeParams({ query: { taskId: "task-2" } })).not.toBe(baseline);
+    expect(serializePluginBridgeParams({ query: { runId: "task-1" } })).not.toBe(baseline);
   });
 
   it("rejects circular and non-JSON values", () => {
@@ -288,7 +288,7 @@ describe("plugin SDK markdown component bridge", () => {
     const registry = globalThis.__paperclipPluginBridge__?.sdkUi;
     expect(registry?.MarkdownBlock).toBeTypeOf("function");
     expect(registry?.MarkdownEditor).toBeTypeOf("function");
-    expect(registry?.IssuesList).toBeTypeOf("function");
+    expect(registry?.TasksList).toBeTypeOf("function");
     expect(registry?.OwnerPicker).toBeTypeOf("function");
     expect(registry?.ProjectPicker).toBeTypeOf("function");
     expect(registry?.ManagedRoutinesList).toBeTypeOf("function");

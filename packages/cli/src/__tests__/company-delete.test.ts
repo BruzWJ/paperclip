@@ -10,8 +10,8 @@ function makeCompany(overrides: Partial<Company>): Company {
     status: "active",
     pauseReason: null,
     pausedAt: null,
-    issuePrefix: "ALP",
-    issueCounter: 1,
+    taskPrefix: "ALP",
+    taskCounter: 1,
     budgetCurrency: "USD",
     budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
     knownSpendAmount: canonicalizeMoneyAmount("0"),
@@ -32,18 +32,18 @@ describe("resolveCompanyForDeletion", () => {
     makeCompany({
       id: "11111111-1111-1111-1111-111111111111",
       name: "Alpha",
-      issuePrefix: "ALP",
+      taskPrefix: "ALP",
     }),
     makeCompany({
       id: "22222222-2222-2222-2222-222222222222",
       name: "Paperclip",
-      issuePrefix: "PAP",
+      taskPrefix: "PAP",
     }),
   ];
 
   it("resolves by ID in auto mode", () => {
     const result = resolveCompanyForDeletion(companies, "22222222-2222-2222-2222-222222222222", "auto");
-    expect(result.issuePrefix).toBe("PAP");
+    expect(result.taskPrefix).toBe("PAP");
   });
 
   it("resolves by prefix in auto mode", () => {
@@ -68,7 +68,7 @@ describe("resolveCompanyForDeletion", () => {
 describe("assertDeleteConfirmation", () => {
   const company = makeCompany({
     id: "22222222-2222-2222-2222-222222222222",
-    issuePrefix: "PAP",
+    taskPrefix: "PAP",
   });
 
   it("requires --yes", () => {

@@ -13,7 +13,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { issueExecutionPromptCapabilities } from "./issue_execution_capabilities.js";
+import { taskExecutionPromptCapabilities } from "./task_execution_capabilities.js";
 import { plugins } from "./plugins.js";
 
 /**
@@ -52,8 +52,8 @@ export const pluginRunContexts = pgTable(
         table.capabilityGeneration,
       ],
       foreignColumns: [
-        issueExecutionPromptCapabilities.capabilityConnectionId,
-        issueExecutionPromptCapabilities.capabilityGeneration,
+        taskExecutionPromptCapabilities.capabilityConnectionId,
+        taskExecutionPromptCapabilities.capabilityGeneration,
       ],
       name: "plugin_run_contexts_capability_generation_fk",
     }).onDelete("cascade"),
@@ -196,9 +196,9 @@ export const runInterfaceToolCalls = pgTable(
         table.capabilityGeneration,
       ],
       foreignColumns: [
-        issueExecutionPromptCapabilities.companyId,
-        issueExecutionPromptCapabilities.capabilityConnectionId,
-        issueExecutionPromptCapabilities.capabilityGeneration,
+        taskExecutionPromptCapabilities.companyId,
+        taskExecutionPromptCapabilities.capabilityConnectionId,
+        taskExecutionPromptCapabilities.capabilityGeneration,
       ],
       name: "run_interface_tool_calls_capability_generation_fk",
     }).onDelete("cascade"),

@@ -384,7 +384,7 @@ describe("ACPX one-shot runtime bridge", () => {
 
     const result = await executePrompt({
       start: { kind: "resume", sessionId: "missing-provider-session" },
-      message: "continue the issue",
+      message: "continue the task",
     });
 
     expect(result).toMatchObject({ kind: "error", phase: "session_setup",

@@ -9,7 +9,7 @@ import {
 
 interface AcpCorrelationScopeBase {
   readonly companyId: string;
-  readonly issueId: string;
+  readonly taskId: string;
   readonly ownershipEpoch: number;
   readonly targetAgentId: string;
   readonly adapterConfigIdentity: string;
@@ -45,7 +45,7 @@ export interface ProtectedAcpSessionCorrelation {
 }
 
 /**
- * Exact eligible row selected under the canonical issue/run locks. Plaintext
+ * Exact eligible row selected under the canonical task/run locks. Plaintext
  * ACP ids are never part of this repository boundary.
  */
 export interface StoredAcpSessionCorrelation
@@ -98,7 +98,7 @@ export function validateAcpCorrelationScope(
   scope: AcpCorrelationScope,
 ): void {
   exactIdentity(scope.companyId, "correlation company id");
-  exactIdentity(scope.issueId, "correlation issue id");
+  exactIdentity(scope.taskId, "correlation task id");
   exactIdentity(scope.targetAgentId, "correlation target agent id");
   exactIdentity(
     scope.adapterConfigIdentity,

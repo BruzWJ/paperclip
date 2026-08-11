@@ -34,7 +34,7 @@ import {
   planSourceSwitch,
   secretNameFromKey,
   type EnvRow,
-  type NameIssue,
+  type NameDiagnostic,
   type RowSource,
 } from "./model";
 
@@ -57,8 +57,8 @@ export interface EnvironmentVariableRowProps {
   userSecretDefinitions?: readonly UserSecretDefinition[];
   recentlyUsedSecrets?: readonly CompanySecret[];
   disabled?: boolean;
-  nameIssue: NameIssue | null;
-  showNameIssue: boolean;
+  nameDiagnostic: NameDiagnostic | null;
+  showNameDiagnostic: boolean;
   dirtyFields: EnvironmentVariableDirtyFields;
   onPatch: (patch: Partial<EnvRow>) => void;
   onRemove: () => void;
@@ -81,8 +81,8 @@ export function EnvironmentVariableRow({
   userSecretDefinitions,
   recentlyUsedSecrets,
   disabled,
-  nameIssue,
-  showNameIssue,
+  nameDiagnostic,
+  showNameDiagnostic,
   dirtyFields,
   onPatch,
   onRemove,
@@ -226,16 +226,16 @@ export function EnvironmentVariableRow({
           className={cn(
             nameInputClass,
             dirtyFields.name && "border-amber-500/70 bg-amber-500/10 focus-visible:ring-amber-500/40",
-            showNameIssue && nameIssue?.level === "error" && "border-destructive focus-visible:ring-destructive/40",
-            showNameIssue && nameIssue?.level === "warn" && "border-amber-500 focus-visible:ring-amber-500/40",
+            showNameDiagnostic && nameDiagnostic?.level === "error" && "border-destructive focus-visible:ring-destructive/40",
+            showNameDiagnostic && nameDiagnostic?.level === "warn" && "border-amber-500 focus-visible:ring-amber-500/40",
           )}
           placeholder="KEY"
           value={row.name}
           spellCheck={false}
           disabled={disabled || isPending}
           aria-label="Variable name"
-          aria-invalid={showNameIssue && nameIssue?.level === "error" ? true : undefined}
-          aria-describedby={showNameIssue && nameIssue ? nameErrorId : undefined}
+          aria-invalid={showNameDiagnostic && nameDiagnostic?.level === "error" ? true : undefined}
+          aria-describedby={showNameDiagnostic && nameDiagnostic ? nameErrorId : undefined}
           onChange={(event) => onPatch({ name: event.target.value })}
           onBlur={onNameBlur}
           onPaste={(event) => {
@@ -576,15 +576,15 @@ export function EnvironmentVariableRow({
         ) : null}
       </div>
 
-      {showNameIssue && nameIssue ? (
+      {showNameDiagnostic && nameDiagnostic ? (
         <p
           id={nameErrorId}
           className={cn(
             "col-span-2 col-start-1 row-start-3 min-w-0 text-(length:--text-micro) @[40rem]/env:col-span-2 @[40rem]/env:row-start-2",
-            nameIssue.level === "error" ? "text-destructive" : "text-amber-600 dark:text-amber-400",
+            nameDiagnostic.level === "error" ? "text-destructive" : "text-amber-600 dark:text-amber-400",
           )}
         >
-          {nameIssue.message}
+          {nameDiagnostic.message}
         </p>
       ) : null}
 

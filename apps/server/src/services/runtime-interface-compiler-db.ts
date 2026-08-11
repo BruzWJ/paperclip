@@ -4,8 +4,8 @@ import {
   agentContextGrants,
   agentMentionReachGrants,
   agents,
-  issueExecutionRefs,
-  issues,
+  taskExecutionRefs,
+  tasks,
   plugins,
   principalPermissionGrants,
   type Db,
@@ -24,8 +24,8 @@ import {
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   evaluateAgentInvokability,
-  resolveInvokableIssueOwnerCatalog,
-  type InvokableIssueOwnerRevision,
+  resolveInvokableTaskOwnerCatalog,
+  type InvokableTaskOwnerRevision,
   type AgentOrgRow,
 } from "./agent-invokability.js";
 import { resolveContextDial } from "./context-dial-resolver.js";
@@ -34,8 +34,8 @@ import type {
 } from "./prompt-capability-gateway.js";
 import type {
   AgentCatalogEntry,
-  IssueAssignOwnerCatalog,
-  IssueCreateOwnerCatalogEntry,
+  TaskAssignOwnerCatalog,
+  TaskCreateOwnerCatalogEntry,
   RuntimeAgentConfigureTarget,
 } from "./paperclip-managed-tool-registry.js";
 import type {
@@ -46,10 +46,10 @@ import type {
 import { listAuthorizedPluginAgentTools } from "./plugin-agent-tool-authority.js";
 import { pluginManifestIdentity } from "./plugin-manifest-identity.js";
 import { resolveExecutionModeContextMask } from "./execution-mode-context-mask.js";
-import { classifyOrderedExecutionScopePair } from "./issue-execution-initial-request-pair.js";
+import { classifyOrderedExecutionScopePair } from "./task-execution-initial-request-pair.js";
 import {
   resolveMentionReach,
-  type MentionReachIssue,
+  type MentionReachTask,
 } from "./mention-reach-resolver.js";
 
 type AgentRow = AgentOrgRow & {
@@ -67,7 +67,7 @@ export interface RuntimeInterfaceCompilerSnapshot {
   capability: PromptCapabilityCompileScope;
   /** Exact provider turn derived from the current execution ref. */
   turn: RuntimeToolTurn;
-  issue: {
+  task: {
     companyId: string;
     ownerKind: string | null;
     ownerAgentId: string | null;
@@ -78,19 +78,19 @@ export interface RuntimeInterfaceCompilerSnapshot {
     executionPolicy: Record<string, unknown> | null;
   };
   agents: readonly AgentRow[];
-  adapterRevisions: readonly InvokableIssueOwnerRevision[];
+  adapterRevisions: readonly InvokableTaskOwnerRevision[];
   contextGrantKeys: readonly AgentContextGrantKey[];
   actionGrantKeys: readonly PaperclipActionKey[];
   mentionReachGrantKeys: readonly AgentMentionReachGrantKey[];
   configureGrants: readonly ConfigureGrant[];
-  childIssues: readonly {
+  childTasks: readonly {
     id: string;
     identifier: string | null;
     lifecycleStatus: string | null;
     creatorKind: string | null;
     creatorAuthorityId: string | null;
   }[];
-  issueTree: readonly MentionReachIssue[];
+  taskTree: readonly MentionReachTask[];
   pluginTools: readonly RuntimePluginTool[];
 }
 
@@ -100,7 +100,7 @@ export interface PostgresPromptCapabilityCompiler {
   ): Promise<RuntimeInterfaceCompileInput>;
 }
 
-type RuntimeContextIssue = RuntimeInterfaceCompilerSnapshot["issue"];
+type RuntimeContextTask = RuntimeInterfaceCompilerSnapshot["task"];
 
 /** Resolves the context identity shared by admission and prompt compilation. */
 export function resolveRuntimeContextDial(input: {
@@ -108,7 +108,7 @@ export function resolveRuntimeContextDial(input: {
     PromptCapabilityCompileScope,
     "targetAgentId" | "executionMode"
   >;
-  readonly issue: RuntimeContextIssue;
+  readonly task: RuntimeContextTask;
   readonly contextGrantKeys: readonly AgentContextGrantKey[];
 }) {
   return resolveContextDial({
@@ -116,15 +116,15 @@ export function resolveRuntimeContextDial(input: {
       AGENT_CONTEXT_GRANT_KEYS,
       input.contextGrantKeys,
     ),
-    issueOwner:
+    taskOwner:
       input.capability.executionMode === "owner" &&
-      input.issue.ownerKind === "agent" &&
-      input.issue.ownerAgentId === input.capability.targetAgentId,
+      input.task.ownerKind === "agent" &&
+      input.task.ownerAgentId === input.capability.targetAgentId,
     executionMode: resolveExecutionModeContextMask({
-      workMode: input.issue.workMode,
-      harnessKind: input.issue.harnessKind,
-      originKind: input.issue.originKind,
-      issueExecutionPolicy: input.issue.executionPolicy,
+      workMode: input.task.workMode,
+      harnessKind: input.task.harnessKind,
+      originKind: input.task.originKind,
+      taskExecutionPolicy: input.task.executionPolicy,
     }),
   }).effective;
 }
@@ -231,17 +231,17 @@ export function readyPluginTools(
 export function buildRuntimeInterfaceCompileInput(
   snapshot: RuntimeInterfaceCompilerSnapshot,
 ): RuntimeInterfaceCompileInput {
-  const { capability, issue } = snapshot;
+  const { capability, task } = snapshot;
   if (
-    issue.companyId !== capability.companyId ||
-    issue.ownershipEpoch !== capability.ownershipEpoch
+    task.companyId !== capability.companyId ||
+    task.ownershipEpoch !== capability.ownershipEpoch
   ) {
-    throw new Error("Prompt-capability issue scope changed during compilation");
+    throw new Error("Prompt-capability task scope changed during compilation");
   }
   const companyAgents = snapshot.agents.filter(
     (agent) => agent.companyId === capability.companyId,
   );
-  const invokableOwners = resolveInvokableIssueOwnerCatalog({
+  const invokableOwners = resolveInvokableTaskOwnerCatalog({
     companyId: capability.companyId,
     companyAgents,
     adapterRevisions: snapshot.adapterRevisions,
@@ -264,11 +264,11 @@ export function buildRuntimeInterfaceCompileInput(
     snapshot.mentionReachGrantKeys,
   );
   const isCurrentOwner = capability.executionMode === "owner" &&
-    issue.ownerKind === "agent" &&
-    issue.ownerAgentId === sourceAgent.id;
+    task.ownerKind === "agent" &&
+    task.ownerAgentId === sourceAgent.id;
   const contextDial = resolveRuntimeContextDial({
     capability,
-    issue,
+    task,
     contextGrantKeys: snapshot.contextGrantKeys,
   });
 
@@ -281,7 +281,7 @@ export function buildRuntimeInterfaceCompileInput(
     .sort((left, right) =>
       left.name.localeCompare(right.name) || left.id.localeCompare(right.id),
     );
-  const issueCreateDirectChildren: IssueCreateOwnerCatalogEntry[] =
+  const taskCreateDirectChildren: TaskCreateOwnerCatalogEntry[] =
     directChildren.map((agent) => ({
       ...agentCatalogEntry(agent),
       kind: "agent",
@@ -289,10 +289,10 @@ export function buildRuntimeInterfaceCompileInput(
 
   const authorityId =
     capability.executionMode === "owner"
-      ? capability.issueExecutionAuthorityId
+      ? capability.taskExecutionAuthorityId
       : null;
-  const eligibleCreatedIssues = authorityId
-    ? snapshot.childIssues
+  const eligibleCreatedTasks = authorityId
+    ? snapshot.childTasks
         .filter(
           (child) =>
             (child.lifecycleStatus === "open" ||
@@ -308,22 +308,22 @@ export function buildRuntimeInterfaceCompileInput(
     : [];
   const owners = [
     { kind: "self" as const },
-    ...issueCreateDirectChildren,
+    ...taskCreateDirectChildren,
   ];
-  const issueAssignTargets: IssueAssignOwnerCatalog[] =
-    eligibleCreatedIssues.map((child) => ({
-      issueId: child.id,
+  const taskAssignTargets: TaskAssignOwnerCatalog[] =
+    eligibleCreatedTasks.map((child) => ({
+      taskId: child.id,
       identifier: child.identifier,
       owners,
     }));
-  const creatorUpdateTargets = eligibleCreatedIssues.map((child) => ({
-    issueId: child.id,
+  const creatorUpdateTargets = eligibleCreatedTasks.map((child) => ({
+    taskId: child.id,
   }));
 
   const reachableMentionIds = resolveMentionReach({
     sourceAgentId: sourceAgent.id,
     companyAgents,
-    issueTree: snapshot.issueTree,
+    taskTree: snapshot.taskTree,
     mentionReach: mentionReachGrants,
   }).targetAgentIds;
   const mentionTargets = companyAgents
@@ -366,8 +366,8 @@ export function buildRuntimeInterfaceCompileInput(
     actionGrants,
     mentionReachGrants,
     isCurrentOwner,
-    issueCreateDirectChildren,
-    issueAssignTargets,
+    taskCreateDirectChildren,
+    taskAssignTargets,
     creatorUpdateTargets,
     mentionTargets,
     configureTargets,
@@ -383,15 +383,15 @@ export async function resolveRuntimeToolTurn(
   if (capability.refId === undefined) return "work";
   const rows = await db
     .select()
-    .from(issueExecutionRefs)
+    .from(taskExecutionRefs)
     .where(
       and(
-        eq(issueExecutionRefs.id, capability.refId),
-        eq(issueExecutionRefs.companyId, capability.companyId),
-        eq(issueExecutionRefs.issueId, capability.issueId),
-        eq(issueExecutionRefs.ownershipEpoch, capability.ownershipEpoch),
-        eq(issueExecutionRefs.targetAgentId, capability.targetAgentId),
-        eq(issueExecutionRefs.mode, capability.executionMode),
+        eq(taskExecutionRefs.id, capability.refId),
+        eq(taskExecutionRefs.companyId, capability.companyId),
+        eq(taskExecutionRefs.taskId, capability.taskId),
+        eq(taskExecutionRefs.ownershipEpoch, capability.ownershipEpoch),
+        eq(taskExecutionRefs.targetAgentId, capability.targetAgentId),
+        eq(taskExecutionRefs.mode, capability.executionMode),
       ),
     )
     .limit(2);
@@ -401,17 +401,17 @@ export async function resolveRuntimeToolTurn(
   const current = rows[0]!;
   const grouped = await db
     .select()
-    .from(issueExecutionRefs)
+    .from(taskExecutionRefs)
     .where(
       and(
-        eq(issueExecutionRefs.companyId, current.companyId),
-        eq(issueExecutionRefs.issueId, current.issueId),
-        eq(issueExecutionRefs.sessionId, current.sessionId),
-        eq(issueExecutionRefs.executionScopeId, current.executionScopeId),
-        eq(issueExecutionRefs.executionLineageId, current.executionLineageId),
+        eq(taskExecutionRefs.companyId, current.companyId),
+        eq(taskExecutionRefs.taskId, current.taskId),
+        eq(taskExecutionRefs.sessionId, current.sessionId),
+        eq(taskExecutionRefs.executionScopeId, current.executionScopeId),
+        eq(taskExecutionRefs.executionLineageId, current.executionLineageId),
       ),
     )
-    .orderBy(asc(issueExecutionRefs.laneOrdinal))
+    .orderBy(asc(taskExecutionRefs.laneOrdinal))
     .limit(3);
   const pair = classifyOrderedExecutionScopePair(grouped);
   if (!pair) {
@@ -430,7 +430,7 @@ async function loadSnapshot(
   capability: PromptCapabilityCompileScope,
 ): Promise<RuntimeInterfaceCompilerSnapshot> {
   const [
-    issueRows,
+    taskRows,
     turn,
     agentRows,
     adapterRevisionRows,
@@ -439,22 +439,22 @@ async function loadSnapshot(
     mentionRows,
     configureRows,
     childRows,
-    issueTreeRows,
+    taskTreeRows,
     readyPlugins,
   ] = await Promise.all([
     db
       .select({
-        companyId: issues.companyId,
-        ownerKind: issues.ownerKind,
-        ownerAgentId: issues.ownerAgentId,
-        ownershipEpoch: issues.ownershipEpoch,
-        workMode: issues.workMode,
-        harnessKind: issues.harnessKind,
-        originKind: issues.originKind,
-        executionPolicy: issues.executionPolicy,
+        companyId: tasks.companyId,
+        ownerKind: tasks.ownerKind,
+        ownerAgentId: tasks.ownerAgentId,
+        ownershipEpoch: tasks.ownershipEpoch,
+        workMode: tasks.workMode,
+        harnessKind: tasks.harnessKind,
+        originKind: tasks.originKind,
+        executionPolicy: tasks.executionPolicy,
       })
-      .from(issues)
-      .where(eq(issues.id, capability.issueId))
+      .from(tasks)
+      .where(eq(tasks.id, capability.taskId))
       .limit(1),
     resolveRuntimeToolTurn(db, capability),
     db
@@ -539,29 +539,29 @@ async function loadSnapshot(
       ),
     db
       .select({
-        id: issues.id,
-        identifier: issues.identifier,
-        lifecycleStatus: issues.lifecycleStatus,
-        creatorKind: issues.creatorKind,
-        creatorAuthorityId: issues.creatorAuthorityId,
+        id: tasks.id,
+        identifier: tasks.identifier,
+        lifecycleStatus: tasks.lifecycleStatus,
+        creatorKind: tasks.creatorKind,
+        creatorAuthorityId: tasks.creatorAuthorityId,
       })
-      .from(issues)
+      .from(tasks)
       .where(
         and(
-          eq(issues.companyId, capability.companyId),
-          eq(issues.parentId, capability.issueId),
+          eq(tasks.companyId, capability.companyId),
+          eq(tasks.parentId, capability.taskId),
         ),
       ),
-    db.execute(sql<MentionReachIssue>`
+    db.execute(sql<MentionReachTask>`
       WITH RECURSIVE ancestors(id, parent_id, depth, visited) AS (
-        SELECT issue.id, issue.parent_id, 0, ARRAY[issue.id]
-        FROM issues issue
-        WHERE issue.company_id = ${capability.companyId}
-          AND issue.id = ${capability.issueId}
-          AND issue.hidden_at IS NULL
+        SELECT task.id, task.parent_id, 0, ARRAY[task.id]
+        FROM tasks task
+        WHERE task.company_id = ${capability.companyId}
+          AND task.id = ${capability.taskId}
+          AND task.hidden_at IS NULL
         UNION ALL
         SELECT parent.id, parent.parent_id, ancestors.depth + 1, ancestors.visited || parent.id
-        FROM issues parent
+        FROM tasks parent
         JOIN ancestors ON parent.id = ancestors.parent_id
         WHERE parent.company_id = ${capability.companyId}
           AND parent.hidden_at IS NULL
@@ -573,24 +573,24 @@ async function loadSnapshot(
         ORDER BY depth DESC
         LIMIT 1
       ),
-      issue_tree(id, parent_id, owner_kind, owner_agent_id, visited) AS (
-        SELECT issue.id, issue.parent_id, issue.owner_kind, issue.owner_agent_id, ARRAY[issue.id]
-        FROM issues issue
-        JOIN tree_root ON tree_root.id = issue.id
+      task_tree(id, parent_id, owner_kind, owner_agent_id, visited) AS (
+        SELECT task.id, task.parent_id, task.owner_kind, task.owner_agent_id, ARRAY[task.id]
+        FROM tasks task
+        JOIN tree_root ON tree_root.id = task.id
         UNION ALL
-        SELECT child.id, child.parent_id, child.owner_kind, child.owner_agent_id, issue_tree.visited || child.id
-        FROM issues child
-        JOIN issue_tree ON child.parent_id = issue_tree.id
+        SELECT child.id, child.parent_id, child.owner_kind, child.owner_agent_id, task_tree.visited || child.id
+        FROM tasks child
+        JOIN task_tree ON child.parent_id = task_tree.id
         WHERE child.company_id = ${capability.companyId}
           AND child.hidden_at IS NULL
-          AND NOT child.id = ANY(issue_tree.visited)
+          AND NOT child.id = ANY(task_tree.visited)
       )
       SELECT
         id::text AS "id",
         parent_id::text AS "parentId",
         owner_kind AS "ownerKind",
         owner_agent_id::text AS "ownerAgentId"
-      FROM issue_tree
+      FROM task_tree
     `),
     db
       .select({
@@ -601,24 +601,24 @@ async function loadSnapshot(
       .from(plugins)
       .where(eq(plugins.status, "ready")),
   ]);
-  const issue = issueRows[0];
-  if (!issue) throw new Error("Prompt-capability issue no longer exists");
+  const task = taskRows[0];
+  if (!task) throw new Error("Prompt-capability task no longer exists");
   return {
     capability,
     turn,
-    issue,
+    task,
     agents: agentRows,
     adapterRevisions: adapterRevisionRows,
     contextGrantKeys: contextRows.map((row) => row.key),
     actionGrantKeys: actionRows.map((row) => row.key),
     mentionReachGrantKeys: mentionRows.map((row) => row.key),
     configureGrants: configureRows,
-    childIssues: childRows,
-    issueTree: (
-      Array.isArray(issueTreeRows)
-        ? issueTreeRows
-        : Array.from(issueTreeRows as Iterable<unknown>)
-    ) as unknown as MentionReachIssue[],
+    childTasks: childRows,
+    taskTree: (
+      Array.isArray(taskTreeRows)
+        ? taskTreeRows
+        : Array.from(taskTreeRows as Iterable<unknown>)
+    ) as unknown as MentionReachTask[],
     pluginTools: readyPluginTools(readyPlugins),
   };
 }
@@ -648,7 +648,7 @@ export function createRuntimeRetrievalScopeResolver(
       const input = await compiler.resolve(capability);
       return {
         companyId: capability.companyId,
-        activeIssueId: capability.issueId,
+        activeTaskId: capability.taskId,
         dial: input.contextDial,
       };
     },

@@ -3,13 +3,13 @@
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { buildIssueReferenceHref, buildProjectMentionHref, buildRoutineMentionHref, buildSkillMentionHref } from "@paperclipai/shared";
+import { buildTaskReferenceHref, buildProjectMentionHref, buildRoutineMentionHref, buildSkillMentionHref } from "@paperclipai/shared";
 import {
   computeMentionMenuPosition,
   findClosestAutocompleteAnchor,
   findMentionMatch,
   isSameAutocompleteSession,
-  issueMentionTitle,
+  taskMentionTitle,
   MarkdownEditor,
   type MentionOption,
   placeCaretAfterMentionAnchor,
@@ -184,32 +184,32 @@ function createFileDragEvent(type: string) {
   return event;
 }
 
-describe("issueMentionTitle", () => {
+describe("taskMentionTitle", () => {
   it("strips the leading identifier from the mention name", () => {
     expect(
-      issueMentionTitle({
-        id: "issue:1",
-        kind: "issue",
+      taskMentionTitle({
+        id: "task:1",
+        kind: "task",
         name: "PAP-102 @task references",
-        issueIdentifier: "PAP-102",
+        taskIdentifier: "PAP-102",
       }),
     ).toBe("@task references");
   });
 
   it("returns the full name when there is no separate title", () => {
     expect(
-      issueMentionTitle({
-        id: "issue:1",
-        kind: "issue",
+      taskMentionTitle({
+        id: "task:1",
+        kind: "task",
         name: "PAP-7",
-        issueIdentifier: "PAP-7",
+        taskIdentifier: "PAP-7",
       }),
     ).toBe("");
   });
 
   it("falls back to the name when the identifier is missing", () => {
     expect(
-      issueMentionTitle({ id: "issue:1", kind: "issue", name: "Some task" }),
+      taskMentionTitle({ id: "task:1", kind: "task", name: "Some task" }),
     ).toBe("Some task");
   });
 });
@@ -706,7 +706,7 @@ describe("MarkdownEditor", () => {
   });
 
   it("still rejects slash commands once spaces are typed", () => {
-    expect(findMentionMatch("/open issue", "/open issue".length)).toBeNull();
+    expect(findMentionMatch("/open task", "/open task".length)).toBeNull();
   });
 
   it("keeps routine slash queries active across spaces", () => {
@@ -913,17 +913,17 @@ describe("MarkdownEditor", () => {
     });
   });
 
-  it("inserts a compact issue link when an @task reference is selected", async () => {
+  it("inserts a compact task link when an @task reference is selected", async () => {
     const handleChange = vi.fn();
     const { option, root } = await openMentionMenuFor(
       handleChange,
       [
         {
-          id: "issue:issue-1",
-          kind: "issue" as const,
+          id: "task:task-1",
+          kind: "task" as const,
           name: "PAP-102 @task references",
-          issueId: "issue-1",
-          issueIdentifier: "PAP-102",
+          taskId: "task-1",
+          taskIdentifier: "PAP-102",
         },
       ],
       "PAP-102",
@@ -938,7 +938,7 @@ describe("MarkdownEditor", () => {
     });
 
     expect(handleChange).toHaveBeenCalledWith(
-      `[PAP-102](${buildIssueReferenceHref("PAP-102")}) `,
+      `[PAP-102](${buildTaskReferenceHref("PAP-102")}) `,
     );
 
     await act(async () => {
@@ -946,17 +946,17 @@ describe("MarkdownEditor", () => {
     });
   });
 
-  it("renders the task tag and identifier for issue mention options", async () => {
+  it("renders the task tag and identifier for task mention options", async () => {
     const handleChange = vi.fn();
     const { option, root } = await openMentionMenuFor(
       handleChange,
       [
         {
-          id: "issue:issue-1",
-          kind: "issue" as const,
+          id: "task:task-1",
+          kind: "task" as const,
           name: "PAP-102 @task references",
-          issueId: "issue-1",
-          issueIdentifier: "PAP-102",
+          taskId: "task-1",
+          taskIdentifier: "PAP-102",
         },
       ],
       "PAP-102",

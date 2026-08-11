@@ -5,7 +5,7 @@ import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSh
 import type { ActivityEvent, Agent } from "@paperclipai/shared";
 import { activityApi } from "../api/activity";
 import { agentsApi } from "../api/agents";
-import { issuesApi } from "../api/issues";
+import { tasksApi } from "../api/tasks";
 import { queryKeys } from "../lib/queryKeys";
 import { useCompany } from "../context/CompanyContext";
 import { FeedCard } from "./FeedCard";
@@ -28,7 +28,7 @@ import {
 import { ListFilter, Layers, ChevronDown, ChevronRight, User, Settings } from "lucide-react";
 import { AgentIcon } from "./AgentIconPicker";
 import { timeAgo } from "../lib/timeAgo";
-import { issueDisplayTitle } from "../lib/issue-display";
+import { taskDisplayTitle } from "../lib/task-display";
 
 /* ------------------------------------------------------------------ */
 /*  Event Tier Classification                                          */
@@ -39,35 +39,35 @@ type EventTier = 1 | 2 | 3;
 /** Tier 1 = cards (high weight), Tier 2 = one-liners, Tier 3 = hidden by default */
 const ACTION_TIER: Record<string, EventTier> = {
   // Tier 1 — Cards
-  "issue.created": 1,
-  "issue.document_created": 1,
+  "task.created": 1,
+  "task.document_created": 1,
   "approval.created": 1,
   "approval.approved": 1,
   "approval.rejected": 1,
   "approval.revision_requested": 1,
   "agent.created": 1,
 
-  "issue.work_product_created": 1,
+  "task.work_product_created": 1,
 
   // Tier 2 — One-liners
-  "issue.updated": 2,
-  "issue.work_product_updated": 2,
-  "issue.work_product_deleted": 2,
-  "issue.comment_added": 2,
-  "issue.commented": 2,
+  "task.updated": 2,
+  "task.work_product_updated": 2,
+  "task.work_product_deleted": 2,
+  "task.comment_added": 2,
+  "task.commented": 2,
   "agent.paused": 2,
   "agent.resumed": 2,
   "agent.updated": 2,
 
   // Tier 3 — Hidden
-  "issue.read_marked": 3,
-  "issue.read_unmarked": 3,
-  "issue.inbox_archived": 3,
-  "issue.inbox_unarchived": 3,
-  "issue.attachment_added": 3,
-  "issue.attachment_removed": 3,
-  "issue.document_deleted": 3,
-  "issue.document_updated": 2,
+  "task.read_marked": 3,
+  "task.read_unmarked": 3,
+  "task.inbox_archived": 3,
+  "task.inbox_unarchived": 3,
+  "task.attachment_added": 3,
+  "task.attachment_removed": 3,
+  "task.document_deleted": 3,
+  "task.document_updated": 2,
   "agent.budget_updated": 3,
   "agent.terminated": 2,
   "company.created": 3,
@@ -87,8 +87,8 @@ const ACTION_TIER: Record<string, EventTier> = {
 };
 
 function getEventTier(event: ActivityEvent): EventTier {
-  // Special case: issue.updated with status → in_review is tier 1
-  if (event.action === "issue.updated" && event.details) {
+  // Special case: task.updated with status → in_review is tier 1
+  if (event.action === "task.updated" && event.details) {
     const details = event.details as Record<string, unknown>;
     if (details.status === "in_review") return 1;
   }
@@ -111,8 +111,8 @@ const FILTER_OPTIONS: Array<{ value: FilterValue; label: string }> = [
 
 const FILTER_ACTIONS: Record<FilterValue, Set<string> | null> = {
   all: null,
-  "in-progress": new Set(["issue.created"]),
-  "for-review": new Set(["approval.created", "issue.document_created", "issue.document_updated"]),
+  "in-progress": new Set(["task.created"]),
+  "for-review": new Set(["approval.created", "task.document_created", "task.document_updated"]),
   completed: new Set(["approval.approved"]),
 };
 
@@ -127,7 +127,7 @@ function matchesFilter(event: ActivityEvent, filter: FilterValue): boolean {
   if (filter === "all") return true;
   const actions = FILTER_ACTIONS[filter];
   if (actions?.has(event.action)) return true;
-  if (event.action === "issue.updated" && event.details) {
+  if (event.action === "task.updated" && event.details) {
     const statusSet = STATUS_FILTER_MAP[filter];
     const details = event.details as Record<string, unknown>;
     if (statusSet && typeof details.status === "string" && statusSet.has(details.status)) return true;
@@ -357,10 +357,10 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
     enabled: !!selectedCompanyId,
   });
 
-  // Fetch issues for name resolution
-  const { data: issues } = useQuery({
-    queryKey: queryKeys.issues.list(selectedCompanyId ?? ""),
-    queryFn: () => issuesApi.list(selectedCompanyId!),
+  // Fetch tasks for name resolution
+  const { data: tasks } = useQuery({
+    queryKey: queryKeys.tasks.list(selectedCompanyId ?? ""),
+    queryFn: () => tasksApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
@@ -373,15 +373,15 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
   const entityNameMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const a of agents ?? []) map.set(`agent:${a.id}`, a.name);
-    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.identifier ?? i.id);
+    for (const i of tasks ?? []) map.set(`task:${i.id}`, i.identifier ?? i.id);
     return map;
-  }, [agents, issues]);
+  }, [agents, tasks]);
 
   const entityTitleMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const i of issues ?? []) map.set(`issue:${i.id}`, issueDisplayTitle(i));
+    for (const i of tasks ?? []) map.set(`task:${i.id}`, taskDisplayTitle(i));
     return map;
-  }, [issues]);
+  }, [tasks]);
 
   // Filter, tier, sort events
   const processedItems = useMemo(() => {
@@ -515,10 +515,10 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
   };
 
   const renderGrouped = () => {
-    // Group by issue entityId
+    // Group by task entityId
     const groups = new Map<string, FeedItem[]>();
     for (const item of visibleItems) {
-      const key = "type" in item ? item.entityId : (item.entityType === "issue" ? item.entityId : "__other__");
+      const key = "type" in item ? item.entityId : (item.entityType === "task" ? item.entityId : "__other__");
       const existing = groups.get(key) ?? [];
       existing.push(item);
       groups.set(key, existing);
@@ -526,11 +526,11 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
 
     return Array.from(groups.entries()).map(([groupKey, items]) => {
       const isOther = groupKey === "__other__";
-      const issueName = entityNameMap.get(`issue:${groupKey}`);
-      const issueTitle = entityTitleMap.get(`issue:${groupKey}`);
+      const taskName = entityNameMap.get(`task:${groupKey}`);
+      const taskTitle = entityTitleMap.get(`task:${groupKey}`);
       const label = isOther
         ? "Other activity"
-        : `${issueName ?? groupKey}${issueTitle ? ` — ${issueTitle}` : ""}`;
+        : `${taskName ?? groupKey}${taskTitle ? ` — ${taskTitle}` : ""}`;
 
       return (
         <div key={groupKey} className="mb-2">

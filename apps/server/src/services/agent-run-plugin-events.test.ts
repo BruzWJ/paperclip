@@ -18,7 +18,7 @@ describe("agent run plugin events", () => {
       { publish },
       {
         companyId: "company-1",
-        issueId: "issue-1",
+        taskId: "task-1",
         runId: "run-1",
         agentId: "agent-1",
         outcome,
@@ -37,7 +37,7 @@ describe("agent run plugin events", () => {
       entityId: "run-1",
       payload: {
         companyId: "company-1",
-        issueId: "issue-1",
+        taskId: "task-1",
         runId: "run-1",
         agentId: "agent-1",
         outcome,

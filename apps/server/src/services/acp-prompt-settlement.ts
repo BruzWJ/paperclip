@@ -6,34 +6,34 @@ import {
   agentRuntimeState,
   companies,
   costEvents,
-  issueExecutionAttempts,
-  issueExecutionPromptCapabilities,
-  issueExecutionPromptSegments,
-  issueExecutionRunRefs,
-  issueExecutionSessions,
+  taskExecutionAttempts,
+  taskExecutionPromptCapabilities,
+  taskExecutionPromptSegments,
+  taskExecutionRunRefs,
+  taskExecutionSessions,
   type Db,
 } from "@paperclipai/db";
 import {
   addMoneyAmounts,
   agentAdapterAcpConfigurationSchema,
   canonicalizeMoneyAmount,
-  IssueSession,
+  TaskSession,
   parseBudgetCurrency,
   settleAcpPromptCost,
   type AcpCostCursor,
   type AcpCostSettlement,
   type BudgetCurrency,
-  type IssueExecutionPromptOutcome,
-  type IssueExecutionRunStatus,
+  type TaskExecutionPromptOutcome,
+  type TaskExecutionRunStatus,
 } from "@paperclipai/shared";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   budgetService,
   type BudgetEnforcementScope,
 } from "./budgets.js";
-import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
-import { publishIssueSessionEventInTx } from "./issue-session/publication.js";
-import { lockIssueExecutionRunInTransaction } from "./issue-execution-run-service.js";
+import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
+import { publishTaskSessionEventInTx } from "./task-session/publication.js";
+import { lockTaskExecutionRunInTransaction } from "./task-execution-run-service.js";
 
 const TERMINAL_STOP_REASONS = new Set([
   "end_turn",
@@ -54,7 +54,7 @@ export class AcpPromptSettlementRejected extends Error {
 
 interface AcpPromptSettlementCommonIdentity {
   readonly companyId: string;
-  readonly issueId: string;
+  readonly taskId: string;
   readonly sessionId: string;
   readonly agentId: string;
   readonly runId: string;
@@ -253,7 +253,7 @@ function assertSettlementInput(input: SettleAcpPromptInTransactionInput): void {
 
 function outcomeForStopReason(
   stopReason: AcpPromptSettlement["stopReason"],
-): IssueExecutionPromptOutcome {
+): TaskExecutionPromptOutcome {
   if (stopReason === "refusal") return "refused";
   if (stopReason === "cancelled") return "cancelled";
   return "succeeded";
@@ -334,7 +334,7 @@ function sourceIdentityDigest(input: {
       JSON.stringify({
         kind: "acp_prompt_settlement",
         companyId: input.identity.companyId,
-        issueId: input.identity.issueId,
+        taskId: input.identity.taskId,
         sessionId: input.identity.sessionId,
         runId: input.identity.runId,
         runKind: input.identity.runKind,
@@ -352,28 +352,28 @@ function sourceIdentityDigest(input: {
 }
 
 async function lockProductivePromptOwner(
-  transaction: IssueSessionDbTransaction,
+  transaction: TaskSessionDbTransaction,
   identity: AcpProductivePromptSettlementIdentity,
 ): Promise<ProductivePromptOwner> {
   const owner = identity.promptKind === "base"
     ? await transaction
         .select({
-          attemptId: issueExecutionRunRefs.attemptId,
-          capabilityConnectionId: issueExecutionRunRefs.capabilityConnectionId,
-          capabilityGeneration: issueExecutionRunRefs.capabilityGeneration,
-          promptTransmissionPhase: issueExecutionRunRefs.promptTransmissionPhase,
-          protocolSettlementState: issueExecutionRunRefs.protocolSettlementState,
-          settlementVersion: issueExecutionRunRefs.settlementVersion,
+          attemptId: taskExecutionRunRefs.attemptId,
+          capabilityConnectionId: taskExecutionRunRefs.capabilityConnectionId,
+          capabilityGeneration: taskExecutionRunRefs.capabilityGeneration,
+          promptTransmissionPhase: taskExecutionRunRefs.promptTransmissionPhase,
+          protocolSettlementState: taskExecutionRunRefs.protocolSettlementState,
+          settlementVersion: taskExecutionRunRefs.settlementVersion,
         })
-        .from(issueExecutionRunRefs)
+        .from(taskExecutionRunRefs)
         .where(
           and(
-            eq(issueExecutionRunRefs.companyId, identity.companyId),
-            eq(issueExecutionRunRefs.issueId, identity.issueId),
-            eq(issueExecutionRunRefs.sessionId, identity.sessionId),
-            eq(issueExecutionRunRefs.runId, identity.runId),
-            eq(issueExecutionRunRefs.refId, identity.refId),
-            eq(issueExecutionRunRefs.refOrdinal, identity.runOrdinal),
+            eq(taskExecutionRunRefs.companyId, identity.companyId),
+            eq(taskExecutionRunRefs.taskId, identity.taskId),
+            eq(taskExecutionRunRefs.sessionId, identity.sessionId),
+            eq(taskExecutionRunRefs.runId, identity.runId),
+            eq(taskExecutionRunRefs.refId, identity.refId),
+            eq(taskExecutionRunRefs.refOrdinal, identity.runOrdinal),
           ),
         )
         .limit(1)
@@ -381,27 +381,27 @@ async function lockProductivePromptOwner(
         .then((rows) => rows[0] ?? null)
     : await transaction
         .select({
-          attemptId: issueExecutionPromptSegments.attemptId,
+          attemptId: taskExecutionPromptSegments.attemptId,
           capabilityConnectionId:
-            issueExecutionPromptSegments.capabilityConnectionId,
-          capabilityGeneration: issueExecutionPromptSegments.capabilityGeneration,
+            taskExecutionPromptSegments.capabilityConnectionId,
+          capabilityGeneration: taskExecutionPromptSegments.capabilityGeneration,
           promptTransmissionPhase:
-            issueExecutionPromptSegments.promptTransmissionPhase,
+            taskExecutionPromptSegments.promptTransmissionPhase,
           protocolSettlementState:
-            issueExecutionPromptSegments.protocolSettlementState,
-          settlementVersion: issueExecutionPromptSegments.settlementVersion,
+            taskExecutionPromptSegments.protocolSettlementState,
+          settlementVersion: taskExecutionPromptSegments.settlementVersion,
         })
-        .from(issueExecutionPromptSegments)
+        .from(taskExecutionPromptSegments)
         .where(
           and(
-            eq(issueExecutionPromptSegments.companyId, identity.companyId),
-            eq(issueExecutionPromptSegments.issueId, identity.issueId),
-            eq(issueExecutionPromptSegments.sessionId, identity.sessionId),
-            eq(issueExecutionPromptSegments.runId, identity.runId),
-            eq(issueExecutionPromptSegments.refId, identity.refId),
-            eq(issueExecutionPromptSegments.refOrdinal, identity.runOrdinal),
+            eq(taskExecutionPromptSegments.companyId, identity.companyId),
+            eq(taskExecutionPromptSegments.taskId, identity.taskId),
+            eq(taskExecutionPromptSegments.sessionId, identity.sessionId),
+            eq(taskExecutionPromptSegments.runId, identity.runId),
+            eq(taskExecutionPromptSegments.refId, identity.refId),
+            eq(taskExecutionPromptSegments.refOrdinal, identity.runOrdinal),
             eq(
-              issueExecutionPromptSegments.segmentOrdinal,
+              taskExecutionPromptSegments.segmentOrdinal,
               identity.segmentOrdinal,
             ),
           ),
@@ -424,7 +424,7 @@ async function lockProductivePromptOwner(
 }
 
 async function lockProductiveCostCursor(
-  transaction: IssueSessionDbTransaction,
+  transaction: TaskSessionDbTransaction,
   identity: AcpProductivePromptSettlementIdentity,
   owner: ProductivePromptOwner,
   run: {
@@ -438,30 +438,30 @@ async function lockProductiveCostCursor(
 }> {
   const capability = await transaction
     .select({
-      targetSessionCorrelationId: issueExecutionPromptCapabilities.targetSessionCorrelationId,
-      state: issueExecutionPromptCapabilities.state,
+      targetSessionCorrelationId: taskExecutionPromptCapabilities.targetSessionCorrelationId,
+      state: taskExecutionPromptCapabilities.state,
     })
-    .from(issueExecutionPromptCapabilities)
+    .from(taskExecutionPromptCapabilities)
     .where(
       and(
         eq(
-          issueExecutionPromptCapabilities.capabilityConnectionId,
+          taskExecutionPromptCapabilities.capabilityConnectionId,
           owner.capabilityConnectionId!,
         ),
         eq(
-          issueExecutionPromptCapabilities.capabilityGeneration,
+          taskExecutionPromptCapabilities.capabilityGeneration,
           owner.capabilityGeneration!,
         ),
-        eq(issueExecutionPromptCapabilities.companyId, identity.companyId),
-        eq(issueExecutionPromptCapabilities.issueId, identity.issueId),
-        eq(issueExecutionPromptCapabilities.runId, identity.runId),
-        eq(issueExecutionPromptCapabilities.refId, identity.refId),
-        eq(issueExecutionPromptCapabilities.refOrdinal, identity.runOrdinal),
+        eq(taskExecutionPromptCapabilities.companyId, identity.companyId),
+        eq(taskExecutionPromptCapabilities.taskId, identity.taskId),
+        eq(taskExecutionPromptCapabilities.runId, identity.runId),
+        eq(taskExecutionPromptCapabilities.refId, identity.refId),
+        eq(taskExecutionPromptCapabilities.refOrdinal, identity.runOrdinal),
         eq(
-          issueExecutionPromptCapabilities.segmentOrdinal,
+          taskExecutionPromptCapabilities.segmentOrdinal,
           identity.segmentOrdinal,
         ),
-        eq(issueExecutionPromptCapabilities.attemptId, identity.attemptId),
+        eq(taskExecutionPromptCapabilities.attemptId, identity.attemptId),
       ),
     )
     .limit(1)
@@ -477,20 +477,20 @@ async function lockProductiveCostCursor(
 
   const correlation = await transaction
     .select()
-    .from(issueExecutionSessions)
+    .from(taskExecutionSessions)
     .where(
       and(
-        eq(issueExecutionSessions.id, capability.targetSessionCorrelationId),
-        eq(issueExecutionSessions.companyId, identity.companyId),
-        eq(issueExecutionSessions.issueId, identity.issueId),
-        eq(issueExecutionSessions.ownershipEpoch, run.ownershipEpoch),
-        eq(issueExecutionSessions.targetAgentId, identity.agentId),
+        eq(taskExecutionSessions.id, capability.targetSessionCorrelationId),
+        eq(taskExecutionSessions.companyId, identity.companyId),
+        eq(taskExecutionSessions.taskId, identity.taskId),
+        eq(taskExecutionSessions.ownershipEpoch, run.ownershipEpoch),
+        eq(taskExecutionSessions.targetAgentId, identity.agentId),
         eq(
-          issueExecutionSessions.adapterConfigIdentity,
+          taskExecutionSessions.adapterConfigIdentity,
           identity.adapterConfigRevisionId,
         ),
         eq(
-          issueExecutionSessions.workspaceIdentity,
+          taskExecutionSessions.workspaceIdentity,
           run.executionWorkspaceBindingId,
         ),
       ),
@@ -522,10 +522,10 @@ async function lockProductiveCostCursor(
 }
 
 async function updateRuntimeState(
-  transaction: IssueSessionDbTransaction,
+  transaction: TaskSessionDbTransaction,
   input: {
     readonly identity: AcpPromptSettlementIdentity;
-    readonly runStatus: IssueExecutionRunStatus;
+    readonly runStatus: TaskExecutionRunStatus;
     readonly adapterType: string;
     readonly contextUsedTokens: number;
     readonly contextWindowTokens: number;
@@ -599,10 +599,10 @@ async function updateRuntimeState(
 }
 
 async function settlePromptOwner(
-  transaction: IssueSessionDbTransaction,
+  transaction: TaskSessionDbTransaction,
   input: {
     readonly identity: AcpPromptSettlementIdentity;
-    readonly outcome: IssueExecutionPromptOutcome;
+    readonly outcome: TaskExecutionPromptOutcome;
     readonly promptSettlementReferenceId: string;
     readonly accountingId: string;
     readonly costEventId: string;
@@ -619,7 +619,7 @@ async function settlePromptOwner(
   };
   if (input.identity.promptKind === "base") {
     const rows = await transaction
-      .update(issueExecutionRunRefs)
+      .update(taskExecutionRunRefs)
       .set({
         ...values,
         outcome: input.outcome,
@@ -627,24 +627,24 @@ async function settlePromptOwner(
       })
       .where(
         and(
-          eq(issueExecutionRunRefs.companyId, input.identity.companyId),
-          eq(issueExecutionRunRefs.issueId, input.identity.issueId),
-          eq(issueExecutionRunRefs.sessionId, input.identity.sessionId),
-          eq(issueExecutionRunRefs.runId, input.identity.runId),
-          eq(issueExecutionRunRefs.refId, input.identity.refId),
-          eq(issueExecutionRunRefs.refOrdinal, input.identity.runOrdinal),
-          eq(issueExecutionRunRefs.attemptId, input.identity.attemptId),
-          eq(issueExecutionRunRefs.promptTransmissionPhase, "transmitted"),
-          isNull(issueExecutionRunRefs.protocolSettlementState),
-          eq(issueExecutionRunRefs.settlementVersion, 0),
+          eq(taskExecutionRunRefs.companyId, input.identity.companyId),
+          eq(taskExecutionRunRefs.taskId, input.identity.taskId),
+          eq(taskExecutionRunRefs.sessionId, input.identity.sessionId),
+          eq(taskExecutionRunRefs.runId, input.identity.runId),
+          eq(taskExecutionRunRefs.refId, input.identity.refId),
+          eq(taskExecutionRunRefs.refOrdinal, input.identity.runOrdinal),
+          eq(taskExecutionRunRefs.attemptId, input.identity.attemptId),
+          eq(taskExecutionRunRefs.promptTransmissionPhase, "transmitted"),
+          isNull(taskExecutionRunRefs.protocolSettlementState),
+          eq(taskExecutionRunRefs.settlementVersion, 0),
         ),
       )
-      .returning({ runId: issueExecutionRunRefs.runId });
+      .returning({ runId: taskExecutionRunRefs.runId });
     if (!rows[0]) reject("ACP base prompt settlement lost its current owner");
     return;
   }
   const rows = await transaction
-    .update(issueExecutionPromptSegments)
+    .update(taskExecutionPromptSegments)
     .set({
       ...values,
       steeringState: "protocol_settled",
@@ -654,26 +654,26 @@ async function settlePromptOwner(
     })
     .where(
       and(
-        eq(issueExecutionPromptSegments.companyId, input.identity.companyId),
-        eq(issueExecutionPromptSegments.issueId, input.identity.issueId),
-        eq(issueExecutionPromptSegments.sessionId, input.identity.sessionId),
-        eq(issueExecutionPromptSegments.runId, input.identity.runId),
-        eq(issueExecutionPromptSegments.refId, input.identity.refId),
-        eq(issueExecutionPromptSegments.refOrdinal, input.identity.runOrdinal),
+        eq(taskExecutionPromptSegments.companyId, input.identity.companyId),
+        eq(taskExecutionPromptSegments.taskId, input.identity.taskId),
+        eq(taskExecutionPromptSegments.sessionId, input.identity.sessionId),
+        eq(taskExecutionPromptSegments.runId, input.identity.runId),
+        eq(taskExecutionPromptSegments.refId, input.identity.refId),
+        eq(taskExecutionPromptSegments.refOrdinal, input.identity.runOrdinal),
         eq(
-          issueExecutionPromptSegments.segmentOrdinal,
+          taskExecutionPromptSegments.segmentOrdinal,
           input.identity.segmentOrdinal,
         ),
-        eq(issueExecutionPromptSegments.attemptId, input.identity.attemptId),
+        eq(taskExecutionPromptSegments.attemptId, input.identity.attemptId),
         eq(
-          issueExecutionPromptSegments.promptTransmissionPhase,
+          taskExecutionPromptSegments.promptTransmissionPhase,
           "transmitted",
         ),
-        isNull(issueExecutionPromptSegments.protocolSettlementState),
-        eq(issueExecutionPromptSegments.settlementVersion, 0),
+        isNull(taskExecutionPromptSegments.protocolSettlementState),
+        eq(taskExecutionPromptSegments.settlementVersion, 0),
       ),
     )
-    .returning({ runId: issueExecutionPromptSegments.runId });
+    .returning({ runId: taskExecutionPromptSegments.runId });
   if (!rows[0]) reject("ACP steering prompt settlement lost its current owner");
 }
 
@@ -684,13 +684,13 @@ async function settlePromptOwner(
  * paths are intentionally outside this API and must never call it.
  */
 export async function settleAcpPromptInTransaction(
-  transaction: IssueSessionDbTransaction,
+  transaction: TaskSessionDbTransaction,
   input: SettleAcpPromptInTransactionInput,
 ): Promise<SettledAcpPromptResult> {
   assertSettlementInput(input);
   const { identity, settlement } = input;
 
-  const run = await lockIssueExecutionRunInTransaction(transaction, identity);
+  const run = await lockTaskExecutionRunInTransaction(transaction, identity);
   if (
     run.kind !== identity.runKind ||
     run.status !== "running" ||
@@ -725,21 +725,21 @@ export async function settleAcpPromptInTransaction(
     revision.acpConfiguration,
   );
   const attempt = await transaction
-    .select({ id: issueExecutionAttempts.id })
-    .from(issueExecutionAttempts)
+    .select({ id: taskExecutionAttempts.id })
+    .from(taskExecutionAttempts)
     .where(
       and(
-        eq(issueExecutionAttempts.id, identity.attemptId),
-        eq(issueExecutionAttempts.companyId, identity.companyId),
-        eq(issueExecutionAttempts.issueId, identity.issueId),
-        eq(issueExecutionAttempts.sessionId, identity.sessionId),
-        eq(issueExecutionAttempts.runId, identity.runId),
-        eq(issueExecutionAttempts.runKind, identity.runKind),
-        eq(issueExecutionAttempts.promptKind, identity.promptKind),
-        eq(issueExecutionAttempts.state, "running"),
-        eq(issueExecutionAttempts.refId, identity.refId),
-        eq(issueExecutionAttempts.refOrdinal, identity.runOrdinal),
-        eq(issueExecutionAttempts.segmentOrdinal, identity.segmentOrdinal),
+        eq(taskExecutionAttempts.id, identity.attemptId),
+        eq(taskExecutionAttempts.companyId, identity.companyId),
+        eq(taskExecutionAttempts.taskId, identity.taskId),
+        eq(taskExecutionAttempts.sessionId, identity.sessionId),
+        eq(taskExecutionAttempts.runId, identity.runId),
+        eq(taskExecutionAttempts.runKind, identity.runKind),
+        eq(taskExecutionAttempts.promptKind, identity.promptKind),
+        eq(taskExecutionAttempts.state, "running"),
+        eq(taskExecutionAttempts.refId, identity.refId),
+        eq(taskExecutionAttempts.refOrdinal, identity.runOrdinal),
+        eq(taskExecutionAttempts.segmentOrdinal, identity.segmentOrdinal),
       ),
     )
     .limit(1)
@@ -790,7 +790,7 @@ export async function settleAcpPromptInTransaction(
     .insert(acpPromptAccounting)
     .values({
       companyId: identity.companyId,
-      issueId: identity.issueId,
+      taskId: identity.taskId,
       sessionId: identity.sessionId,
       agentId: identity.agentId,
       runId: identity.runId,
@@ -819,7 +819,7 @@ export async function settleAcpPromptInTransaction(
     .values({
       accountingId: accounting.id,
       companyId: identity.companyId,
-      issueId: identity.issueId,
+      taskId: identity.taskId,
       agentId: identity.agentId,
       runId: identity.runId,
       runKind: identity.runKind,
@@ -850,7 +850,7 @@ export async function settleAcpPromptInTransaction(
       .evaluateCostEventInTransaction(costEvent);
 
   const cursorUpdated = await transaction
-    .update(issueExecutionSessions)
+    .update(taskExecutionSessions)
     .set({
       lastProtocolSettledRunId: identity.runId,
       lastProtocolSettledRefId: identity.refId,
@@ -860,12 +860,12 @@ export async function settleAcpPromptInTransaction(
     })
     .where(
       and(
-        eq(issueExecutionSessions.id, productiveCursor.correlationId),
-        eq(issueExecutionSessions.companyId, identity.companyId),
-        eq(issueExecutionSessions.issueId, identity.issueId),
+        eq(taskExecutionSessions.id, productiveCursor.correlationId),
+        eq(taskExecutionSessions.companyId, identity.companyId),
+        eq(taskExecutionSessions.taskId, identity.taskId),
       ),
     )
-    .returning({ id: issueExecutionSessions.id });
+    .returning({ id: taskExecutionSessions.id });
   if (!cursorUpdated[0]) reject("ACP prompt cost cursor update lost its owner");
 
   await updateRuntimeState(transaction, {
@@ -899,17 +899,17 @@ export async function settleAcpPromptInTransaction(
       ? {}
       : { files: [...input.stepEnded.files] }),
   };
-  await publishIssueSessionEventInTx(transaction, {
+  await publishTaskSessionEventInTx(transaction, {
     event: {
       id: input.stepEnded.eventId,
       sessionId: identity.sessionId,
       seq: input.stepEnded.eventSeq,
-      type: IssueSession.Event.Step.Ended.type,
+      type: TaskSession.Event.Step.Ended.type,
       data: stepEndedData,
     },
     envelope: {
       companyId: identity.companyId,
-      issueId: identity.issueId,
+      taskId: identity.taskId,
       runId: identity.runId,
       ownershipEpoch: run.ownershipEpoch,
       agentId: identity.agentId,

@@ -49,7 +49,7 @@ describe("in-tab GET coalescing", () => {
     expect(__inflightGetCount()).toBe(0);
   });
 
-  it("issues a fresh fetch after the previous one settles", async () => {
+  it("starts a fresh fetch after the previous one settles", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ value: "x" }));
     await api.get("/coalesce-b");
     await api.get("/coalesce-b");

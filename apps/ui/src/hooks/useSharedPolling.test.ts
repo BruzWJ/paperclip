@@ -8,7 +8,7 @@ import { applySharedPollingResult } from "./useSharedPolling";
 
 describe("applySharedPollingResult", () => {
   afterEach(() => {
-    clearLocalInboxArchive("company-1", "issue-archived");
+    clearLocalInboxArchive("company-1", "task-archived");
   });
 
   it("drops result messages that are older than local query state", () => {
@@ -49,10 +49,10 @@ describe("applySharedPollingResult", () => {
     expect(queryClient.getQueryState(queryKey)?.dataUpdatedAt).toBe(3_000);
   });
 
-  it("filters locally archived issues from newer inbox broadcasts", () => {
+  it("filters locally archived tasks from newer inbox broadcasts", () => {
     const queryClient = new QueryClient();
-    const queryKey = ["issues", "company-1", "mine-by-me"];
-    beginLocalInboxArchive("company-1", "issue-archived");
+    const queryKey = ["tasks", "company-1", "mine-by-me"];
+    beginLocalInboxArchive("company-1", "task-archived");
 
     const applied = applySharedPollingResult(queryClient, queryKey, {
       type: "result",
@@ -60,35 +60,35 @@ describe("applySharedPollingResult", () => {
       from: "leader",
       at: 4_000,
       dataUpdatedAt: 3_000,
-      data: [{ id: "issue-archived" }, { id: "issue-visible" }],
+      data: [{ id: "task-archived" }, { id: "task-visible" }],
     });
 
     expect(applied).toBe(true);
-    expect(queryClient.getQueryData(queryKey)).toEqual([{ id: "issue-visible" }]);
+    expect(queryClient.getQueryData(queryKey)).toEqual([{ id: "task-visible" }]);
   });
 
-  it("filters locally archived issues from the generic compact inbox broadcast", () => {
+  it("filters locally archived tasks from the generic compact inbox broadcast", () => {
     const queryClient = new QueryClient();
     const queryKey = [
-      "issues",
+      "tasks",
       "company-1",
       "compact",
       "with-routine-executions",
       "live-descendant-summary",
       250,
     ];
-    beginLocalInboxArchive("company-1", "issue-archived");
+    beginLocalInboxArchive("company-1", "task-archived");
 
     const applied = applySharedPollingResult(queryClient, queryKey, {
       type: "result",
-      key: "company:inbox:issues",
+      key: "company:inbox:tasks",
       from: "leader",
       at: 4_000,
       dataUpdatedAt: 3_000,
-      data: [{ id: "issue-archived" }, { id: "issue-visible" }],
+      data: [{ id: "task-archived" }, { id: "task-visible" }],
     });
 
     expect(applied).toBe(true);
-    expect(queryClient.getQueryData(queryKey)).toEqual([{ id: "issue-visible" }]);
+    expect(queryClient.getQueryData(queryKey)).toEqual([{ id: "task-visible" }]);
   });
 });

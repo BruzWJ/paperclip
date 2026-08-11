@@ -13,7 +13,7 @@ import type {
 } from "@paperclipai/shared";
 import { api } from "./client";
 
-export type CompanyStats = Record<string, { agentCount: number; issueCount: number }>;
+export type CompanyStats = Record<string, { agentCount: number; taskCount: number }>;
 
 export const companiesApi = {
   list: () => api.get<Company[]>("/companies"),

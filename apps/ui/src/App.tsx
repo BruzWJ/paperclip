@@ -44,15 +44,15 @@ const ProjectDetail = lazyPage(
   () => import("./pages/ProjectDetail"),
   "ProjectDetail",
 );
-const Issues = lazyPage(() => import("./pages/Issues"), "Issues");
+const Tasks = lazyPage(() => import("./pages/Tasks"), "Tasks");
 const Search = lazyPage(() => import("./pages/Search"), "Search");
-const IssueDetail = lazyPage(
-  () => import("./pages/IssueDetail"),
-  "IssueDetail",
+const TaskDetail = lazyPage(
+  () => import("./pages/TaskDetail"),
+  "TaskDetail",
 );
-const IssueChatLongThreadPerf = lazyPage(
-  () => import("./pages/IssueChatLongThreadPerf"),
-  "IssueChatLongThreadPerf",
+const TaskChatLongThreadPerf = lazyPage(
+  () => import("./pages/TaskChatLongThreadPerf"),
+  "TaskChatLongThreadPerf",
 );
 const Routines = lazyPage(() => import("./pages/Routines"), "Routines");
 const Goals = lazyPage(() => import("./pages/Goals"), "Goals");
@@ -232,8 +232,8 @@ function boardRoutes() {
       <Route path="projects/:projectId" element={<ProjectDetail />} />
       {[
         "overview",
-        "issues",
-        "issues/:filter",
+        "tasks",
+        "tasks/:filter",
         "configuration",
         "budget",
       ].map((tab) => (
@@ -243,13 +243,13 @@ function boardRoutes() {
           element={<ProjectDetail />}
         />
       ))}
-      <Route path="issues" element={<Issues />} />
+      <Route path="tasks" element={<Tasks />} />
       <Route path="search" element={<Search />} />
-      <Route path="issues/:issueId" element={<IssueDetail />} />
+      <Route path="tasks/:taskId" element={<TaskDetail />} />
       {import.meta.env.DEV ? (
         <Route
           path="tests/perf/long-thread"
-          element={<IssueChatLongThreadPerf />}
+          element={<TaskChatLongThreadPerf />}
         />
       ) : null}
       <Route path="routines" element={<Routines />} />
@@ -308,7 +308,7 @@ function OnboardingRoutePage() {
   const matchedCompany = companyPrefix
     ? (companies.find(
         (company) =>
-          company.issuePrefix.toUpperCase() === companyPrefix.toUpperCase(),
+          company.taskPrefix.toUpperCase() === companyPrefix.toUpperCase(),
       ) ?? null)
     : null;
 
@@ -371,7 +371,7 @@ function CompanyRootRedirect() {
     return <CompanylessRouteFallback pathname={location.pathname} />;
   }
 
-  return <Navigate to={`/${targetCompany.issuePrefix}/dashboard`} replace />;
+  return <Navigate to={`/${targetCompany.taskPrefix}/dashboard`} replace />;
 }
 
 function UnprefixedBoardRedirect() {
@@ -387,7 +387,7 @@ function UnprefixedBoardRedirect() {
 
   return (
     <Navigate
-      to={`/${targetCompany.issuePrefix}${location.pathname}${location.search}${location.hash}`}
+      to={`/${targetCompany.taskPrefix}${location.pathname}${location.search}${location.hash}`}
       replace
     />
   );
@@ -427,8 +427,8 @@ function NoCompaniesStartPage() {
  */
 const UNPREFIXED_BOARD_PATHS = [
   "companies",
-  "issues",
-  "issues/:issueId",
+  "tasks",
+  "tasks/:taskId",
   "routines",
   "routines/:routineId",
   "goals",
@@ -449,8 +449,8 @@ const UNPREFIXED_BOARD_PATHS = [
   "projects",
   "projects/:projectId",
   "projects/:projectId/overview",
-  "projects/:projectId/issues",
-  "projects/:projectId/issues/:filter",
+  "projects/:projectId/tasks",
+  "projects/:projectId/tasks/:filter",
   "projects/:projectId/configuration",
 ];
 
@@ -468,7 +468,7 @@ export function App() {
           <Route path="invite/:token" element={<InviteLandingPage />} />
           <Route
             path="tests/perf/long-thread"
-            element={<IssueChatLongThreadPerf />}
+            element={<TaskChatLongThreadPerf />}
           />
           <Route element={<AuthenticatedAppGate />}>
             <Route index element={<CompanyRootRedirect />} />

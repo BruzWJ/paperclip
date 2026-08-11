@@ -1,6 +1,6 @@
 import type {
-  IssueExecutionRunEnvelopeRecord,
-  IssueExecutionRunListPageRecord,
+  TaskExecutionRunEnvelopeRecord,
+  TaskExecutionRunListPageRecord,
 } from "@paperclipai/shared";
 import { Command } from "commander";
 import {
@@ -23,7 +23,7 @@ export function registerRunCommands(command: Command): void {
   addCommonClientOptions(
     command
       .command("list")
-      .description("List canonical issue-execution run envelopes")
+      .description("List canonical task-execution run envelopes")
       .option("-C, --company-id <id>", "Company ID")
       .option("--agent-id <id>", "Filter by target agent ID")
       .option("--cursor <cursor>", "Continue from a prior page")
@@ -36,7 +36,7 @@ export function registerRunCommands(command: Command): void {
           if (opts.cursor) params.set("cursor", opts.cursor);
           if (opts.limit) params.set("limit", opts.limit);
           const query = params.toString();
-          const page = await ctx.api.get<IssueExecutionRunListPageRecord>(
+          const page = await ctx.api.get<TaskExecutionRunListPageRecord>(
             `${apiPath`/api/companies/${ctx.companyId}/runs`}${query ? `?${query}` : ""}`,
           );
           printRuns(page?.items ?? [], ctx.json, page?.nextCursor ?? null);
@@ -50,8 +50,8 @@ export function registerRunCommands(command: Command): void {
   addCommonClientOptions(
     command
       .command("get")
-      .description("Get the bounded joined detail for an issue-execution run")
-      .argument("<runId>", "Issue-execution run ID")
+      .description("Get the bounded joined detail for a task-execution run")
+      .argument("<runId>", "Task-execution run ID")
       .option("--limit <n>", "Maximum records per joined owner", "200")
       .action(
         async (
@@ -76,8 +76,8 @@ export function registerRunCommands(command: Command): void {
   addCommonClientOptions(
     command
       .command("cancel")
-      .description("Cancel an active issue-execution run")
-      .argument("<runId>", "Issue-execution run ID")
+      .description("Cancel an active task-execution run")
+      .argument("<runId>", "Task-execution run ID")
       .action(async (runId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
@@ -95,7 +95,7 @@ export function registerRunCommands(command: Command): void {
 }
 
 function printRuns(
-  rows: IssueExecutionRunEnvelopeRecord[],
+  rows: TaskExecutionRunEnvelopeRecord[],
   json: boolean,
   nextCursor: string | null,
 ): void {
@@ -109,7 +109,7 @@ function printRuns(
         id: row.id,
         kind: row.kind,
         status: row.status,
-        issueId: row.issueId,
+        taskId: row.taskId,
         targetAgentId: row.targetAgentId,
         startedAt: row.startedAt,
         finishedAt: row.finishedAt,

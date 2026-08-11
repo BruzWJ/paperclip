@@ -335,7 +335,7 @@ describe("agent adapter configuration revisions", () => {
               outputTokenLimit: 128_000,
             },
           },
-          workspaceSelector: { kind: "issue_execution_workspace" },
+          workspaceSelector: { kind: "task_execution_workspace" },
           companySkillPins: [{ key: "code-review", versionId }],
         },
       }]],

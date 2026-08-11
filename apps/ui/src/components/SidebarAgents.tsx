@@ -20,7 +20,7 @@ import { useToastActions } from "../context/ToastContext";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import {
-  ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+  ACTIVE_TASK_EXECUTION_RUN_STATUSES,
   runsApi,
 } from "../api/runs";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
@@ -309,7 +309,7 @@ export function SidebarAgents() {
   const membershipsQuery = useResourceMemberships(selectedCompanyId);
   const membershipMutation = useResourceMembershipMutation(selectedCompanyId);
 
-  const activeRunStatuses = ACTIVE_ISSUE_EXECUTION_RUN_STATUSES;
+  const activeRunStatuses = ACTIVE_TASK_EXECUTION_RUN_STATUSES;
   const activeRunsQueryKey = queryKeys.runs(selectedCompanyId!, {
     status: activeRunStatuses,
   });
@@ -318,7 +318,7 @@ export function SidebarAgents() {
     resourceKey: "active-runs",
     queryKey: activeRunsQueryKey,
     enabled: !!selectedCompanyId,
-    // Event-sourced via LiveUpdatesProvider (issue 9627); no interval poll needed.
+    // Event-sourced via LiveUpdatesProvider (task 9627); no interval poll needed.
     refetchInterval: false,
     leaderOnly: true,
   });

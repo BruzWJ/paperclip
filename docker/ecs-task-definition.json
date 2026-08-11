@@ -27,7 +27,7 @@
         { "name": "PAPERCLIP_CONFIG", "value": "/paperclip/instances/default/config.json" },
         { "name": "PAPERCLIP_DEPLOYMENT_EXPOSURE", "value": "public" },
         { "name": "PAPERCLIP_PUBLIC_URL", "value": "https://<DOMAIN>" },
-        { "name": "ISSUE_EXECUTION_SCHEDULER_ENABLED", "value": "true" }
+        { "name": "TASK_EXECUTION_SCHEDULER_ENABLED", "value": "true" }
       ],
       "secrets": [
         {

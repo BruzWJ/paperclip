@@ -324,7 +324,7 @@
 
   /* Small inline widgets keep their design size on touch devices —
      forcing 44px here stretches checkboxes, chip menus, and icon buttons
-     that live inside dense rows (sidebar headers, issue rows, filter
+     that live inside dense rows (sidebar headers, task rows, filter
      popovers). The surrounding row provides the touch area. */
   [data-slot="toggle"],
   [data-slot="checkbox"],
@@ -1229,14 +1229,14 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   text-decoration: none;
 }
 
-.paperclip-markdown a.paperclip-mention-chip[data-mention-kind="issue"] {
+.paperclip-markdown a.paperclip-mention-chip[data-mention-kind="task"] {
   border-color: color-mix(in oklab, var(--foreground) 14%, var(--border) 86%);
   background: color-mix(in oklab, var(--accent) 42%, transparent);
 }
 
-/* Inline issue references in markdown: no pill chrome, just a status icon
+/* Inline task references in markdown: no pill chrome, just a status icon
    beside the link label — keeps the pair from splitting across lines. */
-.paperclip-markdown-issue-ref {
+.paperclip-markdown-task-ref {
   display: inline;
   white-space: nowrap;
 }
@@ -1438,9 +1438,9 @@ span.paperclip-project-mention-chip {
    NOT converted to tokens — each also carries an inline
    `token-extraction: allowlisted` comment at the site):
    - pages/CompanySettings.tsx — <input type="color"> value; functional form control, not a rendered value.
-   - components/issue-properties/IssueProperties.tsx (newLabelColor) — color-picker seed persisted into label-create payload.
+   - components/task-properties/TaskProperties.tsx (newLabelColor) — color-picker seed persisted into label-create payload.
    - pages/CompanySkills.tsx (DISCOVERY_ACCENTS) — persisted/compared skill.color JS data, not just rendered.
-   - components/IssueColumns.tsx (accentColor fallback) — also feeds pickTextColorForPillBg() contrast math.
+   - components/TaskColumns.tsx (accentColor fallback) — also feeds pickTextColorForPillBg() contrast math.
    - components/CompanyPatternIcon.tsx — canvas fillStyle computed at runtime from numeric props, not a static literal.
 */
 :root {
@@ -1457,9 +1457,9 @@ span.paperclip-project-mention-chip {
   --hex-6b7280: #6b7280; /* ActivityCharts.tsx — priority 'low' + unknown-status statusColors fallback. */
   --hex-10b981: #10b981; /* ActivityCharts.tsx — >=0.8 success-rate bar tint; also the run-activity 'succeeded' segment. */
   --hex-737373: #737373; /* ActivityCharts.tsx — run activity 'other' segment tint. */
-  --project-none: #64748b; /* Semantic rename of --hex-64748b (DECISION-SHEET.md A3, value unchanged). 'No project assigned' muted-slate fallback (TOKEN-AUDIT.md 1.3) across Routines/MarkdownEditor/RoutineRunVariablesDialog/RoutineList/IssueColumns/editable-sections; also ActivityCharts.tsx status 'backlog'. */
+  --project-none: #64748b; /* Semantic rename of --hex-64748b (DECISION-SHEET.md A3, value unchanged). 'No project assigned' muted-slate fallback (TOKEN-AUDIT.md 1.3) across Routines/MarkdownEditor/RoutineRunVariablesDialog/RoutineList/TaskColumns/editable-sections; also ActivityCharts.tsx status 'backlog'. */
   --project-seed: #6366f1; /* Semantic rename of --hex-6366f1 (DECISION-SHEET.md A3, value unchanged). Project-color fallback indigo seed for project pickers. */
-  --liveness-blue: #2563eb; /* DECISION-SHEET.md A6: IssueChatThread.tsx human-message 'liveness blue' bubble (PAP-95 rev 5). Same value as --status-task-in_progress by coincidence, decoupled on purpose so a future status-hue change doesn't drag the chat bubble along. */
+  --liveness-blue: #2563eb; /* DECISION-SHEET.md A6: TaskChatThread.tsx human-message 'liveness blue' bubble (PAP-95 rev 5). Same value as --status-task-in_progress by coincidence, decoupled on purpose so a future status-hue change doesn't drag the chat bubble along. */
   --gradient-extract-1: linear-gradient(180deg,rgba(255,80,80,0.12),rgba(255,255,255,0.02)); /* Dashboard.tsx budget-alert card gradient. */
   --gradient-extract-2: linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02)); /* Costs.tsx subtle white card gradient. */
   --gradient-extract-4: linear-gradient(180deg,rgba(255,70,70,0.10),rgba(255,255,255,0.02)); /* BudgetIncidentCard.tsx incident-card gradient. */
@@ -1519,7 +1519,7 @@ span.paperclip-project-mention-chip {
    - components/ui/scroll-area.tsx (rounded-[inherit]) — CSS keyword, not a
      literal value; nothing to extract.
    - Bracket values that only wrap var(--radix-*-trigger-width/height) or
-     var(--new-issue-dialog-height) etc. are rewritten to the bare paren
+     var(--new-task-dialog-height) etc. are rewritten to the bare paren
      form directly (e.g. w-(--radix-popover-trigger-width)) — these are
      runtime library/component variables, not design values, so no new
      --sz-* token is minted for them (see TOKEN-AUDIT.md extraction log
@@ -1561,17 +1561,17 @@ span.paperclip-project-mention-chip {
   --sz-18pct: 18%;
   --sz-12pct: 12%;
   --sz-calc-6: min(20rem,calc(100vw - 2rem)); /* Extracted from apps/ui/src/components/InlineEntitySelector.tsx (w-[min(20rem,calc(100vw-2rem))]). */
-  --sz-18rem: 18rem; /* Extracted from apps/ui/src/components/IssueBlockedNotice.tsx (max-w-[18rem]). */
-  --sz-70vh: 70vh; /* Extracted from apps/ui/src/components/IssueChatThread.test.tsx (max-h-[70vh]). */
-  --sz-calc-7: calc(100% - 0.5rem); /* Extracted from apps/ui/src/components/IssueChatThread.test.tsx (max-w-[calc(100%-0.5rem)]). */
-  --sz-28dvh: 28dvh; /* Extracted from apps/ui/src/components/IssueChatThread.test.tsx (max-h-[28dvh]). */
-  --sz-72px: 72px; /* Extracted from apps/ui/src/components/IssueChatThread.test.tsx (min-h-[72px]). */
-  --sz-15px: 15px; /* Extracted from apps/ui/src/components/IssueChatThread.test.tsx (p-[15px]). */
-  --sz-calc-8: calc(env(safe-area-inset-bottom) + 20px); /* Extracted from apps/ui/src/components/IssueChatThread.test.tsx (bottom-[calc(env(safe-area-inset-bottom)+20px)]). */
-  --sz-300px: 300px; /* Extracted from apps/ui/src/components/IssueColumns.tsx (w-[300px]). */
-  --sz-calc-9: min(80vh,42rem); /* Extracted from apps/ui/src/components/IssueFiltersPopover.test.tsx (max-h-[min(80vh,42rem)]). */
-  --sz-calc-10: min(780px,calc(100vw - 2rem)); /* Extracted from apps/ui/src/components/IssueFiltersPopover.tsx (w-[min(780px,calc(100vw-2rem))]). */
-  --sz-calc-13: calc(0.75rem + 0.5rem); /* Extracted from apps/ui/src/components/IssueRow.tsx (ml-[calc(theme(spacing.3)+theme(spacing.2))]). */
+  --sz-18rem: 18rem; /* Extracted from apps/ui/src/components/TaskBlockedNotice.tsx (max-w-[18rem]). */
+  --sz-70vh: 70vh; /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (max-h-[70vh]). */
+  --sz-calc-7: calc(100% - 0.5rem); /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (max-w-[calc(100%-0.5rem)]). */
+  --sz-28dvh: 28dvh; /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (max-h-[28dvh]). */
+  --sz-72px: 72px; /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (min-h-[72px]). */
+  --sz-15px: 15px; /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (p-[15px]). */
+  --sz-calc-8: calc(env(safe-area-inset-bottom) + 20px); /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (bottom-[calc(env(safe-area-inset-bottom)+20px)]). */
+  --sz-300px: 300px; /* Extracted from apps/ui/src/components/TaskColumns.tsx (w-[300px]). */
+  --sz-calc-9: min(80vh,42rem); /* Extracted from apps/ui/src/components/TaskFiltersPopover.test.tsx (max-h-[min(80vh,42rem)]). */
+  --sz-calc-10: min(780px,calc(100vw - 2rem)); /* Extracted from apps/ui/src/components/TaskFiltersPopover.tsx (w-[min(780px,calc(100vw-2rem))]). */
+  --sz-calc-13: calc(0.75rem + 0.5rem); /* Extracted from apps/ui/src/components/TaskRow.tsx (ml-[calc(theme(spacing.3)+theme(spacing.2))]). */
   --sz-140px: 140px; /* Extracted from apps/ui/src/components/JsonSchemaForm.tsx (min-h-[140px]). */
   --sz-52px: 52px; /* Extracted from apps/ui/src/components/KanbanBoard.tsx (w-[52px]). */
   --sz-48px: 48px; /* Extracted from apps/ui/src/components/KanbanBoard.tsx (min-w-[48px]). */
@@ -1588,7 +1588,7 @@ span.paperclip-project-mention-chip {
   --sz-calc-16: min(calc(100dvh - 2rem),46rem); /* Extracted from apps/ui/src/components/NewAgentDialog.tsx (max-h-[min(calc(100dvh-2rem),46rem)]). */
   --sz-24rem: 24rem; /* Extracted from apps/ui/src/components/NewAgentDialog.tsx (h-[24rem]). */
   --sz-50vh: 50vh; /* Extracted from apps/ui/src/components/NewGoalDialog.tsx (max-h-[50vh]). */
-  --sz-8_5rem: 8.5rem; /* Extracted from apps/ui/src/components/NewIssueDialog.tsx (min-w-[8.5rem]). */
+  --sz-8_5rem: 8.5rem; /* Extracted from apps/ui/src/components/NewTaskDialog.tsx (min-w-[8.5rem]). */
   --sz-160px: 160px; /* Extracted from apps/ui/src/components/NewProjectDialog.tsx (max-w-[160px]). */
   --sz-80px: 80px; /* Extracted from apps/ui/src/components/OnboardingWizard.tsx (min-h-[80px]). */
   --sz-calc-17: calc(100vh - 4rem); /* Extracted from apps/ui/src/components/PageSkeleton.tsx (h-[calc(100vh-4rem)]). */
@@ -1607,8 +1607,8 @@ span.paperclip-project-mention-chip {
   --sz-8px: 8px; /* Extracted from apps/ui/src/components/artifacts/ArtifactGroupCard.tsx (translate-x-[8px]). */
   --sz-4px: 4px; /* Extracted from apps/ui/src/components/artifacts/ArtifactGroupCard.tsx (translate-x-[4px]). */
   --sz-34px: 34px; /* Extracted from apps/ui/src/components/environment-variables-editor/SecretPicker.tsx (h-[34px]). */
-  --sz-11rem: 11rem; /* Extracted from apps/ui/src/components/issue-properties/IssueProperties.tsx (min-w-[11rem]). */
-  --sz-32rem: 32rem; /* Extracted from apps/ui/src/components/issue-properties/IssueProperties.tsx (w-[32rem]). */
+  --sz-11rem: 11rem; /* Extracted from apps/ui/src/components/task-properties/TaskProperties.tsx (min-w-[11rem]). */
+  --sz-32rem: 32rem; /* Extracted from apps/ui/src/components/task-properties/TaskProperties.tsx (w-[32rem]). */
   --sz-280px: 280px; /* Extracted from apps/ui/src/components/timeline/WorkTimelineChart.tsx (max-w-[280px]). */
   --sz-calc-25: calc(100% - 2rem); /* Extracted from apps/ui/src/components/ui/alert-dialog.tsx (max-w-[calc(100%-2rem)]). */
   --sz-calc-26: max(1rem,env(safe-area-inset-top)); /* Extracted from apps/ui/src/components/ui/alert-dialog.tsx (top-[max(1rem,env(safe-area-inset-top))]). */
@@ -1636,15 +1636,15 @@ span.paperclip-project-mention-chip {
   --sz-640px: 640px; /* Extracted from apps/ui/src/pages/DesignGuide.tsx (max-w-[640px]). */
   --sz-28rem: 28rem; /* Extracted from apps/ui/src/pages/DesignGuide.tsx (w-[28rem]). */
   --sz-170px: 170px; /* Extracted from apps/ui/src/pages/Inbox.tsx (w-[170px]). */
-  --sz-calc-37: min(100%,22rem); /* Extracted from apps/ui/src/pages/IssueDetail.tsx (w-[min(100%,22rem)]). */
-  --sz-85dvh: 85dvh; /* Extracted from apps/ui/src/pages/IssueDetail.tsx (max-h-[85dvh]). */
+  --sz-calc-37: min(100%,22rem); /* Extracted from apps/ui/src/pages/TaskDetail.tsx (w-[min(100%,22rem)]). */
+  --sz-85dvh: 85dvh; /* Extracted from apps/ui/src/pages/TaskDetail.tsx (max-h-[85dvh]). */
   --sz-calc-38: calc(100dvh - 9rem); /* Extracted from apps/ui/src/pages/OrgChart.tsx (h-[calc(100dvh-9rem)]). */
   --sz-960px: 960px; /* Extracted from apps/ui/src/pages/Search.tsx (max-w-[960px]). */
   --sz-70px: 70px; /* Extracted from apps/ui/src/pages/Secrets.tsx (min-h-[70px]). */
   --sz-calc-41: min(520px,calc(100vw - 2rem)); /* Extracted from apps/ui/src/pages/Secrets.tsx (w-[min(520px,calc(100vw-2rem))]). */
   --sz-calc-42: min(80vh,34rem); /* Extracted from apps/ui/src/pages/Secrets.tsx (max-h-[min(80vh,34rem)]). */
   --rad-3: 3px; /* Shared focus-ring width. */
-  --rad-4: 4px; /* Extracted from apps/ui/src/components/IssueChatThread.tsx (rounded-br-[4px]). */
+  --rad-4: 4px; /* Extracted from apps/ui/src/components/TaskChatThread.tsx (rounded-br-[4px]). */
   --rad-2: 2px; /* Extracted from apps/ui/src/components/SidebarCompanyMenu.tsx (ring-[2px]). */
   --rad-14: 14px; /* Extracted from apps/ui/src/pages/CompanySettings.tsx (rounded-[14px]). */
   --rad-28: 28px; /* Extracted from apps/ui/src/pages/InviteUxLab.tsx (rounded-[28px]). */
@@ -1652,16 +1652,16 @@ span.paperclip-project-mention-chip {
   --rad-32: 32px; /* Extracted from apps/ui/src/pages/InviteUxLab.tsx (rounded-[32px]). */
   --pct-90: 90%; /* Extracted from apps/ui/src/components/DocumentDiffModal.tsx (max-w-[90%]). */
   --pct-50: 50%; /* Extracted from apps/ui/src/components/ImageGalleryModal.tsx (max-w-[50%]). */
-  --pct-85: 85%; /* Extracted from apps/ui/src/components/IssueChatThread.test.tsx (max-w-[85%]). */
+  --pct-85: 85%; /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (max-w-[85%]). */
   --pct-neg-50: -50%; /* Extracted from apps/ui/src/components/ui/alert-dialog.tsx (translate-x-[-50%]). */
-  --pct-72: 72%; /* Extracted from apps/ui/src/pages/IssueDetail.tsx (w-[72%]). */
+  --pct-72: 72%; /* Extracted from apps/ui/src/pages/TaskDetail.tsx (w-[72%]). */
   --shadow-extract-1: 0 16px 40px rgba(37,99,235,0.08); /* ActiveAgentsPanel.tsx live-box glow. Gallery feedback r2: liveness glow recolored cyan->status blue (value edit, site unchanged; originally extracted as rgba(6,182,212,0.08)). */
   --shadow-extract-2: 0 20px 80px -40px rgba(0,0,0,0.55); /* Extracted from apps/ui/src/components/BudgetPolicyCard.tsx (shadow-[0_20px_80px_-40px_rgba(0,0,0,0.55)]). */
   --shadow-extract-3: 0 0 0 1px rgba(255,255,255,0.08); /* Extracted from apps/ui/src/components/BudgetSidebarMarker.tsx (shadow-[0_0_0_1px_rgba(255,255,255,0.08)]). */
   --shadow-extract-4: 0 -12px 28px rgba(15,23,42,0.08); /* Extracted from apps/ui/src/components/ChatComposer.test.tsx (shadow-[0_-12px_28px_rgba(15,23,42,0.08)]). */
   --shadow-extract-5: 0 -12px 28px rgba(0,0,0,0.28); /* Extracted from apps/ui/src/components/ChatComposer.test.tsx (shadow-[0_-12px_28px_rgba(0,0,0,0.28)]). */
   --shadow-extract-6: 0 0 0 1px var(--color-background); /* Extracted from apps/ui/src/components/DocumentAnnotationLayer.tsx (shadow-[0_0_0_1px_var(--color-background)]). */
-  --shadow-extract-7: 0 -12px 28px rgba(15,23,42,0.08),0 0 0 1px hsl(var(--primary)/0.16); /* Extracted from apps/ui/src/components/IssueChatThread.tsx (shadow-[0_-12px_28px_rgba(15,23,42,0.08),0_0_0_1px_hsl(var(--primary)/0.16)]). */
+  --shadow-extract-7: 0 -12px 28px rgba(15,23,42,0.08),0 0 0 1px hsl(var(--primary)/0.16); /* Extracted from apps/ui/src/components/TaskChatThread.tsx (shadow-[0_-12px_28px_rgba(15,23,42,0.08),0_0_0_1px_hsl(var(--primary)/0.16)]). */
   --shadow-extract-8: 0 1px 0 rgba(15,23,42,0.02); /* Shared inset card shadow. */
   --shadow-extract-9: 0 18px 42px rgba(15,23,42,0.06);
   --shadow-extract-10: 0 1px 0 1px hsl(var(--border)); /* Extracted from apps/ui/src/components/KeyboardShortcutsCheatsheet.tsx (shadow-[0_1px_0_1px_hsl(var(--border))]). */
@@ -1714,14 +1714,14 @@ span.paperclip-project-mention-chip {
   --gtc-3: minmax(0,1fr) 2.25rem; /* Extracted from apps/ui/src/components/FileTree.tsx (grid-cols-[minmax(0,1fr)_2.25rem]). */
   --gtc-4: minmax(0,1fr); /* Extracted from apps/ui/src/components/FileTree.tsx (grid-cols-[minmax(0,1fr)]). */
   --gtc-5: auto minmax(0,1fr); /* Shared metadata grid. */
-  --gtc-7: 7.5rem minmax(0,1fr); /* Extracted from apps/ui/src/components/IssueChatThread.tsx (grid-cols-[7.5rem_minmax(0,1fr)]). */
+  --gtc-7: 7.5rem minmax(0,1fr); /* Extracted from apps/ui/src/components/TaskChatThread.tsx (grid-cols-[7.5rem_minmax(0,1fr)]). */
   --gtc-8: 7.5rem 1fr; /* Shared metadata grid. */
   --gtc-9: 300px minmax(0,1fr); /* Extracted from apps/ui/src/components/RoutineHistoryTab.tsx (grid-cols-[300px_minmax(0,1fr)]). */
   --gtc-10: 10rem 1fr; /* Extracted from apps/ui/src/components/SourceResolvedFoldCallout.tsx (grid-cols-[10rem_1fr]). */
   --gtc-11: 12rem 1fr; /* Extracted from apps/ui/src/components/SourceResolvedFoldCallout.tsx (grid-cols-[12rem_1fr]). */
   --gtc-13: minmax(0,1fr) auto; /* Extracted from apps/ui/src/components/environment-variables-editor/Row.tsx (grid-cols-[minmax(0,1fr)_auto]). */
   --gtc-14: minmax(160px,2fr) minmax(240px,3fr) 32px; /* Extracted from apps/ui/src/components/environment-variables-editor/Row.tsx (grid-cols-[minmax(160px,2fr)_minmax(240px,3fr)_32px]). */
-  --gtc-15: 6rem 1fr; /* Extracted from apps/ui/src/components/issue-properties/IssueProperties.tsx (grid-cols-[6rem_1fr]). */
+  --gtc-15: 6rem 1fr; /* Extracted from apps/ui/src/components/task-properties/TaskProperties.tsx (grid-cols-[6rem_1fr]). */
   --gtc-17: 1fr auto; /* Extracted from apps/ui/src/components/ui/card.tsx (grid-cols-[1fr_auto]). */
   --gtc-18: auto minmax(0,1fr) minmax(12rem,0.65fr); /* Extracted from apps/ui/src/pages/AgentDetail.tsx (grid-cols-[auto_minmax(0,1fr)_minmax(12rem,0.65fr)]). */
   --gtc-19: 260px minmax(0,1fr); /* Extracted from apps/ui/src/pages/AgentDetail.tsx (grid-cols-[260px_minmax(0,1fr)]). */
@@ -1740,7 +1740,7 @@ span.paperclip-project-mention-chip {
   --gtc-37: minmax(0,1.15fr) minmax(320px,0.85fr); /* Extracted from apps/ui/src/pages/InviteUxLab.tsx (grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]). */
   --gtc-38: minmax(0,0.92fr) minmax(0,1.08fr); /* Extracted from apps/ui/src/pages/InviteUxLab.tsx (grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]). */
   --gtc-39: minmax(0,1.2fr) 320px; /* Extracted from apps/ui/src/pages/InviteUxLab.tsx (grid-cols-[minmax(0,1.2fr)_320px]). */
-  --gtc-40: minmax(0,1fr) 320px; /* Extracted from apps/ui/src/pages/IssueChatLongThreadPerf.tsx (grid-cols-[minmax(0,1fr)_320px]). */
+  --gtc-40: minmax(0,1fr) 320px; /* Extracted from apps/ui/src/pages/TaskChatLongThreadPerf.tsx (grid-cols-[minmax(0,1fr)_320px]). */
   --gtc-52: minmax(0,1.4fr) minmax(220px,0.8fr); /* Extracted from apps/ui/src/pages/PluginSettings.tsx (grid-cols-[minmax(0,1.4fr)_minmax(220px,0.8fr)]). */
   --gtc-54: minmax(12rem,2.4fr) minmax(5.25rem,0.75fr) minmax(7rem,1fr) minmax(5rem,0.7fr) 2.75rem; /* Extracted from apps/ui/src/pages/Secrets.tsx (grid-cols-[minmax(12rem,2.4fr)_minmax(5.25rem,0.75fr)_minmax(7rem,1fr)_minmax(5rem,0.7fr)_2.75rem]). */
   --gtc-55: 8rem minmax(0,1fr); /* Extracted from apps/ui/src/pages/Secrets.tsx (grid-cols-[8rem_minmax(0,1fr)]). */
@@ -1761,7 +1761,7 @@ span.paperclip-project-mention-chip {
   --tp-width: width; /* Extracted from apps/ui/src/components/ProviderQuotaCard.tsx (transition-[width]). */
   --tp-background-color-color-opacity: background-color,color,opacity; /* Extracted from apps/ui/src/components/FileTree.tsx (transition-[background-color,color,opacity]). */
   --tp-max-height: max-height; /* Extracted from apps/ui/src/components/FoldCurtain.tsx (transition-[max-height]). */
-  --tp-border-color-background-color-box-shadow: border-color,background-color,box-shadow; /* Extracted from apps/ui/src/components/IssueChatThread.tsx (transition-[border-color,background-color,box-shadow]). */
+  --tp-border-color-background-color-box-shadow: border-color,background-color,box-shadow; /* Extracted from apps/ui/src/components/TaskChatThread.tsx (transition-[border-color,background-color,box-shadow]). */
   --tp-width-min-width: width,min-width; /* Extracted from apps/ui/src/components/KanbanBoard.tsx (transition-[width,min-width]). */
   --tp-width-opacity: width,opacity; /* Extracted from apps/ui/src/components/OnboardingWizard.tsx (transition-[width,opacity]). */
   --tp-background-color-right: background-color,right; /* Extracted from apps/ui/src/components/ScrollToBottom.tsx (transition-[background-color,right]). */
@@ -1777,7 +1777,7 @@ span.paperclip-project-mention-chip {
   --tp-transform-box-shadow: transform,box-shadow; /* Extracted from apps/ui/src/pages/ProjectDetail.tsx (transition-[transform,box-shadow]). */
   --z-2: 2; /* Extracted from apps/ui/src/components/DocumentAnnotationLayer.tsx (z-[2]). */
   --z-60: 60; /* Extracted from apps/ui/src/components/DocumentAnnotationPanel.tsx (z-[60]). */
-  --z-1: 1; /* Extracted from apps/ui/src/components/IssueDocumentAnnotations.tsx (z-[1]). */
+  --z-1: 1; /* Extracted from apps/ui/src/components/TaskDocumentAnnotations.tsx (z-[1]). */
   --z-200: 200; /* Extracted from apps/ui/src/components/Layout.tsx (z-[200]). */
   --z-9999: 9999; /* Extracted from apps/ui/src/components/MarkdownEditor.tsx (z-[9999]). */
   --z-120: 120; /* Extracted from apps/ui/src/components/ToastViewport.tsx (z-[120]). */
@@ -1786,7 +1786,7 @@ span.paperclip-project-mention-chip {
   --va-0_125em: -0.125em; /* Shared inline-icon alignment. */
   --sw-2_3: 2.3; /* Extracted from apps/ui/src/components/MobileBottomNav.tsx (stroke-[2.3]). */
   --blur-1px: 1px; /* Extracted from apps/ui/src/components/ChatComposer.tsx (backdrop-blur-[1px]). */
-  --blur-2px: 2px; /* Extracted from apps/ui/src/components/IssueChatThread.tsx (backdrop-blur-[2px]). */
+  --blur-2px: 2px; /* Extracted from apps/ui/src/components/TaskChatThread.tsx (backdrop-blur-[2px]). */
   --drop-shadow-extract-1: 0 1px 2px rgba(0,0,0,0.65); /* Extracted from apps/ui/src/components/CompanyPatternIcon.tsx (drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]). */
   --gradient-extract-25: linear-gradient(135deg,hsl(var(--primary)) 0%,hsl(var(--accent)) 55%,hsl(var(--muted)) 100%); /* Extracted from apps/ui/src/components/SidebarAccountMenu.tsx (bg-[linear-gradient(135deg,hsl(var(--primary))_0%,hsl(var(--accent))_55%,hsl(var(--muted))_100%)]). */
   --gradient-extract-26: linear-gradient(135deg,hsl(var(--primary)) 0%,hsl(var(--accent)) 58%,color-mix(in oklab,hsl(var(--background)) 76%,white 24%) 100%); /* Extracted from apps/ui/src/pages/ProfileSettings.tsx (bg-[linear-gradient(135deg,hsl(var(--primary))_0%,hsl(var(--accent))_58%,color-mix(in_oklab,hsl(var(--background))_76%,white_24%)_100%)]). */
@@ -1818,9 +1818,9 @@ span.paperclip-project-mention-chip {
    allowlisted concern. Paths are matched by the gate script as a substring
    of the file being checked (repo-relative, POSIX-style).
    * allow apps/ui/src/pages/CompanySettings.tsx — <input type="color"> value; the DOM color-picker control requires a real hex string
-   * allow apps/ui/src/components/issue-properties/IssueProperties.tsx — newLabelColor color-picker seed state persisted into the label-create payload sent to the backend; a var() string would corrupt that payload
+   * allow apps/ui/src/components/task-properties/TaskProperties.tsx — newLabelColor color-picker seed state persisted into the label-create payload sent to the backend; a var() string would corrupt that payload
    * allow apps/ui/src/pages/CompanySkills.tsx — DISCOVERY_ACCENTS palette array feeds skill.color, persisted/compared JS data (SkillCreateDraft), not just a rendered value; also fontSize: Math.round(size * 0.42), computed at runtime from a prop, not a static literal
-   * allow apps/ui/src/components/IssueColumns.tsx — accentColor fallback also feeds pickTextColorForPillBg() contrast math (lib/color-contrast.ts), which needs a real hex string to compute luminance
+   * allow apps/ui/src/components/TaskColumns.tsx — accentColor fallback also feeds pickTextColorForPillBg() contrast math (lib/color-contrast.ts), which needs a real hex string to compute luminance
    * allow apps/ui/src/components/CompanyPatternIcon.tsx — canvas 2D fillStyle built from a runtime-computed template literal, not a static literal at all
    * allow apps/ui/src/components/ui/scroll-area.tsx — rounded-[inherit] is a CSS keyword, not a literal value; nothing to extract
    * allow apps/ui/src/components/ui/dialog.tsx — tw-animate-css plugin utilities (zoom-in-[0.97], zoom-out-[0.97], slide-in-from-top-[1%], slide-out-to-top-[1%], animate-in, animate-out, fade-in-0, fade-out-0) are dead/no-op classes today (the tw-animate-css plugin is not installed and no matching @utility exists in this file; confirmed via grep of the built storybook-static CSS — none of these class names emit any rule); nothing to tokenize without visually changing a currently-inert class
@@ -1835,21 +1835,21 @@ span.paperclip-project-mention-chip {
    declarations. These are the test-file counterpart of the same
    "functional/persisted data, not a rendered CSS value" category Batch 1
    already allowlisted in production source (see CompanySkills.tsx,
-   IssueProperties.tsx, IssueColumns.tsx above); tokenizing them would
+   TaskProperties.tsx, TaskColumns.tsx above); tokenizing them would
    replace realistic-looking mock data with `var()` strings that no longer
    resemble what a real API response contains, without touching any
    rendered pixel. Each file is listed individually for reviewability.
-   * allow apps/ui/src/components/IssueFiltersPopover.test.tsx — mock label color prop
-   * allow apps/ui/src/components/IssueProperties.test.tsx — mock label/project color fixtures
+   * allow apps/ui/src/components/TaskFiltersPopover.test.tsx — mock label color prop
+   * allow apps/ui/src/components/TaskProperties.test.tsx — mock label/project color fixtures
    * allow apps/ui/src/components/MarkdownBody.test.tsx — mock project color fed through a mention-href builder
    * allow apps/ui/src/components/MarkdownEditor.test.tsx — mock projectColor mention fixture
-   * allow apps/ui/src/components/NewIssueDialog.test.tsx — mock brandColor/label color fixtures
+   * allow apps/ui/src/components/NewTaskDialog.test.tsx — mock brandColor/label color fixtures
    * allow apps/ui/src/components/ProjectTile.test.tsx — mock project color prop
    * allow apps/ui/src/components/RoutineRunVariablesDialog.test.tsx — mock label color fixture
    * allow apps/ui/src/components/SidebarCompanyMenu.test.tsx — mock brandColor company fixtures
    * allow apps/ui/src/components/SidebarStarredProjects.test.tsx — mock project color fixture
    * allow apps/ui/src/pages/InviteLanding.test.tsx — mock companyBrandColor fixtures
-   * allow apps/ui/src/pages/IssueDetail.test.tsx — mock project color fixture
+   * allow apps/ui/src/pages/TaskDetail.test.tsx — mock project color fixture
    * allow apps/ui/src/pages/ProjectDetail.test.tsx — mock project color fixture
    * allow apps/ui/src/pages/Projects.test.tsx — mock project color fixture
    * allow apps/ui/src/pages/Routines.test.tsx — mock routine/label color fixtures

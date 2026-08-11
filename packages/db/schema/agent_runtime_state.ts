@@ -1,4 +1,4 @@
-import type { IssueExecutionRunStatus } from "@paperclipai/shared";
+import type { TaskExecutionRunStatus } from "@paperclipai/shared";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -11,7 +11,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
-import { issueExecutionRuns } from "./issue_execution_runs.js";
+import { taskExecutionRuns } from "./task_execution_runs.js";
 import {
   moneyAmountColumn,
   nonnegativeFiniteMoneyCheck,
@@ -19,7 +19,7 @@ import {
 
 /**
  * Agent-scoped operational facts only. Conversational continuity remains in
- * the issue Session graph and opaque ACP target correlation.
+ * the task Session graph and opaque ACP target correlation.
  */
 export const agentRuntimeState = pgTable(
   "agent_runtime_state",
@@ -28,7 +28,7 @@ export const agentRuntimeState = pgTable(
     companyId: uuid("company_id").notNull(),
     adapterType: text("adapter_type").notNull(),
     lastRunId: uuid("last_run_id"),
-    lastRunStatus: text("last_run_status").$type<IssueExecutionRunStatus>(),
+    lastRunStatus: text("last_run_status").$type<TaskExecutionRunStatus>(),
     lastContextUsedTokens: bigint("last_context_used_tokens", {
       mode: "number",
     }),
@@ -112,7 +112,7 @@ export const agentRuntimeState = pgTable(
     }).onDelete("cascade"),
     foreignKey({
       columns: [table.companyId, table.lastRunId],
-      foreignColumns: [issueExecutionRuns.companyId, issueExecutionRuns.id],
+      foreignColumns: [taskExecutionRuns.companyId, taskExecutionRuns.id],
       name: "agent_runtime_state_last_run_fk",
     }).onDelete("restrict"),
     index("agent_runtime_state_company_agent_idx").on(

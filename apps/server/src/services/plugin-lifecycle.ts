@@ -52,8 +52,8 @@ import {
   pausePluginManagedAgentsIntoTriageInTransaction,
 } from "./plugin-managed-agents.js";
 import type { AgentSuspensionService } from "./agents.js";
-import type { RequestedAgentRunCancellations } from "./issue-execution-cancellation.js";
-import { createIssueSessionAdmissionService } from "./issue-session/admission.js";
+import type { RequestedAgentRunCancellations } from "./task-execution-cancellation.js";
+import { createTaskSessionAdmissionService } from "./task-session/admission.js";
 import { terminalizePluginCreatorEdgesInTransaction } from "./system-escalation-postgres.js";
 import { validatePluginInstanceConfig } from "./plugin-config-validator.js";
 
@@ -204,7 +204,7 @@ interface PluginLifecycleManagerOptions {
   dispatchRef(refId: string): Promise<void>;
 
   /** Canonical transaction owner of triage fencing and run suspension. */
-  issueExecutionCancellation: AgentSuspensionService;
+  taskExecutionCancellation: AgentSuspensionService;
 }
 
 /**
@@ -221,7 +221,7 @@ interface PluginLifecycleManagerOptions {
  * const lifecycle = pluginLifecycleManager(db, {
  *   loader,
  *   dispatchRef,
- *   issueExecutionCancellation,
+ *   taskExecutionCancellation,
  * });
  * lifecycle.on("plugin.activated", ({ pluginId }) => { ... });
  * await lifecycle.install(installOptions);
@@ -236,10 +236,10 @@ export function pluginLifecycleManager(
 ): PluginLifecycleManager {
   const pluginLoaderInstance = options.loader;
   const dispatchRef = options.dispatchRef;
-  const issueExecutionCancellation = options.issueExecutionCancellation;
+  const taskExecutionCancellation = options.taskExecutionCancellation;
 
   const registry = pluginRegistryService(db);
-  const canonicalSessions = createIssueSessionAdmissionService(db);
+  const canonicalSessions = createTaskSessionAdmissionService(db);
   const emitter = new EventEmitter();
 
   const log = logger.child({ service: "plugin-lifecycle" });
@@ -358,7 +358,7 @@ export function pluginLifecycleManager(
             actorType: "system",
             actorId: pluginId,
           },
-          issueExecutionCancellation,
+          taskExecutionCancellation,
           now,
         );
       const pluginEscalations =
@@ -413,7 +413,7 @@ export function pluginLifecycleManager(
 
     for (const suspensionRequests of committed.suspensionRequests) {
       try {
-        await issueExecutionCancellation
+        await taskExecutionCancellation
           .reconcileRequestedCancellations(suspensionRequests);
       } catch (error) {
         deferredRecoveryErrors.push(error);

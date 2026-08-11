@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   analyzeFrontmatterBlock,
-  detectFrontmatterRoundTripIssues,
+  detectFrontmatterRoundTripDiagnostics,
   getSkillFrontmatterUnknownKeys,
   joinFrontmatterBlock,
   parseFrontmatterFields,
@@ -223,16 +223,16 @@ describe("skillFrontmatterSchema", () => {
   });
 });
 
-describe("detectFrontmatterRoundTripIssues", () => {
+describe("detectFrontmatterRoundTripDiagnostics", () => {
   it("reports YAML constructs that fields mode cannot preserve", () => {
-    const issues = detectFrontmatterRoundTripIssues([
+    const diagnostics = detectFrontmatterRoundTripDiagnostics([
       "# leading comment",
       "\"quoted-key\": value",
       "base: &base",
       "copy: *base",
     ].join("\n"));
 
-    expect(issues.map((issue) => issue.kind)).toEqual([
+    expect(diagnostics.map((diagnostic) => diagnostic.kind)).toEqual([
       "comment",
       "quoted_key",
       "anchor",
@@ -279,7 +279,7 @@ describe("analyzeFrontmatterBlock", () => {
   it("marks a simple inline block as round-trippable", () => {
     const result = analyzeFrontmatterBlock("name: reflection-coach\ndescription: A coach");
     expect(result.canRoundTrip).toBe(true);
-    expect(result.issues).toEqual([]);
+    expect(result.diagnostics).toEqual([]);
     expect(result.parsed).toEqual({ name: "reflection-coach", description: "A coach" });
   });
 
@@ -302,13 +302,13 @@ describe("analyzeFrontmatterBlock", () => {
   it("refuses fields mode when comments are present (would be dropped)", () => {
     const result = analyzeFrontmatterBlock("name: coach # inline note\ndescription: x");
     expect(result.canRoundTrip).toBe(false);
-    expect(result.issues.some((issue) => issue.kind === "comment")).toBe(true);
+    expect(result.diagnostics.some((diagnostic) => diagnostic.kind === "comment")).toBe(true);
   });
 
   it("refuses fields mode for folded scalars the serializer cannot reproduce", () => {
     const raw = ["description: >", "  first line", "  second line"].join("\n");
     const result = analyzeFrontmatterBlock(raw);
-    // No detector "issue", but re-serialization is not byte-identical, so it is
+    // No explicit diagnostic, but re-serialization is not byte-identical, so it is
     // still not round-trippable — the strict serialize-back gate catches it.
     expect(result.canRoundTrip).toBe(false);
   });

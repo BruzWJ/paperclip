@@ -1,7 +1,7 @@
 import type {
-  IssueCommentMetadata,
-  IssueCommentMetadataRow,
-  IssueCommentPresentation,
+  TaskCommentMetadata,
+  TaskCommentMetadataRow,
+  TaskCommentPresentation,
 } from "@paperclipai/shared";
 import type {
   SystemNoticeMetadataRow,
@@ -24,7 +24,7 @@ function metadataRowText(row: { label?: string | null }, fallback: string) {
 }
 
 function mapMetadataRow(
-  row: IssueCommentMetadataRow,
+  row: TaskCommentMetadataRow,
   ctx: { runAgentId?: string | null },
 ): SystemNoticeMetadataRow | null {
   switch (row.type) {
@@ -34,16 +34,16 @@ function mapMetadataRow(
       return { kind: "code", label: metadataRowText(row, "Code"), value: row.code };
     case "key_value":
       return { kind: "text", label: row.label, value: row.value };
-    case "issue_link": {
+    case "task_link": {
       const identifier = row.identifier ?? null;
       if (!identifier) {
         return { kind: "text", label: metadataRowText(row, "Task"), value: row.title ?? "unknown" };
       }
       return {
-        kind: "issue",
+        kind: "task",
         label: metadataRowText(row, "Task"),
         identifier,
-        href: `/issues/${identifier}`,
+        href: `/tasks/${identifier}`,
         title: row.title ?? undefined,
       };
     }
@@ -73,7 +73,7 @@ function mapMetadataRow(
 }
 
 export function mapCommentMetadataToSystemNoticeSections(
-  metadata: IssueCommentMetadata | null | undefined,
+  metadata: TaskCommentMetadata | null | undefined,
   ctx: { runAgentId?: string | null } = {},
 ): SystemNoticeMetadataSection[] {
   if (!metadata || !Array.isArray(metadata.sections)) return [];
@@ -100,8 +100,8 @@ export function systemNoticeLabelForTone(
 }
 
 export function buildSystemNoticeProps(input: {
-  presentation: IssueCommentPresentation | null;
-  metadata: IssueCommentMetadata | null;
+  presentation: TaskCommentPresentation | null;
+  metadata: TaskCommentMetadata | null;
   body: import("react").ReactNode;
   timestamp?: string;
   source?: SystemNoticeProps["source"];

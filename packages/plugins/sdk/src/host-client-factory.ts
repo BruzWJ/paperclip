@@ -149,7 +149,7 @@ export interface HostServices {
   runtimeRecords: {
     readSession(params: WorkerToHostMethods["runtime.records.readSession"][0]): Promise<WorkerToHostMethods["runtime.records.readSession"][1]>;
     readRun(params: WorkerToHostMethods["runtime.records.readRun"][0]): Promise<WorkerToHostMethods["runtime.records.readRun"][1]>;
-    readIssueComments(params: WorkerToHostMethods["runtime.records.readIssueComments"][0]): Promise<WorkerToHostMethods["runtime.records.readIssueComments"][1]>;
+    readTaskComments(params: WorkerToHostMethods["runtime.records.readTaskComments"][0]): Promise<WorkerToHostMethods["runtime.records.readTaskComments"][1]>;
   };
 
   /** Provides `activity.log`. */
@@ -209,33 +209,33 @@ export interface HostServices {
     managedReset(params: WorkerToHostMethods["skills.managed.reset"][0]): Promise<WorkerToHostMethods["skills.managed.reset"][1]>;
   };
 
-  /** Provides the installation-bound issue control plane. */
-  issues: {
-    list(params: WorkerToHostMethods["issues.list"][0]): Promise<WorkerToHostMethods["issues.list"][1]>;
-    get(params: WorkerToHostMethods["issues.get"][0]): Promise<WorkerToHostMethods["issues.get"][1]>;
-    registerCreatorCallback(params: WorkerToHostMethods["issues.creatorCallback.register"][0]): Promise<WorkerToHostMethods["issues.creatorCallback.register"][1]>;
+  /** Provides the installation-bound task control plane. */
+  tasks: {
+    list(params: WorkerToHostMethods["tasks.list"][0]): Promise<WorkerToHostMethods["tasks.list"][1]>;
+    get(params: WorkerToHostMethods["tasks.get"][0]): Promise<WorkerToHostMethods["tasks.get"][1]>;
+    registerCreatorCallback(params: WorkerToHostMethods["tasks.creatorCallback.register"][0]): Promise<WorkerToHostMethods["tasks.creatorCallback.register"][1]>;
     create(
-      params: WorkerToHostMethods["issues.create"][0],
+      params: WorkerToHostMethods["tasks.create"][0],
       operation: HostRpcOperationContext,
-    ): Promise<WorkerToHostMethods["issues.create"][1]>;
+    ): Promise<WorkerToHostMethods["tasks.create"][1]>;
     update(
-      params: WorkerToHostMethods["issues.update"][0],
+      params: WorkerToHostMethods["tasks.update"][0],
       operation: HostRpcOperationContext,
-    ): Promise<WorkerToHostMethods["issues.update"][1]>;
+    ): Promise<WorkerToHostMethods["tasks.update"][1]>;
     withdraw(
-      params: WorkerToHostMethods["issues.withdraw"][0],
+      params: WorkerToHostMethods["tasks.withdraw"][0],
       operation: HostRpcOperationContext,
-    ): Promise<WorkerToHostMethods["issues.withdraw"][1]>;
+    ): Promise<WorkerToHostMethods["tasks.withdraw"][1]>;
   };
 
-  /** Provides run-scoped issue projections for direct plugin tools. */
-  runIssues: {
+  /** Provides run-scoped task projections for direct plugin tools. */
+  runTasks: {
     resolveContext(params: WorkerToHostMethods["run.context.resolve"][0]): Promise<WorkerToHostMethods["run.context.resolve"][1]>;
-    issueReach(params: WorkerToHostMethods["run.context.issueReach"][0]): Promise<WorkerToHostMethods["run.context.issueReach"][1]>;
-    listCompanyIssues(params: WorkerToHostMethods["run.issues.listCompanyIssues"][0]): Promise<WorkerToHostMethods["run.issues.listCompanyIssues"][1]>;
-    listSubIssues(params: WorkerToHostMethods["run.issues.listSubIssues"][0]): Promise<WorkerToHostMethods["run.issues.listSubIssues"][1]>;
-    readIssueComments(params: WorkerToHostMethods["run.issues.readIssueComments"][0]): Promise<WorkerToHostMethods["run.issues.readIssueComments"][1]>;
-    readIssueAgentRun(params: WorkerToHostMethods["run.issues.readIssueAgentRun"][0]): Promise<WorkerToHostMethods["run.issues.readIssueAgentRun"][1]>;
+    taskReach(params: WorkerToHostMethods["run.context.taskReach"][0]): Promise<WorkerToHostMethods["run.context.taskReach"][1]>;
+    listCompanyTasks(params: WorkerToHostMethods["run.tasks.listCompanyTasks"][0]): Promise<WorkerToHostMethods["run.tasks.listCompanyTasks"][1]>;
+    listSubTasks(params: WorkerToHostMethods["run.tasks.listSubTasks"][0]): Promise<WorkerToHostMethods["run.tasks.listSubTasks"][1]>;
+    readTaskComments(params: WorkerToHostMethods["run.tasks.readTaskComments"][0]): Promise<WorkerToHostMethods["run.tasks.readTaskComments"][1]>;
+    readTaskAgentRun(params: WorkerToHostMethods["run.tasks.readTaskAgentRun"][0]): Promise<WorkerToHostMethods["run.tasks.readTaskAgentRun"][1]>;
   };
 
   /** Provides `agents.list`, `agents.get`, `agents.pause`, `agents.resume`. */
@@ -372,7 +372,7 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   // Privileged runtime records
   "runtime.records.readSession": "runtime.records.read",
   "runtime.records.readRun": "runtime.records.read",
-  "runtime.records.readIssueComments": "runtime.records.read",
+  "runtime.records.readTaskComments": "runtime.records.read",
 
   // Activity
   "activity.log": "activity.log.write",
@@ -405,19 +405,19 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
     "skills.managed.reconcile": "skills.managed",
     "skills.managed.reset": "skills.managed",
 
-  // Issues
-  "issues.list": "issues.read",
-  "issues.get": "issues.read",
-  "issues.creatorCallback.register": "issues.create",
-  "issues.create": "issues.create",
-  "issues.update": "issues.update",
-  "issues.withdraw": "issues.withdraw",
+  // Tasks
+  "tasks.list": "tasks.read",
+  "tasks.get": "tasks.read",
+  "tasks.creatorCallback.register": "tasks.create",
+  "tasks.create": "tasks.create",
+  "tasks.update": "tasks.update",
+  "tasks.withdraw": "tasks.withdraw",
   "run.context.resolve": "runtime.context.read",
-  "run.context.issueReach": "runtime.context.read",
-  "run.issues.listCompanyIssues": "issues.read",
-  "run.issues.listSubIssues": "issues.read",
-  "run.issues.readIssueComments": "issues.read",
-  "run.issues.readIssueAgentRun": "issues.read",
+  "run.context.taskReach": "runtime.context.read",
+  "run.tasks.listCompanyTasks": "tasks.read",
+  "run.tasks.listSubTasks": "tasks.read",
+  "run.tasks.readTaskComments": "tasks.read",
+  "run.tasks.readTaskAgentRun": "tasks.read",
 
   // Agents
   "agents.list": "agents.read",
@@ -452,14 +452,14 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   "authorization.audit.search": "authorization.audit.read",
 };
 
-const INSTALLATION_ISSUE_CONTROL_PLANE_METHODS: ReadonlySet<WorkerToHostMethodName> =
+const INSTALLATION_TASK_CONTROL_PLANE_METHODS: ReadonlySet<WorkerToHostMethodName> =
   new Set([
-    "issues.list",
-    "issues.get",
-    "issues.creatorCallback.register",
-    "issues.create",
-    "issues.update",
-    "issues.withdraw",
+    "tasks.list",
+    "tasks.get",
+    "tasks.creatorCallback.register",
+    "tasks.create",
+    "tasks.update",
+    "tasks.withdraw",
   ]);
 
 // ---------------------------------------------------------------------------
@@ -611,11 +611,11 @@ export function createHostClientHandlers(
   function requireExactRunContextHandle(
     method:
       | "run.context.resolve"
-      | "run.context.issueReach"
-      | "run.issues.listCompanyIssues"
-      | "run.issues.listSubIssues"
-      | "run.issues.readIssueComments"
-      | "run.issues.readIssueAgentRun",
+      | "run.context.taskReach"
+      | "run.tasks.listCompanyTasks"
+      | "run.tasks.listSubTasks"
+      | "run.tasks.readTaskComments"
+      | "run.tasks.readTaskAgentRun",
     params: WorkerToHostMethods[typeof method][0],
     context?: WorkerHostCallContext,
   ): void {
@@ -639,11 +639,11 @@ export function createHostClientHandlers(
     }
   }
 
-  function requireRunIssueContextBoundary(
+  function requireRunTaskContextBoundary(
     method: WorkerToHostMethodName,
     context?: WorkerHostCallContext,
   ): void {
-    if (!INSTALLATION_ISSUE_CONTROL_PLANE_METHODS.has(method)) return;
+    if (!INSTALLATION_TASK_CONTROL_PLANE_METHODS.has(method)) return;
     const activeRunContextHandle = readNonEmptyString(
       context?.invocationScope?.pluginRunContextHandle,
     );
@@ -651,12 +651,12 @@ export function createHostClientHandlers(
     throw new InvocationScopeDeniedError(
       pluginId,
       method,
-      "the installation issue control plane is unavailable while serving an agent run; use only run.issues.* with the exact active run-context handle",
+      "the installation task control plane is unavailable while serving an agent run; use only run.tasks.* with the exact active run-context handle",
     );
   }
 
   function requireHostRpcOperation(
-    method: "issues.create" | "issues.update" | "issues.withdraw",
+    method: "tasks.create" | "tasks.update" | "tasks.withdraw",
     context?: WorkerHostCallContext,
   ): HostRpcOperationContext {
     const hostRpcOperationId = readNonEmptyString(context?.rpcOperationId);
@@ -694,7 +694,7 @@ export function createHostClientHandlers(
   ): HostHandler<M> {
     return async (params: WorkerToHostMethods[M][0], context?: WorkerHostCallContext) => {
       requireCapability(method);
-      requireRunIssueContextBoundary(method, context);
+      requireRunTaskContextBoundary(method, context);
       requireInvocationCompanyScope(method, params, context);
       return handler(params, context);
     };
@@ -796,12 +796,12 @@ export function createHostClientHandlers(
       }
       if (
         canonicalSession &&
-        result.session.issueId !== canonicalSession.issueId
+        result.session.taskId !== canonicalSession.taskId
       ) {
         throw new InvocationScopeDeniedError(
           pluginId,
           "runtime.records.readSession",
-          "the canonical Session does not belong to the host-stamped invocation issue",
+          "the canonical Session does not belong to the host-stamped invocation task",
         );
       }
       return result;
@@ -810,9 +810,9 @@ export function createHostClientHandlers(
       const companyId = resolveRequiredCompanyId("runtime.records.readRun", params, context);
       return services.runtimeRecords.readRun({ ...params, companyId });
     }),
-    "runtime.records.readIssueComments": gated("runtime.records.readIssueComments", async (params, context) => {
-      const companyId = resolveRequiredCompanyId("runtime.records.readIssueComments", params, context);
-      return services.runtimeRecords.readIssueComments({ ...params, companyId });
+    "runtime.records.readTaskComments": gated("runtime.records.readTaskComments", async (params, context) => {
+      const companyId = resolveRequiredCompanyId("runtime.records.readTaskComments", params, context);
+      return services.runtimeRecords.readTaskComments({ ...params, companyId });
     }),
 
     // Activity
@@ -893,56 +893,56 @@ export function createHostClientHandlers(
       return services.skills.managedReset(params);
     }),
 
-    // Issues
-    "issues.list": gated("issues.list", async (params) => {
-      return services.issues.list(params);
+    // Tasks
+    "tasks.list": gated("tasks.list", async (params) => {
+      return services.tasks.list(params);
     }),
-    "issues.get": gated("issues.get", async (params) => {
-      return services.issues.get(params);
+    "tasks.get": gated("tasks.get", async (params) => {
+      return services.tasks.get(params);
     }),
-    "issues.creatorCallback.register": gated("issues.creatorCallback.register", async (params) => {
-      return services.issues.registerCreatorCallback(params);
+    "tasks.creatorCallback.register": gated("tasks.creatorCallback.register", async (params) => {
+      return services.tasks.registerCreatorCallback(params);
     }),
     "run.context.resolve": gated("run.context.resolve", async (params, context) => {
       requireExactRunContextHandle("run.context.resolve", params, context);
-      return services.runIssues.resolveContext(params);
+      return services.runTasks.resolveContext(params);
     }),
-    "run.context.issueReach": gated("run.context.issueReach", async (params, context) => {
-      requireExactRunContextHandle("run.context.issueReach", params, context);
-      return services.runIssues.issueReach(params);
+    "run.context.taskReach": gated("run.context.taskReach", async (params, context) => {
+      requireExactRunContextHandle("run.context.taskReach", params, context);
+      return services.runTasks.taskReach(params);
     }),
-    "run.issues.listCompanyIssues": gated("run.issues.listCompanyIssues", async (params, context) => {
-      requireExactRunContextHandle("run.issues.listCompanyIssues", params, context);
-      return services.runIssues.listCompanyIssues(params);
+    "run.tasks.listCompanyTasks": gated("run.tasks.listCompanyTasks", async (params, context) => {
+      requireExactRunContextHandle("run.tasks.listCompanyTasks", params, context);
+      return services.runTasks.listCompanyTasks(params);
     }),
-    "run.issues.listSubIssues": gated("run.issues.listSubIssues", async (params, context) => {
-      requireExactRunContextHandle("run.issues.listSubIssues", params, context);
-      return services.runIssues.listSubIssues(params);
+    "run.tasks.listSubTasks": gated("run.tasks.listSubTasks", async (params, context) => {
+      requireExactRunContextHandle("run.tasks.listSubTasks", params, context);
+      return services.runTasks.listSubTasks(params);
     }),
-    "run.issues.readIssueComments": gated("run.issues.readIssueComments", async (params, context) => {
-      requireExactRunContextHandle("run.issues.readIssueComments", params, context);
-      return services.runIssues.readIssueComments(params);
+    "run.tasks.readTaskComments": gated("run.tasks.readTaskComments", async (params, context) => {
+      requireExactRunContextHandle("run.tasks.readTaskComments", params, context);
+      return services.runTasks.readTaskComments(params);
     }),
-    "run.issues.readIssueAgentRun": gated("run.issues.readIssueAgentRun", async (params, context) => {
-      requireExactRunContextHandle("run.issues.readIssueAgentRun", params, context);
-      return services.runIssues.readIssueAgentRun(params);
+    "run.tasks.readTaskAgentRun": gated("run.tasks.readTaskAgentRun", async (params, context) => {
+      requireExactRunContextHandle("run.tasks.readTaskAgentRun", params, context);
+      return services.runTasks.readTaskAgentRun(params);
     }),
-    "issues.create": gated("issues.create", async (params, context) => {
-      return services.issues.create(
+    "tasks.create": gated("tasks.create", async (params, context) => {
+      return services.tasks.create(
         params,
-        requireHostRpcOperation("issues.create", context),
+        requireHostRpcOperation("tasks.create", context),
       );
     }),
-    "issues.update": gated("issues.update", async (params, context) => {
-      return services.issues.update(
+    "tasks.update": gated("tasks.update", async (params, context) => {
+      return services.tasks.update(
         params,
-        requireHostRpcOperation("issues.update", context),
+        requireHostRpcOperation("tasks.update", context),
       );
     }),
-    "issues.withdraw": gated("issues.withdraw", async (params, context) => {
-      return services.issues.withdraw(
+    "tasks.withdraw": gated("tasks.withdraw", async (params, context) => {
+      return services.tasks.withdraw(
         params,
-        requireHostRpcOperation("issues.withdraw", context),
+        requireHostRpcOperation("tasks.withdraw", context),
       );
     }),
 

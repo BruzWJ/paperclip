@@ -4,7 +4,7 @@ import {
   renderPaperclipManagedToolPrompt,
 } from "./paperclip-agent-message.js";
 
-const issue = {
+const task = {
   id: "11111111-1111-4111-8111-111111111111",
   identifier: "PAP-123",
   title: "  Fix\ncanonical messaging  ",
@@ -19,7 +19,7 @@ const owner = {
 };
 
 describe("Paperclip canonical agent messages", () => {
-  it("wraps a same-issue agent mention with issue and sender identity", () => {
+  it("wraps a same-task agent mention with task and sender identity", () => {
     const message = "Check this exact context.\nKeep the second line.";
     const rendered = renderPaperclipManagedToolPrompt({
       toolName: "mention_agent",
@@ -28,7 +28,7 @@ describe("Paperclip canonical agent messages", () => {
         message,
       },
       context: {
-        issue,
+        task,
         from: creator,
         to: owner,
       },
@@ -37,7 +37,7 @@ describe("Paperclip canonical agent messages", () => {
     expect(rendered).toBe([
       "[Paperclip agent message]",
       `To: Owner Agent (${owner.id})`,
-      `Issue: PAP-123 (${issue.id})`,
+      `Task: PAP-123 (${task.id})`,
       `From: Creator Agent (${creator.id})`,
       "",
       `@Owner Agent ${message}`,
@@ -49,7 +49,7 @@ describe("Paperclip canonical agent messages", () => {
     )).toBe(true);
     expect(paperclipEnvelopeHasBody(
       rendered,
-      "[Paperclip issue assignment]",
+      "[Paperclip task assignment]",
       `@Owner Agent ${message}`,
     )).toBe(false);
     expect(paperclipEnvelopeHasBody(
@@ -60,25 +60,25 @@ describe("Paperclip canonical agent messages", () => {
   });
 
   it("uses one assignment envelope for create and assign", () => {
-    const request = "Implement the child issue.";
+    const request = "Implement the child task.";
     expect(renderPaperclipManagedToolPrompt({
-      toolName: "issue_create",
+      toolName: "task_create",
       arguments: {
         request,
-        title: issue.title,
+        title: task.title,
         priority: "high",
         owner: { kind: "agent", agentId: owner.id },
       },
       context: {
-        issue,
+        task,
         from: creator,
         owner,
         status: "open",
       },
     })).toBe([
-      "[Paperclip issue assignment]",
+      "[Paperclip task assignment]",
       "Action: Created and assigned",
-      `Issue: PAP-123 (${issue.id})`,
+      `Task: PAP-123 (${task.id})`,
       `From: Creator Agent (${creator.id})`,
       `Owner: Owner Agent (${owner.id})`,
       "Status: open",
@@ -86,22 +86,22 @@ describe("Paperclip canonical agent messages", () => {
       request,
     ].join("\n"));
     expect(renderPaperclipManagedToolPrompt({
-      toolName: "issue_assign",
+      toolName: "task_assign",
       arguments: {
-        issueId: issue.id,
+        taskId: task.id,
         owner: { kind: "agent", agentId: owner.id },
       },
       context: {
-        issue,
+        task,
         from: creator,
         owner,
         status: "blocked",
         request,
       },
     })).toBe([
-      "[Paperclip issue assignment]",
+      "[Paperclip task assignment]",
       "Action: Reassigned",
-      `Issue: PAP-123 (${issue.id})`,
+      `Task: PAP-123 (${task.id})`,
       `From: Creator Agent (${creator.id})`,
       `Owner: Owner Agent (${owner.id})`,
       "Status: blocked",
@@ -110,25 +110,25 @@ describe("Paperclip canonical agent messages", () => {
     ].join("\n"));
   });
 
-  it("identifies the updated issue, source role, and effective status", () => {
+  it("identifies the updated task, source role, and effective status", () => {
     expect(renderPaperclipManagedToolPrompt({
-      toolName: "issue_update",
+      toolName: "task_update",
       arguments: {
-        issueId: issue.id,
+        taskId: task.id,
         status: "blocked",
         message: "Waiting for credentials.",
       },
       context: {
-        issue,
+        task,
         from: owner,
-        sourceRole: "issue owner",
+        sourceRole: "task owner",
         previousStatus: "open",
         effectiveStatus: "blocked",
       },
     })).toBe([
-      "[Paperclip issue update]",
-      `Issue: PAP-123 (${issue.id})`,
-      `From: issue owner, Owner Agent (${owner.id})`,
+      "[Paperclip task update]",
+      `Task: PAP-123 (${task.id})`,
+      `From: task owner, Owner Agent (${owner.id})`,
       "Status: open -> blocked",
       "",
       "Waiting for credentials.",
@@ -137,16 +137,16 @@ describe("Paperclip canonical agent messages", () => {
 
   it("does not claim a gated completion already changed lifecycle", () => {
     expect(renderPaperclipManagedToolPrompt({
-      toolName: "issue_update",
+      toolName: "task_update",
       arguments: {
         status: "done",
         message: "Ready for review.",
         structuredResult: { artifact: "report.json" },
       },
       context: {
-        issue,
+        task,
         from: owner,
-        sourceRole: "issue owner",
+        sourceRole: "task owner",
         previousStatus: "open",
         effectiveStatus: "open",
         pendingReview: true,

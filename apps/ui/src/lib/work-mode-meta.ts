@@ -1,10 +1,10 @@
-import type { IssueWorkMode } from "@paperclipai/shared";
+import type { TaskWorkMode } from "@paperclipai/shared";
 import { ClipboardList, Hammer, MessageCircleQuestion, type LucideIcon } from "lucide-react";
 
 export type WorkModeTone = "neutral" | "ask" | "planning";
 
 export interface WorkModeMeta {
-  value: IssueWorkMode;
+  value: TaskWorkMode;
   label: string;
   shortLabel: string;
   icon: LucideIcon;
@@ -38,7 +38,7 @@ const PLANNING_CLASSES = {
   badge: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
 };
 
-export function isIssueWorkMode(value: unknown): value is IssueWorkMode {
+export function isTaskWorkMode(value: unknown): value is TaskWorkMode {
   return value === "standard" || value === "ask" || value === "planning";
 }
 
@@ -71,18 +71,18 @@ export function workModeMetaList(): WorkModeMeta[] {
   ];
 }
 
-export function workModeMetaFor(mode: IssueWorkMode): WorkModeMeta {
+export function workModeMetaFor(mode: TaskWorkMode): WorkModeMeta {
   const modes = workModeMetaList();
   return modes.find((meta) => meta.value === mode) ?? modes[0]!;
 }
 
-export function nextWorkMode(mode: IssueWorkMode): IssueWorkMode {
+export function nextWorkMode(mode: TaskWorkMode): TaskWorkMode {
   const modes = workModeMetaList();
   const index = modes.findIndex((meta) => meta.value === mode);
   return modes[(index + 1) % modes.length]?.value ?? "standard";
 }
 
-export function titleForPendingWorkMode(mode: IssueWorkMode): string {
+export function titleForPendingWorkMode(mode: TaskWorkMode): string {
   if (mode === "ask") {
     return "Ask mode for this submission. Click to change. The responsible will answer in this thread; no implementation work.";
   }

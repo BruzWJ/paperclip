@@ -4,7 +4,7 @@ import {
   agents,
   financeEvents,
   goals,
-  issues,
+  tasks,
   projects,
 } from "@paperclipai/db";
 import {
@@ -118,8 +118,8 @@ export function financeService(db: Db) {
       if (data.agentId) {
         await assertBelongsToCompany(db, agents, data.agentId, companyId, "Agent");
       }
-      if (data.issueId) {
-        await assertBelongsToCompany(db, issues, data.issueId, companyId, "Issue");
+      if (data.taskId) {
+        await assertBelongsToCompany(db, tasks, data.taskId, companyId, "Task");
       }
       if (data.projectId) {
         await assertBelongsToCompany(db, projects, data.projectId, companyId, "Project");

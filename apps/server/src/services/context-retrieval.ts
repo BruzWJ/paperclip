@@ -1,15 +1,15 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
-  decodeIssueDisposition,
+  decodeTaskDisposition,
   decodeSystemCreatorSourceKind,
-  type AgentVisibleIssueStatus,
+  type AgentVisibleTaskStatus,
   type AcpCostUnavailableReason,
   type BudgetCurrency,
-  type IssueExecutionRunKind,
+  type TaskExecutionRunKind,
   type MoneyAmount,
-  type ProviderSafeIssueCreator,
-  type ProviderSafeIssueOwner,
-  type ProviderSafeIssueProjection,
+  type ProviderSafeTaskCreator,
+  type ProviderSafeTaskOwner,
+  type ProviderSafeTaskProjection,
   type ProviderSafeRunOutputCommentReference,
   type ProviderSafeRunTrace,
   type ProviderSafeRunTracePart,
@@ -33,8 +33,8 @@ export const CONTEXT_RETRIEVAL_MAX_PAGE_SIZE = 100;
  * those are retrieval content.
  */
 export type {
-  ProviderSafeIssueCreator,
-  ProviderSafeIssueOwner,
+  ProviderSafeTaskCreator,
+  ProviderSafeTaskOwner,
 } from "@paperclipai/shared";
 
 export type ProviderSafeCommentAuthor =
@@ -43,12 +43,12 @@ export type ProviderSafeCommentAuthor =
   | { kind: "plugin"; pluginKey: string }
   | { kind: "system" };
 
-export type ContextRetrievalIssueProjection =
-  ProviderSafeIssueProjection;
+export type ContextRetrievalTaskProjection =
+  ProviderSafeTaskProjection;
 
 export interface ContextRetrievalCommentProjection {
   id: string;
-  issueId: string;
+  taskId: string;
   body: string;
   author: ProviderSafeCommentAuthor;
   runId: string | null;
@@ -107,7 +107,7 @@ export interface CanonicalRunCommentLink {
   sourceKind:
     | "run_output"
     | "run_progress"
-    | "issue_update";
+    | "task_update";
   projectedEventSeq: number;
 }
 
@@ -128,8 +128,8 @@ export interface CanonicalRunTraceAccounting {
  */
 export interface CanonicalRunTrace {
   runId: string;
-  runKind: IssueExecutionRunKind;
-  issueId: string;
+  runKind: TaskExecutionRunKind;
+  taskId: string;
   status: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -145,9 +145,9 @@ export interface RetrievalPage<T> {
   nextCursor: string | null;
 }
 
-export interface RetrievalIssueFilters {
-  status?: AgentVisibleIssueStatus;
-  priority?: ContextRetrievalIssueProjection["priority"];
+export interface RetrievalTaskFilters {
+  status?: AgentVisibleTaskStatus;
+  priority?: ContextRetrievalTaskProjection["priority"];
 }
 
 export interface RetrievalPageRequest {
@@ -155,40 +155,40 @@ export interface RetrievalPageRequest {
   limit?: number;
 }
 
-export interface IssueReach {
+export interface TaskReach {
   sameCompany: boolean;
   active: boolean;
   descendant: boolean;
 }
 
 export interface ContextRetrievalRepository {
-  issueReach(input: {
+  taskReach(input: {
     companyId: string;
-    activeIssueId: string;
-    issueId: string;
-  }): Promise<IssueReach | null>;
-  listTopLevelIssues(input: {
+    activeTaskId: string;
+    taskId: string;
+  }): Promise<TaskReach | null>;
+  listTopLevelTasks(input: {
     companyId: string;
-    filters: RetrievalIssueFilters;
+    filters: RetrievalTaskFilters;
     after: RetrievalCursorPosition | null;
     limit: number;
-  }): Promise<ContextRetrievalIssueProjection[]>;
+  }): Promise<ContextRetrievalTaskProjection[]>;
   listDirectChildren(input: {
     companyId: string;
-    issueId: string;
+    taskId: string;
     after: RetrievalCursorPosition | null;
     limit: number;
-  }): Promise<ContextRetrievalIssueProjection[]>;
-  listIssueComments(input: {
+  }): Promise<ContextRetrievalTaskProjection[]>;
+  listTaskComments(input: {
     companyId: string;
-    issueId: string;
+    taskId: string;
     after: RetrievalCursorPosition | null;
     limit: number;
   }): Promise<ContextRetrievalCommentProjection[]>;
-  runIssue(input: {
+  runTask(input: {
     companyId: string;
     runId: string;
-  }): Promise<{ issueId: string } | null>;
+  }): Promise<{ taskId: string } | null>;
   readCanonicalRunTrace(input: {
     companyId: string;
     runId: string;
@@ -199,7 +199,7 @@ export interface ContextRetrievalRepository {
 
 export interface ContextRetrievalScope {
   companyId: string;
-  activeIssueId: string;
+  activeTaskId: string;
   dial: ContextDial;
 }
 
@@ -211,7 +211,7 @@ export interface ContextRetrievalServiceOptions {
 export class ContextRetrievalDenied extends Error {
   readonly code = "context_retrieval_denied";
 
-  constructor(message = "Issue is outside the effective context tier") {
+  constructor(message = "Task is outside the effective context tier") {
     super(message);
     this.name = "ContextRetrievalDenied";
   }
@@ -335,10 +335,10 @@ function pageCursor<T>(
   };
 }
 
-function issuePosition(
-  issue: ContextRetrievalIssueProjection,
+function taskPosition(
+  task: ContextRetrievalTaskProjection,
 ): RetrievalCursorPosition {
-  return { sortValue: issue.updatedAt, id: issue.id };
+  return { sortValue: task.updatedAt, id: task.id };
 }
 
 function commentPosition(
@@ -356,7 +356,7 @@ function tracePosition(
   };
 }
 
-function assertIssueProjection(issue: ContextRetrievalIssueProjection): void {
+function assertTaskProjection(task: ContextRetrievalTaskProjection): void {
   const exactKeys = [
     "id",
     "identifier",
@@ -371,10 +371,10 @@ function assertIssueProjection(issue: ContextRetrievalIssueProjection): void {
     "directChildCount",
     "updatedAt",
   ];
-  const actual = Object.keys(issue).sort();
+  const actual = Object.keys(task).sort();
   if (actual.join("\n") !== [...exactKeys].sort().join("\n")) {
     throw new Error(
-      `Context repository returned a non-canonical issue projection: ${actual.join(", ")}`,
+      `Context repository returned a non-canonical task projection: ${actual.join(", ")}`,
     );
   }
 }
@@ -382,7 +382,7 @@ function assertIssueProjection(issue: ContextRetrievalIssueProjection): void {
 function assertCommentProjection(comment: ContextRetrievalCommentProjection): void {
   const exactKeys = [
     "id",
-    "issueId",
+    "taskId",
     "body",
     "author",
     "runId",
@@ -423,28 +423,28 @@ function nullableString(value: unknown, label: string): string | null {
   return requiredString(value, label);
 }
 
-function providerSafeCreator(value: unknown): ProviderSafeIssueCreator {
-  const creator = asRecord(value, "Context issue creator");
+function providerSafeCreator(value: unknown): ProviderSafeTaskCreator {
+  const creator = asRecord(value, "Context task creator");
   switch (creator.kind) {
     case "agent-execution":
       return {
         kind: "agent-execution",
-        agentId: requiredString(creator.agentId, "Context issue creator.agentId"),
+        agentId: requiredString(creator.agentId, "Context task creator.agentId"),
       };
     case "user/board":
       return {
         kind: "user/board",
-        userId: nullableString(creator.userId, "Context issue creator.userId"),
+        userId: nullableString(creator.userId, "Context task creator.userId"),
       };
     case "plugin":
       return {
         kind: "plugin",
-        pluginKey: requiredString(creator.pluginKey, "Context issue creator.pluginKey"),
+        pluginKey: requiredString(creator.pluginKey, "Context task creator.pluginKey"),
       };
     case "routine":
       return {
         kind: "routine",
-        routineId: requiredString(creator.routineId, "Context issue creator.routineId"),
+        routineId: requiredString(creator.routineId, "Context task creator.routineId"),
       };
     case "system":
       return {
@@ -452,27 +452,27 @@ function providerSafeCreator(value: unknown): ProviderSafeIssueCreator {
         sourceKind: decodeSystemCreatorSourceKind(creator.sourceKind),
       };
     default:
-      throw new Error("Context issue creator has an unsupported kind");
+      throw new Error("Context task creator has an unsupported kind");
   }
 }
 
-function providerSafeOwner(value: unknown): ProviderSafeIssueOwner {
-  const owner = asRecord(value, "Context issue owner");
+function providerSafeOwner(value: unknown): ProviderSafeTaskOwner {
+  const owner = asRecord(value, "Context task owner");
   switch (owner.kind) {
     case "agent":
       return {
         kind: "agent",
-        agentId: requiredString(owner.agentId, "Context issue owner.agentId"),
+        agentId: requiredString(owner.agentId, "Context task owner.agentId"),
       };
     case "user":
       return {
         kind: "user",
-        userId: requiredString(owner.userId, "Context issue owner.userId"),
+        userId: requiredString(owner.userId, "Context task owner.userId"),
       };
     case "board":
       return { kind: "board" };
     default:
-      throw new Error("Context issue owner has an unsupported kind");
+      throw new Error("Context task owner has an unsupported kind");
   }
 }
 
@@ -521,48 +521,48 @@ function providerSafeCommentAuthor(value: unknown): ProviderSafeCommentAuthor {
   }
 }
 
-function providerSafeIssue(
-  issue: ContextRetrievalIssueProjection,
-): ContextRetrievalIssueProjection {
-  assertIssueProjection(issue);
+function providerSafeTask(
+  task: ContextRetrievalTaskProjection,
+): ContextRetrievalTaskProjection {
+  assertTaskProjection(task);
   if (
-    issue.status !== "open" &&
-    issue.status !== "blocked" &&
-    issue.status !== "done" &&
-    issue.status !== "cancelled"
+    task.status !== "open" &&
+    task.status !== "blocked" &&
+    task.status !== "done" &&
+    task.status !== "cancelled"
   ) {
-    throw new Error("Context issue projection has an unsupported status");
+    throw new Error("Context task projection has an unsupported status");
   }
   if (
-    issue.priority !== "critical" &&
-    issue.priority !== "high" &&
-    issue.priority !== "medium" &&
-    issue.priority !== "low"
+    task.priority !== "critical" &&
+    task.priority !== "high" &&
+    task.priority !== "medium" &&
+    task.priority !== "low"
   ) {
-    throw new Error("Context issue projection has an unsupported priority");
+    throw new Error("Context task projection has an unsupported priority");
   }
   if (
-    !Number.isSafeInteger(issue.directChildCount) ||
-    issue.directChildCount < 0
+    !Number.isSafeInteger(task.directChildCount) ||
+    task.directChildCount < 0
   ) {
-    throw new Error("Context issue projection has an invalid direct-child count");
+    throw new Error("Context task projection has an invalid direct-child count");
   }
   return {
-    id: requiredString(issue.id, "Context issue id"),
-    identifier: nullableString(issue.identifier, "Context issue identifier"),
-    title: nullableString(issue.title, "Context issue title"),
-    request: requiredString(issue.request, "Context issue request"),
-    status: issue.status,
+    id: requiredString(task.id, "Context task id"),
+    identifier: nullableString(task.identifier, "Context task identifier"),
+    title: nullableString(task.title, "Context task title"),
+    request: requiredString(task.request, "Context task request"),
+    status: task.status,
     disposition:
-      issue.disposition === null
+      task.disposition === null
         ? null
-        : decodeIssueDisposition(issue.disposition),
-    priority: issue.priority,
-    creator: providerSafeCreator(issue.creator),
-    owner: providerSafeOwner(issue.owner),
-    parentId: nullableString(issue.parentId, "Context issue parentId"),
-    directChildCount: issue.directChildCount,
-    updatedAt: requiredString(issue.updatedAt, "Context issue updatedAt"),
+        : decodeTaskDisposition(task.disposition),
+    priority: task.priority,
+    creator: providerSafeCreator(task.creator),
+    owner: providerSafeOwner(task.owner),
+    parentId: nullableString(task.parentId, "Context task parentId"),
+    directChildCount: task.directChildCount,
+    updatedAt: requiredString(task.updatedAt, "Context task updatedAt"),
   };
 }
 
@@ -575,7 +575,7 @@ function providerSafeComment(
   }
   return {
     id: requiredString(comment.id, "Context comment id"),
-    issueId: requiredString(comment.issueId, "Context comment issueId"),
+    taskId: requiredString(comment.taskId, "Context comment taskId"),
     body: providerSafeCommentBody(comment.body),
     author: providerSafeCommentAuthor(comment.author),
     runId: nullableString(comment.runId, "Context comment runId"),
@@ -727,17 +727,17 @@ function providerSafeRunTrace(trace: CanonicalRunTrace): ProviderSafeRunTrace {
 async function assertReach(
   repository: ContextRetrievalRepository,
   scope: ContextRetrievalScope,
-  issueId: string,
+  taskId: string,
   allowed: {
     active: boolean;
     descendant: boolean;
     company: boolean;
   },
 ): Promise<void> {
-  const reach = await repository.issueReach({
+  const reach = await repository.taskReach({
     companyId: scope.companyId,
-    activeIssueId: scope.activeIssueId,
-    issueId,
+    activeTaskId: scope.activeTaskId,
+    taskId,
   });
   if (
     !reach?.sameCompany ||
@@ -763,13 +763,13 @@ export function createContextRetrievalService(
     runId: string;
     cursor?: string | null;
   }): Promise<ProviderSafeRunTrace> {
-    const run = await options.repository.runIssue({
+    const run = await options.repository.runTask({
       companyId: input.companyId,
       runId: input.runId,
     });
     if (!run) throw new ContextRetrievalDenied();
     const key = scopeKey([
-      "read_issue_agent_run",
+      "read_task_agent_run",
       input.companyId,
       input.runId,
     ]);
@@ -785,7 +785,7 @@ export function createContextRetrievalService(
       after,
       limit: limit + 1,
     });
-    if (!trace || trace.issueId !== run.issueId) {
+    if (!trace || trace.taskId !== run.taskId) {
       throw new ContextRetrievalDenied();
     }
     const page = pageCursor(
@@ -810,15 +810,15 @@ export function createContextRetrievalService(
      */
     readCanonicalAgentRunTrace,
 
-    async listCompanyIssues(
+    async listCompanyTasks(
       scope: ContextRetrievalScope,
-      input: RetrievalPageRequest & { filters?: RetrievalIssueFilters } = {},
-    ): Promise<RetrievalPage<ContextRetrievalIssueProjection>> {
+      input: RetrievalPageRequest & { filters?: RetrievalTaskFilters } = {},
+    ): Promise<RetrievalPage<ContextRetrievalTaskProjection>> {
       const policy = resolveContextRetrievalPolicy(scope.dial);
-      if (!policy.listCompanyIssues) throw new ContextRetrievalDenied();
+      if (!policy.listCompanyTasks) throw new ContextRetrievalDenied();
       const filters = input.filters ?? {};
       const key = scopeKey([
-        "list_company_issues",
+        "list_company_tasks",
         scope.companyId,
         filters.status ?? "",
         filters.priority ?? "",
@@ -829,39 +829,39 @@ export function createContextRetrievalService(
         key,
       );
       const limit = boundedLimit(input.limit);
-      const rows = await options.repository.listTopLevelIssues({
+      const rows = await options.repository.listTopLevelTasks({
         companyId: scope.companyId,
         filters,
         after,
         limit: limit + 1,
       });
-      const projected = rows.map(providerSafeIssue);
+      const projected = rows.map(providerSafeTask);
       if (projected.some((row) => row.parentId !== null)) {
         throw new Error(
-          "Context repository returned a non-top-level company issue",
+          "Context repository returned a non-top-level company task",
         );
       }
-      return pageCursor(options.cursorSecret, key, projected, limit, issuePosition);
+      return pageCursor(options.cursorSecret, key, projected, limit, taskPosition);
     },
 
-    async listSubIssues(
+    async listSubTasks(
       scope: ContextRetrievalScope,
-      input: RetrievalPageRequest & { issueId?: string } = {},
-    ): Promise<RetrievalPage<ContextRetrievalIssueProjection>> {
+      input: RetrievalPageRequest & { taskId?: string } = {},
+    ): Promise<RetrievalPage<ContextRetrievalTaskProjection>> {
       const policy = resolveContextRetrievalPolicy(scope.dial);
-      if (!policy.listSubIssues.enabled) throw new ContextRetrievalDenied();
-      const issueIdProvided =
-        typeof input.issueId === "string" && input.issueId.length > 0;
-      const issueId = issueIdProvided ? input.issueId! : scope.activeIssueId;
-      await assertReach(options.repository, scope, issueId, {
-        active: issueIdProvided
-          ? policy.listSubIssues.explicit.active
-          : policy.listSubIssues.omittedActive,
+      if (!policy.listSubTasks.enabled) throw new ContextRetrievalDenied();
+      const taskIdProvided =
+        typeof input.taskId === "string" && input.taskId.length > 0;
+      const taskId = taskIdProvided ? input.taskId! : scope.activeTaskId;
+      await assertReach(options.repository, scope, taskId, {
+        active: taskIdProvided
+          ? policy.listSubTasks.explicit.active
+          : policy.listSubTasks.omittedActive,
         descendant:
-          issueIdProvided && policy.listSubIssues.explicit.descendant,
-        company: issueIdProvided && policy.listSubIssues.explicit.company,
+          taskIdProvided && policy.listSubTasks.explicit.descendant,
+        company: taskIdProvided && policy.listSubTasks.explicit.company,
       });
-      const key = scopeKey(["list_sub_issues", scope.companyId, issueId]);
+      const key = scopeKey(["list_sub_tasks", scope.companyId, taskId]);
       const after = decodeRetrievalCursor(
         options.cursorSecret,
         input.cursor,
@@ -870,50 +870,50 @@ export function createContextRetrievalService(
       const limit = boundedLimit(input.limit);
       const rows = await options.repository.listDirectChildren({
         companyId: scope.companyId,
-        issueId,
+        taskId,
         after,
         limit: limit + 1,
       });
-      const projected = rows.map(providerSafeIssue);
-      if (projected.some((row) => row.parentId !== issueId)) {
+      const projected = rows.map(providerSafeTask);
+      if (projected.some((row) => row.parentId !== taskId)) {
         throw new Error("Context repository returned a non-direct child");
       }
-      return pageCursor(options.cursorSecret, key, projected, limit, issuePosition);
+      return pageCursor(options.cursorSecret, key, projected, limit, taskPosition);
     },
 
-    async readIssueComments(
+    async readTaskComments(
       scope: ContextRetrievalScope,
-      input: RetrievalPageRequest & { issueId?: string } = {},
+      input: RetrievalPageRequest & { taskId?: string } = {},
     ): Promise<RetrievalPage<ContextRetrievalCommentProjection>> {
       const policy = resolveContextRetrievalPolicy(scope.dial);
       if (!policy.comments.enabled) throw new ContextRetrievalDenied();
-      const issueIdProvided =
-        typeof input.issueId === "string" && input.issueId.length > 0;
-      if (policy.comments.issueIdRequired && !issueIdProvided) {
+      const taskIdProvided =
+        typeof input.taskId === "string" && input.taskId.length > 0;
+      if (policy.comments.taskIdRequired && !taskIdProvided) {
         throw new ContextRetrievalDenied();
       }
-      const issueId = issueIdProvided ? input.issueId! : scope.activeIssueId;
-      await assertReach(options.repository, scope, issueId, {
+      const taskId = taskIdProvided ? input.taskId! : scope.activeTaskId;
+      await assertReach(options.repository, scope, taskId, {
         active: policy.comments.active,
         descendant: policy.comments.descendant,
         company: policy.comments.company,
       });
-      const key = scopeKey(["read_issue_comments", scope.companyId, issueId]);
+      const key = scopeKey(["read_task_comments", scope.companyId, taskId]);
       const after = decodeRetrievalCursor(
         options.cursorSecret,
         input.cursor,
         key,
       );
       const limit = boundedLimit(input.limit);
-      const rows = await options.repository.listIssueComments({
+      const rows = await options.repository.listTaskComments({
         companyId: scope.companyId,
-        issueId,
+        taskId,
         after,
         limit: limit + 1,
       });
       const projected = rows.map(providerSafeComment);
-      if (projected.some((row) => row.issueId !== issueId)) {
-        throw new Error("Context repository returned a cross-issue comment");
+      if (projected.some((row) => row.taskId !== taskId)) {
+        throw new Error("Context repository returned a cross-task comment");
       }
       for (let index = 1; index < projected.length; index += 1) {
         if (projected[index - 1].sequence >= projected[index].sequence) {
@@ -931,19 +931,19 @@ export function createContextRetrievalService(
       );
     },
 
-    async readIssueAgentRun(
+    async readTaskAgentRun(
       scope: ContextRetrievalScope,
       input: { runId: string; cursor?: string | null },
     ): Promise<ProviderSafeRunTrace> {
       if (!input.runId) throw new ContextRetrievalDenied();
       const policy = resolveContextRetrievalPolicy(scope.dial);
       if (!policy.runs.enabled) throw new ContextRetrievalDenied();
-      const run = await options.repository.runIssue({
+      const run = await options.repository.runTask({
         companyId: scope.companyId,
         runId: input.runId,
       });
       if (!run) throw new ContextRetrievalDenied();
-      await assertReach(options.repository, scope, run.issueId, {
+      await assertReach(options.repository, scope, run.taskId, {
         active: policy.runs.active,
         descendant: policy.runs.descendant,
         company: policy.runs.company,

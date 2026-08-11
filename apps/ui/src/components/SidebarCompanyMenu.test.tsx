@@ -46,21 +46,21 @@ vi.mock("@/context/CompanyContext", () => ({
     companies: [
       {
         id: "company-1",
-        issuePrefix: "PAP",
+        taskPrefix: "PAP",
         name: "Acme Labs",
         brandColor: "#3366ff",
         status: "active",
       },
       {
         id: "company-2",
-        issuePrefix: "STR",
+        taskPrefix: "STR",
         name: "Strata",
         brandColor: "#36a269",
         status: "active",
       },
       {
         id: "company-3",
-        issuePrefix: "ANA",
+        taskPrefix: "ANA",
         name: "Anachronist Wiki",
         brandColor: "#a36a21",
         status: "active",
@@ -68,7 +68,7 @@ vi.mock("@/context/CompanyContext", () => ({
     ],
     selectedCompany: {
       id: "company-1",
-      issuePrefix: "PAP",
+      taskPrefix: "PAP",
       name: "Acme Labs",
       brandColor: "#3366ff",
       status: "active",
@@ -281,7 +281,7 @@ describe("SidebarCompanyMenu", () => {
   });
 
   it("navigates to the selected company dashboard from company-prefixed routes", async () => {
-    mockLocation.pathname = "/PAP/issues";
+    mockLocation.pathname = "/PAP/tasks";
     const root = createRoot(container);
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },

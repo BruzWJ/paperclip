@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
  * A single, process-wide 1-second ticker shared by every subscriber.
  *
  * Live "elapsed time" displays (e.g. "2m ago", running-agent timers) used to
- * each create their own `setInterval(..., 1000)`. On a busy issue thread that
+ * each create their own `setInterval(..., 1000)`. On a busy task thread that
  * meant dozens of independent 1s timers, each forcing a component re-render
  * every second — a major driver of steady-state CPU churn (and, compounded
  * across a long-lived tab, off-heap allocation growth). This collapses all of

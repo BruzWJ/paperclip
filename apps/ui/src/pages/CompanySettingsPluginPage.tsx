@@ -17,12 +17,12 @@ export function CompanySettingsPluginPage() {
   const routeCompany = useMemo(() => {
     if (!routeCompanyPrefix) return null;
     const requested = routeCompanyPrefix.toUpperCase();
-    return companies.find((company) => company.issuePrefix.toUpperCase() === requested) ?? null;
+    return companies.find((company) => company.taskPrefix.toUpperCase() === requested) ?? null;
   }, [companies, routeCompanyPrefix]);
   const hasInvalidCompanyPrefix = Boolean(routeCompanyPrefix) && !routeCompany;
   const resolvedCompanyId = routeCompany?.id ?? (routeCompanyPrefix ? null : selectedCompanyId ?? null);
   const companyPrefix = resolvedCompanyId
-    ? companies.find((company) => company.id === resolvedCompanyId)?.issuePrefix ?? null
+    ? companies.find((company) => company.id === resolvedCompanyId)?.taskPrefix ?? null
     : null;
 
   const { slots, isLoading, errorMessage } = usePluginSlots({

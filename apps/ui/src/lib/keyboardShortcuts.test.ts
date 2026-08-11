@@ -6,7 +6,7 @@ import {
   focusPageSearchShortcutTarget,
   hasBlockingShortcutDialog,
   isKeyboardShortcutTextInputTarget,
-  resolveIssueDetailGoKeyAction,
+  resolveTaskDetailGoKeyAction,
   resolveInboxQuickArchiveKeyAction,
   resolveInboxUndoArchiveKeyAction,
   shouldBlurPageSearchOnEnter,
@@ -215,7 +215,7 @@ describe("keyboardShortcuts helpers", () => {
   it("arms go-to-inbox on a clean g press", () => {
     const button = document.createElement("button");
 
-    expect(resolveIssueDetailGoKeyAction({
+    expect(resolveTaskDetailGoKeyAction({
       armed: false,
       defaultPrevented: false,
       key: "g",
@@ -230,7 +230,7 @@ describe("keyboardShortcuts helpers", () => {
   it("navigates to inbox on i after g", () => {
     const button = document.createElement("button");
 
-    expect(resolveIssueDetailGoKeyAction({
+    expect(resolveTaskDetailGoKeyAction({
       armed: true,
       defaultPrevented: false,
       key: "i",
@@ -245,7 +245,7 @@ describe("keyboardShortcuts helpers", () => {
   it("focuses the comment composer on c after g", () => {
     const button = document.createElement("button");
 
-    expect(resolveIssueDetailGoKeyAction({
+    expect(resolveTaskDetailGoKeyAction({
       armed: true,
       defaultPrevented: false,
       key: "c",
@@ -260,7 +260,7 @@ describe("keyboardShortcuts helpers", () => {
   it("disarms go-to-inbox instead of firing from an editor", () => {
     const input = document.createElement("textarea");
 
-    expect(resolveIssueDetailGoKeyAction({
+    expect(resolveTaskDetailGoKeyAction({
       armed: true,
       defaultPrevented: false,
       key: "i",

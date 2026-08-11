@@ -191,7 +191,15 @@ describe("company skill policy routes", () => {
       .post(`/companies/${companyId}/skill-policy/evaluate`)
       .send({ action: "skills.publish", resource: {} })
       .expect(422)
-      .expect(({ body }) => expect(body.code).toBe("skill_policy_validation_failed"));
+      .expect(({ body }) => {
+        expect(body.code).toBe("skill_policy_validation_failed");
+        expect(body.details).toMatchObject({
+          code: "skill_policy_validation_failed",
+          diagnostics: expect.any(Array),
+        });
+        expect(body.details.diagnostics.length).toBeGreaterThan(0);
+        expect(body.details).not.toHaveProperty("tasks");
+      });
     await request(app)
       .put(`/companies/${companyId}/skill-policy`)
       .set("x-test-actor", "board")

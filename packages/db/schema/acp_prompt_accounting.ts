@@ -1,4 +1,4 @@
-import type { IssueExecutionRunKind } from "@paperclipai/shared";
+import type { TaskExecutionRunKind } from "@paperclipai/shared";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -16,11 +16,11 @@ import {
 import { agentAdapterConfigRevisions } from "./agent_adapter_config_revisions.js";
 import { agents } from "./agents.js";
 import {
-  issueExecutionAttempts,
-  issueExecutionRunRefs,
-  issueExecutionRuns,
-} from "./issue_execution_runs.js";
-import { issueSessions } from "./issue_sessions.js";
+  taskExecutionAttempts,
+  taskExecutionRunRefs,
+  taskExecutionRuns,
+} from "./task_execution_runs.js";
+import { taskSessions } from "./task_sessions.js";
 
 export type AcpPromptAccountingKind = "base" | "steering";
 
@@ -33,11 +33,11 @@ export const acpPromptAccounting = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull(),
-    issueId: uuid("issue_id").notNull(),
+    taskId: uuid("task_id").notNull(),
     sessionId: text("session_id").notNull(),
     agentId: uuid("agent_id").notNull(),
     runId: uuid("run_id").notNull(),
-    runKind: text("run_kind").$type<IssueExecutionRunKind>().notNull(),
+    runKind: text("run_kind").$type<TaskExecutionRunKind>().notNull(),
     promptKind: text("prompt_kind").$type<AcpPromptAccountingKind>().notNull(),
     refId: uuid("ref_id"),
     runOrdinal: integer("run_ordinal"),
@@ -99,28 +99,28 @@ export const acpPromptAccounting = pgTable(
         and length(btrim(${table.terminalStopReference})) between 1 and 500`,
     ),
     foreignKey({
-      columns: [table.companyId, table.issueId, table.sessionId],
+      columns: [table.companyId, table.taskId, table.sessionId],
       foreignColumns: [
-        issueSessions.companyId,
-        issueSessions.issueId,
-        issueSessions.id,
+        taskSessions.companyId,
+        taskSessions.taskId,
+        taskSessions.id,
       ],
       name: "acp_prompt_accounting_session_fk",
     }).onDelete("cascade"),
     foreignKey({
       columns: [
         table.companyId,
-        table.issueId,
+        table.taskId,
         table.runId,
         table.runKind,
         table.adapterConfigRevisionId,
       ],
       foreignColumns: [
-        issueExecutionRuns.companyId,
-        issueExecutionRuns.issueId,
-        issueExecutionRuns.id,
-        issueExecutionRuns.kind,
-        issueExecutionRuns.adapterConfigRevisionId,
+        taskExecutionRuns.companyId,
+        taskExecutionRuns.taskId,
+        taskExecutionRuns.id,
+        taskExecutionRuns.kind,
+        taskExecutionRuns.adapterConfigRevisionId,
       ],
       name: "acp_prompt_accounting_run_revision_fk",
     }).onDelete("cascade"),
@@ -145,7 +145,7 @@ export const acpPromptAccounting = pgTable(
     foreignKey({
       columns: [
         table.companyId,
-        table.issueId,
+        table.taskId,
         table.runId,
         table.attemptId,
         table.runKind,
@@ -155,46 +155,46 @@ export const acpPromptAccounting = pgTable(
         table.segmentOrdinal,
       ],
       foreignColumns: [
-        issueExecutionAttempts.companyId,
-        issueExecutionAttempts.issueId,
-        issueExecutionAttempts.runId,
-        issueExecutionAttempts.id,
-        issueExecutionAttempts.runKind,
-        issueExecutionAttempts.promptKind,
-        issueExecutionAttempts.refOrdinal,
-        issueExecutionAttempts.refId,
-        issueExecutionAttempts.segmentOrdinal,
+        taskExecutionAttempts.companyId,
+        taskExecutionAttempts.taskId,
+        taskExecutionAttempts.runId,
+        taskExecutionAttempts.id,
+        taskExecutionAttempts.runKind,
+        taskExecutionAttempts.promptKind,
+        taskExecutionAttempts.refOrdinal,
+        taskExecutionAttempts.refId,
+        taskExecutionAttempts.segmentOrdinal,
       ],
       name: "acp_prompt_accounting_productive_attempt_fk",
     }).onDelete("cascade"),
     foreignKey({
       columns: [
         table.companyId,
-        table.issueId,
+        table.taskId,
         table.sessionId,
         table.runId,
         table.runOrdinal,
         table.refId,
       ],
       foreignColumns: [
-        issueExecutionRunRefs.companyId,
-        issueExecutionRunRefs.issueId,
-        issueExecutionRunRefs.sessionId,
-        issueExecutionRunRefs.runId,
-        issueExecutionRunRefs.refOrdinal,
-        issueExecutionRunRefs.refId,
+        taskExecutionRunRefs.companyId,
+        taskExecutionRunRefs.taskId,
+        taskExecutionRunRefs.sessionId,
+        taskExecutionRunRefs.runId,
+        taskExecutionRunRefs.refOrdinal,
+        taskExecutionRunRefs.refId,
       ],
       name: "acp_prompt_accounting_run_ref_fk",
     }).onDelete("cascade"),
     unique("acp_prompt_accounting_scope_id_uq").on(
       table.companyId,
-      table.issueId,
+      table.taskId,
       table.runId,
       table.id,
     ),
     unique("acp_prompt_accounting_common_attribution_uq").on(
       table.companyId,
-      table.issueId,
+      table.taskId,
       table.agentId,
       table.runId,
       table.runKind,
@@ -204,7 +204,7 @@ export const acpPromptAccounting = pgTable(
       "acp_prompt_accounting_productive_cost_attribution_uq",
     ).on(
       table.companyId,
-      table.issueId,
+      table.taskId,
       table.agentId,
       table.runId,
       table.runKind,

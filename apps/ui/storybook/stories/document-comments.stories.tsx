@@ -11,7 +11,7 @@ import type { PendingAnchor } from "@/components/DocumentAnnotationLayer";
 import type { CompanyUserProfile } from "@/lib/company-members";
 import { queryKeys } from "@/lib/queryKeys";
 
-const issueId = "issue-doc-comments";
+const taskId = "task-doc-comments";
 const documentKey = "plan";
 const currentUserId = "user-board";
 
@@ -29,7 +29,7 @@ function makeThread(
   return {
     id,
     companyId: "co-1",
-    issueId,
+    taskId,
     documentId: "doc-1",
     documentKey,
     status,
@@ -63,7 +63,7 @@ function makeThread(
         id: `${id}-c1`,
         companyId: "co-1",
         threadId: id,
-        issueId,
+        taskId,
         documentId: "doc-1",
         body: "Please confirm this is still the behaviour we want.",
         authorType: "user",
@@ -116,7 +116,7 @@ function PanelFrame({
           <DocumentAnnotationPanel
             open
             onOpenChange={() => undefined}
-            issueId={issueId}
+            taskId={taskId}
             documentKey={documentKey}
             documentRevisionNumber={4}
             baseRevisionId="rev-4"

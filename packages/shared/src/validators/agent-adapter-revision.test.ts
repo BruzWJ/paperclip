@@ -29,7 +29,7 @@ function configuration() {
       },
     },
     workspaceSelector: {
-      kind: "issue_execution_workspace" as const,
+      kind: "task_execution_workspace" as const,
     },
     companySkillPins: [
       { key: "code-review", versionId: SKILL_VERSION_A },

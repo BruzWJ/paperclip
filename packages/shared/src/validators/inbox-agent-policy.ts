@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addValidationDetail } from "../validation-details.js";
 
 export const inboxAgentPolicyModeSchema = z.enum(["open", "allowlist", "disabled"]);
 
@@ -7,7 +8,7 @@ export const updateInboxAgentPolicySchema = z.object({
   allowedAgentIds: z.array(z.string().uuid()).max(100).default([]),
 }).strict().superRefine((value, ctx) => {
   if (value.mode !== "allowlist" && value.allowedAgentIds.length > 0) {
-    ctx.addIssue({
+    addValidationDetail(ctx, {
       code: "custom",
       message: "allowedAgentIds must be empty when mode is not \"allowlist\"",
       path: ["allowedAgentIds"],

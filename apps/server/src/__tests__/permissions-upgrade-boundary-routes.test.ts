@@ -14,7 +14,7 @@ vi.hoisted(() => {
 const sourceCompanyId = "00000000-0000-4000-8000-000000000001";
 const targetCompanyId = "00000000-0000-4000-8000-000000000002";
 const sourceAgentId = "00000000-0000-4000-8000-000000000003";
-const issueId = "00000000-0000-4000-8000-000000000004";
+const taskId = "00000000-0000-4000-8000-000000000004";
 
 function agentActor(companyId: string, agentId: string): Express.Request["actor"] {
   return {
@@ -27,9 +27,9 @@ function agentActor(companyId: string, agentId: string): Express.Request["actor"
 }
 
 async function createApp(actor: Express.Request["actor"]) {
-  const [{ activityRoutes }, { issueRoutes }] = await Promise.all([
+  const [{ activityRoutes }, { taskRoutes }] = await Promise.all([
     import("../routes/activity.js"),
-    import("../routes/issues.js"),
+    import("../routes/tasks.js"),
   ]);
   const db = {} as Db;
   const app = express();
@@ -39,7 +39,7 @@ async function createApp(actor: Express.Request["actor"]) {
     next();
   });
   app.use("/api", denyGenericAgentRest("REST"));
-  app.use("/api", issueRoutes(db, {} as never, { ordinaryIssues: {} as never }));
+  app.use("/api", taskRoutes(db, {} as never, { ordinaryTasks: {} as never }));
   app.use("/api", activityRoutes(db));
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const error = err as { status?: number; message?: string };
@@ -53,13 +53,13 @@ describe("permissions upgrade visibility and route boundaries", () => {
     const app = await createApp(agentActor(sourceCompanyId, sourceAgentId));
 
     const responses = await Promise.all([
-      request(app).get(`/api/companies/${sourceCompanyId}/issues`),
-      request(app).get(`/api/issues/${issueId}/comments`),
-      request(app).get(`/api/issues/${issueId}/documents`),
-      request(app).get(`/api/issues/${issueId}/documents/plan`),
-      request(app).get(`/api/issues/${issueId}/attachments`),
-      request(app).get(`/api/issues/${issueId}/activity`),
-      request(app).get(`/api/issues/${issueId}/work-products`),
+      request(app).get(`/api/companies/${sourceCompanyId}/tasks`),
+      request(app).get(`/api/tasks/${taskId}/comments`),
+      request(app).get(`/api/tasks/${taskId}/documents`),
+      request(app).get(`/api/tasks/${taskId}/documents/plan`),
+      request(app).get(`/api/tasks/${taskId}/attachments`),
+      request(app).get(`/api/tasks/${taskId}/activity`),
+      request(app).get(`/api/tasks/${taskId}/work-products`),
     ]);
 
     for (const response of responses) {
@@ -70,10 +70,10 @@ describe("permissions upgrade visibility and route boundaries", () => {
     }
   }, 20_000);
 
-  it("denies generic agent REST before cross-company issue lookup or grant evaluation", async () => {
+  it("denies generic agent REST before cross-company task lookup or grant evaluation", async () => {
     const res = await request(
       await createApp(agentActor(sourceCompanyId, sourceAgentId)),
-    ).get(`/api/companies/${targetCompanyId}/issues/${issueId}`);
+    ).get(`/api/companies/${targetCompanyId}/tasks/${taskId}`);
 
     expect(res.status).toBe(403);
     expect(res.body.error).toBe(

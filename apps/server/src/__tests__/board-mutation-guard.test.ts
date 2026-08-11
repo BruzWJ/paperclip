@@ -122,7 +122,7 @@ describe("boardMutationGuard", () => {
     const res = await request(app)
       .post("/mutate")
       .set("Host", "localhost:3100")
-      .set("Referer", "http://localhost:3100/issues/abc")
+      .set("Referer", "http://localhost:3100/tasks/abc")
       .send({ ok: true });
     expect([200, 204]).toContain(res.status);
   });

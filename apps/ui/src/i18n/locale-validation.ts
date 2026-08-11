@@ -46,11 +46,11 @@ function hasBlockedData(value: string, englishValue: string) {
   return blocked;
 }
 
-function validateString(path: string[], candidateValue: string, englishValue: string, issues: string[]) {
+function validateString(path: string[], candidateValue: string, englishValue: string, diagnostics: string[]) {
   const candidatePlaceholders = interpolationPlaceholders(candidateValue);
   const englishPlaceholders = interpolationPlaceholders(englishValue);
   if (candidatePlaceholders.join("\u0000") !== englishPlaceholders.join("\u0000")) {
-    issues.push(
+    diagnostics.push(
       `${formatPath(path)} interpolation placeholders must match English exactly: expected ${JSON.stringify(
         englishPlaceholders,
       )}, received ${JSON.stringify(candidatePlaceholders)}`,
@@ -58,33 +58,33 @@ function validateString(path: string[], candidateValue: string, englishValue: st
   }
 
   for (const blockedPayload of hasBlockedData(candidateValue, englishValue)) {
-    issues.push(`${formatPath(path)} contains disallowed ${blockedPayload}`);
+    diagnostics.push(`${formatPath(path)} contains disallowed ${blockedPayload}`);
   }
 
   const relativeLimit = Math.max(englishValue.length * 4 + 64, englishValue.length + 128);
   const lengthLimit = Math.min(MAX_STRING_LENGTH, relativeLimit);
   if (candidateValue.length > lengthLimit) {
-    issues.push(`${formatPath(path)} is too long: ${candidateValue.length} characters exceeds ${lengthLimit}`);
+    diagnostics.push(`${formatPath(path)} is too long: ${candidateValue.length} characters exceeds ${lengthLimit}`);
   }
 }
 
-function validateNode(path: string[], candidate: unknown, englishReference: unknown, issues: string[]) {
+function validateNode(path: string[], candidate: unknown, englishReference: unknown, diagnostics: string[]) {
   if (typeof englishReference === "string") {
     if (typeof candidate !== "string") {
-      issues.push(`${formatPath(path)} must be a string`);
+      diagnostics.push(`${formatPath(path)} must be a string`);
       return;
     }
-    validateString(path, candidate, englishReference, issues);
+    validateString(path, candidate, englishReference, diagnostics);
     return;
   }
 
   if (!isPlainObject(englishReference)) {
-    issues.push(`${formatPath(path)} has unsupported English reference type`);
+    diagnostics.push(`${formatPath(path)} has unsupported English reference type`);
     return;
   }
 
   if (!isPlainObject(candidate)) {
-    issues.push(`${formatPath(path)} must be an object`);
+    diagnostics.push(`${formatPath(path)} must be an object`);
     return;
   }
 
@@ -94,28 +94,28 @@ function validateNode(path: string[], candidate: unknown, englishReference: unkn
   const extraKeys = candidateKeys.filter((key) => !englishKeys.includes(key));
 
   for (const key of missingKeys) {
-    issues.push(`${formatPath([...path, key])} is missing`);
+    diagnostics.push(`${formatPath([...path, key])} is missing`);
   }
   for (const key of extraKeys) {
-    issues.push(`${formatPath([...path, key])} is not defined in English`);
+    diagnostics.push(`${formatPath([...path, key])} is not defined in English`);
   }
 
   for (const key of englishKeys) {
     if (key in candidate) {
-      validateNode([...path, key], candidate[key], englishReference[key], issues);
+      validateNode([...path, key], candidate[key], englishReference[key], diagnostics);
     }
   }
 }
 
 export function validateLocaleMessages(candidate: unknown, englishReference: unknown = en) {
-  const issues: string[] = [];
-  validateNode([], candidate, englishReference, issues);
-  return issues;
+  const diagnostics: string[] = [];
+  validateNode([], candidate, englishReference, diagnostics);
+  return diagnostics;
 }
 
 export function assertValidLocaleMessages(candidate: unknown, englishReference: unknown = en) {
-  const issues = validateLocaleMessages(candidate, englishReference);
-  if (issues.length > 0) {
-    throw new Error(`Invalid locale messages:\n${issues.join("\n")}`);
+  const diagnostics = validateLocaleMessages(candidate, englishReference);
+  if (diagnostics.length > 0) {
+    throw new Error(`Invalid locale messages:\n${diagnostics.join("\n")}`);
   }
 }

@@ -119,7 +119,7 @@ function SortableCompanyItem({
       ) : (
         <>
           <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-(length:--text-nano) text-muted-foreground">
-            {company.issuePrefix}
+            {company.taskPrefix}
           </span>
           {isSelected ? <Check className="size-4 text-muted-foreground" /> : null}
         </>
@@ -187,7 +187,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
   function selectCompany(company: Company) {
     const pathPrefix = location.pathname.split("/")[1]?.toUpperCase();
     const isCompanyRoute = sidebarCompanies.some((sidebarCompany) => (
-      sidebarCompany.issuePrefix.toUpperCase() === pathPrefix
+      sidebarCompany.taskPrefix.toUpperCase() === pathPrefix
     ));
     const shouldLeaveCurrentRoute = company.id !== selectedCompany?.id
       && (location.pathname.startsWith("/instance/") || isCompanyRoute);
@@ -196,7 +196,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
     setOpen(false);
     if (isMobile) setSidebarOpen(false);
     if (shouldLeaveCurrentRoute) {
-      navigate(`/${company.issuePrefix}/dashboard`);
+      navigate(`/${company.taskPrefix}/dashboard`);
     }
   }
 

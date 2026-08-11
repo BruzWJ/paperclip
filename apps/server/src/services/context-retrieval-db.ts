@@ -1,44 +1,44 @@
 import { and, asc, eq, gt, or, sql } from "drizzle-orm";
 import {
-  issueSessionMessages,
+  taskSessionMessages,
   type Db,
 } from "@paperclipai/db";
 import {
   canonicalizeMoneyAmount,
-  decodeIssueDisposition,
+  decodeTaskDisposition,
   decodeSystemCreatorSourceKind,
   parseBudgetCurrency,
-  type AgentVisibleIssueStatus,
+  type AgentVisibleTaskStatus,
   type AcpCostUnavailableReason,
 } from "@paperclipai/shared";
 import {
-  encodeIssueSessionMessage,
-  type IssueSessionMessage,
-} from "@paperclipai/shared/issue-session";
+  encodeTaskSessionMessage,
+  type TaskSessionMessage,
+} from "@paperclipai/shared/task-session";
 import type {
   CanonicalRunTracePart,
   CanonicalRunTraceTurn,
   CanonicalRunTrace,
   ContextRetrievalCommentProjection,
-  ContextRetrievalIssueProjection,
+  ContextRetrievalTaskProjection,
   ContextRetrievalRepository,
-  ProviderSafeIssueCreator,
-  ProviderSafeIssueOwner,
+  ProviderSafeTaskCreator,
+  ProviderSafeTaskOwner,
   RetrievalCursorPosition,
-  RetrievalIssueFilters,
+  RetrievalTaskFilters,
 } from "./context-retrieval.js";
 import {
-  resolveIssueExecutionRunIdentityById,
-  type IssueExecutionRunService,
-} from "./issue-execution-run-service.js";
+  resolveTaskExecutionRunIdentityById,
+  type TaskExecutionRunService,
+} from "./task-execution-run-service.js";
 import {
   redactEventPayload,
   redactSensitiveText,
 } from "../redaction.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
-import { decodeStoredIssueSessionMessage } from "./issue-session/store.js";
+import { decodeStoredTaskSessionMessage } from "./task-session/store.js";
 
-interface IssueProjectionRow {
+interface TaskProjectionRow {
   id: string;
   identifier: string | null;
   title: string | null;
@@ -69,7 +69,7 @@ interface IssueProjectionRow {
 
 interface CommentProjectionRow {
   id: string;
-  issueId: string;
+  taskId: string;
   body: string;
   authorType: string | null;
   authorAgentId: string | null;
@@ -80,33 +80,33 @@ interface CommentProjectionRow {
   createdAt: Date | string;
 }
 
-function exactStatus(value: string | null): AgentVisibleIssueStatus {
+function exactStatus(value: string | null): AgentVisibleTaskStatus {
   if (
     value !== "open" &&
     value !== "blocked" &&
     value !== "done" &&
     value !== "cancelled"
   ) {
-    throw new Error("Canonical issue row has no agent-visible lifecycle status");
+    throw new Error("Canonical task row has no agent-visible lifecycle status");
   }
   return value;
 }
 
 function exactPriority(
   value: string,
-): ContextRetrievalIssueProjection["priority"] {
+): ContextRetrievalTaskProjection["priority"] {
   if (
     value !== "critical" &&
     value !== "high" &&
     value !== "medium" &&
     value !== "low"
   ) {
-    throw new Error(`Canonical issue row has invalid priority ${value}`);
+    throw new Error(`Canonical task row has invalid priority ${value}`);
   }
   return value;
 }
 
-function owner(row: IssueProjectionRow): ProviderSafeIssueOwner {
+function owner(row: TaskProjectionRow): ProviderSafeTaskOwner {
   if (row.ownerKind === "agent" && row.ownerAgentId && !row.ownerUserId) {
     return { kind: "agent", agentId: row.ownerAgentId };
   }
@@ -116,10 +116,10 @@ function owner(row: IssueProjectionRow): ProviderSafeIssueOwner {
   if (row.ownerKind === "board" && !row.ownerAgentId && !row.ownerUserId) {
     return { kind: "board" };
   }
-  throw new Error("Canonical issue row has an invalid owner shape");
+  throw new Error("Canonical task row has an invalid owner shape");
 }
 
-function creator(row: IssueProjectionRow): ProviderSafeIssueCreator {
+function creator(row: TaskProjectionRow): ProviderSafeTaskCreator {
   switch (row.creatorKind) {
     case "agent-execution":
       if (
@@ -167,7 +167,7 @@ function creator(row: IssueProjectionRow): ProviderSafeIssueCreator {
       }
       break;
   }
-  throw new Error("Canonical issue row has an invalid creator shape");
+  throw new Error("Canonical task row has an invalid creator shape");
 }
 
 function iso(value: Date | string | number): string {
@@ -187,17 +187,17 @@ function executedRows<Row>(result: unknown): Row[] {
   return Array.from(result as Iterable<Row>);
 }
 
-export function mapContextIssueRow(
-  row: IssueProjectionRow,
-): ContextRetrievalIssueProjection {
+export function mapContextTaskRow(
+  row: TaskProjectionRow,
+): ContextRetrievalTaskProjection {
   if (!row.request) {
-    throw new Error("Canonical issue row has no immutable request");
+    throw new Error("Canonical task row has no immutable request");
   }
   const status = exactStatus(row.status);
   const disposition =
     row.disposition === null
       ? null
-      : decodeIssueDisposition(row.disposition);
+      : decodeTaskDisposition(row.disposition);
   if (
     ((status === "open" || status === "blocked") &&
       disposition !== null) ||
@@ -205,7 +205,7 @@ export function mapContextIssueRow(
       disposition === null)
   ) {
     throw new Error(
-      "Canonical issue row has an invalid lifecycle/disposition shape",
+      "Canonical task row has an invalid lifecycle/disposition shape",
     );
   }
   return {
@@ -228,12 +228,12 @@ function afterDate(after: RetrievalCursorPosition | null): Date | null {
   if (!after) return null;
   const value = new Date(after.sortValue);
   if (!Number.isFinite(value.getTime())) {
-    throw new Error("Issue keyset cursor timestamp is invalid");
+    throw new Error("Task keyset cursor timestamp is invalid");
   }
   return value;
 }
 
-const ISSUE_SELECT = sql.raw(`
+const TASK_SELECT = sql.raw(`
   i.id,
   i.identifier,
   i.title,
@@ -249,7 +249,7 @@ const ISSUE_SELECT = sql.raw(`
   i.creator_authority_id AS "creatorAuthorityId",
   (
     SELECT authority.agent_id
-    FROM issue_execution_authorities authority
+    FROM task_execution_authorities authority
     WHERE authority.company_id = i.company_id
       AND authority.id = i.creator_authority_id
     LIMIT 1
@@ -266,7 +266,7 @@ const ISSUE_SELECT = sql.raw(`
   i.creator_system_source_id AS "creatorSystemSourceId",
   (
     SELECT count(*)
-    FROM issues child
+    FROM tasks child
     WHERE child.company_id = i.company_id
       AND child.parent_id = i.id
       AND child.hidden_at IS NULL
@@ -274,14 +274,14 @@ const ISSUE_SELECT = sql.raw(`
   i.updated_at AS "updatedAt"
 `);
 
-function issueFilterSql(filters: RetrievalIssueFilters) {
+function taskFilterSql(filters: RetrievalTaskFilters) {
   return sql`
     ${filters.status ? sql`AND i.lifecycle_status = ${filters.status}` : sql``}
     ${filters.priority ? sql`AND i.priority = ${filters.priority}` : sql``}
   `;
 }
 
-function issueAfterSql(after: RetrievalCursorPosition | null) {
+function taskAfterSql(after: RetrievalCursorPosition | null) {
   const timestamp = afterDate(after);
   return timestamp && after
     ? sql`AND (i.updated_at < ${timestamp} OR (i.updated_at = ${timestamp} AND i.id::text < ${after.id}))`
@@ -326,7 +326,7 @@ export function mapContextCommentAuthor(
   ) {
     return { kind: "system" };
   }
-  throw new Error("Canonical issue comment row has an invalid author shape");
+  throw new Error("Canonical task comment row has an invalid author shape");
 }
 
 function sanitizedValue(value: unknown): unknown {
@@ -431,10 +431,10 @@ function assistantParts(value: unknown): CanonicalRunTracePart[] {
  * metadata are intentionally absent from this allowlist.
  */
 export function sanitizeCanonicalMessage(
-  message: IssueSessionMessage,
+  message: TaskSessionMessage,
   seq: number,
 ): CanonicalRunTraceTurn {
-  const wire = encodeIssueSessionMessage(message) as unknown as Record<
+  const wire = encodeTaskSessionMessage(message) as unknown as Record<
     string,
     unknown
   >;
@@ -495,11 +495,11 @@ export function sanitizeCanonicalMessage(
 export function createContextRetrievalDbRepository(
   db: Db,
   options: {
-    runService: Pick<IssueExecutionRunService, "readJoinedRunDetail">;
+    runService: Pick<TaskExecutionRunService, "readJoinedRunDetail">;
   },
 ): ContextRetrievalRepository {
   return {
-    async issueReach({ companyId, activeIssueId, issueId }) {
+    async taskReach({ companyId, activeTaskId, taskId }) {
       const rows = executedRows<{
         sameCompany: boolean;
         active: boolean;
@@ -512,24 +512,24 @@ export function createContextRetrievalDbRepository(
         }>`
           WITH RECURSIVE descendants AS (
             SELECT id
-            FROM issues
+            FROM tasks
             WHERE company_id = ${companyId}
-              AND parent_id = ${activeIssueId}
+              AND parent_id = ${activeTaskId}
               AND hidden_at IS NULL
             UNION ALL
             SELECT child.id
-            FROM issues child
+            FROM tasks child
             JOIN descendants parent ON child.parent_id = parent.id
             WHERE child.company_id = ${companyId}
               AND child.hidden_at IS NULL
           )
           SELECT
             true AS "sameCompany",
-            (target.id = ${activeIssueId}) AS "active",
+            (target.id = ${activeTaskId}) AS "active",
             EXISTS (SELECT 1 FROM descendants WHERE id = target.id) AS "descendant"
-          FROM issues target
+          FROM tasks target
           WHERE target.company_id = ${companyId}
-            AND target.id = ${issueId}
+            AND target.id = ${taskId}
             AND target.hidden_at IS NULL
           LIMIT 1
         `),
@@ -537,42 +537,42 @@ export function createContextRetrievalDbRepository(
       return rows[0] ?? null;
     },
 
-    async listTopLevelIssues({ companyId, filters, after, limit }) {
-      const rows = executedRows<IssueProjectionRow>(
-        await db.execute(sql<IssueProjectionRow>`
-          SELECT ${ISSUE_SELECT}
-          FROM issues i
+    async listTopLevelTasks({ companyId, filters, after, limit }) {
+      const rows = executedRows<TaskProjectionRow>(
+        await db.execute(sql<TaskProjectionRow>`
+          SELECT ${TASK_SELECT}
+          FROM tasks i
           WHERE i.company_id = ${companyId}
             AND i.parent_id IS NULL
             AND i.hidden_at IS NULL
             AND i.lifecycle_status IS NOT NULL
-            ${issueFilterSql(filters)}
-            ${issueAfterSql(after)}
+            ${taskFilterSql(filters)}
+            ${taskAfterSql(after)}
           ORDER BY i.updated_at DESC, i.id DESC
           LIMIT ${limit}
         `),
       );
-      return rows.map(mapContextIssueRow);
+      return rows.map(mapContextTaskRow);
     },
 
-    async listDirectChildren({ companyId, issueId, after, limit }) {
-      const rows = executedRows<IssueProjectionRow>(
-        await db.execute(sql<IssueProjectionRow>`
-          SELECT ${ISSUE_SELECT}
-          FROM issues i
+    async listDirectChildren({ companyId, taskId, after, limit }) {
+      const rows = executedRows<TaskProjectionRow>(
+        await db.execute(sql<TaskProjectionRow>`
+          SELECT ${TASK_SELECT}
+          FROM tasks i
           WHERE i.company_id = ${companyId}
-            AND i.parent_id = ${issueId}
+            AND i.parent_id = ${taskId}
             AND i.hidden_at IS NULL
             AND i.lifecycle_status IS NOT NULL
-            ${issueAfterSql(after)}
+            ${taskAfterSql(after)}
           ORDER BY i.updated_at DESC, i.id DESC
           LIMIT ${limit}
         `),
       );
-      return rows.map(mapContextIssueRow);
+      return rows.map(mapContextTaskRow);
     },
 
-    async listIssueComments({ companyId, issueId, after, limit }) {
+    async listTaskComments({ companyId, taskId, after, limit }) {
       const afterSequence = after ? Number(after.sortValue) : null;
       if (
         after &&
@@ -584,7 +584,7 @@ export function createContextRetrievalDbRepository(
         await db.execute(sql<CommentProjectionRow>`
           SELECT
             c.id,
-            c.issue_id AS "issueId",
+            c.task_id AS "taskId",
             c.body,
             c.author_type AS "authorType",
             c.author_agent_id AS "authorAgentId",
@@ -593,13 +593,13 @@ export function createContextRetrievalDbRepository(
             source.run_id AS "runId",
             source.projected_event_seq AS "sequence",
             c.created_at AS "createdAt"
-          FROM issue_comments c
-          JOIN issue_comment_projection_sources source
+          FROM task_comments c
+          JOIN task_comment_projection_sources source
             ON source.comment_id = c.id
            AND source.company_id = c.company_id
-           AND source.issue_id = c.issue_id
+           AND source.task_id = c.task_id
           WHERE c.company_id = ${companyId}
-            AND c.issue_id = ${issueId}
+            AND c.task_id = ${taskId}
             ${
               after && afterSequence !== null
                 ? sql`AND (
@@ -617,7 +617,7 @@ export function createContextRetrievalDbRepository(
       );
       return rows.map((row) => ({
         id: row.id,
-        issueId: row.issueId,
+        taskId: row.taskId,
         body: row.body,
         author: mapContextCommentAuthor(row),
         runId: row.runId,
@@ -626,10 +626,10 @@ export function createContextRetrievalDbRepository(
       }));
     },
 
-    async runIssue({ companyId, runId }) {
-      const identity = await resolveIssueExecutionRunIdentityById(db, runId);
+    async runTask({ companyId, runId }) {
+      const identity = await resolveTaskExecutionRunIdentityById(db, runId);
       return identity?.companyId === companyId
-        ? { issueId: identity.issueId }
+        ? { taskId: identity.taskId }
         : null;
     },
 
@@ -639,7 +639,7 @@ export function createContextRetrievalDbRepository(
       after,
       limit,
     }) {
-      const identity = await resolveIssueExecutionRunIdentityById(db, runId);
+      const identity = await resolveTaskExecutionRunIdentityById(db, runId);
       if (!identity || identity.companyId !== companyId) return null;
       const afterSeq = after ? Number(after.sortValue) : -1;
       if (!Number.isSafeInteger(afterSeq) || afterSeq < -1) {
@@ -657,55 +657,55 @@ export function createContextRetrievalDbRepository(
       const run = detail.run;
       const messages = await db
         .select()
-        .from(issueSessionMessages)
+        .from(taskSessionMessages)
         .where(
           and(
-            eq(issueSessionMessages.companyId, companyId),
-            eq(issueSessionMessages.issueId, run.issueId),
-            eq(issueSessionMessages.sessionId, run.sessionId),
+            eq(taskSessionMessages.companyId, companyId),
+            eq(taskSessionMessages.taskId, run.taskId),
+            eq(taskSessionMessages.sessionId, run.sessionId),
             or(
-              eq(issueSessionMessages.runId, runId),
+              eq(taskSessionMessages.runId, runId),
               sql`exists (
                 select 1
-                from issue_execution_run_refs member
-                join issue_execution_refs source_ref
+                from task_execution_run_refs member
+                join task_execution_refs source_ref
                   on source_ref.company_id = member.company_id
-                  and source_ref.issue_id = member.issue_id
+                  and source_ref.task_id = member.task_id
                   and source_ref.session_id = member.session_id
                   and source_ref.id = member.ref_id
                 where member.company_id = ${companyId}
-                  and member.issue_id = ${run.issueId}
+                  and member.task_id = ${run.taskId}
                   and member.session_id = ${run.sessionId}
                   and member.run_id = ${runId}
                   and member.prompt_transmission_phase = 'transmitted'
-                  and source_ref.source_message_id = ${issueSessionMessages.id}
+                  and source_ref.source_message_id = ${taskSessionMessages.id}
               )`,
               sql`exists (
                 select 1
-                from issue_execution_prompt_segments segment
+                from task_execution_prompt_segments segment
                 where segment.company_id = ${companyId}
-                  and segment.issue_id = ${run.issueId}
+                  and segment.task_id = ${run.taskId}
                   and segment.session_id = ${run.sessionId}
                   and segment.run_id = ${runId}
                   and segment.prompt_transmission_phase = 'transmitted'
-                  and segment.source_message_id = ${issueSessionMessages.id}
+                  and segment.source_message_id = ${taskSessionMessages.id}
               )`,
             ),
             after
               ? or(
-                  gt(issueSessionMessages.seq, afterSeq),
+                  gt(taskSessionMessages.seq, afterSeq),
                   and(
-                    eq(issueSessionMessages.seq, afterSeq),
-                    gt(issueSessionMessages.id, after.id),
+                    eq(taskSessionMessages.seq, afterSeq),
+                    gt(taskSessionMessages.id, after.id),
                   ),
                 )
               : undefined,
           ),
         )
-        .orderBy(asc(issueSessionMessages.seq), asc(issueSessionMessages.id))
+        .orderBy(asc(taskSessionMessages.seq), asc(taskSessionMessages.id))
         .limit(messageLimit);
       const turns = messages.map((row) =>
-        sanitizeCanonicalMessage(decodeStoredIssueSessionMessage(row), row.seq),
+        sanitizeCanonicalMessage(decodeStoredTaskSessionMessage(row), row.seq),
       );
       const accountingRow = detail.accounting.items.at(-1) ?? null;
       const costRow = accountingRow
@@ -735,7 +735,7 @@ export function createContextRetrievalDbRepository(
       return {
         runId,
         runKind: run.kind,
-        issueId: run.issueId,
+        taskId: run.taskId,
         status: run.status,
         startedAt: run.startedAt ? iso(run.startedAt) : null,
         finishedAt: run.finishedAt ? iso(run.finishedAt) : null,

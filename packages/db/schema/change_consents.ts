@@ -10,7 +10,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
 import { companies } from "./companies.js";
-import { issueExecutionRuns } from "./issue_execution_runs.js";
+import { taskExecutionRuns } from "./task_execution_runs.js";
 
 export const changeConsents = pgTable(
   "change_consents",
@@ -20,13 +20,13 @@ export const changeConsents = pgTable(
     targetKey: text("target_key").notNull(),
     displayedDiff: text("displayed_diff").notNull(),
     requestedByAgentId: uuid("requested_by_agent_id").notNull().references(() => agents.id, { onDelete: "restrict" }),
-    sourceRunId: uuid("source_run_id").notNull().references(() => issueExecutionRuns.id, { onDelete: "restrict" }),
+    sourceRunId: uuid("source_run_id").notNull().references(() => taskExecutionRuns.id, { onDelete: "restrict" }),
     status: text("status").notNull().default("pending"),
     decisionReason: text("decision_reason"),
     decidedByBoardId: text("decided_by_board_id"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    consumedByRunId: uuid("consumed_by_run_id").references(() => issueExecutionRuns.id, { onDelete: "restrict" }),
+    consumedByRunId: uuid("consumed_by_run_id").references(() => taskExecutionRuns.id, { onDelete: "restrict" }),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

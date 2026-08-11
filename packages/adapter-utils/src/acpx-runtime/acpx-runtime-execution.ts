@@ -52,7 +52,7 @@ export interface AcpxOneShotPromptInput {
    * Optional Paperclip ACPX configuration scope. When supplied, ACPX resolves
    * its registry and configured overrides here while the provider session runs in
    * `cwd`. This keeps catalog, revision validation, readiness, and execution
-   * on one ACPX registry without treating an issue workspace as configuration.
+   * on one ACPX registry without treating a task workspace as configuration.
    */
   readonly registryCwd?: string;
   /** Must be an exact, locally available name in ACPX's registry. */

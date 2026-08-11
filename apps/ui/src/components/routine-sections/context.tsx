@@ -150,7 +150,7 @@ export type RoutineDetailContextValue = {
   routineRuns: RoutineRunList | undefined;
   activity: RoutineActivityList | undefined;
   hasLiveRun: boolean;
-  activeIssueId: string | undefined;
+  activeTaskId: string | undefined;
 
   // refs
   titleInputRef: React.RefObject<HTMLTextAreaElement | null>;

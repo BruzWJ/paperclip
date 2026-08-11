@@ -33,10 +33,10 @@ import {
   type ApprovalLifecycleTransaction,
   type HireRejectionAgentTerminationInput,
 } from "./approvals.js";
-import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
+import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 import type {
   RequestedAgentRunCancellations,
-} from "./issue-execution-cancellation.js";
+} from "./task-execution-cancellation.js";
 import { lockCompanyAgentGraph } from "./agent-org-graph-lock.js";
 
 const MANAGED_AGENT_ENTITY_TYPE = "managed_agent";
@@ -44,7 +44,7 @@ type PluginManagedAgentBinding =
   typeof pluginManagedResources.$inferSelect;
 
 async function lockPairedManagedAgentEntity(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   binding: PluginManagedAgentBinding,
 ) {
   const rows = await tx
@@ -247,7 +247,7 @@ export async function adoptPluginManagedAgentFromBoard(
 }
 
 async function recordPluginManagedAgentTerminationInTransaction(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   input: {
     binding: PluginManagedAgentBinding;
     previousAgentStatus: string;
@@ -442,7 +442,7 @@ export async function terminatePluginManagedAgentFromBoard(
         sourceId,
         now,
       },
-      postCommit.issueExecutionCancellation,
+      postCommit.taskExecutionCancellation,
     );
     const termination =
       withdrawn ??
@@ -455,7 +455,7 @@ export async function terminatePluginManagedAgentFromBoard(
           actor: { kind: "user", userId: input.actorUserId },
           now,
         },
-        postCommit.issueExecutionCancellation,
+        postCommit.taskExecutionCancellation,
       ));
     if (!termination) {
       throw conflict(
@@ -484,11 +484,11 @@ export async function terminatePluginManagedAgentFromBoard(
     };
   });
   for (const cancellationRequests of committed.cancellationRequests) {
-    await postCommit.issueExecutionCancellation
+    await postCommit.taskExecutionCancellation
       .reconcileRequestedCancellations(cancellationRequests);
   }
   for (const suspensionRequests of committed.suspensionRequests) {
-    await postCommit.issueExecutionCancellation
+    await postCommit.taskExecutionCancellation
       .reconcileRequestedCancellations(suspensionRequests);
   }
   for (const refId of committed.dispatchRefIds) {
@@ -503,7 +503,7 @@ export async function terminatePluginManagedAgentFromBoard(
  * one database invariant. The caller must lock the plugin installation first.
  */
 export async function pausePluginManagedAgentsIntoTriageInTransaction(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   input: PausePluginManagedAgentsIntoTriageInput,
   suspension: AgentSuspensionService,
   now = new Date(),

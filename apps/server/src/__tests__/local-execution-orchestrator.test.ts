@@ -18,7 +18,7 @@ const lease: LocalRunLease = {
   id: "lease-1",
   companyId: "company-1",
   executionWorkspaceId: "workspace-1",
-  issueId: "issue-1",
+  taskId: "task-1",
   runId: "run-1",
   status: "active",
   acquiredAt: now,
@@ -84,7 +84,7 @@ function makeLeases() {
 function acquisitionInput(runId = "run-1") {
   return {
     companyId: "company-1",
-    issueId: "issue-1",
+    taskId: "task-1",
     runId,
     agentId: "agent-1",
     executionWorkspaceBindingId: "binding-1",
@@ -112,7 +112,7 @@ describe("localExecutionOrchestrator", () => {
     expect(acquireRunLease).toHaveBeenCalledWith({
       companyId: "company-1",
       executionWorkspaceId: workspace.id,
-      issueId: "issue-1",
+      taskId: "task-1",
       runId: "run-1",
     });
 
@@ -138,7 +138,7 @@ describe("localExecutionOrchestrator", () => {
       workspaceId: workspace.id,
       workspaceCompanyId: workspace.companyId,
       workspaceCwd: workspace.cwd,
-      workspaceBranchName: "paperclip/issue-1",
+      workspaceBranchName: "paperclip/task-1",
     };
 
     await localExecutionOrchestrator(makeDb(managed), {
@@ -150,9 +150,9 @@ describe("localExecutionOrchestrator", () => {
       workspace: {
         id: workspace.id,
         cwd: workspace.cwd,
-        branchName: "paperclip/issue-1",
+        branchName: "paperclip/task-1",
       },
-      issueId: "issue-1",
+      taskId: "task-1",
       runId: "run-1",
     });
     expect(managedWorkspaceSafeguards.mock.invocationCallOrder[0]).toBeLessThan(

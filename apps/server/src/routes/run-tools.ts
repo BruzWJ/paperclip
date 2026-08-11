@@ -19,7 +19,7 @@ interface JsonRpcRequest {
 }
 
 const RUN_TOOLS_INSTRUCTIONS =
-  "Paperclip-managed tools exposed by this server are already available in your tool catalog; invoke them directly without a separate discovery step. Use them for Paperclip company, issue, project, and agent state or mutations, and never substitute repository, catalog, or configuration-file edits for Paperclip actions.";
+  "Paperclip-managed tools exposed by this server are already available in your tool catalog; invoke them directly without a separate discovery step. Use them for Paperclip company, task, project, and agent state or mutations, and never substitute repository, catalog, or configuration-file edits for Paperclip actions.";
 
 function bearer(req: Request): string {
   const authorization = req.header("authorization")?.trim() ?? "";
@@ -222,7 +222,7 @@ export function runToolsRoutes(gateway: PromptCapabilityGateway) {
       const token = rawCallBearer ?? bearer(req);
       if (body.method === "initialize") {
         // Authentication is exercised by dynamic discovery; initialize never
-        // returns identity, issue scope, or a static catalog.
+        // returns identity, task scope, or a static catalog.
         await gateway.listTools(token);
         res.json({
           jsonrpc: "2.0",

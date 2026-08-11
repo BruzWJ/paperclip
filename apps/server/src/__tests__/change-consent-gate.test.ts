@@ -11,9 +11,9 @@ const runMocks = vi.hoisted(() => ({
   readRun: vi.fn(),
 }));
 
-vi.mock("../services/issue-execution-run-service.js", () => ({
-  resolveIssueExecutionRunIdentityById: runMocks.resolveIdentity,
-  readIssueExecutionRun: runMocks.readRun,
+vi.mock("../services/task-execution-run-service.js", () => ({
+  resolveTaskExecutionRunIdentityById: runMocks.resolveIdentity,
+  readTaskExecutionRun: runMocks.readRun,
 }));
 
 const DISPLAYED_DIFF = "```diff\n+Tighten the workflow.\n```";

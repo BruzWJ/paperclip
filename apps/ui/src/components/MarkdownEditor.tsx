@@ -37,7 +37,7 @@ import {
 } from "@mdxeditor/editor";
 import {
   buildAgentMentionHref,
-  buildIssueReferenceHref,
+  buildTaskReferenceHref,
   buildProjectMentionHref,
   buildRoutineMentionHref,
   buildUserMentionHref,
@@ -58,15 +58,15 @@ import { useEditorAutocomplete, type SlashCommandOption } from "../context/Edito
 export interface MentionOption {
   id: string;
   name: string;
-  kind?: "agent" | "project" | "user" | "issue";
+  kind?: "agent" | "project" | "user" | "task";
   agentId?: string;
   agentIcon?: string | null;
   projectId?: string;
   projectColor?: string | null;
   userId?: string;
-  /** Issue/task references (PAP-95f). `name` carries the searchable identifier + title. */
-  issueId?: string;
-  issueIdentifier?: string;
+  /** Task references (PAP-95f). `name` carries the searchable identifier + title. */
+  taskId?: string;
+  taskIdentifier?: string;
 }
 
 /* ---- Editor props ---- */
@@ -459,10 +459,10 @@ function isSelectionInsideCodeLikeElement(container: HTMLElement | null) {
   return false;
 }
 
-/** The human title of an issue mention — `name` minus its leading identifier. */
-export function issueMentionTitle(option: MentionOption): string {
+/** The human title of a task mention — `name` minus its leading identifier. */
+export function taskMentionTitle(option: MentionOption): string {
   const name = option.name.trim();
-  const identifier = option.issueIdentifier?.trim();
+  const identifier = option.taskIdentifier?.trim();
   if (identifier && name.toLowerCase().startsWith(identifier.toLowerCase())) {
     return name.slice(identifier.length).trim();
   }
@@ -470,11 +470,11 @@ export function issueMentionTitle(option: MentionOption): string {
 }
 
 function mentionMarkdown(option: MentionOption): string {
-  if (option.kind === "issue" && option.issueIdentifier) {
-    // Insert a compact issue link (e.g. `[PAP-123](/issues/PAP-123)`). The chip
-    // decorator recognizes this href as an `issue` mention and renders it as a
+  if (option.kind === "task" && option.taskIdentifier) {
+    // Insert a compact task link (e.g. `[PAP-123](/tasks/PAP-123)`). The chip
+    // decorator recognizes this href as a `task` mention and renders it as a
     // task chip; MarkdownBody linkifies the same href on display.
-    return `[${option.issueIdentifier}](${buildIssueReferenceHref(option.issueIdentifier)}) `;
+    return `[${option.taskIdentifier}](${buildTaskReferenceHref(option.taskIdentifier)}) `;
   }
   if (option.kind === "project" && option.projectId) {
     return `[@${option.name}](${buildProjectMentionHref(option.projectId, option.projectColor ?? null)}) `;
@@ -537,8 +537,8 @@ function autocompleteOptionMatchesLink(option: AutocompleteOption, href: string)
     return parsed.kind === "routine" && parsed.routineId === option.routineId;
   }
 
-  if (option.kind === "issue" && option.issueIdentifier) {
-    return parsed.kind === "issue" && parsed.identifier === option.issueIdentifier;
+  if (option.kind === "task" && option.taskIdentifier) {
+    return parsed.kind === "task" && parsed.identifier === option.taskIdentifier;
   }
   if (option.kind === "project" && option.projectId) {
     return parsed.kind === "project" && parsed.projectId === option.projectId;
@@ -894,7 +894,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         continue;
       }
 
-      if (parsed.kind === "user" || parsed.kind === "issue") {
+      if (parsed.kind === "user" || parsed.kind === "task") {
         applyMentionChipDecoration(link, parsed);
         continue;
       }
@@ -1037,7 +1037,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
 
   const selectMention = useCallback(
     (option: AutocompleteOption) => {
-      // Read from ref to avoid stale-closure issues (selectionchange can
+      // Read from ref to avoid stale-closure tasks (selectionchange can
       // update state between the last render and this callback firing).
       const state = mentionStateRef.current;
       if (!state) return false;
@@ -1410,7 +1410,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                   <CalendarClock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 ) : option.kind === "skill" ? (
                   <Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                ) : option.kind === "issue" ? (
+                ) : option.kind === "task" ? (
                   <Hash className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 ) : option.kind === "project" && option.projectId ? (
                   <span
@@ -1425,12 +1425,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                     className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
                   />
                 )}
-                {option.kind === "issue" && option.issueIdentifier ? (
+                {option.kind === "task" && option.taskIdentifier ? (
                   <span className="flex min-w-0 items-baseline gap-1.5">
                     <span className="shrink-0 font-mono text-(length:--text-micro) text-muted-foreground">
-                      {option.issueIdentifier}
+                      {option.taskIdentifier}
                     </span>
-                    <span className="truncate">{issueMentionTitle(option)}</span>
+                    <span className="truncate">{taskMentionTitle(option)}</span>
                   </span>
                 ) : (
                   <span className="truncate">
@@ -1439,7 +1439,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                       : option.name}
                   </span>
                 )}
-                {option.kind === "issue" && (
+                {option.kind === "task" && (
                   <span className="ml-auto text-(length:--text-nano) uppercase tracking-wide text-muted-foreground">
                     Task
                   </span>

@@ -1,21 +1,21 @@
 import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import type { SQL, SQLWrapper } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { documents, issueComments, issueDocuments, issues } from "@paperclipai/db";
+import { documents, taskComments, taskDocuments, tasks } from "@paperclipai/db";
 import {
-  type CompanySearchExtractIssueResult,
+  type CompanySearchExtractTaskResult,
   type CompanySearchExtractMatch,
   type CompanySearchExtractQuery,
   type CompanySearchExtractResponse,
   type CompanySearchExtractSourceRef,
 } from "@paperclipai/shared";
-import { visibleIssueCondition } from "./issue-visibility.js";
+import { visibleTaskCondition } from "./task-visibility.js";
 
 const EXCERPT_MAX_CHARS = 180;
 const URL_PATTERN = /(?:https?:\/\/|www\.)[^\s<>"'`]+|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\/[^\s<>"'`]+/giu;
 
 type ExtractSource = {
-  issueId: string;
+  taskId: string;
   field: CompanySearchExtractMatch["field"];
   label: string;
   text: string;
@@ -130,7 +130,7 @@ function extractMatches(sources: ExtractSource[], query: CompanySearchExtractQue
       const dedupeKey = occurrence.value.toLowerCase();
       if (seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);
-      if (matches.length >= query.matchesPerIssue) {
+      if (matches.length >= query.matchesPerTask) {
         matchesTruncated = true;
         continue;
       }
@@ -155,18 +155,18 @@ export function companySearchExtractService(db: Db) {
       const containsPattern = `%${escapeLikePattern(query.contains)}%`;
       const urlPattern = urlContainsPattern(query.contains);
       const scopeConditions: SQL[] = [];
-      if (scopeIncludes(query.scope, "issues")) {
+      if (scopeIncludes(query.scope, "tasks")) {
         scopeConditions.push(or(
-          contentMatch(issues.title, query, containsPattern, urlPattern),
-          contentMatch(issues.request, query, containsPattern, urlPattern),
+          contentMatch(tasks.title, query, containsPattern, urlPattern),
+          contentMatch(tasks.request, query, containsPattern, urlPattern),
         )!);
       }
       if (scopeIncludes(query.scope, "comments")) {
         scopeConditions.push(sql`EXISTS (
           SELECT 1
-          FROM issue_comments extract_comments
+          FROM task_comments extract_comments
           WHERE extract_comments.company_id = ${companyId}
-            AND extract_comments.issue_id = ${issues.id}
+            AND extract_comments.task_id = ${tasks.id}
             AND ${query.kind === "url"
               ? sql`extract_comments.body ~* ${urlPattern}`
               : sql`extract_comments.body ILIKE ${containsPattern}`}
@@ -175,12 +175,12 @@ export function companySearchExtractService(db: Db) {
       if (scopeIncludes(query.scope, "documents")) {
         scopeConditions.push(sql`EXISTS (
           SELECT 1
-          FROM issue_documents extract_issue_documents
+          FROM task_documents extract_task_documents
           INNER JOIN documents extract_documents
-            ON extract_documents.id = extract_issue_documents.document_id
-            AND extract_documents.company_id = extract_issue_documents.company_id
-          WHERE extract_issue_documents.company_id = ${companyId}
-            AND extract_issue_documents.issue_id = ${issues.id}
+            ON extract_documents.id = extract_task_documents.document_id
+            AND extract_documents.company_id = extract_task_documents.company_id
+          WHERE extract_task_documents.company_id = ${companyId}
+            AND extract_task_documents.task_id = ${tasks.id}
             AND (
               ${query.kind === "url"
                 ? sql`extract_documents.title ~* ${urlPattern}`
@@ -193,78 +193,78 @@ export function companySearchExtractService(db: Db) {
       }
 
       const conditions: SQL[] = [
-        eq(issues.companyId, companyId),
-        visibleIssueCondition(),
+        eq(tasks.companyId, companyId),
+        visibleTaskCondition(),
         or(...scopeConditions)!,
       ];
-      if (query.status.length > 0) conditions.push(inArray(issues.boardPresentationStatus, query.status));
+      if (query.status.length > 0) conditions.push(inArray(tasks.boardPresentationStatus, query.status));
       const updatedWithin = updatedWithinStart(query.updatedWithin);
-      if (updatedWithin) conditions.push(gte(issues.updatedAt, updatedWithin));
-      if (query.updatedAfter) conditions.push(gte(issues.updatedAt, new Date(query.updatedAfter)));
+      if (updatedWithin) conditions.push(gte(tasks.updatedAt, updatedWithin));
+      if (query.updatedAfter) conditions.push(gte(tasks.updatedAt, new Date(query.updatedAfter)));
 
       const candidateRows = await db
         .select({
-          id: issues.id,
-          identifier: issues.identifier,
-          title: issues.title,
-          request: issues.request,
-          boardPresentationStatus: issues.boardPresentationStatus,
-          ownerAgentId: issues.ownerAgentId,
-          ownerUserId: issues.ownerUserId,
-          updatedAt: issues.updatedAt,
+          id: tasks.id,
+          identifier: tasks.identifier,
+          title: tasks.title,
+          request: tasks.request,
+          boardPresentationStatus: tasks.boardPresentationStatus,
+          ownerAgentId: tasks.ownerAgentId,
+          ownerUserId: tasks.ownerUserId,
+          updatedAt: tasks.updatedAt,
         })
-        .from(issues)
+        .from(tasks)
         .where(and(...conditions))
-        .orderBy(desc(issues.updatedAt), desc(issues.id))
+        .orderBy(desc(tasks.updatedAt), desc(tasks.id))
         .limit(query.limit + 1)
         .offset(query.offset);
 
       const hasMore = candidateRows.length > query.limit;
       const pageRows = candidateRows.slice(0, query.limit);
-      const issueIds = pageRows.map((row) => row.id);
-      const sourcesByIssue = new Map<string, ExtractSource[]>();
+      const taskIds = pageRows.map((row) => row.id);
+      const sourcesByTask = new Map<string, ExtractSource[]>();
       const addSource = (source: ExtractSource) => {
-        const sources = sourcesByIssue.get(source.issueId) ?? [];
+        const sources = sourcesByTask.get(source.taskId) ?? [];
         sources.push(source);
-        sourcesByIssue.set(source.issueId, sources);
+        sourcesByTask.set(source.taskId, sources);
       };
 
-      if (scopeIncludes(query.scope, "issues")) {
+      if (scopeIncludes(query.scope, "tasks")) {
         for (const row of pageRows) {
           if (row.title && sourceOccurrences(row.title, query).length > 0) {
             addSource({
-              issueId: row.id,
+              taskId: row.id,
               field: "title",
-              label: "Issue title",
+              label: "Task title",
               text: row.title,
-              source: { type: "issue", issueId: row.id },
+              source: { type: "task", taskId: row.id },
             });
           }
           if (row.request && sourceOccurrences(row.request, query).length > 0) {
             addSource({
-              issueId: row.id,
+              taskId: row.id,
               field: "request",
-              label: "Issue request",
+              label: "Task request",
               text: row.request,
-              source: { type: "issue", issueId: row.id },
+              source: { type: "task", taskId: row.id },
             });
           }
         }
       }
 
-      if (issueIds.length > 0 && scopeIncludes(query.scope, "comments")) {
+      if (taskIds.length > 0 && scopeIncludes(query.scope, "comments")) {
         const commentRows = await db
-          .select({ id: issueComments.id, issueId: issueComments.issueId, body: issueComments.body })
-          .from(issueComments)
+          .select({ id: taskComments.id, taskId: taskComments.taskId, body: taskComments.body })
+          .from(taskComments)
           .where(and(
-            eq(issueComments.companyId, companyId),
-            inArray(issueComments.issueId, issueIds),
-            contentMatch(issueComments.body, query, containsPattern, urlPattern),
+            eq(taskComments.companyId, companyId),
+            inArray(taskComments.taskId, taskIds),
+            contentMatch(taskComments.body, query, containsPattern, urlPattern),
           ))
-          .orderBy(asc(issueComments.createdAt), asc(issueComments.id));
+          .orderBy(asc(taskComments.createdAt), asc(taskComments.id));
         for (const row of commentRows) {
           addSource({
-            issueId: row.issueId,
+            taskId: row.taskId,
             field: "comment",
             label: "Comment",
             text: row.body,
@@ -273,34 +273,34 @@ export function companySearchExtractService(db: Db) {
         }
       }
 
-      if (issueIds.length > 0 && scopeIncludes(query.scope, "documents")) {
+      if (taskIds.length > 0 && scopeIncludes(query.scope, "documents")) {
         const documentRows = await db
           .select({
             id: documents.id,
-            issueId: issueDocuments.issueId,
-            key: issueDocuments.key,
+            taskId: taskDocuments.taskId,
+            key: taskDocuments.key,
             title: documents.title,
             body: documents.latestBody,
           })
-          .from(issueDocuments)
+          .from(taskDocuments)
           .innerJoin(documents, and(
-            eq(documents.id, issueDocuments.documentId),
-            eq(documents.companyId, issueDocuments.companyId),
+            eq(documents.id, taskDocuments.documentId),
+            eq(documents.companyId, taskDocuments.companyId),
           ))
           .where(and(
-            eq(issueDocuments.companyId, companyId),
-            inArray(issueDocuments.issueId, issueIds),
+            eq(taskDocuments.companyId, companyId),
+            inArray(taskDocuments.taskId, taskIds),
             or(
               contentMatch(documents.title, query, containsPattern, urlPattern),
               contentMatch(documents.latestBody, query, containsPattern, urlPattern),
             ),
           ))
-          .orderBy(asc(issueDocuments.key), asc(documents.id));
+          .orderBy(asc(taskDocuments.key), asc(documents.id));
         for (const row of documentRows) {
           const source = { type: "document" as const, documentId: row.id, documentKey: row.key };
           if (row.title && sourceOccurrences(row.title, query).length > 0) {
             addSource({
-              issueId: row.issueId,
+              taskId: row.taskId,
               field: "document_title",
               label: `Document title (${row.key})`,
               text: row.title,
@@ -309,7 +309,7 @@ export function companySearchExtractService(db: Db) {
           }
           if (sourceOccurrences(row.body, query).length > 0) {
             addSource({
-              issueId: row.issueId,
+              taskId: row.taskId,
               field: "document_body",
               label: `Document (${row.key})`,
               text: row.body,
@@ -319,14 +319,14 @@ export function companySearchExtractService(db: Db) {
         }
       }
 
-      const results: CompanySearchExtractIssueResult[] = pageRows.map((row) => {
-        const extracted = extractMatches(sourcesByIssue.get(row.id) ?? [], query);
+      const results: CompanySearchExtractTaskResult[] = pageRows.map((row) => {
+        const extracted = extractMatches(sourcesByTask.get(row.id) ?? [], query);
         return {
-          issueId: row.id,
+          taskId: row.id,
           identifier: row.identifier,
           title: row.title,
           boardPresentationStatus:
-            row.boardPresentationStatus as CompanySearchExtractIssueResult["boardPresentationStatus"],
+            row.boardPresentationStatus as CompanySearchExtractTaskResult["boardPresentationStatus"],
           request: row.request ?? "",
           ownerAgentId: row.ownerAgentId,
           ownerUserId: row.ownerUserId,
@@ -341,7 +341,7 @@ export function companySearchExtractService(db: Db) {
         scope: query.scope,
         limit: query.limit,
         offset: query.offset,
-        matchesPerIssue: query.matchesPerIssue,
+        matchesPerTask: query.matchesPerTask,
         results,
         hasMore,
         truncated: hasMore || results.some((result) => result.matchesTruncated),

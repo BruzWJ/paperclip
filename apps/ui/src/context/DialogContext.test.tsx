@@ -22,14 +22,14 @@ describe("DialogContext", () => {
 
     function ActionOnlyConsumer() {
       actionRenderCount += 1;
-      const { openNewIssue } = useDialogActions();
-      return <button onClick={() => openNewIssue()}>Open issue</button>;
+      const { openNewTask } = useDialogActions();
+      return <button onClick={() => openNewTask()}>Open task</button>;
     }
 
     function StateConsumer() {
       stateRenderCount += 1;
-      const { newIssueOpen } = useDialogState();
-      return <span>{newIssueOpen ? "open" : "closed"}</span>;
+      const { newTaskOpen } = useDialogState();
+      return <span>{newTaskOpen ? "open" : "closed"}</span>;
     }
 
     act(() => {

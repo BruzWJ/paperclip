@@ -22,7 +22,7 @@ type EnvVarRow = {
   note: string;
 };
 
-const DEFAULT_ISSUE_EXECUTION_SCHEDULER_INTERVAL_MS = "30000";
+const DEFAULT_TASK_EXECUTION_SCHEDULER_INTERVAL_MS = "30000";
 const DEFAULT_SECRETS_PROVIDER = "local_encrypted";
 const DEFAULT_STORAGE_PROVIDER = "local_disk";
 function defaultSecretsKeyFilePath(): string {
@@ -135,11 +135,11 @@ function collectDeploymentEnvRows(config: PaperclipConfig | null, configPath: st
     config?.server?.exposure ??
     "private";
 
-  const issueExecutionInterval =
-    process.env.ISSUE_EXECUTION_SCHEDULER_INTERVAL_MS ??
-    DEFAULT_ISSUE_EXECUTION_SCHEDULER_INTERVAL_MS;
-  const issueExecutionEnabled =
-    process.env.ISSUE_EXECUTION_SCHEDULER_ENABLED ?? "true";
+  const taskExecutionInterval =
+    process.env.TASK_EXECUTION_SCHEDULER_INTERVAL_MS ??
+    DEFAULT_TASK_EXECUTION_SCHEDULER_INTERVAL_MS;
+  const taskExecutionEnabled =
+    process.env.TASK_EXECUTION_SCHEDULER_ENABLED ?? "true";
   const secretsProvider =
     process.env.PAPERCLIP_SECRETS_PROVIDER ??
     config?.secrets?.provider ??
@@ -217,18 +217,18 @@ function collectDeploymentEnvRows(config: PaperclipConfig | null, configPath: st
         : "Must remain unset; private auth origins are request-derived",
     },
     {
-      key: "ISSUE_EXECUTION_SCHEDULER_INTERVAL_MS",
-      value: issueExecutionInterval,
-      source: process.env.ISSUE_EXECUTION_SCHEDULER_INTERVAL_MS ? "env" : "default",
+      key: "TASK_EXECUTION_SCHEDULER_INTERVAL_MS",
+      value: taskExecutionInterval,
+      source: process.env.TASK_EXECUTION_SCHEDULER_INTERVAL_MS ? "env" : "default",
       required: false,
-      note: "Issue-execution reconciliation interval in ms",
+      note: "Task-execution reconciliation interval in ms",
     },
     {
-      key: "ISSUE_EXECUTION_SCHEDULER_ENABLED",
-      value: issueExecutionEnabled,
-      source: process.env.ISSUE_EXECUTION_SCHEDULER_ENABLED ? "env" : "default",
+      key: "TASK_EXECUTION_SCHEDULER_ENABLED",
+      value: taskExecutionEnabled,
+      source: process.env.TASK_EXECUTION_SCHEDULER_ENABLED ? "env" : "default",
       required: false,
-      note: "Set to `false` to disable issue-execution reconciliation",
+      note: "Set to `false` to disable task-execution reconciliation",
     },
     {
       key: "PAPERCLIP_SECRETS_PROVIDER",

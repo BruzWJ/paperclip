@@ -1,28 +1,28 @@
 import { useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { Issue, IssueBlockedInboxAttention } from "@paperclipai/shared";
+import type { Task, TaskBlockedInboxAttention } from "@paperclipai/shared";
 import { BlockedInboxView } from "@/components/BlockedInboxView";
 import { BlockedReasonChip } from "@/components/BlockedReasonChip";
-import { defaultIssueFilterState } from "@/lib/issue-filters";
+import { defaultTaskFilterState } from "@/lib/task-filters";
 import { queryKeys } from "@/lib/queryKeys";
-import { storybookIssues } from "../fixtures/paperclipData";
+import { storybookTasks } from "../fixtures/paperclipData";
 
 const companyId = "company-storybook";
 const blockedViewDefaults = {
   groupBy: "none" as const,
   sortBy: "most_recent" as const,
-  issueFilters: defaultIssueFilterState,
+  taskFilters: defaultTaskFilterState,
   currentUserId: "user-1",
-  liveIssueIds: new Set<string>(),
+  liveTaskIds: new Set<string>(),
   showStatusColumn: true,
   showIdentifierColumn: true,
   showUpdatedColumn: true,
 };
 
 function attention(
-  overrides: Partial<IssueBlockedInboxAttention> = {},
-): IssueBlockedInboxAttention {
+  overrides: Partial<TaskBlockedInboxAttention> = {},
+): TaskBlockedInboxAttention {
   return {
     kind: "blocked",
     state: "needs_attention",
@@ -31,21 +31,21 @@ function attention(
     stoppedSinceAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
     owner: { type: "agent", agentId: null, userId: null, label: "ClaudeCoder" },
     action: { label: "Resolve PAP-12", detail: null },
-    sourceIssue: null,
-    leafIssue: null,
+    sourceTask: null,
+    leafTask: null,
     approvalId: null,
-    sampleIssueIdentifier: null,
+    sampleTaskIdentifier: null,
     redaction: { externalDetailsRedacted: false, secretFieldsOmitted: true },
     ...overrides,
   };
 }
 
-const baseIssue = storybookIssues[0]!;
+const baseTask = storybookTasks[0]!;
 
-const fixtureIssues: Issue[] = [
+const fixtureTasks: Task[] = [
   {
-    ...baseIssue,
-    id: "issue-decision-1",
+    ...baseTask,
+    id: "task-decision-1",
     identifier: "PAP-401",
     title: "Approve plan: rewrite onboarding flow",
     boardPresentationStatus: "in_review",
@@ -59,8 +59,8 @@ const fixtureIssues: Issue[] = [
     }),
   },
   {
-    ...baseIssue,
-    id: "issue-stalled-critical",
+    ...baseTask,
+    id: "task-stalled-critical",
     identifier: "PAP-410",
     title: "Ship invoice export — blocker is stalled",
     boardPresentationStatus: "blocked",
@@ -79,8 +79,8 @@ const fixtureIssues: Issue[] = [
     }),
   },
   {
-    ...baseIssue,
-    id: "issue-stalled-high",
+    ...baseTask,
+    id: "task-stalled-high",
     identifier: "PAP-412",
     title: "Run nightly maintenance",
     boardPresentationStatus: "blocked",
@@ -93,8 +93,8 @@ const fixtureIssues: Issue[] = [
     }),
   },
   {
-    ...baseIssue,
-    id: "issue-external",
+    ...baseTask,
+    id: "task-external",
     identifier: "PAP-440",
     title: "Awaiting upstream provider response",
     boardPresentationStatus: "blocked",
@@ -115,8 +115,8 @@ function PrimeBlockedFixtures({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   useMemo(() => {
     queryClient.setQueryData(
-      queryKeys.issues.listBlockedAttention(companyId),
-      fixtureIssues,
+      queryKeys.tasks.listBlockedAttention(companyId),
+      fixtureTasks,
     );
   }, [queryClient]);
   return <>{children}</>;
@@ -135,7 +135,7 @@ function BlockedTabSurface({ search = "" }: { search?: string }) {
             companyId={companyId}
             searchQuery={search}
             agentNameById={new Map()}
-            issueLinkState={null}
+            taskLinkState={null}
             subtreeLiveCounts={new Map()}
           />
         </div>
@@ -190,7 +190,7 @@ function BlockedTabEmptyState() {
         companyId="company-empty"
         searchQuery=""
         agentNameById={new Map()}
-        issueLinkState={null}
+        taskLinkState={null}
         subtreeLiveCounts={new Map()}
       />
     </div>
@@ -204,7 +204,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Stopped-work triage Inbox tab. Rows group by reason variant and sort by severity → stoppedSinceAt. The reason chip + owner + action combo sits next to the issue title. No quick archive on this tab.",
+          "Stopped-work triage Inbox tab. Rows group by reason variant and sort by severity → stoppedSinceAt. The reason chip + owner + action combo sits next to the task title. No quick archive on this tab.",
       },
     },
   },

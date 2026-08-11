@@ -133,8 +133,8 @@ export interface Config {
   storageS3Endpoint: string | undefined;
   storageS3Prefix: string;
   storageS3ForcePathStyle: boolean;
-  issueExecutionSchedulerEnabled: boolean;
-  issueExecutionSchedulerIntervalMs: number;
+  taskExecutionSchedulerEnabled: boolean;
+  taskExecutionSchedulerIntervalMs: number;
   companyDeletionEnabled: boolean;
   telemetryEnabled: boolean;
 }
@@ -299,10 +299,10 @@ export function loadConfig(): Config {
     storageS3Endpoint,
     storageS3Prefix,
     storageS3ForcePathStyle,
-    issueExecutionSchedulerEnabled: process.env.ISSUE_EXECUTION_SCHEDULER_ENABLED !== "false",
-    issueExecutionSchedulerIntervalMs: Math.max(
+    taskExecutionSchedulerEnabled: process.env.TASK_EXECUTION_SCHEDULER_ENABLED !== "false",
+    taskExecutionSchedulerIntervalMs: Math.max(
       10000,
-      Number(process.env.ISSUE_EXECUTION_SCHEDULER_INTERVAL_MS) || 30000,
+      Number(process.env.TASK_EXECUTION_SCHEDULER_INTERVAL_MS) || 30000,
     ),
     companyDeletionEnabled,
     telemetryEnabled: fileConfig?.telemetry?.enabled ?? true,

@@ -1,21 +1,21 @@
 import type { AgentEnvConfig } from "./secrets.js";
 import type { RoutineVariable } from "./routine.js";
-import type { IssueCommentAuthorType, PermissionKey } from "../constants.js";
+import type { TaskCommentAuthorType, PermissionKey } from "../constants.js";
 import type {
   AgentContextGrantKey,
   AgentMentionReachGrantKey,
-  AgentVisibleIssueStatus,
-  IssueDisposition,
+  AgentVisibleTaskStatus,
+  TaskDisposition,
   PaperclipActionKey,
-} from "../issue-runtime.js";
-import type { IssueCommentMetadata, IssueCommentPresentation } from "./issue.js";
+} from "../task-runtime.js";
+import type { TaskCommentMetadata, TaskCommentPresentation } from "./task.js";
 import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
 export interface CompanyPortabilityInclude {
   company: boolean;
   agents: boolean;
   projects: boolean;
-  issues: boolean;
+  tasks: boolean;
   skills: boolean;
 }
 
@@ -69,7 +69,7 @@ export interface CompanyPortabilityProjectManifestEntry {
   metadata: Record<string, unknown> | null;
 }
 
-export interface CompanyPortabilityIssueRoutineTriggerManifestEntry {
+export interface CompanyPortabilityTaskRoutineTriggerManifestEntry {
   kind: string;
   label: string | null;
   enabled: boolean;
@@ -79,24 +79,24 @@ export interface CompanyPortabilityIssueRoutineTriggerManifestEntry {
   replayWindowSec: number | null;
 }
 
-export interface CompanyPortabilityIssueRoutineManifestEntry {
+export interface CompanyPortabilityTaskRoutineManifestEntry {
   concurrencyPolicy: string | null;
   catchUpPolicy: string | null;
   variables?: RoutineVariable[] | null;
-  triggers: CompanyPortabilityIssueRoutineTriggerManifestEntry[];
+  triggers: CompanyPortabilityTaskRoutineTriggerManifestEntry[];
 }
 
-export interface CompanyPortabilityIssueCommentManifestEntry {
+export interface CompanyPortabilityTaskCommentManifestEntry {
   body: string;
-  authorType: IssueCommentAuthorType;
+  authorType: TaskCommentAuthorType;
   authorAgentSlug: string | null;
   authorUserId: string | null;
-  presentation: IssueCommentPresentation | null;
-  metadata: IssueCommentMetadata | null;
+  presentation: TaskCommentPresentation | null;
+  metadata: TaskCommentMetadata | null;
   createdAt: string | null;
 }
 
-export interface CompanyPortabilityIssueManifestEntry {
+export interface CompanyPortabilityTaskManifestEntry {
   slug: string;
   identifier: string | null;
   title: string | null;
@@ -105,14 +105,14 @@ export interface CompanyPortabilityIssueManifestEntry {
   ownerAgentSlug: string;
   request: string;
   recurring: boolean;
-  routine: CompanyPortabilityIssueRoutineManifestEntry | null;
-  lifecycleStatus: AgentVisibleIssueStatus;
-  disposition: IssueDisposition | null;
+  routine: CompanyPortabilityTaskRoutineManifestEntry | null;
+  lifecycleStatus: AgentVisibleTaskStatus;
+  disposition: TaskDisposition | null;
   boardPresentationStatus: string;
   priority: string | null;
   labelIds: string[];
   billingCode: string | null;
-  comments: CompanyPortabilityIssueCommentManifestEntry[];
+  comments: CompanyPortabilityTaskCommentManifestEntry[];
   metadata: Record<string, unknown> | null;
 }
 
@@ -174,7 +174,7 @@ export interface CompanyPortabilityManifest {
   agents: CompanyPortabilityAgentManifestEntry[];
   skills: CompanyPortabilitySkillManifestEntry[];
   projects: CompanyPortabilityProjectManifestEntry[];
-  issues: CompanyPortabilityIssueManifestEntry[];
+  tasks: CompanyPortabilityTaskManifestEntry[];
   envInputs: CompanyPortabilityEnvInput[];
 }
 
@@ -188,7 +188,7 @@ export interface CompanyPortabilityExportResult {
 
 export interface CompanyPortabilityExportPreviewFile {
   path: string;
-  kind: "company" | "agent" | "skill" | "project" | "issue" | "extension" | "readme" | "other";
+  kind: "company" | "agent" | "skill" | "project" | "task" | "extension" | "readme" | "other";
 }
 
 export interface CompanyPortabilityExportPreviewResult {
@@ -201,7 +201,7 @@ export interface CompanyPortabilityExportPreviewResult {
     agents: number;
     skills: number;
     projects: number;
-    issues: number;
+    tasks: number;
   };
   warnings: string[];
   paperclipExtensionPath: string;
@@ -259,7 +259,7 @@ export interface CompanyPortabilityPreviewProjectPlan {
   reason: string | null;
 }
 
-export interface CompanyPortabilityPreviewIssuePlan {
+export interface CompanyPortabilityPreviewTaskPlan {
   slug: string;
   action: "create" | "skip";
   plannedTitle: string;
@@ -276,7 +276,7 @@ export interface CompanyPortabilityPreviewResult {
     companyAction: "none" | "create" | "update";
     agentPlans: CompanyPortabilityPreviewAgentPlan[];
     projectPlans: CompanyPortabilityPreviewProjectPlan[];
-    issuePlans: CompanyPortabilityPreviewIssuePlan[];
+    taskPlans: CompanyPortabilityPreviewTaskPlan[];
   };
   manifest: CompanyPortabilityManifest;
   files: Record<string, CompanyPortabilityFileEntry>;
@@ -323,8 +323,8 @@ export interface CompanyPortabilityExportRequest {
   agents?: string[];
   skills?: string[];
   projects?: string[];
-  issues?: string[];
-  projectIssues?: string[];
+  tasks?: string[];
+  projectTasks?: string[];
   selectedFiles?: string[];
   expandReferencedSkills?: boolean;
   sidebarOrder?: Partial<CompanyPortabilitySidebarOrder>;

@@ -28,7 +28,7 @@ const INCLUDE_ALL = {
   company: true,
   agents: true,
   projects: true,
-  issues: true,
+  tasks: true,
   skills: false,
 } as const;
 
@@ -56,7 +56,7 @@ function portabilityManifest(): CompanyPortabilityManifest {
     agents: [],
     skills: [],
     projects: [],
-    issues: [],
+    tasks: [],
     envInputs: [],
   };
 }
@@ -105,7 +105,7 @@ function portabilityPreview(input: {
       companyAction: input.companyAction,
       agentPlans: [],
       projectPlans: [],
-      issuePlans: [],
+      taskPlans: [],
     },
     manifest: exported.manifest,
     files: exported.files,
@@ -208,7 +208,7 @@ describe("paperclipai company import/export HTTP boundary", () => {
       "--out",
       exportDir,
       "--include",
-      "company,agents,projects,issues",
+      "company,agents,projects,tasks",
       "--api-base",
       API_BASE,
       "--api-key",
@@ -224,8 +224,8 @@ describe("paperclipai company import/export HTTP boundary", () => {
       include: INCLUDE_ALL,
       skills: [],
       projects: [],
-      issues: [],
-      projectIssues: [],
+      tasks: [],
+      projectTasks: [],
       expandReferencedSkills: false,
     });
     expect(readFileSync(path.join(exportDir, "COMPANY.md"), "utf8")).toBe(
@@ -256,7 +256,7 @@ describe("paperclipai company import/export HTTP boundary", () => {
       "--new-company-name",
       "Imported Portable Paperclip",
       "--include",
-      "company,agents,projects,issues",
+      "company,agents,projects,tasks",
       "--yes",
       "--api-base",
       API_BASE,
@@ -312,7 +312,7 @@ describe("paperclipai company import/export HTTP boundary", () => {
       "--company-id",
       COMPANY_ID,
       "--include",
-      "company,agents,projects,issues",
+      "company,agents,projects,tasks",
       "--dry-run",
       "--api-base",
       API_BASE,

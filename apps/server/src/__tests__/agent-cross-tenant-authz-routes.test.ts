@@ -62,16 +62,16 @@ const mockBudgetService = vi.hoisted(() => ({
   upsertPolicy: vi.fn(),
 }));
 
-const mockIssueExecutionCancellation = vi.hoisted(() => ({
+const mockTaskExecutionCancellation = vi.hoisted(() => ({
   requestAgentCancellationsInTransaction: vi.fn(),
   reconcileRequestedCancellations: vi.fn(),
 }));
 
-const mockIssueApprovalService = vi.hoisted(() => ({
+const mockTaskApprovalService = vi.hoisted(() => ({
   linkManyForApproval: vi.fn(),
 }));
 
-const mockIssueService = vi.hoisted(() => ({
+const mockTaskService = vi.hoisted(() => ({
   list: vi.fn(),
 }));
 
@@ -82,7 +82,7 @@ const mockSecretService = vi.hoisted(() => ({
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
-const mockResolveInvokableIssueOwnerCatalogFromDb = vi.hoisted(() => vi.fn());
+const mockResolveInvokableTaskOwnerCatalogFromDb = vi.hoisted(() => vi.fn());
 
 vi.mock("@paperclipai/shared/telemetry", () => ({
   trackAgentCreated: vi.fn(),
@@ -95,8 +95,8 @@ vi.mock("../telemetry.js", () => ({
 
 vi.mock("../services/agent-invokability.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../services/agent-invokability.js")>()),
-  resolveInvokableIssueOwnerCatalogFromDb:
-    mockResolveInvokableIssueOwnerCatalogFromDb,
+  resolveInvokableTaskOwnerCatalogFromDb:
+    mockResolveInvokableTaskOwnerCatalogFromDb,
 }));
 
 vi.mock("../routes/authz.js", async () => {
@@ -167,8 +167,8 @@ vi.mock("../services/index.js", () => ({
   approvalService: () => mockApprovalService,
   budgetService: () => mockBudgetService,
   createRuntimeAgentConfigurationService: () => ({}),
-  issueApprovalService: () => mockIssueApprovalService,
-  issueService: () => mockIssueService,
+  taskApprovalService: () => mockTaskApprovalService,
+  taskService: () => mockTaskService,
   logActivity: mockLogActivity,
   secretService: () => mockSecretService,
 }));
@@ -207,8 +207,8 @@ async function createApp(actor: Record<string, unknown>) {
   });
   app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", agentRoutes({} as any, {
-    ordinaryIssues: {} as never,
-    issueExecutionCancellation: mockIssueExecutionCancellation as never,
+    ordinaryTasks: {} as never,
+    taskExecutionCancellation: mockTaskExecutionCancellation as never,
   }));
   app.use(errorHandler);
   return app;
@@ -247,15 +247,15 @@ function resetMockDefaults() {
   for (const mock of Object.values(mockAccessService)) mock.mockReset();
   for (const mock of Object.values(mockApprovalService)) mock.mockReset();
   for (const mock of Object.values(mockBudgetService)) mock.mockReset();
-  for (const mock of Object.values(mockIssueExecutionCancellation)) mock.mockReset();
-  for (const mock of Object.values(mockIssueApprovalService)) mock.mockReset();
-  for (const mock of Object.values(mockIssueService)) mock.mockReset();
+  for (const mock of Object.values(mockTaskExecutionCancellation)) mock.mockReset();
+  for (const mock of Object.values(mockTaskApprovalService)) mock.mockReset();
+  for (const mock of Object.values(mockTaskService)) mock.mockReset();
   for (const mock of Object.values(mockSecretService)) mock.mockReset();
   mockLogActivity.mockReset();
   mockGetTelemetryClient.mockReset();
-  mockResolveInvokableIssueOwnerCatalogFromDb.mockReset();
+  mockResolveInvokableTaskOwnerCatalogFromDb.mockReset();
   mockGetTelemetryClient.mockReturnValue({ track: vi.fn() });
-  mockResolveInvokableIssueOwnerCatalogFromDb.mockResolvedValue(new Map());
+  mockResolveInvokableTaskOwnerCatalogFromDb.mockResolvedValue(new Map());
   currentAccessCanUser = false;
   mockAgentService.getById.mockImplementation(async () => ({ ...baseAgent }));
   mockAgentService.pause.mockImplementation(async () => ({ ...baseAgent }));
@@ -279,7 +279,7 @@ function resetMockDefaults() {
   mockAccessService.listPrincipalGrants.mockImplementation(async () => []);
   mockAccessService.ensureMembership.mockImplementation(async () => undefined);
   mockAccessService.setPrincipalPermission.mockImplementation(async () => undefined);
-  mockIssueExecutionCancellation.requestAgentCancellationsInTransaction.mockImplementation(
+  mockTaskExecutionCancellation.requestAgentCancellationsInTransaction.mockImplementation(
     async (_transaction, input) => ({
       companyId: input.companyId,
       agentIds: input.agentIds,
@@ -288,7 +288,7 @@ function resetMockDefaults() {
       requests: [],
     }),
   );
-  mockIssueExecutionCancellation.reconcileRequestedCancellations.mockImplementation(async () => undefined);
+  mockTaskExecutionCancellation.reconcileRequestedCancellations.mockImplementation(async () => undefined);
   mockLogActivity.mockImplementation(async () => undefined);
 }
 
@@ -316,8 +316,8 @@ describe.sequential("agent cross-tenant route authorization", () => {
     15_000,
   );
 
-  it("returns only safe fields from the canonical invokable issue-owner catalog", async () => {
-    mockResolveInvokableIssueOwnerCatalogFromDb.mockResolvedValue(new Map([
+  it("returns only safe fields from the canonical invokable task-owner catalog", async () => {
+    mockResolveInvokableTaskOwnerCatalogFromDb.mockResolvedValue(new Map([
       [agentId, {
         owner: {
           ...baseAgent,
@@ -341,7 +341,7 @@ describe.sequential("agent cross-tenant route authorization", () => {
     }));
 
     const res = await requestApp(app, (baseUrl) =>
-      request(baseUrl).get(`/api/companies/${companyId}/issue-owner-catalog`),
+      request(baseUrl).get(`/api/companies/${companyId}/task-owner-catalog`),
     );
 
     expect(res.status).toBe(200);
@@ -351,13 +351,13 @@ describe.sequential("agent cross-tenant route authorization", () => {
       title: "Build lead",
       icon: "hammer",
     }]);
-    expect(mockResolveInvokableIssueOwnerCatalogFromDb).toHaveBeenCalledWith(
+    expect(mockResolveInvokableTaskOwnerCatalogFromDb).toHaveBeenCalledWith(
       expect.anything(),
       { companyId },
     );
   });
 
-  it("does not resolve the issue-owner catalog outside company authorization", async () => {
+  it("does not resolve the task-owner catalog outside company authorization", async () => {
     const app = await createApp(testBoardSessionActor({
       userId: "outside-user",
       companyIds: [],
@@ -365,11 +365,11 @@ describe.sequential("agent cross-tenant route authorization", () => {
     }));
 
     const res = await requestApp(app, (baseUrl) =>
-      request(baseUrl).get(`/api/companies/${companyId}/issue-owner-catalog`),
+      request(baseUrl).get(`/api/companies/${companyId}/task-owner-catalog`),
     );
 
     expect(res.status).toBe(403);
-    expect(mockResolveInvokableIssueOwnerCatalogFromDb).not.toHaveBeenCalled();
+    expect(mockResolveInvokableTaskOwnerCatalogFromDb).not.toHaveBeenCalled();
   });
 
   it("enforces company boundaries before mutating agents", async () => {

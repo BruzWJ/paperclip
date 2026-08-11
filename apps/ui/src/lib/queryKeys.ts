@@ -33,8 +33,8 @@ export const queryKeys = {
   },
   agents: {
     list: (companyId: string) => ["agents", companyId] as const,
-    issueOwnerCatalog: (companyId: string) =>
-      ["agents", companyId, "issue-owner-catalog"] as const,
+    taskOwnerCatalog: (companyId: string) =>
+      ["agents", companyId, "task-owner-catalog"] as const,
     detail: (id: string) => ["agents", "detail", id] as const,
     runtimeState: (id: string) => ["agents", "runtime-state", id] as const,
     runtimeConfiguration: (agentId: string, companyId?: string) =>
@@ -63,45 +63,45 @@ export const queryKeys = {
     adapterModelProfiles: (companyId: string, adapterType: string) =>
       ["agents", companyId, "adapter-model-profiles", adapterType] as const,
   },
-  issues: {
-    list: (companyId: string) => ["issues", companyId] as const,
-    mentionPool: (companyId: string) => ["issues", companyId, "mention-pool"] as const,
+  tasks: {
+    list: (companyId: string) => ["tasks", companyId] as const,
+    mentionPool: (companyId: string) => ["tasks", companyId, "mention-pool"] as const,
     search: (companyId: string, q: string, projectId?: string, limit?: number) =>
-      ["issues", companyId, "search", q, projectId ?? "__all-projects__", limit ?? "__no-limit__"] as const,
-    listAssignedToMe: (companyId: string) => ["issues", companyId, "assigned-to-me"] as const,
-    listMineByMe: (companyId: string) => ["issues", companyId, "mine-by-me"] as const,
-    listTouchedByMe: (companyId: string) => ["issues", companyId, "touched-by-me"] as const,
-    listUnreadTouchedByMe: (companyId: string) => ["issues", companyId, "unread-touched-by-me"] as const,
-    listBlockedAttention: (companyId: string) => ["issues", companyId, "blocked-attention"] as const,
-    countBlockedAttention: (companyId: string) => ["issues", companyId, "blocked-attention", "count"] as const,
-    labels: (companyId: string) => ["issues", companyId, "labels"] as const,
+      ["tasks", companyId, "search", q, projectId ?? "__all-projects__", limit ?? "__no-limit__"] as const,
+    listAssignedToMe: (companyId: string) => ["tasks", companyId, "assigned-to-me"] as const,
+    listMineByMe: (companyId: string) => ["tasks", companyId, "mine-by-me"] as const,
+    listTouchedByMe: (companyId: string) => ["tasks", companyId, "touched-by-me"] as const,
+    listUnreadTouchedByMe: (companyId: string) => ["tasks", companyId, "unread-touched-by-me"] as const,
+    listBlockedAttention: (companyId: string) => ["tasks", companyId, "blocked-attention"] as const,
+    countBlockedAttention: (companyId: string) => ["tasks", companyId, "blocked-attention", "count"] as const,
+    labels: (companyId: string) => ["tasks", companyId, "labels"] as const,
     listByProject: (companyId: string, projectId: string) =>
-      ["issues", companyId, "project", projectId] as const,
+      ["tasks", companyId, "project", projectId] as const,
     listPluginOperationsByProject: (companyId: string, projectId: string, originKindPrefix: string) =>
-      ["issues", companyId, "project", projectId, "plugin-operations", originKindPrefix] as const,
+      ["tasks", companyId, "project", projectId, "plugin-operations", originKindPrefix] as const,
     listByParent: (companyId: string, parentId: string) =>
-      ["issues", companyId, "parent", parentId] as const,
-    listByDescendantRoot: (companyId: string, rootIssueId: string) =>
-      ["issues", companyId, "descendants", rootIssueId] as const,
-    detail: (id: string) => ["issues", "detail", id] as const,
-    comments: (issueId: string) => ["issues", "comments", issueId] as const,
-    commentsList: (issueId: string) => ["issues", "comments", issueId, "list"] as const,
-    costSummary: (issueId: string, options: { excludeRoot?: boolean } = {}) =>
+      ["tasks", companyId, "parent", parentId] as const,
+    listByDescendantRoot: (companyId: string, rootTaskId: string) =>
+      ["tasks", companyId, "descendants", rootTaskId] as const,
+    detail: (id: string) => ["tasks", "detail", id] as const,
+    comments: (taskId: string) => ["tasks", "comments", taskId] as const,
+    commentsList: (taskId: string) => ["tasks", "comments", taskId, "list"] as const,
+    costSummary: (taskId: string, options: { excludeRoot?: boolean } = {}) =>
       options.excludeRoot
-        ? (["issues", "cost-summary", issueId, "exclude-root"] as const)
-        : (["issues", "cost-summary", issueId] as const),
-    attachments: (issueId: string) => ["issues", "attachments", issueId] as const,
-    attachmentPreview: (attachmentId: string) => ["issues", "attachment-preview", attachmentId] as const,
-    documents: (issueId: string) => ["issues", "documents", issueId] as const,
-    document: (issueId: string, key: string) => ["issues", "document", issueId, key] as const,
-    documentRevisions: (issueId: string, key: string) => ["issues", "document-revisions", issueId, key] as const,
-    documentAnnotations: (issueId: string, key: string, status: "open" | "resolved" | "all" = "all") =>
-      ["issues", "document-annotations", issueId, key, status] as const,
-    activity: (issueId: string) => ["issues", "activity", issueId] as const,
-    runs: (issueId: string, status?: readonly string[]) =>
-      ["issues", "runs", issueId, status?.join(",") ?? "all"] as const,
-    approvals: (issueId: string) => ["issues", "approvals", issueId] as const,
-    workProducts: (issueId: string) => ["issues", "work-products", issueId] as const,
+        ? (["tasks", "cost-summary", taskId, "exclude-root"] as const)
+        : (["tasks", "cost-summary", taskId] as const),
+    attachments: (taskId: string) => ["tasks", "attachments", taskId] as const,
+    attachmentPreview: (attachmentId: string) => ["tasks", "attachment-preview", attachmentId] as const,
+    documents: (taskId: string) => ["tasks", "documents", taskId] as const,
+    document: (taskId: string, key: string) => ["tasks", "document", taskId, key] as const,
+    documentRevisions: (taskId: string, key: string) => ["tasks", "document-revisions", taskId, key] as const,
+    documentAnnotations: (taskId: string, key: string, status: "open" | "resolved" | "all" = "all") =>
+      ["tasks", "document-annotations", taskId, key, status] as const,
+    activity: (taskId: string) => ["tasks", "activity", taskId] as const,
+    runs: (taskId: string, status?: readonly string[]) =>
+      ["tasks", "runs", taskId, status?.join(",") ?? "all"] as const,
+    approvals: (taskId: string) => ["tasks", "approvals", taskId] as const,
+    workProducts: (taskId: string) => ["tasks", "work-products", taskId] as const,
   },
   routines: {
     list: (companyId: string, filters?: { projectId?: string | null }) =>
@@ -131,7 +131,7 @@ export const queryKeys = {
       kind?: string,
       q?: string,
       groupBy?: string,
-      groupIssueId?: string,
+      groupTaskId?: string,
     ) =>
       [
         "artifacts",
@@ -139,7 +139,7 @@ export const queryKeys = {
         kind ?? "all",
         q ?? "",
         groupBy ?? "none",
-        groupIssueId ?? "",
+        groupTaskId ?? "",
       ] as const,
   },
   budgets: {
@@ -150,7 +150,7 @@ export const queryKeys = {
       ["approvals", companyId, status] as const,
     detail: (approvalId: string) => ["approvals", "detail", approvalId] as const,
     comments: (approvalId: string) => ["approvals", "comments", approvalId] as const,
-    issues: (approvalId: string) => ["approvals", "issues", approvalId] as const,
+    tasks: (approvalId: string) => ["approvals", "tasks", approvalId] as const,
   },
   access: {
     invites: (companyId: string, state: string = "all", limit: number = 20) =>

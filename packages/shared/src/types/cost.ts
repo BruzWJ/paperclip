@@ -1,7 +1,7 @@
 import type {
   AcpCostCursorState,
-  IssueExecutionRunKind,
-} from "./issue-execution-run.js";
+  TaskExecutionRunKind,
+} from "./task-execution-run.js";
 import type { AcpCostUnavailableReason } from "../acp-cost.js";
 import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
@@ -13,10 +13,10 @@ export interface CostEvent {
   id: string;
   accountingId: string;
   companyId: string;
-  issueId: string;
+  taskId: string;
   agentId: string;
   runId: string;
-  runKind: IssueExecutionRunKind;
+  runKind: TaskExecutionRunKind;
   promptKind: AcpPromptAccountingKind;
   refId: string | null;
   runOrdinal: number | null;
@@ -48,9 +48,9 @@ export interface CostSummary {
   unpricedPromptCount: number;
 }
 
-export interface IssueCostSummary {
-  issueId: string;
-  issueCount: number;
+export interface TaskCostSummary {
+  taskId: string;
+  taskCount: number;
   includeDescendants: boolean;
   budgetCurrency: BudgetCurrency;
   knownCostAmount: MoneyAmount;

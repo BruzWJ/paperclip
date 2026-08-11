@@ -13,7 +13,7 @@ export type GitWorktreeInProgressOperation =
 export interface GitWorktreeBranchIncoherenceEvidence {
   reason: "git_worktree_branch_incoherence";
   fingerprint: string;
-  sourceIssueId: string | null;
+  sourceTaskId: string | null;
   sourceIdentifier: string | null;
   executionWorkspaceId: string | null;
   worktreePath: string;
@@ -26,13 +26,13 @@ export interface GitWorktreeBranchIncoherenceEvidence {
   dirtyPathSample: string[];
   contention: {
     claimedByWorkspaceId: string;
-    claimedByIssueId: string | null;
-    claimedByIssueIdentifier: string | null;
+    claimedByTaskId: string | null;
+    claimedByTaskIdentifier: string | null;
     activeRun: {
       id: string;
       status: "queued" | "running";
-      issueId: string | null;
-      issueIdentifier: string | null;
+      taskId: string | null;
+      taskIdentifier: string | null;
     } | null;
   } | null;
   provenance: {

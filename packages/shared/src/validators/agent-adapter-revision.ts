@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addValidationDetail } from "../validation-details.js";
 import {
   companySkillPinsSchema,
 } from "./company-skill-pins.js";
@@ -30,8 +31,7 @@ const acpSessionConfigSelectionsSchema = z
       const current = selections[index]!;
       const previous = selections[index - 1];
       if (previous && previous.configId >= current.configId) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+        addValidationDetail(ctx, {
           message:
             "ACP session configuration ids must be unique and code-unit sorted",
           path: [index, "configId"],
@@ -49,8 +49,7 @@ const acpModelLimitsSchema = z
   .strict()
   .superRefine((limits, ctx) => {
     if (limits.outputTokenLimit > limits.contextTokenLimit) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "outputTokenLimit cannot exceed contextTokenLimit",
         path: ["outputTokenLimit"],
       });
@@ -59,8 +58,7 @@ const acpModelLimitsSchema = z
       limits.inputTokenLimit !== undefined &&
       limits.inputTokenLimit > limits.contextTokenLimit
     ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+      addValidationDetail(ctx, {
         message: "inputTokenLimit cannot exceed contextTokenLimit",
         path: ["inputTokenLimit"],
       });
@@ -71,8 +69,7 @@ const canonicalCompanySkillPinsSchema = companySkillPinsSchema.superRefine(
   (pins, ctx) => {
     for (let index = 1; index < pins.length; index += 1) {
       if (pins[index - 1]!.key >= pins[index]!.key) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+        addValidationDetail(ctx, {
           message: "Company skill pins must be code-unit sorted by key",
           path: [index, "key"],
         });
@@ -106,7 +103,7 @@ export const agentAdapterAcpConfigurationSchema = z
       .nullable(),
     workspaceSelector: z
       .object({
-        kind: z.literal("issue_execution_workspace"),
+        kind: z.literal("task_execution_workspace"),
       })
       .strict(),
     companySkillPins: canonicalCompanySkillPinsSchema,

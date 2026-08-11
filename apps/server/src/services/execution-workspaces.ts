@@ -7,10 +7,10 @@ import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   executionWorkspaces,
-  issueExecutionWorkspaceBindings,
-  issueSessionContextEpochs,
-  issueSessions,
-  issues,
+  taskExecutionWorkspaceBindings,
+  taskSessionContextEpochs,
+  taskSessions,
+  tasks,
   projects,
   projectWorkspaces,
 } from "@paperclipai/db";
@@ -18,17 +18,17 @@ import type {
   ExecutionWorkspace,
   GitWorktreeBranchAncestryVerdict,
 } from "@paperclipai/shared";
-import * as IssueSession from "@paperclipai/shared/issue-session";
+import * as TaskSession from "@paperclipai/shared/task-session";
 import { resolvePaperclipInstanceRoot } from "@paperclipai/shared/home-paths";
 import { conflict, notFound, unprocessable } from "../errors.js";
-import { appendCanonicalControlNotice } from "./issue-session-producers.js";
-import { resolveCurrentIssueOwnerRunLinkages } from "./productive-run-linkage.js";
-import { createIssueSessionRootInTx } from "./issue-session-root-postgres.js";
+import { appendCanonicalControlNotice } from "./task-session-producers.js";
+import { resolveCurrentTaskOwnerRunLinkages } from "./productive-run-linkage.js";
+import { createTaskSessionRootInTx } from "./task-session-root-postgres.js";
 import {
-  reserveIssueSessionEventSequence,
-  type IssueSessionDbTransaction,
-} from "./issue-session/event-store.js";
-import { publishIssueSessionEventInTx } from "./issue-session/publication.js";
+  reserveTaskSessionEventSequence,
+  type TaskSessionDbTransaction,
+} from "./task-session/event-store.js";
+import { publishTaskSessionEventInTx } from "./task-session/publication.js";
 
 type ExecutionWorkspaceRow = typeof executionWorkspaces.$inferSelect;
 const execFileAsync = promisify(execFile);
@@ -58,7 +58,7 @@ export type ExecutionWorkspaceBranchReconcileInspection = {
 
 export type ExecutionWorkspaceBranchReconcileResult = {
   workspace: ExecutionWorkspace;
-  boundIssueId: string;
+  boundTaskId: string;
   boundOwnershipEpoch: number;
   inspection: ExecutionWorkspaceBranchReconcileInspection;
   auditCommentId: string | null;
@@ -66,28 +66,28 @@ export type ExecutionWorkspaceBranchReconcileResult = {
 
 export type ExecutionWorkspaceGitWorktreeContention = {
   claimedByWorkspaceId: string;
-  claimedByIssueId: string | null;
-  claimedByIssueIdentifier: string | null;
+  claimedByTaskId: string | null;
+  claimedByTaskIdentifier: string | null;
   activeRun: {
     id: string;
     status: "queued" | "running";
-    issueId: string | null;
-    issueIdentifier: string | null;
+    taskId: string | null;
+    taskIdentifier: string | null;
   } | null;
 } | null;
 
 type ExecutionWorkspaceCurrentBinding = {
   id: string;
   companyId: string;
-  issueId: string;
+  taskId: string;
   sessionId: string;
   ownershipEpoch: number;
   executionWorkspaceId: string;
   absoluteCwd: string;
-  issueIdentifier: string | null;
-  issueTitle: string | null;
-  issueStatus: string;
-  issueUpdatedAt: Date;
+  taskIdentifier: string | null;
+  taskTitle: string | null;
+  taskStatus: string;
+  taskUpdatedAt: Date;
 };
 
 function readNullableString(value: unknown): string | null {
@@ -121,7 +121,7 @@ function formatBranchForMessage(branch: string | null | undefined) {
 }
 
 function fingerprintWorkspaceBranchIncoherence(input: {
-  issueId: string;
+  taskId: string;
   executionWorkspaceId: string | null;
   worktreePath: string;
   expectedBranch: string;
@@ -134,7 +134,7 @@ function fingerprintWorkspaceBranchIncoherence(input: {
     .update(stableStringify({
       version: 1,
       reason: WORKSPACE_BRANCH_INCOHERENCE_REASON,
-      issueId: input.issueId,
+      taskId: input.taskId,
       executionWorkspaceId: input.executionWorkspaceId,
       worktreePath: path.resolve(input.worktreePath),
       expectedBranch: input.expectedBranch,
@@ -189,7 +189,7 @@ function explainGitWorktreeBranchReconcileInspection(input: {
 
 async function inspectExecutionWorkspaceBranchForReconcile(
   workspace: Pick<ExecutionWorkspace, "id" | "cwd" | "branchName">,
-  issueId: string,
+  taskId: string,
 ): Promise<ExecutionWorkspaceBranchReconcileInspection> {
   const fromBranch = readNullableString(workspace.branchName);
   if (!fromBranch) {
@@ -230,7 +230,7 @@ async function inspectExecutionWorkspaceBranchForReconcile(
 
   return {
     fingerprint: fingerprintWorkspaceBranchIncoherence({
-      issueId,
+      taskId,
       executionWorkspaceId: workspace.id,
       worktreePath,
       expectedBranch: fromBranch,
@@ -336,8 +336,8 @@ function toExecutionWorkspace(
   };
 }
 
-type WorkspaceReservationIssue = Pick<
-  typeof issues.$inferSelect,
+type WorkspaceReservationTask = Pick<
+  typeof tasks.$inferSelect,
   | "id"
   | "companyId"
   | "parentId"
@@ -349,8 +349,8 @@ type WorkspaceReservationIssue = Pick<
   | "ownerAgentId"
 >;
 
-export interface ReserveIssueExecutionWorkspaceBindingInput {
-  issue: WorkspaceReservationIssue;
+export interface ReserveTaskExecutionWorkspaceBindingInput {
+  task: WorkspaceReservationTask;
   session: {
     id: string;
     parentSessionId?: string | null;
@@ -362,18 +362,18 @@ export interface ReserveIssueExecutionWorkspaceBindingInput {
   };
 }
 
-export class IssueExecutionWorkspaceReservationRejected extends Error {
+export class TaskExecutionWorkspaceReservationRejected extends Error {
   constructor(
     message: string,
     readonly reason: string,
   ) {
     super(message);
-    this.name = "IssueExecutionWorkspaceReservationRejected";
+    this.name = "TaskExecutionWorkspaceReservationRejected";
   }
 }
 
 function rejectWorkspaceReservation(message: string, reason: string): never {
-  throw new IssueExecutionWorkspaceReservationRejected(message, reason);
+  throw new TaskExecutionWorkspaceReservationRejected(message, reason);
 }
 
 function deterministicWorkspaceUuid(namespace: string, key: string): string {
@@ -408,24 +408,24 @@ function absoluteProjectWorkspaceCwd(
 }
 
 async function currentContextGeneration(
-  tx: IssueSessionDbTransaction,
-  input: { companyId: string; issueId: string; sessionId: string },
+  tx: TaskSessionDbTransaction,
+  input: { companyId: string; taskId: string; sessionId: string },
 ): Promise<number> {
   const row = await tx
-    .select({ generation: issueSessionContextEpochs.generation })
-    .from(issueSessionContextEpochs)
+    .select({ generation: taskSessionContextEpochs.generation })
+    .from(taskSessionContextEpochs)
     .where(
       and(
-        eq(issueSessionContextEpochs.companyId, input.companyId),
-        eq(issueSessionContextEpochs.issueId, input.issueId),
-        eq(issueSessionContextEpochs.sessionId, input.sessionId),
+        eq(taskSessionContextEpochs.companyId, input.companyId),
+        eq(taskSessionContextEpochs.taskId, input.taskId),
+        eq(taskSessionContextEpochs.sessionId, input.sessionId),
       ),
     )
     .limit(1)
     .then((rows) => rows[0] ?? null);
   if (!row) {
     rejectWorkspaceReservation(
-      "Issue Session context epoch is missing",
+      "Task Session context epoch is missing",
       "session_context_epoch_missing",
     );
   }
@@ -433,32 +433,32 @@ async function currentContextGeneration(
 }
 
 async function resolveReservationParentSession(
-  tx: IssueSessionDbTransaction,
-  input: ReserveIssueExecutionWorkspaceBindingInput,
+  tx: TaskSessionDbTransaction,
+  input: ReserveTaskExecutionWorkspaceBindingInput,
 ): Promise<string | null> {
-  if (!input.issue.parentId) {
+  if (!input.task.parentId) {
     if (input.session.parentSessionId) {
       rejectWorkspaceReservation(
-        "Root issue cannot have a parent Session",
+        "Root task cannot have a parent Session",
         "parent_session_invalid",
       );
     }
     return null;
   }
   const parent = await tx
-    .select({ id: issueSessions.id })
-    .from(issueSessions)
+    .select({ id: taskSessions.id })
+    .from(taskSessions)
     .where(
       and(
-        eq(issueSessions.companyId, input.issue.companyId),
-        eq(issueSessions.issueId, input.issue.parentId),
+        eq(taskSessions.companyId, input.task.companyId),
+        eq(taskSessions.taskId, input.task.parentId),
       ),
     )
     .limit(1)
     .then((rows) => rows[0] ?? null);
   if (!parent) {
     rejectWorkspaceReservation(
-      "Parent issue has no canonical Session",
+      "Parent task has no canonical Session",
       "parent_session_missing",
     );
   }
@@ -467,7 +467,7 @@ async function resolveReservationParentSession(
     input.session.parentSessionId !== parent.id
   ) {
     rejectWorkspaceReservation(
-      "Parent Session does not match the parent issue",
+      "Parent Session does not match the parent task",
       "parent_session_mismatch",
     );
   }
@@ -475,28 +475,28 @@ async function resolveReservationParentSession(
 }
 
 async function publishSessionMovedForWorkspaceInTx(
-  tx: IssueSessionDbTransaction,
-  input: ReserveIssueExecutionWorkspaceBindingInput,
+  tx: TaskSessionDbTransaction,
+  input: ReserveTaskExecutionWorkspaceBindingInput,
   absoluteCwd: string,
 ): Promise<void> {
-  const { seq } = await reserveIssueSessionEventSequence(tx, {
-    companyId: input.issue.companyId,
-    issueId: input.issue.id,
+  const { seq } = await reserveTaskSessionEventSequence(tx, {
+    companyId: input.task.companyId,
+    taskId: input.task.id,
     sessionId: input.session.id,
   });
   const sourceKey = [
     "workspace-binding",
-    input.issue.id,
-    input.issue.ownershipEpoch,
+    input.task.id,
+    input.task.ownershipEpoch,
     absoluteCwd,
   ].join(":");
   const eventId = `evt_${workspaceReservationDigest(sourceKey).slice(0, 40)}`;
-  await publishIssueSessionEventInTx(tx, {
+  await publishTaskSessionEventInTx(tx, {
     event: {
       id: eventId,
       sessionId: input.session.id,
       seq,
-      type: IssueSession.Event.Moved.type,
+      type: TaskSession.Event.Moved.type,
       data: {
         sessionID: input.session.id,
         timestamp: input.session.now.getTime(),
@@ -504,16 +504,16 @@ async function publishSessionMovedForWorkspaceInTx(
       },
     },
     envelope: {
-      companyId: input.issue.companyId,
-      issueId: input.issue.id,
+      companyId: input.task.companyId,
+      taskId: input.task.id,
       runId: null,
-      ownershipEpoch: input.issue.ownershipEpoch,
-      agentId: input.issue.ownerAgentId,
+      ownershipEpoch: input.task.ownershipEpoch,
+      agentId: input.task.ownerAgentId,
       adapterConfigRevisionId: null,
       sourceKind: "workspace_binding_moved",
       sourceId: eventId,
       immutableSourceKey: sourceKey,
-      sourceRecordId: input.issue.id,
+      sourceRecordId: input.task.id,
       sourceIdentityDigest: workspaceReservationDigest(
         `${sourceKey}:${eventId}`,
       ),
@@ -523,47 +523,47 @@ async function publishSessionMovedForWorkspaceInTx(
 }
 
 /**
- * Sole production mutating owner for an issue-execution workspace binding.
+ * Sole production mutating owner for a task-execution workspace binding.
  *
- * The workspace is resolved automatically from the issue's project on every
+ * The workspace is resolved automatically from the task's project on every
  * ownership epoch. Parent Sessions supply lineage only: neither a parent
  * binding nor a prior epoch cwd is an implicit workspace source.
  */
-export async function reserveIssueExecutionWorkspaceBinding(
-  tx: IssueSessionDbTransaction,
-  input: ReserveIssueExecutionWorkspaceBindingInput,
+export async function reserveTaskExecutionWorkspaceBinding(
+  tx: TaskSessionDbTransaction,
+  input: ReserveTaskExecutionWorkspaceBindingInput,
 ) {
   if (
-    !Number.isSafeInteger(input.issue.ownershipEpoch) ||
-    input.issue.ownershipEpoch < 1
+    !Number.isSafeInteger(input.task.ownershipEpoch) ||
+    input.task.ownershipEpoch < 1
   ) {
     rejectWorkspaceReservation(
-      "Issue ownership epoch must be positive",
+      "Task ownership epoch must be positive",
       "ownership_epoch_invalid",
     );
   }
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${[
-      "issue-workspace-reservation",
-      input.issue.companyId,
-      input.issue.id,
-      input.issue.ownershipEpoch,
+      "task-workspace-reservation",
+      input.task.companyId,
+      input.task.id,
+      input.task.ownershipEpoch,
     ].join(":")}, 0))`,
   );
 
   const existingBinding = await tx
     .select()
-    .from(issueExecutionWorkspaceBindings)
+    .from(taskExecutionWorkspaceBindings)
     .where(
       and(
         eq(
-          issueExecutionWorkspaceBindings.companyId,
-          input.issue.companyId,
+          taskExecutionWorkspaceBindings.companyId,
+          input.task.companyId,
         ),
-        eq(issueExecutionWorkspaceBindings.issueId, input.issue.id),
+        eq(taskExecutionWorkspaceBindings.taskId, input.task.id),
         eq(
-          issueExecutionWorkspaceBindings.ownershipEpoch,
-          input.issue.ownershipEpoch,
+          taskExecutionWorkspaceBindings.ownershipEpoch,
+          input.task.ownershipEpoch,
         ),
       ),
     )
@@ -572,18 +572,18 @@ export async function reserveIssueExecutionWorkspaceBinding(
   if (existingBinding) {
     if (existingBinding.sessionId !== input.session.id) {
       rejectWorkspaceReservation(
-        "Issue workspace reservation was retried with different immutable identity",
+        "Task workspace reservation was retried with different immutable identity",
         "workspace_binding_conflict",
       );
     }
     const existingSession = await tx
       .select()
-      .from(issueSessions)
+      .from(taskSessions)
       .where(
         and(
-          eq(issueSessions.companyId, input.issue.companyId),
-          eq(issueSessions.issueId, input.issue.id),
-          eq(issueSessions.id, input.session.id),
+          eq(taskSessions.companyId, input.task.companyId),
+          eq(taskSessions.taskId, input.task.id),
+          eq(taskSessions.id, input.session.id),
         ),
       )
       .limit(1)
@@ -601,7 +601,7 @@ export async function reserveIssueExecutionWorkspaceBinding(
       .from(executionWorkspaces)
       .where(
         and(
-          eq(executionWorkspaces.companyId, input.issue.companyId),
+          eq(executionWorkspaces.companyId, input.task.companyId),
           eq(
             executionWorkspaces.id,
             existingBinding.executionWorkspaceId,
@@ -620,8 +620,8 @@ export async function reserveIssueExecutionWorkspaceBinding(
       binding: existingBinding,
       session: existingSession,
       contextEpochGeneration: await currentContextGeneration(tx, {
-        companyId: input.issue.companyId,
-        issueId: input.issue.id,
+        companyId: input.task.companyId,
+        taskId: input.task.id,
         sessionId: input.session.id,
       }),
       projectWorkspaceId: existingWorkspace.projectWorkspaceId,
@@ -629,34 +629,34 @@ export async function reserveIssueExecutionWorkspaceBinding(
     };
   }
 
-  const project = input.issue.projectId
+  const project = input.task.projectId
     ? await tx
         .select()
         .from(projects)
         .where(
           and(
-            eq(projects.companyId, input.issue.companyId),
-            eq(projects.id, input.issue.projectId),
+            eq(projects.companyId, input.task.companyId),
+            eq(projects.id, input.task.projectId),
           ),
         )
         .limit(1)
         .then((rows) => rows[0] ?? null)
     : null;
-  if (input.issue.projectId && !project) {
+  if (input.task.projectId && !project) {
     rejectWorkspaceReservation(
-      "Issue project is not in this company",
+      "Task project is not in this company",
       "project_invalid",
     );
   }
-  const selectedProjectWorkspaceId = input.issue.projectWorkspaceId ?? null;
-  const selectedProjectWorkspace = input.issue.projectId
+  const selectedProjectWorkspaceId = input.task.projectWorkspaceId ?? null;
+  const selectedProjectWorkspace = input.task.projectId
     ? await tx
         .select()
         .from(projectWorkspaces)
         .where(
           and(
-            eq(projectWorkspaces.companyId, input.issue.companyId),
-            eq(projectWorkspaces.projectId, input.issue.projectId),
+            eq(projectWorkspaces.companyId, input.task.companyId),
+            eq(projectWorkspaces.projectId, input.task.projectId),
             selectedProjectWorkspaceId
               ? eq(projectWorkspaces.id, selectedProjectWorkspaceId)
               : sql`true`,
@@ -667,7 +667,7 @@ export async function reserveIssueExecutionWorkspaceBinding(
     : null;
   if (selectedProjectWorkspaceId && !selectedProjectWorkspace) {
     rejectWorkspaceReservation(
-      "Selected project workspace is not in the issue project",
+      "Selected project workspace is not in the task project",
       "project_workspace_invalid",
     );
   }
@@ -678,18 +678,18 @@ export async function reserveIssueExecutionWorkspaceBinding(
     );
     const perEpochRoot = path.join(
       resolvePaperclipInstanceRoot(),
-      "issue-workspaces",
-      input.issue.companyId,
-      input.issue.id,
-      String(input.issue.ownershipEpoch),
+      "task-workspaces",
+      input.task.companyId,
+      input.task.id,
+      String(input.task.ownershipEpoch),
     );
     const absoluteCwd = projectWorkspaceCwd ?? perEpochRoot;
     await fs.mkdir(absoluteCwd, { recursive: true });
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${[
         "shared-execution-workspace",
-        input.issue.companyId,
-        input.issue.projectId ?? "global",
+        input.task.companyId,
+        input.task.projectId ?? "global",
         selectedProjectWorkspace?.id ?? "projectless",
         absoluteCwd,
       ].join(":")}, 0))`,
@@ -699,9 +699,9 @@ export async function reserveIssueExecutionWorkspaceBinding(
             .from(executionWorkspaces)
             .where(
               and(
-                eq(executionWorkspaces.companyId, input.issue.companyId),
-                input.issue.projectId
-                  ? eq(executionWorkspaces.projectId, input.issue.projectId)
+                eq(executionWorkspaces.companyId, input.task.companyId),
+                input.task.projectId
+                  ? eq(executionWorkspaces.projectId, input.task.projectId)
                   : isNull(executionWorkspaces.projectId),
                 selectedProjectWorkspace?.id
                   ? eq(
@@ -728,8 +728,8 @@ export async function reserveIssueExecutionWorkspaceBinding(
       const inserted = await tx
         .insert(executionWorkspaces)
         .values({
-          companyId: input.issue.companyId,
-          projectId: input.issue.projectId,
+          companyId: input.task.companyId,
+          projectId: input.task.projectId,
           projectWorkspaceId: selectedProjectWorkspace?.id ?? null,
           cwd: absoluteCwd,
           repoUrl: selectedProjectWorkspace?.repoUrl ?? null,
@@ -759,28 +759,28 @@ export async function reserveIssueExecutionWorkspaceBinding(
   const parentSessionId = await resolveReservationParentSession(tx, input);
   const existingSession = await tx
     .select()
-    .from(issueSessions)
+    .from(taskSessions)
     .where(
       and(
-        eq(issueSessions.companyId, input.issue.companyId),
-        eq(issueSessions.issueId, input.issue.id),
-        eq(issueSessions.id, input.session.id),
+        eq(taskSessions.companyId, input.task.companyId),
+        eq(taskSessions.taskId, input.task.id),
+        eq(taskSessions.id, input.session.id),
       ),
     )
     .for("update")
     .then((rows) => rows[0] ?? null);
 
-  let session: typeof issueSessions.$inferSelect;
+  let session: typeof taskSessions.$inferSelect;
   let contextEpochGeneration: number;
   let moved = false;
   if (!existingSession) {
-    const root = await createIssueSessionRootInTx(tx, {
+    const root = await createTaskSessionRootInTx(tx, {
       id: input.session.id,
-      companyId: input.issue.companyId,
-      issueId: input.issue.id,
+      companyId: input.task.companyId,
+      taskId: input.task.id,
       parentSessionId,
-      projectId: input.issue.projectId ?? "global",
-      title: input.issue.title?.trim() || `Issue ${input.issue.id}`,
+      projectId: input.task.projectId ?? "global",
+      title: input.task.title?.trim() || `Task ${input.task.id}`,
       directory: absoluteCwd,
       now: input.session.now,
     });
@@ -789,7 +789,7 @@ export async function reserveIssueExecutionWorkspaceBinding(
   } else {
     if (existingSession.parentSessionId !== parentSessionId) {
       rejectWorkspaceReservation(
-        "Existing Session parent does not match issue lineage",
+        "Existing Session parent does not match task lineage",
         "parent_session_mismatch",
       );
     }
@@ -798,8 +798,8 @@ export async function reserveIssueExecutionWorkspaceBinding(
       moved = true;
       const movedSession = await tx
         .select()
-        .from(issueSessions)
-        .where(eq(issueSessions.id, input.session.id))
+        .from(taskSessions)
+        .where(eq(taskSessions.id, input.session.id))
         .limit(1)
         .then((rows) => rows[0] ?? null);
       if (!movedSession) {
@@ -813,23 +813,23 @@ export async function reserveIssueExecutionWorkspaceBinding(
       session = existingSession;
     }
     contextEpochGeneration = await currentContextGeneration(tx, {
-      companyId: input.issue.companyId,
-      issueId: input.issue.id,
+      companyId: input.task.companyId,
+      taskId: input.task.id,
       sessionId: input.session.id,
     });
   }
 
   const binding = await tx
-    .insert(issueExecutionWorkspaceBindings)
+    .insert(taskExecutionWorkspaceBindings)
     .values({
       id: deterministicWorkspaceUuid(
-        "issue-workspace-binding",
-        `${input.issue.companyId}:${input.issue.id}:${input.issue.ownershipEpoch}`,
+        "task-workspace-binding",
+        `${input.task.companyId}:${input.task.id}:${input.task.ownershipEpoch}`,
       ),
-      companyId: input.issue.companyId,
-      issueId: input.issue.id,
+      companyId: input.task.companyId,
+      taskId: input.task.id,
       sessionId: input.session.id,
-      ownershipEpoch: input.issue.ownershipEpoch,
+      ownershipEpoch: input.task.ownershipEpoch,
       executionWorkspaceId: workspace.id,
       absoluteCwd,
       boundByAgentId: input.provenance?.agentId ?? null,
@@ -840,7 +840,7 @@ export async function reserveIssueExecutionWorkspaceBinding(
     .then((rows) => rows[0] ?? null);
   if (!binding) {
     rejectWorkspaceReservation(
-      "Issue execution workspace binding was not persisted",
+      "Task execution workspace binding was not persisted",
       "workspace_binding_missing",
     );
   }
@@ -856,90 +856,90 @@ export async function reserveIssueExecutionWorkspaceBinding(
 export function executionWorkspaceService(db: Db) {
   async function listCurrentBindingsForWorkspace(
     executionWorkspaceId: string,
-    options: { companyId?: string; issueId?: string } = {},
+    options: { companyId?: string; taskId?: string } = {},
   ): Promise<ExecutionWorkspaceCurrentBinding[]> {
     const conditions = [
       eq(
-        issueExecutionWorkspaceBindings.executionWorkspaceId,
+        taskExecutionWorkspaceBindings.executionWorkspaceId,
         executionWorkspaceId,
       ),
-      eq(issueExecutionWorkspaceBindings.companyId, issues.companyId),
-      eq(issueExecutionWorkspaceBindings.issueId, issues.id),
+      eq(taskExecutionWorkspaceBindings.companyId, tasks.companyId),
+      eq(taskExecutionWorkspaceBindings.taskId, tasks.id),
       eq(
-        issueExecutionWorkspaceBindings.ownershipEpoch,
-        issues.ownershipEpoch,
+        taskExecutionWorkspaceBindings.ownershipEpoch,
+        tasks.ownershipEpoch,
       ),
     ];
     if (options.companyId) {
       conditions.push(
-        eq(issueExecutionWorkspaceBindings.companyId, options.companyId),
+        eq(taskExecutionWorkspaceBindings.companyId, options.companyId),
       );
     }
-    if (options.issueId) {
+    if (options.taskId) {
       conditions.push(
-        eq(issueExecutionWorkspaceBindings.issueId, options.issueId),
+        eq(taskExecutionWorkspaceBindings.taskId, options.taskId),
       );
     }
 
     return db
       .select({
-        id: issueExecutionWorkspaceBindings.id,
-        companyId: issueExecutionWorkspaceBindings.companyId,
-        issueId: issueExecutionWorkspaceBindings.issueId,
-        sessionId: issueExecutionWorkspaceBindings.sessionId,
-        ownershipEpoch: issueExecutionWorkspaceBindings.ownershipEpoch,
+        id: taskExecutionWorkspaceBindings.id,
+        companyId: taskExecutionWorkspaceBindings.companyId,
+        taskId: taskExecutionWorkspaceBindings.taskId,
+        sessionId: taskExecutionWorkspaceBindings.sessionId,
+        ownershipEpoch: taskExecutionWorkspaceBindings.ownershipEpoch,
         executionWorkspaceId:
-          issueExecutionWorkspaceBindings.executionWorkspaceId,
-        absoluteCwd: issueExecutionWorkspaceBindings.absoluteCwd,
-        issueIdentifier: issues.identifier,
-        issueTitle: issues.title,
-        issueStatus: issues.boardPresentationStatus,
-        issueUpdatedAt: issues.updatedAt,
+          taskExecutionWorkspaceBindings.executionWorkspaceId,
+        absoluteCwd: taskExecutionWorkspaceBindings.absoluteCwd,
+        taskIdentifier: tasks.identifier,
+        taskTitle: tasks.title,
+        taskStatus: tasks.boardPresentationStatus,
+        taskUpdatedAt: tasks.updatedAt,
       })
-      .from(issueExecutionWorkspaceBindings)
+      .from(taskExecutionWorkspaceBindings)
       .innerJoin(
-        issues,
+        tasks,
         and(
-          eq(issues.companyId, issueExecutionWorkspaceBindings.companyId),
-          eq(issues.id, issueExecutionWorkspaceBindings.issueId),
+          eq(tasks.companyId, taskExecutionWorkspaceBindings.companyId),
+          eq(tasks.id, taskExecutionWorkspaceBindings.taskId),
           eq(
-            issues.ownershipEpoch,
-            issueExecutionWorkspaceBindings.ownershipEpoch,
+            tasks.ownershipEpoch,
+            taskExecutionWorkspaceBindings.ownershipEpoch,
           ),
         ),
       )
       .where(and(...conditions))
       .orderBy(
-        desc(issues.updatedAt),
-        desc(issueExecutionWorkspaceBindings.createdAt),
+        desc(tasks.updatedAt),
+        desc(taskExecutionWorkspaceBindings.createdAt),
       );
   }
 
   async function resolveCurrentBindingForWorkspace(
     executionWorkspaceId: string,
     companyId: string,
-    issueId?: string | null,
+    taskId?: string | null,
   ): Promise<ExecutionWorkspaceCurrentBinding> {
     const bindings = await listCurrentBindingsForWorkspace(
       executionWorkspaceId,
       {
         companyId,
-        ...(issueId ? { issueId } : {}),
+        ...(taskId ? { taskId } : {}),
       },
     );
     if (bindings.length === 0) {
       throw unprocessable(
-        issueId
-          ? "Execution workspace is not bound to the issue's current ownership epoch"
+        taskId
+          ? "Execution workspace is not bound to the task's current ownership epoch"
           : "Execution workspace has no current ownership-epoch binding",
       );
     }
-    if (!issueId && bindings.length > 1) {
+    if (!taskId && bindings.length > 1) {
       throw conflict(
-        "Execution workspace has multiple current issue bindings; select the issue whose ownership epoch should be reconciled",
+        "Execution workspace has multiple current task bindings; select the task whose ownership epoch should be reconciled",
         {
           executionWorkspaceId,
-          issueIds: bindings.map((binding) => binding.issueId),
+          taskIds: bindings.map((binding) => binding.taskId),
         },
       );
     }
@@ -996,37 +996,37 @@ export function executionWorkspaceService(db: Db) {
         );
         if (!matchesPath && !matchesBranch) continue;
 
-        const linkedIssues = await listCurrentBindingsForWorkspace(
+        const linkedTasks = await listCurrentBindingsForWorkspace(
           candidate.id,
           { companyId: input.companyId },
         );
-        if (linkedIssues.length === 0) continue;
+        if (linkedTasks.length === 0) continue;
 
-        const linkages = await resolveCurrentIssueOwnerRunLinkages(db, {
+        const linkages = await resolveCurrentTaskOwnerRunLinkages(db, {
           companyId: input.companyId,
-          issueIds: linkedIssues.map((issue) => issue.issueId),
+          taskIds: linkedTasks.map((task) => task.taskId),
         });
         const linkage =
           [...linkages.values()].sort(
             (left, right) =>
               right.createdAt.getTime() - left.createdAt.getTime(),
           )[0] ?? null;
-        const activeIssue = linkage
-          ? linkedIssues.find((issue) => issue.issueId === linkage.issueId) ??
+        const activeTask = linkage
+          ? linkedTasks.find((task) => task.taskId === linkage.taskId) ??
             null
           : null;
-        const claimedIssue = activeIssue ?? linkedIssues[0]!;
+        const claimedTask = activeTask ?? linkedTasks[0]!;
 
         return {
           claimedByWorkspaceId: candidate.id,
-          claimedByIssueId: claimedIssue.issueId,
-          claimedByIssueIdentifier: claimedIssue.issueIdentifier,
+          claimedByTaskId: claimedTask.taskId,
+          claimedByTaskIdentifier: claimedTask.taskIdentifier,
           activeRun: linkage
             ? {
                 id: linkage.runId,
                 status: "running",
-                issueId: activeIssue?.issueId ?? null,
-                issueIdentifier: activeIssue?.issueIdentifier ?? null,
+                taskId: activeTask?.taskId ?? null,
+                taskIdentifier: activeTask?.taskIdentifier ?? null,
               }
             : null,
         };
@@ -1039,7 +1039,7 @@ export function executionWorkspaceService(db: Db) {
       id: string,
       input: {
         mode: ExecutionWorkspaceBranchReconcileMode;
-        issueId?: string | null;
+        taskId?: string | null;
         reason?: string | null;
         actor: ExecutionWorkspaceBranchReconcileActor;
       },
@@ -1056,11 +1056,11 @@ export function executionWorkspaceService(db: Db) {
       const currentBinding = await resolveCurrentBindingForWorkspace(
         existing.id,
         existing.companyId,
-        input.issueId,
+        input.taskId,
       );
       const inspection = await inspectExecutionWorkspaceBranchForReconcile(
         existing,
-        currentBinding.issueId,
+        currentBinding.taskId,
       );
       if (inspection.fromBranch === inspection.toBranch) {
         throw unprocessable(
@@ -1088,39 +1088,39 @@ export function executionWorkspaceService(db: Db) {
 
         const lockedBinding = await tx
           .select({
-            id: issueExecutionWorkspaceBindings.id,
-            companyId: issueExecutionWorkspaceBindings.companyId,
-            issueId: issueExecutionWorkspaceBindings.issueId,
-            sessionId: issueExecutionWorkspaceBindings.sessionId,
-            ownershipEpoch: issueExecutionWorkspaceBindings.ownershipEpoch,
+            id: taskExecutionWorkspaceBindings.id,
+            companyId: taskExecutionWorkspaceBindings.companyId,
+            taskId: taskExecutionWorkspaceBindings.taskId,
+            sessionId: taskExecutionWorkspaceBindings.sessionId,
+            ownershipEpoch: taskExecutionWorkspaceBindings.ownershipEpoch,
             executionWorkspaceId:
-              issueExecutionWorkspaceBindings.executionWorkspaceId,
+              taskExecutionWorkspaceBindings.executionWorkspaceId,
           })
-          .from(issueExecutionWorkspaceBindings)
+          .from(taskExecutionWorkspaceBindings)
           .innerJoin(
-            issues,
+            tasks,
             and(
-              eq(issues.companyId, issueExecutionWorkspaceBindings.companyId),
-              eq(issues.id, issueExecutionWorkspaceBindings.issueId),
+              eq(tasks.companyId, taskExecutionWorkspaceBindings.companyId),
+              eq(tasks.id, taskExecutionWorkspaceBindings.taskId),
               eq(
-                issues.ownershipEpoch,
-                issueExecutionWorkspaceBindings.ownershipEpoch,
+                tasks.ownershipEpoch,
+                taskExecutionWorkspaceBindings.ownershipEpoch,
               ),
             ),
           )
           .where(
             and(
-              eq(issueExecutionWorkspaceBindings.id, currentBinding.id),
+              eq(taskExecutionWorkspaceBindings.id, currentBinding.id),
               eq(
-                issueExecutionWorkspaceBindings.companyId,
+                taskExecutionWorkspaceBindings.companyId,
                 lockedRow.companyId,
               ),
               eq(
-                issueExecutionWorkspaceBindings.issueId,
-                currentBinding.issueId,
+                taskExecutionWorkspaceBindings.taskId,
+                currentBinding.taskId,
               ),
               eq(
-                issueExecutionWorkspaceBindings.executionWorkspaceId,
+                taskExecutionWorkspaceBindings.executionWorkspaceId,
                 lockedRow.id,
               ),
             ),
@@ -1133,10 +1133,10 @@ export function executionWorkspaceService(db: Db) {
           lockedBinding.ownershipEpoch !== currentBinding.ownershipEpoch
         ) {
           throw conflict(
-            "Execution workspace ownership binding changed during branch reconciliation; retry with the current issue epoch",
+            "Execution workspace ownership binding changed during branch reconciliation; retry with the current task epoch",
             {
               executionWorkspaceId: lockedRow.id,
-              issueId: currentBinding.issueId,
+              taskId: currentBinding.taskId,
               ownershipEpoch: currentBinding.ownershipEpoch,
             },
           );
@@ -1171,7 +1171,7 @@ export function executionWorkspaceService(db: Db) {
           db,
           {
             companyId: lockedRow.companyId,
-            issueId: lockedBinding.issueId,
+            taskId: lockedBinding.taskId,
             sourceKind: "workspace_branch_reconciled",
             immutableSourceKey: [inspection.fingerprint, input.mode].join(":"),
             sourceRecordId: inspection.fingerprint,
@@ -1192,7 +1192,7 @@ export function executionWorkspaceService(db: Db) {
 
         return {
           workspace: toExecutionWorkspace(updatedRow),
-          boundIssueId: lockedBinding.issueId,
+          boundTaskId: lockedBinding.taskId,
           boundOwnershipEpoch: lockedBinding.ownershipEpoch,
           inspection,
           auditCommentId: auditNotice.comment?.id ?? null,

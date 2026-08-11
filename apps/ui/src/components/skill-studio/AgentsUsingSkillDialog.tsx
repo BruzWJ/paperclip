@@ -149,7 +149,7 @@ export function AgentsUsingSkillDialog({
   );
 
   // Every non-terminated company agent can receive an explicit company-skill
-  // selection. Runtime exposure is owned by the issue-execution boundary.
+  // selection. Runtime exposure is owned by the task-execution boundary.
   const attachedIds = useMemo(
     () => new Set(skill.usedByAgents.map((entry) => entry.id)),
     [skill.usedByAgents],

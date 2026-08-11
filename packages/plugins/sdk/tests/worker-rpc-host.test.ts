@@ -900,7 +900,7 @@ describe("worker invocation scope propagation", () => {
     const sessionResult = {
       session: {
         companyId: "company-a",
-        issueId: "issue-a",
+        taskId: "task-a",
         sessionId: "session-a",
         parentSessionId: null,
         projectId: "project-a",
@@ -913,8 +913,8 @@ describe("worker invocation scope propagation", () => {
     const commentsResult = {
       items: [{
         id: "comment-a",
-        issueId: "issue-a",
-        body: "Pinned issue context.",
+        taskId: "task-a",
+        body: "Pinned task context.",
         author: { kind: "board" as const },
         runId: null,
         sequence: 36,
@@ -923,12 +923,12 @@ describe("worker invocation scope propagation", () => {
       nextCursor: null,
     };
     const readSession = vi.fn(async () => sessionResult);
-    const readIssueComments = vi.fn(async () => commentsResult);
+    const readTaskComments = vi.fn(async () => commentsResult);
     const handlers = createHostClientHandlers({
       pluginId: "paperclip.before-prompt-records-test",
       capabilities: ["runtime.records.read"],
       services: {
-        runtimeRecords: { readSession, readIssueComments },
+        runtimeRecords: { readSession, readTaskComments },
       } as unknown as HostServices,
     });
 
@@ -948,9 +948,9 @@ describe("worker invocation scope propagation", () => {
           messages: { afterSeq: -1, limit: 50 },
           events: { afterSeq: -1, limit: 50 },
         });
-        const comments = await records.readIssueComments({
+        const comments = await records.readTaskComments({
           companyId: input.companyId,
-          issueId: input.issueId,
+          taskId: input.taskId,
           limit: 50,
         });
         return {
@@ -991,7 +991,7 @@ describe("worker invocation scope propagation", () => {
       scope: {
         companyId: "company-a",
         canonicalSession: {
-          issueId: "issue-a",
+          taskId: "task-a",
           sessionId: "session-a",
           snapshotHighWaterSeq: 37,
         },
@@ -1052,7 +1052,7 @@ describe("worker invocation scope propagation", () => {
 
     const beforePromptInput = {
       companyId: "company-a",
-      issueId: "issue-a",
+      taskId: "task-a",
       sessionId: "session-a",
       runId: "run-a",
       agentId: "agent-a",
@@ -1067,14 +1067,14 @@ describe("worker invocation scope propagation", () => {
       sourceMessageSeq: 37,
       contextAccess: {
         carry_context: false,
-        read_issue_comments: true,
-        read_issue_agent_run: false,
-        list_sub_issues: false,
-        read_sub_issue_comments: false,
-        read_sub_issue_agent_run: false,
-        list_company_issues: false,
-        read_company_issue_comments: false,
-        read_company_issue_agent_run: false,
+        read_task_comments: true,
+        read_task_agent_run: false,
+        list_sub_tasks: false,
+        read_sub_task_comments: false,
+        read_sub_task_agent_run: false,
+        list_company_tasks: false,
+        read_company_task_comments: false,
+        read_company_task_agent_run: false,
       },
       snapshotHighWaterSeq: 37,
     } as const;
@@ -1119,10 +1119,10 @@ describe("worker invocation scope propagation", () => {
           invocationScope: invocation.scope,
         },
         {
-          method: "runtime.records.readIssueComments",
+          method: "runtime.records.readTaskComments",
           params: {
             companyId: "company-a",
-            issueId: "issue-a",
+            taskId: "task-a",
             limit: 50,
           },
           invocationId: "invocation-before-prompt",
@@ -1131,8 +1131,8 @@ describe("worker invocation scope propagation", () => {
       ]);
       expect(readSession).toHaveBeenCalledOnce();
       expect(readSession).toHaveBeenCalledWith(nestedCalls[0]?.params);
-      expect(readIssueComments).toHaveBeenCalledOnce();
-      expect(readIssueComments).toHaveBeenCalledWith(nestedCalls[1]?.params);
+      expect(readTaskComments).toHaveBeenCalledOnce();
+      expect(readTaskComments).toHaveBeenCalledWith(nestedCalls[1]?.params);
     } finally {
       worker.stop();
       hostReadline.close();
@@ -1143,7 +1143,7 @@ describe("worker invocation scope propagation", () => {
 });
 
 describe("worker plugin run-context bridge", () => {
-  it("blocks captured installation issue APIs during executeTool while run issues use the exact opaque handle", async () => {
+  it("blocks captured installation task APIs during executeTool while run tasks use the exact opaque handle", async () => {
     const hostToWorker = new PassThrough();
     const workerToHost = new PassThrough();
     const hostReadline = createInterface({ input: workerToHost });
@@ -1154,17 +1154,17 @@ describe("worker plugin run-context bridge", () => {
       invocationId: string | undefined;
     }> = [];
     let nextRequestId = 1;
-    const ordinaryIssueList = vi.fn(async () => []);
-    const readIssueComments = vi.fn(async () => ({
+    const ordinaryTaskList = vi.fn(async () => []);
+    const readTaskComments = vi.fn(async () => ({
       items: [{ id: "comment-a", body: "Dial-authorized comment." }],
       nextCursor: null,
     }));
     const handlers = createHostClientHandlers({
       pluginId: "paperclip.run-context-test",
-      capabilities: ["issues.read"],
+      capabilities: ["tasks.read"],
       services: {
-        issues: { list: ordinaryIssueList },
-        runIssues: { readIssueComments },
+        tasks: { list: ordinaryTaskList },
+        runTasks: { readTaskComments },
       } as unknown as HostServices,
     });
     const plugin = definePlugin({
@@ -1172,25 +1172,25 @@ describe("worker plugin run-context bridge", () => {
         ctx.tools.register(
           "inspect",
           async (_params, runContext) => {
-            let ordinaryIssueError: { code: number | null; message: string } | null = null;
+            let ordinaryTaskError: { code: number | null; message: string } | null = null;
             try {
-              await ctx.issues.list({ companyId: "company-a" });
+              await ctx.tasks.list({ companyId: "company-a" });
             } catch (error) {
-              ordinaryIssueError = {
+              ordinaryTaskError = {
                 code: typeof (error as { code?: unknown })?.code === "number"
                   ? (error as { code: number }).code
                   : null,
                 message: error instanceof Error ? error.message : String(error),
               };
             }
-            const comments = await runContext.issues.readIssueComments();
+            const comments = await runContext.tasks.readTaskComments();
             return {
               ok: true,
               content: "ok",
               data: {
                 contextKeys: Object.keys(runContext).sort(),
                 handle: runContext.handle,
-                ordinaryIssueError,
+                ordinaryTaskError,
                 comments,
               },
             };
@@ -1288,7 +1288,7 @@ describe("worker plugin run-context bridge", () => {
           description: "Run context test",
           author: "Paperclip",
           categories: ["automation"],
-          capabilities: ["agent.tools.register", "issues.read"],
+          capabilities: ["agent.tools.register", "tasks.read"],
           entrypoints: { worker: "dist/worker.js" },
           tools: [{
             name: "inspect",
@@ -1320,12 +1320,12 @@ describe("worker plugin run-context bridge", () => {
         ok: true,
         content: "ok",
         data: {
-          contextKeys: ["handle", "issueReach", "issues", "resolve"],
+          contextKeys: ["handle", "resolve", "taskReach", "tasks"],
           handle: "pc_plugin_ctx_v1_exact",
-          ordinaryIssueError: {
+          ordinaryTaskError: {
             code: PLUGIN_RPC_ERROR_CODES.INVOCATION_SCOPE_DENIED,
             message: expect.stringContaining(
-              "installation issue control plane is unavailable while serving an agent run",
+              "installation task control plane is unavailable while serving an agent run",
             ),
           },
           comments: {
@@ -1335,18 +1335,18 @@ describe("worker plugin run-context bridge", () => {
         },
       });
       expect(nestedCalls).toContainEqual({
-        method: "issues.list",
+        method: "tasks.list",
         params: { companyId: "company-a" },
         invocationId: "invocation-run",
       });
       expect(nestedCalls).toContainEqual({
-        method: "run.issues.readIssueComments",
+        method: "run.tasks.readTaskComments",
         params: { runContextHandle: "pc_plugin_ctx_v1_exact" },
         invocationId: "invocation-run",
       });
-      expect(ordinaryIssueList).not.toHaveBeenCalled();
-      expect(readIssueComments).toHaveBeenCalledOnce();
-      expect(readIssueComments).toHaveBeenCalledWith({
+      expect(ordinaryTaskList).not.toHaveBeenCalled();
+      expect(readTaskComments).toHaveBeenCalledOnce();
+      expect(readTaskComments).toHaveBeenCalledWith({
         runContextHandle: "pc_plugin_ctx_v1_exact",
       });
     } finally {
@@ -1358,7 +1358,7 @@ describe("worker plugin run-context bridge", () => {
   });
 });
 
-describe("worker issue mutation bridge", () => {
+describe("worker task mutation bridge", () => {
   it("replays each exact mutation request after a lost response without supplying an operation identity", async () => {
     const hostToWorker = new PassThrough();
     const workerToHost = new PassThrough();
@@ -1370,25 +1370,25 @@ describe("worker issue mutation bridge", () => {
     const plugin = definePlugin({
       async setup(ctx) {
         ctx.data.register("mutations", async () => {
-          const created = await ctx.issues.create({
+          const created = await ctx.tasks.create({
             companyId: "company-1",
             request: "Create exact plugin work.",
             ownerAgentId: "agent-1",
             callbackKey: "creator",
             callbackVersion: "1",
           });
-          const messaged = await ctx.issues.update(
-            "issue-1",
+          const messaged = await ctx.tasks.update(
+            "task-1",
             { kind: "message", message: "One creator message." },
             "company-1",
           );
-          const reassigned = await ctx.issues.update(
-            "issue-1",
+          const reassigned = await ctx.tasks.update(
+            "task-1",
             { kind: "reassign", ownerAgentId: "agent-2" },
             "company-1",
           );
-          const withdrawn = await ctx.issues.withdraw(
-            "issue-1",
+          const withdrawn = await ctx.tasks.withdraw(
+            "task-1",
             "The plugin no longer needs this work.",
             "company-1",
           );
@@ -1432,23 +1432,23 @@ describe("worker issue mutation bridge", () => {
         params: message.params,
         line,
       });
-      const updateKind = message.method === "issues.update"
+      const updateKind = message.method === "tasks.update"
         ? (message.params as { input: { kind: string } }).input.kind
         : "";
       const mutationKey = `${message.method}:${updateKind}`;
       const attempt = (mutationAttempts.get(mutationKey) ?? 0) + 1;
       mutationAttempts.set(mutationKey, attempt);
       if (attempt === 1) return;
-      if (message.method === "issues.withdraw") {
+      if (message.method === "tasks.withdraw") {
         hostToWorker.write(serializeMessage(createSuccessResponse(message.id, {
           operationId: "host-operation-1",
-          issue: { id: "issue-1", status: "cancelled" },
+          task: { id: "task-1", status: "cancelled" },
           retried: true,
         })));
         return;
       }
       hostToWorker.write(serializeMessage(createSuccessResponse(message.id, {
-        id: "issue-1",
+        id: "task-1",
         companyId: "company-1",
       })));
     });
@@ -1463,7 +1463,7 @@ describe("worker issue mutation bridge", () => {
           description: "Withdrawal test",
           author: "Paperclip",
           categories: ["automation"],
-          capabilities: ["issues.withdraw"],
+          capabilities: ["tasks.withdraw"],
           entrypoints: { worker: "dist/worker.js" },
         },
         instanceInfo: { instanceId: "test", hostVersion: "0.0.0" },
@@ -1475,9 +1475,9 @@ describe("worker issue mutation bridge", () => {
         key: "mutations",
         params: {},
       })).resolves.toMatchObject({
-        created: { id: "issue-1" },
-        messaged: { id: "issue-1" },
-        reassigned: { id: "issue-1" },
+        created: { id: "task-1" },
+        messaged: { id: "task-1" },
+        reassigned: { id: "task-1" },
         withdrawn: {
           operationId: "host-operation-1",
           retried: true,
@@ -1488,11 +1488,11 @@ describe("worker issue mutation bridge", () => {
         expect(hostCalls[index + 1]).toEqual(hostCalls[index]);
       }
       const withdrawal = hostCalls.find(
-        ({ method }) => method === "issues.withdraw",
+        ({ method }) => method === "tasks.withdraw",
       );
       expect(withdrawal).toMatchObject({
         params: {
-          issueId: "issue-1",
+          taskId: "task-1",
           companyId: "company-1",
           message: "The plugin no longer needs this work.",
         },

@@ -34,7 +34,7 @@ function manifest(pluginKey = "paperclip.dbtest"): PaperclipPluginManifestV1 {
     entrypoints: { worker: "./dist/worker.js" },
     database: {
       migrationsDir: "migrations",
-      coreReadTables: ["issues"],
+      coreReadTables: ["tasks"],
     },
   };
 }
@@ -60,9 +60,9 @@ describe("plugin database SQL validation", () => {
   it("allows namespace migrations with whitelisted public foreign keys", () => {
     expect(() =>
       validatePluginMigrationStatement(
-        "CREATE TABLE plugin_test.rows (id uuid PRIMARY KEY, issue_id uuid REFERENCES public.issues(id))",
+        "CREATE TABLE plugin_test.rows (id uuid PRIMARY KEY, task_id uuid REFERENCES public.tasks(id))",
         "plugin_test",
-        ["issues"],
+        ["tasks"],
       )
     ).not.toThrow();
   });
@@ -70,7 +70,7 @@ describe("plugin database SQL validation", () => {
   it("allows qualified indexes and namespace-scoped migration backfills", () => {
     expect(() =>
       validatePluginMigrationStatement(
-        "CREATE INDEX IF NOT EXISTS rows_issue_idx ON plugin_test.rows (issue_id)",
+        "CREATE INDEX IF NOT EXISTS rows_task_idx ON plugin_test.rows (task_id)",
         "plugin_test",
       )
     ).not.toThrow();
@@ -100,16 +100,16 @@ describe("plugin database SQL validation", () => {
     ).toThrow(/fully qualified/i);
     expect(() =>
       validatePluginMigrationStatement(
-        "WITH source_rows AS (SELECT id FROM plugin_test.rows) INSERT INTO public.issues (id) SELECT id FROM source_rows",
+        "WITH source_rows AS (SELECT id FROM plugin_test.rows) INSERT INTO public.tasks (id) SELECT id FROM source_rows",
         "plugin_test",
-        ["issues"],
+        ["tasks"],
       )
     ).toThrow(/public/i);
     expect(() =>
       validatePluginMigrationStatement(
-        "UPDATE public.issues SET title = 'bad'",
+        "UPDATE public.tasks SET title = 'bad'",
         "plugin_test",
-        ["issues"],
+        ["tasks"],
       )
     ).toThrow(/public/i);
   });
@@ -117,14 +117,14 @@ describe("plugin database SQL validation", () => {
   it("allows whitelisted runtime reads but rejects public writes", () => {
     expect(() =>
       validatePluginRuntimeQuery(
-        "SELECT r.id FROM plugin_test.rows r JOIN public.issues i ON i.id = r.issue_id",
+        "SELECT r.id FROM plugin_test.rows r JOIN public.tasks i ON i.id = r.task_id",
         "plugin_test",
-        ["issues"],
+        ["tasks"],
       )
     ).not.toThrow();
     expect(() =>
       validatePluginRuntimeExecute(
-        "UPDATE public.issues SET title = $1",
+        "UPDATE public.tasks SET title = $1",
         "plugin_test",
       )
     ).toThrow(/namespace/i);
@@ -305,7 +305,7 @@ describe("plugin database service without a database process", () => {
 
     const rows = await pluginDatabaseService(harness.db).query(
       pluginId,
-      `SELECT r.id, i.title FROM ${namespace.namespaceName}.rows r JOIN public.issues i ON i.id = r.issue_id`,
+      `SELECT r.id, i.title FROM ${namespace.namespaceName}.rows r JOIN public.tasks i ON i.id = r.task_id`,
     );
 
     expect(rows).toEqual([{ id: "row-1", title: "Allowed" }]);
@@ -321,7 +321,7 @@ describe("plugin database service without a database process", () => {
     await expect(
       pluginDatabaseService(harness.db).execute(
         pluginId,
-        "UPDATE public.issues SET title = $1",
+        "UPDATE public.tasks SET title = $1",
         ["bad"],
       ),
     ).rejects.toThrow(/plugin namespace/i);

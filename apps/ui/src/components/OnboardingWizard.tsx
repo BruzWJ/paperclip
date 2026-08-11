@@ -7,7 +7,7 @@ import { companiesApi } from "../api/companies";
 import { goalsApi } from "../api/goals";
 import { agentsApi } from "../api/agents";
 import { companySkillsApi } from "../api/companySkills";
-import { issuesApi } from "../api/issues";
+import { tasksApi } from "../api/tasks";
 import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
 import { Dialog, DialogPortal } from "@/components/ui/dialog";
@@ -24,7 +24,7 @@ import { AgentConfigForm } from "./AgentConfigForm";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import { parseOnboardingGoalInput } from "../lib/onboarding-goal";
 import {
-  buildOnboardingIssuePayload,
+  buildOnboardingTaskPayload,
   buildOnboardingProjectPayload,
   selectDefaultCompanyGoalId,
   selectReusableOnboardingProject,
@@ -274,8 +274,8 @@ export function OnboardingWizard() {
   const [createdProjectId, setCreatedProjectId] = useState<string | null>(
     (saved?.createdProjectId as string) ?? null
   );
-  const [createdIssueRef, setCreatedIssueRef] = useState<string | null>(
-    (saved?.createdIssueRef as string) ?? null
+  const [createdTaskRef, setCreatedTaskRef] = useState<string | null>(
+    (saved?.createdTaskRef as string) ?? null
   );
 
   const { data: companySkills } = useQuery({
@@ -307,11 +307,11 @@ export function OnboardingWizard() {
     effectiveOnboardingOptions.initialStep
   ]);
 
-  // Backfill issue prefix for an existing company once companies are loaded.
+  // Backfill task prefix for an existing company once companies are loaded.
   useEffect(() => {
     if (!effectiveOnboardingOpen || !createdCompanyId || createdCompanyPrefix) return;
     const company = companies.find((c) => c.id === createdCompanyId);
-    if (company) setCreatedCompanyPrefix(company.issuePrefix);
+    if (company) setCreatedCompanyPrefix(company.taskPrefix);
   }, [effectiveOnboardingOpen, createdCompanyId, createdCompanyPrefix, companies]);
 
   // Persist wizard state to localStorage on every change
@@ -324,7 +324,7 @@ export function OnboardingWizard() {
       agentCreateIdempotencyKey, adapterType,
       adapterConfigValues: configValues,
       createdCompanyId, createdCompanyPrefix, createdAgentId,
-      createdCompanyGoalId, createdProjectId, createdIssueRef,
+      createdCompanyGoalId, createdProjectId, createdTaskRef,
       onboardingPath, growWorkflows, growPainPoints, growAutomate,
     };
     localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify(state));
@@ -334,7 +334,7 @@ export function OnboardingWizard() {
     runtimeAccess, companySkillPins, initialTaskTitle, initialTaskRequest,
     agentCreateIdempotencyKey, adapterType, configValues,
     createdCompanyId, createdCompanyPrefix, createdAgentId,
-    createdCompanyGoalId, createdProjectId, createdIssueRef,
+    createdCompanyGoalId, createdProjectId, createdTaskRef,
     onboardingPath, growWorkflows, growPainPoints, growAutomate,
   ]);
 
@@ -410,7 +410,7 @@ export function OnboardingWizard() {
     setCreatedAgentId(null);
     setCreatedCompanyGoalId(null);
     setCreatedProjectId(null);
-    setCreatedIssueRef(null);
+    setCreatedTaskRef(null);
   }
 
   function handleClose() {
@@ -429,7 +429,7 @@ export function OnboardingWizard() {
       return;
     }
     if (!initialTaskRequest.trim()) {
-      setError("Write the first issue request before launching.");
+      setError("Write the first task request before launching.");
       return;
     }
     setLoading(true);
@@ -461,10 +461,10 @@ export function OnboardingWizard() {
         setCreatedProjectId(projectId);
       }
 
-      if (!createdIssueRef) {
-        const issue = await issuesApi.create(
+      if (!createdTaskRef) {
+        const task = await tasksApi.create(
           createdCompanyId,
-          buildOnboardingIssuePayload({
+          buildOnboardingTaskPayload({
             title: initialTaskTitle,
             request: initialTaskRequest,
             ownerAgentId: createdAgentId,
@@ -472,9 +472,9 @@ export function OnboardingWizard() {
             goalId,
           })
         );
-        setCreatedIssueRef(issue.identifier ?? issue.id);
+        setCreatedTaskRef(task.identifier ?? task.id);
         queryClient.invalidateQueries({
-          queryKey: queryKeys.issues.list(createdCompanyId)
+          queryKey: queryKeys.tasks.list(createdCompanyId)
         });
       }
 
@@ -503,7 +503,7 @@ export function OnboardingWizard() {
     try {
       const company = await companiesApi.create({ name: companyName.trim() });
       setCreatedCompanyId(company.id);
-      setCreatedCompanyPrefix(company.issuePrefix);
+      setCreatedCompanyPrefix(company.taskPrefix);
       setSelectedCompanyId(company.id);
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
 
@@ -531,7 +531,7 @@ export function OnboardingWizard() {
 
   // Step 4 → 5: create the ordinary root agent through the three disjoint
   // board control-plane contracts. No provider work begins until step 5
-  // creates the first ordinary issue.
+  // creates the first ordinary task.
   async function handleCreateAgent() {
     if (!createdCompanyId) return;
     if (createdAgentId) {
@@ -539,12 +539,12 @@ export function OnboardingWizard() {
       return;
     }
     if (!adapterConfiguration.valid) {
-      const schemaIssue = adapterConfiguration.fieldErrors
+      const schemaErrors = adapterConfiguration.fieldErrors
         .map((entry) => entry.message)
         .join(" ");
       setError(
         adapterConfiguration.error
-          ?? (schemaIssue
+          ?? (schemaErrors
             || "Complete the explicit adapter configuration before creating the agent."),
       );
       return;
@@ -1347,23 +1347,23 @@ export function OnboardingWizard() {
                   )}
                   <div className="space-y-3 rounded-md border border-border p-3">
                     <div>
-                      <h3 className="text-sm font-medium">First issue</h3>
+                      <h3 className="text-sm font-medium">First task</h3>
                       <p className="mt-1 text-xs text-muted-foreground">
                         This board-authored request is the only action that
                         starts the agent's first provider run.
                       </p>
                     </div>
                     <input
-                      aria-label="First issue title"
+                      aria-label="First task title"
                       className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      placeholder="Issue title (optional)"
+                      placeholder="Task title (optional)"
                       value={initialTaskTitle}
                       onChange={(event) =>
                         setInitialTaskTitle(event.target.value)
                       }
                     />
                     <textarea
-                      aria-label="First issue request"
+                      aria-label="First task request"
                       className="min-h-28 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       placeholder={`Describe ${agentName || "the agent"}'s first concrete assignment`}
                       value={initialTaskRequest}

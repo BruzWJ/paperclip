@@ -57,7 +57,7 @@ describe("SwipeToArchive", () => {
       root.render(
         <SwipeToArchive onArchive={onArchive}>
           <button type="button" onClick={onClick}>
-            Open issue
+            Open task
           </button>
         </SwipeToArchive>,
       );
@@ -106,7 +106,7 @@ describe("SwipeToArchive", () => {
       root.render(
         <SwipeToArchive onArchive={onArchive}>
           <button type="button" onClick={onClick}>
-            Open issue
+            Open task
           </button>
         </SwipeToArchive>,
       );
@@ -136,7 +136,7 @@ describe("SwipeToArchive", () => {
       root.render(
         <SwipeToArchive onArchive={onArchive}>
           <button type="button" onClick={onClick}>
-            Open issue
+            Open task
           </button>
         </SwipeToArchive>,
       );
@@ -180,7 +180,7 @@ describe("SwipeToArchive", () => {
     act(() => {
       root.render(
         <SwipeToArchive onArchive={onArchive}>
-          <button type="button">Open issue</button>
+          <button type="button">Open task</button>
         </SwipeToArchive>,
       );
     });
@@ -210,7 +210,7 @@ describe("SwipeToArchive", () => {
     act(() => {
       root.render(
         <SwipeToArchive onArchive={onArchive}>
-          <button type="button">Open issue</button>
+          <button type="button">Open task</button>
         </SwipeToArchive>,
       );
     });
@@ -236,7 +236,7 @@ describe("SwipeToArchive", () => {
     act(() => {
       root.render(
         <SwipeToArchive onArchive={() => {}} selected>
-          <button type="button">Open issue</button>
+          <button type="button">Open task</button>
         </SwipeToArchive>,
       );
     });

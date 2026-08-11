@@ -88,7 +88,7 @@ const DEFAULT_DECLARATION_INCLUDE: CompanyPortabilityInclude = {
   company: true,
   agents: false,
   projects: true,
-  issues: false,
+  tasks: false,
   skills: false,
 };
 
@@ -107,7 +107,7 @@ export function parseSecretsInclude(input: string | undefined): CompanyPortabili
     company: values.includes("company"),
     agents: false,
     projects: values.includes("projects"),
-    issues: false,
+    tasks: false,
     skills: false,
   };
   if (!Object.values(include).some(Boolean)) {

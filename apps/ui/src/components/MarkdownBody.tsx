@@ -8,9 +8,9 @@ import { Link } from "@/lib/router";
 import { useTheme } from "../context/ThemeContext";
 import { useOptionalCompany } from "../context/CompanyContext";
 import { mentionChipInlineStyle, parseMentionChipHref } from "../lib/mention-chips";
-import { issuesApi } from "../api/issues";
+import { tasksApi } from "../api/tasks";
 import { queryKeys } from "../lib/queryKeys";
-import { parseIssueReferenceFromHref, remarkLinkIssueReferences } from "../lib/issue-reference";
+import { parseTaskReferenceFromHref, remarkLinkTaskReferences } from "../lib/task-reference";
 import { remarkSoftBreaks } from "../lib/remark-soft-breaks";
 import { StatusIcon } from "./StatusIcon";
 
@@ -19,7 +19,7 @@ interface MarkdownBodyProps {
   className?: string;
   style?: React.CSSProperties;
   softBreaks?: boolean;
-  linkIssueReferences?: boolean;
+  linkTaskReferences?: boolean;
   /** Opt into Obsidian-style [[target]] / [[target|label]] wikilinks. */
   enableWikiLinks?: boolean;
   /** Base href used for wikilinks when no resolver is supplied. */
@@ -34,33 +34,33 @@ interface MarkdownBodyProps {
 
 let mermaidLoaderPromise: Promise<typeof import("mermaid").default> | null = null;
 
-function MarkdownIssueLink({
-  issuePathId,
+function MarkdownTaskLink({
+  taskPathId,
   children,
 }: {
-  issuePathId: string;
+  taskPathId: string;
   children: ReactNode;
 }) {
   const { data } = useQuery({
-    queryKey: queryKeys.issues.detail(issuePathId),
-    queryFn: () => issuesApi.get(issuePathId),
+    queryKey: queryKeys.tasks.detail(taskPathId),
+    queryFn: () => tasksApi.get(taskPathId),
     staleTime: 60_000,
   });
 
-  const identifier = data?.identifier ?? issuePathId;
+  const identifier = data?.identifier ?? taskPathId;
   const title = data?.title ?? identifier;
   const status = data?.boardPresentationStatus;
-  const issueLabel = title !== identifier ? `Issue ${identifier}: ${title}` : `Issue ${identifier}`;
+  const taskLabel = title !== identifier ? `Task ${identifier}: ${title}` : `Task ${identifier}`;
 
   return (
     <Link
-      to={`/issues/${identifier}`}
-      data-mention-kind="issue"
+      to={`/tasks/${identifier}`}
+      data-mention-kind="task"
       // Boxless inline mention: the unified status glyph + a regular-weight
       // underlined link, optically centered with the body text.
-      className={cn("paperclip-markdown-issue-ref", "font-normal underline")}
+      className={cn("paperclip-markdown-task-ref", "font-normal underline")}
       title={title}
-      aria-label={issueLabel}
+      aria-label={taskLabel}
     >
       {status ? (
         <StatusIcon status={status} size="lg" className="relative -top-px mr-1 inline-block h-5 w-5 align-middle" />
@@ -589,7 +589,7 @@ function MarkdownBodyImpl({
   className,
   style,
   softBreaks = true,
-  linkIssueReferences = true,
+  linkTaskReferences = true,
   enableWikiLinks = false,
   wikiLinkRoot,
   resolveWikiLinkHref,
@@ -598,13 +598,13 @@ function MarkdownBodyImpl({
 }: MarkdownBodyProps) {
   const { theme } = useTheme();
   // MarkdownBody also renders outside CompanyProvider; those surfaces have no
-  // authority to auto-link bare issue identifiers.
+  // authority to auto-link bare task identifiers.
   const company = useOptionalCompany();
   const companies = company?.companies;
   // Stable identity so it can feed the memoized remark plugins without
   // re-creating them (and forcing a full markdown re-parse) every render.
   const knownPrefixes = useMemo(
-    () => companies?.map((c) => c.issuePrefix) ?? [],
+    () => companies?.map((c) => c.taskPrefix) ?? [],
     [companies],
   );
   // react-markdown treats the values of `components` as component *types* and
@@ -618,14 +618,14 @@ function MarkdownBodyImpl({
     if (enableWikiLinks) {
       plugins.push(createRemarkWikiLinks({ wikiLinkRoot, resolveWikiLinkHref }));
     }
-    if (linkIssueReferences) {
-      plugins.push([remarkLinkIssueReferences, { knownPrefixes }]);
+    if (linkTaskReferences) {
+      plugins.push([remarkLinkTaskReferences, { knownPrefixes }]);
     }
     if (softBreaks) {
       plugins.push(remarkSoftBreaks);
     }
     return plugins;
-  }, [enableWikiLinks, wikiLinkRoot, resolveWikiLinkHref, linkIssueReferences, knownPrefixes, softBreaks]);
+  }, [enableWikiLinks, wikiLinkRoot, resolveWikiLinkHref, linkTaskReferences, knownPrefixes, softBreaks]);
   const components = useMemo<Components>(() => {
     const map: Components = {
     p: ({ node: _node, style: paragraphStyle, children: paragraphChildren, ...paragraphProps }) => (
@@ -688,12 +688,12 @@ function MarkdownBodyImpl({
         );
       }
 
-      const issueRef = linkIssueReferences ? parseIssueReferenceFromHref(href) : null;
-      if (issueRef) {
+      const taskRef = linkTaskReferences ? parseTaskReferenceFromHref(href) : null;
+      if (taskRef) {
         return (
-          <MarkdownIssueLink issuePathId={issueRef.issuePathId}>
+          <MarkdownTaskLink taskPathId={taskRef.taskPathId}>
             {linkChildren}
-          </MarkdownIssueLink>
+          </MarkdownTaskLink>
         );
       }
 
@@ -701,8 +701,8 @@ function MarkdownBodyImpl({
       if (parsed) {
         const targetHref = parsed.kind === "project"
           ? `/projects/${parsed.projectId}`
-          : parsed.kind === "issue"
-            ? `/issues/${parsed.identifier}`
+          : parsed.kind === "task"
+            ? `/tasks/${parsed.identifier}`
             : parsed.kind === "skill"
               ? `/skills/${parsed.skillId}`
               : parsed.kind === "routine"
@@ -762,7 +762,7 @@ function MarkdownBodyImpl({
       };
     }
     return map;
-  }, [theme, linkIssueReferences, resolveImageSrc, onImageClick]);
+  }, [theme, linkTaskReferences, resolveImageSrc, onImageClick]);
 
   return (
     <div

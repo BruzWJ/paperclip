@@ -115,7 +115,7 @@ export function SidebarStarredProjects() {
 
         const link = (
           <NavLink
-            to={`/projects/${routeRef}/issues`}
+            to={`/projects/${routeRef}/tasks`}
             state={SIDEBAR_SCROLL_RESET_STATE}
             onClick={() => {
               if (isMobile) setSidebarOpen(false);

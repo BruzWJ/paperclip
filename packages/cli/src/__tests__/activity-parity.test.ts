@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerActivityCommands } from "../commands/client/activity.js";
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
-const ISSUE_ID = "33333333-3333-4333-8333-333333333333";
+const TASK_ID = "33333333-3333-4333-8333-333333333333";
 
 function createProgram(): Command {
   const program = new Command();
@@ -38,12 +38,12 @@ describe("activity parity commands", () => {
 
     await run(["activity", "list", "--company-id", COMPANY_ID, "--agent-id", "agent-1"]);
     await run(["activity", "create", "--company-id", COMPANY_ID, "--payload-json", "{}"]);
-    await run(["activity", "issue", ISSUE_ID]);
+    await run(["activity", "task", TASK_ID]);
 
     expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/activity?agentId=agent-1`],
       ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/activity`],
-      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/activity`],
+      ["GET", `http://localhost:3100/api/tasks/${TASK_ID}/activity`],
     ]);
   });
 });

@@ -6,7 +6,7 @@ import {
 
 const baseInput = {
   runStatus: "succeeded",
-  issueLifecycleStatus: "open",
+  taskLifecycleStatus: "open",
   assistantTextParts: [],
   failureFacts: {
     terminalReasonCode: "protocol_settled",
@@ -94,10 +94,10 @@ describe("run liveness classifier", () => {
     expect(classification.livenessState).toBe("advanced");
   });
 
-  it("classifies done issues as completed", () => {
+  it("classifies done tasks as completed", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
-      issueLifecycleStatus: "done",
+      taskLifecycleStatus: "done",
       assistantTextParts: ["Finished the implementation."],
     });
 
@@ -119,15 +119,15 @@ describe("run liveness classifier", () => {
   it("preserves the typed blocked lifecycle fact", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
-      issueLifecycleStatus: "blocked",
+      taskLifecycleStatus: "blocked",
       assistantTextParts: ["Recorded the current state."],
     });
 
     expect(classification.livenessState).toBe("blocked");
-    expect(classification.livenessReason).toBe("Issue status is blocked");
+    expect(classification.livenessReason).toBe("Task status is blocked");
   });
 
-  it("treats issue-chain validation output as runnable follow-up", () => {
+  it("treats task-chain validation output as runnable follow-up", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
       assistantTextParts: [

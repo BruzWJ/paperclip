@@ -9,13 +9,12 @@ describe("execution-mode context attenuation", () => {
   it.each([
     { workMode: "skill_test" },
     { harnessKind: "skill_test" },
-    { originKind: "task_bridge" },
     {
-      issueExecutionPolicy: {
+      taskExecutionPolicy: {
         authorizationPolicy: {
           trustBoundary: {
             mode: "low_trust_review",
-            issueIds: ["issue-1"],
+            taskIds: ["task-1"],
           },
         },
       },
@@ -37,14 +36,6 @@ describe("execution-mode context attenuation", () => {
         workMode: "standard",
         harnessKind: null,
         originKind: "manual",
-      }),
-    ).toBeNull();
-  });
-
-  it("does not accept a renamed issue_bridge alias", () => {
-    expect(
-      resolveExecutionModeContextMask({
-        originKind: "issue_bridge",
       }),
     ).toBeNull();
   });

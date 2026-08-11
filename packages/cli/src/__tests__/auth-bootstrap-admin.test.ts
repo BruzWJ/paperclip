@@ -37,7 +37,7 @@ vi.mock("picocolors", () => ({
 
 import {
   bootstrapAdminInvite,
-  issueBootstrapAdminCapability,
+  createBootstrapAdminCapability,
 } from "../commands/auth-bootstrap-admin.js";
 
 const ORIGINAL_ENV = { ...process.env };
@@ -279,7 +279,7 @@ describe("bootstrap admin capability transaction", () => {
     };
     const fake = makeTransactionalDb({ activeInvites: [priorInvite], failInsert: true });
 
-    await expect(issueBootstrapAdminCapability(fake.db, {
+    await expect(createBootstrapAdminCapability(fake.db, {
       tokenHash: "replacement-hash",
       now: new Date("2026-08-02T00:00:00.000Z"),
       expiresAt: new Date("2026-08-05T00:00:00.000Z"),
@@ -339,7 +339,7 @@ describe("bootstrap admin capability transaction", () => {
   it("does not revoke or insert after an administrator already exists", async () => {
     const fake = makeTransactionalDb({ adminUserIds: ["admin-user"] });
 
-    await expect(issueBootstrapAdminCapability(fake.db, {
+    await expect(createBootstrapAdminCapability(fake.db, {
       tokenHash: "unused-hash",
       now: new Date("2026-08-02T00:00:00.000Z"),
       expiresAt: new Date("2026-08-05T00:00:00.000Z"),

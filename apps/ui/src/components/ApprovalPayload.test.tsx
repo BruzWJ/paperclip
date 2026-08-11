@@ -41,7 +41,7 @@ describe("ApprovalPayloadRenderer", () => {
             title: "Reply with an ASCII frog",
             summary: "Board asked for approval before posting the frog.",
             recommendedAction: "Approve the frog reply.",
-            nextActionOnApproval: "Post the frog comment on the issue.",
+            nextActionOnApproval: "Post the frog comment on the task.",
             risks: ["The frog might be too powerful."],
             proposedComment: "(o)<",
           }}
@@ -52,7 +52,7 @@ describe("ApprovalPayloadRenderer", () => {
     expect(container.textContent).toContain("Reply with an ASCII frog");
     expect(container.textContent).toContain("Board asked for approval before posting the frog.");
     expect(container.textContent).toContain("Approve the frog reply.");
-    expect(container.textContent).toContain("Post the frog comment on the issue.");
+    expect(container.textContent).toContain("Post the frog comment on the task.");
     expect(container.textContent).toContain("The frog might be too powerful.");
     expect(container.textContent).toContain("(o)<");
     expect(container.textContent).not.toContain("\"recommendedAction\"");

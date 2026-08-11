@@ -71,7 +71,7 @@ const selector = {
 const annotationThread = {
   id: "55555555-5555-4555-8555-555555555555",
   companyId,
-  issueId: null,
+  taskId: null,
   routineId,
   documentId: descriptionDocument.id,
   documentKey: "description",
@@ -103,7 +103,7 @@ const annotationComment = {
   id: "66666666-6666-4666-8666-666666666666",
   companyId,
   threadId: annotationThread.id,
-  issueId: null,
+  taskId: null,
   routineId,
   documentId: descriptionDocument.id,
   body: "Please tighten this",
@@ -157,7 +157,7 @@ async function createApp(actor: "board" | "agent" = "board", actorCompanyId = co
     next();
   });
   app.use("/api", routineRoutes({} as any, {
-    ordinaryIssues: {} as never,
+    ordinaryTasks: {} as never,
   }));
   app.use(errorHandler);
   return app;

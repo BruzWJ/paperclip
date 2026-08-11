@@ -2,26 +2,26 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockDb } from "./helpers/mock-db.js";
 
-const issueReferenceMocks = vi.hoisted(() => ({
+const taskReferenceMocks = vi.hoisted(() => ({
   syncDocument: vi.fn(async () => undefined),
   deleteCommentSource: vi.fn(async () => undefined),
   deleteDocumentSource: vi.fn(async () => undefined),
 }));
 
-vi.mock("../services/issue-references.js", () => ({
-  issueReferenceService: () => issueReferenceMocks,
+vi.mock("../services/task-references.js", () => ({
+  taskReferenceService: () => taskReferenceMocks,
 }));
 
 import { documentService } from "../services/documents.js";
 
-type DocumentRow = Parameters<typeof import("../services/documents.js").mapIssueDocumentRow>[0];
+type DocumentRow = Parameters<typeof import("../services/documents.js").mapTaskDocumentRow>[0];
 
 function documentRow(overrides: Partial<DocumentRow> = {}): DocumentRow {
   const now = new Date("2026-01-01T00:00:00.000Z");
   return {
     id: randomUUID(),
     companyId: randomUUID(),
-    issueId: randomUUID(),
+    taskId: randomUUID(),
     key: "plan",
     title: "Plan",
     format: "markdown",
@@ -42,23 +42,23 @@ function documentRow(overrides: Partial<DocumentRow> = {}): DocumentRow {
   };
 }
 
-describe("documentService issue documents", () => {
+describe("documentService task documents", () => {
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  it("locks, rejects writes to, unlocks, and then updates an issue document", async () => {
-    const issueId = randomUUID();
+  it("locks, rejects writes to, unlocks, and then updates a task document", async () => {
+    const taskId = randomUUID();
     const companyId = randomUUID();
     const userId = "board-user";
-    const initial = documentRow({ companyId, issueId });
+    const initial = documentRow({ companyId, taskId });
 
     const lockDb = createMockDb({
       select: [[initial]],
       update: [[], []],
     });
-    const locked = await documentService(lockDb.db).lockIssueDocument({
-      issueId,
+    const locked = await documentService(lockDb.db).lockTaskDocument({
+      taskId,
       key: "plan",
       lockedByUserId: userId,
     });
@@ -75,10 +75,10 @@ describe("documentService issue documents", () => {
       lockedByUserId: userId,
     });
     const conflictDb = createMockDb({
-      select: [[{ id: issueId, companyId }], [lockedRow]],
+      select: [[{ id: taskId, companyId }], [lockedRow]],
     });
-    await expect(documentService(conflictDb.db).upsertIssueDocument({
-      issueId,
+    await expect(documentService(conflictDb.db).upsertTaskDocument({
+      taskId,
       key: "plan",
       title: "Plan",
       format: "markdown",
@@ -96,7 +96,7 @@ describe("documentService issue documents", () => {
       select: [[lockedRow]],
       update: [[], []],
     });
-    const unlocked = await documentService(unlockDb.db).unlockIssueDocument(issueId, "plan");
+    const unlocked = await documentService(unlockDb.db).unlockTaskDocument(taskId, "plan");
     expect(unlocked.changed).toBe(true);
     expect(unlocked.document.lockedAt).toBeNull();
 
@@ -107,12 +107,12 @@ describe("documentService issue documents", () => {
     });
     const revisionId = randomUUID();
     const updateDb = createMockDb({
-      select: [[{ id: issueId, companyId }], [unlockedRow]],
+      select: [[{ id: taskId, companyId }], [unlockedRow]],
       insert: [[{ id: revisionId }]],
       update: [[], []],
     });
-    const updated = await documentService(updateDb.db).upsertIssueDocument({
-      issueId,
+    const updated = await documentService(updateDb.db).upsertTaskDocument({
+      taskId,
       key: "plan",
       title: "Plan",
       format: "markdown",
@@ -128,25 +128,25 @@ describe("documentService issue documents", () => {
       latestRevisionNumber: 2,
       updatedByUserId: userId,
     });
-    expect(issueReferenceMocks.syncDocument).toHaveBeenCalledWith(initial.id, updateDb.db);
+    expect(taskReferenceMocks.syncDocument).toHaveBeenCalledWith(initial.id, updateDb.db);
     expect(updateDb.remaining("select")).toBe(0);
     expect(updateDb.remaining("insert")).toBe(0);
     expect(updateDb.remaining("update")).toBe(0);
   });
 
   it("creates a new document instead of updating a locked document when requested", async () => {
-    const issueId = randomUUID();
+    const taskId = randomUUID();
     const companyId = randomUUID();
     const locked = documentRow({
       companyId,
-      issueId,
+      taskId,
       lockedAt: new Date("2026-01-01T00:05:00.000Z"),
       lockedByUserId: "board-user",
     });
     const replacementDocument = documentRow({
       id: randomUUID(),
       companyId,
-      issueId,
+      taskId,
       key: "plan-2",
       latestBody: "# Agent replacement plan",
       latestRevisionId: null,
@@ -156,7 +156,7 @@ describe("documentService issue documents", () => {
     const replacementRevisionId = randomUUID();
     const writeDb = createMockDb({
       select: [
-        [{ id: issueId, companyId }],
+        [{ id: taskId, companyId }],
         [locked],
         [{ key: "plan" }],
       ],
@@ -168,8 +168,8 @@ describe("documentService issue documents", () => {
       update: [[]],
     });
 
-    const fallback = await documentService(writeDb.db).upsertIssueDocument({
-      issueId,
+    const fallback = await documentService(writeDb.db).upsertTaskDocument({
+      taskId,
       key: "plan",
       title: "Plan",
       format: "markdown",
@@ -189,7 +189,7 @@ describe("documentService issue documents", () => {
         lockedAt: null,
       },
     });
-    expect(issueReferenceMocks.syncDocument).toHaveBeenCalledWith(replacementDocument.id, writeDb.db);
+    expect(taskReferenceMocks.syncDocument).toHaveBeenCalledWith(replacementDocument.id, writeDb.db);
     expect(writeDb.remaining("select")).toBe(0);
     expect(writeDb.remaining("insert")).toBe(0);
     expect(writeDb.remaining("update")).toBe(0);
@@ -201,11 +201,11 @@ describe("documentService issue documents", () => {
       ],
     });
     const readService = documentService(readDb.db);
-    await expect(readService.getIssueDocumentByKey(issueId, "plan")).resolves.toMatchObject({
+    await expect(readService.getTaskDocumentByKey(taskId, "plan")).resolves.toMatchObject({
       body: "# Plan",
       lockedAt: locked.lockedAt,
     });
-    await expect(readService.getIssueDocumentByKey(issueId, "plan-2")).resolves.toMatchObject({
+    await expect(readService.getTaskDocumentByKey(taskId, "plan-2")).resolves.toMatchObject({
       body: "# Agent replacement plan",
       lockedAt: null,
     });

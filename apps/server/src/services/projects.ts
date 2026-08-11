@@ -4,7 +4,7 @@ import {
   projects,
   projectGoals,
   goals,
-  issues,
+  tasks,
   budgetPolicies,
   pluginManagedResources,
   plugins,
@@ -63,7 +63,7 @@ export interface InternalProject extends ProjectRow {
   workspaces: InternalProjectWorkspace[];
   primaryWorkspace: InternalProjectWorkspace | null;
   managedByPlugin: ProjectManagedByPlugin | null;
-  issueCount?: number;
+  taskCount?: number;
   budget?: ProjectBudgetSummary | null;
 }
 
@@ -243,7 +243,7 @@ async function attachWorkspaces(db: Db, rows: InternalProjectWithGoals[]): Promi
   });
 }
 
-type IssueCountRow = { projectId: string | null; count: number };
+type TaskCountRow = { projectId: string | null; count: number };
 type ProjectBudgetRow = {
   scopeId: string;
   limitAmount: string;
@@ -251,14 +251,14 @@ type ProjectBudgetRow = {
 };
 
 /**
- * Build the per-project issue-count and budget lookups from the aggregate query
+ * Build the per-project task-count and budget lookups from the aggregate query
  * rows. Pure (no DB) so the merge logic can be unit-tested in isolation.
  * Only active policies with a positive canonical limit surface as a budget.
  */
-export function buildProjectListMetricMaps(issueCountRows: IssueCountRow[], budgetRows: ProjectBudgetRow[]) {
-  const issueCountByProjectId = new Map<string, number>();
-  for (const row of issueCountRows) {
-    if (row.projectId) issueCountByProjectId.set(row.projectId, Number(row.count) || 0);
+export function buildProjectListMetricMaps(taskCountRows: TaskCountRow[], budgetRows: ProjectBudgetRow[]) {
+  const taskCountByProjectId = new Map<string, number>();
+  for (const row of taskCountRows) {
+    if (row.projectId) taskCountByProjectId.set(row.projectId, Number(row.count) || 0);
   }
 
   const budgetByProjectId = new Map<string, ProjectBudgetSummary>();
@@ -272,11 +272,11 @@ export function buildProjectListMetricMaps(issueCountRows: IssueCountRow[], budg
     }
   }
 
-  return { issueCountByProjectId, budgetByProjectId };
+  return { taskCountByProjectId, budgetByProjectId };
 }
 
 /**
- * Attach lightweight list-only metrics (issue count + budget) to a set of
+ * Attach lightweight list-only metrics (task count + budget) to a set of
  * projects using two aggregate queries (no N+1). Used by the projects list
  * view (IA Phase 4 — PAP-60).
  */
@@ -289,15 +289,15 @@ async function attachListMetrics(
 
   const projectIds = rows.map((r) => r.id);
 
-  const [issueCountRows, budgetRows] = await Promise.all([
+  const [taskCountRows, budgetRows] = await Promise.all([
     db
       .select({
-        projectId: issues.projectId,
+        projectId: tasks.projectId,
         count: sql<number>`count(*)::int`,
       })
-      .from(issues)
-      .where(and(eq(issues.companyId, companyId), inArray(issues.projectId, projectIds)))
-      .groupBy(issues.projectId),
+      .from(tasks)
+      .where(and(eq(tasks.companyId, companyId), inArray(tasks.projectId, projectIds)))
+      .groupBy(tasks.projectId),
     db
       .select({
         scopeId: budgetPolicies.scopeId,
@@ -315,14 +315,14 @@ async function attachListMetrics(
       ),
   ]);
 
-  const { issueCountByProjectId, budgetByProjectId } = buildProjectListMetricMaps(
-    issueCountRows,
+  const { taskCountByProjectId, budgetByProjectId } = buildProjectListMetricMaps(
+    taskCountRows,
     budgetRows,
   );
 
   return rows.map((row) => ({
     ...row,
-    issueCount: issueCountByProjectId.get(row.id) ?? 0,
+    taskCount: taskCountByProjectId.get(row.id) ?? 0,
     budget: budgetByProjectId.get(row.id) ?? null,
   }));
 }

@@ -11,13 +11,13 @@ import {
 
 type JsonRecord = Record<string, unknown>;
 
-export const LOW_TRUST_ISSUE_ANCESTRY_MAX_DEPTH = 12;
+export const LOW_TRUST_TASK_ANCESTRY_MAX_DEPTH = 12;
 
-export type TrustPresetPolicySource = "issue" | "run";
+export type TrustPresetPolicySource = "task" | "run";
 
 export type ResolveCoreTrustPresetInput = {
   companyId: string;
-  issue?: {
+  task?: {
     companyId?: string | null;
     executionPolicy?: unknown;
   } | null;
@@ -229,11 +229,11 @@ function mergeBoundary(
   }
 
   const base = current ?? { mode: LOW_TRUST_REVIEW_PRESET, companyId };
-  if (base.rootIssueId && next.rootIssueId && base.rootIssueId !== next.rootIssueId) {
+  if (base.rootTaskId && next.rootTaskId && base.rootTaskId !== next.rootTaskId) {
     return deny(
       "conflicting_low_trust_boundary",
       source,
-      "Low-trust boundary root issue scopes do not overlap.",
+      "Low-trust boundary root task scopes do not overlap.",
       sourcePresets,
     );
   }
@@ -241,8 +241,8 @@ function mergeBoundary(
   return {
     ...base,
     projectIds: intersectSets(base.projectIds, next.projectIds),
-    rootIssueId: base.rootIssueId ?? next.rootIssueId,
-    issueIds: intersectSets(base.issueIds, next.issueIds),
+    rootTaskId: base.rootTaskId ?? next.rootTaskId,
+    taskIds: intersectSets(base.taskIds, next.taskIds),
     allowedAgentIds: intersectSets(base.allowedAgentIds, next.allowedAgentIds),
     allowedSecretBindingIds: intersectSets(base.allowedSecretBindingIds, next.allowedSecretBindingIds),
     allowedToolClasses: intersectSets(base.allowedToolClasses, next.allowedToolClasses),
@@ -251,19 +251,19 @@ function mergeBoundary(
 }
 
 function hasBoundaryScope(boundary: LowTrustBoundary): boolean {
-  return Boolean(boundary.rootIssueId)
+  return Boolean(boundary.rootTaskId)
     || Boolean(boundary.projectIds?.length)
-    || Boolean(boundary.issueIds?.length);
+    || Boolean(boundary.taskIds?.length);
 }
 
 export function resolveCoreTrustPreset(input: ResolveCoreTrustPresetInput): TrustPresetResolution {
   const sourcePresets: Partial<Record<TrustPresetPolicySource, TrustPreset>> = {};
   const sources: ParsedPolicySource[] = [];
 
-  const issuePolicy = asRecord(input.issue?.executionPolicy);
-  const issue = parseSource("issue", input.issue?.companyId, issuePolicy, issuePolicy?.authorizationPolicy, sourcePresets);
-  if ("kind" in issue) return issue;
-  sources.push(issue);
+  const taskPolicy = asRecord(input.task?.executionPolicy);
+  const task = parseSource("task", input.task?.companyId, taskPolicy, taskPolicy?.authorizationPolicy, sourcePresets);
+  if ("kind" in task) return task;
+  sources.push(task);
 
   const runPolicy = asRecord(input.run?.executionPolicy);
   const run = parseSource("run", input.run?.companyId, runPolicy, runPolicy?.authorizationPolicy, sourcePresets);
@@ -306,7 +306,7 @@ export function resolveCoreTrustPreset(input: ResolveCoreTrustPresetInput): Trus
     return deny(
       "missing_low_trust_boundary_scope",
       null,
-      "Low-trust review requires a concrete project, root issue, or issue-id boundary.",
+      "Low-trust review requires a concrete project, root task, or task-id boundary.",
       sourcePresets,
     );
   }
@@ -319,13 +319,13 @@ export function resolveCoreTrustPreset(input: ResolveCoreTrustPresetInput): Trus
   };
 }
 
-export function isIssueWithinLowTrustBoundary(
+export function isTaskWithinLowTrustBoundary(
   boundary: LowTrustBoundary & { companyId: string },
-  issue: { companyId: string; id?: string | null; projectId?: string | null },
+  task: { companyId: string; id?: string | null; projectId?: string | null },
 ): boolean {
-  if (issue.companyId !== boundary.companyId) return false;
-  if (issue.id && issue.id === boundary.rootIssueId) return true;
-  if (issue.id && boundary.issueIds?.includes(issue.id)) return true;
-  if (issue.projectId && boundary.projectIds?.includes(issue.projectId)) return true;
+  if (task.companyId !== boundary.companyId) return false;
+  if (task.id && task.id === boundary.rootTaskId) return true;
+  if (task.id && boundary.taskIds?.includes(task.id)) return true;
+  if (task.projectId && boundary.projectIds?.includes(task.projectId)) return true;
   return false;
 }

@@ -154,7 +154,7 @@ export function classifySkillDenial(
       remediation:
         remediation
         ?? (code && PLATFORM_REMEDIATIONS[code])
-        ?? "Fix the flagged issue and try again.",
+        ?? "Resolve the flagged problem and try again.",
     };
   }
 

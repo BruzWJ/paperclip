@@ -92,26 +92,26 @@ function sampleArtifact(overrides: Partial<CompanyArtifact> = {}): CompanyArtifa
     contentPath: null,
     openPath: null,
     downloadPath: null,
-    issue: { id: "issue-1", identifier: "PAP-42", title: "Ship launch" },
+    task: { id: "task-1", identifier: "PAP-42", title: "Ship launch" },
     project: null,
     createdByAgent: null,
     updatedAt: "2026-06-01T00:00:00.000Z",
-    href: "/PAP/issues/PAP-42#document-brief",
+    href: "/PAP/tasks/PAP-42#document-brief",
     ...overrides,
   };
 }
 
 function sampleGroup(overrides: Partial<CompanyArtifactGroup> = {}): CompanyArtifactGroup {
   return {
-    id: "issue:issue-1",
-    groupBy: "issue",
-    issue: { id: "issue-1", identifier: "PAP-42", title: "Ship launch" },
+    id: "task:task-1",
+    groupBy: "task",
+    task: { id: "task-1", identifier: "PAP-42", title: "Ship launch" },
     title: "Ship launch",
     count: 3,
     mediaKinds: ["document"],
     previewArtifacts: [sampleArtifact()],
     updatedAt: "2026-06-01T00:00:00.000Z",
-    href: "/PAP/artifacts?groupBy=issue&groupIssueId=issue-1",
+    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-1",
     ...overrides,
   };
 }
@@ -180,8 +180,8 @@ describe("Artifacts page", () => {
       expect(artifactsApiMock.list).toHaveBeenCalledWith("company-1", {
         kind: "all",
         q: undefined,
-        groupBy: "issue",
-        groupIssueId: undefined,
+        groupBy: "task",
+        groupTaskId: undefined,
         limit: 30,
         cursor: undefined,
       });
@@ -192,7 +192,7 @@ describe("Artifacts page", () => {
       expect(groupControl.textContent).toBe("");
       expect(groupControl.getAttribute("data-variant")).toBe("outline");
       expect(groupControl.getAttribute("data-size")).toBe("icon");
-      expect(groupControl.getAttribute("data-group-by")).toBe("issue");
+      expect(groupControl.getAttribute("data-group-by")).toBe("task");
       expect(Boolean(groupControl.compareDocumentPosition(allFilter) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     });
 
@@ -226,8 +226,8 @@ describe("Artifacts page", () => {
       expect(artifactsApiMock.list).toHaveBeenLastCalledWith("company-1", {
         kind: "all",
         q: "launch",
-        groupBy: "issue",
-        groupIssueId: undefined,
+        groupBy: "task",
+        groupTaskId: undefined,
         limit: 30,
         cursor: undefined,
       });
@@ -284,7 +284,7 @@ describe("Artifacts page", () => {
         kind: "all",
         q: undefined,
         groupBy: "none",
-        groupIssueId: undefined,
+        groupTaskId: undefined,
         limit: 30,
         cursor: "cursor-2",
       });
@@ -324,7 +324,7 @@ describe("Artifacts page", () => {
         kind: "all",
         q: undefined,
         groupBy: "none",
-        groupIssueId: undefined,
+        groupTaskId: undefined,
         limit: 30,
         cursor: undefined,
       });
@@ -345,14 +345,14 @@ describe("Artifacts page", () => {
       nextCursor: null,
     });
 
-    const { root } = renderArtifacts(container, ["/artifacts?groupBy=issue"]);
+    const { root } = renderArtifacts(container, ["/artifacts?groupBy=task"]);
 
     await waitForAssertion(() => {
       expect(artifactsApiMock.list).toHaveBeenCalledWith("company-1", {
         kind: "all",
         q: undefined,
-        groupBy: "issue",
-        groupIssueId: undefined,
+        groupBy: "task",
+        groupTaskId: undefined,
         limit: 30,
         cursor: undefined,
       });
@@ -360,7 +360,7 @@ describe("Artifacts page", () => {
       expect(card).not.toBeNull();
       expect(card.getAttribute("data-count")).toBe("4");
       expect(card.getAttribute("data-stacked")).toBe("true");
-      expect(card.getAttribute("href")).toBe("/artifacts?groupIssueId=issue-1");
+      expect(card.getAttribute("href")).toBe("/artifacts?groupTaskId=task-1");
       expect(card.textContent).toContain("4 artifacts");
     });
 
@@ -377,15 +377,15 @@ describe("Artifacts page", () => {
     });
 
     const { root } = renderArtifacts(container, [
-      "/artifacts?groupBy=issue&groupIssueId=issue-1",
+      "/artifacts?groupBy=task&groupTaskId=task-1",
     ]);
 
     await waitForAssertion(() => {
       expect(artifactsApiMock.list).toHaveBeenCalledWith("company-1", {
         kind: "all",
         q: undefined,
-        groupBy: "issue",
-        groupIssueId: "issue-1",
+        groupBy: "task",
+        groupTaskId: "task-1",
         limit: 30,
         cursor: undefined,
       });
@@ -409,14 +409,14 @@ describe("Artifacts page", () => {
       nextCursor: null,
     });
 
-    const { root } = renderArtifacts(container, ["/artifacts?kind=image&groupBy=issue"]);
+    const { root } = renderArtifacts(container, ["/artifacts?kind=image&groupBy=task"]);
 
     await waitForAssertion(() => {
       expect(artifactsApiMock.list).toHaveBeenCalledWith("company-1", {
         kind: "image",
         q: undefined,
-        groupBy: "issue",
-        groupIssueId: undefined,
+        groupBy: "task",
+        groupTaskId: undefined,
         limit: 30,
         cursor: undefined,
       });

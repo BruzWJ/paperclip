@@ -15,12 +15,12 @@ import type {
   PluginJobRunStatus,
   PluginJobRunTrigger,
   PluginWebhookDeliveryStatus,
-  IssuePriority,
+  TaskPriority,
   ProjectStatus,
   RoutineCatchUpPolicy,
   RoutineConcurrencyPolicy,
   RoutineStatus,
-  IssueSurfaceVisibility,
+  TaskSurfaceVisibility,
 } from "../constants.js";
 import type { Agent } from "./agent.js";
 import type { CompanySkill } from "./company-skill.js";
@@ -111,7 +111,7 @@ export interface PluginWebhookDeclaration {
 
 /**
  * Declares an agent tool contributed by the plugin. Tools are namespaced
- * by plugin ID at runtime (e.g. `linear__search-issues`).
+ * by plugin ID at runtime (e.g. `linear__search-tickets`).
  *
  * Requires the `agent.tools.register` capability.
  *
@@ -264,14 +264,14 @@ export interface PluginManagedRoutineDeclaration {
   description?: string | null;
   /** Stable managed agent reference for the default assignee. */
   assigneeRef?: PluginManagedResourceRef | null;
-  /** Stable managed project reference for routine-created issues. */
+  /** Stable managed project reference for routine-created tasks. */
   projectRef?: PluginManagedResourceRef | null;
   /** Optional goal id to set on the routine in this company. */
   goalId?: string | null;
   /** Suggested starting status. Defaults to `paused` when no assignee is resolved, otherwise `active`. */
   status?: RoutineStatus;
-  /** Suggested issue priority. Defaults to `medium`. */
-  priority?: IssuePriority;
+  /** Suggested task priority. Defaults to `medium`. */
+  priority?: TaskPriority;
   /** Suggested concurrency behavior. Defaults to core routine default. */
   concurrencyPolicy?: RoutineConcurrencyPolicy;
   /** Suggested missed-trigger behavior. Defaults to core routine default. */
@@ -286,9 +286,9 @@ export interface PluginManagedRoutineDeclaration {
     Pick<RoutineTrigger, "kind">
     & Partial<Pick<RoutineTrigger, "label" | "enabled" | "cronExpression" | "timezone" | "signingMode" | "replayWindowSec">>
   >;
-  /** Defaults for issues created by this routine. */
-  issueTemplate?: {
-    surfaceVisibility?: IssueSurfaceVisibility;
+  /** Defaults for tasks created by this routine. */
+  taskTemplate?: {
+    surfaceVisibility?: TaskSurfaceVisibility;
     originId?: string | null;
     billingCode?: string | null;
   };
@@ -372,8 +372,8 @@ type PluginEntityUiSlotDeclaration =
       routePath?: never;
     }
   | {
-      type: "issueDetailView";
-      entityTypes: Array<Extract<PluginUiSlotEntityType, "issue">>;
+      type: "taskDetailView";
+      entityTypes: Array<Extract<PluginUiSlotEntityType, "task">>;
       routePath?: never;
     }
   | {
@@ -383,7 +383,7 @@ type PluginEntityUiSlotDeclaration =
     }
   | {
       type: "toolbarButton";
-      entityTypes: Array<Extract<PluginUiSlotEntityType, "project" | "issue">>;
+      entityTypes: Array<Extract<PluginUiSlotEntityType, "project" | "task">>;
       routePath?: never;
     };
 
@@ -467,7 +467,7 @@ interface PluginLauncherDeclarationBase {
 type PluginLauncherPlacementDeclaration =
   | {
       placementZone: "toolbarButton";
-      entityTypes: Array<Extract<PluginUiSlotEntityType, "project" | "issue">>;
+      entityTypes: Array<Extract<PluginUiSlotEntityType, "project" | "task">>;
     }
   | {
       placementZone: Exclude<PluginLauncherPlacementZone, "toolbarButton">;
@@ -527,14 +527,14 @@ export interface PluginDatabaseDeclaration {
 export type PluginApiRouteCompanyResolution =
   | { from: "body"; key: string }
   | { from: "query"; key: string }
-  | { from: "issue"; param: string };
+  | { from: "task"; param: string };
 
 export interface PluginApiRouteDeclaration {
   /** Stable plugin-defined route key passed to the worker. */
   routeKey: string;
   /** HTTP method accepted by this route. */
   method: PluginApiRouteMethod;
-  /** Plugin-local path under `/api/plugins/:pluginId/api`, e.g. `/issues/:issueId/smoke`. */
+  /** Plugin-local path under `/api/plugins/:pluginId/api`, e.g. `/tasks/:taskId/smoke`. */
   path: string;
   /** How the host resolves company access for this route. */
   companyResolution: PluginApiRouteCompanyResolution;

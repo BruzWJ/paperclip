@@ -2,7 +2,7 @@ import type {
   Approval,
   ApprovalComment,
   HireAgentApprovalResubmission,
-  Issue,
+  Task,
 } from "@paperclipai/shared";
 import { api } from "./client";
 
@@ -27,5 +27,5 @@ export const approvalsApi = {
   listComments: (id: string) => api.get<ApprovalComment[]>(`/approvals/${id}/comments`),
   addComment: (id: string, body: string) =>
     api.post<ApprovalComment>(`/approvals/${id}/comments`, { body }),
-  listIssues: (id: string) => api.get<Issue[]>(`/approvals/${id}/issues`),
+  listTasks: (id: string) => api.get<Task[]>(`/approvals/${id}/tasks`),
 };

@@ -7,13 +7,13 @@ import {
   companies,
   inboxDismissals,
   invites,
-  issueApprovals,
-  issueAttachments,
-  issueBoardMentions,
-  issueBoardReopenCommands,
-  issueBoardUserComments,
-  issueComments,
-  issues,
+  taskApprovals,
+  taskAttachments,
+  taskBoardMentions,
+  taskBoardReopenCommands,
+  taskBoardUserComments,
+  taskComments,
+  tasks,
   joinRequests,
   projects,
   projectWorkspaces,
@@ -33,7 +33,7 @@ import type {
   MoneyAmount,
 } from "@paperclipai/shared";
 import { budgetService } from "./budgets.js";
-import { parseIssueExecutionState } from "./issue-execution-policy.js";
+import { parseTaskExecutionState } from "./task-execution-policy.js";
 
 const ATTENTION_SOURCE_KINDS: AttentionSourceKind[] = [
   "approval",
@@ -60,10 +60,10 @@ const SOURCE_RANK: Record<AttentionSourceKind, number> = {
 
 const DETAIL_EXCERPT_LENGTH = 160;
 const DETAIL_IMAGE_LIMIT = 3;
-const boardMentionComments = alias(issueComments, "board_mention_comments");
-const boardReplyComments = alias(issueComments, "board_reply_comments");
+const boardMentionComments = alias(taskComments, "board_mention_comments");
+const boardReplyComments = alias(taskComments, "board_reply_comments");
 
-type IssueSummaryRow = {
+type TaskSummaryRow = {
   id: string;
   companyId: string;
   identifier: string | null;
@@ -78,7 +78,7 @@ type IssueSummaryRow = {
   workspace: AttentionWorkspaceRef | null;
 };
 
-type IssueSubjectRow = Omit<IssueSummaryRow, "project" | "workspace">;
+type TaskSubjectRow = Omit<TaskSummaryRow, "project" | "workspace">;
 
 type DismissalState = {
   kind: "dismiss" | "snooze";
@@ -153,15 +153,15 @@ function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-function issueContext(issue: IssueSummaryRow | null | undefined) {
+function taskContext(task: TaskSummaryRow | null | undefined) {
   return {
-    project: issue?.project ?? null,
-    workspace: issue?.workspace ?? null,
+    project: task?.project ?? null,
+    workspace: task?.workspace ?? null,
   };
 }
 
-function issueImages(imageMap: ReadonlyMap<string, AttentionDetailImage[]>, issueId: string | null | undefined) {
-  return issueId ? imageMap.get(issueId) ?? [] : [];
+function taskImages(imageMap: ReadonlyMap<string, AttentionDetailImage[]>, taskId: string | null | undefined) {
+  return taskId ? imageMap.get(taskId) ?? [] : [];
 }
 
 function genericDetail(summary: unknown, images: AttentionDetailImage[]): AttentionItemDetail {
@@ -177,23 +177,23 @@ function approvalDetail(type: string, payload: Record<string, unknown>): Attenti
   };
 }
 
-function issueHref(prefix: string, issue: Pick<IssueSubjectRow, "id" | "identifier">) {
-  return `/${prefix}/issues/${issue.identifier ?? issue.id}`;
+function taskHref(prefix: string, task: Pick<TaskSubjectRow, "id" | "identifier">) {
+  return `/${prefix}/tasks/${task.identifier ?? task.id}`;
 }
 
-function issueSubject(prefix: string, issue: IssueSubjectRow): AttentionSubject {
+function taskSubject(prefix: string, task: TaskSubjectRow): AttentionSubject {
   return {
-    kind: "issue",
-    id: issue.id,
-    companyId: issue.companyId,
-    title: issue.title,
-    identifier: issue.identifier,
-    status: issue.boardPresentationStatus,
-    href: issueHref(prefix, issue),
+    kind: "task",
+    id: task.id,
+    companyId: task.companyId,
+    title: task.title,
+    identifier: task.identifier,
+    status: task.boardPresentationStatus,
+    href: taskHref(prefix, task),
     metadata: {
-      priority: issue.priority,
-      ownerAgentId: issue.ownerAgentId,
-      ownerUserId: issue.ownerUserId,
+      priority: task.priority,
+      ownerAgentId: task.ownerAgentId,
+      ownerUserId: task.ownerUserId,
     },
   };
 }
@@ -268,11 +268,11 @@ function budgetObservedPercent(observedAmount: MoneyAmount, limitAmount: MoneyAm
 
 async function companyPrefix(db: Db, companyId: string) {
   const row = await db
-    .select({ issuePrefix: companies.issuePrefix })
+    .select({ taskPrefix: companies.taskPrefix })
     .from(companies)
     .where(eq(companies.id, companyId))
     .then((rows) => rows[0] ?? null);
-  return row?.issuePrefix ?? "PAP";
+  return row?.taskPrefix ?? "PAP";
 }
 
 async function dismissalByKey(db: Db, companyId: string, userId: string | null | undefined) {
@@ -293,42 +293,42 @@ async function dismissalByKey(db: Db, companyId: string, userId: string | null |
   }]));
 }
 
-async function issueSummaryMap(
+async function taskSummaryMap(
   db: Db,
   companyId: string,
-  issueIds: Array<string | null | undefined>,
+  taskIds: Array<string | null | undefined>,
   options: { includeHidden?: boolean } = {},
 ) {
-  const ids = [...new Set(issueIds.filter((value): value is string => Boolean(value)))];
-  if (ids.length === 0) return new Map<string, IssueSummaryRow>();
+  const ids = [...new Set(taskIds.filter((value): value is string => Boolean(value)))];
+  if (ids.length === 0) return new Map<string, TaskSummaryRow>();
   const rows = await db
     .select({
-      id: issues.id,
-      companyId: issues.companyId,
-      identifier: issues.identifier,
-      title: issues.title,
-      boardPresentationStatus: issues.boardPresentationStatus,
-      priority: issues.priority,
-      ownerAgentId: issues.ownerAgentId,
-      ownerUserId: issues.ownerUserId,
-      createdAt: issues.createdAt,
-      updatedAt: issues.updatedAt,
+      id: tasks.id,
+      companyId: tasks.companyId,
+      identifier: tasks.identifier,
+      title: tasks.title,
+      boardPresentationStatus: tasks.boardPresentationStatus,
+      priority: tasks.priority,
+      ownerAgentId: tasks.ownerAgentId,
+      ownerUserId: tasks.ownerUserId,
+      createdAt: tasks.createdAt,
+      updatedAt: tasks.updatedAt,
       projectId: projects.id,
       projectName: projects.name,
       projectColor: projects.color,
       projectIcon: projects.icon,
       workspaceId: projectWorkspaces.id,
     })
-    .from(issues)
-    .leftJoin(projects, and(eq(issues.projectId, projects.id), eq(projects.companyId, companyId)))
+    .from(tasks)
+    .leftJoin(projects, and(eq(tasks.projectId, projects.id), eq(projects.companyId, companyId)))
     .leftJoin(projectWorkspaces, and(
-      eq(issues.projectWorkspaceId, projectWorkspaces.id),
+      eq(tasks.projectWorkspaceId, projectWorkspaces.id),
       eq(projectWorkspaces.companyId, companyId),
     ))
     .where(and(
-      eq(issues.companyId, companyId),
-      inArray(issues.id, ids),
-      options.includeHidden ? undefined : isNull(issues.hiddenAt),
+      eq(tasks.companyId, companyId),
+      inArray(tasks.id, ids),
+      options.includeHidden ? undefined : isNull(tasks.hiddenAt),
     ));
   return new Map(rows.map((row) => [row.id, {
     id: row.id,
@@ -355,31 +355,31 @@ async function issueSummaryMap(
   }]));
 }
 
-async function issueImageMap(db: Db, companyId: string, issueIds: Array<string | null | undefined>) {
-  const ids = [...new Set(issueIds.filter((value): value is string => Boolean(value)))];
+async function taskImageMap(db: Db, companyId: string, taskIds: Array<string | null | undefined>) {
+  const ids = [...new Set(taskIds.filter((value): value is string => Boolean(value)))];
   if (ids.length === 0) return new Map<string, AttentionDetailImage[]>();
   const rows = await db
     .select({
-      issueId: issueAttachments.issueId,
-      assetId: issueAttachments.assetId,
+      taskId: taskAttachments.taskId,
+      assetId: taskAttachments.assetId,
       originalFilename: assets.originalFilename,
     })
-    .from(issueAttachments)
-    .innerJoin(assets, eq(issueAttachments.assetId, assets.id))
+    .from(taskAttachments)
+    .innerJoin(assets, eq(taskAttachments.assetId, assets.id))
     .where(and(
-      eq(issueAttachments.companyId, companyId),
+      eq(taskAttachments.companyId, companyId),
       eq(assets.companyId, companyId),
-      inArray(issueAttachments.issueId, ids),
+      inArray(taskAttachments.taskId, ids),
       sql`${assets.contentType} like 'image/%'`,
     ))
-    .orderBy(asc(issueAttachments.issueId), asc(issueAttachments.createdAt), asc(issueAttachments.id));
+    .orderBy(asc(taskAttachments.taskId), asc(taskAttachments.createdAt), asc(taskAttachments.id));
 
   const map = new Map<string, AttentionDetailImage[]>();
   for (const row of rows) {
-    const images = map.get(row.issueId) ?? [];
+    const images = map.get(row.taskId) ?? [];
     if (images.length >= DETAIL_IMAGE_LIMIT) continue;
     images.push({ assetId: row.assetId, alt: row.originalFilename ?? null });
-    map.set(row.issueId, images);
+    map.set(row.taskId, images);
   }
   return map;
 }
@@ -422,19 +422,19 @@ export function attentionService(db: Db) {
         .orderBy(desc(approvals.updatedAt), desc(approvals.id));
 
       const pendingApprovalIds = pendingApprovals.map((approval) => approval.id);
-      const approvalIssueRows = pendingApprovalIds.length > 0
+      const approvalTaskRows = pendingApprovalIds.length > 0
         ? await db
-          .select({ approvalId: issueApprovals.approvalId, issueId: issueApprovals.issueId })
-          .from(issueApprovals)
+          .select({ approvalId: taskApprovals.approvalId, taskId: taskApprovals.taskId })
+          .from(taskApprovals)
           .where(and(
-            eq(issueApprovals.companyId, companyId),
-            inArray(issueApprovals.approvalId, pendingApprovalIds),
+            eq(taskApprovals.companyId, companyId),
+            inArray(taskApprovals.approvalId, pendingApprovalIds),
           ))
-          .orderBy(asc(issueApprovals.approvalId), asc(issueApprovals.issueId))
+          .orderBy(asc(taskApprovals.approvalId), asc(taskApprovals.taskId))
         : [];
-      const approvalIssueMap = new Map<string, string>();
-      for (const row of approvalIssueRows) {
-        if (!approvalIssueMap.has(row.approvalId)) approvalIssueMap.set(row.approvalId, row.issueId);
+      const approvalTaskMap = new Map<string, string>();
+      for (const row of approvalTaskRows) {
+        if (!approvalTaskMap.has(row.approvalId)) approvalTaskMap.set(row.approvalId, row.taskId);
       }
 
       for (const approval of pendingApprovals) {
@@ -455,7 +455,7 @@ export function attentionService(db: Db) {
               type: approval.type,
               requestedByAgentId: approval.requestedByAgentId,
               requestedByUserId: approval.requestedByUserId,
-              issueId: approvalIssueMap.get(approval.id) ?? null,
+              taskId: approvalTaskMap.get(approval.id) ?? null,
             },
           },
           whyNow: "Approval is pending a board decision.",
@@ -472,7 +472,7 @@ export function attentionService(db: Db) {
           activityAt: toIso(approval.updatedAt),
           createdAt: toIso(approval.createdAt),
           updatedAt: toIso(approval.updatedAt),
-          relatedIssue: null,
+          relatedTask: null,
           detail: approvalDetail(approval.type, approval.payload),
         }));
       }
@@ -534,176 +534,176 @@ export function attentionService(db: Db) {
           activityAt: toIso(join.updatedAt),
           createdAt: toIso(join.createdAt),
           updatedAt: toIso(join.updatedAt),
-          relatedIssue: null,
+          relatedTask: null,
           detail: genericDetail(label, []),
         }));
       }
 
       const reviewRows = await db
         .select({
-          id: issues.id,
-          companyId: issues.companyId,
-          identifier: issues.identifier,
-          title: issues.title,
-          boardPresentationStatus: issues.boardPresentationStatus,
-          priority: issues.priority,
-          ownerAgentId: issues.ownerAgentId,
-          ownerUserId: issues.ownerUserId,
-          executionState: issues.executionState,
-          createdAt: issues.createdAt,
-          updatedAt: issues.updatedAt,
+          id: tasks.id,
+          companyId: tasks.companyId,
+          identifier: tasks.identifier,
+          title: tasks.title,
+          boardPresentationStatus: tasks.boardPresentationStatus,
+          priority: tasks.priority,
+          ownerAgentId: tasks.ownerAgentId,
+          ownerUserId: tasks.ownerUserId,
+          executionState: tasks.executionState,
+          createdAt: tasks.createdAt,
+          updatedAt: tasks.updatedAt,
         })
-        .from(issues)
-        .where(and(eq(issues.companyId, companyId), eq(issues.boardPresentationStatus, "in_review"), isNull(issues.hiddenAt)))
-        .orderBy(desc(issues.updatedAt), desc(issues.id));
-      const reviewIssueIds = reviewRows.map((row) => row.id);
-      const pendingReviewApprovalRows = reviewIssueIds.length === 0
+        .from(tasks)
+        .where(and(eq(tasks.companyId, companyId), eq(tasks.boardPresentationStatus, "in_review"), isNull(tasks.hiddenAt)))
+        .orderBy(desc(tasks.updatedAt), desc(tasks.id));
+      const reviewTaskIds = reviewRows.map((row) => row.id);
+      const pendingReviewApprovalRows = reviewTaskIds.length === 0
         ? []
         : await db
-          .select({ issueId: issueApprovals.issueId, approvalId: approvals.id })
-          .from(issueApprovals)
-          .innerJoin(approvals, eq(issueApprovals.approvalId, approvals.id))
+          .select({ taskId: taskApprovals.taskId, approvalId: approvals.id })
+          .from(taskApprovals)
+          .innerJoin(approvals, eq(taskApprovals.approvalId, approvals.id))
           .where(and(
-            eq(issueApprovals.companyId, companyId),
+            eq(taskApprovals.companyId, companyId),
             eq(approvals.companyId, companyId),
-            inArray(issueApprovals.issueId, reviewIssueIds),
+            inArray(taskApprovals.taskId, reviewTaskIds),
             eq(approvals.status, "pending"),
           ));
-      const pendingApprovalByIssueId = new Map(pendingReviewApprovalRows.map((row) => [row.issueId, row.approvalId]));
-      const reviewIssueMap = await issueSummaryMap(db, companyId, reviewIssueIds);
-      const reviewImageMap = await issueImageMap(db, companyId, reviewIssueIds);
+      const pendingApprovalByTaskId = new Map(pendingReviewApprovalRows.map((row) => [row.taskId, row.approvalId]));
+      const reviewTaskMap = await taskSummaryMap(db, companyId, reviewTaskIds);
+      const reviewImageMap = await taskImageMap(db, companyId, reviewTaskIds);
 
       for (const review of reviewRows) {
-        const state = parseIssueExecutionState(review.executionState);
+        const state = parseTaskExecutionState(review.executionState);
         const currentParticipant = state?.status === "pending" ? state.currentParticipant : null;
         const hasHumanParticipant = currentParticipant?.type === "user";
-        const pendingApprovalId = pendingApprovalByIssueId.get(review.id) ?? null;
+        const pendingApprovalId = pendingApprovalByTaskId.get(review.id) ?? null;
         if (!hasHumanParticipant && !review.ownerUserId && !pendingApprovalId) continue;
-        const issue = reviewIssueMap.get(review.id);
-        if (!issue) continue;
+        const task = reviewTaskMap.get(review.id);
+        if (!task) continue;
         const dedupKey = `review:${review.id}`;
         add(createItem({
           companyId,
           sourceKind: "review",
-          subject: issueSubject(prefix, issue),
+          subject: taskSubject(prefix, task),
           whyNow: pendingApprovalId
-            ? "Issue is in review with a linked pending approval."
+            ? "Task is in review with a linked pending approval."
             : hasHumanParticipant
-              ? "Issue is in review and the current execution participant is a user."
-              : "Issue is in review and owned by a user.",
+              ? "Task is in review and the current execution participant is a user."
+              : "Task is in review and owned by a user.",
           decisionVerbs: decisionVerbs(
-            { id: "approve", label: "Approve", description: "Approve the review and advance the issue." },
-            { id: "request_changes", label: "Request changes", description: "Return the issue to its owner with changes requested." },
+            { id: "approve", label: "Approve", description: "Approve the review and advance the task." },
+            { id: "request_changes", label: "Request changes", description: "Return the task to its owner with changes requested." },
           ),
           inlineResolvable: false,
-          entryRule: "issues.boardPresentationStatus = 'in_review' and human reviewer, user owner, or linked pending approval exists.",
-          exitRule: "Issue leaves in_review or the human review path resolves.",
+          entryRule: "tasks.boardPresentationStatus = 'in_review' and human reviewer, user owner, or linked pending approval exists.",
+          exitRule: "Task leaves in_review or the human review path resolves.",
           dedupKey,
           severity: "medium",
           activityAt: toIso(review.updatedAt),
           createdAt: toIso(review.createdAt),
           updatedAt: toIso(review.updatedAt),
-          relatedIssue: null,
-          ...issueContext(issue),
-          detail: genericDetail(review.title, issueImages(reviewImageMap, review.id)),
+          relatedTask: null,
+          ...taskContext(task),
+          detail: genericDetail(review.title, taskImages(reviewImageMap, review.id)),
         }));
       }
 
       const activeBoardMentions = await db
         .select({
-          id: issueBoardMentions.id,
-          issueId: issueBoardMentions.issueId,
+          id: taskBoardMentions.id,
+          taskId: taskBoardMentions.taskId,
           message: boardMentionComments.body,
-          createdAt: issueBoardMentions.createdAt,
+          createdAt: taskBoardMentions.createdAt,
         })
-        .from(issueBoardMentions)
+        .from(taskBoardMentions)
         .innerJoin(
           boardMentionComments,
           and(
-            eq(boardMentionComments.companyId, issueBoardMentions.companyId),
-            eq(boardMentionComments.issueId, issueBoardMentions.issueId),
-            eq(boardMentionComments.id, issueBoardMentions.commentId),
+            eq(boardMentionComments.companyId, taskBoardMentions.companyId),
+            eq(boardMentionComments.taskId, taskBoardMentions.taskId),
+            eq(boardMentionComments.id, taskBoardMentions.commentId),
           ),
         )
         .innerJoin(
-          issues,
+          tasks,
           and(
-            eq(issues.companyId, issueBoardMentions.companyId),
-            eq(issues.id, issueBoardMentions.issueId),
-            eq(issues.ownershipEpoch, issueBoardMentions.ownershipEpoch),
+            eq(tasks.companyId, taskBoardMentions.companyId),
+            eq(tasks.id, taskBoardMentions.taskId),
+            eq(tasks.ownershipEpoch, taskBoardMentions.ownershipEpoch),
           ),
         )
         .where(and(
-          eq(issueBoardMentions.companyId, companyId),
-          isNull(issues.hiddenAt),
-          inArray(issues.lifecycleStatus, ["open", "blocked"]),
+          eq(taskBoardMentions.companyId, companyId),
+          isNull(tasks.hiddenAt),
+          inArray(tasks.lifecycleStatus, ["open", "blocked"]),
           notExists(
             db
-              .select({ id: issueBoardUserComments.id })
-              .from(issueBoardUserComments)
+              .select({ id: taskBoardUserComments.id })
+              .from(taskBoardUserComments)
               .innerJoin(
                 boardReplyComments,
                 and(
-                  eq(boardReplyComments.companyId, issueBoardUserComments.companyId),
-                  eq(boardReplyComments.issueId, issueBoardUserComments.issueId),
-                  eq(boardReplyComments.id, issueBoardUserComments.commentId),
+                  eq(boardReplyComments.companyId, taskBoardUserComments.companyId),
+                  eq(boardReplyComments.taskId, taskBoardUserComments.taskId),
+                  eq(boardReplyComments.id, taskBoardUserComments.commentId),
                 ),
               )
               .where(and(
-                eq(issueBoardUserComments.companyId, issueBoardMentions.companyId),
-                eq(issueBoardUserComments.issueId, issueBoardMentions.issueId),
-                eq(issueBoardUserComments.ownershipEpoch, issueBoardMentions.ownershipEpoch),
-                eq(issueBoardUserComments.mentionTargetAgentId, issueBoardMentions.agentId),
+                eq(taskBoardUserComments.companyId, taskBoardMentions.companyId),
+                eq(taskBoardUserComments.taskId, taskBoardMentions.taskId),
+                eq(taskBoardUserComments.ownershipEpoch, taskBoardMentions.ownershipEpoch),
+                eq(taskBoardUserComments.mentionTargetAgentId, taskBoardMentions.agentId),
                 gt(boardReplyComments.projectedEventSeq, boardMentionComments.projectedEventSeq),
               )),
           ),
           notExists(
             db
-              .select({ id: issueBoardReopenCommands.id })
-              .from(issueBoardReopenCommands)
+              .select({ id: taskBoardReopenCommands.id })
+              .from(taskBoardReopenCommands)
               .where(and(
-                eq(issueBoardReopenCommands.companyId, issueBoardMentions.companyId),
-                eq(issueBoardReopenCommands.issueId, issueBoardMentions.issueId),
-                eq(issueBoardReopenCommands.ownershipEpoch, issueBoardMentions.ownershipEpoch),
-                sql`${issueBoardReopenCommands.createdAt} >= ${issueBoardMentions.createdAt}`,
+                eq(taskBoardReopenCommands.companyId, taskBoardMentions.companyId),
+                eq(taskBoardReopenCommands.taskId, taskBoardMentions.taskId),
+                eq(taskBoardReopenCommands.ownershipEpoch, taskBoardMentions.ownershipEpoch),
+                sql`${taskBoardReopenCommands.createdAt} >= ${taskBoardMentions.createdAt}`,
               )),
           ),
         ))
-        .orderBy(desc(issueBoardMentions.createdAt), desc(issueBoardMentions.id));
-      const boardMentionIssueMap = await issueSummaryMap(
+        .orderBy(desc(taskBoardMentions.createdAt), desc(taskBoardMentions.id));
+      const boardMentionTaskMap = await taskSummaryMap(
         db,
         companyId,
-        activeBoardMentions.map((mention) => mention.issueId),
+        activeBoardMentions.map((mention) => mention.taskId),
       );
-      const boardMentionImageMap = await issueImageMap(
+      const boardMentionImageMap = await taskImageMap(
         db,
         companyId,
-        activeBoardMentions.map((mention) => mention.issueId),
+        activeBoardMentions.map((mention) => mention.taskId),
       );
       for (const mention of activeBoardMentions) {
-        const issue = boardMentionIssueMap.get(mention.issueId);
-        if (!issue) continue;
+        const task = boardMentionTaskMap.get(mention.taskId);
+        if (!task) continue;
         add(createItem({
           companyId,
           sourceKind: "mention_board",
-          subject: issueSubject(prefix, issue),
+          subject: taskSubject(prefix, task),
           whyNow: "An agent requested information or direction from the Board.",
           decisionVerbs: decisionVerbs(
-            { id: "reply_and_continue", label: "Reply & continue", description: "Reply to the agent and continue this issue." },
+            { id: "reply_and_continue", label: "Reply & continue", description: "Reply to the agent and continue this task." },
           ),
           inlineResolvable: false,
-          entryRule: "An active agent Board mention exists for the current nonterminal issue ownership epoch.",
-          exitRule: "A Board user resumes the exact owner/epoch, the issue is reopened, or the ownership epoch leaves scope.",
+          entryRule: "An active agent Board mention exists for the current nonterminal task ownership epoch.",
+          exitRule: "A Board user resumes the exact owner/epoch, the task is reopened, or the ownership epoch leaves scope.",
           dedupKey: `board-mention:${mention.id}`,
           severity: "medium",
           activityAt: toIso(mention.createdAt),
           createdAt: toIso(mention.createdAt),
           updatedAt: toIso(mention.createdAt),
-          relatedIssue: null,
-          ...issueContext(issue),
+          relatedTask: null,
+          ...taskContext(task),
           detail: genericDetail(
             mention.message,
-            issueImages(boardMentionImageMap, mention.issueId),
+            taskImages(boardMentionImageMap, mention.taskId),
           ),
         }));
       }
@@ -752,7 +752,7 @@ export function attentionService(db: Db) {
           activityAt: toIso(incident.updatedAt),
           createdAt: toIso(incident.createdAt),
           updatedAt: toIso(incident.updatedAt),
-          relatedIssue: null,
+          relatedTask: null,
           detail: {
             kind: "budget",
             observedPercent,

@@ -76,14 +76,14 @@ export function AgentStatusCapsule({ status }: { status: string }) {
 }
 
 /**
- * Issue/task status chip — bordered chip recoloured from the editable
+ * Task status chip — bordered chip recoloured from the editable
  * `--status-task-*` base hue via `.status-chip`, carrying the unified
  * {@link StatusGlyph} (one distinct, color-blind-safe shape per status), a
  * sentence-cased label and regular weight. `cancelled` is struck through.
  * Distinct from the generic {@link StatusBadge} so run/goal/approval badges are
  * unaffected.
  */
-export function IssueStatusBadge({ status }: { status: string }) {
+export function TaskStatusBadge({ status }: { status: string }) {
   const cssVar = taskStatusVar[status] ?? taskStatusVarDefault;
   return (
     <span

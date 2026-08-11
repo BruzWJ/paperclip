@@ -1,13 +1,17 @@
 import fs from "node:fs";
-import { paperclipConfigSchema, type PaperclipConfig } from "@paperclipai/shared";
+import {
+  paperclipConfigSchema,
+  validationDetails,
+  type PaperclipConfig,
+} from "@paperclipai/shared";
 import { ZodError } from "zod";
 import { resolvePaperclipConfigPath } from "./paths.js";
 
 function formatConfigValidationError(error: ZodError): string {
-  return error.issues
-    .map((issue) => {
-      const issuePath = issue.path.length > 0 ? issue.path.join(".") : "<root>";
-      return `${issuePath}: ${issue.message}`;
+  return validationDetails(error)
+    .map((detail) => {
+      const detailPath = detail.path.length > 0 ? detail.path.join(".") : "<root>";
+      return `${detailPath}: ${detail.message}`;
     })
     .join("; ");
 }

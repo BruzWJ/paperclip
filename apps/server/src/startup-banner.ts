@@ -17,8 +17,8 @@ type StartupBannerOptions = {
   listenPort: number;
   uiMode: UiMode;
   db: ExternalPostgresInfo;
-  issueExecutionSchedulerEnabled: boolean;
-  issueExecutionSchedulerIntervalMs: number;
+  taskExecutionSchedulerEnabled: boolean;
+  taskExecutionSchedulerIntervalMs: number;
 };
 
 const ansi = {
@@ -62,8 +62,8 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
 
   const dbDetails = redactExternalPostgresConnectionString(opts.db.connectionString);
 
-  const issueExecution = opts.issueExecutionSchedulerEnabled
-    ? `enabled ${color(`(${opts.issueExecutionSchedulerIntervalMs}ms)`, "dim")}`
+  const taskExecution = opts.taskExecutionSchedulerEnabled
+    ? `enabled ${color(`(${opts.taskExecutionSchedulerIntervalMs}ms)`, "dim")}`
     : color("disabled", "yellow");
 
   const art = [
@@ -87,7 +87,7 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
     row("API", `${apiUrl} ${color(`(health: ${apiUrl}/health)`, "dim")}`),
     row("UI", uiUrl),
     row("Database", dbDetails),
-    row("Issue execution", issueExecution),
+    row("Task execution", taskExecution),
     row("Config", configPath),
     color("  ───────────────────────────────────────────────────────", "blue"),
     "",

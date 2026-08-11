@@ -8,7 +8,7 @@ import type { PluginEvent } from "../src/types.js";
 function event(overrides: Partial<PluginEvent> = {}): PluginEvent {
   return {
     eventId: "event",
-    eventType: "issue.board.comment.created",
+    eventType: "task.board.comment.created",
     occurredAt: "2026-08-05T00:00:00.000Z",
     companyId: "company",
     payload: {},
@@ -42,7 +42,7 @@ describe("pluginEventMatchesFilter", () => {
 describe("assertPluginEventSubscription", () => {
   it("rejects an agent filter on the board-comment core event", () => {
     expect(() => assertPluginEventSubscription(
-      "issue.board.comment.created",
+      "task.board.comment.created",
       { agentId: "agent" },
     )).toThrow("agentId is not supported");
   });

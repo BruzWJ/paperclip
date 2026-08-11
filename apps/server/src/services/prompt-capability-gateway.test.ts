@@ -2,17 +2,17 @@ import { createHash } from "node:crypto";
 import {
   agents,
   companies,
-  issueExecutionAttempts,
-  issueExecutionAuthorities,
-  issueExecutionLeases,
-  issueExecutionPromptCapabilities,
-  issueExecutionPromptSegments,
-  issueExecutionRefs,
-  issueExecutionRunControls,
-  issueExecutionRunRefs,
-  issueExecutionSessions,
-  issueExecutionWorkspaceBindings,
-  issues,
+  taskExecutionAttempts,
+  taskExecutionAuthorities,
+  taskExecutionLeases,
+  taskExecutionPromptCapabilities,
+  taskExecutionPromptSegments,
+  taskExecutionRefs,
+  taskExecutionRunControls,
+  taskExecutionRunRefs,
+  taskExecutionSessions,
+  taskExecutionWorkspaceBindings,
+  tasks,
   type Db,
 } from "@paperclipai/db";
 import { describe, expect, it, vi } from "vitest";
@@ -31,7 +31,7 @@ import {
   createPostgresPromptCapabilityGatewayRepository,
   lockActivePromptCapabilityBinding,
 } from "./prompt-capability-gateway-postgres.js";
-import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
+import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 import type {
   PaperclipManagedToolCommand,
 } from "./paperclip-managed-tool-registry.js";
@@ -58,13 +58,13 @@ const capability: PromptCapabilityBinding = Object.freeze({
   leaseId: "00000000-0000-4000-8000-000000000006",
   leaseGeneration: 2,
   workerProcessIdentity: "00000000-0000-4000-8000-000000000007",
-  issueId: "00000000-0000-4000-8000-000000000008",
+  taskId: "00000000-0000-4000-8000-000000000008",
   sessionId: "ses_canonical",
   ownershipEpoch: 4,
   targetAgentId: "00000000-0000-4000-8000-000000000009",
   laneKind: "owner",
   executionMode: "owner",
-  issueExecutionAuthorityId: "00000000-0000-4000-8000-00000000000a",
+  taskExecutionAuthorityId: "00000000-0000-4000-8000-00000000000a",
   consultExecutionId: null,
   adapterConfigIdentity: "00000000-0000-4000-8000-00000000000b",
   workspaceIdentity: "00000000-0000-4000-8000-00000000000c",
@@ -107,7 +107,7 @@ function capabilityLockTransaction(
       };
       return builder;
     },
-  } as unknown as IssueSessionDbTransaction;
+  } as unknown as TaskSessionDbTransaction;
   return { transaction, selectedTables, lockedTables };
 }
 
@@ -131,23 +131,23 @@ function persistedCapabilityRow(input: {
 
 function gatewayAuthorityRows(
   row: ReturnType<typeof persistedCapabilityRow>,
-  issueState: {
+  taskState: {
     lifecycleStatus?: "open" | "blocked" | "done" | "cancelled";
     executionPaused?: boolean;
   } = {},
 ) {
   return new Map<unknown, readonly unknown[]>([
-    [issueExecutionPromptCapabilities, [row]],
+    [taskExecutionPromptCapabilities, [row]],
     [companies, [{ status: "active", integrity: "ready" }]],
     [
-      issues,
+      tasks,
       [{
         companyId: row.companyId,
         ownershipEpoch: row.ownershipEpoch,
-        lifecycleStatus: issueState.lifecycleStatus ?? "open",
+        lifecycleStatus: taskState.lifecycleStatus ?? "open",
         ownerKind: "agent",
         ownerAgentId: row.targetAgentId,
-        executionPaused: issueState.executionPaused ?? false,
+        executionPaused: taskState.executionPaused ?? false,
       }],
     ],
     [
@@ -159,25 +159,25 @@ function gatewayAuthorityRows(
       }],
     ],
     [
-      issueExecutionRefs,
+      taskExecutionRefs,
       [{
         companyId: row.companyId,
-        issueId: row.issueId,
+        taskId: row.taskId,
         sessionId: capability.sessionId,
         ownershipEpoch: row.ownershipEpoch,
         mode: row.executionMode,
         targetAgentId: row.targetAgentId,
-        issueExecutionAuthorityId: row.issueExecutionAuthorityId,
+        taskExecutionAuthorityId: row.taskExecutionAuthorityId,
         consultExecutionId: row.consultExecutionId,
         adapterConfigRevisionId: row.adapterConfigIdentity,
         disposition: "active",
       }],
     ],
     [
-      issueExecutionRunRefs,
+      taskExecutionRunRefs,
       [{
         companyId: row.companyId,
-        issueId: row.issueId,
+        taskId: row.taskId,
         sessionId: capability.sessionId,
         batchDigest: row.runBatchDigest,
         attemptId: row.attemptId,
@@ -189,10 +189,10 @@ function gatewayAuthorityRows(
     ...(row.segmentOrdinal === 0
       ? []
       : [[
-          issueExecutionPromptSegments,
+          taskExecutionPromptSegments,
           [{
             companyId: row.companyId,
-            issueId: row.issueId,
+            taskId: row.taskId,
             sessionId: capability.sessionId,
             attemptId: row.attemptId,
             capabilityConnectionId: row.capabilityConnectionId,
@@ -202,7 +202,7 @@ function gatewayAuthorityRows(
           }],
         ]] as const),
     [
-      issueExecutionRunControls,
+      taskExecutionRunControls,
       [{
         currentRefId: row.refId,
         currentOrdinal: row.refOrdinal,
@@ -210,10 +210,10 @@ function gatewayAuthorityRows(
       }],
     ],
     [
-      issueExecutionAttempts,
+      taskExecutionAttempts,
       [{
         companyId: row.companyId,
-        issueId: row.issueId,
+        taskId: row.taskId,
         sessionId: capability.sessionId,
         runId: row.runId,
         runKind: "productive",
@@ -225,10 +225,10 @@ function gatewayAuthorityRows(
       }],
     ],
     [
-      issueExecutionLeases,
+      taskExecutionLeases,
       [{
         companyId: row.companyId,
-        issueId: row.issueId,
+        taskId: row.taskId,
         runId: row.runId,
         attemptId: row.attemptId,
         leaseGeneration: row.leaseGeneration,
@@ -237,9 +237,9 @@ function gatewayAuthorityRows(
       }],
     ],
     [
-      issueExecutionSessions,
+      taskExecutionSessions,
       [{
-        issueId: row.issueId,
+        taskId: row.taskId,
         ownershipEpoch: row.ownershipEpoch,
         targetAgentId: row.targetAgentId,
         adapterConfigIdentity: row.adapterConfigIdentity,
@@ -253,19 +253,19 @@ function gatewayAuthorityRows(
       }],
     ],
     [
-      issueExecutionWorkspaceBindings,
+      taskExecutionWorkspaceBindings,
       [{
         companyId: row.companyId,
-        issueId: row.issueId,
+        taskId: row.taskId,
         sessionId: capability.sessionId,
         ownershipEpoch: row.ownershipEpoch,
       }],
     ],
     [
-      issueExecutionAuthorities,
+      taskExecutionAuthorities,
       [{
         companyId: row.companyId,
-        issueId: row.issueId,
+        taskId: row.taskId,
         sessionId: capability.sessionId,
         ownershipEpoch: row.ownershipEpoch,
         agentId: row.targetAgentId,
@@ -278,9 +278,9 @@ function gatewayAuthorityRows(
 function postgresGatewayRepository(
   row: ReturnType<typeof persistedCapabilityRow>,
   databaseTime = now,
-  issueState: Parameters<typeof gatewayAuthorityRows>[1] = {},
+  taskState: Parameters<typeof gatewayAuthorityRows>[1] = {},
 ) {
-  const rowsByTable = gatewayAuthorityRows(row, issueState);
+  const rowsByTable = gatewayAuthorityRows(row, taskState);
   const database: Record<string, unknown> = {
     async execute() {
       return [{ timestampMs: databaseTime.getTime() }];
@@ -330,7 +330,7 @@ function postgresGatewayRepository(
         ownershipEpoch: row.ownershipEpoch,
         targetAgentId: row.targetAgentId,
         executionMode: row.executionMode,
-        issueExecutionAuthorityId: row.issueExecutionAuthorityId,
+        taskExecutionAuthorityId: row.taskExecutionAuthorityId,
         consultExecutionId: row.consultExecutionId,
         adapterConfigRevisionId: row.adapterConfigIdentity,
         executionWorkspaceBindingId: row.workspaceIdentity,
@@ -350,8 +350,8 @@ function compileInput(): RuntimeInterfaceCompileInput {
     contextDial: resolveContextDial({ agent: {} }).effective,
     actionGrants: {},
     isCurrentOwner: true,
-    issueCreateDirectChildren: [],
-    issueAssignTargets: [],
+    taskCreateDirectChildren: [],
+    taskAssignTargets: [],
     creatorUpdateTargets: [],
     mentionTargets: [],
     configureTargets: [],
@@ -573,10 +573,10 @@ describe("prompt-capability gateway", () => {
     const bearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(7));
 
     const tools = await runtime.gateway.listTools(bearer);
-    expect(tools.map((tool) => tool.name)).toContain("issue_update");
+    expect(tools.map((tool) => tool.name)).toContain("task_update");
     await expect(runtime.gateway.callTool({
       bearer,
-      toolName: "issue_update",
+      toolName: "task_update",
       arguments: { message: "progress" },
       callIdentity: { source: "jsonrpc", id: 7 },
       ingressOrdinal: 0,
@@ -621,7 +621,7 @@ describe("prompt-capability gateway", () => {
   it("uses one compiled snapshot for descriptor and context scope", async () => {
     const bearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(9));
     const compiledDial = resolveContextDial({
-      agent: { read_issue_comments: true },
+      agent: { read_task_comments: true },
     }).effective;
     const driftedDial = resolveContextDial({ agent: {} }).effective;
     const resolveCompileInput = vi.fn()
@@ -668,7 +668,7 @@ describe("prompt-capability gateway", () => {
 
     await expect(gateway.callTool({
       bearer,
-      toolName: "read_issue_comments",
+      toolName: "read_task_comments",
       arguments: {},
       callIdentity: { source: "jsonrpc", id: "context-call" },
       ingressOrdinal: 0,
@@ -677,7 +677,7 @@ describe("prompt-capability gateway", () => {
     expect(resolveCompileInput).toHaveBeenCalledOnce();
     expect(observedScopes).toEqual([{
       companyId: capability.companyId,
-      activeIssueId: capability.issueId,
+      activeTaskId: capability.taskId,
       dial: compiledDial,
     }]);
     expect(observedScopes).not.toContainEqual(expect.objectContaining({
@@ -709,20 +709,20 @@ describe("prompt-capability gateway", () => {
 
     await expect(runtime.gateway.callTool({
       bearer,
-      toolName: "issue_update",
+      toolName: "task_update",
       arguments: { message: "do work" },
       callIdentity: { source: "jsonrpc", id: "bootstrap-denied" },
       ingressOrdinal: 0,
     })).rejects.toMatchObject({
       code: "runtime_tool_unavailable",
       message:
-        "Tool is not available for the current issue execution: issue_update",
+        "Tool is not available for the current task execution: task_update",
     });
     expect(runtime.execute).not.toHaveBeenCalled();
     expect(runtime.registerTerminalInvalid).toHaveBeenCalledWith(
       expect.objectContaining({
         capability,
-        descriptor: expect.objectContaining({ name: "issue_update" }),
+        descriptor: expect.objectContaining({ name: "task_update" }),
       }),
     );
 
@@ -767,10 +767,10 @@ describe("prompt-capability gateway", () => {
       ),
     ).resolves.toBeUndefined();
     expect(runtime.selectedTables).toEqual([
-      issueExecutionPromptCapabilities,
+      taskExecutionPromptCapabilities,
     ]);
     expect(runtime.lockedTables).toEqual([
-      issueExecutionPromptCapabilities,
+      taskExecutionPromptCapabilities,
     ]);
   });
 
@@ -810,25 +810,25 @@ describe("prompt-capability gateway", () => {
 
   it.each([
     {
-      label: "blocked issue",
-      issueState: { lifecycleStatus: "blocked" as const },
+      label: "blocked task",
+      taskState: { lifecycleStatus: "blocked" as const },
       expected: "authenticated",
     },
     {
-      label: "cancelled issue",
-      issueState: { lifecycleStatus: "cancelled" as const },
-      expected: "issue_lifecycle_terminal",
+      label: "cancelled task",
+      taskState: { lifecycleStatus: "cancelled" as const },
+      expected: "task_lifecycle_terminal",
     },
     {
-      label: "paused issue tree",
-      issueState: { executionPaused: true },
-      expected: "issue_execution_paused",
+      label: "paused task tree",
+      taskState: { executionPaused: true },
+      expected: "task_execution_paused",
     },
-  ])("applies the canonical execution gate for a $label", async ({ issueState, expected }) => {
+  ])("applies the canonical execution gate for a $label", async ({ taskState, expected }) => {
     const row = persistedCapabilityRow({
       expiresAt: new Date("2026-07-31T12:10:00.000Z"),
     });
-    const repository = postgresGatewayRepository(row, now, issueState);
+    const repository = postgresGatewayRepository(row, now, taskState);
     const result = await repository.revalidate(
       capability,
       new Date("2026-07-31T12:06:00.000Z"),

@@ -1,6 +1,6 @@
 /**
  * Normalize pasted markdown by removing common leading whitespace (dedent)
- * and normalizing line endings. This fixes formatting issues when pasting
+ * and normalizing line endings. This fixes formatting problems when pasting
  * content from terminals/consoles that add uniform indentation.
  */
 export function normalizeMarkdown(text: string): string {

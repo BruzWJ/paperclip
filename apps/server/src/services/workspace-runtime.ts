@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
-import { issues } from "@paperclipai/db";
+import { tasks } from "@paperclipai/db";
 import {
   type GitWorktreeBranchAncestryVerdict,
   type GitWorktreeBranchIncoherenceEvidence as SharedGitWorktreeBranchIncoherenceEvidence,
@@ -13,9 +13,9 @@ import {
 import { eq } from "drizzle-orm";
 import { executionWorkspaceService } from "./execution-workspaces.js";
 import { logActivity } from "./activity-log.js";
-import { appendCanonicalControlNotice } from "./issue-session-producers.js";
+import { appendCanonicalControlNotice } from "./task-session-producers.js";
 
-export interface ExecutionWorkspaceIssueRef {
+export interface ExecutionWorkspaceTaskRef {
   id: string;
   identifier: string | null;
 }
@@ -281,36 +281,36 @@ function formatUtcBranchTimestamp(date = new Date()) {
   return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 }
 
-function buildDirtyQuarantineRescueBranch(sourceIssue: ExecutionWorkspaceIssueRef | null) {
-  const issueComponent = sanitizeBranchName(sourceIssue?.identifier ?? sourceIssue?.id ?? "issue");
-  return sanitizeBranchName(`paperclip/rescue/${issueComponent}/${formatUtcBranchTimestamp()}`);
+function buildDirtyQuarantineRescueBranch(sourceTask: ExecutionWorkspaceTaskRef | null) {
+  const taskComponent = sanitizeBranchName(sourceTask?.identifier ?? sourceTask?.id ?? "task");
+  return sanitizeBranchName(`paperclip/rescue/${taskComponent}/${formatUtcBranchTimestamp()}`);
 }
 
-function formatIssueReference(issueId: string | null | undefined, identifier: string | null | undefined) {
-  if (!identifier) return issueId ? `\`${issueId}\`` : "`unknown`";
+function formatTaskReference(taskId: string | null | undefined, identifier: string | null | undefined) {
+  if (!identifier) return taskId ? `\`${taskId}\`` : "`unknown`";
   const match = identifier.match(/^([A-Z]+)-\d+$/);
   if (!match) return `\`${identifier}\``;
-  return `[${identifier}](/${match[1]}/issues/${identifier})`;
+  return `[${identifier}](/${match[1]}/tasks/${identifier})`;
 }
 
-async function readIssueCompanyId(db: Db, issueId: string | null | undefined): Promise<string | null> {
-  if (!issueId) return null;
+async function readTaskCompanyId(db: Db, taskId: string | null | undefined): Promise<string | null> {
+  if (!taskId) return null;
   return db
-    .select({ companyId: issues.companyId })
-    .from(issues)
-    .where(eq(issues.id, issueId))
+    .select({ companyId: tasks.companyId })
+    .from(tasks)
+    .where(eq(tasks.id, taskId))
     .then((rows) => rows[0]?.companyId ?? null);
 }
 
 async function findGitWorktreeBranchContention(input: {
   db: Db | null | undefined;
-  sourceIssue: ExecutionWorkspaceIssueRef | null;
+  sourceTask: ExecutionWorkspaceTaskRef | null;
   executionWorkspaceId: string | null;
   worktreePath: string;
   actualBranchName: string | null;
 }): Promise<GitWorktreeBranchContention | null> {
   if (!input.db) return null;
-  const companyId = await readIssueCompanyId(input.db, input.sourceIssue?.id);
+  const companyId = await readTaskCompanyId(input.db, input.sourceTask?.id);
   if (!companyId) return null;
   return executionWorkspaceService(input.db).findGitWorktreeContention({
     companyId,
@@ -329,7 +329,7 @@ async function assertGitIndexIsUnlocked(worktreePath: string) {
 }
 
 function fingerprintWorkspaceBranchIncoherence(input: {
-  issueId: string | null;
+  taskId: string | null;
   executionWorkspaceId: string | null;
   worktreePath: string;
   expectedBranch: string;
@@ -342,7 +342,7 @@ function fingerprintWorkspaceBranchIncoherence(input: {
     .update(stableStringify({
       version: 1,
       reason: GIT_WORKTREE_BRANCH_INCOHERENCE_REASON,
-      issueId: input.issueId,
+      taskId: input.taskId,
       executionWorkspaceId: input.executionWorkspaceId,
       worktreePath: path.resolve(input.worktreePath),
       expectedBranch: input.expectedBranch,
@@ -403,7 +403,7 @@ async function inspectGitWorktreeBranchIncoherence(input: {
   worktreePath: string;
   expectedBranchName: string;
   actualBranchName: string | null;
-  sourceIssue: ExecutionWorkspaceIssueRef | null;
+  sourceTask: ExecutionWorkspaceTaskRef | null;
   executionWorkspaceId?: string | null;
 }): Promise<GitWorktreeBranchIncoherenceEvidence> {
   const status = await runGit(
@@ -485,7 +485,7 @@ async function inspectGitWorktreeBranchIncoherence(input: {
           ? "expected branch and current HEAD differ"
           : "safe repair could not be proven";
   const fingerprint = fingerprintWorkspaceBranchIncoherence({
-    issueId: input.sourceIssue?.id ?? null,
+    taskId: input.sourceTask?.id ?? null,
     executionWorkspaceId: input.executionWorkspaceId ?? null,
     worktreePath: input.worktreePath,
     expectedBranch: input.expectedBranchName,
@@ -496,7 +496,7 @@ async function inspectGitWorktreeBranchIncoherence(input: {
   });
   const contention = await findGitWorktreeBranchContention({
     db: input.db ?? null,
-    sourceIssue: input.sourceIssue,
+    sourceTask: input.sourceTask,
     executionWorkspaceId: input.executionWorkspaceId ?? null,
     worktreePath: input.worktreePath,
     actualBranchName: input.actualBranchName,
@@ -505,8 +505,8 @@ async function inspectGitWorktreeBranchIncoherence(input: {
   return {
     reason: GIT_WORKTREE_BRANCH_INCOHERENCE_REASON,
     fingerprint,
-    sourceIssueId: input.sourceIssue?.id ?? null,
-    sourceIdentifier: input.sourceIssue?.identifier ?? null,
+    sourceTaskId: input.sourceTask?.id ?? null,
+    sourceIdentifier: input.sourceTask?.identifier ?? null,
     executionWorkspaceId: input.executionWorkspaceId ?? null,
     worktreePath: path.resolve(input.worktreePath),
     repoRoot: path.resolve(input.repoRoot),
@@ -574,7 +574,7 @@ function formatDirtyQuarantineAuditComment(input: {
   rescueBranch: string;
   rescueCommitSha: string;
   fileCount: number;
-  sourceIssue: ExecutionWorkspaceIssueRef | null;
+  sourceTask: ExecutionWorkspaceTaskRef | null;
   claimant: GitWorktreeBranchContention | null;
 }) {
   const dirtySample = input.evidence.dirtyPathSample.length > 0
@@ -583,7 +583,7 @@ function formatDirtyQuarantineAuditComment(input: {
   return [
     "Execution workspace dirty worktree quarantined before restore.",
     "",
-    `- Source issue: ${formatIssueReference(input.evidence.sourceIssueId, input.evidence.sourceIdentifier ?? input.sourceIssue?.identifier ?? null)}`,
+    `- Source task: ${formatTaskReference(input.evidence.sourceTaskId, input.evidence.sourceIdentifier ?? input.sourceTask?.identifier ?? null)}`,
     `- Workspace: \`${input.evidence.executionWorkspaceId ?? "unpersisted"}\``,
     `- Worktree: \`${input.evidence.worktreePath}\``,
     `- Recorded branch: \`${input.evidence.expectedBranch}\``,
@@ -597,7 +597,7 @@ function formatDirtyQuarantineAuditComment(input: {
       : []),
     `- Fingerprint: \`${input.evidence.fingerprint}\``,
     input.claimant
-      ? `- Claimant: workspace \`${input.claimant.claimedByWorkspaceId}\` on issue ${formatIssueReference(input.claimant.claimedByIssueId, input.claimant.claimedByIssueIdentifier)}${input.claimant.activeRun ? ` with active run \`${input.claimant.activeRun.id}\`` : " with no active run"}`
+      ? `- Claimant: workspace \`${input.claimant.claimedByWorkspaceId}\` on task ${formatTaskReference(input.claimant.claimedByTaskId, input.claimant.claimedByTaskIdentifier)}${input.claimant.activeRun ? ` with active run \`${input.claimant.activeRun.id}\`` : " with no active run"}`
       : "- Claimant: none",
   ].join("\n");
 }
@@ -606,7 +606,7 @@ async function writeDirtyQuarantineAuditComments(input: {
   db: Db;
   companyId: string;
   evidence: GitWorktreeBranchIncoherenceEvidence;
-  sourceIssue: ExecutionWorkspaceIssueRef | null;
+  sourceTask: ExecutionWorkspaceTaskRef | null;
   rescueBranch: string;
   rescueCommitSha: string;
   fileCount: number;
@@ -617,15 +617,15 @@ async function writeDirtyQuarantineAuditComments(input: {
     rescueBranch: input.rescueBranch,
     rescueCommitSha: input.rescueCommitSha,
     fileCount: input.fileCount,
-    sourceIssue: input.sourceIssue,
+    sourceTask: input.sourceTask,
     claimant: input.evidence.contention,
   });
   let sourceAuditCommentId: string | null = null;
   let claimantAuditCommentId: string | null = null;
-  if (input.evidence.sourceIssueId) {
+  if (input.evidence.sourceTaskId) {
     const sourceNotice = await appendCanonicalControlNotice(input.db, {
       companyId: input.companyId,
-      issueId: input.evidence.sourceIssueId,
+      taskId: input.evidence.sourceTaskId,
       sourceKind: "workspace_dirty_quarantine",
       immutableSourceKey:
         `${input.evidence.fingerprint}:source:${input.rescueCommitSha}`,
@@ -640,14 +640,14 @@ async function writeDirtyQuarantineAuditComments(input: {
     sourceAuditCommentId = sourceNotice.comment?.id ?? null;
   }
 
-  const claimantIssueId = input.evidence.contention?.claimedByIssueId ?? null;
-  if (claimantIssueId && claimantIssueId !== input.evidence.sourceIssueId) {
+  const claimantTaskId = input.evidence.contention?.claimedByTaskId ?? null;
+  if (claimantTaskId && claimantTaskId !== input.evidence.sourceTaskId) {
     const claimantNotice = await appendCanonicalControlNotice(input.db, {
       companyId: input.companyId,
-      issueId: claimantIssueId,
+      taskId: claimantTaskId,
       sourceKind: "workspace_dirty_quarantine",
       immutableSourceKey:
-        `${input.evidence.fingerprint}:claimant:${claimantIssueId}:${input.rescueCommitSha}`,
+        `${input.evidence.fingerprint}:claimant:${claimantTaskId}:${input.rescueCommitSha}`,
       sourceRecordId: input.evidence.fingerprint,
       exactText: body,
       comment: {
@@ -679,11 +679,11 @@ async function logDirtyQuarantineActivity(input: {
     actorId: "workspace_runtime",
     runId: input.runId,
     action: "execution_workspace.dirty_worktree_quarantined",
-    entityType: input.evidence.executionWorkspaceId ? "execution_workspace" : "issue",
-    entityId: input.evidence.executionWorkspaceId ?? input.evidence.sourceIssueId ?? input.companyId,
+    entityType: input.evidence.executionWorkspaceId ? "execution_workspace" : "task",
+    entityId: input.evidence.executionWorkspaceId ?? input.evidence.sourceTaskId ?? input.companyId,
     details: {
       reason: GIT_WORKTREE_BRANCH_INCOHERENCE_REASON,
-      sourceIssueId: input.evidence.sourceIssueId,
+      sourceTaskId: input.evidence.sourceTaskId,
       executionWorkspaceId: input.evidence.executionWorkspaceId,
       worktreePath: input.evidence.worktreePath,
       expectedBranch: input.evidence.expectedBranch,
@@ -710,21 +710,21 @@ async function quarantineDirtyWorktreeBranchIncoherence(input: {
   repoRoot: string;
   worktreePath: string;
   expectedBranchName: string;
-  sourceIssue: ExecutionWorkspaceIssueRef | null;
+  sourceTask: ExecutionWorkspaceTaskRef | null;
   executionWorkspaceId: string | null;
   runId: string | null;
   evidence: GitWorktreeBranchIncoherenceEvidence;
 }): Promise<DirtyQuarantineRepairResult> {
-  const companyId = await readIssueCompanyId(input.db, input.evidence.sourceIssueId);
+  const companyId = await readTaskCompanyId(input.db, input.evidence.sourceTaskId);
   if (!companyId) {
     input.evidence.safeRepair.eligible = false;
-    input.evidence.safeRepair.reason = "dirty quarantine repair requires a source issue company for audit";
+    input.evidence.safeRepair.reason = "dirty quarantine repair requires a source task company for audit";
     throw branchIncoherenceValidationFailure(input.evidence);
   }
 
   const freshContention = await findGitWorktreeBranchContention({
     db: input.db,
-    sourceIssue: input.sourceIssue,
+    sourceTask: input.sourceTask,
     executionWorkspaceId: input.executionWorkspaceId,
     worktreePath: input.worktreePath,
     actualBranchName: input.evidence.actualBranch,
@@ -736,7 +736,7 @@ async function quarantineDirtyWorktreeBranchIncoherence(input: {
     throw branchIncoherenceValidationFailure(input.evidence);
   }
 
-  const rescueBranch = buildDirtyQuarantineRescueBranch(input.sourceIssue);
+  const rescueBranch = buildDirtyQuarantineRescueBranch(input.sourceTask);
   const fileCount = input.evidence.statusEntryCount ?? input.evidence.dirtyPathSample.length;
   const baseMetadata = {
     repoRoot: input.repoRoot,
@@ -746,7 +746,7 @@ async function quarantineDirtyWorktreeBranchIncoherence(input: {
     branchIncoherenceDirtyQuarantineRepair: true,
     rescueBranch,
     fingerprint: input.evidence.fingerprint,
-    sourceIssueId: input.evidence.sourceIssueId,
+    sourceTaskId: input.evidence.sourceTaskId,
     executionWorkspaceId: input.evidence.executionWorkspaceId,
     fileCount,
     dirtyPathSample: input.evidence.dirtyPathSample,
@@ -779,7 +779,7 @@ async function quarantineDirtyWorktreeBranchIncoherence(input: {
         "Paperclip dirty workspace rescue",
         "-m",
         [
-          `Source-Issue: ${input.evidence.sourceIdentifier ?? input.evidence.sourceIssueId ?? "unknown"}`,
+          `Source-Task: ${input.evidence.sourceIdentifier ?? input.evidence.sourceTaskId ?? "unknown"}`,
           `Run-Id: ${input.runId ?? "unknown"}`,
           `Recorded-Branch: ${input.expectedBranchName}`,
           `Live-Branch: ${formatBranchForMessage(input.evidence.actualBranch)}`,
@@ -853,7 +853,7 @@ async function quarantineDirtyWorktreeBranchIncoherence(input: {
       db: input.db,
       companyId,
       evidence: input.evidence,
-      sourceIssue: input.sourceIssue,
+      sourceTask: input.sourceTask,
       rescueBranch,
       rescueCommitSha,
       fileCount,
@@ -892,7 +892,7 @@ async function logForwardBranchReconcileActivity(input: {
   db: Db;
   companyId: string;
   executionWorkspaceId: string;
-  sourceIssueId: string | null;
+  sourceTaskId: string | null;
   runId: string | null;
   mode: "forward";
   reason: string | null;
@@ -921,7 +921,7 @@ async function logForwardBranchReconcileActivity(input: {
       toSha: input.toSha,
       ancestryVerdict: input.ancestryVerdict,
       fingerprint: input.fingerprint,
-      sourceIssueId: input.sourceIssueId,
+      sourceTaskId: input.sourceTaskId,
       auditCommentId: input.auditCommentId,
       actor: {
         type: "system",
@@ -937,7 +937,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
   repoRoot: string;
   worktreePath: string;
   expectedBranchName: string | null;
-  sourceIssue: ExecutionWorkspaceIssueRef | null;
+  sourceTask: ExecutionWorkspaceTaskRef | null;
   executionWorkspaceId?: string | null;
   actualBranchName?: string | null;
   runId?: string | null;
@@ -960,7 +960,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
     worktreePath: input.worktreePath,
     expectedBranchName,
     actualBranchName: currentBranch,
-    sourceIssue: input.sourceIssue,
+    sourceTask: input.sourceTask,
     executionWorkspaceId: input.executionWorkspaceId ?? null,
   });
 
@@ -995,7 +995,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
       repoRoot: input.repoRoot,
       worktreePath: input.worktreePath,
       expectedBranchName,
-      sourceIssue: input.sourceIssue,
+      sourceTask: input.sourceTask,
       executionWorkspaceId: input.executionWorkspaceId ?? null,
       runId: input.runId ?? null,
       evidence,
@@ -1045,7 +1045,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
         input.executionWorkspaceId,
         {
           mode: "forward",
-          issueId: evidence.sourceIssueId,
+          taskId: evidence.sourceTaskId,
           reason,
           actor: {
             actorType: "system",
@@ -1058,7 +1058,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
         db: input.db,
         companyId: result.workspace.companyId,
         executionWorkspaceId: result.workspace.id,
-        sourceIssueId: result.boundIssueId,
+        sourceTaskId: result.boundTaskId,
         runId: input.runId ?? null,
         mode: "forward",
         reason,
@@ -1120,7 +1120,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
           branchIncoherenceRepair: true,
           detachedHeadRepair: true,
           fingerprint: evidence.fingerprint,
-          sourceIssueId: evidence.sourceIssueId,
+          sourceTaskId: evidence.sourceTaskId,
           executionWorkspaceId: evidence.executionWorkspaceId,
         },
         successMessage: `Reattached detached git worktree HEAD at ${input.worktreePath} to ${expectedBranchName}\n`,
@@ -1162,7 +1162,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
         actualBranchName: currentBranch,
         branchIncoherenceRepair: true,
         fingerprint: evidence.fingerprint,
-        sourceIssueId: evidence.sourceIssueId,
+        sourceTaskId: evidence.sourceTaskId,
         executionWorkspaceId: evidence.executionWorkspaceId,
       },
       successMessage: `Repaired clean git worktree branch mismatch at ${input.worktreePath}: checked out ${expectedBranchName}\n`,

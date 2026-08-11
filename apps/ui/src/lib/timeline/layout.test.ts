@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { IssueExecutionRunStatus, WorkTimelineResult } from "@paperclipai/shared";
-import { chooseTickStepMs, computeLayout, issueColor, shortLabel, type LayoutOptions } from "./layout";
+import type { TaskExecutionRunStatus, WorkTimelineResult } from "@paperclipai/shared";
+import { chooseTickStepMs, computeLayout, taskColor, shortLabel, type LayoutOptions } from "./layout";
 
 const DAY = "2026-07-02";
 const t = (hhmm: string) => `${DAY}T${hhmm}:00.000Z`;
@@ -21,19 +21,19 @@ function sample(): WorkTimelineResult {
   const span = (
     runId: string,
     actorId: string,
-    issueId: string,
+    taskId: string,
     identifier: string,
     start: string,
     end: string | null,
-    status: IssueExecutionRunStatus,
+    status: TaskExecutionRunStatus,
     retryOfRunId: string | null = null,
   ): WorkTimelineResult["spans"][number] => ({
     actorId,
     runId,
     kind: "productive",
-    issueId,
-    issueIdentifier: identifier,
-    issueTitle: `${identifier} title`,
+    taskId,
+    taskIdentifier: identifier,
+    taskTitle: `${identifier} title`,
     start: t(start),
     end: end ? t(end) : null,
     status,
@@ -50,10 +50,10 @@ function sample(): WorkTimelineResult {
     span("r8", "agent:codex", "i-423", "PAP-12423", "12:20", "12:38", "succeeded", "r5"), // retry
     span("r9", "system:routine", "i-286", "PAP-12286", "20:00", "20:04", "succeeded"),
   ];
-  const edge = (from: string, to: string, issueId: string, at: string): WorkTimelineResult["edges"][number] => ({
+  const edge = (from: string, to: string, taskId: string, at: string): WorkTimelineResult["edges"][number] => ({
     fromActorId: from,
     toActorId: to,
-    issueId,
+    taskId,
     at: t(at),
     kind: "delegation",
   });
@@ -71,7 +71,7 @@ function sample(): WorkTimelineResult {
     spans,
     events: [],
     edges,
-    pagination: { limit: 200, offset: 0, totalIssues: 6, hasMore: false },
+    pagination: { limit: 200, offset: 0, totalTasks: 6, hasMore: false },
     window: { from: t("09:00"), to: t("20:15"), capped: false },
   };
 }
@@ -125,9 +125,9 @@ describe("computeLayout", () => {
       actorId: "agent:lead",
       runId: "r1-later-automation",
       kind: "productive",
-      issueId: "i-405",
-      issueIdentifier: "PAP-12405",
-      issueTitle: "PAP-12405 title",
+      taskId: "i-405",
+      taskIdentifier: "PAP-12405",
+      taskTitle: "PAP-12405 title",
       start: t("10:30"),
       end: t("10:36"),
       status: "succeeded",
@@ -146,17 +146,17 @@ describe("computeLayout", () => {
       actorId: "agent:ux",
       runId: "late-edge-run",
       kind: "productive",
-      issueId: "i-late",
-      issueIdentifier: "PAP-99999",
-      issueTitle: "Late kickoff fallback",
+      taskId: "i-late",
+      taskIdentifier: "PAP-99999",
+      taskTitle: "Late kickoff fallback",
       start: t("14:00"),
       end: t("14:10"),
       status: "succeeded",
       retryOfRunId: null,
     });
     data.edges.push(
-      { fromActorId: "agent:qa", toActorId: "agent:ux", issueId: "i-late", at: t("14:30"), kind: "delegation" },
-      { fromActorId: "agent:architect", toActorId: "agent:ux", issueId: "i-late", at: t("14:02"), kind: "delegation" },
+      { fromActorId: "agent:qa", toActorId: "agent:ux", taskId: "i-late", at: t("14:30"), kind: "delegation" },
+      { fromActorId: "agent:architect", toActorId: "agent:ux", taskId: "i-late", at: t("14:02"), kind: "delegation" },
     );
 
     const layout = computeLayout(data, OPTS);
@@ -185,10 +185,10 @@ describe("computeLayout", () => {
     expect(running.x2).toBeGreaterThan(running.x1 + 3);
   });
 
-  it("produces a deterministic issue hue + legend", () => {
+  it("produces a deterministic task hue + legend", () => {
     const layout = computeLayout(sample(), OPTS);
-    expect(layout.issues.length).toBe(5); // i-405, i-075, i-422, i-423, i-286
-    expect(issueColor("i-405")).toBe(issueColor("i-405"));
+    expect(layout.tasks.length).toBe(5); // i-405, i-075, i-422, i-423, i-286
+    expect(taskColor("i-405")).toBe(taskColor("i-405"));
   });
 });
 
@@ -196,9 +196,9 @@ describe("human activity markers", () => {
   const withUserEvents = (): WorkTimelineResult => ({
     ...sample(),
     events: [
-      { actorId: "user:dotta", kind: "created", issueId: "i-405", at: t("09:00") },
-      { actorId: "user:dotta", kind: "commented", issueId: "i-422", at: t("11:00") },
-      { actorId: "user:dotta", kind: "approved", issueId: "i-423", at: t("12:15") },
+      { actorId: "user:dotta", kind: "created", taskId: "i-405", at: t("09:00") },
+      { actorId: "user:dotta", kind: "commented", taskId: "i-422", at: t("11:00") },
+      { actorId: "user:dotta", kind: "approved", taskId: "i-423", at: t("12:15") },
     ],
   });
 

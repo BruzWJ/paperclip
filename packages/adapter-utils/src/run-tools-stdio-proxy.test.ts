@@ -131,7 +131,7 @@ describe("run-tools stdio proxy", () => {
         jsonrpc: "2.0",
         id: "new",
         method: "tools/call",
-        params: { name: "read_issue_comments", arguments: {} },
+        params: { name: "read_task_comments", arguments: {} },
       },
       { jsonrpc: "2.0", id: "list", method: "tools/list" },
     ];

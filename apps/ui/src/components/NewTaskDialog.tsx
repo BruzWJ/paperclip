@@ -1,0 +1,1606 @@
+import { memo, useState, useEffect, useRef, useCallback, useMemo, type ChangeEvent, type CSSProperties, type DragEvent, type RefObject } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  type
+  AgentEnvConfig,
+  type
+  CreateTask,
+  type
+  EnvBinding,
+  type
+  TaskWorkMode,
+} from "@paperclipai/shared";
+import { pickTextColorForSolidBg } from "@/lib/color-contrast";
+import { useDialog } from "../context/DialogContext";
+import { useCompany } from "../context/CompanyContext";
+import { tasksApi } from "../api/tasks";
+import { MissingUserSecretsBanner } from "../pages/secrets/MissingUserSecretsBanner";
+import { projectsApi } from "../api/projects";
+import { agentsApi } from "../api/agents";
+import { accessApi } from "../api/access";
+import { authApi } from "../api/auth";
+import { assetsApi } from "../api/assets";
+import {
+  buildMarkdownMentionOptions,
+  isAgentTaskOwnerTarget,
+  isAgentTaskTarget,
+} from "../lib/company-members";
+import { queryKeys } from "../lib/queryKeys";
+import { useProjectOrder } from "../hooks/useProjectOrder";
+import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
+import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
+import { projectWorkspaceIdAfterProjectChange } from "../lib/subTaskDefaults";
+import { isTaskWorkMode, nextWorkMode, workModeMetaFor, workModeMetaList } from "../lib/work-mode-meta";
+import { useToastActions } from "../context/ToastContext";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
+  CircleDot,
+  Minus,
+  ArrowUp,
+  ArrowDown,
+  AlertTriangle,
+  Tag,
+  Calendar,
+  Paperclip,
+  FileText,
+  Flag,
+  Loader2,
+  ListTree,
+  X,
+  Eye,
+  ShieldCheck,
+} from "lucide-react";
+import { cn } from "../lib/utils";
+import { taskStatusText, taskStatusTextDefault, priorityColor, priorityColorDefault } from "../lib/status-colors";
+import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
+import { AgentIcon } from "./AgentIconPicker";
+import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
+
+const DRAFT_KEY = "paperclip:task-request-draft:v2";
+const DEBOUNCE_MS = 800;
+const MOBILE_DIALOG_HEIGHT = "calc(100dvh - max(1rem, env(safe-area-inset-top)) - max(1rem, env(safe-area-inset-bottom)))";
+
+
+interface TaskDraft {
+  title: string;
+  request: string;
+  status: string;
+  priority: string;
+  ownerAgentId: string;
+  reviewerValue: string;
+  approverValue: string;
+  projectId: string;
+  workMode?: TaskWorkMode;
+}
+
+type StagedTaskFile = {
+  id: string;
+  file: File;
+  kind: "document" | "attachment";
+  documentKey?: string;
+  title?: string | null;
+};
+
+import { Badge } from "@/components/ui/badge";
+const STAGED_FILE_ACCEPT = "image/*,application/pdf,text/plain,text/markdown,application/json,text/csv,text/html,.md,.markdown";
+
+function loadDraft(): TaskDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as TaskDraft;
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(draft: TaskDraft) {
+  localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+}
+
+function clearDraft() {
+  localStorage.removeItem(DRAFT_KEY);
+}
+
+function isTextDocumentFile(file: File) {
+  const name = file.name.toLowerCase();
+  return (
+    name.endsWith(".md") ||
+    name.endsWith(".markdown") ||
+    name.endsWith(".txt") ||
+    file.type === "text/markdown" ||
+    file.type === "text/plain"
+  );
+}
+
+function fileBaseName(filename: string) {
+  return filename.replace(/\.[^.]+$/, "");
+}
+
+function slugifyDocumentKey(input: string) {
+  const slug = input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "document";
+}
+
+function titleizeFilename(input: string) {
+  return input
+    .split(/[-_ ]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function createUniqueDocumentKey(baseKey: string, stagedFiles: StagedTaskFile[]) {
+  const existingKeys = new Set(
+    stagedFiles
+      .filter((file) => file.kind === "document")
+      .map((file) => file.documentKey)
+      .filter((key): key is string => Boolean(key)),
+  );
+  if (!existingKeys.has(baseKey)) return baseKey;
+  let suffix = 2;
+  while (existingKeys.has(`${baseKey}-${suffix}`)) {
+    suffix += 1;
+  }
+  return `${baseKey}-${suffix}`;
+}
+
+function formatFileSize(file: File) {
+  if (file.size < 1024) return `${file.size} B`;
+  if (file.size < 1024 * 1024) return `${(file.size / 1024).toFixed(1)} KB`;
+  return `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function buildStatusOptions(): ReadonlyArray<{ value: string; label: string; color: string; description?: string }> {
+  const palette = taskStatusText;
+  return [
+    {
+      value: "backlog",
+      label: "Backlog",
+      color: palette.backlog ?? taskStatusTextDefault,
+      description: "Parked - owner will not be dispatched",
+    },
+    {
+      value: "todo",
+      label: "Todo",
+      color: palette.todo ?? taskStatusTextDefault,
+      description: "Executable - owner will be woken",
+    },
+    { value: "in_progress", label: "In Progress", color: palette.in_progress ?? taskStatusTextDefault },
+    { value: "in_review", label: "In Review", color: palette.in_review ?? taskStatusTextDefault },
+    { value: "done", label: "Done", color: palette.done ?? taskStatusTextDefault },
+  ];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isRequiredUserSecretBinding(value: unknown): value is Extract<EnvBinding, { type: "user_secret_ref" }> {
+  return isRecord(value)
+    && value.type === "user_secret_ref"
+    && typeof value.key === "string"
+    && value.key.trim().length > 0
+    && value.required !== false
+    && value.allowMissingOverride !== true;
+}
+
+function collectRequiredUserSecretKeysFromEnv(env: AgentEnvConfig | Record<string, unknown> | null | undefined): string[] {
+  if (!isRecord(env)) return [];
+  return Object.values(env).flatMap((binding) =>
+    isRequiredUserSecretBinding(binding) ? [binding.key.trim()] : [],
+  );
+}
+
+function uniqueRequiredUserSecretKeys(inputs: Array<AgentEnvConfig | Record<string, unknown> | null | undefined>): string[] {
+  return [...new Set(inputs.flatMap(collectRequiredUserSecretKeysFromEnv))];
+}
+
+function shouldWarnAboutRunUserSecrets(status: string, ownerAgentId: string | null | undefined) {
+  return Boolean(ownerAgentId) && (status === "todo" || status === "in_progress");
+}
+
+function participantAgentId(value: string): string | null {
+  if (!value.startsWith("agent:")) return null;
+  return value.slice("agent:".length) || null;
+}
+
+const priorities = [
+  { value: "critical", label: "Critical", icon: AlertTriangle, color: priorityColor.critical ?? priorityColorDefault },
+  { value: "high", label: "High", icon: ArrowUp, color: priorityColor.high ?? priorityColorDefault },
+  { value: "medium", label: "Medium", icon: Minus, color: priorityColor.medium ?? priorityColorDefault },
+  { value: "low", label: "Low", icon: ArrowDown, color: priorityColor.low ?? priorityColorDefault },
+];
+
+function isWorkModePeriodShortcut(e: Pick<React.KeyboardEvent, "code" | "ctrlKey" | "key" | "metaKey">) {
+  const isPeriod = e.code === "Period" || e.key === ".";
+  return (e.metaKey || e.ctrlKey) && isPeriod;
+}
+
+function isWorkModeEscapeShortcut(e: Pick<KeyboardEvent, "key" | "metaKey">) {
+  return e.metaKey && e.key === "Escape";
+}
+
+const TaskTitleTextarea = memo(function TaskTitleTextarea({
+  value,
+  pending,
+  ownerAgentId,
+  projectId,
+  requestEditorRef,
+  ownerSelectorRef,
+  projectSelectorRef,
+  onChange,
+}: {
+  value: string;
+  pending: boolean;
+  ownerAgentId: string;
+  projectId: string;
+  requestEditorRef: RefObject<MarkdownEditorRef | null>;
+  ownerSelectorRef: RefObject<HTMLButtonElement | null>;
+  projectSelectorRef: RefObject<HTMLButtonElement | null>;
+  onChange: (value: string) => void;
+}) {
+  const [draftValue, setDraftValue] = useState(value);
+
+  useEffect(() => {
+    setDraftValue(value);
+  }, [value]);
+
+  return (
+    <textarea
+      aria-label="Task title"
+      className="w-full text-lg font-semibold bg-transparent outline-none resize-none overflow-hidden placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring"
+      placeholder="Optional task title"
+      rows={1}
+      value={draftValue}
+      onChange={(e) => {
+        const nextValue = e.target.value;
+        setDraftValue(nextValue);
+        onChange(nextValue);
+        e.target.style.height = "auto";
+        e.target.style.height = `${e.target.scrollHeight}px`;
+      }}
+      readOnly={pending}
+      onKeyDown={(e) => {
+        if (
+          e.key === "Enter" &&
+          !e.metaKey &&
+          !e.ctrlKey &&
+          !e.nativeEvent.isComposing
+        ) {
+          e.preventDefault();
+          requestEditorRef.current?.focus();
+        }
+        if (e.key === "Tab" && !e.shiftKey) {
+          e.preventDefault();
+          if (ownerAgentId) {
+            if (projectId) {
+              requestEditorRef.current?.focus();
+            } else {
+              projectSelectorRef.current?.focus();
+            }
+          } else {
+            ownerSelectorRef.current?.focus();
+          }
+        }
+      }}
+      autoFocus
+    />
+  );
+});
+
+const TaskRequestEditor = memo(function TaskRequestEditor({
+  value,
+  expanded,
+  mentions,
+  requestEditorRef,
+  imageUploadHandler,
+  onChange,
+}: {
+  value: string;
+  expanded: boolean;
+  mentions: MentionOption[];
+  requestEditorRef: RefObject<MarkdownEditorRef | null>;
+  imageUploadHandler: (file: File) => Promise<string>;
+  onChange: (value: string) => void;
+}) {
+  const [draftValue, setDraftValue] = useState(value);
+
+  useEffect(() => {
+    setDraftValue(value);
+  }, [value]);
+
+  return (
+    <MarkdownEditor
+      ref={requestEditorRef}
+      value={draftValue}
+      onChange={(nextValue) => {
+        setDraftValue(nextValue);
+        onChange(nextValue);
+      }}
+      placeholder="Describe the request..."
+      bordered={false}
+      mentions={mentions}
+      contentClassName={cn("text-sm text-muted-foreground pb-12", expanded ? "min-h-(--sz-220px)" : "min-h-(--sz-120px)")}
+      imageUploadHandler={imageUploadHandler}
+    />
+  );
+});
+
+export function NewTaskDialog() {
+  const { newTaskOpen, newTaskDefaults, closeNewTask } = useDialog();
+  const { companies, selectedCompanyId, selectedCompany } = useCompany();
+  const workModeOptions = useMemo(() => workModeMetaList(), []);
+  const statuses = useMemo(() => buildStatusOptions(), []);
+  const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
+  const [title, setTitle] = useState("");
+  const [request, setRequest] = useState("");
+  const titleRef = useRef("");
+  const requestRef = useRef("");
+  const [requestHasText, setRequestHasText] = useState(false);
+  const [draftHasText, setDraftHasText] = useState(false);
+  const [status, setStatus] = useState("todo");
+  const [priority, setPriority] = useState("");
+  const [ownerAgentId, setOwnerAgentId] = useState("");
+  const [reviewerValue, setReviewerValue] = useState("");
+  const [approverValue, setApproverValue] = useState("");
+  const [showReviewerRow, setShowReviewerRow] = useState(false);
+  const [showApproverRow, setShowApproverRow] = useState(false);
+  const [projectId, setProjectId] = useState("");
+  const [projectWorkspaceId, setProjectWorkspaceId] = useState("");
+  const [workMode, setWorkMode] = useState<TaskWorkMode>("standard");
+  const [expanded, setExpanded] = useState(false);
+  const [dialogCompanyId, setDialogCompanyId] = useState<string | null>(null);
+  const [stagedFiles, setStagedFiles] = useState<StagedTaskFile[]>([]);
+  const [isFileDragOver, setIsFileDragOver] = useState(false);
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initializationKeyRef = useRef<string | null>(null);
+  const createIdempotencyKeyRef = useRef<string | null>(null);
+
+  const effectiveCompanyId = dialogCompanyId ?? selectedCompanyId;
+  const dialogCompany = companies.find((c) => c.id === effectiveCompanyId) ?? selectedCompany;
+  const isSubTaskMode = Boolean(newTaskDefaults.parentId);
+  const parentTaskLabel = newTaskDefaults.parentIdentifier
+    ?? (newTaskDefaults.parentId ? newTaskDefaults.parentId.slice(0, 8) : "");
+
+  const requestEditorRef = useRef<MarkdownEditorRef>(null);
+  const stageFileInputRef = useRef<HTMLInputElement | null>(null);
+  const ownerSelectorRef = useRef<HTMLButtonElement | null>(null);
+  const projectSelectorRef = useRef<HTMLButtonElement | null>(null);
+
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(effectiveCompanyId!),
+    queryFn: () => agentsApi.list(effectiveCompanyId!),
+    enabled: !!effectiveCompanyId && newTaskOpen,
+  });
+
+  const { data: projects } = useQuery({
+    queryKey: queryKeys.projects.list(effectiveCompanyId!),
+    queryFn: () => projectsApi.list(effectiveCompanyId!),
+    enabled: !!effectiveCompanyId && newTaskOpen,
+  });
+  const { data: session } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+  });
+  const { data: companyMembers } = useQuery({
+    queryKey: queryKeys.access.companyUserDirectory(effectiveCompanyId!),
+    queryFn: () => accessApi.listUserDirectory(effectiveCompanyId!),
+    enabled: Boolean(effectiveCompanyId) && newTaskOpen,
+  });
+  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+  const activeProjects = useMemo(
+    () => (projects ?? []).filter((p) => !p.archivedAt),
+    [projects],
+  );
+  const { orderedProjects } = useProjectOrder({
+    projects: activeProjects,
+    companyId: effectiveCompanyId,
+    userId: currentUserId,
+  });
+
+  const selectedOwnerAgentId = ownerAgentId || null;
+  const mentionOptions = useMemo<MentionOption[]>(() => {
+    return buildMarkdownMentionOptions({
+      agents,
+      projects: orderedProjects,
+      members: companyMembers?.users,
+    });
+  }, [agents, companyMembers?.users, orderedProjects]);
+
+  const createTask = useMutation({
+    mutationFn: async ({
+      companyId,
+      stagedFiles: pendingStagedFiles,
+      ...data
+    }: {
+      companyId: string;
+      stagedFiles: StagedTaskFile[];
+    } & CreateTask) => {
+      const task = await tasksApi.create(companyId, data);
+      const failures: string[] = [];
+
+      for (const stagedFile of pendingStagedFiles) {
+        try {
+          if (stagedFile.kind === "document") {
+            const body = await stagedFile.file.text();
+            await tasksApi.upsertDocument(task.id, stagedFile.documentKey ?? "document", {
+              title: stagedFile.documentKey === "plan" ? null : stagedFile.title ?? null,
+              format: "markdown",
+              body,
+              baseRevisionId: null,
+            });
+          } else {
+            await tasksApi.uploadAttachment(companyId, task.id, stagedFile.file);
+          }
+        } catch {
+          failures.push(stagedFile.file.name);
+        }
+      }
+
+      return { task, companyId, failures };
+    },
+    onSuccess: ({ task, companyId, failures }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.list(companyId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.listMineByMe(companyId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.listTouchedByMe(companyId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.listUnreadTouchedByMe(companyId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(companyId) });
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+      if (failures.length > 0) {
+        const prefix = (companies.find((company) => company.id === companyId)?.taskPrefix ?? "").trim();
+        const taskRef = task.identifier ?? task.id;
+        pushToast({
+          title: `Created ${taskRef} with upload warnings`,
+          body: `${failures.length} staged ${failures.length === 1 ? "file" : "files"} could not be added.`,
+          tone: "warn",
+          action: prefix
+            ? { label: `Open ${taskRef}`, href: `/${prefix}/tasks/${taskRef}` }
+            : undefined,
+        });
+      }
+      clearDraft();
+      reset();
+      closeNewTask();
+    },
+  });
+
+  const uploadRequestImage = useMutation({
+    mutationFn: async (file: File) => {
+      if (!effectiveCompanyId) throw new Error("No company selected");
+      return assetsApi.uploadImage(effectiveCompanyId, file, "tasks/drafts");
+    },
+  });
+  const uploadRequestImageHandler = useCallback(async (file: File) => {
+    const asset = await uploadRequestImage.mutateAsync(file);
+    return asset.contentPath;
+  }, [uploadRequestImage.mutateAsync]);
+
+  // Debounced draft saving
+  const scheduleSave = useCallback(
+    (draft: TaskDraft) => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+      draftTimer.current = setTimeout(() => {
+        if (draft.title.trim() || draft.request.trim()) saveDraft(draft);
+      }, DEBOUNCE_MS);
+    },
+    [],
+  );
+
+  const setTaskText = useCallback((nextTitle: string, nextRequest: string) => {
+    titleRef.current = nextTitle;
+    requestRef.current = nextRequest;
+    setTitle(nextTitle);
+    setRequest(nextRequest);
+    setRequestHasText(nextRequest.trim().length > 0);
+    setDraftHasText(nextTitle.trim().length > 0 || nextRequest.trim().length > 0);
+  }, []);
+
+  const queueDraftSave = useCallback((overrides: { title?: string; request?: string } = {}) => {
+    if (!newTaskOpen) return;
+    const nextTitle = overrides.title ?? titleRef.current;
+    const nextRequest = overrides.request ?? requestRef.current;
+    scheduleSave({
+      title: nextTitle,
+      request: nextRequest,
+      status,
+      priority,
+      ownerAgentId,
+      reviewerValue,
+      approverValue,
+      projectId,
+      workMode,
+    });
+  }, [
+    newTaskOpen,
+    scheduleSave,
+    status,
+    priority,
+    ownerAgentId,
+    reviewerValue,
+    approverValue,
+    projectId,
+    workMode,
+  ]);
+
+  const handleTitleChange = useCallback((nextTitle: string) => {
+    titleRef.current = nextTitle;
+    const nextTitleHasText = nextTitle.trim().length > 0;
+    const nextDraftHasText = nextTitleHasText || requestRef.current.trim().length > 0;
+    setDraftHasText((current) => current === nextDraftHasText ? current : nextDraftHasText);
+    queueDraftSave({ title: nextTitle });
+  }, [queueDraftSave]);
+
+  const handleRequestChange = useCallback((nextRequest: string) => {
+    requestRef.current = nextRequest;
+    const nextRequestHasText = nextRequest.trim().length > 0;
+    const nextDraftHasText = titleRef.current.trim().length > 0 || nextRequest.trim().length > 0;
+    setRequestHasText((current) => current === nextRequestHasText ? current : nextRequestHasText);
+    setDraftHasText((current) => current === nextDraftHasText ? current : nextDraftHasText);
+    queueDraftSave({ request: nextRequest });
+  }, [queueDraftSave]);
+
+  // Save draft on meaningful changes
+  useEffect(() => {
+    if (!newTaskOpen) return;
+    queueDraftSave();
+  }, [
+    status,
+    priority,
+    ownerAgentId,
+    reviewerValue,
+    approverValue,
+    projectId,
+    workMode,
+    newTaskOpen,
+    queueDraftSave,
+  ]);
+
+  // Restore draft or apply defaults when dialog opens
+  useEffect(() => {
+    if (!newTaskOpen) {
+      initializationKeyRef.current = null;
+      createIdempotencyKeyRef.current = null;
+      return;
+    }
+    const initializationKey = `${selectedCompanyId ?? ""}:${JSON.stringify(newTaskDefaults)}`;
+    if (initializationKeyRef.current === initializationKey) return;
+    initializationKeyRef.current = initializationKey;
+    setDialogCompanyId(selectedCompanyId);
+
+    const draft = loadDraft();
+    if (newTaskDefaults.parentId) {
+      const nextWorkMode = isTaskWorkMode(newTaskDefaults.workMode) ? newTaskDefaults.workMode : "standard";
+      const defaultProjectId = newTaskDefaults.projectId ?? "";
+      setTaskText(newTaskDefaults.title ?? "", newTaskDefaults.request ?? "");
+      setStatus(newTaskDefaults.status ?? "todo");
+      setPriority(newTaskDefaults.priority ?? "");
+      setProjectId(defaultProjectId);
+      setProjectWorkspaceId(newTaskDefaults.projectWorkspaceId ?? "");
+      setOwnerAgentId(newTaskDefaults.ownerAgentId ?? "");
+      setWorkMode(nextWorkMode);
+    } else if (newTaskDefaults.title || newTaskDefaults.request) {
+      const nextWorkMode = isTaskWorkMode(newTaskDefaults.workMode) ? newTaskDefaults.workMode : "standard";
+      setTaskText(newTaskDefaults.title ?? "", newTaskDefaults.request ?? "");
+      setStatus(newTaskDefaults.status ?? "todo");
+      setPriority(newTaskDefaults.priority ?? "");
+      const defaultProjectId = newTaskDefaults.projectId ?? "";
+      setProjectId(defaultProjectId);
+      setProjectWorkspaceId(newTaskDefaults.projectWorkspaceId ?? "");
+      setOwnerAgentId(newTaskDefaults.ownerAgentId ?? "");
+      setReviewerValue("");
+      setApproverValue("");
+      setShowReviewerRow(false);
+      setShowApproverRow(false);
+      setWorkMode(nextWorkMode);
+    } else if (draft && (draft.title.trim() || draft.request.trim())) {
+      const nextWorkMode = isTaskWorkMode(draft.workMode) ? draft.workMode : "standard";
+      const restoredProjectId = newTaskDefaults.projectId ?? draft.projectId;
+      setTaskText(draft.title, draft.request);
+      setStatus(draft.status || "todo");
+      setPriority(draft.priority);
+      setOwnerAgentId(newTaskDefaults.ownerAgentId ?? draft.ownerAgentId);
+      setReviewerValue(draft.reviewerValue ?? "");
+      setApproverValue(draft.approverValue ?? "");
+      setShowReviewerRow(!!(draft.reviewerValue));
+      setShowApproverRow(!!(draft.approverValue));
+      setProjectId(restoredProjectId);
+      setProjectWorkspaceId(newTaskDefaults.projectWorkspaceId ?? "");
+      setWorkMode(nextWorkMode);
+    } else {
+      setWorkMode("standard");
+      const defaultProjectId = newTaskDefaults.projectId ?? "";
+      setTaskText("", "");
+      setStatus(newTaskDefaults.status ?? "todo");
+      setPriority(newTaskDefaults.priority ?? "");
+      setProjectId(defaultProjectId);
+      setProjectWorkspaceId(newTaskDefaults.projectWorkspaceId ?? "");
+      setOwnerAgentId(newTaskDefaults.ownerAgentId ?? "");
+      setReviewerValue("");
+      setApproverValue("");
+      setShowReviewerRow(false);
+      setShowApproverRow(false);
+    }
+  }, [newTaskOpen, newTaskDefaults, orderedProjects, selectedCompanyId, setTaskText]);
+
+  useEffect(() => {
+    if (!ownerAgentId || !agents) {
+      return;
+    }
+    if (
+      !(agents ?? []).some(
+        (agent) =>
+          agent.id === ownerAgentId && isAgentTaskOwnerTarget(agent),
+      )
+    ) {
+      setOwnerAgentId("");
+    }
+  }, [agents, ownerAgentId]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+    };
+  }, []);
+
+  function reset() {
+    setTaskText("", "");
+    setStatus("todo");
+    setPriority("");
+    setOwnerAgentId("");
+    setReviewerValue("");
+    setApproverValue("");
+    setShowReviewerRow(false);
+    setShowApproverRow(false);
+    setProjectId("");
+    setProjectWorkspaceId("");
+    setWorkMode("standard");
+    setExpanded(false);
+    setDialogCompanyId(null);
+    setStagedFiles([]);
+    setIsFileDragOver(false);
+    initializationKeyRef.current = null;
+    createIdempotencyKeyRef.current = null;
+  }
+
+  function handleCompanyChange(companyId: string) {
+    if (isSubTaskMode) return;
+    if (companyId === effectiveCompanyId) return;
+    setDialogCompanyId(companyId);
+    setOwnerAgentId("");
+    setReviewerValue("");
+    setApproverValue("");
+    setShowReviewerRow(false);
+    setShowApproverRow(false);
+    setProjectId("");
+    setProjectWorkspaceId("");
+    setWorkMode("standard");
+    createIdempotencyKeyRef.current = null;
+  }
+
+  function discardDraft() {
+    clearDraft();
+    reset();
+    closeNewTask();
+  }
+
+  function handleSubmit() {
+    const currentTitle = titleRef.current.trim();
+    const taskRequest = requestRef.current;
+    if (
+      !effectiveCompanyId ||
+      !taskRequest.trim() ||
+      !selectedOwnerAgentId ||
+      createTask.isPending
+    ) return;
+    createIdempotencyKeyRef.current ??= crypto.randomUUID();
+    createTask.mutate({
+      companyId: effectiveCompanyId,
+      stagedFiles,
+      request: taskRequest,
+      ownerAgentId: selectedOwnerAgentId,
+      idempotencyKey: createIdempotencyKeyRef.current,
+      ...(currentTitle ? { title: currentTitle } : {}),
+      priority: (priority || "medium") as NonNullable<CreateTask["priority"]>,
+      ...(newTaskDefaults.parentId ? { parentId: newTaskDefaults.parentId } : {}),
+      ...(newTaskDefaults.goalId ? { goalId: newTaskDefaults.goalId } : {}),
+      ...(projectId ? { projectId } : {}),
+      ...(projectWorkspaceId
+        ? { projectWorkspaceId }
+        : {}),
+    });
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (isWorkModePeriodShortcut(e)) {
+      e.preventDefault();
+      setWorkMode((current) => nextWorkMode(current));
+      return;
+    }
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  }
+
+  function stageFiles(files: File[]) {
+    if (files.length === 0) return;
+    setStagedFiles((current) => {
+      const next = [...current];
+      for (const file of files) {
+        if (isTextDocumentFile(file)) {
+          const baseName = fileBaseName(file.name);
+          const documentKey = createUniqueDocumentKey(slugifyDocumentKey(baseName), next);
+          next.push({
+            id: `${file.name}:${file.size}:${file.lastModified}:${documentKey}`,
+            file,
+            kind: "document",
+            documentKey,
+            title: titleizeFilename(baseName),
+          });
+          continue;
+        }
+        next.push({
+          id: `${file.name}:${file.size}:${file.lastModified}`,
+          file,
+          kind: "attachment",
+        });
+      }
+      return next;
+    });
+  }
+
+  function handleStageFilesPicked(evt: ChangeEvent<HTMLInputElement>) {
+    stageFiles(Array.from(evt.target.files ?? []));
+    if (stageFileInputRef.current) {
+      stageFileInputRef.current.value = "";
+    }
+  }
+
+  function handleFileDragEnter(evt: DragEvent<HTMLDivElement>) {
+    if (!evt.dataTransfer.types.includes("Files")) return;
+    evt.preventDefault();
+    setIsFileDragOver(true);
+  }
+
+  function handleFileDragOver(evt: DragEvent<HTMLDivElement>) {
+    if (!evt.dataTransfer.types.includes("Files")) return;
+    evt.preventDefault();
+    evt.dataTransfer.dropEffect = "copy";
+    setIsFileDragOver(true);
+  }
+
+  function handleFileDragLeave(evt: DragEvent<HTMLDivElement>) {
+    if (evt.currentTarget.contains(evt.relatedTarget as Node | null)) return;
+    setIsFileDragOver(false);
+  }
+
+  function handleFileDrop(evt: DragEvent<HTMLDivElement>) {
+    if (!evt.dataTransfer.files.length) return;
+    evt.preventDefault();
+    setIsFileDragOver(false);
+    stageFiles(Array.from(evt.dataTransfer.files));
+  }
+
+  function removeStagedFile(id: string) {
+    setStagedFiles((current) => current.filter((file) => file.id !== id));
+  }
+
+  const hasDraft = draftHasText || stagedFiles.length > 0;
+  const currentStatus = statuses.find((s) => s.value === status) ?? statuses[1]!;
+  const currentPriority = priorities.find((p) => p.value === priority);
+  const currentOwner = selectedOwnerAgentId
+    ? (agents ?? []).find((agent) => agent.id === selectedOwnerAgentId)
+    : null;
+  const currentProject = orderedProjects.find((project) => project.id === projectId);
+  const neededUserSecretKeys = useMemo(
+    () => {
+      if (!shouldWarnAboutRunUserSecrets(status, selectedOwnerAgentId)) return [];
+      return uniqueRequiredUserSecretKeys([
+        isRecord(currentOwner?.adapterConfig) ? currentOwner.adapterConfig.env as Record<string, unknown> : null,
+        currentProject?.env ?? null,
+      ]);
+    },
+    [currentOwner?.adapterConfig, currentProject?.env, selectedOwnerAgentId, status],
+  );
+  const recentOwnerAgentIds = useMemo(() => getRecentAssigneeIds(), [newTaskOpen]);
+  const recentOwnerOptionIds = recentOwnerAgentIds;
+  const recentProjectIds = useMemo(() => getRecentProjectIds(), [newTaskOpen]);
+  const ownerOptions = useMemo<InlineEntityOption[]>(
+    () => [
+      ...sortAgentsByRecency(
+        (agents ?? []).filter(isAgentTaskOwnerTarget),
+        recentOwnerAgentIds,
+      ).map((agent) => ({
+        id: agent.id,
+        label: agent.name,
+        searchText: `${agent.name} ${agent.title ?? ""}`,
+      })),
+    ],
+    [agents, recentOwnerAgentIds],
+  );
+  const participantOptions = useMemo<InlineEntityOption[]>(
+    () =>
+      sortAgentsByRecency(
+        (agents ?? []).filter(isAgentTaskTarget),
+        recentOwnerAgentIds,
+      ).map((agent) => ({
+        id: `agent:${agent.id}`,
+        label: agent.name,
+        searchText: `${agent.name} ${agent.title ?? ""}`,
+      })),
+    [agents, recentOwnerAgentIds],
+  );
+  const projectOptions = useMemo<InlineEntityOption[]>(
+    () =>
+      orderedProjects.map((project) => ({
+        id: project.id,
+        label: project.name,
+        searchText: project.description ?? "",
+      })),
+    [orderedProjects],
+  );
+  const savedDraft = useMemo(() => newTaskOpen ? loadDraft() : null, [newTaskOpen]);
+  const hasSavedDraft = Boolean(savedDraft?.title.trim() || savedDraft?.request.trim());
+  const canDiscardDraft = hasDraft || hasSavedDraft;
+  const createTaskErrorMessage =
+    createTask.error instanceof Error ? createTask.error.message : "Failed to create task. Try again.";
+  const stagedDocuments = stagedFiles.filter((file) => file.kind === "document");
+  const stagedAttachments = stagedFiles.filter((file) => file.kind === "attachment");
+
+  const handleProjectChange = useCallback((nextProjectId: string) => {
+    if (nextProjectId) trackRecentProject(nextProjectId);
+    setProjectWorkspaceId((current) =>
+      projectWorkspaceIdAfterProjectChange(projectId, nextProjectId, current),
+    );
+    setProjectId(nextProjectId);
+  }, [projectId]);
+  const currentWorkMode = workModeMetaFor(workMode);
+  const CurrentWorkModeIcon = currentWorkMode.icon;
+
+  return (
+    <Dialog
+      open={newTaskOpen}
+      onOpenChange={(open) => {
+        if (!open && !createTask.isPending) closeNewTask();
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        aria-describedby={undefined}
+        style={{ "--new-task-dialog-height": MOBILE_DIALOG_HEIGHT } as CSSProperties}
+        className={cn(
+          "flex h-(--new-task-dialog-height) max-h-(--new-task-dialog-height) flex-col gap-0 overflow-hidden p-0 sm:h-auto",
+          expanded
+            ? "sm:max-w-2xl sm:h-(--new-task-dialog-height)"
+            : "sm:max-w-lg"
+        )}
+        onKeyDown={handleKeyDown}
+        onEscapeKeyDown={(event) => {
+          if (event.defaultPrevented) return;
+          // iOS Safari maps command-period to Escape for hardware keyboards.
+          // Treat modifier-Escape as the same mode-cycle shortcut so the
+          // dialog does not dismiss before the shortcut can run.
+          if (isWorkModeEscapeShortcut(event)) {
+            event.preventDefault();
+            setWorkMode((current) => nextWorkMode(current));
+            return;
+          }
+          if (createTask.isPending) {
+            event.preventDefault();
+          }
+        }}
+        onPointerDownOutside={(event) => {
+          if (createTask.isPending) {
+            event.preventDefault();
+            return;
+          }
+          // Radix Dialog's modal DismissableLayer calls preventDefault() on
+          // pointerdown events that originate outside the Dialog DOM tree.
+          // Dropdown and editor autocomplete portals render at the body level
+          // (outside the Dialog), so touch/click events on their content get
+          // their default prevented. Telling Radix "this event is handled" skips
+          // that preventDefault, restoring popover scroll and autocomplete taps.
+          const target = event.detail.originalEvent.target as HTMLElement | null;
+          if (target?.closest("[data-radix-popper-content-wrapper], [data-paperclip-floating-ui]")) {
+            event.preventDefault();
+          }
+        }}
+      >
+        <DialogTitle className="sr-only">Create a task</DialogTitle>
+        {/* Header bar */}
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className={cn(
+                    "px-1.5 py-0.5 rounded text-xs font-semibold cursor-pointer hover:opacity-80 transition-opacity",
+                    !dialogCompany?.brandColor && "bg-muted",
+                  )}
+                  disabled={isSubTaskMode}
+                  style={
+                    dialogCompany?.brandColor
+                      ? {
+                          backgroundColor: dialogCompany.brandColor,
+                          color: pickTextColorForSolidBg(dialogCompany.brandColor),
+                        }
+                      : undefined
+                  }
+                >
+                  {(dialogCompany?.name ?? "").slice(0, 3).toUpperCase()}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-48" align="start">
+                {companies.filter((c) => c.status !== "archived").map((c) => (
+                  <DropdownMenuItem
+                    key={c.id}
+                    className={cn(
+                      "text-xs",
+                      c.id === effectiveCompanyId && "bg-accent",
+                    )}
+                    onClick={() => handleCompanyChange(c.id)}
+                  >
+                    <span
+                      className={cn(
+                        "px-1 py-0.5 rounded text-(length:--text-nano) font-semibold leading-none",
+                        !c.brandColor && "bg-muted",
+                      )}
+                      style={
+                        c.brandColor
+                          ? {
+                              backgroundColor: c.brandColor,
+                              color: pickTextColorForSolidBg(c.brandColor),
+                            }
+                          : undefined
+                      }
+                    >
+                      {c.name.slice(0, 3).toUpperCase()}
+                    </span>
+                    <span className="truncate">{c.name}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <span className="text-muted-foreground/60">&rsaquo;</span>
+            <span>{isSubTaskMode ? "New sub-task" : "New task"}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground"
+              onClick={() => setExpanded(!expanded)}
+              disabled={createTask.isPending}
+            >
+              {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground"
+              onClick={() => closeNewTask()}
+              disabled={createTask.isPending}
+            >
+              <span className="text-lg leading-none">&times;</span>
+            </Button>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          {/* Title */}
+          <div className="px-4 pt-4 pb-2">
+            <TaskTitleTextarea
+              value={title}
+              pending={createTask.isPending}
+              ownerAgentId={ownerAgentId}
+              projectId={projectId}
+              requestEditorRef={requestEditorRef}
+              ownerSelectorRef={ownerSelectorRef}
+              projectSelectorRef={projectSelectorRef}
+              onChange={handleTitleChange}
+            />
+          </div>
+
+          {effectiveCompanyId ? (
+            <div className="px-4 pb-2">
+              {neededUserSecretKeys.length > 0 ? (
+                <MissingUserSecretsBanner
+                  companyId={effectiveCompanyId}
+                  definitionKeys={neededUserSecretKeys}
+                />
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="px-4 pb-2">
+            <div className="overflow-x-auto overscroll-x-contain">
+              <div className="inline-flex items-center gap-2 text-sm text-muted-foreground flex-wrap sm:flex-nowrap sm:min-w-max">
+              <span className="w-6 shrink-0 text-center">For</span>
+              <InlineEntitySelector
+                ref={ownerSelectorRef}
+                value={ownerAgentId}
+                options={ownerOptions}
+                recentOptionIds={recentOwnerOptionIds}
+                placeholder="Owner"
+                noneLabel="Choose owner"
+                searchPlaceholder="Search owners..."
+                emptyMessage="No available agents found."
+                onChange={(value) => {
+                  if (value) trackRecentAssignee(value);
+                  setOwnerAgentId(value);
+                  if (value && status === "backlog") {
+                    setStatus("todo");
+                  }
+                }}
+                onConfirm={() => {
+                  if (projectId) {
+                    requestEditorRef.current?.focus();
+                  } else {
+                    projectSelectorRef.current?.focus();
+                  }
+                }}
+                renderTriggerValue={(option) =>
+                  option ? (
+                    currentOwner ? (
+                      <>
+                        <AgentIcon icon={currentOwner.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{option.label}</span>
+                      </>
+                    ) : (
+                      <span className="truncate">{option.label}</span>
+                    )
+                  ) : (
+                    <span className="text-muted-foreground">Owner</span>
+                  )
+                }
+                renderOption={(option) => {
+                  if (!option.id) return <span className="truncate">{option.label}</span>;
+                  const owner = (agents ?? [])
+                    .find((agent) => agent.id === option.id) ?? null;
+                  return (
+                    <>
+                      {owner ? <AgentIcon icon={owner.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  );
+                }}
+              />
+              <span>in</span>
+              <InlineEntitySelector
+                ref={projectSelectorRef}
+                value={projectId}
+                options={projectOptions}
+                recentOptionIds={recentProjectIds}
+                placeholder="Project"
+                noneLabel="No project"
+                searchPlaceholder="Search projects..."
+                emptyMessage="No projects found."
+                onChange={handleProjectChange}
+                onConfirm={() => {
+                  requestEditorRef.current?.focus();
+                }}
+                renderTriggerValue={(option) =>
+                  option && currentProject ? (
+                    <>
+                      <span
+                        className="h-3.5 w-3.5 shrink-0 rounded-sm"
+                        style={{ backgroundColor: currentProject.color ?? "var(--project-seed)" }}
+                      />
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">Project</span>
+                  )
+                }
+                renderOption={(option) => {
+                  if (!option.id) return <span className="truncate">{option.label}</span>;
+                  const project = orderedProjects.find((item) => item.id === option.id);
+                  return (
+                    <>
+                      <span
+                        className="h-3.5 w-3.5 shrink-0 rounded-sm"
+                        style={{ backgroundColor: project?.color ?? "var(--project-seed)" }}
+                      />
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  );
+                }}
+              />
+
+              {/* Three-dot menu to add Reviewer / Approver rows */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center rounded-md p-1 text-muted-foreground hover:bg-accent/50 transition-colors"
+                    title="Add reviewer or approver"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-44" align="start">
+                  <DropdownMenuItem
+                    className={cn("text-xs", showReviewerRow && "bg-accent")}
+                    onClick={() => {
+                      setShowReviewerRow((v) => !v);
+                      if (showReviewerRow) setReviewerValue("");
+                    }}
+                  >
+                    <Eye className="h-3 w-3" />
+                    Reviewer
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className={cn("text-xs", showApproverRow && "bg-accent")}
+                    onClick={() => {
+                      setShowApproverRow((v) => !v);
+                      if (showApproverRow) setApproverValue("");
+                    }}
+                  >
+                    <ShieldCheck className="h-3 w-3" />
+                    Approver
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              </div>
+            </div>
+
+            {/* Reviewer row */}
+            {showReviewerRow && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                <span className="w-6 shrink-0 flex items-center justify-center"><Eye className="h-3.5 w-3.5" /></span>
+                <InlineEntitySelector
+                value={reviewerValue}
+                options={participantOptions}
+                recentOptionIds={recentOwnerAgentIds.map((id) => `agent:${id}`)}
+                placeholder="Reviewer"
+                noneLabel="No reviewer"
+                searchPlaceholder="Search reviewers..."
+                emptyMessage="No reviewers found."
+                onChange={setReviewerValue}
+                renderTriggerValue={(option) =>
+                  option ? (
+                    <>
+                      {(() => {
+                        const reviewerId = participantAgentId(option.id);
+                        const reviewer = reviewerId
+                          ? (agents ?? []).find((agent) => agent.id === reviewerId)
+                          : null;
+                        return reviewer ? <AgentIcon icon={reviewer.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null;
+                      })()}
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">Reviewer</span>
+                  )
+                }
+                renderOption={(option) => {
+                  if (!option.id) return <span className="truncate">{option.label}</span>;
+                  const reviewerId = participantAgentId(option.id);
+                  const reviewer = reviewerId
+                    ? (agents ?? []).find((agent) => agent.id === reviewerId)
+                    : null;
+                  return (
+                    <>
+                      {reviewer ? <AgentIcon icon={reviewer.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  );
+                }}
+                />
+              </div>
+            )}
+
+            {/* Approver row */}
+            {showApproverRow && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                <span className="w-6 shrink-0 flex items-center justify-center"><ShieldCheck className="h-3.5 w-3.5" /></span>
+                <InlineEntitySelector
+                value={approverValue}
+                options={participantOptions}
+                recentOptionIds={recentOwnerAgentIds.map((id) => `agent:${id}`)}
+                placeholder="Approver"
+                noneLabel="No approver"
+                searchPlaceholder="Search approvers..."
+                emptyMessage="No approvers found."
+                onChange={setApproverValue}
+                renderTriggerValue={(option) =>
+                  option ? (
+                    <>
+                      {(() => {
+                        const approverId = participantAgentId(option.id);
+                        const approver = approverId
+                          ? (agents ?? []).find((agent) => agent.id === approverId)
+                          : null;
+                        return approver ? <AgentIcon icon={approver.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null;
+                      })()}
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">Approver</span>
+                  )
+                }
+                renderOption={(option) => {
+                  if (!option.id) return <span className="truncate">{option.label}</span>;
+                  const approverId = participantAgentId(option.id);
+                  const approver = approverId
+                    ? (agents ?? []).find((agent) => agent.id === approverId)
+                    : null;
+                  return (
+                    <>
+                      {approver ? <AgentIcon icon={approver.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  );
+                }}
+                />
+              </div>
+            )}
+
+          </div>
+          {isSubTaskMode ? (
+            <div className="px-4 pb-2">
+            <div className="max-w-full rounded-md border border-border bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <ListTree className="h-3.5 w-3.5 shrink-0" />
+                <span className="shrink-0">Sub-task of</span>
+                <span className="font-medium text-foreground">{parentTaskLabel}</span>
+              </div>
+              {newTaskDefaults.parentTitle ? (
+                <div className="pl-5 text-foreground/80 truncate">
+                  {newTaskDefaults.parentTitle}
+                </div>
+              ) : null}
+            </div>
+            </div>
+          ) : null}
+
+          {/* Immutable request */}
+          <div
+            className="border-t border-border/60 px-4 pb-2 pt-3"
+            onDragEnter={handleFileDragEnter}
+            onDragOver={handleFileDragOver}
+            onDragLeave={handleFileDragLeave}
+            onDrop={handleFileDrop}
+          >
+            <div
+              className={cn(
+                "rounded-md transition-colors",
+                isFileDragOver && "bg-accent/20",
+              )}
+            >
+              <TaskRequestEditor
+                value={request}
+                expanded={expanded}
+                mentions={mentionOptions}
+                requestEditorRef={requestEditorRef}
+                imageUploadHandler={uploadRequestImageHandler}
+                onChange={handleRequestChange}
+              />
+            </div>
+            {stagedFiles.length > 0 ? (
+              <div className="mt-4 space-y-3 rounded-lg border border-border/70 p-3">
+              {stagedDocuments.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground">Documents</div>
+                  <div className="space-y-2">
+                    {stagedDocuments.map((file) => (
+                      <div key={file.id} className="flex items-start justify-between gap-3 rounded-md border border-border/70 px-3 py-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="border-border font-mono text-(length:--text-nano) uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
+                              {file.documentKey}
+                            </Badge>
+                            <span className="truncate text-sm">{file.file.name}</span>
+                          </div>
+                          <div className="mt-1 flex items-center gap-2 text-(length:--text-micro) text-muted-foreground">
+                            <FileText className="h-3.5 w-3.5" />
+                            <span>{file.title || file.file.name}</span>
+                            <span>•</span>
+                            <span>{formatFileSize(file.file)}</span>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="shrink-0 text-muted-foreground"
+                          onClick={() => removeStagedFile(file.id)}
+                          disabled={createTask.isPending}
+                          title="Remove document"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {stagedAttachments.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground">Attachments</div>
+                  <div className="space-y-2">
+                    {stagedAttachments.map((file) => (
+                      <div key={file.id} className="flex items-start justify-between gap-3 rounded-md border border-border/70 px-3 py-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            <span className="truncate text-sm">{file.file.name}</span>
+                          </div>
+                          <div className="mt-1 text-(length:--text-micro) text-muted-foreground">
+                            {file.file.type || "application/octet-stream"} • {formatFileSize(file.file)}
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="shrink-0 text-muted-foreground"
+                          onClick={() => removeStagedFile(file.id)}
+                          disabled={createTask.isPending}
+                          title="Remove attachment"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Property chips bar */}
+        <div className="flex items-center gap-1.5 px-4 py-2 border-t border-border flex-wrap shrink-0">
+          {/* Status chip */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+                <CircleDot className={cn("h-3 w-3", currentStatus.color)} />
+                {currentStatus.label}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56" align="start">
+              <DropdownMenuRadioGroup
+                value={status}
+                onValueChange={(v) => setStatus(v)}
+              >
+                {statuses.map((s) => (
+                  <DropdownMenuRadioItem key={s.value} value={s.value} className="text-xs">
+                    <CircleDot className={cn("h-3 w-3 mt-0.5 shrink-0", s.color)} />
+                    <span className="flex flex-col text-left leading-tight">
+                      <span>{s.label}</span>
+                      {s.description ? (
+                        <span className="text-(length:--text-nano) text-muted-foreground">{s.description}</span>
+                      ) : null}
+                    </span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Priority chip */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                data-testid="new-task-priority-chip"
+                className="hidden items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors hover:bg-accent/50 sm:inline-flex"
+              >
+                {currentPriority ? (
+                  <>
+                    <currentPriority.icon className={cn("h-3 w-3", currentPriority.color)} />
+                    {currentPriority.label}
+                  </>
+                ) : (
+                  <>
+                    <Minus className="h-3 w-3 text-muted-foreground" />
+                    Priority
+                  </>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-36" align="start">
+              <DropdownMenuRadioGroup
+                value={priority}
+                onValueChange={(v) => setPriority(v)}
+              >
+                {priorities.map((p) => (
+                  <DropdownMenuRadioItem key={p.value} value={p.value} className="text-xs">
+                    <p.icon className={cn("h-3 w-3", p.color)} />
+                    {p.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Labels chip — disabled, not wired up yet */}
+          {/* <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground">
+            <Tag className="h-3 w-3" />
+            Labels
+          </button> */}
+
+          <input
+            ref={stageFileInputRef}
+            type="file"
+            aria-label="Upload task attachments"
+            accept={STAGED_FILE_ACCEPT}
+            className="hidden"
+            onChange={handleStageFilesPicked}
+            multiple
+          />
+          <button
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground"
+            onClick={() => stageFileInputRef.current?.click()}
+            disabled={createTask.isPending}
+          >
+            <Paperclip className="h-3 w-3" />
+            Upload
+          </button>
+
+          {/* Work mode chip */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                data-task-work-mode-chip={workMode}
+                aria-keyshortcuts="Meta+Period Control+Period"
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors",
+                  currentWorkMode.classes.chip,
+                )}
+              >
+                <CurrentWorkModeIcon className="h-3 w-3" />
+                {currentWorkMode.shortLabel}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-36" align="start">
+              <DropdownMenuRadioGroup
+                value={workMode}
+                onValueChange={(v) => setWorkMode(v as TaskWorkMode)}
+              >
+                {workModeOptions.map((option) => {
+                  const Icon = option.icon;
+                  return (
+                    <DropdownMenuRadioItem
+                      key={option.value}
+                      value={option.value}
+                      data-task-work-mode={option.value}
+                      className={cn("text-xs", option.classes.menuItem)}
+                    >
+                      <Icon className="h-3 w-3" />
+                      {option.label}
+                    </DropdownMenuRadioItem>
+                  );
+                })}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* More */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                data-testid="new-task-more-menu-trigger"
+                aria-label="More task options"
+                className="inline-flex items-center justify-center rounded-md border border-border p-1 text-xs text-muted-foreground transition-colors hover:bg-accent/50"
+              >
+                <MoreHorizontal className="h-3 w-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-44" align="start" data-testid="new-task-more-menu">
+              <div className="sm:hidden">
+                <DropdownMenuLabel className="text-(length:--text-nano)">Priority</DropdownMenuLabel>
+                {priorities.map((p) => (
+                  <DropdownMenuItem
+                    key={p.value}
+                    data-testid={`new-task-more-priority-${p.value}`}
+                    className={cn(
+                      "text-xs",
+                      p.value === priority && "bg-accent",
+                    )}
+                    onClick={() => setPriority(p.value)}
+                  >
+                    <p.icon className={cn("h-3 w-3", p.color)} />
+                    {p.label}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+              </div>
+              <DropdownMenuItem className="text-xs text-muted-foreground">
+                <Calendar className="h-3 w-3" />
+                Start date
+              </DropdownMenuItem>
+              <DropdownMenuItem className="text-xs text-muted-foreground">
+                <Calendar className="h-3 w-3" />
+                Due date
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {ownerAgentId && status === "backlog" ? (
+          <div
+            data-testid="new-task-assigned-backlog-note"
+            className="mx-4 mb-2 flex items-start gap-2 rounded-md border border-amber-300/70 bg-amber-50/90 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
+          >
+            <Flag className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-300" />
+            <span className="leading-snug">
+              Agent ownership implies executable intent - leave status as <span className="font-medium">Backlog</span> only to deliberately park this. The owner will not be dispatched until status moves to <span className="font-medium">Todo</span> or <span className="font-medium">In Progress</span>.
+            </span>
+          </div>
+        ) : null}
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-4 py-2.5 border-t border-border shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={discardDraft}
+            disabled={createTask.isPending || !canDiscardDraft}
+          >
+            Discard Draft
+          </Button>
+          <div className="flex items-center gap-3">
+            <div className="min-h-5 text-right">
+              {createTask.isPending ? (
+                <span role="status" className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Creating task...
+                </span>
+              ) : createTask.isError ? (
+                <span role="alert" className="text-xs text-destructive">{createTaskErrorMessage}</span>
+              ) : null}
+            </div>
+            <Button
+              size="sm"
+              className="min-w-(--sz-8_5rem) disabled:opacity-100"
+              disabled={
+                !draftHasText ||
+                !requestHasText ||
+                !selectedOwnerAgentId ||
+                createTask.isPending
+              }
+              onClick={handleSubmit}
+              aria-busy={createTask.isPending}
+            >
+              <span className="inline-flex items-center justify-center gap-1.5">
+                {createTask.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                <span>{createTask.isPending ? "Creating..." : isSubTaskMode ? "Create Sub-Task" : "Create Task"}</span>
+              </span>
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

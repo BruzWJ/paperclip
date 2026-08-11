@@ -24,7 +24,7 @@ vi.mock("@tanstack/react-query", () => ({
       };
     }
     if (root === "activity") return { data: [], dataUpdatedAt: 0 };
-    if (root === "issues" || root === "projects") return { data: [] };
+    if (root === "tasks" || root === "projects") return { data: [] };
     return { data: undefined };
   },
 }));

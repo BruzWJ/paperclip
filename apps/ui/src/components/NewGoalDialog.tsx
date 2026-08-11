@@ -28,7 +28,7 @@ import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
 import { StatusBadge } from "./StatusBadge";
 
 const GOAL_STATUSES = ["planned", "active", "achieved", "cancelled"] as const satisfies readonly GoalStatus[];
-const GOAL_LEVELS = ["company", "team", "agent", "issue"] as const satisfies readonly GoalLevel[];
+const GOAL_LEVELS = ["company", "team", "agent", "task"] as const satisfies readonly GoalLevel[];
 
 const levelLabels: Record<string, string> = {
   company: "Company",
@@ -44,7 +44,7 @@ export function NewGoalDialog() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("planned");
-  const [level, setLevel] = useState("issue");
+  const [level, setLevel] = useState("task");
   const [parentId, setParentId] = useState("");
   const [expanded, setExpanded] = useState(false);
 
@@ -83,7 +83,7 @@ export function NewGoalDialog() {
     setTitle("");
     setDescription("");
     setStatus("planned");
-    setLevel("issue");
+    setLevel("task");
     setParentId("");
     setExpanded(false);
   }

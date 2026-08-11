@@ -169,9 +169,9 @@ describe("validateName", () => {
   });
 
   it("flags reserved prefixes as warnings", () => {
-    const issue = validateName("PAPERCLIP_HOME", new Set(), reserved);
-    expect(issue?.level).toBe("warn");
-    expect(issue?.message).toMatch(/Reserved prefix/);
+    const diagnostic = validateName("PAPERCLIP_HOME", new Set(), reserved);
+    expect(diagnostic?.level).toBe("warn");
+    expect(diagnostic?.message).toMatch(/Reserved prefix/);
   });
 
   it("charset error takes precedence over reserved prefix", () => {

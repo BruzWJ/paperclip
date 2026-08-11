@@ -8,7 +8,7 @@ import { boardMcpRoutes } from "../routes/board-mcp.js";
 const companyId = "00000000-0000-4000-8000-000000000001";
 const userId = "board-user-1";
 const boardApiKeyId = "board-key-1";
-const issueId = "00000000-0000-4000-8000-000000000002";
+const taskId = "00000000-0000-4000-8000-000000000002";
 const targetAgentId = "00000000-0000-4000-8000-000000000003";
 
 const mocks = vi.hoisted(() => ({
@@ -93,9 +93,9 @@ describe("Board MCP route", () => {
       .expect(200)
       .expect(({ body }) => {
         const names = body.result.tools.map((tool: { name: string }) => tool.name);
-        expect(names).toContain("issue_create");
+        expect(names).toContain("task_create");
         expect(names).toContain("mention_agent");
-        expect(names).toContain("read_issue_agent_run");
+        expect(names).toContain("read_task_agent_run");
         expect(names).not.toContain("list_companies");
         expect(names).not.toContain("mention_board");
       });
@@ -136,9 +136,9 @@ describe("Board MCP route", () => {
           name: "mention_agent",
           arguments: {
             companyId,
-            issueId,
+            taskId,
             agentId: targetAgentId,
-            message: "Please review this issue.",
+            message: "Please review this task.",
           },
         },
       })
@@ -148,9 +148,9 @@ describe("Board MCP route", () => {
       {
         name: "mention_agent",
         companyId,
-        issueId,
+        taskId,
         agentId: targetAgentId,
-        message: "Please review this issue.",
+        message: "Please review this task.",
       },
       expect.any(Object),
     );

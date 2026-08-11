@@ -1,11 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ReactNode } from "react";
 import { CircleDot, Flag, MoreHorizontal, Paperclip } from "lucide-react";
-import type { IssueRelationIssueSummary } from "@paperclipai/shared";
-import { IssueOwnerBacklogNotice } from "@/components/IssueOwnerBacklogNotice";
-import { IssueBlockedNotice } from "@/components/IssueBlockedNotice";
-import { IssueRow } from "@/components/IssueRow";
-import { storybookAgents, createIssue } from "../fixtures/paperclipData";
+import type { TaskRelationTaskSummary } from "@paperclipai/shared";
+import { TaskOwnerBacklogNotice } from "@/components/TaskOwnerBacklogNotice";
+import { TaskBlockedNotice } from "@/components/TaskBlockedNotice";
+import { TaskRow } from "@/components/TaskRow";
+import { storybookAgents, createTask } from "../fixtures/paperclipData";
 
 const codexAgent = storybookAgents.find((agent) => agent.id === "agent-codex") ?? storybookAgents[0]!;
 const qaAgent = storybookAgents.find((agent) => agent.id === "agent-qa") ?? storybookAgents[0]!;
@@ -27,7 +27,7 @@ function StoryFrame({ title, children }: { title: string; children: ReactNode })
 function CreationFormPanel() {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-3 text-sm font-medium text-muted-foreground">A. Issue creation chip bar with intent note</div>
+      <div className="mb-3 text-sm font-medium text-muted-foreground">A. Task creation chip bar with intent note</div>
 
       <div className="space-y-3 rounded-md border border-border/60 bg-background p-3">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -95,9 +95,9 @@ function CreationFormPanel() {
 function OwnerBacklogNoticePanel() {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-3 text-sm font-medium text-muted-foreground">B. Issue panel banner — parked with owner</div>
-      <IssueOwnerBacklogNotice
-        issueStatus="backlog"
+      <div className="mb-3 text-sm font-medium text-muted-foreground">B. Task panel banner — parked with owner</div>
+      <TaskOwnerBacklogNotice
+        taskStatus="backlog"
         ownerAgent={qaAgent}
         ownerUserId={null}
         onResume={() => undefined}
@@ -107,7 +107,7 @@ function OwnerBacklogNoticePanel() {
 }
 
 function BlockedByParkedWorkPanel() {
-  const parkedBlocker: IssueRelationIssueSummary = {
+  const parkedBlocker: TaskRelationTaskSummary = {
     id: "blocker-parked",
     identifier: "PAP-3683",
     title: "Adapter restart fails after upgrade",
@@ -118,9 +118,9 @@ function BlockedByParkedWorkPanel() {
   };
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-3 text-sm font-medium text-muted-foreground">C. Parent issue blocked by parked work</div>
-      <IssueBlockedNotice
-        issueStatus="blocked"
+      <div className="mb-3 text-sm font-medium text-muted-foreground">C. Parent task blocked by parked work</div>
+      <TaskBlockedNotice
+        taskStatus="blocked"
         blockers={[parkedBlocker]}
         blockerAttention={{
           state: "needs_attention",
@@ -140,13 +140,13 @@ function BlockedByParkedWorkPanel() {
 function ListRowsPanel() {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-3 text-sm font-medium text-muted-foreground">D. Issue list row indicators</div>
+      <div className="mb-3 text-sm font-medium text-muted-foreground">D. Task list row indicators</div>
       <div className="rounded-md border border-border">
-        <IssueRow
-          issue={createIssue({
-            id: "issue-blocked-parent",
+        <TaskRow
+          task={createTask({
+            id: "task-blocked-parent",
             identifier: "PAP-3643",
-            issueNumber: 3643,
+            taskNumber: 3643,
             title: "Restart deploy run after fixed adapter",
             boardPresentationStatus: "blocked",
             priority: "high",
@@ -173,11 +173,11 @@ function ListRowsPanel() {
             },
           })}
         />
-        <IssueRow
-          issue={createIssue({
-            id: "issue-healthy",
+        <TaskRow
+          task={createTask({
+            id: "task-healthy",
             identifier: "PAP-3644",
-            issueNumber: 3644,
+            taskNumber: 3644,
             title: "Compute new deploy budget for next cycle",
             boardPresentationStatus: "in_progress",
             priority: "medium",
@@ -217,28 +217,28 @@ type Story = StoryObj<typeof meta>;
 export const Overview: Story = {};
 export const CreationForm: Story = {
   render: () => (
-    <StoryFrame title="Issue creation chip bar with intent note">
+    <StoryFrame title="Task creation chip bar with intent note">
       <CreationFormPanel />
     </StoryFrame>
   ),
 };
 export const OwnerBacklogBanner: Story = {
   render: () => (
-    <StoryFrame title="Issue panel banner — parked with owner">
+    <StoryFrame title="Task panel banner — parked with owner">
       <OwnerBacklogNoticePanel />
     </StoryFrame>
   ),
 };
 export const BlockedByParkedWork: Story = {
   render: () => (
-    <StoryFrame title="Parent issue blocked by parked work">
+    <StoryFrame title="Parent task blocked by parked work">
       <BlockedByParkedWorkPanel />
     </StoryFrame>
   ),
 };
 export const ListRows: Story = {
   render: () => (
-    <StoryFrame title="Issue list row indicators">
+    <StoryFrame title="Task list row indicators">
       <ListRowsPanel />
     </StoryFrame>
   ),

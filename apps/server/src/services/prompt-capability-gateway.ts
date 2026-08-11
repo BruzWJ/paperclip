@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { IssueExecutionRefMode } from "@paperclipai/shared";
+import type { TaskExecutionRefMode } from "@paperclipai/shared";
 import {
   compileRuntimeInterface,
   type CompiledRunToolDescriptor,
@@ -26,11 +26,11 @@ const PLUGIN_RUN_CONTEXT_HANDLE_PATTERN = new RegExp(
  */
 export interface PromptCapabilityCompileScope {
   readonly companyId: string;
-  readonly issueId: string;
+  readonly taskId: string;
   readonly ownershipEpoch: number;
   readonly targetAgentId: string;
-  readonly executionMode: IssueExecutionRefMode;
-  readonly issueExecutionAuthorityId: string | null;
+  readonly executionMode: TaskExecutionRefMode;
+  readonly taskExecutionAuthorityId: string | null;
   readonly consultExecutionId: string | null;
   /** Exact prompt identity; refId selects its bootstrap or work projection. */
   readonly sessionId?: string;
@@ -56,7 +56,7 @@ export interface PromptCapabilityIngressBinding
   readonly leaseGeneration: number;
   readonly workerProcessIdentity: string;
   readonly sessionId: string;
-  readonly laneKind: IssueExecutionRefMode;
+  readonly laneKind: TaskExecutionRefMode;
   readonly adapterConfigIdentity: string;
   readonly workspaceIdentity: string;
   readonly targetSessionCorrelationId: string | null;
@@ -354,7 +354,7 @@ export function createPromptCapabilityGateway(options: {
         descriptor,
         runtimeScope: {
           companyId: current.companyId,
-          activeIssueId: current.issueId,
+          activeTaskId: current.taskId,
           dial: compileInput.contextDial,
         },
         arguments: input.arguments,

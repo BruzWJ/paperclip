@@ -6,8 +6,8 @@ import { routinesApi } from "../api/routines";
 import { foldersApi } from "../api/folders";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
-import { issuesApi } from "../api/issues";
-import { ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, runsApi } from "../api/runs";
+import { tasksApi } from "../api/tasks";
+import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "../api/runs";
 import { accessApi } from "../api/access";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -16,13 +16,13 @@ import { buildMarkdownMentionOptions } from "../lib/company-members";
 import { cn } from "../lib/utils";
 import { queryKeys } from "../lib/queryKeys";
 import { groupBy } from "../lib/groupBy";
-import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
-import { collectLiveIssueIds } from "../lib/liveIssueIds";
+import { createTaskDetailLocationState } from "../lib/taskDetailBreadcrumb";
+import { collectLiveTaskIds } from "../lib/liveTaskIds";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
 import { EmptyState } from "../components/EmptyState";
-import { IssuesList } from "../components/IssuesList";
+import { TasksList } from "../components/TasksList";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
 import { AgentIcon } from "../components/AgentIconPicker";
@@ -346,12 +346,12 @@ export function Routines() {
     queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
-  const { data: routineExecutionIssues, isLoading: recentRunsLoading, error: recentRunsError } = useQuery({
-    queryKey: [...queryKeys.issues.list(selectedCompanyId!), "routine-executions"],
-    queryFn: () => issuesApi.list(selectedCompanyId!, { originKind: "routine_execution" }),
+  const { data: routineExecutionTasks, isLoading: recentRunsLoading, error: recentRunsError } = useQuery({
+    queryKey: [...queryKeys.tasks.list(selectedCompanyId!), "routine-executions"],
+    queryFn: () => tasksApi.list(selectedCompanyId!, { originKind: "routine_execution" }),
     enabled: !!selectedCompanyId && activeTab === "runs",
   });
-  const activeRunsQueryKey = queryKeys.runs(selectedCompanyId!, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES });
+  const activeRunsQueryKey = queryKeys.runs(selectedCompanyId!, { status: ACTIVE_TASK_EXECUTION_RUN_STATUSES });
   const sharedActiveRuns = useSharedPollingQuery({
     companyId: selectedCompanyId,
     resourceKey: "active-runs",
@@ -363,7 +363,7 @@ export function Routines() {
   });
   const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
     queryKey: activeRunsQueryKey,
-    queryFn: () => runsApi.listForCompany(selectedCompanyId!, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, limit: 200 }),
+    queryFn: () => runsApi.listForCompany(selectedCompanyId!, { status: ACTIVE_TASK_EXECUTION_RUN_STATUSES, limit: 200 }),
     enabled: sharedActiveRuns.enabled,
     refetchInterval: sharedActiveRuns.refetchInterval,
   });
@@ -582,7 +582,7 @@ export function Routines() {
     () => new Map((projects ?? []).map((project) => [project.id, project])),
     [projects],
   );
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(activeRunPage?.items), [activeRunPage]);
+  const liveTaskIds = useMemo(() => collectLiveTaskIds(activeRunPage?.items), [activeRunPage]);
   const visibleRoutines = useMemo(
     () => (routines ?? []).filter((routine) => routine.status !== "archived"),
     [routines],
@@ -621,12 +621,12 @@ export function Routines() {
     () => buildRoutineSections(sortedRoutines, routineViewState.groupBy, projectById, agentById),
     [agentById, projectById, routineViewState.groupBy, sortedRoutines],
   );
-  const recentRunsIssueLinkState = useMemo(
+  const recentRunsTaskLinkState = useMemo(
     () =>
-      createIssueDetailLocationState(
+      createTaskDetailLocationState(
         "Recent Runs",
         buildRoutinesTabHref("runs"),
-        "issues",
+        "tasks",
       ),
     [],
   );
@@ -727,7 +727,7 @@ export function Routines() {
   }
 
   if (isLoading) {
-    return <PageSkeleton variant="issues-list" />;
+    return <PageSkeleton variant="tasks-list" />;
   }
 
   return (
@@ -860,15 +860,15 @@ export function Routines() {
           ) : null}
         </TabsContent>
         <TabsContent value="runs">
-          <IssuesList
-            issues={routineExecutionIssues ?? []}
+          <TasksList
+            tasks={routineExecutionTasks ?? []}
             isLoading={recentRunsLoading}
             error={recentRunsError as Error | null}
             agents={agents}
             projects={projects}
-            liveIssueIds={liveIssueIds}
+            liveTaskIds={liveTaskIds}
             viewStateKey="paperclip:routine-recent-runs-view"
-            issueLinkState={recentRunsIssueLinkState}
+            taskLinkState={recentRunsTaskLinkState}
           />
         </TabsContent>
       </Tabs>

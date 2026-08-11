@@ -11,15 +11,15 @@ import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mocks = vi.hoisted(() => ({
   logActivity: vi.fn(),
-  listIssueExecutionRunsForActivity: vi.fn(),
+  listTaskExecutionRunsForActivity: vi.fn(),
 }));
 
 vi.mock("../services/activity-log.js", () => ({
   logActivity: mocks.logActivity,
 }));
 
-vi.mock("../services/issue-execution-run-service.js", () => ({
-  listIssueExecutionRunsForActivity: mocks.listIssueExecutionRunsForActivity,
+vi.mock("../services/task-execution-run-service.js", () => ({
+  listTaskExecutionRunsForActivity: mocks.listTaskExecutionRunsForActivity,
 }));
 
 function dismissalRow(input: {
@@ -43,7 +43,7 @@ describe("inbox dismissals", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.logActivity.mockResolvedValue(undefined);
-    mocks.listIssueExecutionRunsForActivity.mockResolvedValue({
+    mocks.listTaskExecutionRunsForActivity.mockResolvedValue({
       items: [],
       nextCursor: null,
     });
@@ -167,7 +167,7 @@ describe("inbox dismissals", () => {
         [{ id: primaryAgentId }, { id: secondaryAgentId }],
       ],
     });
-    mocks.listIssueExecutionRunsForActivity.mockResolvedValue({
+    mocks.listTaskExecutionRunsForActivity.mockResolvedValue({
       items: [
         {
           runId: hiddenRunId,
@@ -201,7 +201,7 @@ describe("inbox dismissals", () => {
         createdAt: new Date("2026-03-11T01:00:00.000Z"),
         updatedAt: new Date("2026-03-11T01:00:00.000Z"),
       }],
-      unreadTouchedIssues: 1,
+      unreadTouchedTasks: 1,
     })).resolves.toEqual({
       inbox: 3,
       approvals: 1,

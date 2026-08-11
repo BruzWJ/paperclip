@@ -429,13 +429,13 @@ export function adapterConfigSchemaFieldErrors(
 ): AdapterConfigSchemaFieldError[] {
   if (!schema) return [];
   const readValue = (field: ConfigFieldSchema) => config[field.key];
-  const validationIssues: AdapterConfigSchemaFieldError[] = [];
+  const fieldErrors: AdapterConfigSchemaFieldError[] = [];
   for (const field of schema.fields) {
     if (!fieldMatchesVisibleWhen(field, readValue, schema)) continue;
     const value = config[field.key];
     if (isMissingRequiredConfigValue(value)) {
       if (field.required === true) {
-        validationIssues.push({
+        fieldErrors.push({
           field,
           message: `${field.label} is required.`,
         });
@@ -451,14 +451,14 @@ export function adapterConfigSchemaFieldErrors(
       )
       && typeof value !== "string"
     ) {
-      validationIssues.push({
+      fieldErrors.push({
         field,
         message: `${field.label} must be a string.`,
       });
       continue;
     }
     if (field.type === "toggle" && typeof value !== "boolean") {
-      validationIssues.push({
+      fieldErrors.push({
         field,
         message: `${field.label} must be true or false.`,
       });
@@ -468,7 +468,7 @@ export function adapterConfigSchemaFieldErrors(
       field.type === "number"
       && (typeof value !== "number" || !Number.isFinite(value))
     ) {
-      validationIssues.push({
+      fieldErrors.push({
         field,
         message: `${field.label} must be a finite number.`,
       });
@@ -480,13 +480,13 @@ export function adapterConfigSchemaFieldErrors(
       && Array.isArray(field.options)
       && !field.options.some((option) => option.value === value)
     ) {
-      validationIssues.push({
+      fieldErrors.push({
         field,
         message: `${field.label} must use an adapter-owned option.`,
       });
     }
   }
-  return validationIssues;
+  return fieldErrors;
 }
 
 // ---------------------------------------------------------------------------

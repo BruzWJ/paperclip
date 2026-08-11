@@ -15,5 +15,5 @@ export const activityApi = {
     const qs = params.toString();
     return api.get<ActivityEvent[]>(`/companies/${companyId}/activity${qs ? `?${qs}` : ""}`, options);
   },
-  forIssue: (issueId: string) => api.get<ActivityEvent[]>(`/issues/${issueId}/activity`),
+  forTask: (taskId: string) => api.get<ActivityEvent[]>(`/tasks/${taskId}/activity`),
 };

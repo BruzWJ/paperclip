@@ -5,7 +5,7 @@ import {
   buildPromotedSourceTrust,
   isLowTrustQuarantined,
   redactQuarantinedBodyForHigherTrust,
-  resolveActorSourceTrustForIssue,
+  resolveActorSourceTrustForTask,
   sanitizeQuarantinedCommentForHigherTrust,
 } from "../services/source-trust.js";
 import { createMockDb } from "./helpers/mock-db.js";
@@ -13,7 +13,7 @@ import { createMockDb } from "./helpers/mock-db.js";
 const quarantinedSourceTrust = {
   preset: LOW_TRUST_REVIEW_PRESET,
   disposition: "quarantined" as const,
-  sourceIssueId: "11111111-1111-4111-8111-111111111111",
+  sourceTaskId: "11111111-1111-4111-8111-111111111111",
   sourceRunId: "22222222-2222-4222-8222-222222222222",
   sourceAgentId: "33333333-3333-4333-8333-333333333333",
 };
@@ -57,7 +57,7 @@ describe("source trust quarantine helpers", () => {
 
   it("builds distinct promoted source-trust metadata for trusted artifacts", () => {
     const promoted = buildPromotedSourceTrust({
-      sourceIssueId: "11111111-1111-4111-8111-111111111111",
+      sourceTaskId: "11111111-1111-4111-8111-111111111111",
       sourceArtifactKind: "comment",
       sourceArtifactId: "44444444-4444-4444-8444-444444444444",
       promotedByActorType: "user",
@@ -68,11 +68,11 @@ describe("source trust quarantine helpers", () => {
     expect(promoted).toEqual({
       preset: LOW_TRUST_REVIEW_PRESET,
       disposition: "promoted",
-      sourceIssueId: "11111111-1111-4111-8111-111111111111",
+      sourceTaskId: "11111111-1111-4111-8111-111111111111",
       promotedFrom: {
         artifactKind: "comment",
         artifactId: "44444444-4444-4444-8444-444444444444",
-        issueId: "11111111-1111-4111-8111-111111111111",
+        taskId: "11111111-1111-4111-8111-111111111111",
       },
       promotedByActorType: "user",
       promotedByActorId: "board-user",
@@ -82,40 +82,40 @@ describe("source trust quarantine helpers", () => {
   });
 });
 
-describe("resolveActorSourceTrustForIssue", () => {
+describe("resolveActorSourceTrustForTask", () => {
   const companyId = "00000000-0000-4000-8000-000000000010";
-  const issueId = "00000000-0000-4000-8000-000000000011";
+  const taskId = "00000000-0000-4000-8000-000000000011";
   const actorAgentId = "00000000-0000-4000-8000-000000000012";
   const runId = "00000000-0000-4000-8000-000000000014";
 
-  function lowTrustExecutionPolicy(rootIssueId: string) {
+  function lowTrustExecutionPolicy(rootTaskId: string) {
     return {
       authorizationPolicy: {
         trustBoundary: {
           mode: LOW_TRUST_REVIEW_PRESET,
           companyId,
-          rootIssueId,
+          rootTaskId,
         },
       },
     };
   }
 
-  it("uses the canonical linked issue policy", async () => {
-    const executionPolicy = lowTrustExecutionPolicy(issueId);
+  it("uses the canonical linked task policy", async () => {
+    const executionPolicy = lowTrustExecutionPolicy(taskId);
     const { db } = createMockDb({
       select: [[{
         runId,
         companyId,
         agentId: actorAgentId,
-        issueId,
-        issueExecutionPolicy: executionPolicy,
+        taskId,
+        taskExecutionPolicy: executionPolicy,
       }]],
     });
 
-    const sourceTrust = await resolveActorSourceTrustForIssue({
+    const sourceTrust = await resolveActorSourceTrustForTask({
       db,
-      issue: {
-        id: issueId,
+      task: {
+        id: taskId,
         companyId,
         projectId: null,
         executionPolicy,
@@ -131,7 +131,7 @@ describe("resolveActorSourceTrustForIssue", () => {
     expect(sourceTrust).toMatchObject({
       preset: LOW_TRUST_REVIEW_PRESET,
       disposition: "quarantined",
-      sourceIssueId: issueId,
+      sourceTaskId: taskId,
       sourceRunId: runId,
       sourceAgentId: actorAgentId,
     });
@@ -142,10 +142,10 @@ describe("resolveActorSourceTrustForIssue", () => {
       select: [[]],
     });
 
-    const sourceTrust = await resolveActorSourceTrustForIssue({
+    const sourceTrust = await resolveActorSourceTrustForTask({
       db,
-      issue: {
-        id: issueId,
+      task: {
+        id: taskId,
         companyId,
         projectId: null,
         executionPolicy: null,
@@ -161,7 +161,7 @@ describe("resolveActorSourceTrustForIssue", () => {
     expect(sourceTrust).toMatchObject({
       preset: LOW_TRUST_REVIEW_PRESET,
       disposition: "quarantined",
-      sourceIssueId: issueId,
+      sourceTaskId: taskId,
       sourceRunId: runId,
       sourceAgentId: actorAgentId,
     });
@@ -170,10 +170,10 @@ describe("resolveActorSourceTrustForIssue", () => {
   it("does not load agent state when no productive run is supplied", async () => {
     const { db, calls } = createMockDb();
 
-    await expect(resolveActorSourceTrustForIssue({
+    await expect(resolveActorSourceTrustForTask({
       db,
-      issue: {
-        id: issueId,
+      task: {
+        id: taskId,
         companyId,
         projectId: null,
         executionPolicy: null,

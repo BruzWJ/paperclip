@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import type { IssueWorkMode } from "@paperclipai/shared";
+import type { TaskWorkMode } from "@paperclipai/shared";
 
-interface NewIssueDefaults {
+interface NewTaskDefaults {
   status?: string;
-  workMode?: IssueWorkMode;
+  workMode?: TaskWorkMode;
   priority?: string;
   projectId?: string;
   projectWorkspaceId?: string;
@@ -26,10 +26,10 @@ interface OnboardingOptions {
 }
 
 interface DialogContextValue {
-  newIssueOpen: boolean;
-  newIssueDefaults: NewIssueDefaults;
-  openNewIssue: (defaults?: NewIssueDefaults) => void;
-  closeNewIssue: () => void;
+  newTaskOpen: boolean;
+  newTaskDefaults: NewTaskDefaults;
+  openNewTask: (defaults?: NewTaskDefaults) => void;
+  closeNewTask: () => void;
   newProjectOpen: boolean;
   openNewProject: () => void;
   closeNewProject: () => void;
@@ -53,8 +53,8 @@ interface DialogContextValue {
 
 type DialogStateValue = Pick<
   DialogContextValue,
-  | "newIssueOpen"
-  | "newIssueDefaults"
+  | "newTaskOpen"
+  | "newTaskDefaults"
   | "newProjectOpen"
   | "newGoalOpen"
   | "newGoalDefaults"
@@ -70,8 +70,8 @@ const DialogStateContext = createContext<DialogStateValue | null>(null);
 const DialogActionsContext = createContext<DialogActionsValue | null>(null);
 
 export function DialogProvider({ children }: { children: ReactNode }) {
-  const [newIssueOpen, setNewIssueOpen] = useState(false);
-  const [newIssueDefaults, setNewIssueDefaults] = useState<NewIssueDefaults>({});
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [newTaskDefaults, setNewTaskDefaults] = useState<NewTaskDefaults>({});
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [newGoalOpen, setNewGoalOpen] = useState(false);
   const [newGoalDefaults, setNewGoalDefaults] = useState<NewGoalDefaults>({});
@@ -80,14 +80,14 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const [onboardingOptions, setOnboardingOptions] = useState<OnboardingOptions>({});
   const [onboardingRouteDismissed, setOnboardingRouteDismissed] = useState(false);
 
-  const openNewIssue = useCallback((defaults: NewIssueDefaults = {}) => {
-    setNewIssueDefaults(defaults);
-    setNewIssueOpen(true);
+  const openNewTask = useCallback((defaults: NewTaskDefaults = {}) => {
+    setNewTaskDefaults(defaults);
+    setNewTaskOpen(true);
   }, []);
 
-  const closeNewIssue = useCallback(() => {
-    setNewIssueOpen(false);
-    setNewIssueDefaults({});
+  const closeNewTask = useCallback(() => {
+    setNewTaskOpen(false);
+    setNewTaskDefaults({});
   }, []);
 
   const openNewProject = useCallback(() => {
@@ -128,8 +128,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
 
   const stateValue = useMemo<DialogStateValue>(
     () => ({
-      newIssueOpen,
-      newIssueDefaults,
+      newTaskOpen,
+      newTaskDefaults,
       newProjectOpen,
       newGoalOpen,
       newGoalDefaults,
@@ -139,8 +139,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       onboardingRouteDismissed,
     }),
     [
-      newIssueOpen,
-      newIssueDefaults,
+      newTaskOpen,
+      newTaskDefaults,
       newProjectOpen,
       newGoalOpen,
       newGoalDefaults,
@@ -153,8 +153,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
 
   const actionsValue = useMemo<DialogActionsValue>(
     () => ({
-      openNewIssue,
-      closeNewIssue,
+      openNewTask,
+      closeNewTask,
       openNewProject,
       closeNewProject,
       openNewGoal,
@@ -166,8 +166,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       setOnboardingRouteDismissed,
     }),
     [
-      openNewIssue,
-      closeNewIssue,
+      openNewTask,
+      closeNewTask,
       openNewProject,
       closeNewProject,
       openNewGoal,

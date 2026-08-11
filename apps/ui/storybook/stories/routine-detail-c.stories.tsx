@@ -77,7 +77,7 @@ const routine: RoutineDetailType = {
   companyId: COMPANY_ID,
   projectId: storybookProjects[0]?.id ?? null,
   goalId: null,
-  parentIssueId: null,
+  parentTaskId: null,
   responsibleUserId: null,
   title: "Send the weekly digest to {{customer_name}}",
   description:
@@ -102,10 +102,10 @@ const routine: RoutineDetailType = {
   managedByPlugin: null,
   project: null,
   assignee: null,
-  parentIssue: null,
+  parentTask: null,
   triggers,
   recentRuns: [],
-  activeIssue: null,
+  activeTask: null,
 };
 
 const routineDescriptionDocument: RoutineDescriptionDocument = {
@@ -130,7 +130,7 @@ const routineAnnotationThreads: DocumentAnnotationThreadWithComments[] = [
   {
     id: "routine-thread-1",
     companyId: COMPANY_ID,
-    issueId: null,
+    taskId: null,
     routineId: ROUTINE_ID,
     documentId: routineDescriptionDocument.id,
     documentKey: "description",
@@ -168,7 +168,7 @@ const routineAnnotationThreads: DocumentAnnotationThreadWithComments[] = [
         id: "routine-comment-1",
         companyId: COMPANY_ID,
         threadId: "routine-thread-1",
-        issueId: null,
+        taskId: null,
         routineId: ROUTINE_ID,
         documentId: routineDescriptionDocument.id,
         body: "The digest constraint is visible here; the panel stays aligned with the routine overview editor.",
@@ -176,7 +176,7 @@ const routineAnnotationThreads: DocumentAnnotationThreadWithComments[] = [
         authorAgentId: null,
         authorUserId: "user-board",
         createdByRunId: null,
-        issueCommentId: null,
+        taskCommentId: null,
         createdAt: now,
         updatedAt: now,
       },
@@ -185,9 +185,9 @@ const routineAnnotationThreads: DocumentAnnotationThreadWithComments[] = [
 ];
 
 const routineRuns = [
-  { id: "run-1", source: "manual", status: "succeeded", triggeredAt: new Date("2026-06-09T11:48:00Z"), failureReason: null, triggerPayload: { customer_name: "Acme", deadline: "Fri" }, trigger: { label: "manual", kind: "manual" }, linkedIssue: { id: "issue-1", identifier: "PAP-99221", title: "Weekly digest for Acme" } },
-  { id: "run-2", source: "schedule", status: "failed", triggeredAt: new Date("2026-06-08T14:00:00Z"), failureReason: "Cron timed out after 600s", triggerPayload: { customer_name: "Acme" }, trigger: { label: "schedule", kind: "schedule" }, linkedIssue: { id: "issue-2", identifier: "PAP-99220", title: "Weekly digest for Acme" } },
-  { id: "run-3", source: "schedule", status: "succeeded", triggeredAt: new Date("2026-06-07T14:00:00Z"), failureReason: null, triggerPayload: { customer_name: "Globex" }, trigger: { label: "schedule", kind: "schedule" }, linkedIssue: { id: "issue-3", identifier: "PAP-99219", title: "Weekly digest for Globex" } },
+  { id: "run-1", source: "manual", status: "succeeded", triggeredAt: new Date("2026-06-09T11:48:00Z"), failureReason: null, triggerPayload: { customer_name: "Acme", deadline: "Fri" }, trigger: { label: "manual", kind: "manual" }, linkedTask: { id: "task-1", identifier: "PAP-99221", title: "Weekly digest for Acme" } },
+  { id: "run-2", source: "schedule", status: "failed", triggeredAt: new Date("2026-06-08T14:00:00Z"), failureReason: "Cron timed out after 600s", triggerPayload: { customer_name: "Acme" }, trigger: { label: "schedule", kind: "schedule" }, linkedTask: { id: "task-2", identifier: "PAP-99220", title: "Weekly digest for Acme" } },
+  { id: "run-3", source: "schedule", status: "succeeded", triggeredAt: new Date("2026-06-07T14:00:00Z"), failureReason: null, triggerPayload: { customer_name: "Globex" }, trigger: { label: "schedule", kind: "schedule" }, linkedTask: { id: "task-3", identifier: "PAP-99219", title: "Weekly digest for Globex" } },
 ] as never;
 
 function stubSecret(id: string, name: string, latestVersion: number, referenceCount: number) {
@@ -225,7 +225,7 @@ const availableSecrets = [
 const activity = [
   { id: "act-1", action: "trigger.fired", details: { trigger: "schedule", run: "PAP-99221" }, createdAt: new Date("2026-06-09T14:02:00Z") },
   { id: "act-2", action: "routine.updated", details: { fields: ["instructions", "variables"] }, createdAt: new Date("2026-06-09T13:55:00Z") },
-  { id: "act-3", action: "run.completed", details: { issue: "PAP-99220", status: "failed" }, createdAt: new Date("2026-06-08T23:01:00Z") },
+  { id: "act-3", action: "run.completed", details: { task: "PAP-99220", status: "failed" }, createdAt: new Date("2026-06-08T23:01:00Z") },
 ] as never;
 
 function stubMutation(overrides?: Record<string, unknown>) {
@@ -305,7 +305,7 @@ function makeContext(
     routineRuns,
     activity,
     hasLiveRun: false,
-    activeIssueId: undefined,
+    activeTaskId: undefined,
     titleInputRef: { current: null },
     descriptionEditorRef: { current: null },
     assigneeSelectorRef: { current: null },

@@ -12,12 +12,12 @@ describe("agent action-grant schema", () => {
     expect(constraint).toBeDefined();
 
     const sql = dialect.sqlToQuery(constraint!.value).sql;
-    expect(sql).toContain("'issue_create'");
+    expect(sql).toContain("'task_create'");
     expect(sql).toContain("'mention_board'");
     expect(sql).toContain("'agent_hire'");
     expect(sql).toContain("'agent_configure'");
-    expect(sql).not.toContain("'issue_assign'");
-    expect(sql).not.toContain("'issue_update'");
+    expect(sql).not.toContain("'task_assign'");
+    expect(sql).not.toContain("'task_update'");
     expect(sql).not.toContain("'mention_agent'");
   });
 });

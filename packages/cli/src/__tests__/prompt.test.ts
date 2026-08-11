@@ -35,13 +35,13 @@ describe("board prompt", () => {
     vi.restoreAllMocks();
   });
 
-  it("creates an owned issue through the canonical issue route", async () => {
+  it("creates an owned task through the canonical task route", async () => {
     const prompt = " \tInvestigate queue lag\r\nliteral\\n and literal\\r\t \n";
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(agent()), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        id: "issue-1",
+        id: "task-1",
         companyId: "22222222-2222-4222-8222-222222222222",
         title: "Investigate queue lag",
         lifecycleStatus: "open",
@@ -58,14 +58,14 @@ describe("board prompt", () => {
     });
 
     expect(result.actor).toBe("board");
-    expect(result.mode).toBe("issue");
+    expect(result.mode).toBe("task");
     expect(result.agent.id).toBe("11111111-1111-4111-8111-111111111111");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "http://localhost:3100/api/agents/worker?companyId=22222222-2222-4222-8222-222222222222",
     );
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
-      "http://localhost:3100/api/companies/22222222-2222-4222-8222-222222222222/issues",
+      "http://localhost:3100/api/companies/22222222-2222-4222-8222-222222222222/tasks",
     );
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
       request: prompt,
@@ -81,7 +81,7 @@ describe("board prompt", () => {
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(agent()), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        id: "issue-1",
+        id: "task-1",
         companyId: "22222222-2222-4222-8222-222222222222",
         ownerAgentId: "11111111-1111-4111-8111-111111111111",
         ownershipEpoch: 3,
@@ -89,7 +89,7 @@ describe("board prompt", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({
         comment: {
           id: "comment-1",
-          issueId: "issue-1",
+          taskId: "task-1",
           body: "Follow up on queue lag",
         },
       }), { status: 201 }));
@@ -99,14 +99,14 @@ describe("board prompt", () => {
       apiBase: "http://localhost:3100",
       apiKey: "board-token",
       companyId: "22222222-2222-4222-8222-222222222222",
-      issue: "issue-1",
+      task: "task-1",
     });
 
     expect(result.actor).toBe("board");
     expect(result.mode).toBe("comment");
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("http://localhost:3100/api/issues/issue-1");
-    expect(fetchMock.mock.calls[2]?.[0]).toBe("http://localhost:3100/api/issues/issue-1/comments");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("http://localhost:3100/api/tasks/task-1");
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("http://localhost:3100/api/tasks/task-1/comments");
     expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toMatchObject({
       message: prompt,
       idempotencyKey: expect.any(String),

@@ -21,7 +21,7 @@ import type {
   PluginLauncherRenderContextSnapshot,
   Company,
   Project,
-  Issue,
+  Task,
   PluginManagedAgentResolution,
   PluginManagedProjectResolution,
   PluginManagedRoutineResolution,
@@ -38,14 +38,14 @@ export type { PluginLauncherRenderContextSnapshot } from "@paperclipai/shared";
 
 import type {
   PluginEvent,
-  PluginIssueUpdateInput,
-  PluginIssueWithdrawalResult,
+  PluginTaskUpdateInput,
+  PluginTaskWithdrawalResult,
   PluginCreatorCallbackAcknowledgement,
   PluginCreatorCallbackDelivery,
   PluginJobContext,
   PluginRunContextHandle,
-  PluginRunIssueProjection,
-  PluginRunIssueCommentProjection,
+  PluginRunTaskProjection,
+  PluginRunTaskCommentProjection,
   PluginRunPage,
   ToolResult,
   PluginLocalFolderListing,
@@ -116,7 +116,7 @@ export interface JsonRpcRequest<
   /** Structured parameters for the method call. */
   readonly params: TParams;
   /**
-   * Host-issued metadata for the top-level plugin invocation that is currently
+   * Host-minted metadata for the top-level plugin invocation that is currently
    * executing. The worker treats this as opaque and echoes only the id on
    * worker→host calls made from the same async execution context.
    */
@@ -243,7 +243,7 @@ export interface PluginInvocationScope {
    * provider prompt. Workers cannot widen or move this boundary.
    */
   canonicalSession?: {
-    readonly issueId: string;
+    readonly taskId: string;
     readonly sessionId: string;
     readonly snapshotHighWaterSeq: number;
   };
@@ -266,7 +266,7 @@ export interface PluginInvocationContext {
 
 /**
  * Context provided to host-side worker→host handlers after the worker echoes a
- * host-issued invocation id.
+ * host-minted invocation id.
  */
 export interface WorkerHostCallContext {
   invocationScope?: PluginInvocationScope | null;
@@ -537,7 +537,7 @@ export interface ExecuteToolParams {
 // ---------------------------------------------------------------------------
 
 /**
- * Bounds request issued by a plugin UI running inside a host-managed launcher
+ * Bounds request sent by a plugin UI running inside a host-managed launcher
  * container such as a modal, drawer, or popover.
  */
 export interface PluginModalBoundsRequest {
@@ -604,7 +604,7 @@ export interface HostToWorkerMethods {
   performAction: [params: PerformActionParams, result: unknown];
   /** @see PLUGIN_SPEC.md §13.10 */
   executeTool: [params: ExecuteToolParams, result: ToolResult];
-  "issues.creatorCallback.deliver": [
+  "tasks.creatorCallback.deliver": [
     params: {
       callbackKey: string;
       callbackVersion: string;
@@ -638,7 +638,7 @@ export const HOST_TO_WORKER_OPTIONAL_METHODS = [
   "getData",
   "performAction",
   "executeTool",
-  "issues.creatorCallback.deliver",
+  "tasks.creatorCallback.deliver",
 ] as const satisfies readonly HostToWorkerMethodName[];
 
 export type HostToWorkerOptionalMethodName =
@@ -747,9 +747,9 @@ export interface WorkerToHostMethods {
     params: { companyId: string; runId: string; cursor?: string },
     result: ProviderSafeRunTrace,
   ];
-  "runtime.records.readIssueComments": [
-    params: { companyId: string; issueId: string; cursor?: string; limit?: number },
-    result: PluginRunPage<PluginRunIssueCommentProjection>,
+  "runtime.records.readTaskComments": [
+    params: { companyId: string; taskId: string; cursor?: string; limit?: number },
+    result: PluginRunPage<PluginRunTaskCommentProjection>,
   ];
   "runtime.records.readSession": [
     params: PluginCanonicalSessionReadInput,
@@ -881,8 +881,8 @@ export interface WorkerToHostMethods {
     result: PluginManagedSkillResolution,
   ];
 
-  // Issues
-  "issues.list": [
+  // Tasks
+  "tasks.list": [
     params: {
       companyId: string;
       projectId?: string;
@@ -891,13 +891,13 @@ export interface WorkerToHostMethods {
       limit?: number;
       offset?: number;
     },
-    result: Issue[],
+    result: Task[],
   ];
-  "issues.get": [
-    params: { issueId: string; companyId: string },
-    result: Issue | null,
+  "tasks.get": [
+    params: { taskId: string; companyId: string },
+    result: Task | null,
   ];
-  "issues.creatorCallback.register": [
+  "tasks.creatorCallback.register": [
     params: {
       callbackKey: string;
       callbackVersion: string;
@@ -908,7 +908,7 @@ export interface WorkerToHostMethods {
       registered: true;
     },
   ];
-  "run.issues.listCompanyIssues": [
+  "run.tasks.listCompanyTasks": [
     params: {
       runContextHandle: PluginRunContextHandle;
       status?: "open" | "blocked" | "done" | "cancelled";
@@ -916,35 +916,35 @@ export interface WorkerToHostMethods {
       cursor?: string;
       limit?: number;
     },
-    result: PluginRunPage<PluginRunIssueProjection>,
+    result: PluginRunPage<PluginRunTaskProjection>,
   ];
   "run.context.resolve": [
     params: { runContextHandle: PluginRunContextHandle },
     result: import("./types.js").PluginResolvedRunContext,
   ];
-  "run.context.issueReach": [
-    params: { runContextHandle: PluginRunContextHandle; issueId: string },
-    result: import("./types.js").PluginRunIssueReach,
+  "run.context.taskReach": [
+    params: { runContextHandle: PluginRunContextHandle; taskId: string },
+    result: import("./types.js").PluginRunTaskReach,
   ];
-  "run.issues.listSubIssues": [
+  "run.tasks.listSubTasks": [
     params: {
       runContextHandle: PluginRunContextHandle;
-      issueId?: string;
+      taskId?: string;
       cursor?: string;
       limit?: number;
     },
-    result: PluginRunPage<PluginRunIssueProjection>,
+    result: PluginRunPage<PluginRunTaskProjection>,
   ];
-  "run.issues.readIssueComments": [
+  "run.tasks.readTaskComments": [
     params: {
       runContextHandle: PluginRunContextHandle;
-      issueId?: string;
+      taskId?: string;
       cursor?: string;
       limit?: number;
     },
-    result: PluginRunPage<PluginRunIssueCommentProjection>,
+    result: PluginRunPage<PluginRunTaskCommentProjection>,
   ];
-  "run.issues.readIssueAgentRun": [
+  "run.tasks.readTaskAgentRun": [
     params: {
       runContextHandle: PluginRunContextHandle;
       runId: string;
@@ -952,7 +952,7 @@ export interface WorkerToHostMethods {
     },
     result: ProviderSafeRunTrace,
   ];
-  "issues.create": [
+  "tasks.create": [
     params: {
       companyId: string;
       request: string;
@@ -965,23 +965,23 @@ export interface WorkerToHostMethods {
       parentId?: string;
       priority?: string;
     },
-    result: Issue,
+    result: Task,
   ];
-  "issues.update": [
+  "tasks.update": [
     params: {
-      issueId: string;
-      input: PluginIssueUpdateInput;
+      taskId: string;
+      input: PluginTaskUpdateInput;
       companyId: string;
     },
-    result: Issue,
+    result: Task,
   ];
-  "issues.withdraw": [
+  "tasks.withdraw": [
     params: {
-      issueId: string;
+      taskId: string;
       companyId: string;
       message: string;
     },
-    result: PluginIssueWithdrawalResult,
+    result: PluginTaskWithdrawalResult,
   ];
 
   // Agents (read)
@@ -1102,13 +1102,13 @@ export interface WorkerToHostMethods {
     result: PluginAuthorizationPolicySummary,
   ];
   "authorization.policies.get": [
-    params: { companyId: string; resourceType: "company" | "agent" | "issue"; resourceId: string },
+    params: { companyId: string; resourceType: "company" | "agent" | "task"; resourceId: string },
     result: PluginAuthorizationPolicyRecord | null,
   ];
   "authorization.policies.update": [
     params: {
       companyId: string;
-      resourceType: "issue";
+      resourceType: "task";
       resourceId: string;
       policy: Record<string, unknown> | null;
     },

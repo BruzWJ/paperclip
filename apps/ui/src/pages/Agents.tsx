@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
 import {
-  ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+  ACTIVE_TASK_EXECUTION_RUN_STATUSES,
   runsApi,
 } from "../api/runs";
 import { useCompany } from "../context/CompanyContext";
@@ -150,7 +150,7 @@ export function Agents() {
     enabled: !!selectedCompanyId && effectiveView === "org",
   });
 
-  const activeRunStatuses = ACTIVE_ISSUE_EXECUTION_RUN_STATUSES;
+  const activeRunStatuses = ACTIVE_TASK_EXECUTION_RUN_STATUSES;
   const runsQueryKey = [
     ...queryKeys.runs(selectedCompanyId!, { status: activeRunStatuses }),
     "agents-page",

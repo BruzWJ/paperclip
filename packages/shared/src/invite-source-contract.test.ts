@@ -7,7 +7,7 @@ import {
 } from "./index.js";
 
 describe("invite source contract", () => {
-  it("owns the exact canonical issuance-source tuple", () => {
+  it("owns the exact canonical creation-source tuple", () => {
     expect(INVITE_SOURCES).toEqual([
       "board_api",
       "plugin_host",

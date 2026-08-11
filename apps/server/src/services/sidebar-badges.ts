@@ -3,10 +3,10 @@ import type { Db } from "@paperclipai/db";
 import { agents, approvals } from "@paperclipai/db";
 import type { SidebarBadges } from "@paperclipai/shared";
 import {
-  listIssueExecutionRunsForActivity,
-  type IssueExecutionRunEnvelope,
-  type IssueExecutionRunListCursor,
-} from "./issue-execution-run-service.js";
+  listTaskExecutionRunsForActivity,
+  type TaskExecutionRunEnvelope,
+  type TaskExecutionRunListCursor,
+} from "./task-execution-run-service.js";
 
 const ACTIONABLE_APPROVAL_STATUSES = ["pending", "revision_requested"];
 const FAILED_RUN_STATUSES = ["failed", "timed_out"];
@@ -34,7 +34,7 @@ export function sidebarBadgeService(db: Db) {
       extra?: {
         dismissals?: ReadonlyMap<string, number>;
         joinRequests?: Array<{ id: string; updatedAt: Date | string | null; createdAt: Date | string }>;
-        unreadTouchedIssues?: number;
+        unreadTouchedTasks?: number;
       },
     ): Promise<SidebarBadges> => {
       const actionableApprovals = await db
@@ -60,10 +60,10 @@ export function sidebarBadgeService(db: Db) {
           ))
           .then((rows) => rows.map((row) => row.id)),
       );
-      const latestRunByAgent = new Map<string, IssueExecutionRunEnvelope>();
-      let cursor: IssueExecutionRunListCursor | null = null;
+      const latestRunByAgent = new Map<string, TaskExecutionRunEnvelope>();
+      let cursor: TaskExecutionRunListCursor | null = null;
       do {
-        const page = await listIssueExecutionRunsForActivity(db, {
+        const page = await listTaskExecutionRunsForActivity(db, {
           companyId,
           cursor,
           limit: 200,
@@ -91,9 +91,9 @@ export function sidebarBadgeService(db: Db) {
           row.updatedAt ?? row.createdAt,
         )
       ).length;
-      const unreadTouchedIssues = extra?.unreadTouchedIssues ?? 0;
+      const unreadTouchedTasks = extra?.unreadTouchedTasks ?? 0;
       return {
-        inbox: actionableApprovals + failedRuns + joinRequests + unreadTouchedIssues,
+        inbox: actionableApprovals + failedRuns + joinRequests + unreadTouchedTasks,
         approvals: actionableApprovals,
         failedRuns,
         joinRequests,

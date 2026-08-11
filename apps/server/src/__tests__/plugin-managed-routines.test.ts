@@ -51,7 +51,7 @@ function manifest(): PaperclipPluginManifestV1 {
         cronExpression: "0 3 * * *",
         timezone: "UTC",
       }],
-      issueTemplate: {
+      taskTemplate: {
         surfaceVisibility: "plugin_operation",
         originId: "operation:nightly-lint",
         billingCode: "plugin-test:nightly-lint",
@@ -100,7 +100,7 @@ function service(db: ReturnType<typeof createMockDb>["db"]) {
   return pluginManagedRoutineService(db, {
     pluginId,
     manifest: manifest(),
-    ordinaryIssues: {} as never,
+    ordinaryTasks: {} as never,
   });
 }
 
@@ -111,8 +111,8 @@ beforeEach(() => {
   routineMocks.update.mockResolvedValue(routine());
   routineMocks.runRoutine.mockResolvedValue({
     id: "run-1",
-    status: "issue_created",
-    linkedIssueId: "77777777-7777-4777-8777-777777777777",
+    status: "task_created",
+    linkedTaskId: "77777777-7777-4777-8777-777777777777",
   });
 });
 
@@ -225,7 +225,7 @@ describe("plugin-managed routines", () => {
 
     await expect(
       service(harness.db).run("nightly-lint", companyId),
-    ).resolves.toMatchObject({ id: "run-1", status: "issue_created" });
+    ).resolves.toMatchObject({ id: "run-1", status: "task_created" });
 
     expect(routineMocks.runRoutine).toHaveBeenCalledWith(
       routineId,

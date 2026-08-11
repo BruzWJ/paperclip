@@ -89,8 +89,8 @@ function createCompany(id: string) {
     name: id === companyAId ? "Company A" : "Company B",
     description: null,
     status: "active",
-    issuePrefix: id === companyAId ? "CPA" : "CPB",
-    issueCounter: 1,
+    taskPrefix: id === companyAId ? "CPA" : "CPB",
+    taskCounter: 1,
     budgetCurrency: "USD",
     budgetMonthlyAmount: "0",
     knownSpendAmount: "0",
@@ -115,9 +115,9 @@ function exportResult() {
       agents: [],
       skills: [],
       projects: [],
-      issues: [],
+      tasks: [],
       envInputs: [],
-      includes: { company: true, agents: true, projects: true, issues: false, skills: false },
+      includes: { company: true, agents: true, projects: true, tasks: false, skills: false },
       company: null,
       schemaVersion: 1,
       generatedAt: "2026-06-18T00:00:00.000Z",
@@ -132,7 +132,7 @@ function exportPreviewResult() {
   return {
     ...exportResult(),
     fileInventory: [],
-    counts: { files: 0, agents: 0, skills: 0, projects: 0, issues: 0 },
+    counts: { files: 0, agents: 0, skills: 0, projects: 0, tasks: 0 },
     paperclipExtensionPath: ".paperclip.yaml",
   };
 }
@@ -140,7 +140,7 @@ function exportPreviewResult() {
 function importRequest(targetCompanyId = companyBId) {
   return {
     source: { type: "inline", files: { "COMPANY.md": "---\nname: Imported\n---\n" } },
-    include: { company: true, agents: true, projects: false, issues: false },
+    include: { company: true, agents: true, projects: false, tasks: false },
     target: { mode: "existing_company", companyId: targetCompanyId },
     collisionStrategy: "rename",
   };

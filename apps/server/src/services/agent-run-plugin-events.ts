@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { IssueExecutionTerminal } from "./issue-execution-dispatcher.js";
+import type { TaskExecutionTerminal } from "./task-execution-dispatcher.js";
 import type { PluginDomainEventPublisher } from "./plugin-domain-event-publisher.js";
 
 export interface AgentRunTerminalPluginEventInput {
   companyId: string;
-  issueId: string;
+  taskId: string;
   runId: string;
   agentId: string;
-  outcome: IssueExecutionTerminal["outcome"];
+  outcome: TaskExecutionTerminal["outcome"];
   reason: string | null;
   occurredAt: Date;
 }
@@ -37,7 +37,7 @@ export async function publishAgentRunTerminalEvent(
     companyId: input.companyId,
     payload: {
       companyId: input.companyId,
-      issueId: input.issueId,
+      taskId: input.taskId,
       runId: input.runId,
       agentId: input.agentId,
       outcome: input.outcome,

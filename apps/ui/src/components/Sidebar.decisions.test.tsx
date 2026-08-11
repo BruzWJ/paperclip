@@ -33,13 +33,13 @@ vi.mock("@/lib/router", () => ({
 }));
 
 vi.mock("../context/DialogContext", () => ({
-  useDialogActions: () => ({ openNewIssue: vi.fn() }),
+  useDialogActions: () => ({ openNewTask: vi.fn() }),
 }));
 
 vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({
     selectedCompanyId: "company-1",
-    selectedCompany: { id: "company-1", issuePrefix: "PAP", name: "Paperclip" },
+    selectedCompany: { id: "company-1", taskPrefix: "PAP", name: "Paperclip" },
   }),
 }));
 

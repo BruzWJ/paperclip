@@ -7,17 +7,17 @@ import { approvalsApi } from "../api/approvals";
 import { authApi } from "../api/auth";
 import { dashboardApi } from "../api/dashboard";
 import { runsApi } from "../api/runs";
-import { issuesApi } from "../api/issues";
+import { tasksApi } from "../api/tasks";
 import { queryKeys } from "../lib/queryKeys";
 import {
-  filterLocalInboxArchivedIssues,
-  useLocalInboxArchiveIssueIds,
+  filterLocalInboxArchivedTasks,
+  useLocalInboxArchiveTaskIds,
 } from "../lib/inboxArchiveCache";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "./useSharedPolling";
 import {
   buildInboxDismissedAtByKey,
   computeInboxBadgeData,
-  getRecentTouchedIssues,
+  getRecentTouchedTasks,
   loadDismissedInboxAlerts,
   saveDismissedInboxAlerts,
   loadReadInboxItems,
@@ -25,8 +25,8 @@ import {
   READ_ITEMS_KEY,
 } from "../lib/inbox";
 
-const INBOX_ISSUE_STATUSES = "backlog,todo,in_progress,in_review,blocked,done";
-const INBOX_BADGE_ISSUE_LIMIT = 500;
+const INBOX_TASK_STATUSES = "backlog,todo,in_progress,in_review,blocked,done";
+const INBOX_BADGE_TASK_LIMIT = 500;
 const INBOX_BADGE_RUN_LIMIT = 200;
 const INBOX_BADGE_HOT_PATH_STALE_MS = 30_000;
 
@@ -172,7 +172,7 @@ export function useReadInboxItems() {
 }
 
 export function useInboxBadge(companyId: string | null | undefined) {
-  const locallyArchivedIssueIds = useLocalInboxArchiveIssueIds(companyId);
+  const locallyArchivedTaskIds = useLocalInboxArchiveTaskIds(companyId);
   const { dismissed: dismissedAlerts } = useDismissedInboxAlerts();
   const { dismissedAtByKey } = useInboxDismissals(companyId);
   const { data: session } = useQuery({
@@ -216,31 +216,31 @@ export function useInboxBadge(companyId: string | null | undefined) {
   });
   usePublishSharedQueryData(sharedDashboard, dashboard, dashboardUpdatedAt);
 
-  const mineIssuesQueryKey = queryKeys.issues.listMineByMe(companyId!);
-  const sharedMineIssues = useSharedPollingQuery({
+  const mineTasksQueryKey = queryKeys.tasks.listMineByMe(companyId!);
+  const sharedMineTasks = useSharedPollingQuery({
     companyId,
-    resourceKey: "inbox-badge:mine-issues",
-    queryKey: mineIssuesQueryKey,
+    resourceKey: "inbox-badge:mine-tasks",
+    queryKey: mineTasksQueryKey,
     enabled: !!companyId,
   });
-  const { data: mineIssuesRaw = [], dataUpdatedAt: mineIssuesUpdatedAt } = useQuery({
-    queryKey: mineIssuesQueryKey,
+  const { data: mineTasksRaw = [], dataUpdatedAt: mineTasksUpdatedAt } = useQuery({
+    queryKey: mineTasksQueryKey,
     queryFn: () =>
-      issuesApi.list(companyId!, {
+      tasksApi.list(companyId!, {
         touchedByUserId: "me",
         inboxArchivedByUserId: "me",
-        status: INBOX_ISSUE_STATUSES,
-        limit: INBOX_BADGE_ISSUE_LIMIT,
+        status: INBOX_TASK_STATUSES,
+        limit: INBOX_BADGE_TASK_LIMIT,
       }),
     enabled: !!companyId,
     refetchOnWindowFocus: false,
     staleTime: INBOX_BADGE_HOT_PATH_STALE_MS,
   });
-  usePublishSharedQueryData(sharedMineIssues, mineIssuesRaw, mineIssuesUpdatedAt);
+  usePublishSharedQueryData(sharedMineTasks, mineTasksRaw, mineTasksUpdatedAt);
 
-  const mineIssues = useMemo(
-    () => getRecentTouchedIssues(filterLocalInboxArchivedIssues(companyId, mineIssuesRaw)),
-    [companyId, locallyArchivedIssueIds, mineIssuesRaw],
+  const mineTasks = useMemo(
+    () => getRecentTouchedTasks(filterLocalInboxArchivedTasks(companyId, mineTasksRaw)),
+    [companyId, locallyArchivedTaskIds, mineTasksRaw],
   );
   const currentUserId = session?.user.id ?? session?.session.userId ?? null;
 
@@ -259,11 +259,11 @@ export function useInboxBadge(companyId: string | null | undefined) {
         joinRequests,
         dashboard,
         runs: runPage?.items ?? [],
-        mineIssues,
+        mineTasks,
         dismissedAlerts,
         dismissedAtByKey,
         currentUserId,
       }),
-    [approvals, joinRequests, dashboard, runPage?.items, mineIssues, dismissedAlerts, dismissedAtByKey, currentUserId],
+    [approvals, joinRequests, dashboard, runPage?.items, mineTasks, dismissedAlerts, dismissedAtByKey, currentUserId],
   );
 }

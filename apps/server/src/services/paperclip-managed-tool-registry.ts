@@ -1,11 +1,13 @@
 import {
+  addValidationDetail,
+  validationDetails,
   PAPERCLIP_RUNTIME_ACTION_KEYS,
-  createIssueSchema,
+  createTaskSchema,
   runtimeAgentConfigureActionSchemaForTargets,
   runtimeAgentCreateConfigurationSchema,
   runtimeAgentHireConfigurationSchema,
   runtimeAgentUpdateConfigurationSchema,
-  type IssueExecutionRefMode,
+  type TaskExecutionRefMode,
   type JsonSchema,
   type PaperclipActionKey,
 } from "@paperclipai/shared";
@@ -19,10 +21,10 @@ import {
 import { RuntimeToolArgumentsInvalid } from "./runtime-tool-errors.js";
 
 export const PAPERCLIP_CONTEXT_TOOL_NAMES = [
-  "list_company_issues",
-  "list_sub_issues",
-  "read_issue_comments",
-  "read_issue_agent_run",
+  "list_company_tasks",
+  "list_sub_tasks",
+  "read_task_comments",
+  "read_task_agent_run",
 ] as const;
 
 type PaperclipContextToolName =
@@ -53,49 +55,49 @@ export function isPaperclipManagedToolName(
 }
 
 export const PAPERCLIP_MANAGED_TOOL_METADATA = {
-  list_company_issues: {
-    title: "List company issues",
-    description: "List a bounded page of top-level issues in one company.",
+  list_company_tasks: {
+    title: "List company tasks",
+    description: "List a bounded page of top-level tasks in one company.",
     readOnly: true,
   },
-  list_sub_issues: {
-    title: "List direct sub-issues",
-    description: "List a bounded page of direct child issues.",
+  list_sub_tasks: {
+    title: "List direct sub-tasks",
+    description: "List a bounded page of direct child tasks.",
     readOnly: true,
   },
-  read_issue_comments: {
-    title: "Read issue comments",
-    description: "Read a chronological bounded page of issue comments.",
+  read_task_comments: {
+    title: "Read task comments",
+    description: "Read a chronological bounded page of task comments.",
     readOnly: true,
   },
-  read_issue_agent_run: {
-    title: "Read issue agent run",
+  read_task_agent_run: {
+    title: "Read task agent run",
     description: "Read the provider-safe trace for one agent run.",
     readOnly: true,
   },
-  issue_create: {
-    title: "Create issue",
-    description: "Create an issue and dispatch it to an explicit agent owner.",
+  task_create: {
+    title: "Create task",
+    description: "Create a task and dispatch it to an explicit agent owner.",
     readOnly: false,
   },
-  issue_assign: {
-    title: "Assign issue",
-    description: "Assign an issue to an agent owner.",
+  task_assign: {
+    title: "Assign task",
+    description: "Assign a task to an agent owner.",
     readOnly: false,
   },
-  issue_update: {
-    title: "Update issue",
-    description: "Update an issue or add a canonical issue comment.",
+  task_update: {
+    title: "Update task",
+    description: "Update a task or add a canonical task comment.",
     readOnly: false,
   },
   mention_agent: {
     title: "Mention agent",
-    description: "Send a canonical issue message to an explicit agent.",
+    description: "Send a canonical task message to an explicit agent.",
     readOnly: false,
   },
   mention_board: {
     title: "Mention Board",
-    description: "Send a canonical issue message to the collective Board.",
+    description: "Send a canonical task message to the collective Board.",
     readOnly: false,
   },
   agent_hire: {
@@ -124,7 +126,7 @@ export const PAPERCLIP_MANAGED_TOOL_METADATA = {
 >;
 
 const companyId = z.string().uuid();
-const issueId = z.string().uuid();
+const taskId = z.string().uuid();
 const agentId = z.string().uuid();
 const runId = z.string().uuid();
 const commentId = z.string().uuid();
@@ -132,7 +134,7 @@ const nonBlankMessage = z
   .string()
   .max(200_000)
   .refine((value) => value.trim().length > 0, "Message must not be blank");
-const issueFiltersSchema = z.object({
+const taskFiltersSchema = z.object({
   status: z.enum(["open", "blocked", "done", "cancelled"]).optional(),
   priority: z.enum(["critical", "high", "medium", "low"]).optional(),
 }).strict();
@@ -141,9 +143,9 @@ const page = {
   limit: z.number().int().min(1).max(100).optional(),
 };
 
-const boardIssueUpdateSchema = z.object({
+const boardTaskUpdateSchema = z.object({
   companyId,
-  issueId,
+  taskId,
   title: z.string().trim().min(1).max(240).nullable().optional(),
   message: nonBlankMessage.optional(),
   replyToCommentId: commentId.optional(),
@@ -156,57 +158,49 @@ const boardIssueUpdateSchema = z.object({
     value.message === undefined &&
     value.status === undefined
   ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "Provide title, message, or status",
     });
   }
   if (value.reopen && value.message === undefined) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "Reopening requires a message that explains why",
       path: ["message"],
     });
   }
   if (value.reopen && value.replyToCommentId !== undefined) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "A reopen cannot be a reply to a run comment",
       path: ["replyToCommentId"],
     });
   }
   if (value.reopen && value.status !== undefined) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "A reopen cannot include status",
       path: ["status"],
     });
   }
   if (value.reopen && Object.hasOwn(value, "structuredResult")) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "A reopen cannot include structuredResult",
       path: ["structuredResult"],
     });
   }
   if (value.status !== undefined && value.message === undefined) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "A lifecycle status update requires a message",
       path: ["message"],
     });
   }
   if (value.status !== undefined && value.replyToCommentId !== undefined) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "A lifecycle status update cannot reply to a run comment",
       path: ["replyToCommentId"],
     });
   }
   const terminal = value.status === "done" || value.status === "cancelled";
   if (Object.hasOwn(value, "structuredResult") && !terminal) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "structuredResult is accepted only for done or cancelled",
       path: ["structuredResult"],
     });
@@ -216,8 +210,7 @@ const boardIssueUpdateSchema = z.object({
     Object.hasOwn(value, "structuredResult") &&
     value.structuredResult === undefined
   ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+    addValidationDetail(ctx, {
       message: "structuredResult must be omitted rather than undefined",
       path: ["structuredResult"],
     });
@@ -226,27 +219,27 @@ const boardIssueUpdateSchema = z.object({
 
 /** The one public schema map used by Board MCP and its canonical router. */
 export const boardMcpInputSchemas = {
-  list_company_issues: z.object({
+  list_company_tasks: z.object({
     companyId,
-    filters: issueFiltersSchema.optional(),
+    filters: taskFiltersSchema.optional(),
     ...page,
   }).strict(),
-  list_sub_issues: z.object({ companyId, issueId, ...page }).strict(),
-  read_issue_comments: z.object({ companyId, issueId, ...page }).strict(),
-  read_issue_agent_run: z.object({
+  list_sub_tasks: z.object({ companyId, taskId, ...page }).strict(),
+  read_task_comments: z.object({ companyId, taskId, ...page }).strict(),
+  read_task_agent_run: z.object({
     companyId,
     runId,
     cursor: page.cursor,
   }).strict(),
-  issue_create: createIssueSchema
+  task_create: createTaskSchema
     .omit({ idempotencyKey: true })
     .extend({ companyId })
     .strict(),
-  issue_assign: z.object({ companyId, issueId, ownerAgentId: agentId }).strict(),
-  issue_update: boardIssueUpdateSchema,
+  task_assign: z.object({ companyId, taskId, ownerAgentId: agentId }).strict(),
+  task_update: boardTaskUpdateSchema,
   mention_agent: z.object({
     companyId,
-    issueId,
+    taskId,
     agentId,
     message: nonBlankMessage,
   }).strict(),
@@ -269,7 +262,7 @@ export const boardMcpInputSchemas = {
 
 type ManagedToolPayload<Name extends PaperclipManagedToolName> =
   Name extends "mention_board"
-    ? { companyId: string; issueId: string; message: string }
+    ? { companyId: string; taskId: string; message: string }
     : Name extends BoardManagedToolName
       ? z.infer<(typeof boardMcpInputSchemas)[Name]>
       : never;
@@ -278,8 +271,8 @@ export type PaperclipManagedToolCommandFor<
   Name extends PaperclipManagedToolName,
 > = Name extends PaperclipManagedToolName
   ? { name: Name } & ManagedToolPayload<Name> &
-    (Name extends "issue_update"
-      ? { issueTarget?: "active" | "explicit" }
+    (Name extends "task_update"
+      ? { taskTarget?: "active" | "explicit" }
       : object)
   : never;
 
@@ -324,28 +317,28 @@ export interface RuntimeAgentConfigureTarget {
   id: string;
 }
 
-export interface IssueCreateOwnerCatalogEntry extends AgentCatalogEntry {
+export interface TaskCreateOwnerCatalogEntry extends AgentCatalogEntry {
   kind: "agent";
 }
 
-export interface IssueAssignOwnerCatalog {
-  issueId: string;
+export interface TaskAssignOwnerCatalog {
+  taskId: string;
   identifier: string | null;
-  owners: readonly ({ kind: "self" } | IssueCreateOwnerCatalogEntry)[];
+  owners: readonly ({ kind: "self" } | TaskCreateOwnerCatalogEntry)[];
 }
 
 export interface CreatorUpdateTargetCatalogEntry {
-  issueId: string;
+  taskId: string;
 }
 
 /** Dynamic facts captured into one exact provider descriptor. */
 export interface PaperclipManagedToolRuntimeProjectionInput {
-  mode: IssueExecutionRefMode;
+  mode: TaskExecutionRefMode;
   contextDial: ContextDial;
   actionGrants: Readonly<Partial<Record<PaperclipActionKey, boolean>>>;
   isCurrentOwner: boolean;
-  issueCreateDirectChildren: readonly IssueCreateOwnerCatalogEntry[];
-  issueAssignTargets: readonly IssueAssignOwnerCatalog[];
+  taskCreateDirectChildren: readonly TaskCreateOwnerCatalogEntry[];
+  taskAssignTargets: readonly TaskAssignOwnerCatalog[];
   creatorUpdateTargets: readonly CreatorUpdateTargetCatalogEntry[];
   mentionTargets: readonly AgentCatalogEntry[];
   configureTargets: readonly RuntimeAgentConfigureTarget[];
@@ -353,7 +346,7 @@ export interface PaperclipManagedToolRuntimeProjectionInput {
 
 export interface PaperclipRuntimeCommandScope {
   readonly companyId: string;
-  readonly issueId: string;
+  readonly taskId: string;
   readonly targetAgentId: string;
 }
 
@@ -430,9 +423,9 @@ function runtimeArguments<T>(schema: z.ZodType<T>, payload: unknown): T {
   const parsed = schema.safeParse(payload);
   if (parsed.success) return parsed.data;
   throw new RuntimeToolArgumentsInvalid(
-    parsed.error.issues.map((issue) => {
-      const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";
-      return `${path}${issue.message}`;
+    validationDetails(parsed.error).map((detail) => {
+      const path = detail.path.length > 0 ? `${detail.path.join(".")}: ` : "";
+      return `${path}${detail.message}`;
     }).join("; "),
   );
 }
@@ -461,86 +454,86 @@ const runtimeCursor = z.string().min(1).optional().describe(
 function retrievalReachDescription(input: {
   prefix: string;
   reach: ContextRetrievalReachPolicy;
-  issueIdMode: "optional" | "required" | null;
+  taskIdMode: "optional" | "required" | null;
 }): string {
   const tiers: string[] = [];
   if (input.reach.active) {
     tiers.push(
-      input.issueIdMode === "optional"
-        ? "the active issue (omit issueId or pass it explicitly)"
-        : input.issueIdMode === "required"
-          ? "the active issue through an explicit issueId"
-          : "a run on the active issue",
+      input.taskIdMode === "optional"
+        ? "the active task (omit taskId or pass it explicitly)"
+        : input.taskIdMode === "required"
+          ? "the active task through an explicit taskId"
+          : "a run on the active task",
     );
   }
   if (input.reach.descendant) {
     tiers.push(
-      input.issueIdMode
-        ? "a proper descendant of the active issue through an explicit issueId"
-        : "a run on a proper descendant of the active issue",
+      input.taskIdMode
+        ? "a proper descendant of the active task through an explicit taskId"
+        : "a run on a proper descendant of the active task",
     );
   }
   if (input.reach.company) {
     tiers.push(
-      input.issueIdMode
-        ? "any issue in this run's company through an explicit issueId"
-        : "a run on any issue in this run's company",
+      input.taskIdMode
+        ? "any task in this run's company through an explicit taskId"
+        : "a run on any task in this run's company",
     );
   }
   return `${input.prefix} Authorized target tiers: ${tiers.join("; ")}.`;
 }
 
-function projectRuntimeListCompanyIssues(
+function projectRuntimeListCompanyTasks(
   input: PaperclipManagedToolRuntimeProjectionInput,
-): RuntimeProjection<"list_company_issues"> | null {
-  if (!resolveContextRetrievalPolicy(input.contextDial).listCompanyIssues) {
+): RuntimeProjection<"list_company_tasks"> | null {
+  if (!resolveContextRetrievalPolicy(input.contextDial).listCompanyTasks) {
     return null;
   }
   return projection({
     schema: z.object({
-      filters: issueFiltersSchema.optional(),
+      filters: taskFiltersSchema.optional(),
       cursor: runtimeCursor,
     }).strict(),
     details:
-      "Available only with the company-issue listing grant. Lists one bounded page of top-level issues in this run's company; it never returns descendants, another company's issues, or control-plane configuration.",
+      "Available only with the company-task listing grant. Lists one bounded page of top-level tasks in this run's company; it never returns descendants, another company's tasks, or control-plane configuration.",
     normalize: (payload, scope) => ({
-      name: "list_company_issues",
+      name: "list_company_tasks",
       companyId: scope.companyId,
       ...payload,
     }),
   });
 }
 
-function projectRuntimeListSubIssues(
+function projectRuntimeListSubTasks(
   input: PaperclipManagedToolRuntimeProjectionInput,
-): RuntimeProjection<"list_sub_issues"> | null {
+): RuntimeProjection<"list_sub_tasks"> | null {
   const policy = resolveContextRetrievalPolicy(input.contextDial);
-  if (!policy.listSubIssues.enabled) return null;
-  const explicitTarget = policy.listSubIssues.explicit.company
-    ? "With issueId, any issue in this run's company is accepted, including the active issue."
-    : "With issueId, only a proper descendant of the active issue is accepted; the active issue itself is rejected.";
+  if (!policy.listSubTasks.enabled) return null;
+  const explicitTarget = policy.listSubTasks.explicit.company
+    ? "With taskId, any task in this run's company is accepted, including the active task."
+    : "With taskId, only a proper descendant of the active task is accepted; the active task itself is rejected.";
   return projection({
     schema: z.object({
-      issueId: z.string().min(1).optional(),
+      taskId: z.string().min(1).optional(),
       cursor: runtimeCursor,
     }).strict(),
-    details: `Lists one bounded page of direct children. Omit issueId to list the active issue's direct children. ${explicitTarget}`,
+    details: `Lists one bounded page of direct children. Omit taskId to list the active task's direct children. ${explicitTarget}`,
     normalize: (payload, scope) => ({
-      name: "list_sub_issues",
+      name: "list_sub_tasks",
       companyId: scope.companyId,
-      issueId: payload.issueId ?? scope.issueId,
+      taskId: payload.taskId ?? scope.taskId,
       cursor: payload.cursor,
     }),
   });
 }
 
-function projectRuntimeReadIssueComments(
+function projectRuntimeReadTaskComments(
   input: PaperclipManagedToolRuntimeProjectionInput,
-): RuntimeProjection<"read_issue_comments"> | null {
+): RuntimeProjection<"read_task_comments"> | null {
   const policy = resolveContextRetrievalPolicy(input.contextDial);
   if (!policy.comments.enabled) return null;
   const schema = z.object({
-    issueId: policy.comments.issueIdRequired
+    taskId: policy.comments.taskIdRequired
       ? z.string().min(1)
       : z.string().min(1).optional(),
     cursor: runtimeCursor,
@@ -551,20 +544,20 @@ function projectRuntimeReadIssueComments(
       prefix:
         "Reads one chronological bounded page of first-class Session comments.",
       reach: policy.comments,
-      issueIdMode: policy.comments.active ? "optional" : "required",
+      taskIdMode: policy.comments.active ? "optional" : "required",
     }),
     normalize: (payload, scope) => ({
-      name: "read_issue_comments",
+      name: "read_task_comments",
       companyId: scope.companyId,
-      issueId: payload.issueId ?? scope.issueId,
+      taskId: payload.taskId ?? scope.taskId,
       cursor: payload.cursor,
     }),
   });
 }
 
-function projectRuntimeReadIssueAgentRun(
+function projectRuntimeReadTaskAgentRun(
   input: PaperclipManagedToolRuntimeProjectionInput,
-): RuntimeProjection<"read_issue_agent_run"> | null {
+): RuntimeProjection<"read_task_agent_run"> | null {
   const policy = resolveContextRetrievalPolicy(input.contextDial);
   if (!policy.runs.enabled) return null;
   return projection({
@@ -573,10 +566,10 @@ function projectRuntimeReadIssueAgentRun(
       prefix:
         "Reads the delivered source message(s) and bounded provider-safe detailed turns for exactly one run selected by required runId.",
       reach: policy.runs,
-      issueIdMode: null,
+      taskIdMode: null,
     }),
     normalize: (payload, scope) => ({
-      name: "read_issue_agent_run",
+      name: "read_task_agent_run",
       companyId: scope.companyId,
       ...payload,
     }),
@@ -593,7 +586,7 @@ function agentIdChoice(entries: readonly AgentCatalogEntry[]) {
 
 const selfOwnerSchema = z.object({ kind: z.literal("self") }).strict();
 
-function ownerSchema(entries: readonly IssueCreateOwnerCatalogEntry[]) {
+function ownerSchema(entries: readonly TaskCreateOwnerCatalogEntry[]) {
   if (entries.length === 0) return selfOwnerSchema;
   return z.union([
     selfOwnerSchema,
@@ -604,10 +597,10 @@ function ownerSchema(entries: readonly IssueCreateOwnerCatalogEntry[]) {
   ]);
 }
 
-function projectRuntimeIssueCreate(
+function projectRuntimeTaskCreate(
   input: PaperclipManagedToolRuntimeProjectionInput,
-): RuntimeProjection<"issue_create"> | null {
-  if (input.mode !== "owner" || input.actionGrants.issue_create !== true) {
+): RuntimeProjection<"task_create"> | null {
+  if (input.mode !== "owner" || input.actionGrants.task_create !== true) {
     return null;
   }
   return projection({
@@ -615,15 +608,15 @@ function projectRuntimeIssueCreate(
       request: z.string().min(1),
       title: z.string().min(1).optional(),
       priority: z.enum(["critical", "high", "medium", "low"]).optional(),
-      owner: ownerSchema(input.issueCreateDirectChildren),
+      owner: ownerSchema(input.taskCreateDirectChildren),
     }).strict(),
     details:
-      "Create one direct child of the active issue and canonically mention its explicit invokable owner with the immutable request.",
+      "Create one direct child of the active task and canonically mention its explicit invokable owner with the immutable request.",
     normalize(payload, scope) {
       return {
-        name: "issue_create",
+        name: "task_create",
         companyId: scope.companyId,
-        parentId: scope.issueId,
+        parentId: scope.taskId,
         request: payload.request,
         ownerAgentId: payload.owner.kind === "self"
           ? scope.targetAgentId
@@ -640,21 +633,21 @@ function unionSchema(schemas: readonly z.ZodTypeAny[]): z.ZodTypeAny {
   return z.union(schemas as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]);
 }
 
-function projectRuntimeIssueAssign(
+function projectRuntimeTaskAssign(
   input: PaperclipManagedToolRuntimeProjectionInput,
-): RuntimeProjection<"issue_assign"> | null {
+): RuntimeProjection<"task_assign"> | null {
   if (
     input.mode !== "owner" ||
-    input.actionGrants.issue_create !== true ||
-    input.issueAssignTargets.length === 0
+    input.actionGrants.task_create !== true ||
+    input.taskAssignTargets.length === 0
   ) {
     return null;
   }
-  const targets = new Map(input.issueAssignTargets.map((target) => [
-    target.issueId,
+  const targets = new Map(input.taskAssignTargets.map((target) => [
+    target.taskId,
     target,
   ]));
-  const schema = unionSchema(input.issueAssignTargets.map((target) => {
+  const schema = unionSchema(input.taskAssignTargets.map((target) => {
     const owners = target.owners.map((owner) =>
       owner.kind === "self"
         ? selfOwnerSchema
@@ -663,24 +656,24 @@ function projectRuntimeIssueAssign(
             agentId: z.literal(owner.id),
           }).strict());
     return z.object({
-      issueId: z.literal(target.issueId).describe(target.identifier ?? target.issueId),
+      taskId: z.literal(target.taskId).describe(target.identifier ?? target.taskId),
       owner: unionSchema(owners),
     }).strict();
   }));
   return projection({
     schema,
     details:
-      "Reassign one nonterminal direct child created by this exact issue execution and canonically mention its new owner with the issue request.",
-    normalize(payload: { issueId: string; owner: { kind: "self" } | { kind: "agent"; agentId: string } }, scope) {
-      if (!targets.has(payload.issueId)) {
+      "Reassign one nonterminal direct child created by this exact task execution and canonically mention its new owner with the task request.",
+    normalize(payload: { taskId: string; owner: { kind: "self" } | { kind: "agent"; agentId: string } }, scope) {
+      if (!targets.has(payload.taskId)) {
         throw new RuntimeToolArgumentsInvalid(
-          "issueId is not in the current assignment catalog",
+          "taskId is not in the current assignment catalog",
         );
       }
       return {
-        name: "issue_assign",
+        name: "task_assign",
         companyId: scope.companyId,
-        issueId: payload.issueId,
+        taskId: payload.taskId,
         ownerAgentId: payload.owner.kind === "self"
           ? scope.targetAgentId
           : payload.owner.agentId,
@@ -689,11 +682,11 @@ function projectRuntimeIssueAssign(
   });
 }
 
-function projectRuntimeIssueUpdate(
+function projectRuntimeTaskUpdate(
   input: PaperclipManagedToolRuntimeProjectionInput,
-): RuntimeProjection<"issue_update"> | null {
+): RuntimeProjection<"task_update"> | null {
   if (input.mode !== "owner") return null;
-  const creatorIssueIds = input.creatorUpdateTargets.map((target) => target.issueId);
+  const creatorTaskIds = input.creatorUpdateTargets.map((target) => target.taskId);
   const forms: z.ZodTypeAny[] = [];
   const addNonterminalForms = (
     target: () => Record<string, z.ZodTypeAny>,
@@ -715,28 +708,28 @@ function projectRuntimeIssueUpdate(
       structuredResult: z.unknown().optional(),
     }).strict());
   }
-  if (creatorIssueIds.length > 0) {
+  if (creatorTaskIds.length > 0) {
     addNonterminalForms(() => ({
-      issueId: z.enum(creatorIssueIds as [string, ...string[]]),
+      taskId: z.enum(creatorTaskIds as [string, ...string[]]),
     }));
   }
   if (forms.length === 0) return null;
   return projection({
     schema: unionSchema(forms),
     details:
-      "Publish one canonical issue comment, optionally update lifecycle, and automatically mention the creator/owner counterpart in that counterpart's issue context. Omit issueId to update the active issue as its current owner, including terminal done or cancelled disposition; provide an eligible direct-child issueId to update it as its exact creator with a message, open, or blocked status.",
+      "Publish one canonical task comment, optionally update lifecycle, and automatically mention the creator/owner counterpart in that counterpart's task context. Omit taskId to update the active task as its current owner, including terminal done or cancelled disposition; provide an eligible direct-child taskId to update it as its exact creator with a message, open, or blocked status.",
     normalize(payload: {
-      issueId?: string;
+      taskId?: string;
       status?: "open" | "blocked" | "done" | "cancelled";
       message: string;
       structuredResult?: unknown;
     }, scope) {
-      const explicit = Object.hasOwn(payload, "issueId");
+      const explicit = Object.hasOwn(payload, "taskId");
       return {
-        name: "issue_update",
+        name: "task_update",
         companyId: scope.companyId,
-        issueId: payload.issueId ?? scope.issueId,
-        issueTarget: explicit ? "explicit" : "active",
+        taskId: payload.taskId ?? scope.taskId,
+        taskTarget: explicit ? "explicit" : "active",
         message: payload.message,
         ...(payload.status === undefined ? {} : { status: payload.status }),
         ...(Object.hasOwn(payload, "structuredResult")
@@ -757,11 +750,11 @@ function projectRuntimeMentionAgent(
       message: z.string().min(1),
     }).strict(),
     details:
-      "Post one canonical issue comment mentioning an authorized agent on this same issue. The asynchronous call is non-terminal and gives the recipient no owner or creator lifecycle authority.",
+      "Post one canonical task comment mentioning an authorized agent on this same task. The asynchronous call is non-terminal and gives the recipient no owner or creator lifecycle authority.",
     normalize: (payload, scope) => ({
       name: "mention_agent",
       companyId: scope.companyId,
-      issueId: scope.issueId,
+      taskId: scope.taskId,
       ...payload,
     }),
   });
@@ -774,11 +767,11 @@ function projectRuntimeMentionBoard(
   return projection({
     schema: z.object({ message: z.string().min(1) }).strict(),
     details:
-      "Post one canonical issue comment mentioning the collective Board for information or direction. The asynchronous call is non-terminal and does not change issue lifecycle, approvals, or review.",
+      "Post one canonical task comment mentioning the collective Board for information or direction. The asynchronous call is non-terminal and does not change task lifecycle, approvals, or review.",
     normalize: (payload, scope) => ({
       name: "mention_board",
       companyId: scope.companyId,
-      issueId: scope.issueId,
+      taskId: scope.taskId,
       ...payload,
     }),
   });
@@ -872,13 +865,13 @@ function projectRuntimeTool(
   input: PaperclipManagedToolRuntimeProjectionInput,
 ): RuntimeProjection<PaperclipManagedToolName> | null {
   switch (name) {
-    case "list_company_issues": return projectRuntimeListCompanyIssues(input);
-    case "list_sub_issues": return projectRuntimeListSubIssues(input);
-    case "read_issue_comments": return projectRuntimeReadIssueComments(input);
-    case "read_issue_agent_run": return projectRuntimeReadIssueAgentRun(input);
-    case "issue_create": return projectRuntimeIssueCreate(input);
-    case "issue_assign": return projectRuntimeIssueAssign(input);
-    case "issue_update": return projectRuntimeIssueUpdate(input);
+    case "list_company_tasks": return projectRuntimeListCompanyTasks(input);
+    case "list_sub_tasks": return projectRuntimeListSubTasks(input);
+    case "read_task_comments": return projectRuntimeReadTaskComments(input);
+    case "read_task_agent_run": return projectRuntimeReadTaskAgentRun(input);
+    case "task_create": return projectRuntimeTaskCreate(input);
+    case "task_assign": return projectRuntimeTaskAssign(input);
+    case "task_update": return projectRuntimeTaskUpdate(input);
     case "mention_agent": return projectRuntimeMentionAgent(input);
     case "mention_board": return projectRuntimeMentionBoard(input);
     case "agent_hire": return projectRuntimeAgentHire(input);

@@ -1,15 +1,15 @@
 import { useMemo, useState } from "react";
-import type { Agent, Issue } from "@paperclipai/shared";
+import type { Agent, Task } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
 import { accessApi } from "../api/access";
-import { formatUserLabel } from "../lib/issue-owners";
+import { formatUserLabel } from "../lib/task-owners";
 import { buildCompanyUserInlineOptions, buildCompanyUserLabelMap } from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
 import { sortAgentsByRecency, getRecentAssigneeIds } from "../lib/recent-assignees";
 import {
   buildExecutionPolicy,
   stageParticipantValues,
-} from "../lib/issue-execution-policy";
+} from "../lib/task-execution-policy";
 import { cn } from "../lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { User, Eye, ShieldCheck } from "lucide-react";
@@ -18,7 +18,7 @@ import { AgentIcon } from "./AgentIconPicker";
 type StageType = "review" | "approval";
 
 interface ExecutionParticipantPickerProps {
-  issue: Issue;
+  task: Task;
   stageType: StageType;
   agents: Agent[];
   currentUserId: string | null;
@@ -26,7 +26,7 @@ interface ExecutionParticipantPickerProps {
 }
 
 export function ExecutionParticipantPicker({
-  issue,
+  task,
   stageType,
   agents,
   currentUserId,
@@ -35,13 +35,13 @@ export function ExecutionParticipantPicker({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
-  const reviewerValues = stageParticipantValues(issue.executionPolicy, "review");
-  const approverValues = stageParticipantValues(issue.executionPolicy, "approval");
+  const reviewerValues = stageParticipantValues(task.executionPolicy, "review");
+  const approverValues = stageParticipantValues(task.executionPolicy, "approval");
   const values = stageType === "review" ? reviewerValues : approverValues;
   const { data: companyMembers } = useQuery({
-    queryKey: queryKeys.access.companyUserDirectory(issue.companyId),
-    queryFn: () => accessApi.listUserDirectory(issue.companyId),
-    enabled: !!issue.companyId,
+    queryKey: queryKeys.access.companyUserDirectory(task.companyId),
+    queryFn: () => accessApi.listUserDirectory(task.companyId),
+    enabled: !!task.companyId,
   });
 
   const sortedAgents = sortAgentsByRecency(
@@ -52,7 +52,7 @@ export function ExecutionParticipantPicker({
     () => buildCompanyUserLabelMap(companyMembers?.users),
     [companyMembers?.users],
   );
-  const creatorUserId = issue.creatorKind === "user/board" ? issue.creatorUserId : null;
+  const creatorUserId = task.creatorKind === "user/board" ? task.creatorUserId : null;
   const otherUserOptions = useMemo(
     () => buildCompanyUserInlineOptions(companyMembers?.users, { excludeUserIds: [currentUserId, creatorUserId] }),
     [companyMembers?.users, creatorUserId, currentUserId],
@@ -76,7 +76,7 @@ export function ExecutionParticipantPicker({
   const updatePolicy = (nextValues: string[]) => {
     onUpdate({
       executionPolicy: buildExecutionPolicy({
-        existingPolicy: issue.executionPolicy ?? null,
+        existingPolicy: task.executionPolicy ?? null,
         reviewerValues: stageType === "review" ? nextValues : reviewerValues,
         approverValues: stageType === "approval" ? nextValues : approverValues,
       }),

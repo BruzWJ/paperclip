@@ -2,7 +2,7 @@ import type { Agent } from "@paperclipai/shared";
 import { describe, expect, it } from "vitest";
 import {
   formatActivityVerb,
-  formatIssueActivityAction,
+  formatTaskActivityAction,
 } from "./activity-format";
 
 describe("activity formatting", () => {
@@ -11,18 +11,18 @@ describe("activity formatting", () => {
     ["agent-approver", { id: "agent-approver", name: "Approver Bot" } as Agent],
   ]);
 
-  it("formats blocker activity using linked issue identifiers", () => {
+  it("formats blocker activity using linked task identifiers", () => {
     const details = {
-      addedBlockedByIssues: [
-        { id: "issue-2", identifier: "PAP-22", title: "Blocked task" },
+      addedBlockedByTasks: [
+        { id: "task-2", identifier: "PAP-22", title: "Blocked task" },
       ],
-      removedBlockedByIssues: [],
+      removedBlockedByTasks: [],
     };
 
-    expect(formatActivityVerb("issue.blockers_updated", details)).toBe(
+    expect(formatActivityVerb("task.blockers_updated", details)).toBe(
       "added blocker PAP-22 to",
     );
-    expect(formatIssueActivityAction("issue.blockers_updated", details)).toBe(
+    expect(formatTaskActivityAction("task.blockers_updated", details)).toBe(
       "added blocker PAP-22",
     );
   });
@@ -36,10 +36,10 @@ describe("activity formatting", () => {
     };
 
     expect(
-      formatActivityVerb("issue.reviewers_updated", details, { agentMap }),
+      formatActivityVerb("task.reviewers_updated", details, { agentMap }),
     ).toBe("added reviewer Reviewer Bot to");
     expect(
-      formatIssueActivityAction("issue.reviewers_updated", details, {
+      formatTaskActivityAction("task.reviewers_updated", details, {
         agentMap,
       }),
     ).toBe("added reviewer Reviewer Bot");
@@ -53,10 +53,10 @@ describe("activity formatting", () => {
       ],
     };
 
-    expect(formatActivityVerb("issue.approvers_updated", details)).toBe(
+    expect(formatActivityVerb("task.approvers_updated", details)).toBe(
       "removed approver user user- from",
     );
-    expect(formatIssueActivityAction("issue.approvers_updated", details)).toBe(
+    expect(formatTaskActivityAction("task.approvers_updated", details)).toBe(
       "removed approver user user-",
     );
   });
@@ -72,10 +72,10 @@ describe("activity formatting", () => {
     };
 
     expect(
-      formatActivityVerb("issue.reviewers_updated", details, { agentMap }),
+      formatActivityVerb("task.reviewers_updated", details, { agentMap }),
     ).toBe("updated reviewers on");
     expect(
-      formatIssueActivityAction("issue.reviewers_updated", details, {
+      formatTaskActivityAction("task.reviewers_updated", details, {
         agentMap,
       }),
     ).toBe("updated reviewers");

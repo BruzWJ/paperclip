@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "@paperclipai/db";
 import { errorHandler } from "../middleware/index.js";
 import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
-import { issueRoutes } from "../routes/issues.js";
-import { issueService as createIssueService } from "../services/issues.js";
+import { taskRoutes } from "../routes/tasks.js";
+import { taskService as createTaskService } from "../services/tasks.js";
 import { createMockDb } from "./helpers/mock-db.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
@@ -18,19 +18,19 @@ const routeMocks = vi.hoisted(() => ({
 
 vi.mock("../services/index.js", async () => ({
   ...await vi.importActual<typeof import("../services/index.js")>("../services/index.js"),
-  issueService: () => routeMocks,
+  taskService: () => routeMocks,
   logActivity: routeMocks.logActivity,
 }));
 
 const companyId = "00000000-0000-4000-8000-000000000001";
-const issueId = "00000000-0000-4000-8000-000000000010";
+const taskId = "00000000-0000-4000-8000-000000000010";
 const agentId = "00000000-0000-4000-8000-000000000020";
 const userId = "responsible-user";
 const targetUserId = "target-user";
 const archivedAt = new Date("2026-01-02T03:04:05.000Z");
 
-const issue = {
-  id: issueId,
+const task = {
+  id: taskId,
   companyId,
   updatedAt: new Date("2026-01-01T00:00:00.000Z"),
 };
@@ -38,7 +38,7 @@ const issue = {
 const archiveRow = {
   id: "00000000-0000-4000-8000-000000000030",
   companyId,
-  issueId,
+  taskId,
   userId,
   archivedByActorType: "user",
   archivedByAgentId: null,
@@ -64,7 +64,7 @@ function createApp(db: Db, actor: Express.Request["actor"] = boardActor()) {
     next();
   });
   app.use("/api", denyGenericAgentRest("REST"));
-  app.use("/api", issueRoutes(db, {} as never, { ordinaryIssues: {} as never }));
+  app.use("/api", taskRoutes(db, {} as never, { ordinaryTasks: {} as never }));
   app.use(errorHandler);
   return app;
 }
@@ -78,7 +78,7 @@ describe("inbox archive routes", () => {
   });
 
   it("preserves board archive and unarchive idempotency for the authenticated user", async () => {
-    routeMocks.getById.mockResolvedValue(issue);
+    routeMocks.getById.mockResolvedValue(task);
     routeMocks.archiveInbox.mockResolvedValue(archiveRow);
     routeMocks.unarchiveInbox
       .mockResolvedValueOnce(archiveRow)
@@ -86,10 +86,10 @@ describe("inbox archive routes", () => {
     const harness = createMockDb();
     const app = createApp(harness.db);
 
-    const first = await request(app).post(`/api/issues/${issueId}/inbox-archive`).send({});
-    const second = await request(app).post(`/api/issues/${issueId}/inbox-archive`).send({});
-    const removed = await request(app).delete(`/api/issues/${issueId}/inbox-archive`).send({});
-    const repeated = await request(app).delete(`/api/issues/${issueId}/inbox-archive`).send({});
+    const first = await request(app).post(`/api/tasks/${taskId}/inbox-archive`).send({});
+    const second = await request(app).post(`/api/tasks/${taskId}/inbox-archive`).send({});
+    const removed = await request(app).delete(`/api/tasks/${taskId}/inbox-archive`).send({});
+    const repeated = await request(app).delete(`/api/tasks/${taskId}/inbox-archive`).send({});
 
     expect(first.status).toBe(200);
     expect(first.body).toMatchObject({ id: archiveRow.id, userId, archivedByActorType: "user" });
@@ -99,7 +99,7 @@ describe("inbox archive routes", () => {
     expect(routeMocks.archiveInbox).toHaveBeenCalledTimes(2);
     expect(routeMocks.archiveInbox).toHaveBeenCalledWith(
       companyId,
-      issueId,
+      taskId,
       userId,
       expect.any(Date),
       { archivedByActorType: "user" },
@@ -109,27 +109,27 @@ describe("inbox archive routes", () => {
     expect(harness.calls).toEqual([]);
   });
 
-  it("projects an active archive and drops it when newer issue activity resurfaces the issue", async () => {
+  it("projects an active archive and drops it when newer task activity resurfaces the task", async () => {
     const activeHarness = createMockDb({
       select: [[{
-        issueId,
+        taskId,
         latestCommentAt: new Date("2026-01-01T12:00:00.000Z"),
       }], [], [archiveRow]],
     });
     const resurfacedHarness = createMockDb({
       select: [[{
-        issueId,
+        taskId,
         latestCommentAt: new Date("2026-01-03T00:00:00.000Z"),
       }], [], [archiveRow]],
     });
 
-    await expect(createIssueService(activeHarness.db).getActiveInboxArchiveFields(issue, userId)).resolves.toEqual({
+    await expect(createTaskService(activeHarness.db).getActiveInboxArchiveFields(task, userId)).resolves.toEqual({
       archivedAt,
       archivedByActorType: "user",
       archivedByAgentId: null,
       archivedByRunId: null,
     });
-    await expect(createIssueService(resurfacedHarness.db).getActiveInboxArchiveFields(issue, userId)).resolves.toEqual({});
+    await expect(createTaskService(resurfacedHarness.db).getActiveInboxArchiveFields(task, userId)).resolves.toEqual({});
     expect(activeHarness.remaining("select")).toBe(0);
     expect(resurfacedHarness.remaining("select")).toBe(0);
   });
@@ -147,8 +147,8 @@ describe("inbox archive routes", () => {
     } as const;
     const app = createApp(harness.db, actor);
 
-    const archive = await request(app).post(`/api/issues/${issueId}/inbox-archive`).send({});
-    const unarchive = await request(app).delete(`/api/issues/${issueId}/inbox-archive`).send({});
+    const archive = await request(app).post(`/api/tasks/${taskId}/inbox-archive`).send({});
+    const unarchive = await request(app).delete(`/api/tasks/${taskId}/inbox-archive`).send({});
 
     expect(archive.status).toBe(403);
     expect(unarchive.status).toBe(403);
@@ -160,15 +160,15 @@ describe("inbox archive routes", () => {
     expect(harness.calls).toEqual([]);
   });
 
-  it("rejects the retired explicit target-user body before loading the issue", async () => {
+  it("rejects the retired explicit target-user body before loading the task", async () => {
     const harness = createMockDb();
     const app = createApp(harness.db);
 
     const archive = await request(app)
-      .post(`/api/issues/${issueId}/inbox-archive`)
+      .post(`/api/tasks/${taskId}/inbox-archive`)
       .send({ userId: targetUserId });
     const unarchive = await request(app)
-      .delete(`/api/issues/${issueId}/inbox-archive`)
+      .delete(`/api/tasks/${taskId}/inbox-archive`)
       .send({ userId: targetUserId });
 
     expect(archive.status).toBe(400);

@@ -6,7 +6,7 @@ import {
   agents,
   companies,
   companyMemberships,
-  issues,
+  tasks,
   approvals,
   plugins,
   principalPermissionGrants,
@@ -15,6 +15,7 @@ import {
   type RuntimeAgentConfigurationSnapshot,
 } from "@paperclipai/db";
 import {
+  validationDetails,
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
@@ -208,7 +209,7 @@ interface ActorAuditColumns {
   actorUserId: string | null;
   actorPluginInstallationId: string | null;
   runId: string | null;
-  issueExecutionRefId: string | null;
+  taskExecutionRefId: string | null;
 }
 
 export class RuntimeAgentConfigurationInvalid extends Error {
@@ -453,13 +454,11 @@ export function parseRuntimeAgentUpdateConfiguration(
   return parsed;
 }
 
-function canonicalValidationMessage(
-  error: { issues: Array<{ path: PropertyKey[]; message: string }> },
-): string {
-  return error.issues
-    .map((issue) => {
-      const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";
-      return `${path}${issue.message}`;
+function canonicalValidationMessage(error: unknown): string {
+  return validationDetails(error)
+    .map((detail) => {
+      const path = detail.path.length > 0 ? `${detail.path.join(".")}: ` : "";
+      return `${path}${detail.message}`;
     })
     .join("; ");
 }
@@ -575,7 +574,7 @@ function actorAuditColumns(actor: InternalActor): ActorAuditColumns {
       actorUserId: null,
       actorPluginInstallationId: null,
       runId: actor.capability.runId,
-      issueExecutionRefId: actor.capability.refId,
+      taskExecutionRefId: actor.capability.refId,
     };
   }
   if (actor.kind === "plugin") {
@@ -586,7 +585,7 @@ function actorAuditColumns(actor: InternalActor): ActorAuditColumns {
       actorUserId: null,
       actorPluginInstallationId: actor.pluginInstallationId,
       runId: null,
-      issueExecutionRefId: null,
+      taskExecutionRefId: null,
     };
   }
   return {
@@ -596,7 +595,7 @@ function actorAuditColumns(actor: InternalActor): ActorAuditColumns {
     actorUserId: actor.authorization.userId ?? actor.actorId,
     actorPluginInstallationId: null,
     runId: null,
-    issueExecutionRefId: null,
+    taskExecutionRefId: null,
   };
 }
 
@@ -917,36 +916,36 @@ async function assertRunActionAuthority(
     );
   }
 
-  const issue = await tx
+  const task = await tx
     .select({
-      companyId: issues.companyId,
-      ownerKind: issues.ownerKind,
-      ownerAgentId: issues.ownerAgentId,
-      ownershipEpoch: issues.ownershipEpoch,
-      responsibleUserId: issues.responsibleUserId,
+      companyId: tasks.companyId,
+      ownerKind: tasks.ownerKind,
+      ownerAgentId: tasks.ownerAgentId,
+      ownershipEpoch: tasks.ownershipEpoch,
+      responsibleUserId: tasks.responsibleUserId,
     })
-    .from(issues)
-    .where(eq(issues.id, capability.issueId))
+    .from(tasks)
+    .where(eq(tasks.id, capability.taskId))
     .limit(1)
     .for("update")
     .then((rows) => rows[0] ?? null);
   if (
-    !issue ||
-    issue.companyId !== capability.companyId ||
-    issue.ownershipEpoch !== capability.ownershipEpoch
+    !task ||
+    task.companyId !== capability.companyId ||
+    task.ownershipEpoch !== capability.ownershipEpoch
   ) {
     throw new RuntimeAgentConfigurationDenied(
-      "Issue ownership epoch has changed",
+      "Task ownership epoch has changed",
       "ownership_epoch_changed",
     );
   }
   if (
     capability.executionMode === "owner" &&
-    (issue.ownerKind !== "agent" ||
-      issue.ownerAgentId !== capability.targetAgentId)
+    (task.ownerKind !== "agent" ||
+      task.ownerAgentId !== capability.targetAgentId)
   ) {
     throw new RuntimeAgentConfigurationDenied(
-      "Run no longer owns the issue",
+      "Run no longer owns the task",
       "owner_changed",
     );
   }
@@ -985,7 +984,7 @@ async function assertRunActionAuthority(
       "action_grant_missing",
     );
   }
-  return { responsibleUserId: issue.responsibleUserId };
+  return { responsibleUserId: task.responsibleUserId };
 }
 async function lockAuthorizationRows(
   tx: RuntimeAgentConfigurationTransaction,
@@ -1401,9 +1400,9 @@ function hireApprovalPayload(
       actor.kind === "agent"
         ? {
             kind: "agent_run",
-            issueId: actor.capability.issueId,
+            taskId: actor.capability.taskId,
             runId: actor.capability.runId,
-            issueExecutionRefId: actor.capability.refId,
+            taskExecutionRefId: actor.capability.refId,
           }
         : {
             kind: "plugin_control",

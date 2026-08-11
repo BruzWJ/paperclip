@@ -3,8 +3,8 @@ import { companies } from "./companies.js";
 import { agents } from "./agents.js";
 import { authUsers } from "./auth.js";
 import { documents } from "./documents.js";
-import { issueExecutionRuns } from "./issue_execution_runs.js";
-import { issueComments } from "./issue_comments.js";
+import { taskExecutionRuns } from "./task_execution_runs.js";
+import { taskComments } from "./task_comments.js";
 
 export const documentRevisions = pgTable(
   "document_revisions",
@@ -21,8 +21,8 @@ export const documentRevisions = pgTable(
     createdByUserId: text("created_by_user_id").references(() => authUsers.id, {
       onDelete: "set null",
     }),
-    createdByRunId: uuid("created_by_run_id").references(() => issueExecutionRuns.id, { onDelete: "set null" }),
-    sourceIssueCommentId: uuid("source_issue_comment_id").references(() => issueComments.id, {
+    createdByRunId: uuid("created_by_run_id").references(() => taskExecutionRuns.id, { onDelete: "set null" }),
+    sourceTaskCommentId: uuid("source_task_comment_id").references(() => taskComments.id, {
       onDelete: "restrict",
     }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -37,8 +37,8 @@ export const documentRevisions = pgTable(
       table.documentId,
       table.createdAt,
     ),
-    sourceIssueCommentUq: uniqueIndex("document_revisions_source_issue_comment_uq").on(
-      table.sourceIssueCommentId,
+    sourceTaskCommentUq: uniqueIndex("document_revisions_source_task_comment_uq").on(
+      table.sourceTaskCommentId,
     ),
   }),
 );

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { AGENT_CONTEXT_GRANT_KEYS } from "@paperclipai/shared";
+import { AGENT_CONTEXT_GRANT_KEYS, validationDetails } from "@paperclipai/shared";
 import { z } from "zod";
 import type { BoardKeyActor } from "../http/request-actor.js";
 import { logActivity } from "./activity-log.js";
@@ -13,11 +13,11 @@ import {
   type ContextRetrievalScope,
   type ContextRetrievalService,
 } from "./context-retrieval.js";
-import { issueService } from "./issues.js";
+import { taskService } from "./tasks.js";
 import {
-  OrdinaryIssueRuntimeRejected,
-  type OrdinaryIssueRuntime,
-} from "./ordinary-issue-runtime.js";
+  OrdinaryTaskRuntimeRejected,
+  type OrdinaryTaskRuntime,
+} from "./ordinary-task-runtime.js";
 import {
   isPaperclipContextToolName,
   type PaperclipManagedToolCommand,
@@ -32,7 +32,7 @@ import {
   createRuntimeAgentConfigurationService,
 } from "./runtime-agent-configuration.js";
 import type { RuntimeToolCallTransaction } from "./runtime-tool-call-ledger.js";
-import { canonicalIssueSessionJson } from "./issue-session/store.js";
+import { canonicalTaskSessionJson } from "./task-session/store.js";
 
 export interface AgentRunToolAuthority {
   kind: "agent_run";
@@ -102,7 +102,7 @@ function toolInvocationKey(input: {
   suffix?: string;
 }): string {
   const digest = createHash("sha256")
-    .update(canonicalIssueSessionJson({
+    .update(canonicalTaskSessionJson({
       principal: {
         credentialId: input.authority.credentialId,
         userId: input.authority.userId,
@@ -125,10 +125,10 @@ class PaperclipManagedToolError extends Error {
 
 type AgentRunManagedActionName = Exclude<
   PaperclipManagedToolCommand["name"],
-  | "list_company_issues"
-  | "list_sub_issues"
-  | "read_issue_comments"
-  | "read_issue_agent_run"
+  | "list_company_tasks"
+  | "list_sub_tasks"
+  | "read_task_comments"
+  | "read_task_agent_run"
 >;
 
 export interface AgentRunManagedActionInvocation<
@@ -139,9 +139,9 @@ export interface AgentRunManagedActionInvocation<
 }
 
 export interface AgentRunManagedActionPort {
-  issueCreate(input: AgentRunManagedActionInvocation<"issue_create">): Promise<unknown>;
-  issueAssign(input: AgentRunManagedActionInvocation<"issue_assign">): Promise<unknown>;
-  issueUpdate(input: AgentRunManagedActionInvocation<"issue_update">): Promise<unknown>;
+  taskCreate(input: AgentRunManagedActionInvocation<"task_create">): Promise<unknown>;
+  taskAssign(input: AgentRunManagedActionInvocation<"task_assign">): Promise<unknown>;
+  taskUpdate(input: AgentRunManagedActionInvocation<"task_update">): Promise<unknown>;
   mentionAgent(input: AgentRunManagedActionInvocation<"mention_agent">): Promise<unknown>;
   mentionBoard(input: AgentRunManagedActionInvocation<"mention_board">): Promise<unknown>;
   agentHire(input: AgentRunManagedActionInvocation<"agent_hire">): Promise<unknown>;
@@ -175,7 +175,7 @@ export interface PaperclipManagedToolRouter {
 export interface PaperclipManagedToolRouterDependencies {
   db: Db;
   agentRunActions: AgentRunManagedActionPort;
-  ordinaryIssues(): OrdinaryIssueRuntime;
+  ordinaryTasks(): OrdinaryTaskRuntime;
   retrieval(): ContextRetrievalService;
   pluginDomainEvents: PluginDomainEventPublisher;
 }
@@ -190,8 +190,8 @@ export function paperclipManagedToolPublicError(error: unknown) {
   if (error instanceof z.ZodError) {
     return {
       code: "invalid_arguments",
-      message: error.issues.map((issue) =>
-        `${issue.path.length ? `${issue.path.join(".")}: ` : ""}${issue.message}`
+      message: validationDetails(error).map((detail) =>
+        `${detail.path.length ? `${detail.path.join(".")}: ` : ""}${detail.message}`
       ).join("; "),
     };
   }
@@ -204,7 +204,7 @@ export function paperclipManagedToolPublicError(error: unknown) {
   ) {
     return { code: error.code, message: error.message };
   }
-  if (error instanceof OrdinaryIssueRuntimeRejected) {
+  if (error instanceof OrdinaryTaskRuntimeRejected) {
     return { code: error.reason, message: error.message };
   }
   return {
@@ -219,8 +219,8 @@ const FULL_BOARD_CONTEXT_DIAL = Object.freeze(Object.fromEntries(
   AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, true]),
 )) as ContextDial;
 
-function boardScope(companyId: string, activeIssueId: string) {
-  return { companyId, activeIssueId, dial: FULL_BOARD_CONTEXT_DIAL };
+function boardScope(companyId: string, activeTaskId: string) {
+  return { companyId, activeTaskId, dial: FULL_BOARD_CONTEXT_DIAL };
 }
 
 /**
@@ -231,16 +231,16 @@ function boardScope(companyId: string, activeIssueId: string) {
 export function createPaperclipManagedToolRouter(
   dependencies: PaperclipManagedToolRouterDependencies,
 ): PaperclipManagedToolRouter {
-  const issues = issueService(dependencies.db);
+  const tasks = taskService(dependencies.db);
   const agents = agentService(dependencies.db);
   const runtimeAgents = createRuntimeAgentConfigurationService(dependencies.db);
 
-  async function issueInBoardScope(companyId: string, issueId: string) {
-    const issue = await issues.getById(issueId);
-    if (!issue || issue.companyId !== companyId) {
-      throw new PaperclipManagedToolError("issue_not_found", "Issue not found");
+  async function taskInBoardScope(companyId: string, taskId: string) {
+    const task = await tasks.getById(taskId);
+    if (!task || task.companyId !== companyId) {
+      throw new PaperclipManagedToolError("task_not_found", "Task not found");
     }
-    return issue;
+    return task;
   }
 
   async function agentInBoardScope(companyId: string, agentId: string) {
@@ -253,29 +253,29 @@ export function createPaperclipManagedToolRouter(
 
   async function publishBoardComment(
     authority: BoardUserToolAuthority,
-    input: { companyId: string; issueId: string; commentId: string },
+    input: { companyId: string; taskId: string; commentId: string },
   ) {
     await dependencies.pluginDomainEvents.publish({
       eventId: input.commentId,
-      eventType: "issue.board.comment.created",
+      eventType: "task.board.comment.created",
       occurredAt: new Date().toISOString(),
       actorId: authority.userId,
       actorType: "user",
       entityId: input.commentId,
-      entityType: "issue_comment",
+      entityType: "task_comment",
       companyId: input.companyId,
       payload: input,
     });
   }
 
   async function boardComment(
-    command: PaperclipManagedToolCommandFor<"issue_update">,
+    command: PaperclipManagedToolCommandFor<"task_update">,
     authority: BoardUserToolAuthority,
     message: string,
   ) {
-    const result = await dependencies.ordinaryIssues().userComment({
+    const result = await dependencies.ordinaryTasks().userComment({
       companyId: command.companyId,
-      issueId: command.issueId,
+      taskId: command.taskId,
       actorUserId: authority.userId,
       message,
       replyToCommentId: command.replyToCommentId ?? null,
@@ -286,9 +286,9 @@ export function createPaperclipManagedToolRouter(
         suffix: "comment",
       }),
     });
-    const comment = await issues.getBoardComment(
+    const comment = await tasks.getBoardComment(
       command.companyId,
-      command.issueId,
+      command.taskId,
       result.comment.id,
     );
     if (!comment) {
@@ -300,12 +300,12 @@ export function createPaperclipManagedToolRouter(
     if (!result.retried) {
       await publishBoardComment(authority, {
         companyId: command.companyId,
-        issueId: command.issueId,
+        taskId: command.taskId,
         commentId: comment.id,
       });
     }
     return {
-      issue: result.issue,
+      task: result.task,
       comment,
       executionRefId: result.ref?.id ?? null,
       retried: result.retried,
@@ -313,8 +313,8 @@ export function createPaperclipManagedToolRouter(
   }
 
   function boardLifecycleUpdate(
-    command: PaperclipManagedToolCommandFor<"issue_update">,
-  ): Parameters<OrdinaryIssueRuntime["commitOwnerFormUpdate"]>[1] | null {
+    command: PaperclipManagedToolCommandFor<"task_update">,
+  ): Parameters<OrdinaryTaskRuntime["commitOwnerFormUpdate"]>[1] | null {
     if (command.status === undefined) return null;
     const message = command.message!;
     if (command.status === "done" || command.status === "cancelled") {
@@ -344,16 +344,16 @@ export function createPaperclipManagedToolRouter(
     authority: AgentRunToolAuthority,
   ): Promise<unknown> {
     switch (command.name) {
-      case "issue_create":
-        return dependencies.agentRunActions.issueCreate(
+      case "task_create":
+        return dependencies.agentRunActions.taskCreate(
           agentRunManagedActionInvocation(command, authority),
         );
-      case "issue_assign":
-        return dependencies.agentRunActions.issueAssign(
+      case "task_assign":
+        return dependencies.agentRunActions.taskAssign(
           agentRunManagedActionInvocation(command, authority),
         );
-      case "issue_update":
-        return dependencies.agentRunActions.issueUpdate(
+      case "task_update":
+        return dependencies.agentRunActions.taskUpdate(
           agentRunManagedActionInvocation(command, authority),
         );
       case "mention_agent":
@@ -393,9 +393,9 @@ export function createPaperclipManagedToolRouter(
     authority: PaperclipToolAuthority,
     runtimeScope: ContextRetrievalScope | null,
   ): Promise<unknown> {
-    if (command.name === "list_company_issues") {
+    if (command.name === "list_company_tasks") {
       assertCompanyScope(authority, command.companyId);
-      return dependencies.retrieval().listCompanyIssues(
+      return dependencies.retrieval().listCompanyTasks(
         authority.kind === "board_user"
           ? boardScope(command.companyId, command.companyId)
           : requireRuntimeScope(runtimeScope),
@@ -406,41 +406,41 @@ export function createPaperclipManagedToolRouter(
         },
       );
     }
-    if (command.name === "list_sub_issues") {
+    if (command.name === "list_sub_tasks") {
       assertCompanyScope(authority, command.companyId);
       if (authority.kind === "board_user") {
-        await issueInBoardScope(command.companyId, command.issueId);
+        await taskInBoardScope(command.companyId, command.taskId);
       }
-      return dependencies.retrieval().listSubIssues(
+      return dependencies.retrieval().listSubTasks(
         authority.kind === "board_user"
-          ? boardScope(command.companyId, command.issueId)
+          ? boardScope(command.companyId, command.taskId)
           : requireRuntimeScope(runtimeScope),
         {
-          issueId: command.issueId,
+          taskId: command.taskId,
           cursor: command.cursor,
           limit: command.limit,
         },
       );
     }
-    if (command.name === "read_issue_comments") {
+    if (command.name === "read_task_comments") {
       assertCompanyScope(authority, command.companyId);
       if (authority.kind === "board_user") {
-        await issueInBoardScope(command.companyId, command.issueId);
+        await taskInBoardScope(command.companyId, command.taskId);
       }
-      return dependencies.retrieval().readIssueComments(
+      return dependencies.retrieval().readTaskComments(
         authority.kind === "board_user"
-          ? boardScope(command.companyId, command.issueId)
+          ? boardScope(command.companyId, command.taskId)
           : requireRuntimeScope(runtimeScope),
         {
-          issueId: command.issueId,
+          taskId: command.taskId,
           cursor: command.cursor,
           limit: command.limit,
         },
       );
     }
-    if (command.name === "read_issue_agent_run") {
+    if (command.name === "read_task_agent_run") {
       assertCompanyScope(authority, command.companyId);
-      return dependencies.retrieval().readIssueAgentRun(
+      return dependencies.retrieval().readTaskAgentRun(
         authority.kind === "board_user"
           ? boardScope(command.companyId, command.companyId)
           : requireRuntimeScope(runtimeScope),
@@ -453,8 +453,8 @@ export function createPaperclipManagedToolRouter(
 
     assertCompanyScope(authority, command.companyId);
     switch (command.name) {
-      case "issue_create": {
-        const result = await dependencies.ordinaryIssues().create({
+      case "task_create": {
+        const result = await dependencies.ordinaryTasks().create({
           ...command,
           creator: { kind: "user/board", userId: authority.userId },
           idempotencyKey: toolInvocationKey({
@@ -462,34 +462,34 @@ export function createPaperclipManagedToolRouter(
             name: command.name,
             payload: command,
           }),
-          sourceKind: "issue_request",
+          sourceKind: "task_request",
         });
         if (!result.retried) {
           await logActivity(dependencies.db, {
             companyId: command.companyId,
             actorType: "user",
             actorId: authority.userId,
-            action: "issue.created",
-            entityType: "issue",
-            entityId: result.issue.id,
+            action: "task.created",
+            entityType: "task",
+            entityId: result.task.id,
             details: {
               source: "board_mcp",
-              identifier: result.issue.identifier,
-              ownerAgentId: result.issue.ownerAgentId,
+              identifier: result.task.identifier,
+              ownerAgentId: result.task.ownerAgentId,
               executionRefId: result.ref.id,
             },
           });
         }
         return {
-          issue: result.issue,
+          task: result.task,
           executionRefId: result.ref.id,
           retried: result.retried,
         };
       }
-      case "issue_assign": {
-        const result = await dependencies.ordinaryIssues().boardReassign({
+      case "task_assign": {
+        const result = await dependencies.ordinaryTasks().boardReassign({
           companyId: command.companyId,
-          issueId: command.issueId,
+          taskId: command.taskId,
           ownerAgentId: command.ownerAgentId,
           actorUserId: authority.userId,
           idempotencyKey: toolInvocationKey({
@@ -499,23 +499,23 @@ export function createPaperclipManagedToolRouter(
           }),
         });
         return {
-          issue: result.issue,
+          task: result.task,
           executionRefId: result.ref.id,
           auditId: result.auditId,
           retried: result.retried,
         };
       }
-      case "issue_update": {
+      case "task_update": {
         const lifecycleUpdate = boardLifecycleUpdate(command);
-        const existing = await issueInBoardScope(
+        const existing = await taskInBoardScope(
           command.companyId,
-          command.issueId,
+          command.taskId,
         );
-        const result: Record<string, unknown> = { issueId: existing.id };
+        const result: Record<string, unknown> = { taskId: existing.id };
         if (command.reopen) {
-          result.reopen = await dependencies.ordinaryIssues().boardReopen({
+          result.reopen = await dependencies.ordinaryTasks().boardReopen({
             companyId: command.companyId,
-            issueId: command.issueId,
+            taskId: command.taskId,
             actorUserId: authority.userId,
             reason: command.message!,
             idempotencyKey: toolInvocationKey({
@@ -526,8 +526,8 @@ export function createPaperclipManagedToolRouter(
             }),
           });
         } else if (lifecycleUpdate) {
-          const lifecycle = await dependencies.ordinaryIssues()
-            .commitOwnerFormUpdate(command.issueId, lifecycleUpdate, {
+          const lifecycle = await dependencies.ordinaryTasks()
+            .commitOwnerFormUpdate(command.taskId, lifecycleUpdate, {
               kind: "board",
               companyId: command.companyId,
               actorUserId: authority.userId,
@@ -542,7 +542,7 @@ export function createPaperclipManagedToolRouter(
           if (!lifecycle.retried) {
             await publishBoardComment(authority, {
               companyId: command.companyId,
-              issueId: command.issueId,
+              taskId: command.taskId,
               commentId: lifecycle.comment.id,
             });
           }
@@ -550,44 +550,44 @@ export function createPaperclipManagedToolRouter(
           result.comment = await boardComment(command, authority, command.message);
         }
         if (command.title !== undefined) {
-          const issue = await issues.updateTitle(existing.id, command.title);
-          if (!issue) {
+          const task = await tasks.updateTitle(existing.id, command.title);
+          if (!task) {
             throw new PaperclipManagedToolError(
-              "issue_not_found",
-              "Issue not found",
+              "task_not_found",
+              "Task not found",
             );
           }
           await logActivity(dependencies.db, {
             companyId: command.companyId,
             actorType: "user",
             actorId: authority.userId,
-            action: "issue.title_updated",
-            entityType: "issue",
-            entityId: issue.id,
+            action: "task.title_updated",
+            entityType: "task",
+            entityId: task.id,
             details: {
               source: "board_mcp",
-              identifier: issue.identifier,
-              title: issue.title,
+              identifier: task.identifier,
+              title: task.title,
               _previous: { title: existing.title },
             },
           });
-          result.issue = issue;
+          result.task = task;
         }
         return result;
       }
       case "mention_agent": {
-        const issue = await issueInBoardScope(
+        const task = await taskInBoardScope(
           command.companyId,
-          command.issueId,
+          command.taskId,
         );
-        const result = await dependencies.ordinaryIssues().userComment({
+        const result = await dependencies.ordinaryTasks().userComment({
           companyId: command.companyId,
-          issueId: command.issueId,
+          taskId: command.taskId,
           actorUserId: authority.userId,
           message: command.message,
           mention: {
             targetAgentId: command.agentId,
-            ownershipEpoch: issue.ownershipEpoch,
+            ownershipEpoch: task.ownershipEpoch,
           },
           idempotencyKey: toolInvocationKey({
             authority,
@@ -595,9 +595,9 @@ export function createPaperclipManagedToolRouter(
             payload: command,
           }),
         });
-        const comment = await issues.getBoardComment(
+        const comment = await tasks.getBoardComment(
           command.companyId,
-          command.issueId,
+          command.taskId,
           result.comment.id,
         );
         if (!comment) {
@@ -609,12 +609,12 @@ export function createPaperclipManagedToolRouter(
         if (!result.retried) {
           await publishBoardComment(authority, {
             companyId: command.companyId,
-            issueId: command.issueId,
+            taskId: command.taskId,
             commentId: comment.id,
           });
         }
         return {
-          issue: result.issue,
+          task: result.task,
           comment,
           executionRefId: result.ref?.id ?? null,
           retried: result.retried,

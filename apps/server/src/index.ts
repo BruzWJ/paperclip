@@ -18,16 +18,16 @@ import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import {
   composeAgentRunManagedActionPort,
-  createOrdinaryIssueRuntime,
+  createOrdinaryTaskRuntime,
   createPostgresSystemEscalationService,
-  createPostgresIssueExecutionProductionRuntime,
-  createPostgresIssueSessionCompositionRuntime,
-  createIssueSessionStore,
-  createPostgresRuntimeIssueActionService,
-  type PostgresRuntimeIssueActionServiceOptions,
+  createPostgresTaskExecutionProductionRuntime,
+  createPostgresTaskSessionCompositionRuntime,
+  createTaskSessionStore,
+  createPostgresRuntimeTaskActionService,
+  type PostgresRuntimeTaskActionServiceOptions,
   createRuntimeAgentActionPort,
   createRuntimeAgentConfigurationService,
-  createRuntimeIssueActionPort,
+  createRuntimeTaskActionPort,
   routineService,
 } from "./services/index.js";
 import { choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
@@ -51,7 +51,7 @@ import { serverVersion } from "./version.js";
 import { createRuntimePluginToolPort } from "./services/runtime-tool-gateway.js";
 import { createPaperclipManagedToolRouter } from "./services/paperclip-managed-tool-router.js";
 import type { ContextRetrievalService } from "./services/context-retrieval.js";
-import { createIssueExecutionSteeringResultBroker } from "./services/issue-execution-steering-results.js";
+import { createTaskExecutionSteeringResultBroker } from "./services/task-execution-steering-results.js";
 import type { RequestAuthorityBoundary } from "./http/request-authority.js";
 import {
   agentProfileChangeTargetKey,
@@ -65,12 +65,12 @@ export {
   appendCanonicalUserComment,
   type CanonicalControlNoticeInput,
   type CanonicalUserCommentInput,
-} from "./services/issue-session-producers.js";
+} from "./services/task-session-producers.js";
 export {
-  persistCanonicalIssueAggregateInTx,
-  CanonicalIssueAggregateRejected,
-  type CanonicalIssueAggregateInput,
-} from "./services/canonical-issue-aggregate.js";
+  persistCanonicalTaskAggregateInTx,
+  CanonicalTaskAggregateRejected,
+  type CanonicalTaskAggregateInput,
+} from "./services/canonical-task-aggregate.js";
 export { loadRuntimeEnvironmentFiles } from "./runtime-environment.js";
 
 type BetterAuthSessionUser = {
@@ -85,9 +85,9 @@ type BetterAuthSessionResult = {
 };
 
 type CausalRuntimeStartupAssembly = Pick<
-  PostgresRuntimeIssueActionServiceOptions,
+  PostgresRuntimeTaskActionServiceOptions,
   | "dispatchPersistedRef"
-  | "issueExecutionCancellation"
+  | "taskExecutionCancellation"
 >;
 
 /**
@@ -175,9 +175,9 @@ export async function startServer(): Promise<StartedServer> {
     headers: Headers,
   ): Promise<BetterAuthSessionResult | null> => resolveBetterAuthSessionFromHeaders(auth, headers);
   const authReady = true;
-  const issueSessionStore = createIssueSessionStore(db as any, {
+  const taskSessionStore = createTaskSessionStore(db as any, {
     cursorSecret: deriveInstancePrivateSecret(
-      "issue-session-read-cursor",
+      "task-session-read-cursor",
     ).toString("base64url"),
   });
 
@@ -206,23 +206,23 @@ export async function startServer(): Promise<StartedServer> {
     `paperclip-server:${process.pid}:${Date.now()}`;
   const causalRuntimeStartup =
     createStartupAssembly<CausalRuntimeStartupAssembly>();
-  const issueExecutionSteeringResults =
-    createIssueExecutionSteeringResultBroker();
-  const issueActions = createRuntimeIssueActionPort(
-    createPostgresRuntimeIssueActionService(db as any, {
+  const taskExecutionSteeringResults =
+    createTaskExecutionSteeringResultBroker();
+  const taskActions = createRuntimeTaskActionPort(
+    createPostgresRuntimeTaskActionService(db as any, {
       async dispatchPersistedRef(refId) {
         const runtime = await causalRuntimeStartup.ready;
         await runtime.dispatchPersistedRef(refId);
       },
-      issueExecutionCancellation: {
+      taskExecutionCancellation: {
         async requestScopeCancellationsInTransaction(transaction, input) {
           const runtime = await causalRuntimeStartup.ready;
-          return runtime.issueExecutionCancellation
+          return runtime.taskExecutionCancellation
             .requestScopeCancellationsInTransaction(transaction, input);
         },
         async reconcileRequestedCancellations(requested) {
           const runtime = await causalRuntimeStartup.ready;
-          return runtime.issueExecutionCancellation
+          return runtime.taskExecutionCancellation
             .reconcileRequestedCancellations(requested);
         },
       },
@@ -269,24 +269,24 @@ export async function startServer(): Promise<StartedServer> {
     },
   );
   const agentRunActions = composeAgentRunManagedActionPort(
-    issueActions,
+    taskActions,
     agentActions,
   );
   // One app-owned managed-tool surface is assembled before ACPX and completed
   // with the runtime-owned readers/producers below. Both ACPX and Board MCP
   // retain this exact instance; neither constructs a Board-only executor.
-  let ordinaryIssuesForManagedTools: ReturnType<
-    typeof createOrdinaryIssueRuntime
+  let ordinaryTasksForManagedTools: ReturnType<
+    typeof createOrdinaryTaskRuntime
   > | null = null;
   let retrievalForManagedTools: ContextRetrievalService | null = null;
   const paperclipManagedTools = createPaperclipManagedToolRouter({
     db: db as any,
     agentRunActions,
-    ordinaryIssues() {
-      if (!ordinaryIssuesForManagedTools) {
+    ordinaryTasks() {
+      if (!ordinaryTasksForManagedTools) {
         throw new Error("Paperclip managed actions are not fully assembled");
       }
-      return ordinaryIssuesForManagedTools;
+      return ordinaryTasksForManagedTools;
     },
     retrieval() {
       if (!retrievalForManagedTools) {
@@ -312,24 +312,24 @@ export async function startServer(): Promise<StartedServer> {
       );
     });
   const composition =
-    createPostgresIssueSessionCompositionRuntime(db as any, {
+    createPostgresTaskSessionCompositionRuntime(db as any, {
       workerId,
     });
-  const issueExecutionLocalOrchestrator =
+  const taskExecutionLocalOrchestrator =
     localExecutionOrchestrator(db as any);
   const refDispatcher: { dispatch: ((refId: string) => Promise<void>) | null } = { dispatch: null };
-  const issueExecution =
-    createPostgresIssueExecutionProductionRuntime(
+  const taskExecution =
+    createPostgresTaskExecutionProductionRuntime(
       db as any,
       {
         workerId,
         targetSessionProtectionSecret:
           deriveInstancePrivateSecret(
-            "issue-execution-target-session",
+            "task-execution-target-session",
           ),
-        issueSessionStore,
+        taskSessionStore,
         localExecutionOrchestrator:
-          issueExecutionLocalOrchestrator,
+          taskExecutionLocalOrchestrator,
         capabilityEndpoint:
           `${runtimeApiUrl.replace(/\/+$/, "")}/api/run-tools`,
         capabilityCursorSecret: deriveInstancePrivateSecret(
@@ -339,14 +339,14 @@ export async function startServer(): Promise<StartedServer> {
         pluginTools: promptCapabilityPluginTools,
         pluginDomainEvents,
         beforePrompt: pluginBeforePrompt,
-        steeringResults: issueExecutionSteeringResults,
+        steeringResults: taskExecutionSteeringResults,
         dispatchRef: (refId) => refDispatcher.dispatch?.(refId) ?? Promise.resolve(),
       },
     );
   const dispatchPersistedRef = async (refId: string) => {
     await composition.prepareAndNotifyPersistedRef(
       refId,
-      issueExecution.dispatcher,
+      taskExecution.dispatcher,
     );
   };
   refDispatcher.dispatch = dispatchPersistedRef;
@@ -358,15 +358,15 @@ export async function startServer(): Promise<StartedServer> {
   );
   causalRuntimeStartup.complete({
     dispatchPersistedRef,
-    issueExecutionCancellation: issueExecution.cancellation,
+    taskExecutionCancellation: taskExecution.cancellation,
   });
-  const ordinaryIssues = createOrdinaryIssueRuntime(db as any, {
-    issueExecutionRunService: issueExecution.runService,
-    issueExecutionCancellation: issueExecution.cancellation,
+  const ordinaryTasks = createOrdinaryTaskRuntime(db as any, {
+    taskExecutionRunService: taskExecution.runService,
+    taskExecutionCancellation: taskExecution.cancellation,
     dispatchRef: dispatchPersistedRef,
   });
-  retrievalForManagedTools = issueExecution.promptCapabilities.retrieval;
-  ordinaryIssuesForManagedTools = ordinaryIssues;
+  retrievalForManagedTools = taskExecution.promptCapabilities.retrieval;
+  ordinaryTasksForManagedTools = ordinaryTasks;
   const app = await createApp(db as any, {
     uiMode,
     serverPort: listenPort,
@@ -387,18 +387,18 @@ export async function startServer(): Promise<StartedServer> {
     pluginEventBus,
     pluginDomainEvents,
     promptCapabilityGateway:
-      issueExecution.promptCapabilities.gateway,
+      taskExecution.promptCapabilities.gateway,
     paperclipManagedTools,
-    pluginRunIssueContextReader:
-      issueExecution.promptCapabilities.pluginRunIssueContextReader,
+    pluginRunTaskContextReader:
+      taskExecution.promptCapabilities.pluginRunTaskContextReader,
     pluginRuntimeRecordsReader:
-      issueExecution.promptCapabilities.pluginRuntimeRecordsReader,
-    issueSessionStore,
-    ordinaryIssueRuntime: ordinaryIssues,
-    issueExecutionRunService: issueExecution.runService,
-    issueExecutionCancellation: issueExecution.cancellation,
+      taskExecution.promptCapabilities.pluginRuntimeRecordsReader,
+    taskSessionStore,
+    ordinaryTaskRuntime: ordinaryTasks,
+    taskExecutionRunService: taskExecution.runService,
+    taskExecutionCancellation: taskExecution.cancellation,
     adapterReadinessLocalExecutionOrchestrator:
-      issueExecutionLocalOrchestrator,
+      taskExecutionLocalOrchestrator,
   });
   const requestAuthorityBoundary = (
     app.locals as { paperclipRequestAuthorityBoundary?: RequestAuthorityBoundary }
@@ -423,42 +423,42 @@ export async function startServer(): Promise<StartedServer> {
     requestAuthorityBoundary,
   });
 
-  let issueExecutionSchedulerStopped = false;
-  let issueExecutionSchedulerInterval: ReturnType<typeof setInterval> | null = null;
-  const issueExecutionSchedulerInFlight = new Set<Promise<void>>();
-  const trackIssueExecutionSchedulerWork = (work: Promise<unknown>) => {
+  let taskExecutionSchedulerStopped = false;
+  let taskExecutionSchedulerInterval: ReturnType<typeof setInterval> | null = null;
+  const taskExecutionSchedulerInFlight = new Set<Promise<void>>();
+  const trackTaskExecutionSchedulerWork = (work: Promise<unknown>) => {
     let tracked: Promise<void>;
     tracked = Promise.resolve(work)
       .then(() => undefined, () => undefined)
       .finally(() => {
-        issueExecutionSchedulerInFlight.delete(tracked);
+        taskExecutionSchedulerInFlight.delete(tracked);
       });
-    issueExecutionSchedulerInFlight.add(tracked);
+    taskExecutionSchedulerInFlight.add(tracked);
     return tracked;
   };
-  const waitForIssueExecutionSchedulerIdle = async () => {
-    while (issueExecutionSchedulerInFlight.size > 0) {
-      await Promise.allSettled([...issueExecutionSchedulerInFlight]);
+  const waitForTaskExecutionSchedulerIdle = async () => {
+    while (taskExecutionSchedulerInFlight.size > 0) {
+      await Promise.allSettled([...taskExecutionSchedulerInFlight]);
     }
   };
-  const routines = routineService(db as any, { ordinaryIssues });
+  const routines = routineService(db as any, { ordinaryTasks });
 
-  const reconcilePersistedIssueExecutions = async () => {
+  const reconcilePersistedTaskExecutions = async () => {
     // Durable exact stops are reconciled before any path may recover or
     // dispatch persisted execution work.
     const cancellations =
-      await issueExecution.cancellation.reconcilePending();
+      await taskExecution.cancellation.reconcilePending();
     const escalations = await systemEscalations.reconcile();
     const prepared = await composition.reconcilePersistedRefs(
-      issueExecution.dispatcher,
+      taskExecution.dispatcher,
     );
     const dispatchable =
-      await issueExecution.dispatcher.reconcilePersistedRefs();
+      await taskExecution.dispatcher.reconcilePersistedRefs();
     // Expired-attempt recovery above establishes the attempt/lease settlement
     // fence. Feed only then-recoverable durable steering sources back through
     // their one canonical continuation path.
     const steering =
-      await issueExecution.runService.reconcilePendingSteering();
+      await taskExecution.runService.reconcilePendingSteering();
     if (
       cancellations.length > 0 ||
       escalations.terminalized > 0 ||
@@ -475,44 +475,44 @@ export async function startServer(): Promise<StartedServer> {
           dispatchable,
           steering,
         },
-        "persisted issue-execution recovery reconciled refs",
+        "persisted task-execution recovery reconciled refs",
       );
     }
   };
 
-  const startupIssueExecutionRecovery =
-    reconcilePersistedIssueExecutions().catch((err) => {
+  const startupTaskExecutionRecovery =
+    reconcilePersistedTaskExecutions().catch((err) => {
       logger.error(
         { err },
-        "startup persisted issue-execution recovery failed",
+        "startup persisted task-execution recovery failed",
       );
     });
-  trackIssueExecutionSchedulerWork(startupIssueExecutionRecovery);
-  await startupIssueExecutionRecovery;
+  trackTaskExecutionSchedulerWork(startupTaskExecutionRecovery);
+  await startupTaskExecutionRecovery;
 
-  if (config.issueExecutionSchedulerEnabled) {
-    issueExecutionSchedulerInterval = setInterval(() => {
-      if (issueExecutionSchedulerStopped) return;
-      trackIssueExecutionSchedulerWork(
-        reconcilePersistedIssueExecutions().catch((err) => {
+  if (config.taskExecutionSchedulerEnabled) {
+    taskExecutionSchedulerInterval = setInterval(() => {
+      if (taskExecutionSchedulerStopped) return;
+      trackTaskExecutionSchedulerWork(
+        reconcilePersistedTaskExecutions().catch((err) => {
           logger.error(
             { err },
-            "periodic persisted issue-execution recovery failed",
+            "periodic persisted task-execution recovery failed",
           );
         }),
       );
-      trackIssueExecutionSchedulerWork(
+      trackTaskExecutionSchedulerWork(
         routines.tickScheduledTriggers(new Date())
           .then((result) => {
             if (result.triggered > 0) {
-              logger.info({ ...result }, "routine scheduler created ordinary issues");
+              logger.info({ ...result }, "routine scheduler created ordinary tasks");
             }
           })
           .catch((err) => {
             logger.error({ err }, "routine scheduler tick failed");
           }),
       );
-    }, config.issueExecutionSchedulerIntervalMs);
+    }, config.taskExecutionSchedulerIntervalMs);
   }
   await new Promise<void>((resolveListen, rejectListen) => {
     const onError = (err: Error) => {
@@ -545,8 +545,8 @@ export async function startServer(): Promise<StartedServer> {
         listenPort,
         uiMode,
         db: startupDbInfo,
-        issueExecutionSchedulerEnabled: config.issueExecutionSchedulerEnabled,
-        issueExecutionSchedulerIntervalMs: config.issueExecutionSchedulerIntervalMs,
+        taskExecutionSchedulerEnabled: config.taskExecutionSchedulerEnabled,
+        taskExecutionSchedulerIntervalMs: config.taskExecutionSchedulerIntervalMs,
       });
 
       resolveListen();
@@ -558,12 +558,12 @@ export async function startServer(): Promise<StartedServer> {
   {
     const shutdown = async (signal: "SIGINT" | "SIGTERM") => {
       devServerRestartCoordinator.stop();
-      issueExecutionSchedulerStopped = true;
-      if (issueExecutionSchedulerInterval) {
-        clearInterval(issueExecutionSchedulerInterval);
-        issueExecutionSchedulerInterval = null;
+      taskExecutionSchedulerStopped = true;
+      if (taskExecutionSchedulerInterval) {
+        clearInterval(taskExecutionSchedulerInterval);
+        taskExecutionSchedulerInterval = null;
       }
-      await waitForIssueExecutionSchedulerIdle();
+      await waitForTaskExecutionSchedulerIdle();
 
       const telemetryClient = getTelemetryClient();
       if (telemetryClient) {
@@ -573,17 +573,17 @@ export async function startServer(): Promise<StartedServer> {
 
       try {
         await Promise.all([
-          issueExecution.dispatcher.shutdown(),
-          issueExecution.cancellation.drainRunningRunsForShutdown(signal),
+          taskExecution.dispatcher.shutdown(),
+          taskExecution.cancellation.drainRunningRunsForShutdown(signal),
         ]);
         logger.info(
           { signal },
-          "graceful issue-execution drain complete",
+          "graceful task-execution drain complete",
         );
       } catch (err) {
         logger.error(
           { err, signal },
-          "graceful issue-execution drain failed",
+          "graceful task-execution drain failed",
         );
       }
 

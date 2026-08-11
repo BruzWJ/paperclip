@@ -6,15 +6,15 @@ const referenceMocks = vi.hoisted(() => ({
   syncAnnotationComment: vi.fn(async () => undefined),
 }));
 
-vi.mock("../services/issue-references.js", () => ({
-  issueReferenceService: () => referenceMocks,
+vi.mock("../services/task-references.js", () => ({
+  taskReferenceService: () => referenceMocks,
 }));
 
 const COMPANY_ID = "00000000-0000-4000-8000-000000000001";
-const ISSUE_ID = "00000000-0000-4000-8000-000000000002";
+const TASK_ID = "00000000-0000-4000-8000-000000000002";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000003";
 const REVISION_ID = "00000000-0000-4000-8000-000000000004";
-const ISSUE_COMMENT_ID = "00000000-0000-4000-8000-000000000005";
+const TASK_COMMENT_ID = "00000000-0000-4000-8000-000000000005";
 
 const actor = {
   actorType: "user",
@@ -36,9 +36,9 @@ const selector = {
   },
 };
 
-function issueDocument(overrides: Record<string, unknown> = {}) {
+function taskDocument(overrides: Record<string, unknown> = {}) {
   return {
-    issueId: ISSUE_ID,
+    taskId: TASK_ID,
     companyId: COMPANY_ID,
     documentId: DOCUMENT_ID,
     documentKey: "plan",
@@ -54,27 +54,27 @@ describe("documentAnnotationService database boundary", () => {
     vi.clearAllMocks();
   });
 
-  it("rejects a linked comment that is absent from the same issue", async () => {
+  it("rejects a linked comment that is absent from the same task", async () => {
     const harness = createMockDb({
       execute: [[]],
-      select: [[issueDocument()], []],
+      select: [[taskDocument()], []],
     });
     const service = documentAnnotationService(harness.db);
 
     await expect(service.createThread(
-      ISSUE_ID,
+      TASK_ID,
       "plan",
       {
         baseRevisionId: REVISION_ID,
         baseRevisionNumber: 1,
         selector,
         body: "Do not link a missing comment",
-        issueCommentId: ISSUE_COMMENT_ID,
+        taskCommentId: TASK_COMMENT_ID,
       },
       actor,
     )).rejects.toMatchObject({
       status: 422,
-      message: "Linked issue comment must belong to this issue",
+      message: "Linked task comment must belong to this task",
     });
 
     expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
@@ -87,7 +87,7 @@ describe("documentAnnotationService database boundary", () => {
     const thread = {
       id: threadId,
       companyId: COMPANY_ID,
-      issueId: ISSUE_ID,
+      taskId: TASK_ID,
       documentId: DOCUMENT_ID,
       documentKey: "plan",
       status: "open",
@@ -96,34 +96,34 @@ describe("documentAnnotationService database boundary", () => {
       id: annotationCommentId,
       companyId: COMPANY_ID,
       threadId,
-      issueId: ISSUE_ID,
+      taskId: TASK_ID,
       documentId: DOCUMENT_ID,
       body: "Linked annotation",
       authorType: "user",
       authorAgentId: null,
       authorUserId: "board-user",
       createdByRunId: null,
-      issueCommentId: ISSUE_COMMENT_ID,
+      taskCommentId: TASK_COMMENT_ID,
     };
     const harness = createMockDb({
       execute: [[]],
       select: [
-        [issueDocument()],
-        [{ id: ISSUE_COMMENT_ID, companyId: COMPANY_ID, issueId: ISSUE_ID }],
+        [taskDocument()],
+        [{ id: TASK_COMMENT_ID, companyId: COMPANY_ID, taskId: TASK_ID }],
       ],
       insert: [[thread], [comment]],
     });
     const service = documentAnnotationService(harness.db);
 
     await expect(service.createThread(
-      ISSUE_ID,
+      TASK_ID,
       "plan",
       {
         baseRevisionId: REVISION_ID,
         baseRevisionNumber: 1,
         selector,
         body: "Linked annotation",
-        issueCommentId: ISSUE_COMMENT_ID,
+        taskCommentId: TASK_COMMENT_ID,
       },
       actor,
     )).resolves.toEqual({ ...thread, comments: [comment] });
@@ -139,7 +139,7 @@ describe("documentAnnotationService database boundary", () => {
   it("checks the locked current revision before writing an annotation thread", async () => {
     const harness = createMockDb({
       execute: [[]],
-      select: [[issueDocument({
+      select: [[taskDocument({
         latestRevisionId: "00000000-0000-4000-8000-000000000099",
         latestRevisionNumber: 2,
         latestBody: "Alpha changed text omega",
@@ -148,7 +148,7 @@ describe("documentAnnotationService database boundary", () => {
     const service = documentAnnotationService(harness.db);
 
     await expect(service.createThread(
-      ISSUE_ID,
+      TASK_ID,
       "plan",
       {
         baseRevisionId: REVISION_ID,

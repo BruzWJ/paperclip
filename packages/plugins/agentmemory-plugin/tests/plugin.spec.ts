@@ -7,7 +7,7 @@ import {
   type PluginCanonicalSessionMessage,
   type PluginContext,
   type PluginEvent,
-  type PluginRunIssueCommentProjection,
+  type PluginRunTaskCommentProjection,
   type ProviderSafeRunTrace,
 } from "@paperclipai/plugin-sdk";
 import {
@@ -30,7 +30,7 @@ import {
 import { MEMORY_TOOL_DEFINITIONS } from "../src/memory-tools.js";
 import {
   beforePrompt,
-  canReadIssueMemory,
+  canReadTaskMemory,
   memoryGrantCandidates,
   recall,
 } from "../src/runtime.js";
@@ -183,14 +183,14 @@ function contextAccess(
 ): PluginBeforePromptInput["contextAccess"] {
   return {
     carry_context: false,
-    read_issue_comments: false,
-    read_issue_agent_run: false,
-    list_sub_issues: false,
-    read_sub_issue_comments: false,
-    read_sub_issue_agent_run: false,
-    list_company_issues: false,
-    read_company_issue_comments: false,
-    read_company_issue_agent_run: false,
+    read_task_comments: false,
+    read_task_agent_run: false,
+    list_sub_tasks: false,
+    read_sub_task_comments: false,
+    read_sub_task_agent_run: false,
+    list_company_tasks: false,
+    read_company_task_comments: false,
+    read_company_task_agent_run: false,
     ...overrides,
   };
 }
@@ -200,7 +200,7 @@ function beforePromptInput(
 ): PluginBeforePromptInput {
   return {
     companyId: "company-secret",
-    issueId: "issue-secret",
+    taskId: "task-secret",
     sessionId: "session-secret",
     runId: "run-secret",
     agentId: "agent-secret",
@@ -239,7 +239,7 @@ function canonicalMessage(input: {
     row: {
       id: input.id,
       companyId: "company-secret",
-      issueId: "issue-secret",
+      taskId: "task-secret",
       sessionId: "session-secret",
       seq: input.seq,
       modelStateSeq: input.modelStateSeq ?? input.seq,
@@ -284,7 +284,7 @@ function stateStore() {
 function beforePromptContext(input: {
   baseUrl: string;
   messages: readonly PluginCanonicalSessionMessage[];
-  comments?: readonly PluginRunIssueCommentProjection[];
+  comments?: readonly PluginRunTaskCommentProjection[];
   state?: ReturnType<typeof stateStore>;
 }) {
   const state = input.state ?? stateStore();
@@ -294,7 +294,7 @@ function beforePromptContext(input: {
   }) => ({
     session: {
       companyId: "company-secret",
-      issueId: "issue-secret",
+      taskId: "task-secret",
       sessionId: "session-secret",
     },
     snapshotHighWaterSeq: request.snapshotHighWaterSeq,
@@ -306,17 +306,17 @@ function beforePromptContext(input: {
     },
     events: { items: [], nextCursor: null },
   }));
-  const readIssueComments = vi.fn(async () => ({
+  const readTaskComments = vi.fn(async () => ({
     items: [...(input.comments ?? [])],
     nextCursor: null,
   }));
   const ctx = {
     config: { get: async () => ({ baseUrl: input.baseUrl, apiSecret }) },
     http: { fetch },
-    runtime: { records: { readSession, readIssueComments } },
+    runtime: { records: { readSession, readTaskComments } },
     state: state.api,
   } as unknown as PluginContext;
-  return { ctx, state, readSession, readIssueComments };
+  return { ctx, state, readSession, readTaskComments };
 }
 
 function noLegacyMemoryCalls(requests: readonly StubRequest[]): void {
@@ -331,8 +331,8 @@ describe("AgentMemory manifest and partitions", () => {
       MEMORY_TOOL_DEFINITIONS.map(({ declaration }) => declaration),
     );
     expect(manifest.tools?.map(({ name }) => name)).toEqual([
-      "read_issue_agent_memory",
-      "read_issue_shared_memory",
+      "read_task_agent_memory",
+      "read_task_shared_memory",
       "read_company_agent_memory",
       "read_company_shared_memory",
     ]);
@@ -357,89 +357,89 @@ describe("AgentMemory manifest and partitions", () => {
   it("maps direct Paperclip scopes onto AgentMemory transport coordinates", () => {
     const coordinates = {
       companyId: "company-a",
-      issueId: "issue-a",
+      taskId: "task-a",
       agentId: "agent-a",
     };
-    const issueAgent = memoryPartition("issue_agent", coordinates);
-    const issueShared = memoryPartition("issue_shared", coordinates);
+    const taskAgent = memoryPartition("task_agent", coordinates);
+    const taskShared = memoryPartition("task_shared", coordinates);
     const companyAgent = memoryPartition("company_agent", coordinates);
     const companyShared = memoryPartition("company_shared", coordinates);
 
-    expect(issueAgent.project).toBe(issueShared.project);
+    expect(taskAgent.project).toBe(taskShared.project);
     expect(companyAgent.project).toBe(companyShared.project);
-    expect(issueAgent.project).not.toBe(companyAgent.project);
-    expect(issueAgent.agentId).toBe(companyAgent.agentId);
-    expect(issueShared.agentId).toBe(companyShared.agentId);
-    expect(issueAgent.agentId).not.toBe(issueShared.agentId);
+    expect(taskAgent.project).not.toBe(companyAgent.project);
+    expect(taskAgent.agentId).toBe(companyAgent.agentId);
+    expect(taskShared.agentId).toBe(companyShared.agentId);
+    expect(taskAgent.agentId).not.toBe(taskShared.agentId);
 
-    const otherIssue = memoryPartition("issue_agent", {
+    const otherTask = memoryPartition("task_agent", {
       ...coordinates,
-      issueId: "issue-b",
+      taskId: "task-b",
     });
-    const otherAgent = memoryPartition("issue_agent", {
+    const otherAgent = memoryPartition("task_agent", {
       ...coordinates,
       agentId: "agent-b",
     });
-    expect(otherIssue.project).not.toBe(issueAgent.project);
-    expect(otherIssue.agentId).toBe(issueAgent.agentId);
-    expect(otherAgent.project).toBe(issueAgent.project);
-    expect(otherAgent.agentId).not.toBe(issueAgent.agentId);
+    expect(otherTask.project).not.toBe(taskAgent.project);
+    expect(otherTask.agentId).toBe(taskAgent.agentId);
+    expect(otherAgent.project).toBe(taskAgent.project);
+    expect(otherAgent.agentId).not.toBe(taskAgent.agentId);
 
-    const otherCompany = memoryPartition("issue_agent", {
+    const otherCompany = memoryPartition("task_agent", {
       ...coordinates,
       companyId: "company-b",
     });
-    expect(otherCompany.project).not.toBe(issueAgent.project);
-    expect(otherCompany.agentId).not.toBe(issueAgent.agentId);
-    expect(JSON.stringify(issueAgent)).not.toContain("company-a");
-    expect(JSON.stringify(issueAgent)).not.toContain("issue-a");
-    expect(JSON.stringify(issueAgent)).not.toContain("agent-a");
+    expect(otherCompany.project).not.toBe(taskAgent.project);
+    expect(otherCompany.agentId).not.toBe(taskAgent.agentId);
+    expect(JSON.stringify(taskAgent)).not.toContain("company-a");
+    expect(JSON.stringify(taskAgent)).not.toContain("task-a");
+    expect(JSON.stringify(taskAgent)).not.toContain("agent-a");
   });
 });
 
 describe("AgentMemory authorization and search", () => {
   it("derives memory reach from the matching context-access cells", () => {
-    expect(memoryGrantCandidates("issue_agent", "active"))
-      .toEqual(["read_issue_agent_run", "read_company_issue_agent_run"]);
-    expect(memoryGrantCandidates("issue_shared", "descendant"))
-      .toEqual(["read_sub_issue_comments", "read_company_issue_comments"]);
-    expect(memoryGrantCandidates("issue_agent", "company"))
-      .toEqual(["read_company_issue_agent_run"]);
-    expect(memoryGrantCandidates("issue_shared", "outside")).toEqual([]);
-    expect(canReadIssueMemory(
-      "issue_shared",
+    expect(memoryGrantCandidates("task_agent", "active"))
+      .toEqual(["read_task_agent_run", "read_company_task_agent_run"]);
+    expect(memoryGrantCandidates("task_shared", "descendant"))
+      .toEqual(["read_sub_task_comments", "read_company_task_comments"]);
+    expect(memoryGrantCandidates("task_agent", "company"))
+      .toEqual(["read_company_task_agent_run"]);
+    expect(memoryGrantCandidates("task_shared", "outside")).toEqual([]);
+    expect(canReadTaskMemory(
+      "task_shared",
       { visible: false, relation: "descendant" },
-      contextAccess({ read_sub_issue_comments: true }),
+      contextAccess({ read_sub_task_comments: true }),
     )).toBe(false);
-    expect(canReadIssueMemory(
-      "issue_agent",
+    expect(canReadTaskMemory(
+      "task_agent",
       { visible: true, relation: "active" },
-      contextAccess({ read_company_issue_agent_run: true }),
+      contextAccess({ read_company_task_agent_run: true }),
     )).toBe(true);
   });
 
   it("sends the requested scope's exact backend coordinates and drops non-owned sessions", async () => {
-    const partition = memoryPartition("issue_agent", {
+    const partition = memoryPartition("task_agent", {
       companyId: "company",
-      issueId: "issue",
+      taskId: "task",
       agentId: "agent",
     });
     const ownedSession = memoryObservationSessionId({
       partition,
       observationIdentity: "owned-source",
     });
-    const wrongIssueSession = memoryObservationSessionId({
-      partition: memoryPartition("issue_agent", {
+    const wrongTaskSession = memoryObservationSessionId({
+      partition: memoryPartition("task_agent", {
         companyId: "company",
-        issueId: "other-issue",
+        taskId: "other-task",
         agentId: "agent",
       }),
-      observationIdentity: "wrong-issue-source",
+      observationIdentity: "wrong-task-source",
     });
     const wrongPrincipalSession = memoryObservationSessionId({
-      partition: memoryPartition("issue_shared", {
+      partition: memoryPartition("task_shared", {
         companyId: "company",
-        issueId: "issue",
+        taskId: "task",
       }),
       observationIdentity: "wrong-principal-source",
     });
@@ -447,8 +447,8 @@ describe("AgentMemory authorization and search", () => {
       search: () => narrativeSearch([
         { sessionId: ownedSession, title: "Owned", narrative: "keep" },
         {
-          sessionId: wrongIssueSession,
-          title: "Wrong issue",
+          sessionId: wrongTaskSession,
+          title: "Wrong task",
           narrative: "drop",
         },
         {
@@ -485,56 +485,56 @@ describe("AgentMemory authorization and search", () => {
       kind: MemoryPartitionKind;
       params: Record<string, string>;
       access: Partial<PluginBeforePromptInput["contextAccess"]>;
-      partitionInput: { companyId: string; issueId?: string; agentId?: string };
-      reachesIssue: boolean;
+      partitionInput: { companyId: string; taskId?: string; agentId?: string };
+      reachesTask: boolean;
     }> = [
       {
-        toolName: "read_issue_agent_memory",
-        kind: "issue_agent",
-        params: { issueId: "issue-agent-target", query: "agent issue" },
-        access: { read_issue_agent_run: true },
+        toolName: "read_task_agent_memory",
+        kind: "task_agent",
+        params: { taskId: "task-agent-target", query: "agent task" },
+        access: { read_task_agent_run: true },
         partitionInput: {
           companyId: "company-secret",
-          issueId: "issue-agent-target",
+          taskId: "task-agent-target",
           agentId: "agent-secret",
         },
-        reachesIssue: true,
+        reachesTask: true,
       },
       {
-        toolName: "read_issue_shared_memory",
-        kind: "issue_shared",
-        params: { issueId: "issue-shared-target", query: "shared issue" },
-        access: { read_issue_comments: true },
+        toolName: "read_task_shared_memory",
+        kind: "task_shared",
+        params: { taskId: "task-shared-target", query: "shared task" },
+        access: { read_task_comments: true },
         partitionInput: {
           companyId: "company-secret",
-          issueId: "issue-shared-target",
+          taskId: "task-shared-target",
         },
-        reachesIssue: true,
+        reachesTask: true,
       },
       {
         toolName: "read_company_agent_memory",
         kind: "company_agent",
         params: { query: "agent company" },
         access: {
-          list_company_issues: true,
-          read_company_issue_agent_run: true,
+          list_company_tasks: true,
+          read_company_task_agent_run: true,
         },
         partitionInput: {
           companyId: "company-secret",
           agentId: "agent-secret",
         },
-        reachesIssue: false,
+        reachesTask: false,
       },
       {
         toolName: "read_company_shared_memory",
         kind: "company_shared",
         params: { query: "shared company" },
         access: {
-          list_company_issues: true,
-          read_company_issue_comments: true,
+          list_company_tasks: true,
+          read_company_task_comments: true,
         },
         partitionInput: { companyId: "company-secret" },
-        reachesIssue: false,
+        reachesTask: false,
       },
     ];
 
@@ -544,7 +544,7 @@ describe("AgentMemory authorization and search", () => {
           ({ declaration }) => declaration.name === testCase.toolName,
         )?.partitionKind,
       ).toBe(testCase.kind);
-      const issueReach = vi.fn(async () => ({
+      const taskReach = vi.fn(async () => ({
         visible: true,
         relation: "active" as const,
       }));
@@ -559,21 +559,21 @@ describe("AgentMemory authorization and search", () => {
           handle: testCase.toolName,
           resolve: async () => ({
             companyId: "company-secret",
-            issueId: "active-issue",
+            taskId: "active-task",
             agentId: "agent-secret",
             runId: "run-secret",
             projectId: null,
             contextAccess: contextAccess(testCase.access),
           }),
-          issueReach,
-          issues: {} as never,
+          taskReach,
+          tasks: {} as never,
         },
       });
 
       expect(result).toMatchObject({ ok: true });
-      expect(issueReach).toHaveBeenCalledTimes(testCase.reachesIssue ? 1 : 0);
-      if (testCase.reachesIssue) {
-        expect(issueReach).toHaveBeenCalledWith(testCase.params.issueId);
+      expect(taskReach).toHaveBeenCalledTimes(testCase.reachesTask ? 1 : 0);
+      if (testCase.reachesTask) {
+        expect(taskReach).toHaveBeenCalledWith(testCase.params.taskId);
       }
       const partition = memoryPartition(testCase.kind, testCase.partitionInput);
       expect(stub.requests.at(-1)).toMatchObject({
@@ -587,7 +587,7 @@ describe("AgentMemory authorization and search", () => {
     }
   });
 
-  it("enforces issue visibility and company listing before calling AgentMemory", async () => {
+  it("enforces task visibility and company listing before calling AgentMemory", async () => {
     const stub = await startAgentMemoryStub();
     const ctx = {
       config: { get: async () => ({ baseUrl: stub.baseUrl, apiSecret }) },
@@ -595,29 +595,29 @@ describe("AgentMemory authorization and search", () => {
     } as unknown as PluginContext;
     const resolved = {
       companyId: "company",
-      issueId: "active-issue",
+      taskId: "active-task",
       agentId: "agent",
       runId: "run",
       projectId: null,
       contextAccess: contextAccess({
-        read_sub_issue_comments: true,
-        read_company_issue_comments: true,
+        read_sub_task_comments: true,
+        read_company_task_comments: true,
       }),
     };
 
     await expect(recall({
       ctx,
-      kind: "issue_shared",
-      params: { issueId: "hidden-issue", query: "decision" },
+      kind: "task_shared",
+      params: { taskId: "hidden-task", query: "decision" },
       runContext: {
         handle: "test",
         resolve: async () => resolved,
-        issueReach: async () => ({ visible: false, relation: "outside" }),
-        issues: {} as never,
+        taskReach: async () => ({ visible: false, relation: "outside" }),
+        tasks: {} as never,
       },
     })).resolves.toMatchObject({
       ok: false,
-      error: "Issue memory is outside the current issue-listing reach",
+      error: "Task memory is outside the current task-listing reach",
     });
     await expect(recall({
       ctx,
@@ -626,12 +626,12 @@ describe("AgentMemory authorization and search", () => {
       runContext: {
         handle: "test",
         resolve: async () => resolved,
-        issueReach: async () => ({ visible: false, relation: "outside" }),
-        issues: {} as never,
+        taskReach: async () => ({ visible: false, relation: "outside" }),
+        tasks: {} as never,
       },
     })).resolves.toMatchObject({
       ok: false,
-      error: expect.stringContaining("list_company_issues"),
+      error: expect.stringContaining("list_company_tasks"),
     });
     expect(stub.requests).toEqual([]);
   });
@@ -640,11 +640,11 @@ describe("AgentMemory authorization and search", () => {
 describe("AgentMemory automatic before-prompt capture", () => {
   it("captures each between-message update before the next provider prompt without recapturing old rows", async () => {
     const access = {
-      read_issue_agent_run: true,
-      read_issue_comments: true,
-      list_company_issues: true,
-      read_company_issue_agent_run: true,
-      read_company_issue_comments: true,
+      read_task_agent_run: true,
+      read_task_comments: true,
+      list_company_tasks: true,
+      read_company_task_agent_run: true,
+      read_company_task_comments: true,
     };
     const firstPrompt: PluginBeforePromptInput = {
       ...beforePromptInput(access),
@@ -693,9 +693,9 @@ describe("AgentMemory automatic before-prompt capture", () => {
       agentId: secondPrompt.agentId,
       message: { type: "user", text: secondPrompt.sourceText },
     });
-    const interveningComment: PluginRunIssueCommentProjection = {
+    const interveningComment: PluginRunTaskCommentProjection = {
       id: "comment-between-prompts",
-      issueId: secondPrompt.issueId,
+      taskId: secondPrompt.taskId,
       body: "Comment update between prompts",
       author: { kind: "user", userId: "user" },
       runId: null,
@@ -704,7 +704,7 @@ describe("AgentMemory automatic before-prompt capture", () => {
     };
     const stub = await startAgentMemoryStub();
     const messages: PluginCanonicalSessionMessage[] = [firstSource];
-    const comments: PluginRunIssueCommentProjection[] = [];
+    const comments: PluginRunTaskCommentProjection[] = [];
     const runtime = beforePromptContext({
       baseUrl: stub.baseUrl,
       messages,
@@ -740,7 +740,7 @@ describe("AgentMemory automatic before-prompt capture", () => {
   });
 
   it("fails the before-message capture barrier without searching", async () => {
-    const prompt = beforePromptInput({ read_issue_agent_run: true });
+    const prompt = beforePromptInput({ read_task_agent_run: true });
     const source = canonicalMessage({
       seq: prompt.sourceMessageSeq,
       id: prompt.sourceMessageId,
@@ -904,7 +904,7 @@ describe("AgentMemory capture and receipt contract", () => {
             type: "tool",
             name: pluginAgentToolName(
               manifest.id,
-              "read_issue_agent_memory",
+              "read_task_agent_memory",
             ),
             state: {
               status: "completed",
@@ -973,7 +973,7 @@ describe("AgentMemory capture and receipt contract", () => {
       companyId: "company-secret",
       payload: {
         companyId: "company-secret",
-        issueId: "issue-secret",
+        taskId: "task-secret",
         runId: "run-secret",
         agentId: "agent-secret",
         outcome: "succeeded",

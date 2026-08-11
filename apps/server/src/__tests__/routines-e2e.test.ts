@@ -53,7 +53,7 @@ function app() {
       : testBoardSessionActor({ userId: "board-user", companyIds: [companyId] });
     next();
   });
-  expressApp.use("/api", routineRoutes(createMockDb().db, { ordinaryIssues: {} as never }));
+  expressApp.use("/api", routineRoutes(createMockDb().db, { ordinaryTasks: {} as never }));
   expressApp.use(errorHandler);
   return expressApp;
 }
@@ -110,7 +110,7 @@ describe("routine routes", () => {
       .expect(201, created);
 
     expect(mocks.accessDecide).toHaveBeenCalledWith(expect.objectContaining({
-      action: "issue:mutate",
+      action: "task:mutate",
       resource: { type: "company", companyId },
     }));
     expect(mocks.create).toHaveBeenCalledWith(companyId, expect.objectContaining({
@@ -143,8 +143,8 @@ describe("routine routes", () => {
       id: "run-1",
       routineId,
       source: "manual",
-      status: "issue_created",
-      linkedIssueId: "issue-1",
+      status: "task_created",
+      linkedTaskId: "task-1",
     });
 
     const response = await request(app())
@@ -157,7 +157,7 @@ describe("routine routes", () => {
       })
       .expect(202);
 
-    expect(response.body).toMatchObject({ status: "issue_created", linkedIssueId: "issue-1" });
+    expect(response.body).toMatchObject({ status: "task_created", linkedTaskId: "task-1" });
     expect(mocks.runRoutine).toHaveBeenCalledWith(routineId, expect.objectContaining({
       source: "manual",
       variables: { repo: "paperclip" },

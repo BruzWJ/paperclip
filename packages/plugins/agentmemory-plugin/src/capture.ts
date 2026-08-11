@@ -5,7 +5,7 @@ import {
   type PluginCanonicalSessionMessage,
   type PluginContext,
   type PluginEvent,
-  type PluginRunIssueCommentProjection,
+  type PluginRunTaskCommentProjection,
   type ProviderSafeRunTrace,
 } from "@paperclipai/plugin-sdk";
 import {
@@ -129,15 +129,15 @@ async function readFullRunTurns(
 async function readAllComments(
   ctx: PluginContext,
   companyId: string,
-  issueId: string,
-): Promise<PluginRunIssueCommentProjection[]> {
+  taskId: string,
+): Promise<PluginRunTaskCommentProjection[]> {
   let cursor: string | undefined;
-  const comments: PluginRunIssueCommentProjection[] = [];
+  const comments: PluginRunTaskCommentProjection[] = [];
   const seenCursors = new Set<string>();
   do {
-    const page = await ctx.runtime.records.readIssueComments({
+    const page = await ctx.runtime.records.readTaskComments({
       companyId,
-      issueId,
+      taskId,
       cursor,
       limit: 100,
     });
@@ -244,12 +244,12 @@ export function runObservations(
 }
 
 function commentObservations(
-  comments: readonly PluginRunIssueCommentProjection[],
+  comments: readonly PluginRunTaskCommentProjection[],
 ): MemoryObservation[] {
   return comments.map((comment) => ({
     identity: observationIdentity(
-      "issue-comment",
-      comment.issueId,
+      "task-comment",
+      comment.taskId,
       comment.id,
       comment.sequence,
     ),
@@ -509,8 +509,8 @@ function sessionCheckpointKey(
   backendIdentity: string,
 ) {
   return {
-    scopeKind: "issue" as const,
-    scopeId: input.issueId,
+    scopeKind: "task" as const,
+    scopeId: input.taskId,
     stateKey:
       `agentmemory:session-checkpoint-v3:${sessionStateIdentity(input, backendIdentity)}`,
   };
@@ -540,8 +540,8 @@ function parseCaptureCheckpoint(value: unknown): CaptureCheckpoint | null {
     if (
       !receipt
       || (
-        receipt.kind !== "issue_agent"
-        && receipt.kind !== "issue_shared"
+        receipt.kind !== "task_agent"
+        && receipt.kind !== "task_shared"
         && receipt.kind !== "company_agent"
         && receipt.kind !== "company_shared"
       )
@@ -597,11 +597,11 @@ async function checkpointReceiptsExist(input: {
 
 function privateCaptureQueueKey(input: {
   companyId: string;
-  issueId: string;
+  taskId: string;
   agentId: string;
   backendIdentity: string;
 }): string {
-  return `private:${input.backendIdentity}:${input.companyId}:${input.issueId}:${input.agentId}`;
+  return `private:${input.backendIdentity}:${input.companyId}:${input.taskId}:${input.agentId}`;
 }
 
 function terminalRunStateKey(runId: string, backendIdentity: string) {
@@ -633,7 +633,7 @@ async function readSessionMessages(input: {
     });
     if (
       result.session.companyId !== input.prompt.companyId
-      || result.session.issueId !== input.prompt.issueId
+      || result.session.taskId !== input.prompt.taskId
       || result.session.sessionId !== input.prompt.sessionId
       || result.snapshotHighWaterSeq !== input.prompt.snapshotHighWaterSeq
     ) {
@@ -658,7 +658,7 @@ function sessionObservations(
 
 function privatePartitions(prompt: PluginBeforePromptInput): MemoryPartition[] {
   return [
-    memoryPartition("issue_agent", prompt),
+    memoryPartition("task_agent", prompt),
     memoryPartition("company_agent", prompt),
   ];
 }
@@ -747,7 +747,7 @@ export async function capturePromptSession(input: {
           || record.row.seq > record.row.modelStateSeq
           || seenMessageIds.has(record.row.id)
           || record.row.companyId !== input.prompt.companyId
-          || record.row.issueId !== input.prompt.issueId
+          || record.row.taskId !== input.prompt.taskId
           || record.row.sessionId !== input.prompt.sessionId
           || record.row.modelStateSeq < previousModelStateSeq
           || (
@@ -787,21 +787,21 @@ export async function capturePromptSession(input: {
   );
 }
 
-async function captureIssueCommentsUnlocked(input: {
+async function captureTaskCommentsUnlocked(input: {
   ctx: PluginContext;
   client: AgentMemoryClient;
   companyId: string;
-  issueId: string;
+  taskId: string;
   maxSequence?: number;
 }): Promise<void> {
   const backendIdentity = input.client.backendIdentity;
   const stateKey = {
-    scopeKind: "issue" as const,
-    scopeId: input.issueId,
+    scopeKind: "task" as const,
+    scopeId: input.taskId,
     stateKey: `agentmemory:shared-comment-checkpoint-v3:${backendIdentity}`,
   };
   const partitions = [
-    memoryPartition("issue_shared", input),
+    memoryPartition("task_shared", input),
     memoryPartition("company_shared", input),
   ];
   const checkpoint = parseCaptureCheckpoint(await input.ctx.state.get(stateKey));
@@ -816,7 +816,7 @@ async function captureIssueCommentsUnlocked(input: {
   const allComments = await readAllComments(
     input.ctx,
     input.companyId,
-    input.issueId,
+    input.taskId,
   );
   let previousSequence = -1;
   for (const comment of allComments) {
@@ -824,9 +824,9 @@ async function captureIssueCommentsUnlocked(input: {
       !Number.isSafeInteger(comment.sequence)
       || comment.sequence < 0
       || comment.sequence <= previousSequence
-      || comment.issueId !== input.issueId
+      || comment.taskId !== input.taskId
     ) {
-      throw new Error("Paperclip returned invalid canonical issue-comment ordering");
+      throw new Error("Paperclip returned invalid canonical task-comment ordering");
     }
     previousSequence = comment.sequence;
   }
@@ -844,7 +844,7 @@ async function captureIssueCommentsUnlocked(input: {
     const receipts = await recordIntoPartitions({
       client: input.client,
       partitions,
-      title: "Paperclip shared issue comment",
+      title: "Paperclip shared task comment",
       observations: commentObservations([comment]),
     });
     await input.ctx.state.set(
@@ -861,16 +861,16 @@ export async function capturePromptComments(input: {
   ctx: PluginContext;
   client: AgentMemoryClient;
   companyId: string;
-  issueId: string;
+  taskId: string;
   snapshotHighWaterSeq: number;
 }): Promise<void> {
   return serializeCapture(
-    `comments:${input.client.backendIdentity}:${input.companyId}:${input.issueId}`,
-    () => captureIssueCommentsUnlocked({
+    `comments:${input.client.backendIdentity}:${input.companyId}:${input.taskId}`,
+    () => captureTaskCommentsUnlocked({
       ctx: input.ctx,
       client: input.client,
       companyId: input.companyId,
-      issueId: input.issueId,
+      taskId: input.taskId,
       maxSequence: input.snapshotHighWaterSeq,
     }),
   );
@@ -883,12 +883,12 @@ export async function captureTerminalRun(
   const payload = payloadRecord(event);
   const companyId = nonEmptyString(event.companyId);
   const runId = nonEmptyString(payload.runId);
-  const issueId = nonEmptyString(payload.issueId);
+  const taskId = nonEmptyString(payload.taskId);
   const agentId = nonEmptyString(payload.agentId);
   if (
     !companyId
     || !runId
-    || !issueId
+    || !taskId
     || !agentId
     || payload.companyId !== companyId
     || event.entityId !== runId
@@ -896,18 +896,18 @@ export async function captureTerminalRun(
     || event.actorId !== agentId
     || event.actorType !== "agent"
   ) {
-    throw new Error("Agent run event is missing canonical company, run, issue, or agent identity");
+    throw new Error("Agent run event is missing canonical company, run, task, or agent identity");
   }
   const client = await AgentMemoryClient.connect(ctx);
   await serializeCapture(privateCaptureQueueKey({
     companyId,
-    issueId,
+    taskId,
     agentId,
     backendIdentity: client.backendIdentity,
   }), async () => {
     const stateKey = terminalRunStateKey(runId, client.backendIdentity);
     const partitions = [
-      memoryPartition("issue_agent", { companyId, issueId, agentId }),
+      memoryPartition("task_agent", { companyId, taskId, agentId }),
       memoryPartition("company_agent", { companyId, agentId }),
     ];
     const checkpoint = parseCaptureCheckpoint(await ctx.state.get(stateKey));

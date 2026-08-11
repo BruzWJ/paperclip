@@ -354,7 +354,7 @@ export function Costs() {
           />
           <CostRows
             title="By project"
-            description="Known prompt-cost deltas attributed through issue project membership."
+            description="Known prompt-cost deltas attributed through task project membership."
             rows={projectRows}
             icon={FolderKanban}
           />

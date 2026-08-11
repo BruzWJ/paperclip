@@ -2,7 +2,7 @@ import type {
   DocumentAnnotationAnchorConfidence,
   DocumentAnnotationAnchorState,
   DocumentAnnotationThreadStatus,
-  IssueCommentAuthorType,
+  TaskCommentAuthorType,
 } from "../constants.js";
 
 export interface DocumentTextPosition {
@@ -55,7 +55,7 @@ export interface DocumentAnnotationAnchorSnapshot {
 export interface DocumentAnnotationThread {
   id: string;
   companyId: string;
-  issueId: string | null;
+  taskId: string | null;
   routineId?: string | null;
   documentId: string;
   documentKey: string;
@@ -87,15 +87,15 @@ export interface DocumentAnnotationComment {
   id: string;
   companyId: string;
   threadId: string;
-  issueId: string | null;
+  taskId: string | null;
   routineId?: string | null;
   documentId: string;
   body: string;
-  authorType: IssueCommentAuthorType;
+  authorType: TaskCommentAuthorType;
   authorAgentId: string | null;
   authorUserId: string | null;
   createdByRunId: string | null;
-  issueCommentId?: string | null;
+  taskCommentId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -126,12 +126,12 @@ export interface CreateDocumentAnnotationThreadRequest {
   baseRevisionNumber: number;
   selector: DocumentAnnotationAnchorSelector;
   body: string;
-  issueCommentId?: string | null;
+  taskCommentId?: string | null;
 }
 
 export interface CreateDocumentAnnotationCommentRequest {
   body: string;
-  issueCommentId?: string | null;
+  taskCommentId?: string | null;
 }
 
 export interface UpdateDocumentAnnotationThreadRequest {
@@ -139,7 +139,7 @@ export interface UpdateDocumentAnnotationThreadRequest {
 }
 
 export interface PlanReviewContextAuthor {
-  type: IssueCommentAuthorType;
+  type: TaskCommentAuthorType;
   id: string | null;
 }
 
@@ -178,7 +178,7 @@ export interface PlanReviewContextThread {
 
 export interface PlanReviewContext {
   documentKey: "plan";
-  issueId: string;
+  taskId: string;
   latestRevisionId: string | null;
   latestRevisionNumber: number | null;
   threads: PlanReviewContextThread[];

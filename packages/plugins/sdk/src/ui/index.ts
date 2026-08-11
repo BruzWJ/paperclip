@@ -26,7 +26,7 @@
  *
  *   return (
  *     <div style={{ display: "grid", gap: 8 }}>
- *       <strong>Synced Issues</strong>
+ *       <strong>Synced Tasks</strong>
  *       <div>{data!.syncedCount}</div>
  *       <button onClick={() => resync({})}>
  *         Resync Now
@@ -66,7 +66,7 @@ export {
   Spinner,
   ErrorBoundary,
   FileTree,
-  IssuesList,
+  TasksList,
   OwnerPicker,
   ProjectPicker,
   ManagedRoutinesList,
@@ -93,8 +93,8 @@ export type {
   FileTreeErrorState,
   FileTreePathCollection,
   FileTreeProps,
-  IssuesListFilters,
-  IssuesListProps,
+  TasksListFilters,
+  TasksListProps,
   OwnerPickerSelection,
   OwnerPickerProps,
   ProjectPickerProps,

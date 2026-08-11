@@ -29,7 +29,7 @@ vi.mock("@/context/BreadcrumbContext", () => ({
 }));
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({
-    selectedCompany: { id: "company-1", name: "Fixture company", issuePrefix: "FIX" },
+    selectedCompany: { id: "company-1", name: "Fixture company", taskPrefix: "FIX" },
   }),
 }));
 vi.mock("@/context/ToastContext", () => ({

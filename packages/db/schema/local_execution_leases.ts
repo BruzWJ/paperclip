@@ -2,8 +2,8 @@ import { check, index, pgTable, text, timestamp, unique, uuid } from "drizzle-or
 import { sql } from "drizzle-orm";
 import { companies } from "./companies.js";
 import { executionWorkspaces } from "./execution_workspaces.js";
-import { issueExecutionRuns } from "./issue_execution_runs.js";
-import { issues } from "./issues.js";
+import { taskExecutionRuns } from "./task_execution_runs.js";
+import { tasks } from "./tasks.js";
 
 export const localExecutionLeases = pgTable(
   "local_execution_leases",
@@ -11,8 +11,8 @@ export const localExecutionLeases = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
     executionWorkspaceId: uuid("execution_workspace_id").notNull().references(() => executionWorkspaces.id, { onDelete: "cascade" }),
-    issueId: uuid("issue_id").notNull().references(() => issues.id, { onDelete: "cascade" }),
-    runId: uuid("run_id").notNull().references(() => issueExecutionRuns.id, {
+    taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+    runId: uuid("run_id").notNull().references(() => taskExecutionRuns.id, {
       onDelete: "cascade",
     }),
     status: text("status").notNull().default("active"),
@@ -31,7 +31,7 @@ export const localExecutionLeases = pgTable(
       table.companyId,
       table.executionWorkspaceId,
     ),
-    companyIssueIdx: index("local_execution_leases_company_issue_idx").on(table.companyId, table.issueId),
+    companyTaskIdx: index("local_execution_leases_company_task_idx").on(table.companyId, table.taskId),
     companyLastUsedIdx: index("local_execution_leases_company_last_used_idx").on(table.companyId, table.lastUsedAt),
     companyRunUq: unique("local_execution_leases_company_run_uq").on(
       table.companyId,

@@ -14,63 +14,63 @@ describe("context dial resolver", () => {
     const result = resolveContextDial({
       agent: {
         carry_context: true,
-        read_issue_comments: true,
+        read_task_comments: true,
       },
     });
 
     expect(result.effective.carry_context).toBe(true);
-    expect(result.effective.read_issue_comments).toBe(true);
+    expect(result.effective.read_task_comments).toBe(true);
     for (const key of AGENT_CONTEXT_GRANT_KEYS) {
-      if (key === "carry_context" || key === "read_issue_comments") continue;
+      if (key === "carry_context" || key === "read_task_comments") continue;
       expect(result.effective[key]).toBe(false);
     }
   });
 
-  it("gives an active issue owner only the current and sub-issue baseline", () => {
+  it("gives an active task owner only the current and sub-task baseline", () => {
     const result = resolveContextDial({
       agent: {},
-      issueOwner: true,
+      taskOwner: true,
     });
 
     expect(result.effective).toEqual({
       carry_context: true,
-      read_issue_comments: true,
-      read_issue_agent_run: true,
-      list_sub_issues: true,
-      read_sub_issue_comments: true,
-      read_sub_issue_agent_run: true,
-      list_company_issues: false,
-      read_company_issue_comments: false,
-      read_company_issue_agent_run: false,
+      read_task_comments: true,
+      read_task_agent_run: true,
+      list_sub_tasks: true,
+      read_sub_task_comments: true,
+      read_sub_task_agent_run: true,
+      list_company_tasks: false,
+      read_company_task_comments: false,
+      read_company_task_agent_run: false,
     });
   });
 
   it("keeps company cells at the agent's configured grants", () => {
     const result = resolveContextDial({
       agent: {
-        list_company_issues: true,
-        read_company_issue_agent_run: true,
+        list_company_tasks: true,
+        read_company_task_agent_run: true,
       },
-      issueOwner: true,
+      taskOwner: true,
     });
 
     expect(result.effective).toEqual({
       carry_context: true,
-      read_issue_comments: true,
-      read_issue_agent_run: true,
-      list_sub_issues: true,
-      read_sub_issue_comments: true,
-      read_sub_issue_agent_run: true,
-      list_company_issues: true,
-      read_company_issue_comments: false,
-      read_company_issue_agent_run: true,
+      read_task_comments: true,
+      read_task_agent_run: true,
+      list_sub_tasks: true,
+      read_sub_task_comments: true,
+      read_sub_task_agent_run: true,
+      list_company_tasks: true,
+      read_company_task_comments: false,
+      read_company_task_agent_run: true,
     });
   });
 
   it("does not grant the owner baseline to another execution mode", () => {
     const result = resolveContextDial({
       agent: {},
-      issueOwner: false,
+      taskOwner: false,
     });
 
     expect(allContextCellsFalse(result.effective)).toBe(true);
@@ -79,12 +79,12 @@ describe("context dial resolver", () => {
   it("allows execution mode only to attenuate the owner baseline", () => {
     const result = resolveContextDial({
       agent: {},
-      issueOwner: true,
-      executionMode: { read_issue_comments: false },
+      taskOwner: true,
+      executionMode: { read_task_comments: false },
     });
 
-    expect(result.effective.read_issue_comments).toBe(false);
-    expect(result.effective.read_sub_issue_comments).toBe(true);
+    expect(result.effective.read_task_comments).toBe(false);
+    expect(result.effective.read_sub_task_comments).toBe(true);
   });
 
   it("stamps the exact five presets without persisting preset authority", () => {
@@ -93,42 +93,42 @@ describe("context dial resolver", () => {
     );
     expect(stampContextAccessPreset("focused")).toMatchObject({
       carry_context: true,
-      read_issue_comments: true,
-      list_sub_issues: false,
+      read_task_comments: true,
+      list_sub_tasks: false,
     });
     expect(stampContextAccessPreset("supervisor")).toMatchObject({
       carry_context: true,
-      read_issue_comments: true,
-      list_sub_issues: true,
-      read_sub_issue_comments: true,
-      read_issue_agent_run: false,
+      read_task_comments: true,
+      list_sub_tasks: true,
+      read_sub_task_comments: true,
+      read_task_agent_run: false,
     });
     expect(stampContextAccessPreset("investigator")).toMatchObject({
-      read_issue_agent_run: true,
-      read_sub_issue_agent_run: false,
-      list_company_issues: false,
+      read_task_agent_run: true,
+      read_sub_task_agent_run: false,
+      list_company_tasks: false,
     });
     expect(stampContextAccessPreset("situational")).toMatchObject({
-      read_issue_agent_run: true,
-      read_sub_issue_agent_run: false,
-      list_company_issues: true,
-      read_company_issue_comments: false,
-      read_company_issue_agent_run: false,
+      read_task_agent_run: true,
+      read_sub_task_agent_run: false,
+      list_company_tasks: true,
+      read_company_task_comments: false,
+      read_company_task_agent_run: false,
     });
   });
 
-  it("derives fresh composition depth from only active-issue content cells", () => {
+  it("derives fresh composition depth from only active-task content cells", () => {
     expect(
       resolveFreshCompositionDepth(
         resolveContextDial({
-          agent: { read_company_issue_agent_run: true },
+          agent: { read_company_task_agent_run: true },
         }).effective,
       ),
     ).toBeNull();
     expect(
       resolveFreshCompositionDepth(
         resolveContextDial({
-          agent: { read_issue_comments: true },
+          agent: { read_task_comments: true },
         }).effective,
       ),
     ).toBe("thread");
@@ -136,8 +136,8 @@ describe("context dial resolver", () => {
       resolveFreshCompositionDepth(
         resolveContextDial({
           agent: {
-            read_issue_comments: true,
-            read_issue_agent_run: true,
+            read_task_comments: true,
+            read_task_agent_run: true,
           },
         }).effective,
       ),
@@ -148,16 +148,16 @@ describe("context dial resolver", () => {
     const policy = resolveContextRetrievalPolicy(
       resolveContextDial({
         agent: {
-          list_company_issues: true,
-          read_sub_issue_comments: true,
-          read_company_issue_agent_run: true,
+          list_company_tasks: true,
+          read_sub_task_comments: true,
+          read_company_task_agent_run: true,
         },
       }).effective,
     );
 
     expect(policy).toEqual({
-      listCompanyIssues: true,
-      listSubIssues: {
+      listCompanyTasks: true,
+      listSubTasks: {
         enabled: true,
         omittedActive: true,
         explicit: {
@@ -171,7 +171,7 @@ describe("context dial resolver", () => {
         descendant: true,
         company: false,
         enabled: true,
-        issueIdRequired: true,
+        taskIdRequired: true,
       },
       runs: {
         active: false,
@@ -190,7 +190,7 @@ describe("context dial resolver", () => {
     expect(contextDialDigest(dial)).not.toBe(
       contextDialDigest(
         resolveContextDial({
-          agent: { read_issue_comments: true },
+          agent: { read_task_comments: true },
         }).effective,
       ),
     );

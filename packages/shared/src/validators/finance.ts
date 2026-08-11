@@ -4,7 +4,7 @@ import { moneyAmountSchema } from "../money.js";
 
 export const createFinanceEventSchema = z.object({
   agentId: z.string().uuid().optional().nullable(),
-  issueId: z.string().uuid().optional().nullable(),
+  taskId: z.string().uuid().optional().nullable(),
   projectId: z.string().uuid().optional().nullable(),
   goalId: z.string().uuid().optional().nullable(),
   billingCode: z.string().optional().nullable(),

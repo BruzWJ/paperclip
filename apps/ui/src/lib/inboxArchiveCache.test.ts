@@ -1,112 +1,112 @@
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
-import type { Issue } from "@paperclipai/shared";
+import type { Task } from "@paperclipai/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   beginLocalInboxArchive,
   boundLocalInboxArchive,
   clearLocalInboxArchive,
   confirmLocalInboxArchive,
-  filterLocalInboxArchivedIssues,
-  getIssuePresenceInActiveInboxCaches,
-  getLocalInboxArchiveIssueIds,
-  removeIssueFromInboxCaches,
-  restoreIssueToInboxCaches,
-  snapshotInboxIssueCaches,
+  filterLocalInboxArchivedTasks,
+  getTaskPresenceInActiveInboxCaches,
+  getLocalInboxArchiveTaskIds,
+  removeTaskFromInboxCaches,
+  restoreTaskToInboxCaches,
+  snapshotInboxTaskCaches,
 } from "./inboxArchiveCache";
 import { queryKeys } from "./queryKeys";
 
-function issue(id: string): Issue {
-  return { id } as Issue;
+function task(id: string): Task {
+  return { id } as Task;
 }
 
 describe("inboxArchiveCache", () => {
   afterEach(() => {
     vi.useRealTimers();
-    for (const issueId of getLocalInboxArchiveIssueIds("company-1")) {
-      clearLocalInboxArchive("company-1", issueId);
+    for (const taskId of getLocalInboxArchiveTaskIds("company-1")) {
+      clearLocalInboxArchive("company-1", taskId);
     }
   });
 
   it("restores only the failed archive during overlapping optimistic removals", () => {
     const companyId = "company-1";
     const queryClient = new QueryClient();
-    const queryKey = [...queryKeys.issues.listMineByMe(companyId), "with-routine-executions"] as const;
+    const queryKey = [...queryKeys.tasks.listMineByMe(companyId), "with-routine-executions"] as const;
 
-    queryClient.setQueryData<Issue[]>(queryKey, [
-      issue("issue-a"),
-      issue("issue-b"),
-      issue("issue-c"),
+    queryClient.setQueryData<Task[]>(queryKey, [
+      task("task-a"),
+      task("task-b"),
+      task("task-c"),
     ]);
 
-    const archiveASnapshot = snapshotInboxIssueCaches(queryClient, companyId);
-    removeIssueFromInboxCaches(queryClient, companyId, "issue-a");
+    const archiveASnapshot = snapshotInboxTaskCaches(queryClient, companyId);
+    removeTaskFromInboxCaches(queryClient, companyId, "task-a");
 
-    const archiveBSnapshot = snapshotInboxIssueCaches(queryClient, companyId);
-    removeIssueFromInboxCaches(queryClient, companyId, "issue-b");
+    const archiveBSnapshot = snapshotInboxTaskCaches(queryClient, companyId);
+    removeTaskFromInboxCaches(queryClient, companyId, "task-b");
 
-    restoreIssueToInboxCaches(queryClient, archiveASnapshot, "issue-a");
+    restoreTaskToInboxCaches(queryClient, archiveASnapshot, "task-a");
 
-    expect(queryClient.getQueryData<Issue[]>(queryKey)?.map((cachedIssue) => cachedIssue.id)).toEqual([
-      "issue-a",
-      "issue-c",
+    expect(queryClient.getQueryData<Task[]>(queryKey)?.map((cachedTask) => cachedTask.id)).toEqual([
+      "task-a",
+      "task-c",
     ]);
 
-    restoreIssueToInboxCaches(queryClient, archiveBSnapshot, "issue-b");
+    restoreTaskToInboxCaches(queryClient, archiveBSnapshot, "task-b");
 
-    expect(queryClient.getQueryData<Issue[]>(queryKey)?.map((cachedIssue) => cachedIssue.id)).toEqual([
-      "issue-a",
-      "issue-b",
-      "issue-c",
+    expect(queryClient.getQueryData<Task[]>(queryKey)?.map((cachedTask) => cachedTask.id)).toEqual([
+      "task-a",
+      "task-b",
+      "task-c",
     ]);
   });
 
-  it("filters locally archived issues until confirmed grace expires", () => {
+  it("filters locally archived tasks until confirmed grace expires", () => {
     vi.useFakeTimers();
-    const issues = [issue("issue-a"), issue("issue-b")];
+    const tasks = [task("task-a"), task("task-b")];
 
-    beginLocalInboxArchive("company-1", "issue-a");
-    expect(filterLocalInboxArchivedIssues("company-1", issues)).toEqual([issue("issue-b")]);
+    beginLocalInboxArchive("company-1", "task-a");
+    expect(filterLocalInboxArchivedTasks("company-1", tasks)).toEqual([task("task-b")]);
 
-    confirmLocalInboxArchive("company-1", "issue-a");
+    confirmLocalInboxArchive("company-1", "task-a");
     vi.advanceTimersByTime(4_999);
-    expect(filterLocalInboxArchivedIssues("company-1", issues)).toEqual([issue("issue-b")]);
+    expect(filterLocalInboxArchivedTasks("company-1", tasks)).toEqual([task("task-b")]);
 
     vi.advanceTimersByTime(1);
-    expect(filterLocalInboxArchivedIssues("company-1", issues)).toEqual(issues);
+    expect(filterLocalInboxArchivedTasks("company-1", tasks)).toEqual(tasks);
   });
 
   it("does not expire an in-flight archive before post-settle bounding starts", () => {
     vi.useFakeTimers();
-    beginLocalInboxArchive("company-1", "issue-a");
+    beginLocalInboxArchive("company-1", "task-a");
 
     vi.advanceTimersByTime(30_000);
-    expect(getLocalInboxArchiveIssueIds("company-1").has("issue-a")).toBe(true);
+    expect(getLocalInboxArchiveTaskIds("company-1").has("task-a")).toBe(true);
 
-    boundLocalInboxArchive("company-1", "issue-a");
+    boundLocalInboxArchive("company-1", "task-a");
     vi.advanceTimersByTime(29_999);
-    expect(getLocalInboxArchiveIssueIds("company-1").has("issue-a")).toBe(true);
+    expect(getLocalInboxArchiveTaskIds("company-1").has("task-a")).toBe(true);
 
     vi.advanceTimersByTime(1);
-    expect(getLocalInboxArchiveIssueIds("company-1").has("issue-a")).toBe(false);
+    expect(getLocalInboxArchiveTaskIds("company-1").has("task-a")).toBe(false);
   });
 
   it("distinguishes present, absent, and unavailable active inbox data", () => {
     const companyId = "company-1";
     const queryClient = new QueryClient();
-    const queryKey = [...queryKeys.issues.listMineByMe(companyId), "with-routine-executions"] as const;
+    const queryKey = [...queryKeys.tasks.listMineByMe(companyId), "with-routine-executions"] as const;
 
-    expect(getIssuePresenceInActiveInboxCaches(queryClient, companyId, "issue-a")).toBe("unknown");
+    expect(getTaskPresenceInActiveInboxCaches(queryClient, companyId, "task-a")).toBe("unknown");
 
-    queryClient.setQueryData<Issue[]>(queryKey, [issue("issue-a")]);
-    const observer = new QueryObserver<Issue[]>(queryClient, {
+    queryClient.setQueryData<Task[]>(queryKey, [task("task-a")]);
+    const observer = new QueryObserver<Task[]>(queryClient, {
       queryKey,
       queryFn: async () => [],
     });
     const unsubscribe = observer.subscribe(() => undefined);
 
-    expect(getIssuePresenceInActiveInboxCaches(queryClient, companyId, "issue-a")).toBe("present");
-    queryClient.setQueryData<Issue[]>(queryKey, [issue("issue-b")]);
-    expect(getIssuePresenceInActiveInboxCaches(queryClient, companyId, "issue-a")).toBe("absent");
+    expect(getTaskPresenceInActiveInboxCaches(queryClient, companyId, "task-a")).toBe("present");
+    queryClient.setQueryData<Task[]>(queryKey, [task("task-b")]);
+    expect(getTaskPresenceInActiveInboxCaches(queryClient, companyId, "task-a")).toBe("absent");
 
     unsubscribe();
   });

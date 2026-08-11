@@ -56,7 +56,7 @@ describe("agent company skill pins API", () => {
   });
 });
 
-describe("invokable issue-owner catalog API", () => {
+describe("invokable task-owner catalog API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -64,10 +64,10 @@ describe("invokable issue-owner catalog API", () => {
   it("reads the company-authorized presentation catalog", async () => {
     mockApi.get.mockResolvedValue([]);
 
-    await agentsApi.listInvokableIssueOwners("company / one");
+    await agentsApi.listInvokableTaskOwners("company / one");
 
     expect(mockApi.get).toHaveBeenCalledWith(
-      "/companies/company%20%2F%20one/issue-owner-catalog",
+      "/companies/company%20%2F%20one/task-owner-catalog",
     );
   });
 });

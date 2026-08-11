@@ -7,7 +7,7 @@ import {
   budgetPolicies,
   companies,
   costEvents,
-  issues,
+  tasks,
   projects,
 } from "@paperclipai/db";
 import {
@@ -60,7 +60,7 @@ type BudgetScopeEnforcementAction = "suspend" | "resume" | null;
 
 export type CanonicalCompanyCreation = Omit<
   CompanyInsert,
-  "budgetCurrency" | "budgetMonthlyAmount" | "issuePrefix"
+  "budgetCurrency" | "budgetMonthlyAmount" | "taskPrefix"
 > & {
   budgetCurrency?: unknown;
   budgetMonthlyAmount?: unknown;
@@ -164,7 +164,7 @@ function prefixForAttempt(base: string, attempt: number) {
   return attempt === 1 ? base : `${base}${"A".repeat(attempt - 1)}`;
 }
 
-function isIssuePrefixConflict(error: unknown) {
+function isTaskPrefixConflict(error: unknown) {
   const seen = new Set<unknown>();
   let current = error;
   while (
@@ -182,7 +182,7 @@ function isIssuePrefixConflict(error: unknown) {
     if (
       candidate.code === "23505" &&
       (candidate.constraint ?? candidate.constraint_name) ===
-        "companies_issue_prefix_idx"
+        "companies_task_prefix_idx"
     ) {
       return true;
     }
@@ -288,7 +288,7 @@ async function computeObservedAmount(database: Db, policy: PolicyRow) {
     conditions.push(eq(costEvents.agentId, policy.scopeId));
   }
   if (policy.scopeType === "project") {
-    conditions.push(eq(issues.projectId, policy.scopeId));
+    conditions.push(eq(tasks.projectId, policy.scopeId));
   }
   const { start, end } = resolveWindow(
     policy.windowKind as BudgetWindowKind,
@@ -303,10 +303,10 @@ async function computeObservedAmount(database: Db, policy: PolicyRow) {
     })
     .from(costEvents)
     .innerJoin(
-      issues,
+      tasks,
       and(
-        eq(issues.id, costEvents.issueId),
-        eq(issues.companyId, costEvents.companyId),
+        eq(tasks.id, costEvents.taskId),
+        eq(tasks.companyId, costEvents.companyId),
       ),
     )
     .where(and(...conditions))
@@ -872,25 +872,25 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
     }
     if (input.projectIds) {
       if (input.projectIds.length === 0) return [];
-      conditions.push(inArray(issues.projectId, [...input.projectIds]));
+      conditions.push(inArray(tasks.projectId, [...input.projectIds]));
     }
     return db
       .select({
         companyId: costEvents.companyId,
         agentId: costEvents.agentId,
-        projectId: issues.projectId,
+        projectId: tasks.projectId,
         knownSpendAmount: sql<string>`coalesce(sum(${costEvents.knownDeltaAmount}), 0)::text`,
       })
       .from(costEvents)
       .innerJoin(
-        issues,
+        tasks,
         and(
-          eq(issues.id, costEvents.issueId),
-          eq(issues.companyId, costEvents.companyId),
+          eq(tasks.id, costEvents.taskId),
+          eq(tasks.companyId, costEvents.companyId),
         ),
       )
       .where(and(...conditions))
-      .groupBy(costEvents.companyId, costEvents.agentId, issues.projectId);
+      .groupBy(costEvents.companyId, costEvents.agentId, tasks.projectId);
   }
 
   async function evaluateCostEventInTransaction(
@@ -919,12 +919,12 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
       )
       .for("update");
     const eventProjectId = await db
-      .select({ projectId: issues.projectId })
-      .from(issues)
+      .select({ projectId: tasks.projectId })
+      .from(tasks)
       .where(
         and(
-          eq(issues.id, event.issueId),
-          eq(issues.companyId, event.companyId),
+          eq(tasks.id, event.taskId),
+          eq(tasks.companyId, event.companyId),
         ),
       )
       .then((rows) => rows[0]?.projectId ?? null);
@@ -972,7 +972,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
                 ...data,
                 budgetCurrency,
                 budgetMonthlyAmount,
-                issuePrefix: prefixForAttempt(base, attempt),
+                taskPrefix: prefixForAttempt(base, attempt),
                 sessionIntegrityState: "ready",
                 sessionIntegrityReadyAt: now,
               })
@@ -993,10 +993,10 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
             return created;
           });
         } catch (error) {
-          if (!isIssuePrefixConflict(error)) throw error;
+          if (!isTaskPrefixConflict(error)) throw error;
         }
       }
-      throw new Error("Unable to allocate unique issue prefix");
+      throw new Error("Unable to allocate unique task prefix");
     },
 
     /**
@@ -1173,7 +1173,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
     getInvocationBlock: async (
       companyId: string,
       agentId: string,
-      context?: { issueId?: string | null; projectId?: string | null },
+      context?: { taskId?: string | null; projectId?: string | null },
     ) => {
       const [agent, company, policies] = await Promise.all([
         db

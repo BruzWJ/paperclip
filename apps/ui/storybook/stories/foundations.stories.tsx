@@ -130,7 +130,7 @@ function FoundationsMatrix() {
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
             <div className="space-y-4">
               <div className="grid gap-2">
-                <Label htmlFor="story-title">Issue title</Label>
+                <Label htmlFor="story-title">Task title</Label>
                 <Input id="story-title" defaultValue="Create Storybook coverage for the board UI" />
               </div>
               <div className="grid gap-2">
@@ -226,7 +226,7 @@ function FoundationsMatrix() {
                     Hover for tooltip
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Search issues, agents, projects, and approvals.</TooltipContent>
+                <TooltipContent>Search tasks, agents, projects, and approvals.</TooltipContent>
               </Tooltip>
 
               <Popover>
@@ -253,7 +253,7 @@ function FoundationsMatrix() {
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Create issue</DialogTitle>
+                    <DialogTitle>Create task</DialogTitle>
                     <DialogDescription>
                       Dialogs should keep the primary decision and risk clear without leaving the current board context.
                     </DialogDescription>

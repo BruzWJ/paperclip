@@ -18,7 +18,7 @@ import {
   documentAnnotationService,
   logActivity,
   routineService,
-  type OrdinaryIssueRuntime,
+  type OrdinaryTaskRuntime,
 } from "../services/index.js";
 import {
   assertBoard,
@@ -31,11 +31,11 @@ import { getTelemetryClient } from "../telemetry.js";
 
 export function routineRoutes(
   db: Db,
-  opts: { ordinaryIssues: OrdinaryIssueRuntime },
+  opts: { ordinaryTasks: OrdinaryTaskRuntime },
 ) {
   const router = Router();
   const svc = routineService(db, {
-    ordinaryIssues: opts.ordinaryIssues,
+    ordinaryTasks: opts.ordinaryTasks,
   });
   const documentAnnotationsSvc = documentAnnotationService(db);
   const access = accessService(db);
@@ -93,7 +93,7 @@ export function routineRoutes(
     assertCompanyAccess(req, companyId);
     const decision = await access.decide({
       actor: req.actor,
-      action: "issue:mutate",
+      action: "task:mutate",
       resource: { type: "company", companyId },
     });
     if (!decision.allowed) throw forbidden(decision.explanation);

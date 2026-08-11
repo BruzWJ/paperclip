@@ -15,9 +15,9 @@ vi.mock("../services/activity-log.js", () => ({
   logActivity: mocks.logActivity,
 }));
 
-vi.mock("../services/plugin-issue-authorization.js", async () => {
-  const actual = await vi.importActual<typeof import("../services/plugin-issue-authorization.js")>(
-    "../services/plugin-issue-authorization.js",
+vi.mock("../services/plugin-task-authorization.js", async () => {
+  const actual = await vi.importActual<typeof import("../services/plugin-task-authorization.js")>(
+    "../services/plugin-task-authorization.js",
   );
   return {
     ...actual,
@@ -44,9 +44,9 @@ describe("plugin activity host service", () => {
 
     await services.activity.log({
       companyId,
-      message: "issue.created",
-      entityType: "issue",
-      entityId: "issue-1",
+      message: "task.created",
+      entityType: "task",
+      entityId: "task-1",
       metadata: { source: "test" },
     });
 
@@ -57,10 +57,10 @@ describe("plugin activity host service", () => {
         actorType: "plugin",
         actorId: pluginId,
         action: "activity.logged",
-        entityType: "issue",
-        entityId: "issue-1",
+        entityType: "task",
+        entityId: "task-1",
         details: expect.objectContaining({
-          message: "issue.created",
+          message: "task.created",
           source: "test",
           sourcePluginId: pluginId,
           sourcePluginKey: pluginKey,

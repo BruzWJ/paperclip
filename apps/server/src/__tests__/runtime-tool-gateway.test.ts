@@ -25,8 +25,8 @@ const capability: PromptCapabilityBinding = {
   companyId: "company",
   capabilityConnectionId: "capability-connection",
   capabilityGeneration: 1,
-  issueId: "issue",
-  sessionId: "issue-session",
+  taskId: "task",
+  sessionId: "task-session",
   runId: "run",
   runBatchDigest: "a".repeat(64),
   refId: "ref",
@@ -34,7 +34,7 @@ const capability: PromptCapabilityBinding = {
   segmentOrdinal: 0,
   attemptId: "attempt",
   workerProcessIdentity: "worker",
-  issueExecutionAuthorityId: "authority",
+  taskExecutionAuthorityId: "authority",
   consultExecutionId: null,
   laneKind: "owner",
   executionMode: "owner",
@@ -60,12 +60,12 @@ function paperclipDescriptor(
     mode: "owner",
     turn: "work",
     contextDial: resolveContextDial({
-      agent: { read_issue_comments: true },
+      agent: { read_task_comments: true },
     }).effective,
     actionGrants: {},
     isCurrentOwner: true,
-    issueCreateDirectChildren: [],
-    issueAssignTargets: [],
+    taskCreateDirectChildren: [],
+    taskAssignTargets: [],
     creatorUpdateTargets: [],
     mentionTargets: [],
     configureTargets: [],
@@ -76,7 +76,7 @@ function paperclipDescriptor(
   return descriptor;
 }
 
-const readComments = paperclipDescriptor("read_issue_comments");
+const readComments = paperclipDescriptor("read_task_comments");
 
 function setup(options: {
   agentDial?: Parameters<typeof resolveContextDial>[0]["agent"];
@@ -84,7 +84,7 @@ function setup(options: {
   replayedPluginResult?: { value: unknown };
 } = {}) {
   const mentionTransaction = {} as never;
-  const issueUpdate = vi.fn(async () => ({ ok: true }));
+  const taskUpdate = vi.fn(async () => ({ ok: true }));
   const agentConfigure = vi.fn(async () => ({ configured: true }));
   const mentionAgent = vi.fn(
     async (input: { authority: AgentRunToolAuthority }) =>
@@ -111,7 +111,7 @@ function setup(options: {
     async ({ runId }: { runId: string }) => ({
       runId,
       runKind: "productive" as const,
-      issueId: "issue",
+      taskId: "task",
       status: "succeeded",
       startedAt: null,
       finishedAt: null,
@@ -144,20 +144,20 @@ function setup(options: {
   const retrieval = createContextRetrievalService({
     cursorSecret: "secret",
     repository: {
-      async issueReach() {
+      async taskReach() {
         return { sameCompany: true, active: true, descendant: false };
       },
-      async listTopLevelIssues() {
+      async listTopLevelTasks() {
         return [];
       },
       async listDirectChildren() {
         return [];
       },
-      async listIssueComments({ issueId }) {
+      async listTaskComments({ taskId }) {
         return [
           {
             id: "comment",
-            issueId,
+            taskId,
             body: "visible",
             author: { kind: "user", userId: "board-user" },
             runId: null,
@@ -166,8 +166,8 @@ function setup(options: {
           },
         ];
       },
-      async runIssue() {
-        return options.enableRunTrace ? { issueId: "issue" } : null;
+      async runTask() {
+        return options.enableRunTrace ? { taskId: "task" } : null;
       },
       readCanonicalRunTrace,
     },
@@ -182,18 +182,18 @@ function setup(options: {
         ? await context.resolveRuntimeScope()
         : null;
       switch (command.name) {
-        case "read_issue_comments":
-          return retrieval.readIssueComments(scope!, {
-            issueId: command.issueId,
+        case "read_task_comments":
+          return retrieval.readTaskComments(scope!, {
+            taskId: command.taskId,
             cursor: command.cursor,
           });
-        case "read_issue_agent_run":
-          return retrieval.readIssueAgentRun(scope!, {
+        case "read_task_agent_run":
+          return retrieval.readTaskAgentRun(scope!, {
             runId: command.runId,
             cursor: command.cursor,
           });
-        case "issue_update":
-          return issueUpdate({
+        case "task_update":
+          return taskUpdate({
             command,
             authority: context.authority,
           });
@@ -212,9 +212,9 @@ function setup(options: {
   } as unknown as PaperclipManagedToolRouter;
   const runtimeScope = {
     companyId: "company",
-    activeIssueId: "issue",
+    activeTaskId: "task",
     dial: resolveContextDial({
-      agent: options.agentDial ?? { read_issue_comments: true },
+      agent: options.agentDial ?? { read_task_comments: true },
     }).effective,
   };
   const runtimeGateway = createRuntimeToolGateway({
@@ -239,7 +239,7 @@ function setup(options: {
   };
   return {
     executor,
-    issueUpdate,
+    taskUpdate,
     agentConfigure,
     mentionAgent,
     mentionBoard,
@@ -496,7 +496,7 @@ describe("runtime tool gateway", () => {
     expect(registerTerminalInvalid).toHaveBeenCalledOnce();
   });
 
-  it("routes retrieval through the effective issue scope", async () => {
+  it("routes retrieval through the effective task scope", async () => {
     const { executor } = setup();
     await expect(
       executor.execute({
@@ -515,14 +515,14 @@ describe("runtime tool gateway", () => {
 
   it("uses a signed run-trace cursor through the compiled retrieval ABI", async () => {
     const { executor, readCanonicalRunTrace } = setup({
-      agentDial: { read_issue_agent_run: true },
+      agentDial: { read_task_agent_run: true },
       enableRunTrace: true,
     });
     const first = await executor.execute({
       capability,
-      descriptor: paperclipDescriptor("read_issue_agent_run", {
+      descriptor: paperclipDescriptor("read_task_agent_run", {
         contextDial: resolveContextDial({
-          agent: { read_issue_agent_run: true },
+          agent: { read_task_agent_run: true },
         }).effective,
       }),
       arguments: { runId: "run-observed" },
@@ -540,22 +540,22 @@ describe("runtime tool gateway", () => {
   });
 
   it("routes a Paperclip action with a run-bound canonical authority", async () => {
-    const { executor, issueUpdate } = setup();
+    const { executor, taskUpdate } = setup();
     await executor.execute({
       capability,
-      descriptor: paperclipDescriptor("issue_update"),
+      descriptor: paperclipDescriptor("task_update"),
       arguments: { status: "done", message: "done" },
       callIdentity: { source: "provider", id: "call-1" },
       ingressOrdinal: 0,
       mintPluginRunContext,
     });
-    expect(issueUpdate).toHaveBeenCalledWith(
+    expect(taskUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         command: expect.objectContaining({
-          name: "issue_update",
+          name: "task_update",
           companyId: capability.companyId,
-          issueId: capability.issueId,
-          issueTarget: "active",
+          taskId: capability.taskId,
+          taskTarget: "active",
           status: "done",
           message: "done",
         }),
@@ -621,8 +621,8 @@ describe("runtime tool gateway", () => {
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: {},
       isCurrentOwner: true,
-      issueCreateDirectChildren: [],
-      issueAssignTargets: [],
+      taskCreateDirectChildren: [],
+      taskAssignTargets: [],
       creatorUpdateTargets: [],
       mentionTargets: [],
       configureTargets: [],
@@ -669,8 +669,8 @@ describe("runtime tool gateway", () => {
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: {},
       isCurrentOwner: true,
-      issueCreateDirectChildren: [],
-      issueAssignTargets: [],
+      taskCreateDirectChildren: [],
+      taskAssignTargets: [],
       creatorUpdateTargets: [],
       mentionTargets: [
         { id: "mentioned-agent", name: "Mentioned", capabilities: null },
@@ -727,8 +727,8 @@ describe("runtime tool gateway", () => {
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: { mention_board: true },
       isCurrentOwner: true,
-      issueCreateDirectChildren: [],
-      issueAssignTargets: [],
+      taskCreateDirectChildren: [],
+      taskAssignTargets: [],
       creatorUpdateTargets: [],
       mentionTargets: [],
       configureTargets: [],
@@ -778,7 +778,7 @@ describe("runtime tool gateway", () => {
     await expect(
       executor.execute({
         capability,        descriptor: readComments,
-        arguments: { issueId: "issue", agentId: "leak" },
+        arguments: { taskId: "task", agentId: "leak" },
         callIdentity: { source: "provider", id: "call-1" },
         ingressOrdinal: 0,
         mintPluginRunContext,
@@ -796,8 +796,8 @@ describe("runtime tool gateway", () => {
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: { agent_configure: true },
       isCurrentOwner: true,
-      issueCreateDirectChildren: [],
-      issueAssignTargets: [],
+      taskCreateDirectChildren: [],
+      taskAssignTargets: [],
       creatorUpdateTargets: [],
       mentionTargets: [],
       configureTargets: [{ id: "agent" }],

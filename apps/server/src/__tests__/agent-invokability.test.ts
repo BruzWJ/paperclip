@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   evaluateAgentInvokability,
-  InvokableIssueOwnerRejected,
-  resolveInvokableIssueOwner,
-  resolveInvokableIssueOwnerCatalog,
+  InvokableTaskOwnerRejected,
+  resolveInvokableTaskOwner,
+  resolveInvokableTaskOwnerCatalog,
   type AgentOrgRow,
-  type InvokableIssueOwnerAgent,
-  type InvokableIssueOwnerRevision,
+  type InvokableTaskOwnerAgent,
+  type InvokableTaskOwnerRevision,
 } from "../services/agent-invokability.ts";
 import {
   listCompanyAgentGraphDescendants,
@@ -23,8 +23,8 @@ function agent(partial: Partial<AgentOrgRow> & Pick<AgentOrgRow, "id">): AgentOr
 }
 
 function ownerAgent(
-  partial: Partial<InvokableIssueOwnerAgent> & Pick<InvokableIssueOwnerAgent, "id">,
-): InvokableIssueOwnerAgent {
+  partial: Partial<InvokableTaskOwnerAgent> & Pick<InvokableTaskOwnerAgent, "id">,
+): InvokableTaskOwnerAgent {
   return {
     ...agent(partial),
     currentAdapterConfigRevisionId: `${partial.id}-revision`,
@@ -35,7 +35,7 @@ function ownerAgent(
 function ownerRevision(
   id: string,
   agentId: string,
-): InvokableIssueOwnerRevision {
+): InvokableTaskOwnerRevision {
   return {
     id,
     companyId: "company-1",
@@ -100,7 +100,7 @@ describe("agent invokability", () => {
 
   it("uses one typed owner predicate for lifecycle, org-chain, and exact revision failures", () => {
     const active = ownerAgent({ id: "active" });
-    const valid = resolveInvokableIssueOwner({
+    const valid = resolveInvokableTaskOwner({
       companyId: "company-1",
       ownerAgentId: active.id,
       companyAgents: [active],
@@ -115,8 +115,8 @@ describe("agent invokability", () => {
 
     const cases: Array<{
       name: string;
-      agents: InvokableIssueOwnerAgent[];
-      revisions: InvokableIssueOwnerRevision[];
+      agents: InvokableTaskOwnerAgent[];
+      revisions: InvokableTaskOwnerRevision[];
       expectedReason: string;
     }> = [
       {
@@ -169,7 +169,7 @@ describe("agent invokability", () => {
     for (const testCase of cases) {
       const owner = testCase.agents.at(-1)!;
       try {
-        resolveInvokableIssueOwner({
+        resolveInvokableTaskOwner({
           companyId: "company-1",
           ownerAgentId: owner.id,
           companyAgents: testCase.agents,
@@ -177,9 +177,9 @@ describe("agent invokability", () => {
         });
         throw new Error(`Expected ${testCase.name} to be rejected`);
       } catch (error) {
-        expect(error).toBeInstanceOf(InvokableIssueOwnerRejected);
+        expect(error).toBeInstanceOf(InvokableTaskOwnerRejected);
         expect(error).toMatchObject({
-          code: "invokable_issue_owner_rejected",
+          code: "invokable_task_owner_rejected",
           reason: testCase.expectedReason,
         });
       }
@@ -201,7 +201,7 @@ describe("agent invokability", () => {
     });
     const secondValid = ownerAgent({ id: "second-valid" });
 
-    const catalog = resolveInvokableIssueOwnerCatalog({
+    const catalog = resolveInvokableTaskOwnerCatalog({
       companyId: "company-1",
       companyAgents: [
         valid,

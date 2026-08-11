@@ -2,7 +2,7 @@ import type { Db } from "@paperclipai/db";
 import { agentAdapterConfigRevisions, agents } from "@paperclipai/db";
 import { getAgentWorkEligibility, type AgentEligibilityAgent, type AgentOrgChainHealth } from "@paperclipai/shared";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
+import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
 type AgentStatus = (typeof agents.$inferSelect)["status"];
 
@@ -34,51 +34,51 @@ export type AgentInvokability =
     };
 
 /**
- * An agent can be selected as a new issue owner only when this exact current
+ * An agent can be selected as a new task owner only when this exact current
  * adapter revision remains resolvable for that same agent in that company.
  * A non-null pointer alone is intentionally not sufficient.
  */
-export type InvokableIssueOwnerAgent = AgentOrgRow & Pick<
+export type InvokableTaskOwnerAgent = AgentOrgRow & Pick<
   typeof agents.$inferSelect,
   "currentAdapterConfigRevisionId"
 > & Partial<Pick<typeof agents.$inferSelect, "title" | "icon" | "instruction">>;
 
-export type InvokableIssueOwnerRevision = Pick<
+export type InvokableTaskOwnerRevision = Pick<
   typeof agentAdapterConfigRevisions.$inferSelect,
   | "id"
   | "companyId"
   | "agentId"
 >;
 
-export type InvokableIssueOwnerRejectionReason =
+export type InvokableTaskOwnerRejectionReason =
   | `owner_not_invokable:${AgentInvokabilityBlockReason}`
   | "owner_revision_missing";
 
-export class InvokableIssueOwnerRejected extends Error {
-  readonly code = "invokable_issue_owner_rejected";
+export class InvokableTaskOwnerRejected extends Error {
+  readonly code = "invokable_task_owner_rejected";
 
   constructor(
     message: string,
-    readonly reason: InvokableIssueOwnerRejectionReason,
+    readonly reason: InvokableTaskOwnerRejectionReason,
     readonly details: Record<string, unknown>,
   ) {
     super(message);
-    this.name = "InvokableIssueOwnerRejected";
+    this.name = "InvokableTaskOwnerRejected";
   }
 }
 
-export interface InvokableIssueOwnerResolution<
-  Owner extends InvokableIssueOwnerAgent = InvokableIssueOwnerAgent,
-  Revision extends InvokableIssueOwnerRevision = InvokableIssueOwnerRevision,
+export interface InvokableTaskOwnerResolution<
+  Owner extends InvokableTaskOwnerAgent = InvokableTaskOwnerAgent,
+  Revision extends InvokableTaskOwnerRevision = InvokableTaskOwnerRevision,
 > {
   owner: Owner;
   revision: Revision;
   revisionId: string;
 }
 
-export interface InvokableIssueOwnerSnapshot<
-  Owner extends InvokableIssueOwnerAgent = InvokableIssueOwnerAgent,
-  Revision extends InvokableIssueOwnerRevision = InvokableIssueOwnerRevision,
+export interface InvokableTaskOwnerSnapshot<
+  Owner extends InvokableTaskOwnerAgent = InvokableTaskOwnerAgent,
+  Revision extends InvokableTaskOwnerRevision = InvokableTaskOwnerRevision,
 > {
   companyId: string;
   ownerAgentId: string;
@@ -166,14 +166,14 @@ export function evaluateAgentInvokability(
 /**
  * Pure owner assertion used by both locked writes and catalog snapshots.
  * Keeping the adapter-revision relation here makes a descriptor's owner
- * eligibility identical to the issuance-time owner check.
+ * eligibility identical to the ref-creation-time owner check.
  */
-export function resolveInvokableIssueOwner<
-  Owner extends InvokableIssueOwnerAgent,
-  Revision extends InvokableIssueOwnerRevision,
+export function resolveInvokableTaskOwner<
+  Owner extends InvokableTaskOwnerAgent,
+  Revision extends InvokableTaskOwnerRevision,
 >(
-  input: InvokableIssueOwnerSnapshot<Owner, Revision>,
-): InvokableIssueOwnerResolution<Owner, Revision> {
+  input: InvokableTaskOwnerSnapshot<Owner, Revision>,
+): InvokableTaskOwnerResolution<Owner, Revision> {
   const companyAgents = input.companyAgents.filter(
     (candidate) => candidate.companyId === input.companyId,
   );
@@ -181,7 +181,7 @@ export function resolveInvokableIssueOwner<
     (candidate) => candidate.id === input.ownerAgentId,
   );
   if (!owner) {
-    throw new InvokableIssueOwnerRejected(
+    throw new InvokableTaskOwnerRejected(
       "Agent no longer exists",
       "owner_not_invokable:missing",
       {
@@ -195,7 +195,7 @@ export function resolveInvokableIssueOwner<
     companyAgents,
   );
   if (!invokability.invokable) {
-    throw new InvokableIssueOwnerRejected(
+    throw new InvokableTaskOwnerRejected(
       invokability.message,
       `owner_not_invokable:${invokability.reason}`,
       {
@@ -206,7 +206,7 @@ export function resolveInvokableIssueOwner<
     );
   }
   if (!owner.currentAdapterConfigRevisionId) {
-    throw new InvokableIssueOwnerRejected(
+    throw new InvokableTaskOwnerRejected(
       "Owner has no current adapter configuration revision",
       "owner_revision_missing",
       {
@@ -223,7 +223,7 @@ export function resolveInvokableIssueOwner<
       candidate.agentId === owner.id,
   );
   if (!revision) {
-    throw new InvokableIssueOwnerRejected(
+    throw new InvokableTaskOwnerRejected(
       "Owner adapter configuration revision does not exist",
       "owner_revision_missing",
       {
@@ -241,25 +241,25 @@ export function resolveInvokableIssueOwner<
  * catalog omissions; callers that need the precise reason use the single
  * owner resolver above.
  */
-export function resolveInvokableIssueOwnerCatalog<
-  Owner extends InvokableIssueOwnerAgent,
-  Revision extends InvokableIssueOwnerRevision,
->(input: Omit<InvokableIssueOwnerSnapshot<Owner, Revision>, "ownerAgentId">):
-  ReadonlyMap<string, InvokableIssueOwnerResolution<Owner, Revision>> {
+export function resolveInvokableTaskOwnerCatalog<
+  Owner extends InvokableTaskOwnerAgent,
+  Revision extends InvokableTaskOwnerRevision,
+>(input: Omit<InvokableTaskOwnerSnapshot<Owner, Revision>, "ownerAgentId">):
+  ReadonlyMap<string, InvokableTaskOwnerResolution<Owner, Revision>> {
   const result = new Map<
     string,
-    InvokableIssueOwnerResolution<Owner, Revision>
+    InvokableTaskOwnerResolution<Owner, Revision>
   >();
   for (const candidate of input.companyAgents) {
     if (candidate.companyId !== input.companyId) continue;
     try {
-      const resolved = resolveInvokableIssueOwner({
+      const resolved = resolveInvokableTaskOwner({
         ...input,
         ownerAgentId: candidate.id,
       });
       result.set(candidate.id, resolved);
     } catch (error) {
-      if (error instanceof InvokableIssueOwnerRejected) continue;
+      if (error instanceof InvokableTaskOwnerRejected) continue;
       throw error;
     }
   }
@@ -267,7 +267,7 @@ export function resolveInvokableIssueOwnerCatalog<
 }
 
 function currentRevisionIds(
-  companyAgents: readonly InvokableIssueOwnerAgent[],
+  companyAgents: readonly InvokableTaskOwnerAgent[],
 ): string[] {
   return [
     ...new Set(
@@ -281,8 +281,8 @@ function currentRevisionIds(
 async function listCurrentAdapterRevisions(
   db: Db,
   companyId: string,
-  companyAgents: readonly InvokableIssueOwnerAgent[],
-): Promise<InvokableIssueOwnerRevision[]> {
+  companyAgents: readonly InvokableTaskOwnerAgent[],
+): Promise<InvokableTaskOwnerRevision[]> {
   const revisionIds = currentRevisionIds(companyAgents);
   if (revisionIds.length === 0) return [];
   return db
@@ -302,10 +302,10 @@ async function listCurrentAdapterRevisions(
 }
 
 async function listCurrentAdapterRevisionsForUpdate(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   companyId: string,
-  companyAgents: readonly InvokableIssueOwnerAgent[],
-): Promise<InvokableIssueOwnerRevision[]> {
+  companyAgents: readonly InvokableTaskOwnerAgent[],
+): Promise<InvokableTaskOwnerRevision[]> {
   const revisionIds = currentRevisionIds(companyAgents);
   if (revisionIds.length === 0) return [];
   return tx
@@ -326,10 +326,10 @@ async function listCurrentAdapterRevisionsForUpdate(
 }
 
 /** Resolves a configuration-time owner without acquiring write locks. */
-export async function resolveInvokableIssueOwnerFromDb(
+export async function resolveInvokableTaskOwnerFromDb(
   db: Db,
-  input: Pick<InvokableIssueOwnerSnapshot, "companyId" | "ownerAgentId">,
-): Promise<InvokableIssueOwnerResolution> {
+  input: Pick<InvokableTaskOwnerSnapshot, "companyId" | "ownerAgentId">,
+): Promise<InvokableTaskOwnerResolution> {
   const companyAgents = await db
     .select()
     .from(agents)
@@ -340,7 +340,7 @@ export async function resolveInvokableIssueOwnerFromDb(
     input.companyId,
     companyAgents,
   );
-  return resolveInvokableIssueOwner({
+  return resolveInvokableTaskOwner({
     ...input,
     companyAgents,
     adapterRevisions,
@@ -351,10 +351,10 @@ export async function resolveInvokableIssueOwnerFromDb(
  * Resolves the complete company-wide catalog through the same canonical
  * owner/revision predicate used by single-owner configuration reads.
  */
-export async function resolveInvokableIssueOwnerCatalogFromDb(
+export async function resolveInvokableTaskOwnerCatalogFromDb(
   db: Db,
-  input: Pick<InvokableIssueOwnerSnapshot, "companyId">,
-): Promise<ReadonlyMap<string, InvokableIssueOwnerResolution>> {
+  input: Pick<InvokableTaskOwnerSnapshot, "companyId">,
+): Promise<ReadonlyMap<string, InvokableTaskOwnerResolution>> {
   const companyAgents = await db
     .select()
     .from(agents)
@@ -365,7 +365,7 @@ export async function resolveInvokableIssueOwnerCatalogFromDb(
     input.companyId,
     companyAgents,
   );
-  return resolveInvokableIssueOwnerCatalog({
+  return resolveInvokableTaskOwnerCatalog({
     ...input,
     companyAgents,
     adapterRevisions,
@@ -373,14 +373,14 @@ export async function resolveInvokableIssueOwnerCatalogFromDb(
 }
 
 /**
- * Resolves and locks a new issue owner together with its exact selected
+ * Resolves and locks a new task owner together with its exact selected
  * adapter revision. Use this immediately before persisting an owner epoch or
- * issuing its first ref.
+ * creating its first ref.
  */
-export async function resolveInvokableIssueOwnerInTransaction(
-  tx: IssueSessionDbTransaction,
-  input: Pick<InvokableIssueOwnerSnapshot, "companyId" | "ownerAgentId">,
-): Promise<InvokableIssueOwnerResolution> {
+export async function resolveInvokableTaskOwnerInTransaction(
+  tx: TaskSessionDbTransaction,
+  input: Pick<InvokableTaskOwnerSnapshot, "companyId" | "ownerAgentId">,
+): Promise<InvokableTaskOwnerResolution> {
   const companyAgents = await tx
     .select()
     .from(agents)
@@ -392,7 +392,7 @@ export async function resolveInvokableIssueOwnerInTransaction(
     input.companyId,
     companyAgents,
   );
-  return resolveInvokableIssueOwner({
+  return resolveInvokableTaskOwner({
     ...input,
     companyAgents,
     adapterRevisions,
@@ -404,10 +404,10 @@ export async function resolveInvokableIssueOwnerInTransaction(
  * add authorization layers before this one must acquire those locks first;
  * this function owns the deterministic agents -> current revisions suffix.
  */
-export async function resolveInvokableIssueOwnerCatalogInTransaction(
-  tx: IssueSessionDbTransaction,
-  input: Pick<InvokableIssueOwnerSnapshot, "companyId">,
-): Promise<ReadonlyMap<string, InvokableIssueOwnerResolution>> {
+export async function resolveInvokableTaskOwnerCatalogInTransaction(
+  tx: TaskSessionDbTransaction,
+  input: Pick<InvokableTaskOwnerSnapshot, "companyId">,
+): Promise<ReadonlyMap<string, InvokableTaskOwnerResolution>> {
   const companyAgents = await tx
     .select()
     .from(agents)
@@ -419,7 +419,7 @@ export async function resolveInvokableIssueOwnerCatalogInTransaction(
     input.companyId,
     companyAgents,
   );
-  return resolveInvokableIssueOwnerCatalog({
+  return resolveInvokableTaskOwnerCatalog({
     ...input,
     companyAgents,
     adapterRevisions,

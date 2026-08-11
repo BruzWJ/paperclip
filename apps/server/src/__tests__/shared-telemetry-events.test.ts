@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   trackAgentCreated,
-  trackAgentIssueCompleted,
+  trackAgentTaskCompleted,
   trackInstallCompleted,
 } from "@paperclipai/shared/telemetry";
 import type { TelemetryClient } from "@paperclipai/shared/telemetry";
@@ -26,15 +26,15 @@ describe("shared telemetry agent events", () => {
     });
   });
 
-  it("includes agent_id for agent.issue_completed", () => {
+  it("includes agent_id for agent.task_completed", () => {
     const client = createClient();
 
-    trackAgentIssueCompleted(client, {
+    trackAgentTaskCompleted(client, {
       agentId: "33333333-3333-4333-8333-333333333333",
       adapterType: "codex",
     });
 
-    expect(client.track).toHaveBeenCalledWith("agent.issue_completed", {
+    expect(client.track).toHaveBeenCalledWith("agent.task_completed", {
       agent_id: "33333333-3333-4333-8333-333333333333",
       adapter_type: "codex",
     });

@@ -235,7 +235,7 @@ describe("canonical agent termination lifecycle", () => {
 
     const result = await agentService(harness.db).terminate(targetId, {
       actor: { kind: "system" },
-      issueExecutionCancellation: cancellation.service,
+      taskExecutionCancellation: cancellation.service,
       dispatchRef,
     });
 

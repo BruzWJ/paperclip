@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { StatusIcon } from "../StatusIcon";
 import { Identity } from "../Identity";
 import { HighlightedText, type HighlightedTextProps } from "./HighlightedText";
-import { issueDisplayTitle } from "@/lib/issue-display";
+import { taskDisplayTitle } from "@/lib/task-display";
 
 type SnippetStyle = {
   Icon: ComponentType<SVGProps<SVGSVGElement>>;
@@ -118,7 +118,7 @@ function SearchResultRowImpl({
     return (
       <Link
         to={result.href}
-        disableIssueQuicklook
+        disableTaskQuicklook
         className={cn(ROW_BASE, "py-4", isActive && "bg-muted/40", className)}
         data-result-type="artifact"
       >
@@ -127,7 +127,7 @@ function SearchResultRowImpl({
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <span className="truncate text-sm font-medium text-foreground">{result.title}</span>
             <span className="shrink-0 text-xs text-muted-foreground">
-              {artifact.issueIdentifier}
+              {artifact.taskIdentifier}
             </span>
           </div>
           {result.snippet ? (
@@ -140,7 +140,7 @@ function SearchResultRowImpl({
             />
           ) : null}
           <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground sm:hidden">
-            <span className="truncate">{artifact.issueTitle}</span>
+            <span className="truncate">{artifact.taskTitle}</span>
             {updated ? <span className="ml-auto shrink-0 tabular-nums">{updated}</span> : null}
           </div>
         </div>
@@ -160,12 +160,12 @@ function SearchResultRowImpl({
     );
   }
 
-  const issue = result.issue;
-  if (!issue) return null;
-  const ownerName = issue.ownerAgentId
-    ? agentsById?.get(issue.ownerAgentId)?.name ?? null
+  const task = result.task;
+  if (!task) return null;
+  const ownerName = task.ownerAgentId
+    ? agentsById?.get(task.ownerAgentId)?.name ?? null
     : null;
-  const updated = formatRelativeTime(result.updatedAt ?? issue.updatedAt);
+  const updated = formatRelativeTime(result.updatedAt ?? task.updatedAt);
   const titleHighlights = result.snippets.find((snippet) => snippet.field === "title")?.highlights;
   const bodySnippets = result.snippets.filter((snippet) => snippet.field !== "title").slice(0, 2);
   const previewImageUrl = result.previewImageUrl;
@@ -174,22 +174,22 @@ function SearchResultRowImpl({
   return (
     <Link
       to={result.href}
-      disableIssueQuicklook
+      disableTaskQuicklook
       className={cn(ROW_BASE, "py-4", isActive && "bg-muted/40", className)}
-      data-result-type="issue"
+      data-result-type="task"
     >
       <div className="mt-1 shrink-0">
-        <StatusIcon status={issue.boardPresentationStatus} />
+        <StatusIcon status={task.boardPresentationStatus} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
-          {issue.identifier ? (
+          {task.identifier ? (
             <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
-              {issue.identifier}
+              {task.identifier}
             </span>
           ) : null}
           <HighlightedText
-            text={issueDisplayTitle(issue)}
+            text={taskDisplayTitle(task)}
             highlights={titleHighlights}
             className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground"
           />

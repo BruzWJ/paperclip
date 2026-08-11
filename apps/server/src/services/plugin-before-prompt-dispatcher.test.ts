@@ -18,7 +18,7 @@ import {
   type PluginBeforePromptInstallationReader,
   type PluginBeforePromptSourceReader,
 } from "./plugin-before-prompt-dispatcher.js";
-import { encodeIssueSessionMessageData } from "./issue-session/store.js";
+import { encodeTaskSessionMessageData } from "./task-session/store.js";
 import { pluginManifestIdentity } from "./plugin-manifest-identity.js";
 
 const NOW = new Date("2026-08-05T00:00:00.000Z");
@@ -66,7 +66,7 @@ function installation(input: {
 function promptInput(): PluginBeforePromptDispatchInput {
   return {
     companyId: "company-1",
-    issueId: "issue-1",
+    taskId: "task-1",
     sessionId: "session-1",
     runId: "run-1",
     agentId: "agent-1",
@@ -80,14 +80,14 @@ function promptInput(): PluginBeforePromptDispatchInput {
     sourceMessageSeq: 7,
     contextAccess: {
       carry_context: false,
-      read_issue_comments: true,
-      read_issue_agent_run: false,
-      list_sub_issues: false,
-      read_sub_issue_comments: false,
-      read_sub_issue_agent_run: false,
-      list_company_issues: false,
-      read_company_issue_comments: false,
-      read_company_issue_agent_run: false,
+      read_task_comments: true,
+      read_task_agent_run: false,
+      list_sub_tasks: false,
+      read_sub_task_comments: false,
+      read_sub_task_agent_run: false,
+      list_company_tasks: false,
+      read_company_task_comments: false,
+      read_company_task_agent_run: false,
     },
   };
 }
@@ -237,7 +237,7 @@ describe("plugin before-prompt dispatcher", () => {
     expect(subject.call.mock.calls[0]?.[4]).toEqual({
       companyId: "company-1",
       canonicalSession: {
-        issueId: "issue-1",
+        taskId: "task-1",
         sessionId: "session-1",
         snapshotHighWaterSeq: 7,
       },
@@ -498,12 +498,12 @@ function canonicalSourceRow(input: {
   const message = {
     id: source.sourceMessageId,
     companyId: source.companyId,
-    issueId: source.issueId,
+    taskId: source.taskId,
     sessionId: source.sessionId,
     seq: input.seq ?? source.sourceMessageSeq,
     modelStateSeq: input.seq ?? source.sourceMessageSeq,
     type,
-    data: encodeIssueSessionMessageData(canonical as never),
+    data: encodeTaskSessionMessageData(canonical as never),
     runId: null,
     ownershipEpoch: null,
     agentId: null,

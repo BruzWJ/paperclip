@@ -70,7 +70,7 @@ describe("configure command", () => {
     fs.writeFileSync(configPath, JSON.stringify(candidate, null, 2));
 
     try {
-      expect(() => readConfig(configPath)).toThrow(/Invalid config/);
+      expect(() => readConfig(configPath)).toThrow(/Invalid config.*server:.*deploymentMode/);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

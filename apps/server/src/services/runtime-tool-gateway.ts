@@ -78,7 +78,7 @@ export function prepareRuntimePaperclipManagedToolCall(input: {
   arguments: unknown;
   scope: Pick<
     AgentRunToolAuthority["capability"],
-    "companyId" | "issueId" | "targetAgentId"
+    "companyId" | "taskId" | "targetAgentId"
   >;
 }): RuntimePaperclipManagedToolCall {
   if (

@@ -137,8 +137,8 @@ function replayingExecutor(
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: { agent_hire: true, agent_configure: true },
       isCurrentOwner: true,
-      issueCreateDirectChildren: [],
-      issueAssignTargets: [],
+      taskCreateDirectChildren: [],
+      taskAssignTargets: [],
       creatorUpdateTargets: [],
       mentionTargets: [],
       configureTargets: [
@@ -154,7 +154,7 @@ function replayingExecutor(
       descriptor,
       runtimeScope: {
         companyId: capability.companyId,
-        activeIssueId: capability.issueId,
+        activeTaskId: capability.taskId,
         dial: compileInput.contextDial,
       },
       arguments: arguments_,

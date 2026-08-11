@@ -1,7 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { issueRoutes } from "../routes/issues.js";
+import { taskRoutes } from "../routes/tasks.js";
 import { createCompanySearchRateLimiter } from "../services/company-search-rate-limit.js";
 import type { CompanySearchQuery, CompanySearchResponse } from "@paperclipai/shared";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
@@ -27,7 +27,7 @@ function createSearchResponse(query: CompanySearchQuery): CompanySearchResponse 
     offset: query.offset,
     results: [],
     sort: query.sort,
-    countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+    countsByType: { task: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
     filterOptionCounts: {
       status: {},
       priority: {},
@@ -64,8 +64,8 @@ describe("company search route rate limiting", () => {
       });
       next();
     });
-    app.use("/api", issueRoutes({} as never, {} as never, {
-      ordinaryIssues: {} as never,
+    app.use("/api", taskRoutes({} as never, {} as never, {
+      ordinaryTasks: {} as never,
       searchService: { search },
       searchRateLimiter: createCompanySearchRateLimiter({
         maxRequests: 1,
@@ -95,8 +95,8 @@ describe("company search route rate limiting", () => {
       });
       next();
     });
-    app.use("/api", issueRoutes({} as never, {} as never, {
-      ordinaryIssues: {} as never,
+    app.use("/api", taskRoutes({} as never, {} as never, {
+      ordinaryTasks: {} as never,
       searchService: { search },
       searchRateLimiter: createCompanySearchRateLimiter({
         maxRequests: 10,
@@ -122,8 +122,8 @@ describe("company search route rate limiting", () => {
       });
       next();
     });
-    app.use("/api", issueRoutes({} as never, {} as never, {
-      ordinaryIssues: {} as never,
+    app.use("/api", taskRoutes({} as never, {} as never, {
+      ordinaryTasks: {} as never,
       searchService: { search },
       searchRateLimiter: createCompanySearchRateLimiter({
         maxRequests: 10,

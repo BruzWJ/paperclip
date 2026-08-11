@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { Issue, IssueExecutionRunEnvelopeRecord } from "@paperclipai/shared";
+import type { Task, TaskExecutionRunEnvelopeRecord } from "@paperclipai/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import {
   ChartCard,
-  IssueStatusChart,
+  TaskStatusChart,
   PriorityChart,
   RunActivityChart,
   SuccessRateChart,
@@ -46,15 +46,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useDialog } from "@/context/DialogContext";
 import { queryKeys } from "@/lib/queryKeys";
 import {
-  createIssue,
-  createIssueExecutionRun,
+  createTask,
+  createTaskExecutionRun,
   storybookAgents,
-  storybookIssues,
-  storybookIssueRuns,
+  storybookTasks,
+  storybookTaskRuns,
 } from "../fixtures/paperclipData";
 
 const companyId = "company-storybook";
-const primaryIssueId = "issue-storybook-1";
+const primaryTaskId = "task-storybook-1";
 
 function StoryShell({ children }: { children: React.ReactNode }) {
   return (
@@ -92,10 +92,10 @@ function daysAgo(days: number, hour = 12): Date {
 }
 
 function makeRun(
-  overrides: Partial<IssueExecutionRunEnvelopeRecord>,
-): IssueExecutionRunEnvelopeRecord {
+  overrides: Partial<TaskExecutionRunEnvelopeRecord>,
+): TaskExecutionRunEnvelopeRecord {
   const createdAt = overrides.createdAt ?? daysAgo(1).toISOString();
-  return createIssueExecutionRun({
+  return createTaskExecutionRun({
     status: "succeeded",
     currentAttemptId: null,
     currentLeaseId: null,
@@ -109,7 +109,7 @@ function makeRun(
   });
 }
 
-const activityRuns: IssueExecutionRunEnvelopeRecord[] = [
+const activityRuns: TaskExecutionRunEnvelopeRecord[] = [
   makeRun({ id: "run-chart-1", createdAt: daysAgo(13).toISOString(), startedAt: daysAgo(13).toISOString() }),
   makeRun({ id: "run-chart-2", createdAt: daysAgo(10).toISOString(), startedAt: daysAgo(10).toISOString() }),
   makeRun({ id: "run-chart-3", status: "failed", terminalClassification: "failed", terminalReasonCode: "process_exit", createdAt: daysAgo(10).toISOString(), startedAt: daysAgo(10, 15).toISOString() }),
@@ -120,7 +120,7 @@ const activityRuns: IssueExecutionRunEnvelopeRecord[] = [
   makeRun({ id: "run-chart-8", createdAt: daysAgo(1, 16).toISOString(), startedAt: daysAgo(1, 16).toISOString() }),
 ];
 
-const activityIssues = [
+const activityTasks = [
   { priority: "high", boardPresentationStatus: "in_progress", createdAt: daysAgo(13) },
   { priority: "critical", boardPresentationStatus: "blocked", createdAt: daysAgo(11) },
   { priority: "medium", boardPresentationStatus: "todo", createdAt: daysAgo(9) },
@@ -131,21 +131,21 @@ const activityIssues = [
   { priority: "medium", boardPresentationStatus: "done", createdAt: daysAgo(1) },
 ];
 
-const kanbanIssues: Issue[] = [
-  ...storybookIssues,
-  createIssue({
-    id: "issue-kanban-backlog",
+const kanbanTasks: Task[] = [
+  ...storybookTasks,
+  createTask({
+    id: "task-kanban-backlog",
     identifier: "PAP-1701",
-    issueNumber: 1701,
+    taskNumber: 1701,
     title: "Sketch company analytics dashboard",
     boardPresentationStatus: "backlog",
     priority: "low",
     owner: { kind: "agent", agentId: "agent-cto" },
   }),
-  createIssue({
-    id: "issue-kanban-cancelled",
+  createTask({
+    id: "task-kanban-cancelled",
     identifier: "PAP-1702",
-    issueNumber: 1702,
+    taskNumber: 1702,
     title: "Remove obsolete color token migration",
     boardPresentationStatus: "cancelled",
     priority: "medium",
@@ -158,7 +158,7 @@ const packageFiles: Record<string, string> = {
   "agents/codexcoder/AGENTS.md": "---\nname: CodexCoder\nskills:\n  - frontend-design\n  - paperclip\n---\nShips product UI and verifies changes.",
   "agents/qachecker/AGENTS.md": "---\nname: QAChecker\nskills:\n  - web-design-guidelines\n---\nReviews browser behavior and acceptance criteria.",
   "projects/board-ui/PROJECT.md": "---\ntitle: Board UI\nstatus: in_progress\n---\nStorybook and operator control-plane surfaces.",
-  "tasks/PAP-1641.md": "---\ntitle: Create super-detailed storybooks\npriority: high\n---\nParent issue for Storybook coverage.",
+  "tasks/PAP-1641.md": "---\ntitle: Create super-detailed storybooks\npriority: high\n---\nParent task for Storybook coverage.",
   "tasks/PAP-1677.md": "---\ntitle: Data Visualization & Misc stories\npriority: medium\n---\nFixture task for this story file.",
   "skills/frontend-design/SKILL.md": "---\nname: frontend-design\n---\nDesign quality guidance.",
 };
@@ -172,7 +172,7 @@ const actionMap = new Map([
 
 function ActivityChartsMatrix({ empty = false }: { empty?: boolean }) {
   const runs = empty ? [] : activityRuns;
-  const issues = empty ? [] : activityIssues;
+  const tasks = empty ? [] : activityTasks;
 
   return (
     <StoryShell>
@@ -184,11 +184,11 @@ function ActivityChartsMatrix({ empty = false }: { empty?: boolean }) {
           <ChartCard title="Success rate" subtitle="Daily completion ratio">
             <SuccessRateChart runs={runs} />
           </ChartCard>
-          <ChartCard title="Issue priority" subtitle="Created issues by urgency">
-            <PriorityChart issues={issues} />
+          <ChartCard title="Task priority" subtitle="Created tasks by urgency">
+            <PriorityChart tasks={tasks} />
           </ChartCard>
-          <ChartCard title="Issue status" subtitle="Created issues by workflow state">
-            <IssueStatusChart issues={issues} />
+          <ChartCard title="Task status" subtitle="Created tasks by workflow state">
+            <TaskStatusChart tasks={tasks} />
           </ChartCard>
         </div>
       </Section>
@@ -197,16 +197,16 @@ function ActivityChartsMatrix({ empty = false }: { empty?: boolean }) {
 }
 
 function KanbanBoardDemo({ empty = false }: { empty?: boolean }) {
-  const issues: Issue[] = empty ? [] : kanbanIssues;
-  const liveIssueIds = useMemo(() => new Set(["issue-storybook-1", "issue-kanban-backlog"]), []);
+  const tasks: Task[] = empty ? [] : kanbanTasks;
+  const liveTaskIds = useMemo(() => new Set(["task-storybook-1", "task-kanban-backlog"]), []);
 
   return (
     <StoryShell>
-      <Section eyebrow="KanbanBoard" title={empty ? "Collapsed empty workflow columns" : "Read-only issue cards by status"}>
+      <Section eyebrow="KanbanBoard" title={empty ? "Collapsed empty workflow columns" : "Read-only task cards by status"}>
         <KanbanBoard
-          issues={issues}
+          tasks={tasks}
           agents={storybookAgents}
-          liveIssueIds={liveIssueIds}
+          liveTaskIds={liveTaskIds}
         />
       </Section>
     </StoryShell>
@@ -251,8 +251,8 @@ function LiveRunWidgetStory({ empty = false, loading = false }: { empty?: boolea
 
   useEffect(() => {
     if (loading) return;
-    queryClient.setQueryData(queryKeys.issues.runs(primaryIssueId, ["queued", "scheduled_retry", "running"]), {
-      items: empty ? [] : storybookIssueRuns.filter((run) => run.status === "running"),
+    queryClient.setQueryData(queryKeys.tasks.runs(primaryTaskId, ["queued", "scheduled_retry", "running"]), {
+      items: empty ? [] : storybookTaskRuns.filter((run) => run.status === "running"),
       nextCursor: null,
     });
   }, [empty, loading, queryClient]);
@@ -273,11 +273,11 @@ function LiveRunWidgetStory({ empty = false, loading = false }: { empty?: boolea
   return (
     <StoryShell>
       <Section eyebrow="LiveRunWidget" title={empty ? "No active run" : "Streaming run indicator"}>
-        <LiveRunWidget issueId={primaryIssueId} />
+        <LiveRunWidget taskId={primaryTaskId} />
         {empty && (
           <div className="flex items-center gap-3 rounded-xl border border-border bg-background/70 p-4 text-sm text-muted-foreground">
             <Clock3 className="h-4 w-4" />
-            The widget renders no panel when the issue has no live runs.
+            The widget renders no panel when the task has no live runs.
           </div>
         )}
       </Section>
@@ -425,7 +425,7 @@ function EntityRowsDemo({ empty = false }: { empty?: boolean }) {
           selected: true,
         },
         {
-          id: "issue",
+          id: "task",
           leading: <FolderKanban className="h-4 w-4 text-emerald-600" />,
           identifier: "PAP-1677",
           title: "Storybook: Data Visualization & Misc stories",
@@ -455,7 +455,7 @@ function EntityRowsDemo({ empty = false }: { empty?: boolean }) {
               subtitle={row.subtitle}
               trailing={row.trailing}
               selected={row.selected}
-              to={row.id === "issue" ? "/PAP/issues/PAP-1677" : undefined}
+              to={row.id === "task" ? "/PAP/tasks/PAP-1677" : undefined}
             />
           ))}
           {rows.length === 0 && (
@@ -570,7 +570,7 @@ function AsciiArtAnimationDemo({ loading = false }: { loading?: boolean }) {
 function PageSkeletonMatrix() {
   const variants = [
     "list",
-    "issues-list",
+    "tasks-list",
     "detail",
     "dashboard",
     "approvals",

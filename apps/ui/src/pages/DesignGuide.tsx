@@ -119,7 +119,7 @@ import {
   AvatarGroupCount,
 } from "@/components/ui/avatar";
 import { AgentCapsule, AGENT_GRADIENT_COUNT } from "@/components/AgentCapsule";
-import { StatusBadge, IssueStatusBadge } from "@/components/StatusBadge";
+import { StatusBadge, TaskStatusBadge } from "@/components/StatusBadge";
 import { StatusIcon } from "@/components/StatusIcon";
 import { PriorityIcon } from "@/components/PriorityIcon";
 import { agentStatusDot, agentStatusDotDefault } from "@/lib/status-colors";
@@ -130,15 +130,15 @@ import { FilterBar, type FilterValue } from "@/components/FilterBar";
 import { InlineEditor } from "@/components/InlineEditor";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { Identity } from "@/components/Identity";
-import { IssueReferencePill } from "@/components/IssueReferencePill";
+import { TaskReferencePill } from "@/components/TaskReferencePill";
 import { MembershipAction } from "@/components/MembershipAction";
-import { IssueOutputSection } from "@/components/issue-output/IssueOutputSection";
+import { TaskOutputSection } from "@/components/task-output/TaskOutputSection";
 import { EnvironmentVariablesEditor } from "@/components/environment-variables-editor";
 import type { CompanySecret, EnvBinding } from "@paperclipai/shared";
-import type { IssueWorkProduct } from "@paperclipai/shared";
+import type { TaskWorkProduct } from "@paperclipai/shared";
 
 /* ------------------------------------------------------------------ */
-/*  Sample data for the Issue Output surface showcase                  */
+/*  Sample data for the Task Output surface showcase                  */
 /* ------------------------------------------------------------------ */
 
 function sampleOutput(
@@ -147,13 +147,13 @@ function sampleOutput(
   contentType: string,
   filename: string,
   opts: { byteSize: number; isPrimary?: boolean; createdAt: string },
-): IssueWorkProduct {
+): TaskWorkProduct {
   const contentPath = `/api/attachments/${attachmentId}/content`;
   return {
     id,
     companyId: "demo-company",
     projectId: null,
-    issueId: "demo-issue",
+    taskId: "demo-task",
     type: "artifact",
     provider: "paperclip",
     externalId: null,
@@ -179,7 +179,7 @@ function sampleOutput(
   };
 }
 
-const DESIGN_GUIDE_OUTPUTS: IssueWorkProduct[] = [
+const DESIGN_GUIDE_OUTPUTS: TaskWorkProduct[] = [
   sampleOutput("wp-vid", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "video/mp4", "q3-summary.mp4", {
     byteSize: 19_293_798,
     isPrimary: true,
@@ -191,7 +191,7 @@ const DESIGN_GUIDE_OUTPUTS: IssueWorkProduct[] = [
   }),
 ];
 
-const DESIGN_GUIDE_DEGRADED_OUTPUTS: IssueWorkProduct[] = [
+const DESIGN_GUIDE_DEGRADED_OUTPUTS: TaskWorkProduct[] = [
   {
     ...sampleOutput("wp-broken", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "video/mp4", "corrupt-output.mp4", {
       byteSize: 0,
@@ -200,7 +200,7 @@ const DESIGN_GUIDE_DEGRADED_OUTPUTS: IssueWorkProduct[] = [
     }),
     // Strip the path metadata so it fails the shared artifact schema.
     metadata: { attachmentId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", contentType: "video/mp4" },
-  } as IssueWorkProduct,
+  } as TaskWorkProduct,
 ];
 
 /* ------------------------------------------------------------------ */
@@ -379,7 +379,7 @@ export function DesignGuide() {
             <div className="flex flex-wrap gap-2">
               {[
                 "StatusBadge", "StatusIcon", "PriorityIcon", "EntityRow", "EmptyState", "MetricCard",
-                "FilterBar", "InlineEditor", "PageSkeleton", "Identity", "IssueChatThread", "MarkdownEditor",
+                "FilterBar", "InlineEditor", "PageSkeleton", "Identity", "TaskChatThread", "MarkdownEditor",
                 "PropertiesPanel", "Sidebar", "CommandPalette", "EnvironmentVariablesEditor",
                 "InlineBanner",
               ].map((name) => (
@@ -516,7 +516,7 @@ export function DesignGuide() {
 
         <SubSection title="With icons">
           <div className="flex items-center gap-2 flex-wrap">
-            <Button><Plus data-icon="inline-start" /> New Issue</Button>
+            <Button><Plus data-icon="inline-start" /> New Task</Button>
             <Button variant="outline"><Upload data-icon="inline-start" /> Upload</Button>
             <Button variant="destructive"><Trash2 data-icon="inline-start" /> Delete</Button>
             <Button size="sm"><Plus data-icon="inline-start" /> Add</Button>
@@ -564,11 +564,11 @@ export function DesignGuide() {
           </div>
         </SubSection>
 
-        <SubSection title="IssueStatusBadge (brand chip + glyph — PAP-75)">
+        <SubSection title="TaskStatusBadge (brand chip + glyph — PAP-75)">
           <div className="flex items-center gap-2 flex-wrap">
             {["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"].map(
               (s) => (
-                <IssueStatusBadge key={s} status={s} />
+                <TaskStatusBadge key={s} status={s} />
               )
             )}
           </div>
@@ -622,9 +622,9 @@ export function DesignGuide() {
         <SubSection title="Run invocation badges">
           <div className="flex items-center gap-2 flex-wrap">
             {[
-              ["issue_ref:issue_request", "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"],
-              ["issue_ref:consult_mention", "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"],
-              ["issue_session_automatic", "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"],
+              ["task_ref:task_request", "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"],
+              ["task_ref:consult_mention", "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"],
+              ["task_session_automatic", "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"],
             ].map(([label, cls]) => (
               <Badge variant="ghost" key={label} className={`px-1.5 text-(length:--text-nano) ${cls}`}>
                 {label}
@@ -633,18 +633,18 @@ export function DesignGuide() {
           </div>
         </SubSection>
 
-        <SubSection title="IssueReferencePill">
+        <SubSection title="TaskReferencePill">
           <p className="text-xs text-muted-foreground">
             Used wherever a task is referenced — in markdown, the Related Work tab, and activity summaries.
-            Pass <code className="font-mono">boardPresentationStatus</code> to show the target issue&apos;s state at a glance.
+            Pass <code className="font-mono">boardPresentationStatus</code> to show the target task&apos;s state at a glance.
             Use <code className="font-mono">strikethrough</code> for &quot;removed&quot; contexts.
           </p>
           <div className="flex items-center gap-2 flex-wrap">
-            <IssueReferencePill issue={{ id: "demo-1", identifier: "PAP-123", title: "Identifier only — no status yet" }} />
-            <IssueReferencePill issue={{ id: "demo-2", identifier: "PAP-456", title: "With in_progress status", boardPresentationStatus: "in_progress" }} />
-            <IssueReferencePill issue={{ id: "demo-3", identifier: "PAP-789", title: "Done status", boardPresentationStatus: "done" }} />
-            <IssueReferencePill issue={{ id: "demo-4", identifier: "PAP-101", title: "Blocked status", boardPresentationStatus: "blocked" }} />
-            <IssueReferencePill strikethrough issue={{ id: "demo-5", identifier: "PAP-202", title: "Removed (strikethrough)", boardPresentationStatus: "todo" }} />
+            <TaskReferencePill task={{ id: "demo-1", identifier: "PAP-123", title: "Identifier only — no status yet" }} />
+            <TaskReferencePill task={{ id: "demo-2", identifier: "PAP-456", title: "With in_progress status", boardPresentationStatus: "in_progress" }} />
+            <TaskReferencePill task={{ id: "demo-3", identifier: "PAP-789", title: "Done status", boardPresentationStatus: "done" }} />
+            <TaskReferencePill task={{ id: "demo-4", identifier: "PAP-101", title: "Blocked status", boardPresentationStatus: "blocked" }} />
+            <TaskReferencePill strikethrough task={{ id: "demo-5", identifier: "PAP-202", title: "Removed (strikethrough)", boardPresentationStatus: "todo" }} />
           </div>
         </SubSection>
       </Section>
@@ -850,11 +850,11 @@ export function DesignGuide() {
               checked={menuChecked}
               onCheckedChange={(value) => setMenuChecked(value === true)}
             >
-              Watch issue
+              Watch task
             </DropdownMenuCheckboxItem>
             <DropdownMenuItem variant="destructive">
               <Trash2 className="h-4 w-4" />
-              Delete issue
+              Delete task
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -869,11 +869,11 @@ export function DesignGuide() {
             <Button variant="outline" size="sm">Open Popover</Button>
           </PopoverTrigger>
           <PopoverContent className="space-y-2">
-            <p className="text-sm font-medium">Issue execution</p>
+            <p className="text-sm font-medium">Task execution</p>
             <p className="text-xs text-muted-foreground">
-              Last run succeeded 24s ago. The next issue ref is ready to lease.
+              Last run succeeded 24s ago. The next task ref is ready to lease.
             </p>
-            <Button size="xs">View issue</Button>
+            <Button size="xs">View task</Button>
           </PopoverContent>
         </Popover>
       </Section>
@@ -907,7 +907,7 @@ export function DesignGuide() {
           </SheetTrigger>
           <SheetContent side="right">
             <SheetHeader>
-              <SheetTitle>Issue Properties</SheetTitle>
+              <SheetTitle>Task Properties</SheetTitle>
               <SheetDescription>Edit metadata without leaving the current page.</SheetDescription>
             </SheetHeader>
             <div className="space-y-4 px-4">
@@ -959,7 +959,7 @@ export function DesignGuide() {
                 </CommandItem>
                 <CommandItem>
                   <CircleDot className="h-4 w-4" />
-                  Issues
+                  Tasks
                 </CommandItem>
               </CommandGroup>
               <CommandSeparator />
@@ -970,7 +970,7 @@ export function DesignGuide() {
                 </CommandItem>
                 <CommandItem>
                   <Plus className="h-4 w-4" />
-                  Create new issue
+                  Create new task
                 </CommandItem>
               </CommandGroup>
             </CommandList>
@@ -993,7 +993,7 @@ export function DesignGuide() {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>Issue List</BreadcrumbPage>
+              <BreadcrumbPage>Task List</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
@@ -1022,7 +1022,7 @@ export function DesignGuide() {
         <SubSection title="Metric Cards">
           <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
             <MetricCard icon={Bot} value={12} label="Active Agents" description="+3 this week" />
-            <MetricCard icon={CircleDot} value={48} label="Open Issues" />
+            <MetricCard icon={CircleDot} value={48} label="Open Tasks" />
             <MetricCard icon={DollarSign} value="$1,234" label="Monthly Cost" description="Under budget" />
             <MetricCard icon={Zap} value="99.9%" label="Uptime" />
           </div>
@@ -1091,7 +1091,7 @@ export function DesignGuide() {
             identifier="PAP-001"
             title="Implement authentication flow"
             subtitle="Responsible: Agent Alpha"
-            trailing={<IssueStatusBadge status="in_progress" />}
+            trailing={<TaskStatusBadge status="in_progress" />}
             onClick={() => {}}
           />
           <EntityRow
@@ -1104,7 +1104,7 @@ export function DesignGuide() {
             identifier="PAP-002"
             title="Set up CI/CD pipeline"
             subtitle="Completed 2 days ago"
-            trailing={<IssueStatusBadge status="done" />}
+            trailing={<TaskStatusBadge status="done" />}
             onClick={() => {}}
           />
           <EntityRow
@@ -1116,7 +1116,7 @@ export function DesignGuide() {
             }
             identifier="PAP-003"
             title="Write API documentation"
-            trailing={<IssueStatusBadge status="todo" />}
+            trailing={<TaskStatusBadge status="todo" />}
             onClick={() => {}}
           />
           <EntityRow
@@ -1129,7 +1129,7 @@ export function DesignGuide() {
             identifier="PAP-004"
             title="Deploy to production"
             subtitle="Blocked by PAP-001"
-            trailing={<IssueStatusBadge status="blocked" />}
+            trailing={<TaskStatusBadge status="blocked" />}
             selected
           />
         </div>
@@ -1421,7 +1421,7 @@ export function DesignGuide() {
             </div>
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground cursor-pointer">
               <CircleDot className="h-4 w-4" />
-              Issues
+              Tasks
               <Badge variant="ghost" className="ml-auto bg-primary text-primary-foreground px-1.5">
                 12
               </Badge>
@@ -1452,9 +1452,9 @@ export function DesignGuide() {
       </Section>
 
       {/* ============================================================ */}
-      {/*  GROUPED LIST (Issues pattern)                                */}
+      {/*  GROUPED LIST (Tasks pattern)                                */}
       {/* ============================================================ */}
-      <Section title="Grouped List (Issues pattern)">
+      <Section title="Grouped List (Tasks pattern)">
         <div>
           <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-t-md">
             <StatusIcon status="in_progress" />
@@ -1624,7 +1624,7 @@ export function DesignGuide() {
         <div className="border border-border rounded-md divide-y divide-border text-sm">
           {[
             ["Cmd+K / Ctrl+K", "Open Command Palette"],
-            ["C", "New Issue (outside inputs)"],
+            ["C", "New Task (outside inputs)"],
             ["[", "Toggle Sidebar"],
             ["]", "Toggle Properties Panel"],
 
@@ -1640,16 +1640,16 @@ export function DesignGuide() {
         </div>
       </Section>
 
-      <Section title="Issue Output Surface">
+      <Section title="Task Output Surface">
         <SubSection title="Multiple outputs (primary video + 'Also produced')">
-          <IssueOutputSection workProducts={DESIGN_GUIDE_OUTPUTS} />
+          <TaskOutputSection workProducts={DESIGN_GUIDE_OUTPUTS} />
         </SubSection>
         <SubSection title="Degraded output (invalid / failed attachment metadata)">
-          <IssueOutputSection workProducts={DESIGN_GUIDE_DEGRADED_OUTPUTS} />
+          <TaskOutputSection workProducts={DESIGN_GUIDE_DEGRADED_OUTPUTS} />
         </SubSection>
         <SubSection title="Empty state">
           <p className="text-xs text-muted-foreground">
-            When an issue has produced no artifact work products, the Output section renders nothing
+            When a task has produced no artifact work products, the Output section renders nothing
             at all (no placeholder card).
           </p>
         </SubSection>
@@ -1734,7 +1734,7 @@ export function DesignGuide() {
             title="Summary generation failed."
             actions={<Button size="sm">Retry</Button>}
           >
-            The linked issue reached a terminal state before a summary was written.
+            The linked task reached a terminal state before a summary was written.
           </InlineBanner>
           <InlineBanner tone="info" compact>
             Compact variant for embedding inside dialogs and modals.

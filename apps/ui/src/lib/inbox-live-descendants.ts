@@ -1,7 +1,7 @@
-import type { Issue, IssueBlockerAttention } from "@paperclipai/shared";
+import type { Task, TaskBlockerAttention } from "@paperclipai/shared";
 
-type InboxLiveDescendantIssue = Pick<
-  Issue,
+type InboxLiveDescendantTask = Pick<
+  Task,
   | "boardPresentationStatus"
   | "blockerAttention"
   | "liveDescendantCount"
@@ -17,29 +17,29 @@ function normalizeLiveDescendantCount(value: unknown): number {
   return Math.max(0, Math.trunc(value));
 }
 
-function asBlockerAttention(value: unknown): IssueBlockerAttention | null {
+function asBlockerAttention(value: unknown): TaskBlockerAttention | null {
   if (!value || typeof value !== "object") return null;
-  const attention = value as Partial<IssueBlockerAttention>;
-  return typeof attention.state === "string" ? attention as IssueBlockerAttention : null;
+  const attention = value as Partial<TaskBlockerAttention>;
+  return typeof attention.state === "string" ? attention as TaskBlockerAttention : null;
 }
 
-export function resolveIssueLiveDescendantCount(
-  issue: Pick<Issue, "liveDescendantCount">,
+export function resolveTaskLiveDescendantCount(
+  task: Pick<Task, "liveDescendantCount">,
   loadedSubtreeLiveCount = 0,
 ): number {
   return Math.max(
-    normalizeLiveDescendantCount(issue.liveDescendantCount),
+    normalizeLiveDescendantCount(task.liveDescendantCount),
     normalizeLiveDescendantCount(loadedSubtreeLiveCount),
   );
 }
 
-export function resolveInboxIssueBlockerAttention(
-  issue: InboxLiveDescendantIssue,
+export function resolveInboxTaskBlockerAttention(
+  task: InboxLiveDescendantTask,
   options: InboxLiveDescendantOptions,
-): IssueBlockerAttention | null {
-  const blockerAttention = asBlockerAttention(issue.blockerAttention);
+): TaskBlockerAttention | null {
+  const blockerAttention = asBlockerAttention(task.blockerAttention);
   if (
-    issue.boardPresentationStatus !== "blocked" ||
+    task.boardPresentationStatus !== "blocked" ||
     options.isLive
   ) {
     return blockerAttention;
@@ -49,7 +49,7 @@ export function resolveInboxIssueBlockerAttention(
   }
   if (blockerAttention?.state === "covered") return blockerAttention;
 
-  const liveDescendantCount = resolveIssueLiveDescendantCount(issue, options.loadedSubtreeLiveCount);
+  const liveDescendantCount = resolveTaskLiveDescendantCount(task, options.loadedSubtreeLiveCount);
   if (liveDescendantCount <= 0) return blockerAttention;
 
   return {

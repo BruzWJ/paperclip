@@ -20,13 +20,13 @@ afterEach(async () => {
   })));
 });
 
-function issueListFixture(count: number) {
+function taskListFixture(count: number) {
   return Array.from({ length: count }, (_, index) => ({
-    id: `issue-${index}`,
+    id: `task-${index}`,
     companyId: "company-1",
     identifier: `PAP-${index + 1}`,
-    title: `Synthetic issue list row ${index}`,
-    description: "repeatable payload used to prove API compression on the hot issue-list response",
+    title: `Synthetic task list row ${index}`,
+    description: "repeatable payload used to prove API compression on the hot task-list response",
     status: index % 2 === 0 ? "in_progress" : "todo",
     priority: "medium",
     assigneeAgentId: index % 3 === 0 ? "agent-1" : null,
@@ -75,8 +75,8 @@ async function requestRaw(app: express.Express, path: string, headers: Record<st
 function buildApp() {
   const app = express();
   app.use("/api", apiCompression());
-  app.get("/api/companies/:companyId/issues", (_req, res) => {
-    res.json(issueListFixture(500));
+  app.get("/api/companies/:companyId/tasks", (_req, res) => {
+    res.json(taskListFixture(500));
   });
   app.get("/api/small", (_req, res) => {
     res.json({ ok: true });
@@ -89,7 +89,7 @@ function buildApp() {
   });
   app.get("/api/etag", (_req, res) => {
     res.setHeader("ETag", "\"fixture-etag\"");
-    res.json(issueListFixture(500));
+    res.json(taskListFixture(500));
   });
   app.get("/api/download", (_req, res) => {
     res.setHeader("Content-Type", "application/octet-stream");
@@ -97,9 +97,9 @@ function buildApp() {
     res.end("chunk-two");
   });
   app.get("/api/json-download", (_req, res) => {
-    const chunk = JSON.stringify(issueListFixture(500));
+    const chunk = JSON.stringify(taskListFixture(500));
     res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.setHeader("Content-Disposition", "attachment; filename=\"issues.json\"");
+    res.setHeader("Content-Disposition", "attachment; filename=\"tasks.json\"");
     res.write(chunk.slice(0, chunk.length / 2));
     res.end(chunk.slice(chunk.length / 2));
   });
@@ -120,7 +120,7 @@ function buildApp() {
     res.end();
   });
   app.get("/api/uint8-json", (req, res) => {
-    const body = JSON.stringify(issueListFixture(Number(req.query.count ?? 1)));
+    const body = JSON.stringify(taskListFixture(Number(req.query.count ?? 1)));
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.end(new TextEncoder().encode(body));
   });
@@ -128,9 +128,9 @@ function buildApp() {
 }
 
 describe("API compression middleware", () => {
-  it("compresses the hot 500-item issue-list response with gzip when the client supports it", async () => {
-    const uncompressed = await requestRaw(buildApp(), "/api/companies/company-1/issues?limit=500");
-    const compressed = await requestRaw(buildApp(), "/api/companies/company-1/issues?limit=500", {
+  it("compresses the hot 500-item task-list response with gzip when the client supports it", async () => {
+    const uncompressed = await requestRaw(buildApp(), "/api/companies/company-1/tasks?limit=500");
+    const compressed = await requestRaw(buildApp(), "/api/companies/company-1/tasks?limit=500", {
       "accept-encoding": "gzip",
     });
 
@@ -143,7 +143,7 @@ describe("API compression middleware", () => {
   });
 
   it("uses deflate when that is the supported content encoding", async () => {
-    const res = await requestRaw(buildApp(), "/api/companies/company-1/issues?limit=500", {
+    const res = await requestRaw(buildApp(), "/api/companies/company-1/tasks?limit=500", {
       "accept-encoding": "deflate",
     });
 
@@ -199,7 +199,7 @@ describe("API compression middleware", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.headers["content-disposition"]).toBe("attachment; filename=\"issues.json\"");
+    expect(res.headers["content-disposition"]).toBe("attachment; filename=\"tasks.json\"");
     expect(res.headers["content-encoding"]).toBeUndefined();
     expect(JSON.parse(res.body.toString("utf8"))).toHaveLength(500);
   });

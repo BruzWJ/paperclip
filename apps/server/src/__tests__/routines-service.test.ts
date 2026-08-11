@@ -26,7 +26,7 @@ vi.mock("../services/agent-invokability.js", async (importActual) => {
   >();
   return {
     ...actual,
-    resolveInvokableIssueOwnerInTransaction: mocks.resolveOwner,
+    resolveInvokableTaskOwnerInTransaction: mocks.resolveOwner,
   };
 });
 
@@ -44,13 +44,13 @@ vi.mock(
   },
 );
 
-vi.mock("../services/issue-session/admission.js", async (importActual) => {
+vi.mock("../services/task-session/admission.js", async (importActual) => {
   const actual = await importActual<
-    typeof import("../services/issue-session/admission.js")
+    typeof import("../services/task-session/admission.js")
   >();
   return {
     ...actual,
-    createIssueSessionAdmissionService: vi.fn(() => ({})),
+    createTaskSessionAdmissionService: vi.fn(() => ({})),
   };
 });
 
@@ -122,7 +122,7 @@ function routine(overrides: Record<string, unknown> = {}) {
     projectId: null,
     folderId: null,
     goalId: null,
-    parentIssueId: null,
+    parentTaskId: null,
     title: "Repository triage",
     description: "Review the repository",
     assigneeAgentId: "agent-owner",
@@ -159,7 +159,7 @@ function snapshot(row: ReturnType<typeof routine>, triggers: unknown[] = []) {
       companyId: row.companyId,
       projectId: row.projectId,
       goalId: row.goalId,
-      parentIssueId: row.parentIssueId,
+      parentTaskId: row.parentTaskId,
       title: row.title,
       description: row.description,
       assigneeAgentId: row.assigneeAgentId,
@@ -221,7 +221,7 @@ function descriptionDocument(row: ReturnType<typeof routine>) {
   };
 }
 
-function ordinaryIssues() {
+function ordinaryTasks() {
   return {
     create: vi.fn(),
     dispatchRef: vi.fn().mockResolvedValue(undefined),
@@ -230,7 +230,7 @@ function ordinaryIssues() {
 
 function service(
   harness: MockDbHarness,
-  ordinary = ordinaryIssues(),
+  ordinary = ordinaryTasks(),
   runtimeEnv: Record<string, string | undefined> = {
     PAPERCLIP_PUBLIC_URL: "https://paperclip.example/",
   },
@@ -239,7 +239,7 @@ function service(
     ordinary,
     service: routineService(harness.db, {
       runtimeEnv,
-      ordinaryIssues: ordinary as never,
+      ordinaryTasks: ordinary as never,
     }),
   };
 }
@@ -360,7 +360,7 @@ describe("routine service contracts without a database", () => {
           {
             projectId: null,
             goalId: null,
-            parentIssueId: null,
+            parentTaskId: null,
             title: created.title,
             description: created.description,
             assigneeAgentId: created.assigneeAgentId,
@@ -406,7 +406,7 @@ describe("routine service contracts without a database", () => {
         {
           projectId: null,
           goalId: null,
-          parentIssueId: null,
+          parentTaskId: null,
           title: created.title,
           description: created.description,
           assigneeAgentId: null,
@@ -434,7 +434,7 @@ describe("routine service contracts without a database", () => {
           {
             projectId: null,
             goalId: null,
-            parentIssueId: null,
+            parentTaskId: null,
             title: "Review from {{startDate}}",
             description: null,
             assigneeAgentId: null,
@@ -535,7 +535,7 @@ describe("routine service contracts without a database", () => {
         { dispatchRefId: "escalation-ref-1" },
         { dispatchRefId: null },
       ]);
-      const ordinary = ordinaryIssues();
+      const ordinary = ordinaryTasks();
 
       await expect(
         service(harness, ordinary).service.update(
@@ -778,7 +778,7 @@ describe("routine service contracts without a database", () => {
   });
 
   describe("run admission and scheduling", () => {
-    it("interpolates variables and atomically correlates a fresh execution issue", async () => {
+    it("interpolates variables and atomically correlates a fresh execution task", async () => {
       const existing = routine({
         title: "Triage {{repository}}",
         description: "Review {{repository}} at {{priority}} priority",
@@ -817,7 +817,7 @@ describe("routine service contracts without a database", () => {
         dispatchFingerprint: "fingerprint-1",
         routineRevisionId: existing.latestRevisionId,
         responsibleUserId: "revision-owner",
-        linkedIssueId: null,
+        linkedTaskId: null,
         coalescedIntoRunId: null,
         failureReason: null,
         completedAt: null,
@@ -826,8 +826,8 @@ describe("routine service contracts without a database", () => {
       };
       const finalRun = {
         ...createdRun,
-        status: "issue_created",
-        linkedIssueId: "issue-created-1",
+        status: "task_created",
+        linkedTaskId: "task-created-1",
       };
       const harness = createMockDb({
         select: [
@@ -842,10 +842,10 @@ describe("routine service contracts without a database", () => {
         insert: [[createdRun]],
         update: [[finalRun], []],
       });
-      const ordinary = ordinaryIssues();
+      const ordinary = ordinaryTasks();
       ordinary.create.mockImplementationOnce(async (input) => {
         const persisted = {
-          issue: { id: finalRun.linkedIssueId, companyId: COMPANY_ID },
+          task: { id: finalRun.linkedTaskId, companyId: COMPANY_ID },
           sessionId: "ses-created",
           authorityId: "authority-created",
           ref: { id: "ref-created" },
@@ -892,7 +892,7 @@ describe("routine service contracts without a database", () => {
       ["coalesce_if_active", "coalesced"],
       ["skip_if_active", "skipped"],
     ] as const)(
-      "%s resolves a matching live issue as %s without creating another issue",
+      "%s resolves a matching live task as %s without creating another task",
       async (concurrencyPolicy, expectedStatus) => {
         const existing = routine({ concurrencyPolicy });
         const boundSnapshot = snapshot(existing);
@@ -905,8 +905,8 @@ describe("routine service contracts without a database", () => {
           triggeredAt: NOW,
           responsibleUserId: "board-user",
         };
-        const activeIssue = {
-          id: "issue-active",
+        const activeTask = {
+          id: "task-active",
           companyId: COMPANY_ID,
           lifecycleStatus: "open",
           boardPresentationStatus: "in_progress",
@@ -915,8 +915,8 @@ describe("routine service contracts without a database", () => {
         const settledRun = {
           ...createdRun,
           status: expectedStatus,
-          linkedIssueId: activeIssue.id,
-          coalescedIntoRunId: activeIssue.creatorRoutineDispatchId,
+          linkedTaskId: activeTask.id,
+          coalescedIntoRunId: activeTask.creatorRoutineDispatchId,
           completedAt: NOW,
         };
         const harness = createMockDb({
@@ -925,13 +925,13 @@ describe("routine service contracts without a database", () => {
             [{ snapshot: boundSnapshot }],
             [],
             [{ responsibleUserId: "board-user", snapshot: boundSnapshot }],
-            [activeIssue],
+            [activeTask],
           ],
           execute: [[]],
           insert: [[createdRun]],
           update: [[settledRun], []],
         });
-        const ordinary = ordinaryIssues();
+        const ordinary = ordinaryTasks();
 
         await expect(
           service(harness, ordinary).service.runRoutine(ROUTINE_ID, {
@@ -942,7 +942,7 @@ describe("routine service contracts without a database", () => {
         expect(queryValues(harness, "update")[0]).toEqual(
           expect.objectContaining({
             status: expectedStatus,
-            linkedIssueId: activeIssue.id,
+            linkedTaskId: activeTask.id,
           }),
         );
       },
@@ -981,7 +981,7 @@ describe("routine service contracts without a database", () => {
         update: [[{ id: trigger.id }], [], []],
         insert: [[skippedRun]],
       });
-      const ordinary = ordinaryIssues();
+      const ordinary = ordinaryTasks();
 
       await expect(
         service(harness, ordinary).service.tickScheduledTriggers(NOW),
@@ -995,7 +995,7 @@ describe("routine service contracts without a database", () => {
         expect.objectContaining({
           status: "skipped",
           failureReason: "paused",
-          linkedIssueId: null,
+          linkedTaskId: null,
         }),
       );
       expect(ordinary.create).not.toHaveBeenCalled();
@@ -1045,7 +1045,7 @@ describe("routine service contracts without a database", () => {
         update: [[{ id: trigger.id }], [], []],
         insert: [[skippedRun]],
       });
-      const ordinary = ordinaryIssues();
+      const ordinary = ordinaryTasks();
 
       await expect(
         service(harness, ordinary, {
@@ -1059,7 +1059,7 @@ describe("routine service contracts without a database", () => {
         expect.objectContaining({
           status: "skipped",
           failureReason: "worktree_execution_cutoff",
-          linkedIssueId: null,
+          linkedTaskId: null,
         }),
       );
       expect(ordinary.create).not.toHaveBeenCalled();
@@ -1079,29 +1079,29 @@ describe("routine service contracts without a database", () => {
   describe("run lifecycle projection", () => {
     it.each([
       ["done", "completed", undefined],
-      ["blocked", "failed", "Execution issue moved to blocked"],
-      ["cancelled", "failed", "Execution issue moved to cancelled"],
+      ["blocked", "failed", "Execution task moved to blocked"],
+      ["cancelled", "failed", "Execution task moved to cancelled"],
     ] as const)(
-      "maps an execution issue in %s to a %s routine run",
+      "maps an execution task in %s to a %s routine run",
       async (boardPresentationStatus, runStatus, failureReason) => {
-        const issue = {
-          id: "issue-execution",
+        const task = {
+          id: "task-execution",
           boardPresentationStatus,
           originKind: "routine_execution",
           originRunId: "run-linked",
         };
         const updatedRun = {
-          id: issue.originRunId,
+          id: task.originRunId,
           status: runStatus,
           failureReason: failureReason ?? null,
         };
         const harness = createMockDb({
-          select: [[issue]],
+          select: [[task]],
           update: [[updatedRun]],
         });
 
         await expect(
-          service(harness).service.syncRunStatusForIssue(issue.id),
+          service(harness).service.syncRunStatusForTask(task.id),
         ).resolves.toEqual(updatedRun);
         expect(queryValues(harness, "update")[0]).toEqual(
           expect.objectContaining({
@@ -1113,10 +1113,10 @@ describe("routine service contracts without a database", () => {
       },
     );
 
-    it("ignores an issue without canonical routine execution provenance", async () => {
+    it("ignores a task without canonical routine execution provenance", async () => {
       const harness = createMockDb({
         select: [[{
-          id: "ordinary-issue",
+          id: "ordinary-task",
           boardPresentationStatus: "done",
           originKind: "manual",
           originRunId: null,
@@ -1124,7 +1124,7 @@ describe("routine service contracts without a database", () => {
       });
 
       await expect(
-        service(harness).service.syncRunStatusForIssue("ordinary-issue"),
+        service(harness).service.syncRunStatusForTask("ordinary-task"),
       ).resolves.toBeNull();
       expect(queryValues(harness, "update")).toHaveLength(0);
     });

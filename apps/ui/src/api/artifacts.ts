@@ -20,9 +20,9 @@ export type {
  *
  * Talks to the company-scoped artifacts projection endpoint
  * (`GET /api/companies/:companyId/artifacts`) defined by the approved
- * Artifacts plan (PAP-10353). The endpoint flattens agent-produced issue
+ * Artifacts plan (PAP-10353). The endpoint flattens agent-produced task
  * documents, direct attachments, and `artifact` work products into a single
- * card-ready list so the UI never has to stitch issue-specific endpoints
+ * card-ready list so the UI never has to stitch task-specific endpoints
  * together.
  *
  * The `CompanyArtifact` shape is imported from `@paperclipai/shared` so the
@@ -38,7 +38,7 @@ export interface ListArtifactsParams {
   /** Grouping mode. `none` (default) returns the flat artifact grid. */
   groupBy?: CompanyArtifactGroupBy;
   /** When grouping, selects a single stack to expand into its artifacts. */
-  groupIssueId?: string;
+  groupTaskId?: string;
   limit?: number;
   cursor?: string;
 }
@@ -49,7 +49,7 @@ function buildArtifactsQuery(params?: ListArtifactsParams): string {
   if (params?.projectId) search.set("projectId", params.projectId);
   if (params?.q) search.set("q", params.q);
   if (params?.groupBy && params.groupBy !== "none") search.set("groupBy", params.groupBy);
-  if (params?.groupIssueId) search.set("groupIssueId", params.groupIssueId);
+  if (params?.groupTaskId) search.set("groupTaskId", params.groupTaskId);
   if (params?.limit != null) search.set("limit", String(params.limit));
   if (params?.cursor) search.set("cursor", params.cursor);
   const qs = search.toString();

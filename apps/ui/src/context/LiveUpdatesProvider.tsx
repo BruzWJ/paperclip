@@ -11,8 +11,8 @@ import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-quer
 import { createCoalescingQueryClient, createInvalidationBatcher } from "../lib/query-invalidation-batcher";
 import type {
   Agent,
-  Issue,
-  IssueExecutionRunListPageRecord,
+  Task,
+  TaskExecutionRunListPageRecord,
   LiveEvent,
 } from "@paperclipai/shared";
 import type { CompanyUserDirectoryResponse } from "../api/access";
@@ -21,7 +21,7 @@ import { useCompany } from "./CompanyContext";
 import type { ToastInput } from "./ToastContext";
 import { useToastActions } from "./ToastContext";
 import { queryKeys } from "../lib/queryKeys";
-import { ACTIVE_ISSUE_EXECUTION_RUN_STATUSES } from "../api/runs";
+import { ACTIVE_TASK_EXECUTION_RUN_STATUSES } from "../api/runs";
 import { toCompanyRelativePath } from "../lib/company-routes";
 import { useLocation } from "../lib/router";
 import { buildSameOriginWebSocketUrl } from "../lib/websocket-url";
@@ -146,7 +146,7 @@ function resolveActorLabel(
   return "Someone";
 }
 
-interface IssueToastContext {
+interface TaskToastContext {
   ref: string;
   title: string | null;
   label: string;
@@ -157,72 +157,72 @@ interface VisibleRouteOptions {
   isForegrounded?: boolean;
 }
 
-interface VisibleIssueRouteContext {
-  routeIssueRef: string;
-  issueRefs: Set<string>;
+interface VisibleTaskRouteContext {
+  routeTaskRef: string;
+  taskRefs: Set<string>;
   ownerAgentId: string | null;
   runIds: Set<string>;
 }
 
-function resolveIssueQueryRefs(
+function resolveTaskQueryRefs(
   queryClient: QueryClient,
   companyId: string,
-  issueId: string,
+  taskId: string,
   details: Record<string, unknown> | null,
 ): string[] {
-  const refs = new Set<string>([issueId]);
-  const detailIssue = queryClient.getQueryData<Issue>(queryKeys.issues.detail(issueId));
-  const listIssues = queryClient.getQueryData<Issue[]>(queryKeys.issues.list(companyId));
+  const refs = new Set<string>([taskId]);
+  const detailTask = queryClient.getQueryData<Task>(queryKeys.tasks.detail(taskId));
+  const listTasks = queryClient.getQueryData<Task[]>(queryKeys.tasks.list(companyId));
   const detailsIdentifier =
     readString(details?.identifier) ??
-    readString(details?.issueIdentifier);
+    readString(details?.taskIdentifier);
 
   if (detailsIdentifier) refs.add(detailsIdentifier);
 
-  if (detailIssue?.id) refs.add(detailIssue.id);
-  if (detailIssue?.identifier) refs.add(detailIssue.identifier);
+  if (detailTask?.id) refs.add(detailTask.id);
+  if (detailTask?.identifier) refs.add(detailTask.identifier);
 
-  const listIssue = listIssues?.find((issue) => {
-    if (issue.id === issueId) return true;
-    if (issue.identifier && issue.identifier === issueId) return true;
-    if (detailsIdentifier && issue.identifier === detailsIdentifier) return true;
+  const listTask = listTasks?.find((task) => {
+    if (task.id === taskId) return true;
+    if (task.identifier && task.identifier === taskId) return true;
+    if (detailsIdentifier && task.identifier === detailsIdentifier) return true;
     return false;
   });
-  if (listIssue?.id) refs.add(listIssue.id);
-  if (listIssue?.identifier) refs.add(listIssue.identifier);
+  if (listTask?.id) refs.add(listTask.id);
+  if (listTask?.identifier) refs.add(listTask.identifier);
 
   return Array.from(refs);
 }
 
-function resolveIssueToastContext(
+function resolveTaskToastContext(
   queryClient: QueryClient,
   companyId: string,
-  issueId: string,
+  taskId: string,
   details: Record<string, unknown> | null,
-): IssueToastContext {
-  const issueRefs = resolveIssueQueryRefs(queryClient, companyId, issueId, details);
-  const detailIssue = issueRefs
-    .map((ref) => queryClient.getQueryData<Issue>(queryKeys.issues.detail(ref)))
-    .find((issue): issue is Issue => !!issue);
-  const listIssue = queryClient
-    .getQueryData<Issue[]>(queryKeys.issues.list(companyId))
-    ?.find((issue) => issueRefs.some((ref) => issue.id === ref || issue.identifier === ref));
-  const cachedIssue = detailIssue ?? listIssue ?? null;
+): TaskToastContext {
+  const taskRefs = resolveTaskQueryRefs(queryClient, companyId, taskId, details);
+  const detailTask = taskRefs
+    .map((ref) => queryClient.getQueryData<Task>(queryKeys.tasks.detail(ref)))
+    .find((task): task is Task => !!task);
+  const listTask = queryClient
+    .getQueryData<Task[]>(queryKeys.tasks.list(companyId))
+    ?.find((task) => taskRefs.some((ref) => task.id === ref || task.identifier === ref));
+  const cachedTask = detailTask ?? listTask ?? null;
   const ref =
     readString(details?.identifier) ??
-    readString(details?.issueIdentifier) ??
-    cachedIssue?.identifier ??
-    `Task ${shortId(issueId)}`;
+    readString(details?.taskIdentifier) ??
+    cachedTask?.identifier ??
+    `Task ${shortId(taskId)}`;
   const title =
     readString(details?.title) ??
-    readString(details?.issueTitle) ??
-    cachedIssue?.title ??
+    readString(details?.taskTitle) ??
+    cachedTask?.title ??
     null;
   return {
     ref,
     title,
     label: title ? `${ref} - ${truncate(title, 72)}` : ref,
-    href: `/issues/${cachedIssue?.identifier ?? issueId}`,
+    href: `/tasks/${cachedTask?.identifier ?? taskId}`,
   };
 }
 
@@ -233,43 +233,43 @@ function isPageForegrounded(): boolean {
   return true;
 }
 
-function resolveVisibleIssueRouteContext(
+function resolveVisibleTaskRouteContext(
   queryClient: QueryClient,
   pathname: string,
   options?: VisibleRouteOptions,
-): VisibleIssueRouteContext | null {
+): VisibleTaskRouteContext | null {
   const isForegrounded = options?.isForegrounded ?? isPageForegrounded();
   if (!isForegrounded) return null;
 
   const relativePath = toCompanyRelativePath(pathname);
   const segments = relativePath.split("/").filter(Boolean);
-  if (segments[0] !== "issues" || !segments[1]) return null;
+  if (segments[0] !== "tasks" || !segments[1]) return null;
 
-  const issueRef = decodeURIComponent(segments[1]);
-  const issue = queryClient.getQueryData<Issue>(queryKeys.issues.detail(issueRef)) ?? null;
-  const issueRefs = new Set<string>([issueRef]);
-  if (issue?.id) issueRefs.add(issue.id);
-  if (issue?.identifier) issueRefs.add(issue.identifier);
+  const taskRef = decodeURIComponent(segments[1]);
+  const task = queryClient.getQueryData<Task>(queryKeys.tasks.detail(taskRef)) ?? null;
+  const taskRefs = new Set<string>([taskRef]);
+  if (task?.id) taskRefs.add(task.id);
+  if (task?.identifier) taskRefs.add(task.identifier);
 
   const runIds = new Set<string>();
-  const runs = queryClient.getQueryData<IssueExecutionRunListPageRecord>(
-    queryKeys.issues.runs(issueRef, ACTIVE_ISSUE_EXECUTION_RUN_STATUSES),
+  const runs = queryClient.getQueryData<TaskExecutionRunListPageRecord>(
+    queryKeys.tasks.runs(taskRef, ACTIVE_TASK_EXECUTION_RUN_STATUSES),
   );
   for (const run of runs?.items ?? []) {
     runIds.add(run.id);
   }
 
   return {
-    routeIssueRef: issueRef,
-    issueRefs,
-    ownerAgentId: issue?.ownerAgentId ?? null,
+    routeTaskRef: taskRef,
+    taskRefs,
+    ownerAgentId: task?.ownerAgentId ?? null,
     runIds,
   };
 }
 
-function buildIssueRefsForPayload(entityId: string, details: Record<string, unknown> | null): Set<string> {
+function buildTaskRefsForPayload(entityId: string, details: Record<string, unknown> | null): Set<string> {
   const refs = new Set<string>([entityId]);
-  const identifier = readString(details?.identifier) ?? readString(details?.issueIdentifier);
+  const identifier = readString(details?.identifier) ?? readString(details?.taskIdentifier);
   if (identifier) refs.add(identifier);
   return refs;
 }
@@ -281,7 +281,7 @@ function overlaps(a: Set<string>, b: Set<string>): boolean {
   return false;
 }
 
-function shouldSuppressActivityToastForVisibleIssue(
+function shouldSuppressActivityToastForVisibleTask(
   queryClient: QueryClient,
   pathname: string,
   payload: Record<string, unknown>,
@@ -289,52 +289,52 @@ function shouldSuppressActivityToastForVisibleIssue(
 ): boolean {
   const entityType = readString(payload.entityType);
   const entityId = readString(payload.entityId);
-  if (entityType !== "issue" || !entityId) return false;
+  if (entityType !== "task" || !entityId) return false;
 
-  const context = resolveVisibleIssueRouteContext(queryClient, pathname, options);
+  const context = resolveVisibleTaskRouteContext(queryClient, pathname, options);
   if (!context) return false;
 
-  return overlaps(context.issueRefs, buildIssueRefsForPayload(entityId, readRecord(payload.details)));
+  return overlaps(context.taskRefs, buildTaskRefsForPayload(entityId, readRecord(payload.details)));
 }
 
-function invalidateVisibleIssueRunQueries(
+function invalidateVisibleTaskRunQueries(
   queryClient: QueryClient,
   pathname: string,
   payload: Record<string, unknown>,
   options?: VisibleRouteOptions,
 ): boolean {
-  const context = resolveVisibleIssueRouteContext(queryClient, pathname, options);
+  const context = resolveVisibleTaskRouteContext(queryClient, pathname, options);
   if (!context) return false;
 
   const runId = readString(payload.runId);
   const agentId = readString(payload.agentId);
-  const matchesVisibleIssue =
+  const matchesVisibleTask =
     (runId !== null && context.runIds.has(runId)) ||
     (!!agentId && !!context.ownerAgentId && agentId === context.ownerAgentId);
-  if (!matchesVisibleIssue) return false;
+  if (!matchesVisibleTask) return false;
 
-  for (const issueRef of context.issueRefs) {
-    queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueRef) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(issueRef) });
-    queryClient.invalidateQueries({ queryKey: ["issues", "runs", issueRef] });
+  for (const taskRef of context.taskRefs) {
+    queryClient.invalidateQueries({ queryKey: queryKeys.tasks.detail(taskRef) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.tasks.activity(taskRef) });
+    queryClient.invalidateQueries({ queryKey: ["tasks", "runs", taskRef] });
   }
   return true;
 }
 
-function shouldSuppressAgentStatusToastForVisibleIssue(
+function shouldSuppressAgentStatusToastForVisibleTask(
   queryClient: QueryClient,
   pathname: string,
   payload: Record<string, unknown>,
   options?: VisibleRouteOptions,
 ): boolean {
-  const context = resolveVisibleIssueRouteContext(queryClient, pathname, options);
+  const context = resolveVisibleTaskRouteContext(queryClient, pathname, options);
   if (!context?.ownerAgentId) return false;
 
   const agentId = readString(payload.agentId);
   return !!agentId && agentId === context.ownerAgentId;
 }
 
-function shouldDeferIssueRefetchForVisibleAgentActivity(
+function shouldDeferTaskRefetchForVisibleAgentActivity(
   queryClient: QueryClient,
   pathname: string,
   payload: Record<string, unknown>,
@@ -346,18 +346,18 @@ function shouldDeferIssueRefetchForVisibleAgentActivity(
   const action = readString(payload.action);
   const details = readRecord(payload.details);
 
-  if (entityType !== "issue" || !entityId) return false;
+  if (entityType !== "task" || !entityId) return false;
   if (actorType !== "agent" && actorType !== "system") return false;
-  if (action !== "issue.updated") return false;
+  if (action !== "task.updated") return false;
   if (readString(details?.source) === "comment") return false;
 
-  const context = resolveVisibleIssueRouteContext(queryClient, pathname, options);
+  const context = resolveVisibleTaskRouteContext(queryClient, pathname, options);
   if (!context) return false;
 
-  return overlaps(context.issueRefs, buildIssueRefsForPayload(entityId, details));
+  return overlaps(context.taskRefs, buildTaskRefsForPayload(entityId, details));
 }
 
-function shouldDeferVisibleIssueCommentActivity(
+function shouldDeferVisibleTaskCommentActivity(
   queryClient: QueryClient,
   pathname: string,
   payload: Record<string, unknown>,
@@ -368,16 +368,16 @@ function shouldDeferVisibleIssueCommentActivity(
   const action = readString(payload.action);
   const details = readRecord(payload.details);
 
-  if (entityType !== "issue" || !entityId) return false;
-  if (action !== "issue.comment_added") return false;
+  if (entityType !== "task" || !entityId) return false;
+  if (action !== "task.comment_added") return false;
 
-  const context = resolveVisibleIssueRouteContext(queryClient, pathname, options);
+  const context = resolveVisibleTaskRouteContext(queryClient, pathname, options);
   if (!context) return false;
 
-  return overlaps(context.issueRefs, buildIssueRefsForPayload(entityId, details));
+  return overlaps(context.taskRefs, buildTaskRefsForPayload(entityId, details));
 }
 
-async function refreshVisibleIssueCommentGroups(
+async function refreshVisibleTaskCommentGroups(
   queryClient: QueryClient,
   pathname: string,
   payload: Record<string, unknown>,
@@ -388,35 +388,35 @@ async function refreshVisibleIssueCommentGroups(
   const details = readRecord(payload.details);
   const commentId = readString(details?.commentId);
 
-  if (entityType !== "issue" || action !== "issue.comment_added" || !commentId) return false;
+  if (entityType !== "task" || action !== "task.comment_added" || !commentId) return false;
 
-  const context = resolveVisibleIssueRouteContext(queryClient, pathname, options);
+  const context = resolveVisibleTaskRouteContext(queryClient, pathname, options);
   if (!context) return false;
 
   const entityId = readString(payload.entityId);
-  if (!entityId || !overlaps(context.issueRefs, buildIssueRefsForPayload(entityId, details))) {
+  if (!entityId || !overlaps(context.taskRefs, buildTaskRefsForPayload(entityId, details))) {
     return false;
   }
 
   await queryClient.invalidateQueries({
-    queryKey: queryKeys.issues.comments(context.routeIssueRef),
+    queryKey: queryKeys.tasks.comments(context.routeTaskRef),
   });
   return true;
 }
 
-const ISSUE_TOAST_ACTIONS = new Set(["issue.created", "issue.updated", "issue.comment_added"]);
-const ISSUE_DOCUMENT_ACTIVITY_ACTIONS = new Set([
-  "issue.document_created",
-  "issue.document_updated",
-  "issue.document_restored",
-  "issue.document_deleted",
+const TASK_TOAST_ACTIONS = new Set(["task.created", "task.updated", "task.comment_added"]);
+const TASK_DOCUMENT_ACTIVITY_ACTIONS = new Set([
+  "task.document_created",
+  "task.document_updated",
+  "task.document_restored",
+  "task.document_deleted",
 ]);
-const ISSUE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS = new Set([
-  "issue.document_annotation_thread_created",
-  "issue.document_annotation_comment_added",
-  "issue.document_annotation_thread_resolved",
-  "issue.document_annotation_thread_reopened",
-  "issue.document_annotation_remapped",
+const TASK_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS = new Set([
+  "task.document_annotation_thread_created",
+  "task.document_annotation_comment_added",
+  "task.document_annotation_thread_resolved",
+  "task.document_annotation_thread_reopened",
+  "task.document_annotation_remapped",
 ]);
 const ROUTINE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS = new Set([
   "routine.document_annotation_thread_created",
@@ -427,7 +427,7 @@ const ROUTINE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS = new Set([
 ]);
 const AGENT_TOAST_STATUSES = new Set(["error"]);
 
-function describeIssueUpdate(details: Record<string, unknown> | null): string | null {
+function describeTaskUpdate(details: Record<string, unknown> | null): string | null {
   if (!details) return null;
   const changes: string[] = [];
   if (typeof details.lifecycleStatus === "string") {
@@ -462,45 +462,45 @@ function buildActivityToast(
   const actorId = readString(payload.actorId);
   const actorType = readString(payload.actorType);
 
-  if (entityType !== "issue" || !entityId || !action || !ISSUE_TOAST_ACTIONS.has(action)) {
+  if (entityType !== "task" || !entityId || !action || !TASK_TOAST_ACTIONS.has(action)) {
     return null;
   }
 
-  const issue = resolveIssueToastContext(queryClient, companyId, entityId, details);
+  const task = resolveTaskToastContext(queryClient, companyId, entityId, details);
   const actor = resolveActorLabel(queryClient, companyId, actorType, actorId);
   const isSelfActivity =
     (actorType === "user" && !!currentActor.userId && actorId === currentActor.userId) ||
     (actorType === "agent" && !!currentActor.agentId && actorId === currentActor.agentId);
   if (isSelfActivity) return null;
 
-  if (action === "issue.created") {
+  if (action === "task.created") {
     return {
-      title: `${actor} created ${issue.ref}`,
-      body: issue.title ? truncate(issue.title, 96) : undefined,
+      title: `${actor} created ${task.ref}`,
+      body: task.title ? truncate(task.title, 96) : undefined,
       tone: "success",
-      action: { label: `View ${issue.ref}`, href: issue.href },
+      action: { label: `View ${task.ref}`, href: task.href },
       dedupeKey: `activity:${action}:${entityId}`,
     };
   }
 
-  if (action === "issue.updated") {
+  if (action === "task.updated") {
     if (readString(details?.source) === "comment") {
       // Comment-driven updates emit a paired comment event; show one combined toast on the comment event.
       return null;
     }
-    const changeDesc = describeIssueUpdate(details);
+    const changeDesc = describeTaskUpdate(details);
     const body = changeDesc
-      ? issue.title
-        ? `${truncate(issue.title, 64)} - ${changeDesc}`
+      ? task.title
+        ? `${truncate(task.title, 64)} - ${changeDesc}`
         : changeDesc
-      : issue.title
-        ? truncate(issue.title, 96)
-        : issue.label;
+      : task.title
+        ? truncate(task.title, 96)
+        : task.label;
     return {
-      title: `${actor} updated ${issue.ref}`,
+      title: `${actor} updated ${task.ref}`,
       body: truncate(body, 100),
       tone: "info",
-      action: { label: `View ${issue.ref}`, href: issue.href },
+      action: { label: `View ${task.ref}`, href: task.href },
       dedupeKey: `activity:${action}:${entityId}`,
     };
   }
@@ -516,24 +516,24 @@ function buildActivityToast(
       : "reopened"
     : null;
   const title = reopened
-    ? `${actor} reopened and commented on ${issue.ref}`
+    ? `${actor} reopened and commented on ${task.ref}`
     : updated
-      ? `${actor} commented and updated ${issue.ref}`
-      : `${actor} commented on ${issue.ref}`;
+      ? `${actor} commented and updated ${task.ref}`
+      : `${actor} commented on ${task.ref}`;
   const body = bodySnippet
     ? reopenedLabel
       ? `${reopenedLabel} - ${bodySnippet.replace(/^#+\s*/m, "").replace(/\n/g, " ")}`
       : bodySnippet.replace(/^#+\s*/m, "").replace(/\n/g, " ")
     : reopenedLabel
-      ? issue.title
-        ? `${reopenedLabel} - ${issue.title}`
+      ? task.title
+        ? `${reopenedLabel} - ${task.title}`
         : reopenedLabel
-      : issue.title ?? undefined;
+      : task.title ?? undefined;
   return {
     title,
     body: body ? truncate(body, 96) : undefined,
     tone: "info",
-    action: { label: `View ${issue.ref}`, href: issue.href },
+    action: { label: `View ${task.ref}`, href: task.href },
     dedupeKey: `activity:${action}:${entityId}:${commentId ?? "na"}`,
   };
 }
@@ -620,65 +620,65 @@ function invalidateActivityQueries(
     }
   }
 
-  if (entityType === "issue") {
-    queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.issues.listMineByMe(companyId) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.issues.listTouchedByMe(companyId) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.issues.listUnreadTouchedByMe(companyId) });
+  if (entityType === "task") {
+    queryClient.invalidateQueries({ queryKey: queryKeys.tasks.list(companyId) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.tasks.listMineByMe(companyId) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.tasks.listTouchedByMe(companyId) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.tasks.listUnreadTouchedByMe(companyId) });
     if (entityId) {
       const selfCommentActivity =
-        ((action === "issue.comment_added") ||
-          (action === "issue.updated" && readString(details?.source) === "comment")) &&
+        ((action === "task.comment_added") ||
+          (action === "task.updated" && readString(details?.source) === "comment")) &&
         ((actorType === "user" && !!currentActor.userId && actorId === currentActor.userId) ||
           (actorType === "agent" && !!currentActor.agentId && actorId === currentActor.agentId));
-      const visibleIssueAgentActivity =
+      const visibleTaskAgentActivity =
         !!options?.pathname &&
-        shouldDeferIssueRefetchForVisibleAgentActivity(
+        shouldDeferTaskRefetchForVisibleAgentActivity(
           queryClient,
           options.pathname,
           payload,
           { isForegrounded: options.isForegrounded },
         );
-      const visibleIssueCommentActivity =
+      const visibleTaskCommentActivity =
         !!options?.pathname &&
-        shouldDeferVisibleIssueCommentActivity(
+        shouldDeferVisibleTaskCommentActivity(
           queryClient,
           options.pathname,
           payload,
           { isForegrounded: options.isForegrounded },
         );
-      const issueRefs = resolveIssueQueryRefs(queryClient, companyId, entityId, details);
-      for (const ref of issueRefs) {
+      const taskRefs = resolveTaskQueryRefs(queryClient, companyId, entityId, details);
+      for (const ref of taskRefs) {
         const invalidationOptions =
-          (selfCommentActivity || visibleIssueAgentActivity || visibleIssueCommentActivity)
+          (selfCommentActivity || visibleTaskAgentActivity || visibleTaskCommentActivity)
             ? { refetchType: "inactive" as const }
             : undefined;
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(ref), ...invalidationOptions });
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(ref), ...invalidationOptions });
-        queryClient.invalidateQueries({ queryKey: ["issues", "runs", ref], ...invalidationOptions });
-        if (action === "issue.comment_added") {
-          queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(ref), ...invalidationOptions });
+        queryClient.invalidateQueries({ queryKey: queryKeys.tasks.detail(ref), ...invalidationOptions });
+        queryClient.invalidateQueries({ queryKey: queryKeys.tasks.activity(ref), ...invalidationOptions });
+        queryClient.invalidateQueries({ queryKey: ["tasks", "runs", ref], ...invalidationOptions });
+        if (action === "task.comment_added") {
+          queryClient.invalidateQueries({ queryKey: queryKeys.tasks.comments(ref), ...invalidationOptions });
         }
-        if (action && ISSUE_DOCUMENT_ACTIVITY_ACTIONS.has(action)) {
+        if (action && TASK_DOCUMENT_ACTIVITY_ACTIONS.has(action)) {
           const documentKey = readString(details?.key);
-          queryClient.invalidateQueries({ queryKey: queryKeys.issues.documents(ref), ...invalidationOptions });
+          queryClient.invalidateQueries({ queryKey: queryKeys.tasks.documents(ref), ...invalidationOptions });
           if (documentKey) {
-            queryClient.invalidateQueries({ queryKey: queryKeys.issues.document(ref, documentKey), ...invalidationOptions });
-            queryClient.invalidateQueries({ queryKey: queryKeys.issues.documentRevisions(ref, documentKey), ...invalidationOptions });
+            queryClient.invalidateQueries({ queryKey: queryKeys.tasks.document(ref, documentKey), ...invalidationOptions });
+            queryClient.invalidateQueries({ queryKey: queryKeys.tasks.documentRevisions(ref, documentKey), ...invalidationOptions });
           } else {
-            queryClient.invalidateQueries({ queryKey: ["issues", "document", ref], ...invalidationOptions });
-            queryClient.invalidateQueries({ queryKey: ["issues", "document-revisions", ref], ...invalidationOptions });
+            queryClient.invalidateQueries({ queryKey: ["tasks", "document", ref], ...invalidationOptions });
+            queryClient.invalidateQueries({ queryKey: ["tasks", "document-revisions", ref], ...invalidationOptions });
           }
         }
         if (
           action &&
-          (ISSUE_DOCUMENT_ACTIVITY_ACTIONS.has(action) || ISSUE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS.has(action))
+          (TASK_DOCUMENT_ACTIVITY_ACTIONS.has(action) || TASK_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS.has(action))
         ) {
           const documentKey = readString(details?.key) ?? readString(details?.documentKey);
           queryClient.invalidateQueries({
             queryKey: documentKey
-              ? ["issues", "document-annotations", ref, documentKey]
-              : ["issues", "document-annotations", ref],
+              ? ["tasks", "document-annotations", ref, documentKey]
+              : ["tasks", "document-annotations", ref],
             ...invalidationOptions,
           });
         }
@@ -804,7 +804,7 @@ function handleLiveEvent(
     const toast = buildAgentStatusToast(payload, nameOf, queryClient, expectedCompanyId);
     if (
       toast &&
-      !shouldSuppressAgentStatusToastForVisibleIssue(queryClient, pathname, payload)
+      !shouldSuppressAgentStatusToastForVisibleTask(queryClient, pathname, payload)
     ) {
       gatedPushToast(gate, pushToast, "agent-status", toast);
     }
@@ -813,8 +813,8 @@ function handleLiveEvent(
 
   if (event.type === "activity.logged") {
     invalidateActivityQueries(queryClient, expectedCompanyId, payload, currentActor, { pathname });
-    if (shouldDeferVisibleIssueCommentActivity(queryClient, pathname, payload)) {
-      void refreshVisibleIssueCommentGroups(queryClient, pathname, payload);
+    if (shouldDeferVisibleTaskCommentActivity(queryClient, pathname, payload)) {
+      void refreshVisibleTaskCommentGroups(queryClient, pathname, payload);
     }
     const action = readString(payload.action);
     const toast =
@@ -822,7 +822,7 @@ function handleLiveEvent(
       buildJoinRequestToast(payload);
     if (
       toast &&
-      !shouldSuppressActivityToastForVisibleIssue(queryClient, pathname, payload)
+      !shouldSuppressActivityToastForVisibleTask(queryClient, pathname, payload)
     ) {
       gatedPushToast(gate, pushToast, `activity:${action ?? "unknown"}`, toast);
     }
@@ -873,14 +873,14 @@ export const __liveUpdatesTestUtils = {
   closeSocketQuietly,
   dispatchLiveEventToSubscribers,
   LiveEventSubscriptionContext,
-  refreshVisibleIssueCommentGroups,
+  refreshVisibleTaskCommentGroups,
   invalidateActivityQueries,
-  invalidateVisibleIssueRunQueries,
+  invalidateVisibleTaskRunQueries,
   resolveLiveCompanyId,
-  shouldDeferIssueRefetchForVisibleAgentActivity,
-  shouldDeferVisibleIssueCommentActivity,
-  shouldSuppressActivityToastForVisibleIssue,
-  shouldSuppressAgentStatusToastForVisibleIssue,
+  shouldDeferTaskRefetchForVisibleAgentActivity,
+  shouldDeferVisibleTaskCommentActivity,
+  shouldSuppressActivityToastForVisibleTask,
+  shouldSuppressAgentStatusToastForVisibleTask,
 };
 
 export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
@@ -978,7 +978,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
           queryClient.invalidateQueries({
             predicate: (query) =>
               query.queryKey[0] === "runs" ||
-              (query.queryKey[0] === "issues" && query.queryKey[1] === "runs"),
+              (query.queryKey[0] === "tasks" && query.queryKey[1] === "runs"),
           });
         }
         reconnectAttempt = 0;

@@ -191,7 +191,7 @@ export interface PluginHostContextProps {
 /**
  * Props passed to a plugin detail tab component.
  *
- * A detail tab is rendered on a project or issue detail page.
+ * A detail tab is rendered on a project or task detail page.
  *
  * @see PLUGIN_SPEC.md §19.3 — Detail Tabs
  */

@@ -26,8 +26,8 @@ vi.mock("../services/plugin-managed-agents.js", () => ({
     persistence.pauseManagedAgents,
 }));
 
-vi.mock("../services/issue-session/admission.js", () => ({
-  createIssueSessionAdmissionService: () => ({}),
+vi.mock("../services/task-session/admission.js", () => ({
+  createTaskSessionAdmissionService: () => ({}),
 }));
 
 vi.mock("../services/system-escalation-postgres.js", () => ({
@@ -73,7 +73,7 @@ function createLifecycle(
   return pluginLifecycleManager(db as never, {
     loader: loader as PluginLoader,
     dispatchRef: async () => undefined,
-    issueExecutionCancellation: {
+    taskExecutionCancellation: {
       reconcileRequestedCancellations,
     } as never,
   });

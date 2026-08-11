@@ -16,10 +16,10 @@ import { agents } from "./agents.js";
 import { authUsers } from "./auth.js";
 import { companies } from "./companies.js";
 import { companySecrets } from "./company_secrets.js";
-import { issues } from "./issues.js";
+import { tasks } from "./tasks.js";
 import { projects } from "./projects.js";
 import { goals } from "./goals.js";
-import { issueExecutionRuns } from "./issue_execution_runs.js";
+import { taskExecutionRuns } from "./task_execution_runs.js";
 import { folders } from "./folders.js";
 import type {
   RoutineEnvConfig,
@@ -35,7 +35,7 @@ export const routines = pgTable(
     projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
     folderId: uuid("folder_id").references(() => folders.id, { onDelete: "set null" }),
     goalId: uuid("goal_id").references(() => goals.id, { onDelete: "set null" }),
-    parentIssueId: uuid("parent_issue_id").references(() => issues.id, { onDelete: "set null" }),
+    parentTaskId: uuid("parent_task_id").references(() => tasks.id, { onDelete: "set null" }),
     title: text("title").notNull(),
     description: text("description"),
     assigneeAgentId: uuid("assignee_agent_id").references(() => agents.id),
@@ -96,7 +96,7 @@ export const routineRevisions = pgTable(
     createdByUserId: text("created_by_user_id").references(() => authUsers.id, {
       onDelete: "set null",
     }),
-    createdByRunId: uuid("created_by_run_id").references(() => issueExecutionRuns.id, { onDelete: "set null" }),
+    createdByRunId: uuid("created_by_run_id").references(() => taskExecutionRuns.id, { onDelete: "set null" }),
     responsibleUserId: text("responsible_user_id").references(() => authUsers.id, {
       onDelete: "set null",
     }),
@@ -176,7 +176,7 @@ export const routineRuns = pgTable(
     idempotencyKey: text("idempotency_key"),
     triggerPayload: jsonb("trigger_payload").$type<Record<string, unknown>>(),
     dispatchFingerprint: text("dispatch_fingerprint"),
-    linkedIssueId: uuid("linked_issue_id").references(() => issues.id, { onDelete: "set null" }),
+    linkedTaskId: uuid("linked_task_id").references(() => tasks.id, { onDelete: "set null" }),
     coalescedIntoRunId: uuid("coalesced_into_run_id"),
     failureReason: text("failure_reason"),
     completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -193,7 +193,7 @@ export const routineRuns = pgTable(
     ),
     triggerIdx: index("routine_runs_trigger_idx").on(table.triggerId, table.createdAt),
     dispatchFingerprintIdx: index("routine_runs_dispatch_fingerprint_idx").on(table.routineId, table.dispatchFingerprint),
-    linkedIssueIdx: index("routine_runs_linked_issue_idx").on(table.linkedIssueId),
+    linkedTaskIdx: index("routine_runs_linked_task_idx").on(table.linkedTaskId),
     idempotencyIdx: index("routine_runs_trigger_idempotency_idx").on(table.triggerId, table.idempotencyKey),
   }),
 );

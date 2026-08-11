@@ -64,9 +64,9 @@ import {
 // megabyte minified), so they are code-split out of the entry chunk. They stay
 // mounted like before — each renders null while closed — so the Suspense
 // fallback of null is never user-visible and open/close behavior is unchanged.
-const NewIssueDialog = lazyPage(
-  () => import("./NewIssueDialog"),
-  "NewIssueDialog",
+const NewTaskDialog = lazyPage(
+  () => import("./NewTaskDialog"),
+  "NewTaskDialog",
 );
 const NewProjectDialog = lazyPage(
   () => import("./NewProjectDialog"),
@@ -119,7 +119,7 @@ export function Layout() {
     isMobile,
     setForceCollapsed,
   } = useSidebar();
-  const { openNewIssue, openOnboarding } = useDialogActions();
+  const { openNewTask, openOnboarding } = useDialogActions();
   const { togglePanelVisible } = usePanel();
   const {
     companies,
@@ -158,7 +158,7 @@ export function Layout() {
     const requestedPrefix = companyPrefix.toUpperCase();
     return (
       companies.find(
-        (company) => company.issuePrefix.toUpperCase() === requestedPrefix,
+        (company) => company.taskPrefix.toUpperCase() === requestedPrefix,
       ) ?? null
     );
   }, [companies, companyPrefix]);
@@ -174,7 +174,7 @@ export function Layout() {
     [companyPrefix, location.pathname, matchedPluginRoutePath],
   );
   const routeSidebarCompanyId = matchedCompany?.id ?? null;
-  const routeSidebarCompanyPrefix = matchedCompany?.issuePrefix ?? null;
+  const routeSidebarCompanyPrefix = matchedCompany?.taskPrefix ?? null;
   const { slots: routeSidebarSlots } = usePluginSlots({
     slotTypes: ["page", "routeSidebar"],
     companyId: routeSidebarCompanyId,
@@ -254,9 +254,9 @@ export function Layout() {
       return;
     }
 
-    if (companyPrefix !== matchedCompany.issuePrefix) {
+    if (companyPrefix !== matchedCompany.taskPrefix) {
       const suffix = location.pathname.replace(/^\/[^/]+/, "");
-      navigate(`/${matchedCompany.issuePrefix}${suffix}${location.search}`, {
+      navigate(`/${matchedCompany.taskPrefix}${suffix}${location.search}`, {
         replace: true,
       });
       return;
@@ -405,7 +405,7 @@ export function Layout() {
 
   useKeyboardShortcuts({
     enabled: keyboardShortcutsEnabled,
-    onNewIssue: () => openNewIssue(),
+    onNewTask: () => openNewTask(),
     onSearch: openSearch,
     onToggleSidebar: toggleSidebar,
     onToggleCollapse: toggleCollapse,
@@ -686,7 +686,7 @@ export function Layout() {
                   <NotFoundPage
                     scope="invalid_company_prefix"
                     requestedPrefix={
-                      companyPrefix ?? selectedCompany?.issuePrefix
+                      companyPrefix ?? selectedCompany?.taskPrefix
                     }
                   />
                 ) : (
@@ -714,7 +714,7 @@ export function Layout() {
         {isMobile && <MobileBottomNav visible={mobileNavVisible} />}
         <CommandPalette />
         <Suspense fallback={null}>
-          <NewIssueDialog />
+          <NewTaskDialog />
           <NewProjectDialog />
           <NewGoalDialog />
         </Suspense>

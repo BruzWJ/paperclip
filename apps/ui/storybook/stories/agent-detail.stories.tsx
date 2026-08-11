@@ -12,10 +12,10 @@ import { AgentDetail } from "@/pages/AgentDetail";
 import { useCompany } from "@/context/CompanyContext";
 import { queryKeys } from "@/lib/queryKeys";
 import {
-  createIssueExecutionRun,
+  createTaskExecutionRun,
   storybookAgentMap,
   storybookAgents,
-  storybookIssues,
+  storybookTasks,
 } from "../fixtures/paperclipData";
 
 const COMPANY_ID = "company-storybook";
@@ -55,7 +55,7 @@ const runtimeStateFixture: AgentRuntimeState = {
 };
 
 const runsFixture = [
-  createIssueExecutionRun({
+  createTaskExecutionRun({
     id: "run-agent-detail-3",
     status: "running",
     targetAgentId: AGENT_ID,
@@ -64,7 +64,7 @@ const runsFixture = [
     createdAt: minutesAgo(9).toISOString(),
     updatedAt: minutesAgo(1).toISOString(),
   }),
-  createIssueExecutionRun({
+  createTaskExecutionRun({
     id: "run-agent-detail-2",
     status: "succeeded",
     targetAgentId: AGENT_ID,
@@ -77,7 +77,7 @@ const runsFixture = [
     createdAt: minutesAgo(43).toISOString(),
     updatedAt: minutesAgo(31).toISOString(),
   }),
-  createIssueExecutionRun({
+  createTaskExecutionRun({
     id: "run-agent-detail-1",
     status: "succeeded",
     targetAgentId: AGENT_ID,
@@ -113,8 +113,8 @@ function seedAgentDetailData(queryClient: QueryClient) {
     nextCursor: null,
   });
   queryClient.setQueryData(
-    [...queryKeys.issues.list(COMPANY_ID), "participant-agent", AGENT_ID],
-    storybookIssues.slice(0, 4),
+    [...queryKeys.tasks.list(COMPANY_ID), "participant-agent", AGENT_ID],
+    storybookTasks.slice(0, 4),
   );
   queryClient.setQueryData(queryKeys.agents.list(COMPANY_ID), storybookAgents);
   queryClient.setQueryData(queryKeys.budgets.overview(COMPANY_ID), budgetOverviewFixture);

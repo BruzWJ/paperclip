@@ -57,7 +57,7 @@ describe("authorization service canonical boundaries", () => {
     });
   });
 
-  it("preserves board reads while requiring non-viewer membership for board issue mutation", async () => {
+  it("preserves board reads while requiring non-viewer membership for board task mutation", async () => {
     const viewerId = "viewer-user";
     const operatorId = "operator-user";
     const { db } = createMockDb({
@@ -71,18 +71,18 @@ describe("authorization service canonical boundaries", () => {
 
     await expect(authorization.decide({
       actor: testBoardSessionActor({ userId: viewerId }),
-      action: "issue:read",
-      resource: { type: "issue", companyId, issueId: targetId },
+      action: "task:read",
+      resource: { type: "task", companyId, taskId: targetId },
     })).resolves.toMatchObject({ allowed: true });
     await expect(authorization.decide({
       actor: testBoardSessionActor({ userId: viewerId }),
-      action: "issue:mutate",
-      resource: { type: "issue", companyId, issueId: targetId },
+      action: "task:mutate",
+      resource: { type: "task", companyId, taskId: targetId },
     })).resolves.toMatchObject({ allowed: false, reason: "deny_missing_grant" });
     await expect(authorization.decide({
       actor: testBoardSessionActor({ userId: operatorId }),
-      action: "issue:mutate",
-      resource: { type: "issue", companyId, issueId: targetId },
+      action: "task:mutate",
+      resource: { type: "task", companyId, taskId: targetId },
     })).resolves.toMatchObject({ allowed: true });
   });
 
@@ -91,11 +91,11 @@ describe("authorization service canonical boundaries", () => {
       { action: "company_scope:read", resource: { type: "company", companyId } },
       { action: "project:read", resource: { type: "project", companyId, projectId: targetId } },
       {
-        action: "issue:read",
-        resource: { type: "issue", companyId, issueId: targetId, ownerKind: "agent", ownerAgentId: actorId },
+        action: "task:read",
+        resource: { type: "task", companyId, taskId: targetId, ownerKind: "agent", ownerAgentId: actorId },
       },
-      { action: "issue:comment", resource: { type: "issue", companyId, issueId: targetId } },
-      { action: "issue:mutate", resource: { type: "issue", companyId, issueId: targetId } },
+      { action: "task:comment", resource: { type: "task", companyId, taskId: targetId } },
+      { action: "task:mutate", resource: { type: "task", companyId, taskId: targetId } },
       { action: "runtime:manage", resource: { type: "company", companyId } },
       { action: "secrets:read", resource: { type: "company", companyId } },
       { action: "agent:read", resource: { type: "agent", companyId, agentId: actorId } },

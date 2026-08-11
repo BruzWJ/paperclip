@@ -168,7 +168,7 @@ describe("FrontmatterPanel", () => {
       fileName: "SKILL.md",
     });
     const chip = container.querySelector('[data-testid="frontmatter-warning-chip"]');
-    expect(chip?.textContent).toContain("issue");
+    expect(chip?.textContent).toContain("warning");
   });
 
   it("flags a wrong-typed allowed-tools value instead of editing it as a list", () => {

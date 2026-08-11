@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { Db } from "@paperclipai/db";
-import { normalizeIssueIdentifier } from "@paperclipai/shared";
+import { normalizeTaskIdentifier } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { activityService, normalizeActivityLimit } from "../services/activity.js";
 import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz.js";
-import { accessService, issueService } from "../services/index.js";
+import { accessService, taskService } from "../services/index.js";
 import { sanitizeRecord } from "../redaction.js";
 
 const createActivitySchema = z.object({
@@ -22,7 +22,7 @@ export function activityRoutes(db: Db) {
   const router = Router();
   const svc = activityService(db);
   const access = accessService(db);
-  const issueSvc = issueService(db);
+  const taskSvc = taskService(db);
 
   async function assertCompanyScopeReadAllowed(req: Parameters<typeof assertCompanyAccess>[0], res: any, companyId: string) {
     const decision = await access.decide({
@@ -35,7 +35,7 @@ export function activityRoutes(db: Db) {
     return false;
   }
 
-  async function assertIssueReadAllowed(req: Parameters<typeof assertCompanyAccess>[0], res: any, issue: {
+  async function assertTaskReadAllowed(req: Parameters<typeof assertCompanyAccess>[0], res: any, task: {
     id: string;
     companyId: string;
     projectId: string | null;
@@ -46,28 +46,28 @@ export function activityRoutes(db: Db) {
   }) {
     const decision = await access.decide({
       actor: req.actor,
-      action: "issue:read",
+      action: "task:read",
       resource: {
-        type: "issue",
-        companyId: issue.companyId,
-        issueId: issue.id,
-        projectId: issue.projectId,
-        parentIssueId: issue.parentId,
-        ownerAgentId: issue.ownerAgentId,
-        ownerUserId: issue.ownerUserId,
+        type: "task",
+        companyId: task.companyId,
+        taskId: task.id,
+        projectId: task.projectId,
+        parentTaskId: task.parentId,
+        ownerAgentId: task.ownerAgentId,
+        ownerUserId: task.ownerUserId,
       },
     });
     if (decision.allowed) return true;
-    res.status(403).json({ error: "Issue activity is outside this actor's authorization boundary" });
+    res.status(403).json({ error: "Task activity is outside this actor's authorization boundary" });
     return false;
   }
 
-  async function resolveIssueByRef(rawId: string) {
-    const identifier = normalizeIssueIdentifier(rawId);
+  async function resolveTaskByRef(rawId: string) {
+    const identifier = normalizeTaskIdentifier(rawId);
     if (identifier) {
-      return issueSvc.getByIdentifier(identifier);
+      return taskSvc.getByIdentifier(identifier);
     }
-    return issueSvc.getById(rawId);
+    return taskSvc.getById(rawId);
   }
 
   router.get("/companies/:companyId/activity", async (req, res) => {
@@ -98,12 +98,12 @@ export function activityRoutes(db: Db) {
     res.status(201).json(event);
   });
 
-  router.get("/issues/:id/activity", async (req, res) => {
+  router.get("/tasks/:id/activity", async (req, res) => {
     const rawId = req.params.id as string;
-    const issue = await getAccessibleResource(req, res, resolveIssueByRef(rawId), "Issue not found");
-    if (!issue) return;
-    if (!(await assertIssueReadAllowed(req, res, issue))) return;
-    const result = await svc.forIssue(issue.id);
+    const task = await getAccessibleResource(req, res, resolveTaskByRef(rawId), "Task not found");
+    if (!task) return;
+    if (!(await assertTaskReadAllowed(req, res, task))) return;
+    const result = await svc.forTask(task.id);
     res.json(result);
   });
 

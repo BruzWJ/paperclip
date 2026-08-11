@@ -1,4 +1,4 @@
-import type { IssuePriority, IssueStatus } from "../constants.js";
+import type { TaskPriority, TaskStatus } from "../constants.js";
 import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
 export interface UserProfileIdentity {
@@ -15,10 +15,10 @@ export interface UserProfileIdentity {
 export interface UserProfileWindowStats {
   key: "last7" | "last30" | "all";
   label: string;
-  touchedIssues: number;
-  createdIssues: number;
-  completedIssues: number;
-  assignedOpenIssues: number;
+  touchedTasks: number;
+  createdTasks: number;
+  completedTasks: number;
+  assignedOpenTasks: number;
   commentCount: number;
   activityCount: number;
   knownCostAmount: MoneyAmount;
@@ -29,18 +29,18 @@ export interface UserProfileWindowStats {
 export interface UserProfileDailyPoint {
   date: string;
   activityCount: number;
-  completedIssues: number;
+  completedTasks: number;
   knownCostAmount: MoneyAmount;
   pricedPromptCount: number;
   unpricedPromptCount: number;
 }
 
-export interface UserProfileIssueSummary {
+export interface UserProfileTaskSummary {
   id: string;
   identifier: string | null;
   title: string | null;
-  boardPresentationStatus: IssueStatus;
-  priority: IssuePriority;
+  boardPresentationStatus: TaskStatus;
+  priority: TaskPriority;
   ownerAgentId: string | null;
   ownerUserId: string | null;
   updatedAt: Date;
@@ -69,7 +69,7 @@ export interface UserProfileResponse {
   budgetCurrency: BudgetCurrency;
   stats: UserProfileWindowStats[];
   daily: UserProfileDailyPoint[];
-  recentIssues: UserProfileIssueSummary[];
+  recentTasks: UserProfileTaskSummary[];
   recentActivity: UserProfileActivitySummary[];
   topAgents: UserProfileAgentUsage[];
 }

@@ -16,7 +16,7 @@ import type {
 } from "@paperclipai/shared";
 import type { WorkerToHostMethods } from "@paperclipai/plugin-sdk";
 import { conflict, notFound } from "../errors.js";
-import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
+import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 import { lockPluginCompanySettingScopeInTransaction } from "./plugin-authorization-locks.js";
 
 // ---------------------------------------------------------------------------
@@ -104,7 +104,7 @@ function isPluginKeyConflict(error: unknown): boolean {
  * Every install and manifest replacement must call this inside its transaction.
  */
 export async function lockPluginRegistryClaimsInTransaction(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   manifest: PaperclipPluginManifestV1,
   excludePluginId?: string,
 ) {
@@ -140,7 +140,7 @@ export async function lockPluginRegistryClaimsInTransaction(
 
 /** Persist one validated installation while holding the registry claim lock. */
 export async function installPluginInTransaction(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   input: PluginRegistryInstallInput,
   manifest: PaperclipPluginManifestV1,
 ) {
@@ -186,7 +186,7 @@ function quotePersistedNamespace(value: string): string {
 }
 
 export async function lockPluginInstallationInTransaction(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   id: string,
 ) {
   return tx
@@ -198,7 +198,7 @@ export async function lockPluginInstallationInTransaction(
 }
 
 export async function persistPluginStatusInTransaction(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   id: string,
   input: UpdatePluginStatus,
   now: Date,
@@ -220,11 +220,11 @@ export async function persistPluginStatusInTransaction(
  * fenced. The installation-owned namespace is physical state outside normal
  * row cascading, so it is dropped explicitly. The installation row then owns
  * deletion of all operational data, including ephemeral run-context handles,
- * through foreign-key cascades. Historical issue/run audit rows retain their
+ * through foreign-key cascades. Historical task/run audit rows retain their
  * immutable plugin key or call identity with no installation FK.
  */
 export async function deletePluginInstallationInTransaction(
-  tx: IssueSessionDbTransaction,
+  tx: TaskSessionDbTransaction,
   pluginId: string,
 ): Promise<typeof plugins.$inferSelect | null> {
   const installation = await lockPluginInstallationInTransaction(tx, pluginId);

@@ -160,7 +160,7 @@ export const agentAdapterConfigRevisions = pgTable(
         )
         and jsonb_typeof(${table.acpConfiguration} -> 'workspaceSelector') = 'object'
         and (${table.acpConfiguration} -> 'workspaceSelector') - 'kind' = '{}'::jsonb
-        and ${table.acpConfiguration} #>> '{workspaceSelector,kind}' = 'issue_execution_workspace'
+        and ${table.acpConfiguration} #>> '{workspaceSelector,kind}' = 'task_execution_workspace'
         and jsonb_typeof(${table.acpConfiguration} -> 'companySkillPins') = 'array'
       `,
     ),

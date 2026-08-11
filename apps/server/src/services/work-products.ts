@@ -1,25 +1,25 @@
 import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { issueWorkProducts } from "@paperclipai/db";
-import type { IssueWorkProduct } from "@paperclipai/shared";
+import { taskWorkProducts } from "@paperclipai/db";
+import type { TaskWorkProduct } from "@paperclipai/shared";
 
-type IssueWorkProductRow = typeof issueWorkProducts.$inferSelect;
+type TaskWorkProductRow = typeof taskWorkProducts.$inferSelect;
 
-function toIssueWorkProduct(row: IssueWorkProductRow): IssueWorkProduct {
+function toTaskWorkProduct(row: TaskWorkProductRow): TaskWorkProduct {
   return {
     id: row.id,
     companyId: row.companyId,
     projectId: row.projectId ?? null,
-    issueId: row.issueId,
-    type: row.type as IssueWorkProduct["type"],
+    taskId: row.taskId,
+    type: row.type as TaskWorkProduct["type"],
     provider: row.provider,
     externalId: row.externalId ?? null,
     title: row.title,
     url: row.url ?? null,
     status: row.status,
-    reviewState: row.reviewState as IssueWorkProduct["reviewState"],
+    reviewState: row.reviewState as TaskWorkProduct["reviewState"],
     isPrimary: row.isPrimary,
-    healthStatus: row.healthStatus as IssueWorkProduct["healthStatus"],
+    healthStatus: row.healthStatus as TaskWorkProduct["healthStatus"],
     summary: row.summary ?? null,
     metadata: (row.metadata as Record<string, unknown> | null) ?? null,
     sourceTrust: row.sourceTrust ?? null,
@@ -31,92 +31,92 @@ function toIssueWorkProduct(row: IssueWorkProductRow): IssueWorkProduct {
 
 export function workProductService(db: Db) {
   return {
-    listForIssue: async (issueId: string) => {
+    listForTask: async (taskId: string) => {
       const rows = await db
         .select()
-        .from(issueWorkProducts)
-        .where(eq(issueWorkProducts.issueId, issueId))
-        .orderBy(desc(issueWorkProducts.isPrimary), desc(issueWorkProducts.updatedAt));
-      return rows.map(toIssueWorkProduct);
+        .from(taskWorkProducts)
+        .where(eq(taskWorkProducts.taskId, taskId))
+        .orderBy(desc(taskWorkProducts.isPrimary), desc(taskWorkProducts.updatedAt));
+      return rows.map(toTaskWorkProduct);
     },
 
     getById: async (id: string) => {
       const row = await db
         .select()
-        .from(issueWorkProducts)
-        .where(eq(issueWorkProducts.id, id))
+        .from(taskWorkProducts)
+        .where(eq(taskWorkProducts.id, id))
         .then((rows) => rows[0] ?? null);
-      return row ? toIssueWorkProduct(row) : null;
+      return row ? toTaskWorkProduct(row) : null;
     },
 
-    createForIssue: async (issueId: string, companyId: string, data: Omit<typeof issueWorkProducts.$inferInsert, "issueId" | "companyId">) => {
+    createForTask: async (taskId: string, companyId: string, data: Omit<typeof taskWorkProducts.$inferInsert, "taskId" | "companyId">) => {
       const row = await db.transaction(async (tx) => {
         if (data.isPrimary) {
           await tx
-            .update(issueWorkProducts)
+            .update(taskWorkProducts)
             .set({ isPrimary: false, updatedAt: new Date() })
             .where(
               and(
-                eq(issueWorkProducts.companyId, companyId),
-                eq(issueWorkProducts.issueId, issueId),
-                eq(issueWorkProducts.type, data.type),
+                eq(taskWorkProducts.companyId, companyId),
+                eq(taskWorkProducts.taskId, taskId),
+                eq(taskWorkProducts.type, data.type),
               ),
             );
         }
         return await tx
-          .insert(issueWorkProducts)
+          .insert(taskWorkProducts)
           .values({
             ...data,
             companyId,
-            issueId,
+            taskId,
           })
           .returning()
           .then((rows) => rows[0] ?? null);
       });
-      return row ? toIssueWorkProduct(row) : null;
+      return row ? toTaskWorkProduct(row) : null;
     },
 
-    update: async (id: string, patch: Partial<typeof issueWorkProducts.$inferInsert>) => {
+    update: async (id: string, patch: Partial<typeof taskWorkProducts.$inferInsert>) => {
       const row = await db.transaction(async (tx) => {
         const existing = await tx
           .select()
-          .from(issueWorkProducts)
-          .where(eq(issueWorkProducts.id, id))
+          .from(taskWorkProducts)
+          .where(eq(taskWorkProducts.id, id))
           .then((rows) => rows[0] ?? null);
         if (!existing) return null;
 
         if (patch.isPrimary === true) {
           await tx
-            .update(issueWorkProducts)
+            .update(taskWorkProducts)
             .set({ isPrimary: false, updatedAt: new Date() })
             .where(
               and(
-                eq(issueWorkProducts.companyId, existing.companyId),
-                eq(issueWorkProducts.issueId, existing.issueId),
-                eq(issueWorkProducts.type, existing.type),
+                eq(taskWorkProducts.companyId, existing.companyId),
+                eq(taskWorkProducts.taskId, existing.taskId),
+                eq(taskWorkProducts.type, existing.type),
               ),
             );
         }
 
         return await tx
-          .update(issueWorkProducts)
+          .update(taskWorkProducts)
           .set({ ...patch, updatedAt: new Date() })
-          .where(eq(issueWorkProducts.id, id))
+          .where(eq(taskWorkProducts.id, id))
           .returning()
           .then((rows) => rows[0] ?? null);
       });
-      return row ? toIssueWorkProduct(row) : null;
+      return row ? toTaskWorkProduct(row) : null;
     },
 
     remove: async (id: string) => {
       const row = await db
-        .delete(issueWorkProducts)
-        .where(eq(issueWorkProducts.id, id))
+        .delete(taskWorkProducts)
+        .where(eq(taskWorkProducts.id, id))
         .returning()
         .then((rows) => rows[0] ?? null);
-      return row ? toIssueWorkProduct(row) : null;
+      return row ? toTaskWorkProduct(row) : null;
     },
   };
 }
 
-export { toIssueWorkProduct };
+export { toTaskWorkProduct };

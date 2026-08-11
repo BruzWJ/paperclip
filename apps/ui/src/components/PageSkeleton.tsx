@@ -3,7 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 interface PageSkeletonProps {
   variant?:
     | "list"
-    | "issues-list"
+    | "tasks-list"
     | "detail"
     | "dashboard"
     | "approvals"
@@ -135,7 +135,7 @@ export function PageSkeleton({ variant = "list" }: PageSkeletonProps) {
     );
   }
 
-  if (variant === "issues-list") {
+  if (variant === "tasks-list") {
     return (
       <div className="space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

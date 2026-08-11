@@ -2,17 +2,17 @@
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { AgentStatusBadge, IssueStatusBadge, StatusBadge } from "./StatusBadge";
+import { AgentStatusBadge, TaskStatusBadge, StatusBadge } from "./StatusBadge";
 import { agentStatusVar, taskStatusVar } from "../lib/status-colors";
 
 /**
- * Issue/task status chips carry the unified glyph and are recolored from the
+ * Task status chips carry the unified glyph and are recolored from the
  * `--status-task-*` base hue via the `.status-chip` color-mix helper.
  */
-describe("IssueStatusBadge", () => {
-  it("wires each issue status to its --status-task-* base hue, with a glyph", () => {
+describe("TaskStatusBadge", () => {
+  it("wires each task status to its --status-task-* base hue, with a glyph", () => {
     for (const [status, cssVar] of Object.entries(taskStatusVar)) {
-      const html = renderToStaticMarkup(<IssueStatusBadge status={status} />);
+      const html = renderToStaticMarkup(<TaskStatusBadge status={status} />);
       expect(html).toContain("status-chip");
       expect(html).toContain("border");
       expect(html).toContain(`var(${cssVar})`);
@@ -21,12 +21,12 @@ describe("IssueStatusBadge", () => {
   });
 
   it("points in_progress at the blue liveness var and todo at the amber var", () => {
-    expect(renderToStaticMarkup(<IssueStatusBadge status="in_progress" />)).toContain("var(--status-task-in_progress)");
-    expect(renderToStaticMarkup(<IssueStatusBadge status="todo" />)).toContain("var(--status-task-todo)");
+    expect(renderToStaticMarkup(<TaskStatusBadge status="in_progress" />)).toContain("var(--status-task-in_progress)");
+    expect(renderToStaticMarkup(<TaskStatusBadge status="todo" />)).toContain("var(--status-task-todo)");
   });
 
   it("sentence-cases the label and uses regular weight", () => {
-    const html = renderToStaticMarkup(<IssueStatusBadge status="in_review" />);
+    const html = renderToStaticMarkup(<TaskStatusBadge status="in_review" />);
     expect(html).toContain("In review");
     expect(html).not.toContain("In Review"); // sentence case, not title case
     expect(html).toContain("font-normal");
@@ -34,15 +34,15 @@ describe("IssueStatusBadge", () => {
   });
 
   it("strikes through cancelled chips", () => {
-    expect(renderToStaticMarkup(<IssueStatusBadge status="cancelled" />)).toContain("line-through");
+    expect(renderToStaticMarkup(<TaskStatusBadge status="cancelled" />)).toContain("line-through");
   });
 
   it("falls back to the backlog (gray) var for unknown statuses", () => {
-    expect(renderToStaticMarkup(<IssueStatusBadge status="mystery" />)).toContain("var(--status-task-backlog)");
+    expect(renderToStaticMarkup(<TaskStatusBadge status="mystery" />)).toContain("var(--status-task-backlog)");
   });
 
   it("renders task chips without depending on the chat flag", () => {
-    const html = renderToStaticMarkup(<IssueStatusBadge status="todo" />);
+    const html = renderToStaticMarkup(<TaskStatusBadge status="todo" />);
     expect(html).toContain("status-chip");
     expect(html).toContain('viewBox="0 0 24 24"');
     expect(html).toContain("Todo");

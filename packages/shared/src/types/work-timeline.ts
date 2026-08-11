@@ -1,7 +1,7 @@
 import type {
-  IssueExecutionRunKind,
-  IssueExecutionRunStatus,
-} from "./issue-execution-run.js";
+  TaskExecutionRunKind,
+  TaskExecutionRunStatus,
+} from "./task-execution-run.js";
 
 /**
  * Work Timeline (Gantt) types — shared between the aggregation service
@@ -25,23 +25,23 @@ export interface WorkTimelineActor {
 export interface WorkTimelineSpan {
   actorId: string;
   runId: string;
-  kind: IssueExecutionRunKind;
-  issueId: string;
-  issueIdentifier: string | null;
-  /** Human-readable issue title, shown truncated in the hover tooltip (bars carry no ID). */
-  issueTitle: string | null;
+  kind: TaskExecutionRunKind;
+  taskId: string;
+  taskIdentifier: string | null;
+  /** Human-readable task title, shown truncated in the hover tooltip (bars carry no ID). */
+  taskTitle: string | null;
   /** ISO timestamp of run start. */
   start: string;
   /** ISO timestamp of run finish, or null when the run is still in progress. */
   end: string | null;
-  status: IssueExecutionRunStatus;
+  status: TaskExecutionRunStatus;
   retryOfRunId: string | null;
 }
 
 export interface WorkTimelineEvent {
   actorId: string;
   kind: TimelineEventKind;
-  issueId: string;
+  taskId: string;
   /** ISO timestamp. */
   at: string;
 }
@@ -49,7 +49,7 @@ export interface WorkTimelineEvent {
 export interface WorkTimelineEdge {
   fromActorId: string;
   toActorId: string;
-  issueId: string;
+  taskId: string;
   /** ISO timestamp. */
   at: string;
   kind: TimelineEdgeKind;
@@ -63,7 +63,7 @@ export interface WorkTimelineResult {
   pagination: {
     limit: number;
     offset: number;
-    totalIssues: number;
+    totalTasks: number;
     hasMore: boolean;
   };
   window: {

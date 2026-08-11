@@ -91,7 +91,7 @@ export function createRuntimeAgentActionPort(
 }
 
 /**
- * Keeps integration explicit while the issue-action implementation remains a
+ * Keeps integration explicit while the task-action implementation remains a
  * separate concern. The shared action contract lives in
  * the managed-tool router, never at the ACPX gateway boundary.
  */

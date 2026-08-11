@@ -6,12 +6,12 @@ import {
 import { badRequest } from "../errors.js";
 import { assertJsonSchemaCompiles } from "./plugin-config-validator.js";
 
-interface ManifestValidationIssue {
+interface ManifestValidationDetail {
   path: (string | number)[];
   message: string;
 }
 
-function rejectInvalidManifest(details: ManifestValidationIssue[]): never {
+function rejectInvalidManifest(details: ManifestValidationDetail[]): never {
   const summary = details
     .map(({ path, message }) => path.length > 0 ? `${path.join(".")}: ${message}` : message)
     .join("; ");
@@ -37,23 +37,23 @@ function declaredInputSchemas(manifest: PaperclipPluginManifestV1): Array<{
 export function parsePluginManifest(input: unknown): PaperclipPluginManifestV1 {
   const result = pluginManifestV1Schema.safeParse(input);
   if (!result.success) {
-    rejectInvalidManifest(result.error.errors.map((issue) => ({
-      path: issue.path,
-      message: issue.message,
+    rejectInvalidManifest(result.error.errors.map((detail) => ({
+      path: detail.path,
+      message: detail.message,
     })));
   }
 
-  const schemaIssues: ManifestValidationIssue[] = [];
+  const schemaDiagnostics: ManifestValidationDetail[] = [];
   for (const declaration of declaredInputSchemas(result.data)) {
     try {
       assertJsonSchemaCompiles(declaration.schema);
     } catch (error) {
-      schemaIssues.push({
+      schemaDiagnostics.push({
         path: declaration.path,
         message: `JSON Schema does not compile: ${error instanceof Error ? error.message : String(error)}`,
       });
     }
   }
-  if (schemaIssues.length > 0) rejectInvalidManifest(schemaIssues);
+  if (schemaDiagnostics.length > 0) rejectInvalidManifest(schemaDiagnostics);
   return result.data;
 }

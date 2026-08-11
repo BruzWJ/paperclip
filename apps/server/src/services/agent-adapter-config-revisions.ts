@@ -8,6 +8,7 @@ import {
   companySkillVersions,
 } from "@paperclipai/db";
 import {
+  validationDetails,
   adapterConfigSchema,
   agentAdapterAcpConfigurationSchema,
   agentCompanySkillPinsUpdateSchema,
@@ -324,7 +325,7 @@ function normalizeExplicitAdapterConfig(
   if (!parsedConfig.success) {
     throw unprocessable("Invalid adapter configuration", {
       code: "invalid_agent_adapter_config",
-      issues: parsedConfig.error.issues,
+      diagnostics: validationDetails(parsedConfig.error),
     });
   }
   return normalizedJson(parsedConfig.data) as JsonRecord;
@@ -351,7 +352,7 @@ function parsePersistedAcpConfiguration(
       "Agent adapter revision has an invalid immutable ACP configuration",
       {
         code: "invalid_persisted_agent_adapter_acp_configuration",
-        issues: parsed.error.issues,
+        diagnostics: validationDetails(parsed.error),
       },
     );
   }
@@ -415,7 +416,7 @@ export function deriveAgentAdapterConfigRevision(input: {
     agentAdapterAcpConfigurationSchema.safeParse({
       ...declarativeAcpConfiguration,
       workspaceSelector: {
-        kind: "issue_execution_workspace",
+        kind: "task_execution_workspace",
       },
       companySkillPins,
     });
@@ -425,7 +426,7 @@ export function deriveAgentAdapterConfigRevision(input: {
       {
         code: "invalid_adapter_acp_revision_configuration",
         adapterType: input.adapterType,
-        issues: parsedAcpConfiguration.error.issues,
+        diagnostics: validationDetails(parsedAcpConfiguration.error),
       },
     );
   }
@@ -928,7 +929,7 @@ export function createAgentAdapterConfigurationService(
       if (!parsed.success) {
         throw unprocessable("Invalid agent company skill pins", {
           code: "invalid_agent_company_skill_pins",
-          issues: parsed.error.issues,
+          diagnostics: validationDetails(parsed.error),
         });
       }
       const requestedPins = parseCompanySkillPins(parsed.data.entries);
@@ -1072,7 +1073,7 @@ export function createAgentAdapterConfigurationService(
       if (!parsed.success) {
         throw unprocessable("Invalid agent adapter revision configuration", {
           code: "invalid_agent_adapter_revision_configuration",
-          issues: parsed.error.issues,
+          diagnostics: validationDetails(parsed.error),
         });
       }
 

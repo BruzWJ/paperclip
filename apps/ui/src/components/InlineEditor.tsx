@@ -141,7 +141,7 @@ export function InlineEditor({
 
   // Once the editor has been focused at least once, it's blurred, and any
   // autosave has settled, swap back to the MarkdownBody preview so inline
-  // issue refs render with status + quicklook.
+  // task refs render with status + quicklook.
   useEffect(() => {
     if (multilineFocused) {
       hasBeenFocusedRef.current = true;

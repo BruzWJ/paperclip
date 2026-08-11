@@ -523,8 +523,8 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           async readRun(input) {
             return callHost("runtime.records.readRun", input);
           },
-          async readIssueComments(input) {
-            return callHost("runtime.records.readIssueComments", input);
+          async readTaskComments(input) {
+            return callHost("runtime.records.readTaskComments", input);
           },
         },
       },
@@ -654,9 +654,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         },
       },
 
-      issues: {
+      tasks: {
         async list(input) {
-          return callHost("issues.list", {
+          return callHost("tasks.list", {
             companyId: input.companyId,
             projectId: input.projectId,
             ownerAgentId: input.ownerAgentId,
@@ -666,8 +666,8 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           });
         },
 
-        async get(issueId: string, companyId: string) {
-          return callHost("issues.get", { issueId, companyId });
+        async get(taskId: string, companyId: string) {
+          return callHost("tasks.get", { taskId, companyId });
         },
 
         async registerCreatorCallback(registration, handler) {
@@ -682,7 +682,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           }
           creatorCallbackHandlers.set(identity, handler);
           try {
-            await callHost("issues.creatorCallback.register", {
+            await callHost("tasks.creatorCallback.register", {
               callbackKey: key,
               callbackVersion: version,
             });
@@ -693,7 +693,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         },
 
         async create(input) {
-          return callHost("issues.create", {
+          return callHost("tasks.create", {
             companyId: input.companyId,
             request: input.request,
             ownerAgentId: input.ownerAgentId,
@@ -709,9 +709,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           });
         },
 
-        async update(issueId: string, input, companyId: string) {
-          return callHost("issues.update", {
-            issueId,
+        async update(taskId: string, input, companyId: string) {
+          return callHost("tasks.update", {
+            taskId,
             input,
             companyId,
           }, {
@@ -719,9 +719,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           });
         },
 
-        async withdraw(issueId: string, message: string, companyId: string) {
-          return callHost("issues.withdraw", {
-            issueId,
+        async withdraw(taskId: string, message: string, companyId: string) {
+          return callHost("tasks.withdraw", {
+            taskId,
             companyId,
             message,
           }, {
@@ -1024,8 +1024,8 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
       case "executeTool":
         return handleExecuteTool(params as ExecuteToolParams);
-      case "issues.creatorCallback.deliver": {
-        const input = params as HostToWorkerMethods["issues.creatorCallback.deliver"][0];
+      case "tasks.creatorCallback.deliver": {
+        const input = params as HostToWorkerMethods["tasks.creatorCallback.deliver"][0];
         const handler = creatorCallbackHandlers.get(
           `${input.callbackKey}\u0000${input.callbackVersion}`,
         );
@@ -1144,7 +1144,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     if (actionHandlers.size > 0) supportedMethods.push("performAction");
     if (toolHandlers.size > 0) supportedMethods.push("executeTool");
     if (creatorCallbackHandlers.size > 0) {
-      supportedMethods.push("issues.creatorCallback.deliver");
+      supportedMethods.push("tasks.creatorCallback.deliver");
     }
     return { supportedMethods };
   }
@@ -1305,49 +1305,49 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           runContextHandle: params.runContextHandle,
         });
       },
-      issueReach(issueId: string) {
-        return callHost("run.context.issueReach", {
+      taskReach(taskId: string) {
+        return callHost("run.context.taskReach", {
           runContextHandle: params.runContextHandle,
-          issueId,
+          taskId,
         });
       },
-      issues: Object.freeze({
-        listCompanyIssues(input: {
+      tasks: Object.freeze({
+        listCompanyTasks(input: {
           status?: "open" | "blocked" | "done" | "cancelled";
           priority?: "critical" | "high" | "medium" | "low";
           cursor?: string;
           limit?: number;
         } = {}) {
-          return callHost("run.issues.listCompanyIssues", {
+          return callHost("run.tasks.listCompanyTasks", {
             runContextHandle: params.runContextHandle,
             ...input,
           });
         },
-        listSubIssues(input: {
-          issueId?: string;
+        listSubTasks(input: {
+          taskId?: string;
           cursor?: string;
           limit?: number;
         } = {}) {
-          return callHost("run.issues.listSubIssues", {
+          return callHost("run.tasks.listSubTasks", {
             runContextHandle: params.runContextHandle,
             ...input,
           });
         },
-        readIssueComments(input: {
-          issueId?: string;
+        readTaskComments(input: {
+          taskId?: string;
           cursor?: string;
           limit?: number;
         } = {}) {
-          return callHost("run.issues.readIssueComments", {
+          return callHost("run.tasks.readTaskComments", {
             runContextHandle: params.runContextHandle,
             ...input,
           });
         },
-        readIssueAgentRun(
+        readTaskAgentRun(
           runId: string,
           input: { cursor?: string } = {},
         ) {
-          return callHost("run.issues.readIssueAgentRun", {
+          return callHost("run.tasks.readTaskAgentRun", {
             runContextHandle: params.runContextHandle,
             runId,
             ...input,
