@@ -1481,7 +1481,7 @@ span.paperclip-project-mention-chip {
   /* ── Named type ladder (DECISION-SHEET.md B3, preset-tune session) ──
      Collapses the 8 verbatim --fs-* font-size tokens and 9 --ls-*
      letter-spacing tokens (extracted in Batch 2 above) into named steps.
-     Codemod: scripts/codemod-type-ladder.mjs. Mapping:
+     Applied mapping:
        9px + 10px    -> --text-nano   (9 -> 10 bump per locked ladder)
        11px + 0.7rem -> --text-micro  (0.7rem = 11.2px -> 11px)
        12px          -> Tailwind `text-xs` class (12px exact match; scale

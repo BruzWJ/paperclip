@@ -68,7 +68,7 @@ test('scanBuildScripts: flags protected release scripts', () => {
 });
 
 test('scanBuildScripts: ignores non-CI scripts', () => {
-  const files = [{ filename: 'scripts/generate-org-chart-images.ts', status: 'modified' }];
+  const files = [{ filename: 'scripts/generate-org-chart-satori-comparison.ts', status: 'modified' }];
   assert.equal(scanBuildScripts(files).length, 0);
 });
 
