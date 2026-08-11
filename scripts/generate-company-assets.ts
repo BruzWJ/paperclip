@@ -283,7 +283,7 @@ async function main() {
       agents: pkg.agents,
       skills: pkg.skills,
       projects: [],
-      issues: [],
+      tasks: [],
     };
 
     const readme = generateReadme(manifest, {

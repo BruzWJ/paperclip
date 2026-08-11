@@ -20,16 +20,16 @@ const SOURCE_ROOTS = [
 /** These owners prove that Paperclip has one server/worker execution path. */
 const REQUIRED_OWNERS = [
   "apps/server/src/services/local-execution-orchestrator.ts",
-  "apps/server/src/services/issue-execution-attempt-executor.ts",
-  "apps/server/src/services/issue-execution-postgres.ts",
-  "apps/server/src/services/issue-execution-provider-configuration.ts",
+  "apps/server/src/services/task-execution-attempt-executor.ts",
+  "apps/server/src/services/task-execution-postgres.ts",
+  "apps/server/src/services/task-execution-provider-configuration.ts",
   "apps/server/src/index.ts",
   "packages/adapter-utils/src/types.ts",
   "packages/adapter-utils/src/server-adapter-contract.ts",
 ] as const;
 
 const RETIRED_AI_PATHS = [
-  "packages/adapter-utils/src/issue-execution.ts",
+  "packages/adapter-utils/src/task-execution.ts",
   "packages/adapter-utils/src/provider-cli.ts",
   "packages/adapter-utils/src/provider-cli-adapter.ts",
   "packages/adapter-utils/src/session-provider-event.ts",
@@ -227,7 +227,7 @@ export function scanServerWorkerTopology(
   });
 
   const executorPath =
-    "apps/server/src/services/issue-execution-attempt-executor.ts";
+    "apps/server/src/services/task-execution-attempt-executor.ts";
   const executor = required(executorPath);
   requireMarkers({
     path: executorPath,
@@ -250,12 +250,12 @@ export function scanServerWorkerTopology(
   }
 
   const providerConfigurationPath =
-    "apps/server/src/services/issue-execution-provider-configuration.ts";
+    "apps/server/src/services/task-execution-provider-configuration.ts";
   requireMarkers({
     path: providerConfigurationPath,
     source: required(providerConfigurationPath),
     markers: [
-      "IssueExecutionTargetAcquirer",
+      "TaskExecutionTargetAcquirer",
       "acquireExecutionTargetForRun",
       "localExecutionOrchestrator",
       "releaseExecutionTarget",
@@ -265,15 +265,15 @@ export function scanServerWorkerTopology(
   });
 
   const productionRuntimePath =
-    "apps/server/src/services/issue-execution-postgres.ts";
+    "apps/server/src/services/task-execution-postgres.ts";
   requireMarkers({
     path: productionRuntimePath,
     source: required(productionRuntimePath),
     markers: [
-      "export function createPostgresIssueExecutionProductionRuntime",
-      "createIssueExecutionCancellationService",
+      "export function createPostgresTaskExecutionProductionRuntime",
+      "createTaskExecutionCancellationService",
       "localExecutionOrchestrator: options.localExecutionOrchestrator",
-      "cancellation = createIssueExecutionCancellationService({",
+      "cancellation = createTaskExecutionCancellationService({",
     ],
     add,
     contract: "canonical productive and consult runtime assembly",
@@ -298,7 +298,7 @@ export function scanServerWorkerTopology(
     source: required(assemblyPath),
     markers: [
       "localExecutionOrchestrator",
-      "createPostgresIssueExecutionProductionRuntime",
+      "createPostgresTaskExecutionProductionRuntime",
     ],
     add,
     contract: "server plus worker production assembly",

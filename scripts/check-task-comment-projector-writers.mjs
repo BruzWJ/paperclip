@@ -13,15 +13,15 @@ const SOURCE_ROOTS = [
   "packages",
 ];
 
-const PROJECTOR_PATH = "apps/server/src/services/issue-session/projector.ts";
-const PURGE_PATH = "apps/server/src/services/issue-session-lifecycle.ts";
+const PROJECTOR_PATH = "apps/server/src/services/task-session/projector.ts";
+const PURGE_PATH = "apps/server/src/services/task-session-lifecycle.ts";
 const PROJECTOR_WRITER_FUNCTION = "materializeComment";
 const LIFECYCLE_PURGE_FUNCTION =
   "purgeCompanySessionGraphInTx";
 
 const MUTATOR_METHODS = new Set(["insert", "update", "delete"]);
 const GENERIC_COMMENT_MUTATOR_NAMES =
-  /^(?:addComment|removeComment|tombstoneComment|persistDerivedIssueCommentAttribution)$/;
+  /^(?:addComment|removeComment|tombstoneComment|persistDerivedTaskCommentAttribution)$/;
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 
 function toPosix(value) {
@@ -85,34 +85,34 @@ function unwrap(expression) {
   return current;
 }
 
-function expressionIsIssueComments(expression, aliases) {
+function expressionIsTaskComments(expression, aliases) {
   const node = unwrap(expression);
   if (ts.isIdentifier(node)) return aliases.has(node.text);
   if (ts.isPropertyAccessExpression(node)) {
-    return node.name.text === "issueComments" || aliases.has(node.name.text);
+    return node.name.text === "taskComments" || aliases.has(node.name.text);
   }
   if (ts.isElementAccessExpression(node) && node.argumentExpression) {
     const argument = unwrap(node.argumentExpression);
-    return ts.isStringLiteralLike(argument) && argument.text === "issueComments";
+    return ts.isStringLiteralLike(argument) && argument.text === "taskComments";
   }
   return false;
 }
 
-function collectIssueCommentAliases(sourceFile) {
-  const aliases = new Set(["issueComments"]);
+function collectTaskCommentAliases(sourceFile) {
+  const aliases = new Set(["taskComments"]);
   let changed = true;
 
   const inspect = (node) => {
     if (
       ts.isImportSpecifier(node) &&
-      (node.propertyName?.text === "issueComments" || (!node.propertyName && node.name.text === "issueComments"))
+      (node.propertyName?.text === "taskComments" || (!node.propertyName && node.name.text === "taskComments"))
     ) {
       aliases.add(node.name.text);
     }
     if (
       ts.isBindingElement(node) &&
-      (propertyNameText(node.propertyName) === "issueComments" ||
-        (!node.propertyName && propertyNameText(node.name) === "issueComments"))
+      (propertyNameText(node.propertyName) === "taskComments" ||
+        (!node.propertyName && propertyNameText(node.name) === "taskComments"))
     ) {
       const name = propertyNameText(node.name);
       if (name) aliases.add(name);
@@ -128,7 +128,7 @@ function collectIssueCommentAliases(sourceFile) {
         ts.isVariableDeclaration(node) &&
         ts.isIdentifier(node.name) &&
         node.initializer &&
-        expressionIsIssueComments(node.initializer, aliases) &&
+        expressionIsTaskComments(node.initializer, aliases) &&
         !aliases.has(node.name.text)
       ) {
         aliases.add(node.name.text);
@@ -138,7 +138,7 @@ function collectIssueCommentAliases(sourceFile) {
         ts.isBinaryExpression(node) &&
         node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
         ts.isIdentifier(node.left) &&
-        expressionIsIssueComments(node.right, aliases) &&
+        expressionIsTaskComments(node.right, aliases) &&
         !aliases.has(node.left.text)
       ) {
         aliases.add(node.left.text);
@@ -227,7 +227,7 @@ function violation(sourceFile, relativePath, node, operation, message) {
 }
 
 function rawSqlMutation(text) {
-  const match = text.match(/\b(insert\s+into|update|delete\s+from)\s+(?:"?[\w-]+"?\.)?"?issue_comments"?\b/i);
+  const match = text.match(/\b(insert\s+into|update|delete\s+from)\s+(?:"?[\w-]+"?\.)?"?task_comments"?\b/i);
   if (!match) return null;
   const keyword = match[1].toLowerCase();
   if (keyword.startsWith("insert")) return "insert";
@@ -260,7 +260,7 @@ export function inspectSourceText(relativePath, sourceText) {
     true,
     scriptKind,
   );
-  const aliases = collectIssueCommentAliases(sourceFile);
+  const aliases = collectTaskCommentAliases(sourceFile);
   const violations = [];
 
   const visit = (node) => {
@@ -270,7 +270,7 @@ export function inspectSourceText(relativePath, sourceText) {
         operation &&
         MUTATOR_METHODS.has(operation) &&
         node.arguments.length > 0 &&
-        expressionIsIssueComments(node.arguments[0], aliases) &&
+        expressionIsTaskComments(node.arguments[0], aliases) &&
         !operationAllowed(relativePath, operation, node)
       ) {
         violations.push(
@@ -279,7 +279,7 @@ export function inspectSourceText(relativePath, sourceText) {
             relativePath,
             node,
             operation,
-            `Only ${PROJECTOR_PATH} may insert/update issue_comments and only ${PURGE_PATH} may delete it.`,
+            `Only ${PROJECTOR_PATH} may insert/update task_comments and only ${PURGE_PATH} may delete it.`,
           ),
         );
       }
@@ -301,7 +301,7 @@ export function inspectSourceText(relativePath, sourceText) {
           relativePath,
           node,
           "generic-mutator",
-          "Generic issue comment mutators are forbidden; publish a canonical Session event and let the projector write.",
+          "Generic task comment mutators are forbidden; publish a canonical Session event and let the projector write.",
         ),
       );
     }
@@ -319,7 +319,7 @@ export function inspectSourceText(relativePath, sourceText) {
             relativePath,
             node,
             operation,
-            "Raw SQL mutation of issue_comments bypasses the canonical Session projector.",
+            "Raw SQL mutation of task_comments bypasses the canonical Session projector.",
           ),
         );
       }
@@ -336,7 +336,7 @@ export function inspectSourceText(relativePath, sourceText) {
   return [...unique.values()];
 }
 
-export function checkIssueCommentProjectorWriters(repoRoot = DEFAULT_REPO_ROOT) {
+export function checkTaskCommentProjectorWriters(repoRoot = DEFAULT_REPO_ROOT) {
   const violations = [];
   for (const absolutePath of listProductionSourceFiles(repoRoot)) {
     const relativePath = toPosix(relative(repoRoot, absolutePath));
@@ -354,14 +354,14 @@ export function checkIssueCommentProjectorWriters(repoRoot = DEFAULT_REPO_ROOT) 
 }
 
 function main() {
-  const violations = checkIssueCommentProjectorWriters();
+  const violations = checkTaskCommentProjectorWriters();
   if (violations.length === 0) {
-    console.log("Issue comment projector writer check passed.");
+    console.log("Task comment projector writer check passed.");
     return;
   }
 
   console.error(
-    `Issue comment projector writer check failed with ${violations.length} violation(s):`,
+    `Task comment projector writer check failed with ${violations.length} violation(s):`,
   );
   for (const item of violations) {
     console.error(

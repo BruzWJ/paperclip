@@ -8,7 +8,8 @@ scripts/rollback-latest.sh @cryppadotta @devinfoley @nickyleach
 doc/RELEASING.md @cryppadotta @devinfoley @nickyleach
 doc/PUBLISHING.md @cryppadotta @devinfoley @nickyleach
 doc/RELEASE-AUTOMATION-SETUP.md @cryppadotta @devinfoley @nickyleach
-skills/** @cryppadotta @devinfoley @nickyleach
+.agents/skills/** @cryppadotta @devinfoley @nickyleach
+packages/skills-catalog/** @cryppadotta @devinfoley @nickyleach
 
 # Package files — dependency changes require review
 # package.json matches recursively at all depths (covers root + all workspaces)

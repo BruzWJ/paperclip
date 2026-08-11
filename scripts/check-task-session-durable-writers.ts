@@ -10,30 +10,30 @@ export interface DurableWriterViolation {
 }
 
 const DURABLE_FUNCTIONS = new Set([
-  "appendIssueSessionEvent",
-  "makeDurableIssueSessionEvent",
-  "projectIssueSessionEventInTx",
-  "projectIssueSessionFinalCommentInTx",
-  "insertOrAssertIssueSessionSourceUserExecution",
+  "appendTaskSessionEvent",
+  "makeDurableTaskSessionEvent",
+  "projectTaskSessionEventInTx",
+  "projectTaskSessionFinalCommentInTx",
+  "insertOrAssertTaskSessionSourceUserExecution",
 ]);
 
 const DURABLE_TABLES = new Set([
-  "issueSessionEvents",
-  "issueSessionMessages",
-  "issueComments",
-  "issueSessionSourceUserExecutions",
+  "taskSessionEvents",
+  "taskSessionMessages",
+  "taskComments",
+  "taskSessionSourceUserExecutions",
 ]);
 
 const PUBLICATION_FILE =
-  "apps/server/src/services/issue-session/publication.ts";
+  "apps/server/src/services/task-session/publication.ts";
 const EVENT_STORE_FILE =
-  "apps/server/src/services/issue-session/event-store.ts";
+  "apps/server/src/services/task-session/event-store.ts";
 const PROJECTOR_FILE =
-  "apps/server/src/services/issue-session/projector.ts";
+  "apps/server/src/services/task-session/projector.ts";
 const LIFECYCLE_FILE =
-  "apps/server/src/services/issue-session-lifecycle.ts";
+  "apps/server/src/services/task-session-lifecycle.ts";
 const SOURCE_USER_EXECUTION_FILE =
-  "apps/server/src/services/issue-session/source-user-execution.ts";
+  "apps/server/src/services/task-session/source-user-execution.ts";
 
 function normalized(file: string): string {
   return file.replaceAll(path.sep, "/");
@@ -64,16 +64,16 @@ function isAllowedDurableFunction(
   if (file === PUBLICATION_FILE) return true;
   if (
     file === EVENT_STORE_FILE &&
-    (symbol === "appendIssueSessionEvent" ||
-      symbol === "makeDurableIssueSessionEvent")
+    (symbol === "appendTaskSessionEvent" ||
+      symbol === "makeDurableTaskSessionEvent")
   ) {
     return true;
   }
   if (
     file === PROJECTOR_FILE &&
-    (symbol === "projectIssueSessionEventInTx" ||
-      symbol === "projectIssueSessionFinalCommentInTx" ||
-      symbol === "insertOrAssertIssueSessionSourceUserExecution")
+    (symbol === "projectTaskSessionEventInTx" ||
+      symbol === "projectTaskSessionFinalCommentInTx" ||
+      symbol === "insertOrAssertTaskSessionSourceUserExecution")
   ) {
     return true;
   }
@@ -87,14 +87,14 @@ function isAllowedTableMutation(
 ): boolean {
   if (
     file === EVENT_STORE_FILE &&
-    table === "issueSessionEvents" &&
+    table === "taskSessionEvents" &&
     operation === "insert"
   ) {
     return true;
   }
   if (
     file === PROJECTOR_FILE &&
-    (table === "issueSessionMessages" || table === "issueComments") &&
+    (table === "taskSessionMessages" || table === "taskComments") &&
     (operation === "insert" ||
       operation === "update" ||
       operation === "delete")
@@ -103,7 +103,7 @@ function isAllowedTableMutation(
   }
   if (
     file === SOURCE_USER_EXECUTION_FILE &&
-    table === "issueSessionSourceUserExecutions" &&
+    table === "taskSessionSourceUserExecutions" &&
     operation === "insert"
   ) {
     return true;
@@ -122,7 +122,7 @@ function isAllowedTableMutation(
  * Import renames, namespace imports, and local aliases are resolved before
  * calls/mutations are inspected, so a wrapper cannot hide a direct writer.
  */
-export function scanIssueSessionDurableWriterSource(
+export function scanTaskSessionDurableWriterSource(
   file: string,
   text: string,
 ): DurableWriterViolation[] {
@@ -317,7 +317,7 @@ export function scanIssueSessionDurableWriterSource(
           : node.getText(source)
       ).toLowerCase();
       const match =
-        /\b(insert\s+into|update|delete\s+from)\s+(?:(?:"?[a-z0-9_]+"?)\.)?"?(issue_session_events|issue_session_messages|issue_comments|issue_session_source_user_executions)"?\b/.exec(
+        /\b(insert\s+into|update|delete\s+from)\s+(?:(?:"?[a-z0-9_]+"?)\.)?"?(task_session_events|task_session_messages|task_comments|task_session_source_user_executions)"?\b/.exec(
           sqlText,
         );
       if (match) {
@@ -327,13 +327,13 @@ export function scanIssueSessionDurableWriterSource(
             ? "delete"
             : "update";
         const table =
-          match[2] === "issue_session_events"
-            ? "issueSessionEvents"
-            : match[2] === "issue_session_messages"
-              ? "issueSessionMessages"
-              : match[2] === "issue_comments"
-                ? "issueComments"
-                : "issueSessionSourceUserExecutions";
+          match[2] === "task_session_events"
+            ? "taskSessionEvents"
+            : match[2] === "task_session_messages"
+              ? "taskSessionMessages"
+              : match[2] === "task_comments"
+                ? "taskComments"
+                : "taskSessionSourceUserExecutions";
         if (
           !isAllowedTableMutation(relativeFile, table, operation)
         ) {
@@ -351,13 +351,13 @@ export function scanIssueSessionDurableWriterSource(
   const mirrorContext = `${relativeFile}\n${text}`;
   const nearbyRunMirrorPersistence = new RegExp(
     [
-      "(?:run[-_ ]?log|heartbeatRun|issueSession|issue_session)",
+      "(?:run[-_ ]?log|heartbeatRun|taskSession|task_session)",
       "[\\s\\S]{0,800}",
       "(?:\\.ndjson\\b|\\.jsonl\\b|local_file|PutObjectCommand|RUN_LOG_S3_|RUN_LOG_BASE_PATH)",
       "|",
       "(?:\\.ndjson\\b|\\.jsonl\\b|local_file|PutObjectCommand|RUN_LOG_S3_|RUN_LOG_BASE_PATH)",
       "[\\s\\S]{0,800}",
-      "(?:run[-_ ]?log|heartbeatRun|issueSession|issue_session)",
+      "(?:run[-_ ]?log|heartbeatRun|taskSession|task_session)",
     ].join(""),
     "i",
   ).test(mirrorContext);
@@ -403,7 +403,7 @@ async function walk(root: string): Promise<string[]> {
   return files;
 }
 
-export async function checkIssueSessionDurableWriters(
+export async function checkTaskSessionDurableWriters(
   repositoryRoot: string,
 ): Promise<DurableWriterViolation[]> {
   const roots = [
@@ -415,7 +415,7 @@ export async function checkIssueSessionDurableWriters(
     for (const file of await walk(root)) {
       const relative = normalized(path.relative(repositoryRoot, file));
       violations.push(
-        ...scanIssueSessionDurableWriterSource(
+        ...scanTaskSessionDurableWriterSource(
           relative,
           await fs.readFile(file, "utf8"),
         ),
@@ -433,7 +433,7 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
   );
-  const violations = await checkIssueSessionDurableWriters(
+  const violations = await checkTaskSessionDurableWriters(
     repositoryRoot,
   );
   if (violations.length > 0) {
@@ -445,7 +445,7 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
     process.exitCode = 1;
   } else {
     console.log(
-      "Issue Session durable writers are closed behind the publication boundary.",
+      "Task Session durable writers are closed behind the publication boundary.",
     );
   }
 }

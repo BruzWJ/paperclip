@@ -4,25 +4,25 @@ import {
   inspectMigrationText,
   inspectSourceText,
   requiredOwnershipViolations,
-} from "./check-canonical-issue-writers.mjs";
+} from "./check-canonical-task-writers.mjs";
 
-const INSERT_OWNER = "apps/server/src/services/canonical-issue-aggregate.ts";
+const INSERT_OWNER = "apps/server/src/services/canonical-task-aggregate.ts";
 
 function operations(violations) {
   return violations.map((entry) => entry.operation).sort();
 }
 
-test("rejects direct, aliased, namespace, helper-returned, and wrapped issue inserts", () => {
+test("rejects direct, aliased, namespace, helper-returned, and wrapped task inserts", () => {
   const direct = inspectSourceText(
     "apps/server/src/services/legacy.ts",
     `
-      import { issues as issueRows } from "@paperclipai/db";
-      const alias = issueRows;
+      import { tasks as taskRows } from "@paperclipai/db";
+      const alias = taskRows;
       const table = () => alias;
-      await db.insert(issueRows).values({});
+      await db.insert(taskRows).values({});
       await db.insert(alias).values({});
       await db.insert(table()).values({});
-      writeAggregate(issueRows);
+      writeAggregate(taskRows);
     `,
   );
   assert.deepEqual(operations(direct), ["insert", "insert", "insert", "table-wrapper"]);
@@ -31,7 +31,7 @@ test("rejects direct, aliased, namespace, helper-returned, and wrapped issue ins
     "apps/server/src/services/namespace-writer.ts",
     `
       import * as schema from "@paperclipai/db";
-      await db.insert(schema.issues).values({});
+      await db.insert(schema.tasks).values({});
     `,
   );
   assert.deepEqual(operations(namespace), ["insert"]);
@@ -41,9 +41,9 @@ test("permits exactly one insert inside the canonical function", () => {
   const accepted = inspectSourceText(
     INSERT_OWNER,
     `
-      import { issues } from "@paperclipai/db";
-      export async function persistCanonicalIssueAggregateInTx(tx, input) {
-        return tx.insert(issues).values(input.issue);
+      import { tasks } from "@paperclipai/db";
+      export async function persistCanonicalTaskAggregateInTx(tx, input) {
+        return tx.insert(tasks).values(input.task);
       }
     `,
   );
@@ -52,10 +52,10 @@ test("permits exactly one insert inside the canonical function", () => {
   const duplicate = inspectSourceText(
     INSERT_OWNER,
     `
-      import { issues } from "@paperclipai/db";
-      export async function persistCanonicalIssueAggregateInTx(tx, input) {
-        await tx.insert(issues).values(input.issue);
-        return tx.insert(issues).values(input.issue);
+      import { tasks } from "@paperclipai/db";
+      export async function persistCanonicalTaskAggregateInTx(tx, input) {
+        await tx.insert(tasks).values(input.task);
+        return tx.insert(tasks).values(input.task);
       }
     `,
   );
@@ -64,9 +64,9 @@ test("permits exactly one insert inside the canonical function", () => {
   const wrongFunction = inspectSourceText(
     INSERT_OWNER,
     `
-      import { issues } from "@paperclipai/db";
-      async function insertAnotherIssue(tx, row) {
-        return tx.insert(issues).values(row);
+      import { tasks } from "@paperclipai/db";
+      async function insertAnotherTask(tx, row) {
+        return tx.insert(tasks).values(row);
       }
     `,
   );
@@ -77,15 +77,15 @@ test("rejects raw SQL inserts and later migration mutations of immutable fields"
   const source = inspectSourceText(
     "apps/server/src/services/raw-writer.ts",
     `
-      await tx.execute(sql\`insert into issues (id) values (\${id})\`);
-      await tx.execute(sql\`update public.issues set request = \${request}\`);
+      await tx.execute(sql\`insert into tasks (id) values (\${id})\`);
+      await tx.execute(sql\`update public.tasks set request = \${request}\`);
     `,
   );
   assert.deepEqual(operations(source), ["immutable-update", "insert"]);
 
   const migration = inspectMigrationText(
     "packages/db/migrations/0001_later.sql",
-    `UPDATE "issues" SET creator_authority_id = NULL;`,
+    `UPDATE "tasks" SET creator_authority_id = NULL;`,
   );
   assert.deepEqual(operations(migration), ["migration-mutation"]);
 });
@@ -94,7 +94,7 @@ test("rejects direct, aliased, spread, and generic immutable updates", () => {
   const direct = inspectSourceText(
     "apps/server/src/services/legacy-update.ts",
     `
-      import { issues as rows } from "@paperclipai/db";
+      import { tasks as rows } from "@paperclipai/db";
       const requestPatch = { request: "replacement" };
       await db.update(rows).set({ creatorAuthorityId: authorityId });
       await db.update(rows).set({ ...requestPatch, updatedAt: new Date() });
@@ -110,24 +110,24 @@ test("rejects direct, aliased, spread, and generic immutable updates", () => {
 
 test("allows the one statically closed control-state patch contract", () => {
   const source = `
-    import { issues } from "@paperclipai/db";
-    type IssueControlStateUpdate = Partial<Omit<typeof issues.$inferInsert,
+    import { tasks } from "@paperclipai/db";
+    type TaskControlStateUpdate = Partial<Omit<typeof tasks.$inferInsert,
       "request" | "creatorAuthorityId" | "creatorAdapterConfigRevisionId">>;
     const service = {
-      updateControlState: async function updateControlState(data: IssueControlStateUpdate) {
-        return db.update(issues).set(data);
+      updateControlState: async function updateControlState(data: TaskControlStateUpdate) {
+        return db.update(tasks).set(data);
       },
     };
   `;
-  assert.deepEqual(inspectSourceText("apps/server/src/services/issues.ts", source), []);
+  assert.deepEqual(inspectSourceText("apps/server/src/services/tasks.ts", source), []);
 });
 
 test("rejects a partial agent-execution creator pair at canonical creation", () => {
   const partial = inspectSourceText(
-    "apps/server/src/services/runtime-issue-action-port.ts",
+    "apps/server/src/services/runtime-task-action-port.ts",
     `
-      await persistCanonicalIssueAggregateInTx(tx, {
-        issue: {
+      await persistCanonicalTaskAggregateInTx(tx, {
+        task: {
           creatorKind: "agent-execution",
           creatorAuthorityId: authorityId,
         },
@@ -137,10 +137,10 @@ test("rejects a partial agent-execution creator pair at canonical creation", () 
   assert.deepEqual(operations(partial), ["partial-creator-pair"]);
 
   const complete = inspectSourceText(
-    "apps/server/src/services/runtime-issue-action-port.ts",
+    "apps/server/src/services/runtime-task-action-port.ts",
     `
-      await persistCanonicalIssueAggregateInTx(tx, {
-        issue: {
+      await persistCanonicalTaskAggregateInTx(tx, {
+        task: {
           creatorKind: "agent-execution",
           creatorAuthorityId: authorityId,
           creatorAdapterConfigRevisionId: revisionId,
@@ -154,40 +154,40 @@ test("rejects a partial agent-execution creator pair at canonical creation", () 
 function validOwnerGraph() {
   return new Map([
     [
-      "apps/server/src/services/canonical-issue-aggregate.ts",
+      "apps/server/src/services/canonical-task-aggregate.ts",
       `
-        export interface CanonicalIssueAggregateInput { issue: { request: string } }
-        export async function persistCanonicalIssueAggregateInTx(tx, input) {
-          const { issue } = input;
-          await assertAgentExecutionCreator(tx, issue);
-          return tx.insert(issues).values(issue);
+        export interface CanonicalTaskAggregateInput { task: { request: string } }
+        export async function persistCanonicalTaskAggregateInTx(tx, input) {
+          const { task } = input;
+          await assertAgentExecutionCreator(tx, task);
+          return tx.insert(tasks).values(task);
         }
       `,
     ],
     [
-      "apps/server/src/services/issues.ts",
-      `type IssueControlStateUpdate = Omit<Row, | "request" | "creatorAuthorityId" | "creatorAdapterConfigRevisionId">;
-       function updateControlState(data: IssueControlStateUpdate) {}`,
+      "apps/server/src/services/tasks.ts",
+      `type TaskControlStateUpdate = Omit<Row, | "request" | "creatorAuthorityId" | "creatorAdapterConfigRevisionId">;
+       function updateControlState(data: TaskControlStateUpdate) {}`,
     ],
     [
       "apps/server/src/services/paperclip-managed-tool-registry.ts",
       `export const boardMcpInputSchemas = {};
-       function projectRuntimeIssueCreate(input) { if (input.mode !== "owner" || input.actionGrants.issue_create !== true) return null; return { name: "issue_create" }; }
-       switch (name) { case "issue_create": return projectRuntimeIssueCreate(input); }`,
+       function projectRuntimeTaskCreate(input) { if (input.mode !== "owner" || input.actionGrants.task_create !== true) return null; return { name: "task_create" }; }
+       switch (name) { case "task_create": return projectRuntimeTaskCreate(input); }`,
     ],
     [
-      "apps/server/src/services/runtime-issue-action-port.ts",
+      "apps/server/src/services/runtime-task-action-port.ts",
       `
-        lockRuntimeActionAuthority(tx, capability, "issue_create", now);
-        if (!input.capability.issueExecutionAuthorityId) throw denied();
-        persistCanonicalIssueAggregateInTx(tx, { issue: {
-          creatorAuthorityId: input.capability.issueExecutionAuthorityId,
+        lockRuntimeActionAuthority(tx, capability, "task_create", now);
+        if (!input.capability.taskExecutionAuthorityId) throw denied();
+        persistCanonicalTaskAggregateInTx(tx, { task: {
+          creatorAuthorityId: input.capability.taskExecutionAuthorityId,
           creatorAdapterConfigRevisionId: input.capability.adapterConfigIdentity,
         }});
       `,
     ],
     [
-      "packages/db/schema/issues.ts",
+      "packages/db/schema/tasks.ts",
       `request: text("request").notNull(), creatorAuthorityId: uuid("creator_authority_id"), creatorAdapterConfigRevisionId: uuid("creator_adapter_config_revision_id")`,
     ],
   ]);
@@ -197,12 +197,12 @@ test("requires compiler, action-port, aggregate, schema, and closed update owner
   assert.deepEqual(requiredOwnershipViolations(validOwnerGraph()), []);
 
   for (const [path, marker] of [
-    ["apps/server/src/services/canonical-issue-aggregate.ts", "await assertAgentExecutionCreator(tx, issue);"],
-    ["apps/server/src/services/issues.ts", '| "request"'],
-    ["apps/server/src/services/paperclip-managed-tool-registry.ts", "input.actionGrants.issue_create !== true"],
-    ["apps/server/src/services/paperclip-managed-tool-registry.ts", 'case "issue_create": return projectRuntimeIssueCreate(input);'],
-    ["apps/server/src/services/runtime-issue-action-port.ts", "if (!input.capability.issueExecutionAuthorityId)"],
-    ["packages/db/schema/issues.ts", 'request: text("request").notNull()'],
+    ["apps/server/src/services/canonical-task-aggregate.ts", "await assertAgentExecutionCreator(tx, task);"],
+    ["apps/server/src/services/tasks.ts", '| "request"'],
+    ["apps/server/src/services/paperclip-managed-tool-registry.ts", "input.actionGrants.task_create !== true"],
+    ["apps/server/src/services/paperclip-managed-tool-registry.ts", 'case "task_create": return projectRuntimeTaskCreate(input);'],
+    ["apps/server/src/services/runtime-task-action-port.ts", "if (!input.capability.taskExecutionAuthorityId)"],
+    ["packages/db/schema/tasks.ts", 'request: text("request").notNull()'],
   ]) {
     const mutated = validOwnerGraph();
     mutated.set(path, mutated.get(path).replace(marker, ""));

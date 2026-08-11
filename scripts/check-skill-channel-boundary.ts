@@ -31,7 +31,7 @@ const RETIRED_SKILL_CHANNEL_TOKENS = [
   "ReapedCompanySkillMaterialization",
   "fenceCompanySkillMaterializationReferenceInTransaction",
   "collectCompanySkillMaterializationIfUnreferencedInTransaction",
-  "hasActiveIssueExecutionAttemptForMaterializationInTransaction",
+  "hasActiveTaskExecutionAttemptForMaterializationInTransaction",
 ] as const;
 
 /** Proves Paperclip has no skill-channel discriminator or materialization path. */

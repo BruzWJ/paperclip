@@ -10,7 +10,7 @@ PGID=${USER_GID:-1000}
 # This covers Kubernetes restricted PodSecurity (runAsNonRoot + runAsUser)
 # as well as platforms that assign arbitrary UIDs (e.g. OpenShift); for the
 # latter a UID/GID mismatch is unfixable here, so warn instead of letting
-# usermod fail cryptically and keep volume-permission issues diagnosable.
+# usermod fail cryptically and keep volume-permission problems diagnosable.
 if [ "$(id -u)" -ne 0 ]; then
     if [ "$(id -u)" -ne "$PUID" ] || [ "$(id -g)" -ne "$PGID" ]; then
         echo "docker-entrypoint.sh: running unprivileged as $(id -u):$(id -g); cannot remap to requested ${PUID}:${PGID}" >&2

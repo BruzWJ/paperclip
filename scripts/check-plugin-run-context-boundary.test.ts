@@ -76,7 +76,7 @@ function fixtureRoot(): string {
     [
       "export interface PluginToolRunContext {",
       "  readonly handle: string;",
-      "  readonly issues: unknown;",
+      "  readonly tasks: unknown;",
       "}",
       "/**",
       " * Result returned from a plugin tool handler.",
@@ -92,11 +92,11 @@ function fixtureRoot(): string {
       "async function handleExecuteTool(params: any) {",
       "  const runContext: PluginToolRunContext = Object.freeze({",
       "    handle: params.runContextHandle,",
-      "    issues: {",
-      '      a: () => callHost("run.issues.listCompanyIssues", {}),',
-      '      b: () => callHost("run.issues.listSubIssues", {}),',
-      '      c: () => callHost("run.issues.readIssueComments", {}),',
-      '      d: () => callHost("run.issues.readIssueAgentRun", {}),',
+      "    tasks: {",
+      '      a: () => callHost("run.tasks.listCompanyTasks", {}),',
+      '      b: () => callHost("run.tasks.listSubTasks", {}),',
+      '      c: () => callHost("run.tasks.readTaskComments", {}),',
+      '      d: () => callHost("run.tasks.readTaskAgentRun", {}),',
       "    },",
       "  });",
       "  return runContext;",
@@ -109,14 +109,14 @@ function fixtureRoot(): string {
     root,
     "packages/plugins/sdk/src/host-client-factory.ts",
     [
-      "const INSTALLATION_ISSUE_CONTROL_PLANE_METHODS = new Set();",
+      "const INSTALLATION_TASK_CONTROL_PLANE_METHODS = new Set();",
       "function requireExactRunContextHandle(params: any, context: any) {",
       "  if (context?.invalidInvocationScope) throw new Error();",
       "  const supplied = params.runContextHandle;",
       "  const active = context.invocationScope.pluginRunContextHandle;",
       "  if (supplied !== active) throw new Error();",
       "}",
-      "function requireRunIssueContextBoundary() {}",
+      "function requireRunTaskContextBoundary() {}",
       "",
     ].join("\n"),
   );
@@ -124,19 +124,19 @@ function fixtureRoot(): string {
     root,
     "apps/server/src/services/plugin-host-services.ts",
     [
-      "export interface PluginRunIssueContextReader {}",
-      "const pluginRunIssueContextReader = true;",
-      "pluginRunIssueContextReader.listCompanyIssues({});",
-      "pluginRunIssueContextReader.listSubIssues({});",
-      "pluginRunIssueContextReader.readIssueComments({});",
-      "pluginRunIssueContextReader.readIssueAgentRun({});",
+      "export interface PluginRunTaskContextReader {}",
+      "const pluginRunTaskContextReader = true;",
+      "pluginRunTaskContextReader.listCompanyTasks({});",
+      "pluginRunTaskContextReader.listSubTasks({});",
+      "pluginRunTaskContextReader.readTaskComments({});",
+      "pluginRunTaskContextReader.readTaskAgentRun({});",
       "",
     ].join("\n"),
   );
   write(
     root,
     "apps/server/src/services/run-interface-runtime.ts",
-    "gateway.resolvePluginRunContext( ); retrieval.listCompanyIssues; retrieval.listSubIssues; retrieval.readIssueComments; retrieval.readIssueAgentRun;\n",
+    "gateway.resolvePluginRunContext( ); retrieval.listCompanyTasks; retrieval.listSubTasks; retrieval.readTaskComments; retrieval.readTaskAgentRun;\n",
   );
   return root;
 }
@@ -186,7 +186,7 @@ test("requires the compiled worker manifest identity check", () => {
 
 for (const field of [
   "companyId",
-  "issueId",
+  "taskId",
   "sessionId",
   "runId",
   "agentId",
@@ -227,7 +227,7 @@ for (const field of ["companyId", "runId", "executionContext"] as const) {
   });
 }
 
-for (const field of ["companyId", "issueId", "runId", "sessionId"] as const) {
+for (const field of ["companyId", "taskId", "runId", "sessionId"] as const) {
   test(`rejects raw frozen-facade field ${field}`, () => {
     const root = fixtureRoot();
     const path = "packages/plugins/sdk/src/types.ts";
@@ -241,19 +241,19 @@ for (const field of ["companyId", "issueId", "runId", "sessionId"] as const) {
   });
 }
 
-test("rejects ordinary issues.* access from a run facade", () => {
+test("rejects ordinary tasks.* access from a run facade", () => {
   const root = fixtureRoot();
   const path = "packages/plugins/sdk/src/worker-rpc-host.ts";
   const source = readFileSync(join(root, path), "utf8");
-  write(root, path, source.replace('callHost("run.issues.listCompanyIssues"', 'callHost("issues.list"'));
+  write(root, path, source.replace('callHost("run.tasks.listCompanyTasks"', 'callHost("tasks.list"'));
   assert.ok(
     pluginRunContextBoundaryViolations(root).some((entry) =>
-      entry.includes("ordinary issues.*"),
+      entry.includes("ordinary tasks.*"),
     ),
   );
 });
 
-test("rejects run issue reads without exact handle validation", () => {
+test("rejects run task reads without exact handle validation", () => {
   const root = fixtureRoot();
   const path = "packages/plugins/sdk/src/host-client-factory.ts";
   const source = readFileSync(join(root, path), "utf8");

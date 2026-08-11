@@ -349,9 +349,9 @@ export const demoProfiles = [
     steps: ["time.now", "echo.echo"],
   },
   {
-    id: "child-issue-proposal",
+    id: "child-task-proposal",
     profileId: "approval-gated-writes",
-    title: "Child issue proposal",
+    title: "Child task proposal",
     steps: ["todo.list", "todo.add"],
   },
   {

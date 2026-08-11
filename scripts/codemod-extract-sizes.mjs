@@ -103,7 +103,7 @@
  * bracket sites exist in this codebase (verified during Step 0 inventory),
  * so only the width form is handled.
  *
- * `calc(theme(spacing.N)±Mpx)` forms (components/IssueRow.tsx): theme() is a
+ * `calc(theme(spacing.N)±Mpx)` forms (components/TaskRow.tsx): theme() is a
  * Tailwind BUILD-TIME function and does not work inside a runtime CSS custom
  * property. This codemod resolves theme(spacing.N) using Tailwind v4's
  * default `--spacing: 0.25rem` base (confirmed via Step 0: no `--spacing`
@@ -472,7 +472,7 @@ function main() {
     lines.push("   - components/ui/scroll-area.tsx (rounded-[inherit]) — CSS keyword, not a");
     lines.push("     literal value; nothing to extract.");
     lines.push("   - Bracket values that only wrap var(--radix-*-trigger-width/height) or");
-    lines.push("     var(--new-issue-dialog-height) etc. are rewritten to the bare paren");
+    lines.push("     var(--new-task-dialog-height) etc. are rewritten to the bare paren");
     lines.push("     form directly (e.g. w-(--radix-popover-trigger-width)) — these are");
     lines.push("     runtime library/component variables, not design values, so no new");
     lines.push("     --sz-* token is minted for them (see TOKEN-AUDIT.md extraction log");

@@ -24,7 +24,7 @@ test("rejects correlation fields and wire literals from public boundaries", () =
     ["apps/server/src/routes/adapters.ts", "const result = { nativeCorrelationKind: kind };"],
     ["apps/server/src/routes/openapi.ts", "const schema = z.object({ nativeCorrelation: z.unknown() });"],
     ["packages/shared/src/types/adapter.ts", "export interface PublicAdapter { nativeCorrelation?: unknown }"],
-    ["apps/ui/src/api/adapters.ts", "const kind = 'issue-execution-native/v1';"],
+    ["apps/ui/src/api/adapters.ts", "const kind = 'task-execution-native/v1';"],
     ["packages/plugins/sdk/src/index.ts", "export const nativeCorrelationKind = 'leak';"],
   ] as const;
 
@@ -40,7 +40,7 @@ test("rejects adapter codec and generic result propagation", () => {
       "export const nativeCorrelationCodec = codec;",
     ],
     [
-      "packages/adapter-utils/src/issue-execution.ts",
+      "packages/adapter-utils/src/task-execution.ts",
       "export interface Result { nativeCorrelation?: unknown }",
     ],
     [
@@ -66,10 +66,10 @@ test("allows only the fixed ACP envelope literal in its canonical owner", () => 
     ["nativeCorrelation"],
   );
 
-  const duplicateLiteral = `${FIXED_CORRELATION_SOURCE}\nconst duplicate = "issue-execution-native/v1";\n`;
+  const duplicateLiteral = `${FIXED_CORRELATION_SOURCE}\nconst duplicate = "task-execution-native/v1";\n`;
   assert.equal(
     scan(FIXED_CORRELATION_PATH, duplicateLiteral).filter(
-      ({ term }) => term === "issue-execution-native/v1",
+      ({ term }) => term === "task-execution-native/v1",
     ).length,
     2,
   );
@@ -78,7 +78,7 @@ test("allows only the fixed ACP envelope literal in its canonical owner", () => 
 test("ACPX event boundaries cannot transport correlation fields", () => {
   for (const path of [
     "packages/adapter-utils/src/acpx-runtime/events.ts",
-    "apps/server/src/services/issue-execution-plan-live.ts",
+    "apps/server/src/services/task-execution-plan-live.ts",
   ]) {
     const violations = scan(
       path,
@@ -95,10 +95,10 @@ test("ACPX event boundaries cannot transport correlation fields", () => {
 test("fixed envelope literal cannot move to another internal service", () => {
   const violations = scan(
     "apps/server/src/services/native-correlation.ts",
-    'const envelopeVersion = "issue-execution-native/v1";',
+    'const envelopeVersion = "task-execution-native/v1";',
   );
   assert.deepEqual(
     violations.map(({ term }) => term),
-    ["issue-execution-native/v1"],
+    ["task-execution-native/v1"],
   );
 });

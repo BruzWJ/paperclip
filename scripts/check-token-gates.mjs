@@ -121,7 +121,8 @@ function listFiles() {
 // though `#` itself is a strong enough anchor in practice).
 // A genuine CSS hex color is never glued directly to an identifier
 // character (letter/digit/underscore) or `/` immediately before the `#` —
-// that shape is an issue/PR reference like "acme/web#241" or "acme/web#12"
+// that shape is a repository ticket/PR reference like "acme/web#241" or
+// "acme/web#12"
 // (Batch 1's codemod header documented this exact false-positive risk for
 // its own hex-literal sweep; the same guard applies here). A real color
 // literal is preceded by a delimiter (quote, colon, paren, comma,
@@ -134,15 +135,15 @@ const HEX_COLOR_RE = /(?<![a-zA-Z0-9_/])#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-
 // MUST match (literal numeric channels).
 const COLOR_FN_LITERAL_RE = /\b(?:rgb|rgba|hsl|hsla|oklch)\(\s*(?!var\()[0-9.%-]/g;
 
-function findColorLiteralIssues(content) {
-  const issues = [];
+function findColorLiteralViolations(content) {
+  const violations = [];
   for (const m of content.matchAll(HEX_COLOR_RE)) {
-    issues.push({ index: m.index, snippet: m[0] });
+    violations.push({ index: m.index, snippet: m[0] });
   }
   for (const m of content.matchAll(COLOR_FN_LITERAL_RE)) {
-    issues.push({ index: m.index, snippet: m[0] });
+    violations.push({ index: m.index, snippet: m[0] });
   }
-  return issues;
+  return violations;
 }
 
 // ── Gate 2: value-bearing arbitrary bracket utilities ───────────────────
@@ -192,8 +193,8 @@ function bracketCarriesValue(raw) {
   return false;
 }
 
-function findArbitraryBracketIssues(content) {
-  const issues = [];
+function findArbitraryBracketViolations(content) {
+  const violations = [];
   for (const m of content.matchAll(BRACKET_RE)) {
     const [full, , word, raw] = m;
     const matchEnd = m.index + full.length;
@@ -212,10 +213,10 @@ function findArbitraryBracketIssues(content) {
     }
 
     if (!raw.includes("[") && bracketCarriesValue(raw)) {
-      issues.push({ index: m.index, snippet: `${word}-[${raw}]` });
+      violations.push({ index: m.index, snippet: `${word}-[${raw}]` });
     }
   }
-  return issues;
+  return violations;
 }
 
 // ── Gate 3: raw font-size declarations ──────────────────────────────────
@@ -226,18 +227,18 @@ const FONT_SIZE_CLASS_RE = /\btext-\[(?:[0-9.]+(?:px|rem|em)|[0-9.]+\/[0-9.]+)\]
 const FONT_SIZE_INLINE_RE = /\bfontSize\s*:\s*["'][0-9][^"']*["']/g;
 const FONT_SIZE_CSS_PROP_RE = /(?<!-)\bfont-size\s*:\s*["'`][0-9][^"'`]*["'`]/g;
 
-function findFontSizeIssues(content) {
-  const issues = [];
+function findFontSizeViolations(content) {
+  const violations = [];
   for (const m of content.matchAll(FONT_SIZE_CLASS_RE)) {
-    issues.push({ index: m.index, snippet: m[0] });
+    violations.push({ index: m.index, snippet: m[0] });
   }
   for (const m of content.matchAll(FONT_SIZE_INLINE_RE)) {
-    issues.push({ index: m.index, snippet: m[0] });
+    violations.push({ index: m.index, snippet: m[0] });
   }
   for (const m of content.matchAll(FONT_SIZE_CSS_PROP_RE)) {
-    issues.push({ index: m.index, snippet: m[0] });
+    violations.push({ index: m.index, snippet: m[0] });
   }
-  return issues;
+  return violations;
 }
 
 function lineNumberAt(content, index) {
@@ -257,23 +258,23 @@ function main() {
 
     const allowed = isAllowlisted(relPathPosix, allowlist);
 
-    const g1 = findColorLiteralIssues(content);
-    const g2 = findArbitraryBracketIssues(content);
-    const g3 = findFontSizeIssues(content);
+    const g1 = findColorLiteralViolations(content);
+    const g2 = findArbitraryBracketViolations(content);
+    const g3 = findFontSizeViolations(content);
 
     if (allowed) {
       allowlistedSkips += g1.length + g2.length + g3.length;
       continue;
     }
 
-    for (const issue of g1) {
-      violations.gate1.push({ file: relPathPosix, line: lineNumberAt(content, issue.index), snippet: issue.snippet });
+    for (const violation of g1) {
+      violations.gate1.push({ file: relPathPosix, line: lineNumberAt(content, violation.index), snippet: violation.snippet });
     }
-    for (const issue of g2) {
-      violations.gate2.push({ file: relPathPosix, line: lineNumberAt(content, issue.index), snippet: issue.snippet });
+    for (const violation of g2) {
+      violations.gate2.push({ file: relPathPosix, line: lineNumberAt(content, violation.index), snippet: violation.snippet });
     }
-    for (const issue of g3) {
-      violations.gate3.push({ file: relPathPosix, line: lineNumberAt(content, issue.index), snippet: issue.snippet });
+    for (const violation of g3) {
+      violations.gate3.push({ file: relPathPosix, line: lineNumberAt(content, violation.index), snippet: violation.snippet });
     }
   }
 
@@ -282,7 +283,7 @@ function main() {
   console.log("check-token-gates summary");
   console.log(`  Files scanned:                 ${files.length}`);
   console.log(`  Allowlist entries loaded:      ${allowlist.length}`);
-  console.log(`  Allowlisted issues skipped:    ${allowlistedSkips}`);
+  console.log(`  Allowlisted violations skipped: ${allowlistedSkips}`);
   console.log("");
   console.log(`  Gate 1 (color literals):       ${violations.gate1.length === 0 ? "CLEAN" : `${violations.gate1.length} violation(s)`}`);
   console.log(`  Gate 2 (arbitrary bracket vals): ${violations.gate2.length === 0 ? "CLEAN" : `${violations.gate2.length} violation(s)`}`);

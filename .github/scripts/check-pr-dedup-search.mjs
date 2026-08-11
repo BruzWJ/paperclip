@@ -4,7 +4,7 @@
  * Checks that the PR body affirms the author searched for similar PRs before
  * opening this one. Looks for a checked checklist line matching the dedup
  * affirmation in the PR template. Respects the same skip prefixes as the
- * linked-issue gate.
+ * linked-ticket gate.
  *
  * Export: checkDedupSearch(prBody, prTitle) → { passed, failures }
  */

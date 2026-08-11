@@ -60,8 +60,8 @@ const RAW_CENSUS_IGNORED_DIRECTORIES = new Set([
 ]);
 const RAW_VITEST_FILE_PATTERN = /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/;
 const SERIALIZED_FAMILY_PATTERNS = [
-  /(?:^|\/)issue-execution(?:-|\/)/,
-  /(?:^|\/)issue-session(?:-|\/)/,
+  /(?:^|\/)task-execution(?:-|\/)/,
+  /(?:^|\/)task-session(?:-|\/)/,
   /(?:^|\/)[^/]*liveness[^/]*\.test\.ts$/,
   /(?:^|\/)[^/]*(?:prompt|acp)[^/]*\.test\.ts$/,
   /(?:^|\/)[^/]*postgres[^/]*\.test\.ts$/,
@@ -336,11 +336,11 @@ test("execution, Session, prompt/ACP, and PostgreSQL suites are structurally ser
   }
 
   const representatives = [
-    "apps/server/src/services/issue-execution-run-service.test.ts",
-    "apps/server/src/services/issue-session/publication.test.ts",
+    "apps/server/src/services/task-execution-run-service.test.ts",
+    "apps/server/src/services/task-session/publication.test.ts",
     "apps/server/src/services/acp-prompt-settlement.test.ts",
     "apps/server/src/services/prompt-capability-gateway.test.ts",
-    "apps/server/src/__tests__/ordinary-issue-runtime-postgres.test.ts",
+    "apps/server/src/__tests__/ordinary-task-runtime-postgres.test.ts",
   ];
   for (const removed of representatives) {
     assert.throws(

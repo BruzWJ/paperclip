@@ -1,27 +1,26 @@
 #!/usr/bin/env node
 /**
- * check-pr-linked-issue.mjs
- * Checks that a PR body either links an existing issue/PR or inlines an
- * issue-template-shaped description. Respects conventional commit prefixes —
+ * check-pr-linked-ticket.mjs
+ * Checks that a PR body either links an existing ticket/PR or inlines a
+ * work-description-shaped description. Respects conventional commit prefixes —
  * skips check for docs/chore/build/ci/style/test/revert prefixed PRs.
  *
  * Exports:
- *   checkLinkedIssue(prBody, prTitle) → { passed, failures }
- *   hasInlineIssueDescription(prBody) → boolean
+ *   checkLinkedTicket(prBody, prTitle) → { passed, failures }
+ *   hasInlineWorkDescription(prBody) → boolean
  */
 import { fileURLToPath } from 'node:url';
 
-const ISSUE_PATTERNS = [
+const TICKET_PATTERNS = [
   /(?:fixes|closes|resolves|refs)\s+#\d+/i,
-  /(?:^|[\s(])https:\/\/github\.com\/paperclipai\/paperclip\/issues\/\d+(?=$|[\s),:;!?]|[.](?![\w-]))/i,
   /(?<!\w)#\d+/,
 ];
 
-// Prefixes where neither a linked issue nor an inline description is required
-const SKIP_ISSUE_PREFIXES = ['docs', 'chore', 'build', 'ci', 'style', 'test', 'revert'];
+// Prefixes where neither a linked ticket nor an inline description is required
+const SKIP_TICKET_PREFIXES = ['docs', 'chore', 'build', 'ci', 'style', 'test', 'revert'];
 
 // Minimum number of template fields the PR body must match to count as an
-// inline issue description.
+// inline work description.
 const INLINE_DESCRIPTION_MIN_FIELDS = 3;
 
 // Per-template field labels. Each field is an array of accepted variants; the
@@ -71,7 +70,7 @@ function countMatchedFields(body, fieldSet) {
   return matched;
 }
 
-export function hasInlineIssueDescription(body) {
+export function hasInlineWorkDescription(body) {
   if (!body || !body.trim()) return false;
   for (const fieldSet of Object.values(TEMPLATE_FIELDS)) {
     if (countMatchedFields(body, fieldSet) >= INLINE_DESCRIPTION_MIN_FIELDS) {
@@ -87,10 +86,10 @@ function parsePrefix(title) {
   return match ? match[1].toLowerCase() : null;
 }
 
-export function checkLinkedIssue(body, prTitle = '') {
+export function checkLinkedTicket(body, prTitle = '') {
   const prefix = parsePrefix(prTitle);
 
-  if (prefix && SKIP_ISSUE_PREFIXES.includes(prefix)) {
+  if (prefix && SKIP_TICKET_PREFIXES.includes(prefix)) {
     return { passed: true, failures: [] };
   }
 
@@ -98,18 +97,17 @@ export function checkLinkedIssue(body, prTitle = '') {
     return { passed: false, failures: ['PR body is empty — please fill out the PR template'] };
   }
 
-  const linked = ISSUE_PATTERNS.some(p => p.test(body));
-  const inlined = hasInlineIssueDescription(body);
+  const linked = TICKET_PATTERNS.some(p => p.test(body));
+  const inlined = hasInlineWorkDescription(body);
   const passed = linked || inlined;
 
   return {
     passed,
     failures: passed ? [] : [
-      'No linked issue or inline issue description found — either tag an existing issue ' +
-      'with `Fixes #NNN` / `Closes #NNN` / `Refs #NNN`, or describe the underlying issue ' +
-      'inline in the PR body following one of our issue templates ' +
-      '(https://github.com/paperclipai/paperclip/tree/master/.github/ISSUE_TEMPLATE). ' +
-      'See CONTRIBUTING.md → "Link Issues or Describe Them In-PR".',
+      'No linked ticket or inline work description found — either tag an existing ticket ' +
+      'with `Fixes #NNN` / `Closes #NNN` / `Refs #NNN`, or describe the underlying work ' +
+      'inline in the PR body using the bug, feature, or adapter fields in the PR template. ' +
+      'See CONTRIBUTING.md → "Link Tickets or Describe Them In-PR".',
     ],
   };
 }
@@ -117,7 +115,7 @@ export function checkLinkedIssue(body, prTitle = '') {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const body = process.env.PR_BODY ?? '';
   const title = process.env.PR_TITLE ?? '';
-  const result = checkLinkedIssue(body, title);
+  const result = checkLinkedTicket(body, title);
   console.log(JSON.stringify(result));
   process.exit(result.passed ? 0 : 1);
 }

@@ -30,7 +30,7 @@ const THEMES = ["dark", "light"] as const;
 // screenshot always captures the settled terminal state.
 const EXTRA_SETTLE_MS: Record<string, number> = {
   // Delayed visual effects clear after 3s plus a 1s fade.
-  "product-issue-management--full-surface-matrix": 4500,
+  "product-task-management--full-surface-matrix": 4500,
 };
 
 // Stories with a genuinely bimodal render race that cannot be settled by

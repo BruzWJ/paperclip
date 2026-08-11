@@ -32,7 +32,7 @@ const SOURCE_EXTENSIONS = new Set([
 const FORBIDDEN_TERMS = [
   "nativeCorrelationKind",
   "nativeCorrelation",
-  "issue-execution-native/v1",
+  "task-execution-native/v1",
 ] as const;
 
 type ForbiddenTerm = (typeof FORBIDDEN_TERMS)[number];
@@ -80,7 +80,7 @@ function fixedAcpCorrelationContractSpans(
   source: string,
 ): readonly AllowedOccurrenceSpan[] {
   if (path !== FIXED_ACP_CORRELATION_CONTRACT_PATH) return [];
-  const literal = '"issue-execution-native/v1"';
+  const literal = '"task-execution-native/v1"';
   const start = source.indexOf(literal);
   if (start === -1 || source.indexOf(literal, start + literal.length) !== -1) {
     return [];
@@ -88,7 +88,7 @@ function fixedAcpCorrelationContractSpans(
   return [{
     start,
     end: start + literal.length,
-    term: "issue-execution-native/v1",
+    term: "task-execution-native/v1",
   }];
 }
 

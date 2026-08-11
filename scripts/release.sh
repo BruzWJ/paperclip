@@ -134,7 +134,7 @@ done < <(printf '%s\n' "$PUBLIC_PACKAGE_INFO" | cut -f2)
 [ -n "$PUBLIC_PACKAGE_INFO" ] || release_fail "no public packages were found in the workspace."
 
 # Pre-fetch published versions for every public package in parallel so the
-# version helpers below do not each issue one serial `npm view` call per
+# version helpers below do not each make one serial `npm view` call per
 # package (see scripts/release-registry-versions.mjs).
 RELEASE_PACKAGE_VERSIONS_FILE="$(mktemp)"
 export RELEASE_PACKAGE_VERSIONS_FILE

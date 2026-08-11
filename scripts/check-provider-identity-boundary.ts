@@ -10,7 +10,7 @@ import {
 const SHARED_BOUNDARY = "packages/shared/src/provider-child-boundary.ts";
 const ADAPTER_VALIDATOR = "packages/shared/src/validators/agent.ts";
 const ATTEMPT_EXECUTOR =
-  "apps/server/src/services/issue-execution-attempt-executor.ts";
+  "apps/server/src/services/task-execution-attempt-executor.ts";
 const AGENT_ACTION_PORT =
   "apps/server/src/services/runtime-agent-action-port.ts";
 const SERVER_ENTRY = "apps/server/src/index.ts";
@@ -31,12 +31,12 @@ const RETIRED_PROVIDER_IDENTITY_TOKENS = [
   "PAPERCLIP_COMPANY_ID",
   "PAPERCLIP_RUN_ID",
   "PAPERCLIP_TASK_ID",
-  "PAPERCLIP_ISSUE_WORK_MODE",
+  "PAPERCLIP_TASK_WORK_MODE",
   "PAPERCLIP_WAKE_REASON",
   "PAPERCLIP_WAKE_COMMENT_ID",
   "PAPERCLIP_APPROVAL_ID",
   "PAPERCLIP_APPROVAL_STATUS",
-  "PAPERCLIP_LINKED_ISSUE_IDS",
+  "PAPERCLIP_LINKED_TASK_IDS",
   "PAPERCLIP_WAKE_PAYLOAD_JSON",
   "PAPERCLIP_API_URL",
   "PAPERCLIP_API_KEY",
@@ -79,7 +79,7 @@ function read(repositoryRoot: string, path: string): string | null {
 
 /**
  * Proves provider children receive only provider-native configuration plus the
- * canonical ACP request, never Paperclip identity, REST, instruction, or issue
+ * canonical ACP request, never Paperclip identity, REST, instruction, or task
  * context channels.
  */
 export function providerIdentityBoundaryViolations(
@@ -91,8 +91,8 @@ export function providerIdentityBoundaryViolations(
       ignoredPaths: [
         "scripts/check-provider-identity-boundary.ts",
         "scripts/check-provider-identity-boundary.test.ts",
-        "scripts/check-cross-issue-memory-removal.ts",
-        "scripts/check-cross-issue-memory-removal.test.ts",
+        "scripts/check-cross-task-memory-removal.ts",
+        "scripts/check-cross-task-memory-removal.test.ts",
       ],
       roots: [
         ".agents",

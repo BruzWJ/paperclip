@@ -19,8 +19,8 @@ import {
 
 const routeTestPattern = /[^/]*(?:route|routes|authz)[^/]*\.test\.ts$/;
 const serializedDomainTestPatterns = Object.freeze([
-  /(?:^|\/)issue-execution(?:-|\/)/,
-  /(?:^|\/)issue-session(?:-|\/)/,
+  /(?:^|\/)task-execution(?:-|\/)/,
+  /(?:^|\/)task-session(?:-|\/)/,
   /(?:^|\/)[^/]*liveness[^/]*\.test\.ts$/,
   /(?:^|\/)[^/]*(?:prompt|acp)[^/]*\.test\.ts$/,
   /(?:^|\/)[^/]*postgres[^/]*\.test\.ts$/,
@@ -40,7 +40,7 @@ const serializedIsolationSuites = new Set([
   "apps/server/src/__tests__/invite-expiry.test.ts",
   "apps/server/src/__tests__/invite-join-manager.test.ts",
   "apps/server/src/__tests__/invite-onboarding-text.test.ts",
-  "apps/server/src/__tests__/issues-service.test.ts",
+  "apps/server/src/__tests__/tasks-service.test.ts",
   "apps/server/src/__tests__/project-routes-env.test.ts",
   "apps/server/src/__tests__/redaction.test.ts",
   "apps/server/src/__tests__/routines-e2e.test.ts",

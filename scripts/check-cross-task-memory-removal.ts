@@ -19,8 +19,8 @@ import {
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "..");
 const SELF_PATHS = new Set([
-  "scripts/check-cross-issue-memory-removal.ts",
-  "scripts/check-cross-issue-memory-removal.test.ts",
+  "scripts/check-cross-task-memory-removal.ts",
+  "scripts/check-cross-task-memory-removal.test.ts",
 ]);
 const SCAN_ROOTS = [
   ".agents",
@@ -217,12 +217,12 @@ const PROVIDER_NAMES = [
   "codex",
 ] as const;
 
-export interface CrossIssueMemoryRemovalFile {
+export interface CrossTaskMemoryRemovalFile {
   readonly path: string;
   readonly source: string;
 }
 
-export interface CrossIssueMemoryRemovalViolation {
+export interface CrossTaskMemoryRemovalViolation {
   readonly path: string;
   readonly line: number;
   readonly term: string;
@@ -264,8 +264,8 @@ function declaredFixtureTerms(
 }
 
 function addViolation(
-  violations: CrossIssueMemoryRemovalViolation[],
-  file: CrossIssueMemoryRemovalFile,
+  violations: CrossTaskMemoryRemovalViolation[],
+  file: CrossTaskMemoryRemovalFile,
   fixtureTerms: ReadonlySet<string>,
   input: {
     readonly offset: number;
@@ -293,25 +293,25 @@ function occurrences(source: string, token: string): number[] {
 }
 
 function scanDirectRetiredTokens(
-  file: CrossIssueMemoryRemovalFile,
+  file: CrossTaskMemoryRemovalFile,
   fixtureTerms: ReadonlySet<string>,
-  violations: CrossIssueMemoryRemovalViolation[],
+  violations: CrossTaskMemoryRemovalViolation[],
 ): void {
   for (const token of DIRECT_RETIRED_TOKENS) {
     for (const offset of occurrences(file.source, token)) {
       addViolation(violations, file, fixtureTerms, {
         offset,
         term: token,
-        reason: "retired cross-issue memory/session identifier",
+        reason: "retired cross-task memory/session identifier",
       });
     }
   }
 }
 
 function scanMemoryContracts(
-  file: CrossIssueMemoryRemovalFile,
+  file: CrossTaskMemoryRemovalFile,
   fixtureTerms: ReadonlySet<string>,
-  violations: CrossIssueMemoryRemovalViolation[],
+  violations: CrossTaskMemoryRemovalViolation[],
 ): void {
   for (const expression of MEMORY_CONTRACT_PATTERNS) {
     expression.lastIndex = 0;
@@ -337,9 +337,9 @@ function scanMemoryContracts(
 }
 
 function scanAgentMandate(
-  file: CrossIssueMemoryRemovalFile,
+  file: CrossTaskMemoryRemovalFile,
   fixtureTerms: ReadonlySet<string>,
-  violations: CrossIssueMemoryRemovalViolation[],
+  violations: CrossTaskMemoryRemovalViolation[],
 ): void {
   if (!/(?:^|\/)(?:AGENTS|HEARTBEAT)\.md$/i.test(file.path)) return;
   const lines = file.source.split("\n");
@@ -375,9 +375,9 @@ function acpxImports(source: string): string[] {
 }
 
 function scanAcpxRuntimeGraph(
-  file: CrossIssueMemoryRemovalFile,
+  file: CrossTaskMemoryRemovalFile,
   fixtureTerms: ReadonlySet<string>,
-  violations: CrossIssueMemoryRemovalViolation[],
+  violations: CrossTaskMemoryRemovalViolation[],
 ): void {
   // ACPX runtime imports in tests exercise both valid temporary discovery and
   // deliberately invalid boundaries. Only production owners participate in
@@ -407,7 +407,7 @@ function scanAcpxRuntimeGraph(
   }
 
   // Discovery, readiness, and one-shot execution intentionally open a
-  // temporary, discarded ACPX session. They are not Paperclip cross-issue
+  // temporary, discarded ACPX session. They are not Paperclip cross-task
   // stores, and their stateful runtime vocabulary must stay confined to these
   // disposable owners.
   if (ACPX_DISPOSABLE_RUNTIME_OWNERS.has(file.path)) return;
@@ -444,7 +444,7 @@ function scanAcpxRuntimeGraph(
   }
 }
 
-function providerFrom(file: CrossIssueMemoryRemovalFile): string | null {
+function providerFrom(file: CrossTaskMemoryRemovalFile): string | null {
   const path = file.path.toLowerCase();
   const providerInPath = PROVIDER_NAMES.find((provider) =>
     new RegExp(`(?:^|[\\/_.-])${provider}(?:[\\/_.-]|$)`).test(path),
@@ -456,9 +456,9 @@ function providerFrom(file: CrossIssueMemoryRemovalFile): string | null {
 }
 
 function scanProviderContinuation(
-  file: CrossIssueMemoryRemovalFile,
+  file: CrossTaskMemoryRemovalFile,
   fixtureTerms: ReadonlySet<string>,
-  violations: CrossIssueMemoryRemovalViolation[],
+  violations: CrossTaskMemoryRemovalViolation[],
 ): void {
   const provider = providerFrom(file);
   if (!provider) return;
@@ -515,9 +515,9 @@ function scanProviderContinuation(
 }
 
 function scanManagedCodexHome(
-  file: CrossIssueMemoryRemovalFile,
+  file: CrossTaskMemoryRemovalFile,
   fixtureTerms: ReadonlySet<string>,
-  violations: CrossIssueMemoryRemovalViolation[],
+  violations: CrossTaskMemoryRemovalViolation[],
 ): void {
   for (const offset of occurrences(file.source, "CODEX_HOME")) {
     const context = file.source.slice(
@@ -546,9 +546,9 @@ function scanManagedCodexHome(
 }
 
 function scanAgentRuntimeStateAbi(
-  file: CrossIssueMemoryRemovalFile,
+  file: CrossTaskMemoryRemovalFile,
   fixtureTerms: ReadonlySet<string>,
-  violations: CrossIssueMemoryRemovalViolation[],
+  violations: CrossTaskMemoryRemovalViolation[],
 ): void {
   const expression =
     /agent_runtime_state[\s\S]{0,240}\b(?:state_json|session_id|sessionId)\b|\b(?:state_json|session_id|sessionId)\b[\s\S]{0,240}agent_runtime_state/g;
@@ -562,9 +562,9 @@ function scanAgentRuntimeStateAbi(
 }
 
 function scanResultCorrelationAbi(
-  file: CrossIssueMemoryRemovalFile,
+  file: CrossTaskMemoryRemovalFile,
   fixtureTerms: ReadonlySet<string>,
-  violations: CrossIssueMemoryRemovalViolation[],
+  violations: CrossTaskMemoryRemovalViolation[],
 ): void {
   const expression =
     /AdapterExecutionResult[\s\S]{0,400}nativeCorrelation|nativeCorrelation[\s\S]{0,400}AdapterExecutionResult/g;
@@ -578,9 +578,9 @@ function scanResultCorrelationAbi(
 }
 
 function scanRemovedAssetPath(
-  file: CrossIssueMemoryRemovalFile,
+  file: CrossTaskMemoryRemovalFile,
   fixtureTerms: ReadonlySet<string>,
-  violations: CrossIssueMemoryRemovalViolation[],
+  violations: CrossTaskMemoryRemovalViolation[],
 ): void {
   const match = REMOVED_ASSET_PATH_PATTERNS.find((pattern) =>
     pattern.test(file.path),
@@ -594,10 +594,10 @@ function scanRemovedAssetPath(
   });
 }
 
-export function scanCrossIssueMemoryRemovalFiles(
-  inputFiles: readonly CrossIssueMemoryRemovalFile[],
-): CrossIssueMemoryRemovalViolation[] {
-  const violations: CrossIssueMemoryRemovalViolation[] = [];
+export function scanCrossTaskMemoryRemovalFiles(
+  inputFiles: readonly CrossTaskMemoryRemovalFile[],
+): CrossTaskMemoryRemovalViolation[] {
+  const violations: CrossTaskMemoryRemovalViolation[] = [];
   for (const rawFile of inputFiles) {
     const file = {
       path: normalizePath(rawFile.path),
@@ -631,7 +631,7 @@ function isTextFile(path: string): boolean {
 function walk(
   absolutePath: string,
   repositoryRoot: string,
-  files: CrossIssueMemoryRemovalFile[],
+  files: CrossTaskMemoryRemovalFile[],
 ): void {
   if (!existsSync(absolutePath)) return;
   const stats = statSync(absolutePath);
@@ -648,10 +648,10 @@ function walk(
   }
 }
 
-export function listCrossIssueMemoryRemovalFiles(
+export function listCrossTaskMemoryRemovalFiles(
   repositoryRoot = REPOSITORY_ROOT,
-): CrossIssueMemoryRemovalFile[] {
-  const files: CrossIssueMemoryRemovalFile[] = [];
+): CrossTaskMemoryRemovalFile[] {
+  const files: CrossTaskMemoryRemovalFile[] = [];
   for (const root of SCAN_ROOTS) {
     walk(resolve(repositoryRoot, root), repositoryRoot, files);
   }
@@ -704,11 +704,11 @@ function canonicalOwnershipViolations(repositoryRoot: string): string[] {
   return violations;
 }
 
-export function crossIssueMemoryRemovalViolations(
+export function crossTaskMemoryRemovalViolations(
   repositoryRoot = REPOSITORY_ROOT,
 ): string[] {
-  const scanned = scanCrossIssueMemoryRemovalFiles(
-    listCrossIssueMemoryRemovalFiles(repositoryRoot),
+  const scanned = scanCrossTaskMemoryRemovalFiles(
+    listCrossTaskMemoryRemovalFiles(repositoryRoot),
   ).map(
     (violation) =>
       `${violation.path}:${violation.line}: ${violation.reason} (${violation.term})`,
@@ -716,12 +716,12 @@ export function crossIssueMemoryRemovalViolations(
   return [...scanned, ...canonicalOwnershipViolations(repositoryRoot)].sort();
 }
 
-export function assertCrossIssueMemoryRemoval(
+export function assertCrossTaskMemoryRemoval(
   repositoryRoot = REPOSITORY_ROOT,
 ): void {
   assertNoGateViolations(
-    "Cross-issue-memory removal check",
-    crossIssueMemoryRemovalViolations(repositoryRoot),
+    "Cross-task-memory removal check",
+    crossTaskMemoryRemovalViolations(repositoryRoot),
   );
 }
 
@@ -731,8 +731,8 @@ if (
   pathToFileURL(resolve(invokedPath)).href === import.meta.url
 ) {
   try {
-    assertCrossIssueMemoryRemoval();
-    console.log("Cross-issue-memory removal check passed.");
+    assertCrossTaskMemoryRemoval();
+    console.log("Cross-task-memory removal check passed.");
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

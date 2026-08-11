@@ -2,11 +2,11 @@ import { chromium } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { argv } from "node:process";
 
-const outDir = argv[2] ?? "/tmp/paperclip/pap-2189-subissues-screens";
+const outDir = argv[2] ?? "/tmp/paperclip/pap-2189-subtasks-screens";
 const baseUrl = argv[3] ?? "http://localhost:6006";
 await mkdir(outDir, { recursive: true });
 
-const id = "ux-labs-sub-issues-workflow-checklist--default";
+const id = "ux-labs-sub-tasks-workflow-checklist--default";
 const runs = [
   { name: "desktop-1440x900-dark", w: 1440, h: 900, theme: "dark" },
   { name: "desktop-1440x900-light", w: 1440, h: 900, theme: "light" },

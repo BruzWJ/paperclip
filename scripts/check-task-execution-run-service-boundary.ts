@@ -48,17 +48,17 @@ const SOURCE_EXTENSIONS = new Set([
 ]);
 
 const SELF_TEST_PATH =
-  "scripts/check-issue-execution-run-service-boundary.test.ts";
+  "scripts/check-task-execution-run-service-boundary.test.ts";
 const RUN_SERVICE_PATH =
-  "apps/server/src/services/issue-execution-run-service.ts";
+  "apps/server/src/services/task-execution-run-service.ts";
 const DISPATCHER_POSTGRES_PATH =
-  "apps/server/src/services/issue-execution-dispatcher-postgres.ts";
+  "apps/server/src/services/task-execution-dispatcher-postgres.ts";
 const ATTEMPT_EXECUTOR_PATH =
-  "apps/server/src/services/issue-execution-attempt-executor.ts";
+  "apps/server/src/services/task-execution-attempt-executor.ts";
 const RUN_FINALIZER_PATH =
-  "apps/server/src/services/issue-execution-finalization-postgres.ts";
+  "apps/server/src/services/task-execution-finalization-postgres.ts";
 const RUN_SCHEMA_PATH =
-  "packages/db/schema/issue_execution_runs.ts";
+  "packages/db/schema/task_execution_runs.ts";
 const RUN_ROUTE_PATH = "apps/server/src/routes/runs.ts";
 const TOOL_GATEWAY_PATH =
   "apps/server/src/services/runtime-tool-gateway.ts";
@@ -98,16 +98,16 @@ const LEGACY_PATH_FRAGMENTS = [
   ["heart", "beat_runs"].join(""),
 ] as const;
 
-const RUN_TABLE_IDENTIFIER = ["issueExecution", "Runs"].join("");
-const RUN_TABLE_SQL_NAME = ["issue_execution", "_runs"].join("");
+const RUN_TABLE_IDENTIFIER = ["taskExecution", "Runs"].join("");
+const RUN_TABLE_SQL_NAME = ["task_execution", "_runs"].join("");
 const CURRENT_RUN_REF_ALIAS = ["current", "RunRefId"].join("");
 const LIVENESS_TABLE_IDENTIFIER =
-  ["issueExecutionRun", "LivenessFacts"].join("");
+  ["taskExecutionRun", "LivenessFacts"].join("");
 
 const RUN_ENVELOPE_COLUMNS = [
   "id",
   "companyId",
-  "issueId",
+  "taskId",
   "sessionId",
   "executionScopeId",
   "kind",
@@ -117,7 +117,7 @@ const RUN_ENVELOPE_COLUMNS = [
   "adapterConfigRevisionId",
   "executionWorkspaceBindingId",
   "executionMode",
-  "issueExecutionAuthorityId",
+  "taskExecutionAuthorityId",
   "consultExecutionId",
   "parentRunId",
   "retryOfRunId",
@@ -165,7 +165,6 @@ function isIgnored(path: string): boolean {
     normalized.includes("/dist/") ||
     normalized.includes("/node_modules/") ||
     normalized.includes("/storybook-static/") ||
-    normalized.includes("/tasks/") ||
     toPosix(path) === SELF_TEST_PATH
   );
 }
@@ -452,7 +451,7 @@ function assertExactColumns(
 }
 
 function assertControlForeignKeyShape(sourceFile: ts.SourceFile): void {
-  const call = getVariableCall(sourceFile, "issueExecutionRunControls");
+  const call = getVariableCall(sourceFile, "taskExecutionRunControls");
   const columnCounts: number[] = [];
   const visit = (node: ts.Node): void => {
     if (
@@ -478,7 +477,7 @@ function assertControlForeignKeyShape(sourceFile: ts.SourceFile): void {
   visit(call);
   if (columnCounts.length !== 1 || columnCounts[0] !== 3) {
     throw new Error(
-      "issueExecutionRunControls must have exactly one three-column member FK and no unconditional segment FK",
+      "taskExecutionRunControls must have exactly one three-column member FK and no unconditional segment FK",
     );
   }
 }
@@ -495,18 +494,18 @@ function assertCanonicalSchema(repositoryRoot: string): void {
     true,
     ts.ScriptKind.TS,
   );
-  assertExactColumns(sourceFile, "issueExecutionRuns", RUN_ENVELOPE_COLUMNS);
+  assertExactColumns(sourceFile, "taskExecutionRuns", RUN_ENVELOPE_COLUMNS);
   assertExactColumns(
     sourceFile,
-    "issueExecutionRunControls",
+    "taskExecutionRunControls",
     RUN_CONTROL_COLUMNS,
   );
   assertControlForeignKeyShape(sourceFile);
 
   for (const required of [
     `\"${RUN_TABLE_SQL_NAME}\"`,
-    "issue_execution_run_refs_run_ordinal_ref_uq",
-    "issue_execution_run_controls_current_member_fk",
+    "task_execution_run_refs_run_ordinal_ref_uq",
+    "task_execution_run_controls_current_member_fk",
     "current_prompt_shape_check",
   ]) {
     if (!runSchemaSource.includes(required)) {
@@ -519,24 +518,24 @@ function assertCanonicalSchema(repositoryRoot: string): void {
  * A provider trace is not the run-detail message page: it also includes the
  * exact source messages that were transmitted through run refs and prompt
  * segments. The run service still owns run identity and the joined envelope;
- * this reader owns the bounded Issue Session transcript projection.
+ * this reader owns the bounded Task Session transcript projection.
  */
 export function assertCanonicalContextRunTraceReader(
   source: string,
 ): void {
   for (const required of [
-    "resolveIssueExecutionRunIdentityById(db, runId)",
+    "resolveTaskExecutionRunIdentityById(db, runId)",
     "options.runService.readJoinedRunDetail",
-    ".from(issueSessionMessages)",
+    ".from(taskSessionMessages)",
     "prompt_transmission_phase = 'transmitted'",
     "source_ref.source_message_id",
     "segment.source_message_id",
-    "sanitizeCanonicalMessage(decodeStoredIssueSessionMessage(row), row.seq)",
+    "sanitizeCanonicalMessage(decodeStoredTaskSessionMessage(row), row.seq)",
     "turns,",
   ]) {
     if (!source.includes(required)) {
       throw new Error(
-        `${TOOL_RETRIEVAL_PATH} must resolve the canonical run and project its transmitted Issue Session trace (${required})`,
+        `${TOOL_RETRIEVAL_PATH} must resolve the canonical run and project its transmitted Task Session trace (${required})`,
       );
     }
   }
@@ -609,7 +608,7 @@ export function assertCanonicalTargetLaneRunLocking(
   dispatcherPostgresSource: string,
 ): void {
   for (const forbidden of [
-    "readActiveProductiveIssueExecutionLaneHeadInTransaction",
+    "readActiveProductiveTaskExecutionLaneHeadInTransaction",
     "expectedCurrentRefId",
     "expectedRunId",
   ]) {
@@ -621,7 +620,7 @@ export function assertCanonicalTargetLaneRunLocking(
   }
   for (const required of [
     "export async function lockActiveProductiveRunForLaneInTransaction(",
-    "input: IssueExecutionTargetLaneIdentity,",
+    "input: TaskExecutionTargetLaneIdentity,",
   ]) {
     if (!runServiceSource.includes(required)) {
       throw new Error(
@@ -652,7 +651,7 @@ export function assertCanonicalTargetLaneRunLocking(
     const offset = ownerSource.indexOf(required);
     if (offset <= previousOffset) {
       throw new Error(
-        `${DISPATCHER_POSTGRES_PATH} must lock company, issue, Session, exact lane, then freshly lock its active run`,
+        `${DISPATCHER_POSTGRES_PATH} must lock company, task, Session, exact lane, then freshly lock its active run`,
       );
     }
     previousOffset = offset;
@@ -711,7 +710,7 @@ export function assertMissingCarryStartsFresh(
   }
 }
 
-export function assertIssueExecutionRunServiceBoundary(
+export function assertTaskExecutionRunServiceBoundary(
   repositoryRoot = REPOSITORY_ROOT,
 ): void {
   const violations = scanCanonicalRunBoundaryFiles(
@@ -735,6 +734,6 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === resolve(import.meta.filename)
 ) {
-  assertIssueExecutionRunServiceBoundary();
-  console.log("Issue-execution run-service boundary check passed.");
+  assertTaskExecutionRunServiceBoundary();
+  console.log("Task-execution run-service boundary check passed.");
 }

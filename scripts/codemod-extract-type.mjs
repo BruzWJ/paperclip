@@ -11,7 +11,7 @@
  * references to CSS custom-property tokens defined in `apps/ui/src/index.css`.
  *
  * Unlike Batch 1's color codemod (which used a hand-audited site table to
- * avoid false-positiving on non-color hex-like strings such as issue
+ * avoid false-positiving on non-color hex-like strings such as task
  * references), this batch's patterns are unambiguous: `text-[Npx]`,
  * `text-[N.Nrem]`, `tracking-[N em]`, and `leading-[...]` inside Tailwind
  * class strings, and `fontSize: "Npx"` / `fontSize: "N.Nrem"` inline-style

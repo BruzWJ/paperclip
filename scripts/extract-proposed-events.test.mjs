@@ -85,9 +85,9 @@ test("extractor emits deterministic proposed-telemetry-extractor.v2 records", ()
     { name: "sharing_scope", type: "string" },
   ]);
   assert.deepEqual(created.rationale, {
-    issue: "PAP-2411",
+    task: "PAP-2411",
     text: "measure Skill Studio create completion",
-    missingIssue: false,
+    missingTask: false,
     missingRationale: false,
   });
   assert.equal(created.provenance.length, 1);
@@ -103,9 +103,9 @@ test("extractor flags a missing proposed-telemetry suffix without hard-failing",
 
   const opened = output.proposals.find((proposal) => proposal.name === "skill_studio.opened");
   assert.deepEqual(opened.rationale, {
-    issue: null,
+    task: null,
     text: null,
-    missingIssue: true,
+    missingTask: true,
     missingRationale: true,
   });
   assert.deepEqual(opened.dimensions, [{ name: "surface", type: "string" }]);
@@ -173,14 +173,14 @@ export const trackWorkspaceFunctionExpression = function (
   assert.deepEqual(output.proposals[1].dimensions, [{ name: "accepted", type: "boolean" }]);
 });
 
-test("extractor rejects invalid rationale issue references when present", () => {
+test("extractor rejects invalid rationale task references when present", () => {
   assert.throws(
     () =>
       withFixtureRepo(
-        `export function trackBad(client, dims: { source: string }): void {\n  client.track(\n    // @ts-expect-error -- proposed-telemetry(PROJ-1): bad issue ref\n    "skill_studio.bad_issue",\n    dims,\n  );\n}\n`,
+        `export function trackBad(client, dims: { source: string }): void {\n  client.track(\n    // @ts-expect-error -- proposed-telemetry(PROJ-1): bad task ref\n    "skill_studio.bad_task",\n    dims,\n  );\n}\n`,
         ({ repoRoot, eventsFile }) => extractProposedEvents({ repoRoot, eventsFile, ref: "fixture-sha" }),
       ),
-    /rationale issue must be PAP-<digits>/,
+    /rationale task must be PAP-<digits>/,
   );
 });
 

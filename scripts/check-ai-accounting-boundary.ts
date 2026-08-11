@@ -10,16 +10,16 @@ import {
 
 const RUNTIME_SCHEMA = "packages/db/schema/agent_runtime_state.ts";
 const ACCOUNTING_SCHEMA = "packages/db/schema/acp_prompt_accounting.ts";
-const SESSION_SCHEMA = "packages/db/schema/issue_sessions.ts";
-const SESSION_INFO = "packages/shared/src/issue-session/session.ts";
-const SESSION_MESSAGE = "packages/shared/src/issue-session/session-message.ts";
-const SESSION_EVENT = "packages/shared/src/issue-session/session-event.ts";
-const CODEC_TEST = "packages/shared/src/issue-session/codec.test.ts";
+const SESSION_SCHEMA = "packages/db/schema/task_sessions.ts";
+const SESSION_INFO = "packages/shared/src/task-session/session.ts";
+const SESSION_MESSAGE = "packages/shared/src/task-session/session-message.ts";
+const SESSION_EVENT = "packages/shared/src/task-session/session-event.ts";
+const CODEC_TEST = "packages/shared/src/task-session/codec.test.ts";
 const MESSAGE_UPDATER =
-  "apps/server/src/services/issue-session/message-updater.ts";
-const PROJECTOR = "apps/server/src/services/issue-session/projector.ts";
+  "apps/server/src/services/task-session/message-updater.ts";
+const PROJECTOR = "apps/server/src/services/task-session/projector.ts";
 const ACP_EVENT_MAPPER =
-  "apps/server/src/services/issue-execution-acp-events-postgres.ts";
+  "apps/server/src/services/task-execution-acp-events-postgres.ts";
 const ACP_SETTLEMENT = "apps/server/src/services/acp-prompt-settlement.ts";
 
 const RETIRED_ACCOUNTING_TOKENS = [
@@ -45,8 +45,8 @@ const RETIRED_ACP_PROVENANCE_TOKENS = [
   "source_total_tokens",
   "sourceAssistantErrorKind",
   "source_assistant_error_kind",
-  "issueSessionAssistantSources",
-  "issue_session_assistant_sources",
+  "taskSessionAssistantSources",
+  "task_session_assistant_sources",
 ] as const;
 
 function read(repositoryRoot: string, path: string): string | null {
@@ -79,7 +79,7 @@ function stableAcpTokenFabricationViolations(
     const source = read(repositoryRoot, path);
     if (source === null) continue;
     if (
-      /(?:stepEndedData|IssueSession\.Event\.Step\.Ended)[\s\S]{0,1200}?\btokens\s*:/.test(
+      /(?:stepEndedData|TaskSession\.Event\.Step\.Ended)[\s\S]{0,1200}?\btokens\s*:/.test(
         source,
       )
     ) {
@@ -197,7 +197,7 @@ export function aiAccountingBoundaryViolations(
       "tokensReasoning: bigint",
       "tokensCacheRead: bigint",
       "tokensCacheWrite: bigint",
-      '"issue_sessions_cost_and_tokens_check"',
+      '"task_sessions_cost_and_tokens_check"',
       "table.tokensInput} is null",
       "table.tokensOutput} is null",
       "table.tokensReasoning} is null",

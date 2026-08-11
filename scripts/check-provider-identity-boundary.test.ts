@@ -29,7 +29,7 @@ function fixtureRoot(): string {
     'if (typeof value === "string") return;',
     "if (isEnvironmentEntry && isProviderChildReservedEnvironmentKey(key)) reject();",
   ].join("\n"));
-  write(root, "apps/server/src/services/issue-execution-attempt-executor.ts", "executeAcpxOneShotPrompt({\nmcpServers: Object.freeze([\nmessage: input.request.message,\n");
+  write(root, "apps/server/src/services/task-execution-attempt-executor.ts", "executeAcpxOneShotPrompt({\nmcpServers: Object.freeze([\nmessage: input.request.message,\n");
   write(root, "apps/server/src/services/runtime-agent-action-port.ts", [
     "type Options = { requestChangeConsent?: (input: unknown) => Promise<void> };",
     "export function create(service: any, options: Options) {",
@@ -125,7 +125,7 @@ test("rejects reviving a Paperclip-owned provider process boundary", () => {
 
 test("rejects a Paperclip-authored setup prompt override", () => {
   const root = fixtureRoot();
-  write(root, "apps/server/src/services/issue-execution-attempt-executor.ts", "executeAcpxOneShotPrompt({\nmcpServers: Object.freeze([\nmessage: input.request.message,\nsystemPrompt: generated,\n");
+  write(root, "apps/server/src/services/task-execution-attempt-executor.ts", "executeAcpxOneShotPrompt({\nmcpServers: Object.freeze([\nmessage: input.request.message,\nsystemPrompt: generated,\n");
   assert.ok(providerIdentityBoundaryViolations(root).some((entry) => entry.includes("prompt override")));
 });
 

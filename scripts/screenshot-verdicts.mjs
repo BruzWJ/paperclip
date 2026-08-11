@@ -6,7 +6,7 @@ import path from "node:path";
 import { chromium } from "@playwright/test";
 
 const BASE = "http://localhost:6102/iframe.html";
-const PREFIX = "chat-comments-issue-thread-interactions";
+const PREFIX = "chat-comments-task-thread-interactions";
 const OUT_DIR = process.argv[2] || "screenshots/pap-13249";
 
 const stories = [

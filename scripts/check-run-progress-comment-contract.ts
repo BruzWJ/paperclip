@@ -15,26 +15,26 @@ const IGNORED_PATHS = [
 const REQUIRED_OWNERS = [
   {
     path: "packages/shared/src/constants.ts",
-    tokens: ["ISSUE_COMMENT_PRESENTATION_KINDS", '"run_progress"'],
+    tokens: ["TASK_COMMENT_PRESENTATION_KINDS", '"run_progress"'],
   },
   {
-    path: "packages/shared/src/types/issue.ts",
-    tokens: ["IssueCommentCanonicalSourceKind", '| "run_progress"'],
+    path: "packages/shared/src/types/task.ts",
+    tokens: ["TaskCommentCanonicalSourceKind", '| "run_progress"'],
   },
   {
-    path: "packages/db/schema/issue_comments.ts",
-    tokens: ["issue_comments_canonical_source_kind_check", "'run_progress'"],
+    path: "packages/db/schema/task_comments.ts",
+    tokens: ["task_comments_canonical_source_kind_check", "'run_progress'"],
   },
   {
-    path: "packages/db/schema/issue_comment_projection_sources.ts",
+    path: "packages/db/schema/task_comment_projection_sources.ts",
     tokens: [
-      "issue_comment_projection_sources_run_progress_uq",
-      "issue_comment_projection_sources_run_check",
+      "task_comment_projection_sources_run_progress_uq",
+      "task_comment_projection_sources_run_check",
       "'run_progress'",
     ],
   },
   {
-    path: "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
+    path: "apps/server/src/services/task-execution-dispatcher-postgres.ts",
     tokens: [
       'immutableSourceKey: `run-progress:${created.run.runId}`',
       "sourceRecordId: created.run.runId",
@@ -44,25 +44,25 @@ const REQUIRED_OWNERS = [
     ],
   },
   {
-    path: "apps/server/src/services/issue-session/admission.ts",
+    path: "apps/server/src/services/task-session/admission.ts",
     tokens: [
       'input.sourceKind === "run_progress"',
       'kind: "run_progress" as const',
     ],
   },
   {
-    path: "apps/server/src/services/issue-session/projector.ts",
+    path: "apps/server/src/services/task-session/projector.ts",
     tokens: [
-      "projectIssueSessionFinalCommentInTx",
-      'eq(issueCommentProjectionSources.sourceKind, "run_progress")',
-      "eq(issueCommentProjectionSources.commentId, input.progressCommentId)",
+      "projectTaskSessionFinalCommentInTx",
+      'eq(taskCommentProjectionSources.sourceKind, "run_progress")',
+      "eq(taskCommentProjectionSources.commentId, input.progressCommentId)",
       'comment.body !== ""',
       'comment.presentation?.kind !== "run_progress"',
-      "eq(issueComments.id, comment.id)",
+      "eq(taskComments.id, comment.id)",
     ],
   },
   {
-    path: "apps/server/src/services/issue-execution-finalization-postgres.ts",
+    path: "apps/server/src/services/task-execution-finalization-postgres.ts",
     tokens: [
       "progressCommentId: progress.comment.id",
       "folded.id !== progress.comment.id",
@@ -78,14 +78,14 @@ const REQUIRED_OWNERS = [
   },
   {
     path: "apps/server/src/routes/openapi.ts",
-    tokens: ["boardIssueCommentSchema", "boardIssueCommentGroupPageSchema"],
+    tokens: ["boardTaskCommentSchema", "boardTaskCommentGroupPageSchema"],
   },
   {
-    path: "apps/ui/src/api/issues.ts",
-    tokens: ["IssueComment", "BoardIssueComment"],
+    path: "apps/ui/src/api/tasks.ts",
+    tokens: ["TaskComment", "BoardTaskComment"],
   },
   {
-    path: "apps/ui/src/lib/issue-chat-messages.ts",
+    path: "apps/ui/src/lib/task-chat-messages.ts",
     tokens: [
       'comment.presentation?.kind === "run_progress"',
       'comment.runState === "queued"',
@@ -111,13 +111,13 @@ export function runProgressCommentContractViolations(
     );
   }
 
-  const uiPath = resolve(repositoryRoot, "apps/ui/src/lib/issue-chat-messages.ts");
+  const uiPath = resolve(repositoryRoot, "apps/ui/src/lib/task-chat-messages.ts");
   if (existsSync(uiPath)) {
     const source = readFileSync(uiPath, "utf8");
     for (const label of ['"Queued..."', '"Working..."']) {
       if (source.includes(label)) {
         violations.push(
-          `apps/ui/src/lib/issue-chat-messages.ts: run progress label must use U+2026, not ${label}`,
+          `apps/ui/src/lib/task-chat-messages.ts: run progress label must use U+2026, not ${label}`,
         );
       }
     }
@@ -125,7 +125,7 @@ export function runProgressCommentContractViolations(
 
   const dispatcherPath = resolve(
     repositoryRoot,
-    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/task-execution-dispatcher-postgres.ts",
   );
   if (existsSync(dispatcherPath)) {
     const source = readFileSync(dispatcherPath, "utf8");
@@ -137,7 +137,7 @@ export function runProgressCommentContractViolations(
     ]) {
       if (source.includes(storedLabel)) {
         violations.push(
-          `apps/server/src/services/issue-execution-dispatcher-postgres.ts: run progress label must be UI-derived, not stored as ${storedLabel}`,
+          `apps/server/src/services/task-execution-dispatcher-postgres.ts: run progress label must be UI-derived, not stored as ${storedLabel}`,
         );
       }
     }

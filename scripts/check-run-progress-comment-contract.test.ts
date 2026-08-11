@@ -15,18 +15,18 @@ const roots = new Set<string>();
 
 const CANONICAL_FILES: Readonly<Record<string, string>> = {
   "packages/shared/src/constants.ts":
-    'const ISSUE_COMMENT_PRESENTATION_KINDS = ["run_progress"];\n',
-  "packages/shared/src/types/issue.ts":
-    'type IssueCommentCanonicalSourceKind = | "run_progress";\n',
-  "packages/db/schema/issue_comments.ts":
-    "issue_comments_canonical_source_kind_check('run_progress');\n",
-  "packages/db/schema/issue_comment_projection_sources.ts": [
-    "issue_comment_projection_sources_run_progress_uq;",
-    "issue_comment_projection_sources_run_check;",
+    'const TASK_COMMENT_PRESENTATION_KINDS = ["run_progress"];\n',
+  "packages/shared/src/types/task.ts":
+    'type TaskCommentCanonicalSourceKind = | "run_progress";\n',
+  "packages/db/schema/task_comments.ts":
+    "task_comments_canonical_source_kind_check('run_progress');\n",
+  "packages/db/schema/task_comment_projection_sources.ts": [
+    "task_comment_projection_sources_run_progress_uq;",
+    "task_comment_projection_sources_run_check;",
     "kind('run_progress');",
     "",
   ].join("\n"),
-  "apps/server/src/services/issue-execution-dispatcher-postgres.ts": [
+  "apps/server/src/services/task-execution-dispatcher-postgres.ts": [
     "immutableSourceKey: `run-progress:${created.run.runId}`;",
     "sourceRecordId: created.run.runId;",
     'exactText: "";',
@@ -34,21 +34,21 @@ const CANONICAL_FILES: Readonly<Record<string, string>> = {
     "runId: created.run.runId;",
     "",
   ].join("\n"),
-  "apps/server/src/services/issue-session/admission.ts": [
+  "apps/server/src/services/task-session/admission.ts": [
     'input.sourceKind === "run_progress";',
     'kind: "run_progress" as const;',
     "",
   ].join("\n"),
-  "apps/server/src/services/issue-session/projector.ts": [
-    "function projectIssueSessionFinalCommentInTx() {}",
-    'eq(issueCommentProjectionSources.sourceKind, "run_progress");',
-    "eq(issueCommentProjectionSources.commentId, input.progressCommentId);",
+  "apps/server/src/services/task-session/projector.ts": [
+    "function projectTaskSessionFinalCommentInTx() {}",
+    'eq(taskCommentProjectionSources.sourceKind, "run_progress");',
+    "eq(taskCommentProjectionSources.commentId, input.progressCommentId);",
     'comment.body !== "";',
     'comment.presentation?.kind !== "run_progress";',
-    "eq(issueComments.id, comment.id);",
+    "eq(taskComments.id, comment.id);",
     "",
   ].join("\n"),
-  "apps/server/src/services/issue-execution-finalization-postgres.ts": [
+  "apps/server/src/services/task-execution-finalization-postgres.ts": [
     "progressCommentId: progress.comment.id;",
     "folded.id !== progress.comment.id;",
     "throw new Error('Stable progress comment did not fold to the exact terminal assistant');",
@@ -60,9 +60,9 @@ const CANONICAL_FILES: Readonly<Record<string, string>> = {
     "",
   ].join("\n"),
   "apps/server/src/routes/openapi.ts":
-    "const route = [boardIssueCommentSchema, boardIssueCommentGroupPageSchema];\n",
-  "apps/ui/src/api/issues.ts": "type Response = IssueComment | BoardIssueComment;\n",
-  "apps/ui/src/lib/issue-chat-messages.ts": [
+    "const route = [boardTaskCommentSchema, boardTaskCommentGroupPageSchema];\n",
+  "apps/ui/src/api/tasks.ts": "type Response = TaskComment | BoardTaskComment;\n",
+  "apps/ui/src/lib/task-chat-messages.ts": [
     'comment.presentation?.kind === "run_progress";',
     'comment.runState === "queued";',
     '"Queued…";',
@@ -113,35 +113,35 @@ test("accepts one stable empty-body run-progress comment contract", () => {
 
 for (const [path, token] of [
   ["packages/shared/src/constants.ts", '"run_progress"'],
-  ["packages/shared/src/types/issue.ts", '| "run_progress"'],
-  ["packages/db/schema/issue_comments.ts", "'run_progress'"],
+  ["packages/shared/src/types/task.ts", '| "run_progress"'],
+  ["packages/db/schema/task_comments.ts", "'run_progress'"],
   [
-    "packages/db/schema/issue_comment_projection_sources.ts",
-    "issue_comment_projection_sources_run_progress_uq",
+    "packages/db/schema/task_comment_projection_sources.ts",
+    "task_comment_projection_sources_run_progress_uq",
   ],
   [
-    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/task-execution-dispatcher-postgres.ts",
     'exactText: ""',
   ],
   [
-    "apps/server/src/services/issue-session/admission.ts",
+    "apps/server/src/services/task-session/admission.ts",
     'kind: "run_progress" as const',
   ],
   [
-    "apps/server/src/services/issue-session/projector.ts",
-    "eq(issueComments.id, comment.id)",
+    "apps/server/src/services/task-session/projector.ts",
+    "eq(taskComments.id, comment.id)",
   ],
   [
-    "apps/server/src/services/issue-execution-finalization-postgres.ts",
+    "apps/server/src/services/task-execution-finalization-postgres.ts",
     "folded.id !== progress.comment.id",
   ],
   [
     "apps/server/src/services/context-retrieval.ts",
     "body: providerSafeCommentBody(comment.body)",
   ],
-  ["apps/server/src/routes/openapi.ts", "boardIssueCommentSchema"],
-  ["apps/ui/src/api/issues.ts", "IssueComment"],
-  ["apps/ui/src/lib/issue-chat-messages.ts", '"Queued…"'],
+  ["apps/server/src/routes/openapi.ts", "boardTaskCommentSchema"],
+  ["apps/ui/src/api/tasks.ts", "TaskComment"],
+  ["apps/ui/src/lib/task-chat-messages.ts", '"Queued…"'],
 ] as const) {
   test(`fails closed when ${path} loses ${token}`, () => {
     const root = fixtureRoot();
@@ -179,8 +179,8 @@ for (const label of ['"Queued..."', '"Working..."'] as const) {
     const root = fixtureRoot();
     write(
       root,
-      "apps/ui/src/lib/issue-chat-messages.ts",
-      `${CANONICAL_FILES["apps/ui/src/lib/issue-chat-messages.ts"]}${label};\n`,
+      "apps/ui/src/lib/task-chat-messages.ts",
+      `${CANONICAL_FILES["apps/ui/src/lib/task-chat-messages.ts"]}${label};\n`,
     );
     assert.ok(
       runProgressCommentContractViolations(root).some((violation) =>
@@ -198,8 +198,8 @@ for (const label of [
     const root = fixtureRoot();
     write(
       root,
-      "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
-      `${CANONICAL_FILES["apps/server/src/services/issue-execution-dispatcher-postgres.ts"]}${label};\n`,
+      "apps/server/src/services/task-execution-dispatcher-postgres.ts",
+      `${CANONICAL_FILES["apps/server/src/services/task-execution-dispatcher-postgres.ts"]}${label};\n`,
     );
     assert.ok(
       runProgressCommentContractViolations(root).some((violation) =>

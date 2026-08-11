@@ -13,7 +13,7 @@ function canonicalFiles(): ServerWorkerTopologyFile[] {
         return { acquireExecutionTargetForRun() {} };
       }
     `,
-    "apps/server/src/services/issue-execution-attempt-executor.ts": `
+    "apps/server/src/services/task-execution-attempt-executor.ts": `
       import { executeAcpxOneShotPrompt } from "acpx";
       import { prepareAcpxRuntimeInvocation } from "acpx-invocation";
       const execute = executeAcpxOneShotPrompt;
@@ -22,23 +22,23 @@ function canonicalFiles(): ServerWorkerTopologyFile[] {
       sessionCorrelations.resolveResume();
       type Prompt = { promptKind: "base" | "steering" };
     `,
-    "apps/server/src/services/issue-execution-provider-configuration.ts": `
-      interface IssueExecutionTargetAcquirer {}
+    "apps/server/src/services/task-execution-provider-configuration.ts": `
+      interface TaskExecutionTargetAcquirer {}
       const target = localExecutionOrchestrator;
       acquireExecutionTargetForRun();
       releaseExecutionTarget();
     `,
-    "apps/server/src/services/issue-execution-postgres.ts": `
-      export function createPostgresIssueExecutionProductionRuntime(options) {
+    "apps/server/src/services/task-execution-postgres.ts": `
+      export function createPostgresTaskExecutionProductionRuntime(options) {
         const target = { localExecutionOrchestrator: options.localExecutionOrchestrator };
-        let cancellation = createIssueExecutionCancellationService({});
-        cancellation = createIssueExecutionCancellationService({});
+        let cancellation = createTaskExecutionCancellationService({});
+        cancellation = createTaskExecutionCancellationService({});
         return { target, cancellation };
       }
     `,
     "apps/server/src/index.ts": `
       localExecutionOrchestrator();
-      createPostgresIssueExecutionProductionRuntime();
+      createPostgresTaskExecutionProductionRuntime();
     `,
     "packages/adapter-utils/src/types.ts": `
       export interface ServerAdapterModule {
@@ -63,7 +63,7 @@ describe("server/worker topology gate", () => {
       source: "export const catalog = [];",
     });
     files.push({
-      path: "packages/adapter-utils/src/issue-execution.ts",
+      path: "packages/adapter-utils/src/task-execution.ts",
       source: "export interface ProviderInvocation {}",
     });
     files.push({
@@ -105,7 +105,7 @@ describe("server/worker topology gate", () => {
 
   it("rejects bypassing the common ACPX lifecycle or request-scoped tools", () => {
     const files = canonicalFiles().map((file) =>
-      file.path === "apps/server/src/services/issue-execution-attempt-executor.ts"
+      file.path === "apps/server/src/services/task-execution-attempt-executor.ts"
         ? {
             ...file,
             source: file.source
@@ -144,11 +144,11 @@ describe("server/worker topology gate", () => {
 
   it("rejects moving canonical cancellation outside the production runtime factory", () => {
     const files = canonicalFiles().map((file) =>
-      file.path === "apps/server/src/services/issue-execution-postgres.ts"
+      file.path === "apps/server/src/services/task-execution-postgres.ts"
         ? {
             ...file,
             source: file.source.replaceAll(
-              "createIssueExecutionCancellationService",
+              "createTaskExecutionCancellationService",
               "createCancellationElsewhere",
             ),
           }
@@ -157,7 +157,7 @@ describe("server/worker topology gate", () => {
     const violations = scanServerWorkerTopology(files);
     assert.ok(
       violations.some((entry) =>
-        entry.message.includes("createIssueExecutionCancellationService")),
+        entry.message.includes("createTaskExecutionCancellationService")),
     );
   });
 });

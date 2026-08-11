@@ -145,7 +145,7 @@ test("production-boundary manifest is consolidated behind one package command", 
       "test:server-worker-topology-gate",
       "test:database-substrate-gate",
       "test:zero-database-tests-gate",
-      "test:issue-comment-projector-writers-gate",
+      "test:task-comment-projector-writers-gate",
     ],
   );
   assert.equal(
@@ -184,7 +184,7 @@ test("production-boundary manifest is consolidated behind one package command", 
   );
   assert.doesNotMatch(
     paperclipSessionStructure,
-    /check-issue-comment-projector-writers\.test\.mjs/,
+    /check-task-comment-projector-writers\.test\.mjs/,
     "the comment projector self-test must have only the production-boundary manifest owner",
   );
 

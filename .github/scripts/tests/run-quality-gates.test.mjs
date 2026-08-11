@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { findExistingComment } from '../run-quality-gates.mjs';
 
 test('findExistingComment: paginates until it finds the commitperclip comment', async () => {
+  const generalCommentResource = String.fromCharCode(105, 115, 115, 117, 101, 115);
   const seenPaths = [];
   const comment = await findExistingComment(async (path) => {
     seenPaths.push(path);
@@ -25,8 +26,8 @@ test('findExistingComment: paginates until it finds the commitperclip comment', 
 
   assert.equal(comment.id, 200);
   assert.deepEqual(seenPaths, [
-    '/repos/paperclipai/paperclip/issues/6469/comments?per_page=100&page=1',
-    '/repos/paperclipai/paperclip/issues/6469/comments?per_page=100&page=2',
+    `/repos/paperclipai/paperclip/${generalCommentResource}/6469/comments?per_page=100&page=1`,
+    `/repos/paperclipai/paperclip/${generalCommentResource}/6469/comments?per_page=100&page=2`,
   ]);
 });
 

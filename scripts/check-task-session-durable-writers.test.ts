@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { scanIssueSessionDurableWriterSource } from "./check-issue-session-durable-writers.js";
+import { scanTaskSessionDurableWriterSource } from "./check-task-session-durable-writers.js";
 
-describe("check-issue-session-durable-writers", () => {
+describe("check-task-session-durable-writers", () => {
   it("rejects renamed and wrapped event-store writers", () => {
-    const violations = scanIssueSessionDurableWriterSource(
+    const violations = scanTaskSessionDurableWriterSource(
       "apps/server/src/services/bypass.ts",
       `
-        import { appendIssueSessionEvent as append } from "./issue-session/event-store.js";
+        import { appendTaskSessionEvent as append } from "./task-session/event-store.js";
         const wrapped = append;
         export async function bypass(tx: unknown, input: unknown) {
           return wrapped(tx, input);
@@ -18,18 +18,18 @@ describe("check-issue-session-durable-writers", () => {
       violations.some(
         (entry) =>
           entry.message ===
-          "direct appendIssueSessionEvent call bypasses the durable publication boundary",
+          "direct appendTaskSessionEvent call bypasses the durable publication boundary",
       ),
     );
 
     const barrelViolations =
-      scanIssueSessionDurableWriterSource(
+      scanTaskSessionDurableWriterSource(
         "apps/server/src/services/bypass.ts",
         `
-          import { appendIssueSessionEvent as append } from "./index.js";
-          import * as sessionRuntime from "./issue-session-runtime.js";
+          import { appendTaskSessionEvent as append } from "./index.js";
+          import * as sessionRuntime from "./task-session-runtime.js";
           append(tx, input);
-          sessionRuntime.projectIssueSessionEventInTx(tx, input);
+          sessionRuntime.projectTaskSessionEventInTx(tx, input);
         `,
       );
     assert.equal(barrelViolations.length, 2);
@@ -43,10 +43,10 @@ describe("check-issue-session-durable-writers", () => {
   });
 
   it("rejects aliased table writes and raw-SQL bootstrap bypasses", () => {
-    const direct = scanIssueSessionDurableWriterSource(
+    const direct = scanTaskSessionDurableWriterSource(
       "apps/server/src/bootstrap.ts",
       `
-        import { issueSessionEvents as events } from "@paperclipai/db";
+        import { taskSessionEvents as events } from "@paperclipai/db";
         const table = events;
         export async function seed(db: any) {
           await db.insert(table).values({});
@@ -55,37 +55,37 @@ describe("check-issue-session-durable-writers", () => {
     );
     assert.match(
       direct[0]?.message ?? "",
-      /direct insert\(issueSessionEvents\)/,
+      /direct insert\(taskSessionEvents\)/,
     );
 
-    const raw = scanIssueSessionDurableWriterSource(
+    const raw = scanTaskSessionDurableWriterSource(
       "apps/server/src/bootstrap.ts",
-      "db.execute(sql`INSERT INTO issue_session_events (id) VALUES ('x')`);",
+      "db.execute(sql`INSERT INTO task_session_events (id) VALUES ('x')`);",
     );
     assert.match(raw[0]?.message ?? "", /raw SQL insert/);
 
-    const namespace = scanIssueSessionDurableWriterSource(
+    const namespace = scanTaskSessionDurableWriterSource(
       "apps/server/src/bootstrap.ts",
       `
         import * as schema from "@paperclipai/db";
         const tables = schema;
-        db.insert(tables.issueSessionSourceUserExecutions).values({});
+        db.insert(tables.taskSessionSourceUserExecutions).values({});
       `,
     );
     assert.match(
       namespace[0]?.message ?? "",
-      /direct insert\(issueSessionSourceUserExecutions\)/,
+      /direct insert\(taskSessionSourceUserExecutions\)/,
     );
 
-    const rawString = scanIssueSessionDurableWriterSource(
+    const rawString = scanTaskSessionDurableWriterSource(
       "apps/server/src/bootstrap.ts",
-      `db.execute('UPDATE "issue_session_messages" SET data = "{}"');`,
+      `db.execute('UPDATE "task_session_messages" SET data = "{}"');`,
     );
     assert.match(rawString[0]?.message ?? "", /raw SQL update/);
   });
 
   it("rejects the deleted local_file/S3 NDJSON run-log store", () => {
-    const violations = scanIssueSessionDurableWriterSource(
+    const violations = scanTaskSessionDurableWriterSource(
       "apps/server/src/services/run-log-mirror.ts",
       `
         const store = "local_file";
@@ -98,10 +98,10 @@ describe("check-issue-session-durable-writers", () => {
       /independent local_file\/S3 NDJSON/,
     );
 
-    const disguised = scanIssueSessionDurableWriterSource(
+    const disguised = scanTaskSessionDurableWriterSource(
       "apps/server/src/services/provider-transcript.ts",
       `
-        const issueSessionMirror = true;
+        const taskSessionMirror = true;
         const stream = createWriteStream("events.ndjson");
       `,
     );
@@ -112,30 +112,30 @@ describe("check-issue-session-durable-writers", () => {
   });
 
   it("rejects direct typed companion helper calls", () => {
-    const violations = scanIssueSessionDurableWriterSource(
+    const violations = scanTaskSessionDurableWriterSource(
       "apps/server/src/services/bypass.ts",
       `
         import {
-          insertOrAssertIssueSessionSourceUserExecution as persistSource,
-        } from "./issue-session/source-user-execution.js";
+          insertOrAssertTaskSessionSourceUserExecution as persistSource,
+        } from "./task-session/source-user-execution.js";
         persistSource(tx, input);
       `,
     );
     assert.match(
       violations[0]?.message ?? "",
-      /insertOrAssertIssueSessionSourceUserExecution/,
+      /insertOrAssertTaskSessionSourceUserExecution/,
     );
   });
 
   it("permits the closed publication/event-store/projector owners", () => {
     assert.deepEqual(
-      scanIssueSessionDurableWriterSource(
-        "apps/server/src/services/issue-session/publication.ts",
+      scanTaskSessionDurableWriterSource(
+        "apps/server/src/services/task-session/publication.ts",
         `
-          import { appendIssueSessionEvent } from "./event-store.js";
-          import { projectIssueSessionEventInTx } from "./projector.js";
-          appendIssueSessionEvent(tx, input);
-          projectIssueSessionEventInTx(tx, input);
+          import { appendTaskSessionEvent } from "./event-store.js";
+          import { projectTaskSessionEventInTx } from "./projector.js";
+          appendTaskSessionEvent(tx, input);
+          projectTaskSessionEventInTx(tx, input);
         `,
       ),
       [],

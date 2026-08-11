@@ -11,7 +11,7 @@
  *
  * Scope is deliberately a fixed, manually-audited SITE TABLE rather than a
  * blind hex-matching regex sweep: a generic `#[0-9a-f]{3,8}` regex produces
- * false positives on this codebase (issue references like "acme/web#241",
+ * false positives on this codebase (repository references like "acme/web#241",
  * PR/comment numbers like "React #10140", etc.). Every entry below was
  * verified by hand against TOKEN-AUDIT.md section 1 (see repo root) to
  * confirm it is (a) a real color value, (b) consumed as a rendered CSS
@@ -66,10 +66,10 @@ const NEW_TOKENS = [
   { name: "hex-8b5cf6", value: "#8b5cf6", comment: "ActivityCharts.tsx — status 'in_progress' (independent from --status-task-in_progress which is #2563eb — flagged inconsistency, TOKEN-AUDIT.md 1.2)." },
   { name: "hex-a855f7", value: "#a855f7", comment: "ActivityCharts.tsx — status 'in_review'." },
   { name: "hex-10b981", value: "#10b981", comment: "ActivityCharts.tsx — status 'done'; also the >=0.8 success-rate bar tint." },
-  { name: "hex-64748b", value: "#64748b", comment: "ActivityCharts.tsx status 'backlog'; also the widely-repeated 'no project assigned' muted-slate fallback color (TOKEN-AUDIT.md 1.3) across Routines/MarkdownEditor/RoutineRunVariablesDialog/RoutineList/IssueColumns/editable-sections." },
+  { name: "hex-64748b", value: "#64748b", comment: "ActivityCharts.tsx status 'backlog'; also the widely-repeated 'no project assigned' muted-slate fallback color (TOKEN-AUDIT.md 1.3) across Routines/MarkdownEditor/RoutineRunVariablesDialog/RoutineList/TaskColumns/editable-sections." },
 
   // --- Project-color-fallback indigo cluster (TOKEN-AUDIT.md 1.3) ---
-  { name: "hex-6366f1", value: "#6366f1", comment: "Project-color-fallback indigo seed default (ProjectDetail/IssueProperties/NewIssueDialog) — new-project-color-picker-seed family per TOKEN-AUDIT.md 1.3." },
+  { name: "hex-6366f1", value: "#6366f1", comment: "Project-color-fallback indigo seed default (ProjectDetail/TaskProperties/NewTaskDialog) — new-project-color-picker-seed family per TOKEN-AUDIT.md 1.3." },
 
   // --- Gradient tokens (verbatim, one per distinct gradient string; DESIGN.md: mint, don't collapse) ---
   { name: "gradient-extract-1", value: "linear-gradient(180deg,rgba(255,80,80,0.12),rgba(255,255,255,0.02))", comment: "Dashboard.tsx budget-alert card gradient." },
@@ -127,14 +127,14 @@ const SITES = [
     ],
   },
   {
-    file: "components/IssueChatThread.tsx",
+    file: "components/TaskChatThread.tsx",
     replaceAll: [
       ['// Liveness blue (#2563EB) for the human\'s own messages (PAP-95 rev 5).', '// Liveness blue (--status-task-in_progress) for the human\'s own messages (PAP-95 rev 5).'],
       ['? "bg-[#2563EB] text-white"', '? "bg-(--status-task-in_progress) text-white"'],
     ],
   },
   {
-    file: "components/IssueChatThread.test.tsx",
+    file: "components/TaskChatThread.test.tsx",
     replaceAll: [
       ['expect(bubble?.className).not.toContain("bg-[#2563EB]");', 'expect(bubble?.className).not.toContain("bg-(--status-task-in_progress)");'],
     ],
@@ -182,14 +182,14 @@ const SITES = [
     ],
   },
   {
-    file: "components/issue-properties/IssueProperties.tsx",
+    file: "components/task-properties/TaskProperties.tsx",
     replaceAll: [
-      ['backgroundColor: orderedProjects.find((p) => p.id === issue.projectId)?.color ?? "#6366f1"', 'backgroundColor: orderedProjects.find((p) => p.id === issue.projectId)?.color ?? "var(--hex-6366f1)"'],
+      ['backgroundColor: orderedProjects.find((p) => p.id === task.projectId)?.color ?? "#6366f1"', 'backgroundColor: orderedProjects.find((p) => p.id === task.projectId)?.color ?? "var(--hex-6366f1)"'],
       ['backgroundColor: option.color ?? "#6366f1"', 'backgroundColor: option.color ?? "var(--hex-6366f1)"'],
     ],
   },
   {
-    file: "components/NewIssueDialog.tsx",
+    file: "components/NewTaskDialog.tsx",
     replaceAll: [
       ['backgroundColor: currentProject.color ?? "#6366f1"', 'backgroundColor: currentProject.color ?? "var(--hex-6366f1)"'],
       ['backgroundColor: project?.color ?? "#6366f1"', 'backgroundColor: project?.color ?? "var(--hex-6366f1)"'],
@@ -286,7 +286,7 @@ const ALLOWLIST_COMMENTS = [
     commentLine: "                  {/* token-extraction: allowlisted — <input type=\"color\"> value must be a real hex string, not a var() reference. */}",
   },
   {
-    file: "components/issue-properties/IssueProperties.tsx",
+    file: "components/task-properties/TaskProperties.tsx",
     anchor: 'const [newLabelColor, setNewLabelColor] = useState("#6366f1");',
     commentLine: "  // token-extraction: allowlisted — color-picker seed state, persisted into label-create payload; a var() string would break that payload.",
   },
@@ -296,7 +296,7 @@ const ALLOWLIST_COMMENTS = [
     commentLine: "// token-extraction: allowlisted — skill.color is persisted/compared JS data (SkillCreateDraft), not just a rendered value; a var() string would corrupt it.",
   },
   {
-    file: "components/IssueColumns.tsx",
+    file: "components/TaskColumns.tsx",
     anchor: 'const accentColor = projectColor ?? "#64748b";',
     commentLine: "            // token-extraction: allowlisted — accentColor also feeds pickTextColorForPillBg() contrast math; a var() string can't be parsed as a hex color there.",
   },
@@ -376,7 +376,7 @@ function main() {
 
   if (!cssOriginal.includes(marker)) {
     const tokenLines = NEW_TOKENS.map((t) => `  --${t.name}: ${t.value}; /* ${t.comment} */`).join("\n");
-    const block = `\n${marker}\n/* Batch 1/4: color literals only. Reused-from-existing-token sites (see\n   TOKEN-AUDIT.md section 1.1) are NOT duplicated here — they reference\n   --status-task-in_progress / --status-task-done directly at the call site.\n\n   Allowlist (sites intentionally left as hardcoded / functional literals,\n   NOT converted to tokens — each also carries an inline\n   \`token-extraction: allowlisted\` comment at the site):\n   - pages/CompanySettings.tsx — <input type="color"> value; functional form control, not a rendered value.\n   - components/issue-properties/IssueProperties.tsx (newLabelColor) — color-picker seed persisted into label-create payload.\n   - pages/CompanySkills.tsx (DISCOVERY_ACCENTS) — persisted/compared skill.color JS data, not just rendered.\n   - components/IssueColumns.tsx (accentColor fallback) — also feeds pickTextColorForPillBg() contrast math.\n   - components/CompanyPatternIcon.tsx — canvas fillStyle computed at runtime from numeric props, not a static literal.\n   - pages/InviteUxLab.tsx (brandColor prop, x2) — demo/showcase-only prop feeding CompanyPatternIcon's hexToHue() color math, not a rendered CSS value.\n*/\n:root {\n${tokenLines}\n}\n`;
+    const block = `\n${marker}\n/* Batch 1/4: color literals only. Reused-from-existing-token sites (see\n   TOKEN-AUDIT.md section 1.1) are NOT duplicated here — they reference\n   --status-task-in_progress / --status-task-done directly at the call site.\n\n   Allowlist (sites intentionally left as hardcoded / functional literals,\n   NOT converted to tokens — each also carries an inline\n   \`token-extraction: allowlisted\` comment at the site):\n   - pages/CompanySettings.tsx — <input type="color"> value; functional form control, not a rendered value.\n   - components/task-properties/TaskProperties.tsx (newLabelColor) — color-picker seed persisted into label-create payload.\n   - pages/CompanySkills.tsx (DISCOVERY_ACCENTS) — persisted/compared skill.color JS data, not just rendered.\n   - components/TaskColumns.tsx (accentColor fallback) — also feeds pickTextColorForPillBg() contrast math.\n   - components/CompanyPatternIcon.tsx — canvas fillStyle computed at runtime from numeric props, not a static literal.\n   - pages/InviteUxLab.tsx (brandColor prop, x2) — demo/showcase-only prop feeding CompanyPatternIcon's hexToHue() color math, not a rendered CSS value.\n*/\n:root {\n${tokenLines}\n}\n`;
     cssNext = cssOriginal + block;
     cssChanged = true;
   }

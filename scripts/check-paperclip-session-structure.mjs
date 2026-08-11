@@ -27,9 +27,9 @@ export const SESSION_STRUCTURE_COMMANDS = Object.freeze([
     "scripts/check-opencode-session-donor.ts",
   ]),
   Object.freeze([
-    "scripts/check-issue-comment-projector-writers.mjs",
+    "scripts/check-task-comment-projector-writers.mjs",
   ]),
-  Object.freeze(["scripts/check-canonical-issue-writers.mjs"]),
+  Object.freeze(["scripts/check-canonical-task-writers.mjs"]),
 ]);
 
 export function main() {

@@ -39,19 +39,19 @@ const REGISTRY_REQUIRED = [
   "contextDial: ContextDial",
   "actionGrants:",
   "isCurrentOwner: boolean",
-  "issueCreateDirectChildren:",
-  "issueAssignTargets:",
+  "taskCreateDirectChildren:",
+  "taskAssignTargets:",
   "creatorUpdateTargets:",
   "mentionTargets:",
   "configureTargets:",
   "export interface ProjectedPaperclipManagedToolDescriptor",
   "resolveContextRetrievalPolicy(input.contextDial)",
-  "function projectRuntimeIssueCreate(",
-  "input.actionGrants.issue_create !== true",
-  "input.issueCreateDirectChildren",
-  "function projectRuntimeIssueAssign(",
-  "input.issueAssignTargets",
-  "function projectRuntimeIssueUpdate(",
+  "function projectRuntimeTaskCreate(",
+  "input.actionGrants.task_create !== true",
+  "input.taskCreateDirectChildren",
+  "function projectRuntimeTaskAssign(",
+  "input.taskAssignTargets",
+  "function projectRuntimeTaskUpdate(",
   "input.creatorUpdateTargets",
   "input.isCurrentOwner",
   "function projectRuntimeMentionAgent(",
@@ -87,8 +87,8 @@ const RUN_TOOLS_REQUIRED = [
 const MANAGED_PROJECTION_FIELDS = [
   "contextDial",
   "isCurrentOwner",
-  "issueCreateDirectChildren",
-  "issueAssignTargets",
+  "taskCreateDirectChildren",
+  "taskAssignTargets",
   "creatorUpdateTargets",
   "mentionTargets",
   "configureTargets",
@@ -97,17 +97,17 @@ const MANAGED_PROJECTION_FIELDS = [
 const MANAGED_CATALOG_TYPES = [
   "AgentCatalogEntry",
   "RuntimeAgentConfigureTarget",
-  "IssueCreateOwnerCatalogEntry",
-  "IssueAssignOwnerCatalog",
+  "TaskCreateOwnerCatalogEntry",
+  "TaskAssignOwnerCatalog",
   "CreatorUpdateTargetCatalogEntry",
 ] as const;
 
 const RAW_MANAGED_DESCRIPTOR_HELPERS = [
   "buildRuntimeRetrievalAbi",
   "actionDescriptors",
-  "issueCreateDescriptor",
-  "issueAssignDescriptor",
-  "issueUpdateDescriptor",
+  "taskCreateDescriptor",
+  "taskAssignDescriptor",
+  "taskUpdateDescriptor",
   "mentionDescriptor",
   "mentionBoardDescriptor",
   "listAgentsDescriptor",
@@ -122,7 +122,7 @@ const RAW_MANAGED_DESCRIPTOR_HELPERS = [
   "PAPERCLIP_RETRIEVAL_TOOL_NAMES",
 ] as const;
 
-const RAW_MANAGED_TOOL_LITERAL = /["'](?:list_company_issues|list_sub_issues|read_issue_comments|read_issue_agent_run|issue_create|issue_assign|issue_update|mention_agent|mention_board|agent_hire|agent_configure|list_agents|agent_read)["']/;
+const RAW_MANAGED_TOOL_LITERAL = /["'](?:list_company_tasks|list_sub_tasks|read_task_comments|read_task_agent_run|task_create|task_assign|task_update|mention_agent|mention_board|agent_hire|agent_configure|list_agents|agent_read)["']/;
 
 function read(repositoryRoot: string, path: string): string | null {
   const absolutePath = resolve(repositoryRoot, path);
@@ -218,7 +218,7 @@ export function runtimeInterfaceCompilerBoundaryViolations(
         COMPILER,
         digest,
         "raw managed authority entered the assembled runtime-interface digest",
-        /\b(?:contextDial|actionGrants|isCurrentOwner|issueCreateDirectChildren|issueAssignTargets|creatorUpdateTargets|mentionTargets|configureTargets|principalPermission|permissionGrants|configureGrants|managementPermission)\b/,
+        /\b(?:contextDial|actionGrants|isCurrentOwner|taskCreateDirectChildren|taskAssignTargets|creatorUpdateTargets|mentionTargets|configureTargets|principalPermission|permissionGrants|configureGrants|managementPermission)\b/,
       );
       rejectPattern(
         violations,
@@ -262,7 +262,7 @@ export function runtimeInterfaceCompilerBoundaryViolations(
       COMPILER,
       compiler,
       "imports a managed action schema/parser",
-      /from\s+["']zod["']|\b(?:createIssueSchema|runtimeAgentConfigureActionSchemaForTargets|runtimeAgentHireConfigurationSchema)\b/,
+      /from\s+["']zod["']|\b(?:createTaskSchema|runtimeAgentConfigureActionSchemaForTargets|runtimeAgentHireConfigurationSchema)\b/,
     );
     for (const catalogType of MANAGED_CATALOG_TYPES) {
       if (compiler.includes(catalogType)) {

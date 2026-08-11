@@ -11,10 +11,10 @@ import { afterEach, test } from "node:test";
 import {
   ACPX_STATE_TERMS,
   DIRECT_RETIRED_TOKENS,
-  assertCrossIssueMemoryRemoval,
-  crossIssueMemoryRemovalViolations,
-  scanCrossIssueMemoryRemovalFiles,
-} from "./check-cross-issue-memory-removal.ts";
+  assertCrossTaskMemoryRemoval,
+  crossTaskMemoryRemovalViolations,
+  scanCrossTaskMemoryRemovalFiles,
+} from "./check-cross-task-memory-removal.ts";
 
 const roots = new Set<string>();
 
@@ -139,12 +139,12 @@ test("accepts the canonical accounting, dynamic ACPX discovery, and opaque-corre
       "}",
     ].join("\n"),
   );
-  assert.deepEqual(crossIssueMemoryRemovalViolations(root), []);
+  assert.deepEqual(crossTaskMemoryRemovalViolations(root), []);
 });
 
 for (const token of DIRECT_RETIRED_TOKENS) {
   test(`rejects exact retired identifier ${token}`, () => {
-    const violations = scanCrossIssueMemoryRemovalFiles([
+    const violations = scanCrossTaskMemoryRemovalFiles([
       {
         path: "apps/server/src/legacy.ts",
         source: `export const retired = ${JSON.stringify(token)};`,
@@ -159,7 +159,7 @@ for (const token of DIRECT_RETIRED_TOKENS) {
 
 test("rejects each ACPX state symbol only inside the ACPX runtime graph", () => {
   for (const term of ACPX_STATE_TERMS) {
-    const violations = scanCrossIssueMemoryRemovalFiles([
+    const violations = scanCrossTaskMemoryRemovalFiles([
       {
         path: "packages/adapter-utils/src/acpx-engine/runtime.ts",
         source: `import { createAgentRegistry } from "acpx/runtime";\nconst value = { ${term}: true };`,
@@ -173,7 +173,7 @@ test("rejects each ACPX state symbol only inside the ACPX runtime graph", () => 
 });
 
 test("rejects aliased access to an ACPX stateful runtime export", () => {
-  const violations = scanCrossIssueMemoryRemovalFiles([
+  const violations = scanCrossTaskMemoryRemovalFiles([
     {
       path: "packages/adapter-utils/src/acpx-runtime/runtime-wrapper.ts",
       source:
@@ -188,7 +188,7 @@ test("rejects aliased access to an ACPX stateful runtime export", () => {
 });
 
 for (const [provider, source] of [
-  ["openclaw", "const options = { sessionKey: issueId };"],
+  ["openclaw", "const options = { sessionKey: taskId };"],
   ["hermes", "const argv = ['--resume', opaqueId];"],
   ["cursor", "const argv = ['--resume', opaqueId];"],
   ["grok", "const argv = ['--resume', opaqueId];"],
@@ -199,7 +199,7 @@ for (const [provider, source] of [
   ["codex", "const argv = ['resume', nativeSessionId];"],
 ] as const) {
   test(`rejects ${provider} provider-specific continuation lowering`, () => {
-    const violations = scanCrossIssueMemoryRemovalFiles([
+    const violations = scanCrossTaskMemoryRemovalFiles([
       {
         path: `packages/adapters/${provider}/src/execute.ts`,
         source,
@@ -210,7 +210,7 @@ for (const [provider, source] of [
 }
 
 test("rejects renamed provider continuation builders and result correlation", () => {
-  const violations = scanCrossIssueMemoryRemovalFiles([
+  const violations = scanCrossTaskMemoryRemovalFiles([
     {
       path: "packages/adapters/gemini/src/args.ts",
       source: "export function buildProviderSessionArguments() { return []; }",
@@ -232,7 +232,7 @@ test("rejects renamed provider continuation builders and result correlation", ()
 });
 
 test("rejects a renamed parsed provider-session result branch", () => {
-  const violations = scanCrossIssueMemoryRemovalFiles([
+  const violations = scanCrossTaskMemoryRemovalFiles([
     {
       path: "packages/adapters/cursor/src/result.ts",
       source: [
@@ -262,7 +262,7 @@ test("rejects every legacy consumer class instead of checking only old filenames
     "apps/docs/adapters/overview.md",
     "releases/v1.md",
   ]) {
-    const violations = scanCrossIssueMemoryRemovalFiles([
+    const violations = scanCrossTaskMemoryRemovalFiles([
       { path, source: "const legacy = 'sessionParams';" },
     ]);
     assert.ok(violations.length > 0, `expected ${path} to fail`);
@@ -270,7 +270,7 @@ test("rejects every legacy consumer class instead of checking only old filenames
 });
 
 test("rejects a wildcard-loaded removed memory eval and removed asset path", () => {
-  const violations = scanCrossIssueMemoryRemovalFiles([
+  const violations = scanCrossTaskMemoryRemovalFiles([
     {
       path: "evals/promptfoo/promptfooconfig.yaml",
       source: "tests: tests/*.yaml\n",
@@ -287,7 +287,7 @@ test("rejects a wildcard-loaded removed memory eval and removed asset path", () 
 
 test("rejects a hidden AGENTS or HEARTBEAT memory mandate", () => {
   for (const path of ["fixtures/AGENTS.md", "fixtures/HEARTBEAT.md"]) {
-    const violations = scanCrossIssueMemoryRemovalFiles([
+    const violations = scanCrossTaskMemoryRemovalFiles([
       {
         path,
         source: "You must recall saved memory before every task.",
@@ -302,7 +302,7 @@ test("rejects a hidden AGENTS or HEARTBEAT memory mandate", () => {
 
 test("rejects Paperclip-managed provider homes but accepts opaque operator environment", () => {
   assert.ok(
-    scanCrossIssueMemoryRemovalFiles([
+    scanCrossTaskMemoryRemovalFiles([
       {
         path: "apps/docs/legacy-provider-home.md",
         source: "Paperclip stages auth.json and skills beneath CODEX_HOME.",
@@ -310,7 +310,7 @@ test("rejects Paperclip-managed provider homes but accepts opaque operator envir
     ]).some((violation) => violation.term === "CODEX_HOME"),
   );
   assert.deepEqual(
-    scanCrossIssueMemoryRemovalFiles([
+    scanCrossTaskMemoryRemovalFiles([
       {
         path: "apps/server/src/provider-environment.ts",
         source: "const child = { CODEX_HOME: input.env.CODEX_HOME };",
@@ -328,7 +328,7 @@ test("rejects Paperclip-managed provider homes but accepts opaque operator envir
 });
 
 test("allows only explicitly marker-scoped negative removal fixtures", () => {
-  const marked = scanCrossIssueMemoryRemovalFiles([
+  const marked = scanCrossTaskMemoryRemovalFiles([
     {
       path: "packages/shared/src/rejected-config.test.ts",
       source: [
@@ -339,7 +339,7 @@ test("allows only explicitly marker-scoped negative removal fixtures", () => {
   ]);
   assert.deepEqual(marked, []);
 
-  const unmarked = scanCrossIssueMemoryRemovalFiles([
+  const unmarked = scanCrossTaskMemoryRemovalFiles([
     {
       path: "packages/shared/src/legacy-allowlist.test.ts",
       source: "expect(parse({ sessionParams: {} })).toFail();",
@@ -348,6 +348,6 @@ test("allows only explicitly marker-scoped negative removal fixtures", () => {
   assert.ok(unmarked.length > 0);
 });
 
-test("the repository satisfies the complete cross-issue-memory removal gate", () => {
-  assert.doesNotThrow(() => assertCrossIssueMemoryRemoval());
+test("the repository satisfies the complete cross-task-memory removal gate", () => {
+  assert.doesNotThrow(() => assertCrossTaskMemoryRemoval());
 });

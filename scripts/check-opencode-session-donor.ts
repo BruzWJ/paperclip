@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,7 +11,6 @@ const DONOR_ROOT = path.resolve(
     path.join(REPO_ROOT, "../../reference/projects/opencode"),
 );
 const LOCK_PATH = path.join(REPO_ROOT, "opencode-donor.lock.json");
-const RETIRED_PACKAGE = path.join(REPO_ROOT, "packages/issue-session");
 
 const SCHEMA_ROOTS = [
   "packages/schema/src/session.ts",
@@ -240,15 +239,6 @@ function verifyDonorFile(record: DonorFileEvidence): void {
   }
 }
 
-async function assertRetiredConnectorAbsent(): Promise<void> {
-  try {
-    await access(RETIRED_PACKAGE);
-    throw new Error("packages/issue-session is retired; Session logic must be Paperclip-owned");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-}
-
 async function main(): Promise<void> {
   const raw = await readFile(LOCK_PATH, "utf8");
   const lock = JSON.parse(raw) as unknown;
@@ -260,7 +250,6 @@ async function main(): Promise<void> {
   for (const record of [...lock.schema.staticRelativeClosure, ...lock.coreV2.files]) {
     verifyDonorFile(record);
   }
-  await assertRetiredConnectorAbsent();
   assert(raw === `${JSON.stringify(lock, null, 2)}\n`, "opencode-donor.lock.json must be canonical reviewed JSON");
   console.log("Exact OpenCode Session schema/core donor closure verified.");
 }

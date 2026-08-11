@@ -8,7 +8,7 @@ export const PROPOSED_TELEMETRY_SCHEMA_VERSION = "proposed-telemetry-extractor.v
 
 const DEFAULT_EVENTS_FILE = "packages/shared/src/telemetry/events.ts";
 const EVENT_NAME_PATTERN = /^[a-z0-9][a-z0-9._:-]{1,63}$/;
-const ISSUE_PATTERN = /^(PAP-\d+|https:\/\/github\.com\/paperclipai\/paperclip\/issues\/\d+)$/;
+const TASK_PATTERN = /^(PAP-\d+|paperclipai\/paperclip#\d+)$/;
 
 export function assertRepoRelativePath(value) {
   if (typeof value !== "string" || value.length === 0) {
@@ -50,19 +50,19 @@ export function parseProposedTelemetryDirective(commentText) {
   const marker = normalized.match(/@ts-expect-error\b(?:\s*--\s*)?(?:proposed-telemetry\(([^)]+)\):\s*(.*))?/s);
   if (!marker) return null;
 
-  const issue = marker[1]?.trim() || null;
+  const task = marker[1]?.trim() || null;
   const text = marker[2]?.trim() || null;
 
-  if (issue && !ISSUE_PATTERN.test(issue)) {
+  if (task && !TASK_PATTERN.test(task)) {
     throw new Error(
-      `proposed telemetry rationale issue must be PAP-<digits> or a paperclipai/paperclip GitHub issue URL: ${issue}`,
+      `proposed telemetry rationale task must be PAP-<digits> or a paperclipai/paperclip#<digits> GitHub ticket reference: ${task}`,
     );
   }
 
   return {
-    issue,
+    task,
     text,
-    missingIssue: issue === null,
+    missingTask: task === null,
     missingRationale: text === null,
   };
 }
@@ -86,7 +86,7 @@ export function extractProposedEvents(options = {}) {
       proposal = {
         name,
         dimensions: new Map(),
-        rationale: { issue: null, text: null },
+        rationale: { task: null, text: null },
         provenance: [],
       };
       proposals.set(name, proposal);
@@ -281,7 +281,7 @@ function assertEventName(value, label) {
 }
 
 function mergeRationale(target, incoming, eventName) {
-  mergeRationaleField(target, incoming, "issue", eventName);
+  mergeRationaleField(target, incoming, "task", eventName);
   mergeRationaleField(target, incoming, "text", eventName);
 }
 
@@ -307,9 +307,9 @@ function formatProposal(proposal) {
     name: proposal.name,
     dimensions: [...proposal.dimensions.values()].sort((a, b) => a.name.localeCompare(b.name)),
     rationale: {
-      issue: proposal.rationale.issue,
+      task: proposal.rationale.task,
       text: proposal.rationale.text,
-      missingIssue: proposal.rationale.issue === null,
+      missingTask: proposal.rationale.task === null,
       missingRationale: proposal.rationale.text === null,
     },
     provenance,

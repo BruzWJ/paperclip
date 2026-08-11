@@ -34,8 +34,8 @@ const SOURCE_EXTENSIONS = new Set([
 ]);
 
 const FORBIDDEN_TERMS = [
-  ["issueExecution", "OutcomeTranslations"].join(""),
-  ["issue_execution", "_outcome_translations"].join(""),
+  ["taskExecution", "OutcomeTranslations"].join(""),
+  ["task_execution", "_outcome_translations"].join(""),
   ["normalized", "Final"].join(""),
   ["normalized", "_final"].join(""),
   ["normalized", "-final"].join(""),
@@ -45,9 +45,9 @@ type ForbiddenTerm = (typeof FORBIDDEN_TERMS)[number];
 
 const SELF_TEST_PATH = "scripts/check-outcome-mirror-removal.test.ts";
 const FINALIZATION_SCHEMA_PATH =
-  "packages/db/schema/issue_execution_runs.ts";
+  "packages/db/schema/task_execution_runs.ts";
 const COMMENT_SOURCE_SCHEMA_PATH =
-  "packages/db/schema/issue_comment_projection_sources.ts";
+  "packages/db/schema/task_comment_projection_sources.ts";
 
 export interface OutcomeMirrorRemovalFile {
   readonly path: string;
@@ -72,7 +72,6 @@ function isIgnored(path: string): boolean {
     normalized.includes("/coverage/") ||
     normalized.includes("/dist/") ||
     normalized.includes("/node_modules/") ||
-    normalized.includes("/tasks/") ||
     toPosix(path) === SELF_TEST_PATH
   );
 }
@@ -155,7 +154,7 @@ function assertCanonicalOwners(repositoryRoot: string): void {
     "utf8",
   );
   for (const required of [
-    '"issue_execution_finalizations"',
+    '"task_execution_finalizations"',
     "finalizationIdentityDigest",
     "terminalSessionEventId",
     "terminalSessionMessageId",
@@ -175,7 +174,7 @@ function assertCanonicalOwners(repositoryRoot: string): void {
   for (const required of [
     '"run_output"',
     '"run_progress"',
-    '"issue_update"',
+    '"task_update"',
   ]) {
     if (!commentSource.includes(required)) {
       throw new Error(

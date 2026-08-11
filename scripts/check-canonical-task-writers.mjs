@@ -16,14 +16,14 @@ const SQL_ROOTS = [
 ];
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 
-const ISSUE_INSERT_OWNER = "apps/server/src/services/canonical-issue-aggregate.ts";
-const ISSUE_INSERT_FUNCTION = "persistCanonicalIssueAggregateInTx";
-const ISSUE_DELETE_OWNER = "apps/server/src/services/issue-session-lifecycle.ts";
-const ISSUE_DELETE_FUNCTION = "purgeCompanySessionGraphInTx";
-const ISSUE_CONTROL_OWNER = "apps/server/src/services/issues.ts";
+const TASK_INSERT_OWNER = "apps/server/src/services/canonical-task-aggregate.ts";
+const TASK_INSERT_FUNCTION = "persistCanonicalTaskAggregateInTx";
+const TASK_DELETE_OWNER = "apps/server/src/services/task-session-lifecycle.ts";
+const TASK_DELETE_FUNCTION = "purgeCompanySessionGraphInTx";
+const TASK_CONTROL_OWNER = "apps/server/src/services/tasks.ts";
 const MANAGED_TOOL_REGISTRY_OWNER = "apps/server/src/services/paperclip-managed-tool-registry.ts";
-const ACTION_PORT_OWNER = "apps/server/src/services/runtime-issue-action-port.ts";
-const ISSUE_SCHEMA_OWNER = "packages/db/schema/issues.ts";
+const ACTION_PORT_OWNER = "apps/server/src/services/runtime-task-action-port.ts";
+const TASK_SCHEMA_OWNER = "packages/db/schema/tasks.ts";
 
 const IMMUTABLE_UPDATE_FIELDS = new Set([
   "parentId",
@@ -83,7 +83,7 @@ function walk(directory, repoRoot, output, extensions) {
   }
 }
 
-export function listCanonicalIssueWriterInputs(repoRoot = DEFAULT_REPO_ROOT) {
+export function listCanonicalTaskWriterInputs(repoRoot = DEFAULT_REPO_ROOT) {
   const sourceFiles = [];
   for (const root of SOURCE_ROOTS) {
     walk(resolve(repoRoot, root), repoRoot, sourceFiles, SOURCE_EXTENSIONS);
@@ -192,14 +192,14 @@ function buildBindings(sourceFile) {
     }
     if (
       ts.isImportSpecifier(node) &&
-      (node.propertyName?.text === "issues" || (!node.propertyName && node.name.text === "issues"))
+      (node.propertyName?.text === "tasks" || (!node.propertyName && node.name.text === "tasks"))
     ) {
       aliases.add(node.name.text);
     }
     if (ts.isBindingElement(node)) {
       const imported = propertyNameText(node.propertyName) ?? propertyNameText(node.name);
       const local = propertyNameText(node.name);
-      if (imported === "issues" && local) aliases.add(local);
+      if (imported === "tasks" && local) aliases.add(local);
     }
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
       initializers.set(node.name.text, node.initializer);
@@ -219,13 +219,13 @@ function buildBindings(sourceFile) {
       return isTable(initializer, seen);
     }
     if (ts.isPropertyAccessExpression(node)) {
-      return node.name.text === "issues" &&
+      return node.name.text === "tasks" &&
         ts.isIdentifier(unwrap(node.expression)) &&
         namespaces.has(unwrap(node.expression).text);
     }
     if (ts.isElementAccessExpression(node) && node.argumentExpression) {
       const key = unwrap(node.argumentExpression);
-      return ts.isStringLiteralLike(key) && key.text === "issues";
+      return ts.isStringLiteralLike(key) && key.text === "tasks";
     }
     return ts.isCallExpression(node) && ts.isIdentifier(unwrap(node.expression)) && factories.has(unwrap(node.expression).text);
   };
@@ -306,7 +306,7 @@ function tableMutationCallFromSet(call, bindings) {
 }
 
 function rawSqlMutation(text) {
-  const table = String.raw`(?:"?[\w-]+"?\.)?"?issues"?`;
+  const table = String.raw`(?:"?[\w-]+"?\.)?"?tasks"?`;
   if (new RegExp(String.raw`\binsert\s+into\s+${table}\b`, "i").test(text)) return "insert";
   if (new RegExp(String.raw`\bdelete\s+from\s+${table}\b`, "i").test(text)) return "delete";
   const update = text.match(new RegExp(String.raw`\bupdate\s+${table}\s+set\s+([\s\S]*)`, "i"));
@@ -327,30 +327,30 @@ function literalText(node) {
   return null;
 }
 
-function canonicalCallIssueObject(call, initializers) {
+function canonicalCallTaskObject(call, initializers) {
   const expression = unwrap(call.expression);
   const calledName = ts.isIdentifier(expression)
     ? expression.text
     : ts.isPropertyAccessExpression(expression)
       ? expression.name.text
       : null;
-  if (calledName !== ISSUE_INSERT_FUNCTION || call.arguments.length === 0) return null;
+  if (calledName !== TASK_INSERT_FUNCTION || call.arguments.length === 0) return null;
   let input = unwrap(call.arguments.at(-1));
   if (ts.isIdentifier(input)) input = unwrap(initializers.get(input.text) ?? input);
   if (!ts.isObjectLiteralExpression(input)) return null;
-  const issueProperty = input.properties.find(
-    (property) => ts.isPropertyAssignment(property) && propertyNameText(property.name) === "issue",
+  const taskProperty = input.properties.find(
+    (property) => ts.isPropertyAssignment(property) && propertyNameText(property.name) === "task",
   );
-  if (!issueProperty || !ts.isPropertyAssignment(issueProperty)) return null;
-  let issue = unwrap(issueProperty.initializer);
-  if (ts.isIdentifier(issue)) issue = unwrap(initializers.get(issue.text) ?? issue);
-  return ts.isObjectLiteralExpression(issue) ? issue : null;
+  if (!taskProperty || !ts.isPropertyAssignment(taskProperty)) return null;
+  let task = unwrap(taskProperty.initializer);
+  if (ts.isIdentifier(task)) task = unwrap(initializers.get(task.text) ?? task);
+  return ts.isObjectLiteralExpression(task) ? task : null;
 }
 
 function hasClosedControlPatchContract(sourceText) {
   const required = [
-    "type IssueControlStateUpdate",
-    "data: IssueControlStateUpdate",
+    "type TaskControlStateUpdate",
+    "data: TaskControlStateUpdate",
     '"request"',
     '"creatorAuthorityId"',
     '"creatorAdapterConfigRevisionId"',
@@ -382,8 +382,8 @@ export function inspectSourceText(relativePath, sourceText) {
       ) {
         const functionName = enclosingFunctionName(node);
         const allowed = operation === "insert"
-          ? path === ISSUE_INSERT_OWNER && functionName === ISSUE_INSERT_FUNCTION
-          : path === ISSUE_DELETE_OWNER && functionName === ISSUE_DELETE_FUNCTION;
+          ? path === TASK_INSERT_OWNER && functionName === TASK_INSERT_FUNCTION
+          : path === TASK_DELETE_OWNER && functionName === TASK_DELETE_FUNCTION;
         if (operation === "insert" && allowed) allowedInsertCalls.push(node);
         if (!allowed) {
           violations.push(makeViolation(
@@ -392,8 +392,8 @@ export function inspectSourceText(relativePath, sourceText) {
             node,
             operation,
             operation === "insert"
-              ? `Only ${ISSUE_INSERT_OWNER}::${ISSUE_INSERT_FUNCTION} may insert issues.`
-              : `Only ${ISSUE_DELETE_OWNER}::${ISSUE_DELETE_FUNCTION} may delete issues.`,
+              ? `Only ${TASK_INSERT_OWNER}::${TASK_INSERT_FUNCTION} may insert tasks.`
+              : `Only ${TASK_DELETE_OWNER}::${TASK_DELETE_FUNCTION} may delete tasks.`,
           ));
         }
       }
@@ -403,7 +403,7 @@ export function inspectSourceText(relativePath, sourceText) {
         const fields = objectPropertyNames(node.arguments[0], bindings.initializers);
         const forbidden = [...fields.names].filter((name) => IMMUTABLE_UPDATE_FIELDS.has(name));
         const closedDynamicPatch =
-          path === ISSUE_CONTROL_OWNER &&
+          path === TASK_CONTROL_OWNER &&
           isInsideNamedFunction(node, "updateControlState") &&
           hasClosedControlPatchContract(sourceText);
         if (
@@ -416,8 +416,8 @@ export function inspectSourceText(relativePath, sourceText) {
             node,
             forbidden.length > 0 ? "immutable-update" : "generic-update-payload",
             forbidden.length > 0
-              ? `Immutable issue fields cannot be updated: ${forbidden.sort().join(", ")}.`
-              : "A generic issue update payload can carry immutable request/creator fields.",
+              ? `Immutable task fields cannot be updated: ${forbidden.sort().join(", ")}.`
+              : "A generic task update payload can carry immutable request/creator fields.",
           ));
         }
       }
@@ -435,19 +435,19 @@ export function inspectSourceText(relativePath, sourceText) {
           path,
           node,
           "table-wrapper",
-          "The issues table cannot escape through a generic writer wrapper.",
+          "The tasks table cannot escape through a generic writer wrapper.",
         ));
       }
 
-      const issueObject = canonicalCallIssueObject(node, bindings.initializers);
-      if (issueObject) {
-        const fields = objectPropertyNames(issueObject, bindings.initializers).names;
+      const taskObject = canonicalCallTaskObject(node, bindings.initializers);
+      if (taskObject) {
+        const fields = objectPropertyNames(taskObject, bindings.initializers).names;
         const pairCount = CREATOR_PAIR.filter((field) => fields.has(field)).length;
         if (pairCount === 1) {
           violations.push(makeViolation(
             sourceFile,
             path,
-            issueObject,
+            taskObject,
             "partial-creator-pair",
             "Agent-execution creator authority and originating adapter revision must be supplied together.",
           ));
@@ -464,7 +464,7 @@ export function inspectSourceText(relativePath, sourceText) {
           path,
           node,
           operation,
-          "Raw SQL cannot bypass canonical issue creation or immutable request/creator fields.",
+          "Raw SQL cannot bypass canonical task creation or immutable request/creator fields.",
         ));
       }
     }
@@ -478,7 +478,7 @@ export function inspectSourceText(relativePath, sourceText) {
       path,
       call,
       "second-owner-insert",
-      `${ISSUE_INSERT_FUNCTION} must contain exactly one issues insert.`,
+      `${TASK_INSERT_FUNCTION} must contain exactly one tasks insert.`,
     ));
   }
 
@@ -500,7 +500,7 @@ export function inspectMigrationText(relativePath, sourceText) {
         line: sourceText.slice(0, sourceText.indexOf(statements[index])).split("\n").length,
         column: 1,
         operation: "migration-mutation",
-        message: "A migration cannot insert issue rows or mutate immutable request/creator fields.",
+        message: "A migration cannot insert task rows or mutate immutable request/creator fields.",
       });
     }
   }
@@ -517,11 +517,11 @@ export function requiredOwnershipViolations(files) {
     }
     return content;
   };
-  const aggregate = requireFile(ISSUE_INSERT_OWNER);
-  const issueService = requireFile(ISSUE_CONTROL_OWNER);
+  const aggregate = requireFile(TASK_INSERT_OWNER);
+  const taskService = requireFile(TASK_CONTROL_OWNER);
   const registry = requireFile(MANAGED_TOOL_REGISTRY_OWNER);
   const actionPort = requireFile(ACTION_PORT_OWNER);
-  const schema = requireFile(ISSUE_SCHEMA_OWNER);
+  const schema = requireFile(TASK_SCHEMA_OWNER);
 
   const requireMarkers = (path, content, markers, operation) => {
     for (const marker of markers) {
@@ -530,41 +530,41 @@ export function requiredOwnershipViolations(files) {
       }
     }
   };
-  requireMarkers(ISSUE_INSERT_OWNER, aggregate, [
-    `export async function ${ISSUE_INSERT_FUNCTION}`,
-    "await assertAgentExecutionCreator(tx, issue);",
-    ".insert(issues)",
+  requireMarkers(TASK_INSERT_OWNER, aggregate, [
+    `export async function ${TASK_INSERT_FUNCTION}`,
+    "await assertAgentExecutionCreator(tx, task);",
+    ".insert(tasks)",
   ], "aggregate-owner");
   if (
-    aggregate.indexOf("await assertAgentExecutionCreator(tx, issue);") >
-    aggregate.indexOf(".insert(issues)")
+    aggregate.indexOf("await assertAgentExecutionCreator(tx, task);") >
+    aggregate.indexOf(".insert(tasks)")
   ) {
-    violations.push({ path: ISSUE_INSERT_OWNER, line: 1, column: 1, operation: "authority-order", message: "Creator authority must be checked before the sole issue insert." });
+    violations.push({ path: TASK_INSERT_OWNER, line: 1, column: 1, operation: "authority-order", message: "Creator authority must be checked before the sole task insert." });
   }
-  requireMarkers(ISSUE_CONTROL_OWNER, issueService, [
-    "type IssueControlStateUpdate",
-    "data: IssueControlStateUpdate",
+  requireMarkers(TASK_CONTROL_OWNER, taskService, [
+    "type TaskControlStateUpdate",
+    "data: TaskControlStateUpdate",
     '| "request"',
     '| "creatorAuthorityId"',
     '| "creatorAdapterConfigRevisionId"',
   ], "closed-update-contract");
   requireMarkers(MANAGED_TOOL_REGISTRY_OWNER, registry, [
     "export const boardMcpInputSchemas",
-    "function projectRuntimeIssueCreate(",
-    "input.actionGrants.issue_create !== true",
-    'name: "issue_create"',
-    'case "issue_create": return projectRuntimeIssueCreate(input);',
+    "function projectRuntimeTaskCreate(",
+    "input.actionGrants.task_create !== true",
+    'name: "task_create"',
+    'case "task_create": return projectRuntimeTaskCreate(input);',
   ], "registry-authority");
   requireMarkers(ACTION_PORT_OWNER, actionPort, [
     'lockRuntimeActionAuthority(',
-    '"issue_create"',
-    "if (!input.capability.issueExecutionAuthorityId)",
-    "creatorAuthorityId: input.capability.issueExecutionAuthorityId",
+    '"task_create"',
+    "if (!input.capability.taskExecutionAuthorityId)",
+    "creatorAuthorityId: input.capability.taskExecutionAuthorityId",
     "creatorAdapterConfigRevisionId:",
     "input.capability.adapterConfigIdentity",
-    `${ISSUE_INSERT_FUNCTION}(tx,`,
+    `${TASK_INSERT_FUNCTION}(tx,`,
   ], "action-port-authority");
-  requireMarkers(ISSUE_SCHEMA_OWNER, schema, [
+  requireMarkers(TASK_SCHEMA_OWNER, schema, [
     'request: text("request").notNull()',
     'creatorAuthorityId: uuid("creator_authority_id")',
     'creatorAdapterConfigRevisionId: uuid("creator_adapter_config_revision_id")',
@@ -572,8 +572,8 @@ export function requiredOwnershipViolations(files) {
   return violations;
 }
 
-export function checkCanonicalIssueWriters(repoRoot = DEFAULT_REPO_ROOT) {
-  const { sourceFiles, sqlFiles } = listCanonicalIssueWriterInputs(repoRoot);
+export function checkCanonicalTaskWriters(repoRoot = DEFAULT_REPO_ROOT) {
+  const { sourceFiles, sqlFiles } = listCanonicalTaskWriterInputs(repoRoot);
   const violations = [];
   const contents = new Map();
   for (const absolutePath of sourceFiles) {
@@ -593,12 +593,12 @@ export function checkCanonicalIssueWriters(repoRoot = DEFAULT_REPO_ROOT) {
 }
 
 function main() {
-  const violations = checkCanonicalIssueWriters();
+  const violations = checkCanonicalTaskWriters();
   if (violations.length === 0) {
-    console.log("Canonical issue writer check passed: one aggregate insert owner, immutable request/creator fields, and registry-projection/action-port authority are structurally locked.");
+    console.log("Canonical task writer check passed: one aggregate insert owner, immutable request/creator fields, and registry-projection/action-port authority are structurally locked.");
     return;
   }
-  console.error(`Canonical issue writer check failed with ${violations.length} violation(s):`);
+  console.error(`Canonical task writer check failed with ${violations.length} violation(s):`);
   for (const item of violations) {
     console.error(`  ${item.path}:${item.line}:${item.column} [${item.operation}] ${item.message}`);
   }

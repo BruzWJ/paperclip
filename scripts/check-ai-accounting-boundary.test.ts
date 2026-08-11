@@ -33,9 +33,9 @@ function fixtureRoot(): string {
     "contextTokenLimit: bigint(), contextUsedTokens: bigint(), contextWindowTokens: bigint(),",
     '}); check("acp_prompt_accounting_context_occupancy_check", sql`${table.contextUsedTokens} >= 0 and ${table.contextWindowTokens} > 0 and ${table.contextUsedTokens} <= ${table.contextWindowTokens} and ${table.contextWindowTokens} = ${table.contextTokenLimit}`);',
   ].join("\n"));
-  write(root, "packages/db/schema/issue_sessions.ts", [
+  write(root, "packages/db/schema/task_sessions.ts", [
     "tokensInput: bigint(), tokensOutput: bigint(), tokensReasoning: bigint(), tokensCacheRead: bigint(), tokensCacheWrite: bigint(),",
-    'check("issue_sessions_cost_and_tokens_check", sql`${table.tokensInput} is null and ${table.tokensOutput} is null and ${table.tokensReasoning} is null and ${table.tokensCacheRead} is null and ${table.tokensCacheWrite} is null or ${table.tokensInput} >= 0 and ${table.tokensOutput} >= 0 and ${table.tokensReasoning} >= 0 and ${table.tokensCacheRead} >= 0 and ${table.tokensCacheWrite} >= 0`);',
+    'check("task_sessions_cost_and_tokens_check", sql`${table.tokensInput} is null and ${table.tokensOutput} is null and ${table.tokensReasoning} is null and ${table.tokensCacheRead} is null and ${table.tokensCacheWrite} is null or ${table.tokensInput} >= 0 and ${table.tokensOutput} >= 0 and ${table.tokensReasoning} >= 0 and ${table.tokensCacheRead} >= 0 and ${table.tokensCacheWrite} >= 0`);',
   ].join("\n"));
   const tokenShape = [
     "tokens: Schema.Struct({",
@@ -43,18 +43,18 @@ function fixtureRoot(): string {
     "cache: Schema.Struct({ read: Schema.Finite, write: Schema.Finite }),",
     "}).pipe(optional)",
   ].join("\n");
-  write(root, "packages/shared/src/issue-session/session.ts", tokenShape);
-  write(root, "packages/shared/src/issue-session/session-message.ts", `export const Assistant = Schema.Struct({\n${tokenShape}\n});`);
-  write(root, "packages/shared/src/issue-session/session-event.ts", `export const Ended = EventDefinition.define({\ntype: "session.next.step.ended",\n${tokenShape}\n});`);
-  write(root, "packages/shared/src/issue-session/codec.test.ts", [
+  write(root, "packages/shared/src/task-session/session.ts", tokenShape);
+  write(root, "packages/shared/src/task-session/session-message.ts", `export const Assistant = Schema.Struct({\n${tokenShape}\n});`);
+  write(root, "packages/shared/src/task-session/session-event.ts", `export const Ended = EventDefinition.define({\ntype: "session.next.step.ended",\n${tokenShape}\n});`);
+  write(root, "packages/shared/src/task-session/codec.test.ts", [
     "preserves unavailable and explicit-zero Session accounting without sentinels",
     "uses only Step.Ended.3 and keeps its accounting objects all-or-none",
     "cache: { read: 0, write: 0 }",
     "tokens: { input: 0 }",
   ].join("\n"));
-  write(root, "apps/server/src/services/issue-session/message-updater.ts", 'case "session.next.step.ended": if (event.data.tokens !== undefined) message.tokens = event.data.tokens;\n');
-  write(root, "apps/server/src/services/issue-session/projector.ts", "canonicalJson(assistant.tokens) !== canonicalJson(event.data.tokens);\n");
-  write(root, "apps/server/src/services/issue-execution-acp-events-postgres.ts", 'if (input.event.kind === "usage") { return; }\n');
+  write(root, "apps/server/src/services/task-session/message-updater.ts", 'case "session.next.step.ended": if (event.data.tokens !== undefined) message.tokens = event.data.tokens;\n');
+  write(root, "apps/server/src/services/task-session/projector.ts", "canonicalJson(assistant.tokens) !== canonicalJson(event.data.tokens);\n");
+  write(root, "apps/server/src/services/task-execution-acp-events-postgres.ts", 'if (input.event.kind === "usage") { return; }\n');
   write(root, "apps/server/src/services/acp-prompt-settlement.ts", [
     "contextUsedTokens: settlement.occupancy.used,",
     "contextWindowTokens: settlement.occupancy.size,",
@@ -105,28 +105,28 @@ test("rejects token-throughput summation", () => {
 
 test("rejects a default on optional donor token storage", () => {
   const root = fixtureRoot();
-  const path = "packages/db/schema/issue_sessions.ts";
+  const path = "packages/db/schema/task_sessions.ts";
   write(root, path, readFileSync(join(root, path), "utf8").replace("tokensInput: bigint()", "tokensInput: bigint().default(0)"));
   assert.ok(aiAccountingBoundaryViolations(root).some((entry) => entry.includes("no default")));
 });
 
 test("rejects incomplete donor token objects", () => {
   const root = fixtureRoot();
-  const path = "packages/shared/src/issue-session/session-message.ts";
+  const path = "packages/shared/src/task-session/session-message.ts";
   write(root, path, readFileSync(join(root, path), "utf8").replace("reasoning: Schema.Finite,", ""));
   assert.ok(aiAccountingBoundaryViolations(root).some((entry) => entry.includes("reasoning")));
 });
 
 test("rejects zero-hostile donor storage", () => {
   const root = fixtureRoot();
-  const path = "packages/db/schema/issue_sessions.ts";
+  const path = "packages/db/schema/task_sessions.ts";
   write(root, path, readFileSync(join(root, path), "utf8").replace("table.tokensInput} >= 0", "table.tokensInput} > 0"));
   assert.ok(aiAccountingBoundaryViolations(root).some((entry) => entry.includes("tokensInput")));
 });
 
 test("rejects mapping stable ACP usage into Session events", () => {
   const root = fixtureRoot();
-  const path = "apps/server/src/services/issue-execution-acp-events-postgres.ts";
+  const path = "apps/server/src/services/task-execution-acp-events-postgres.ts";
   write(root, path, readFileSync(join(root, path), "utf8").replace('input.event.kind === "usage"', 'input.event.kind === "never"'));
   assert.ok(aiAccountingBoundaryViolations(root).some((entry) => entry.includes("usage")));
 });

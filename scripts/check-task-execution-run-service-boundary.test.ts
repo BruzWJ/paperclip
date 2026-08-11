@@ -1,11 +1,37 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   assertCanonicalContextRunTraceReader,
   assertCanonicalTargetLaneRunLocking,
   assertMissingCarryStartsFresh,
+  listCanonicalRunBoundaryFiles,
   scanCanonicalRunBoundaryFiles,
-} from "./check-issue-execution-run-service-boundary.ts";
+} from "./check-task-execution-run-service-boundary.ts";
+
+test("scans canonical tasks directories", () => {
+  const root = mkdtempSync(join(tmpdir(), "paperclip-run-boundary-"));
+  try {
+    const directory = join(root, "apps/server/src/tasks");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(
+      join(directory, "bypass.ts"),
+      "await tx.select().from(taskExecutionRuns);\n",
+    );
+
+    const files = listCanonicalRunBoundaryFiles(root);
+    assert.ok(files.some((file) => file.path === "apps/server/src/tasks/bypass.ts"));
+    assert.ok(
+      scanCanonicalRunBoundaryFiles(files).some((entry) =>
+        entry.rule.includes("run table access"),
+      ),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("rejects every retired run-store surface", () => {
   const terms = [
@@ -54,9 +80,9 @@ test("rejects run-table access outside the canonical service", () => {
     {
       path: "apps/server/src/services/bypass.ts",
       source: [
-        'import { issueExecutionRuns } from "@paperclipai/db";',
-        "await tx.select().from(issueExecutionRuns);",
-        'await tx.execute(sql`select * from "issue_execution_runs"`);',
+        'import { taskExecutionRuns } from "@paperclipai/db";',
+        "await tx.select().from(taskExecutionRuns);",
+        'await tx.execute(sql`select * from "task_execution_runs"`);',
       ].join("\n"),
     },
   ]);
@@ -74,9 +100,9 @@ test("allows typed run ids and schema references without table access", () => {
         "export async function read(runId: string) { return service.readRun({ runId }); }",
     },
     {
-      path: "packages/db/schema/issue_comments.ts",
+      path: "packages/db/schema/task_comments.ts",
       source:
-        "export const runId = uuid('run_id').references(() => issueExecutionRuns.id);",
+        "export const runId = uuid('run_id').references(() => taskExecutionRuns.id);",
     },
   ]);
   assert.deepEqual(violations, []);
@@ -87,7 +113,7 @@ test("keeps terminal liveness insertion inside the canonical finalizer", () => {
     {
       path: "apps/server/src/services/read-repair.ts",
       source:
-        "await tx.insert(issueExecutionRunLivenessFacts).values(fact);",
+        "await tx.insert(taskExecutionRunLivenessFacts).values(fact);",
     },
   ]);
   assert.ok(
@@ -98,9 +124,9 @@ test("keeps terminal liveness insertion inside the canonical finalizer", () => {
 
   const accepted = scanCanonicalRunBoundaryFiles([
     {
-      path: "apps/server/src/services/issue-execution-finalization-postgres.ts",
+      path: "apps/server/src/services/task-execution-finalization-postgres.ts",
       source:
-        "await tx.insert(issueExecutionRunLivenessFacts).values(fact);",
+        "await tx.insert(taskExecutionRunLivenessFacts).values(fact);",
     },
   ]);
   assert.deepEqual(accepted, []);
@@ -110,8 +136,8 @@ test("rejects mutation of immutable terminal liveness facts", () => {
   for (const operation of ["update", "delete"] as const) {
     const violations = scanCanonicalRunBoundaryFiles([
       {
-        path: "apps/server/src/services/issue-execution-finalization-postgres.ts",
-        source: `await tx.${operation}(issueExecutionRunLivenessFacts);`,
+        path: "apps/server/src/services/task-execution-finalization-postgres.ts",
+        source: `await tx.${operation}(taskExecutionRunLivenessFacts);`,
       },
     ]);
     assert.ok(
@@ -157,14 +183,14 @@ test("rejects the removed generic canonical run-trace event surface at each form
 
 test("requires run traces to combine the canonical run and transmitted Session reads", () => {
   const source = [
-    "const identity = await resolveIssueExecutionRunIdentityById(db, runId);",
+    "const identity = await resolveTaskExecutionRunIdentityById(db, runId);",
     "const detail = await options.runService.readJoinedRunDetail(identity);",
-    "const messages = await db.select().from(issueSessionMessages);",
+    "const messages = await db.select().from(taskSessionMessages);",
     "and member.prompt_transmission_phase = 'transmitted'",
-    "and source_ref.source_message_id = issueSessionMessages.id",
-    "and segment.source_message_id = issueSessionMessages.id",
+    "and source_ref.source_message_id = taskSessionMessages.id",
+    "and segment.source_message_id = taskSessionMessages.id",
     "const turns = messages.map((row) =>",
-    "  sanitizeCanonicalMessage(decodeStoredIssueSessionMessage(row), row.seq),",
+    "  sanitizeCanonicalMessage(decodeStoredTaskSessionMessage(row), row.seq),",
     ");",
     "return { turns, detail };",
   ].join("\n");
@@ -173,23 +199,23 @@ test("requires run traces to combine the canonical run and transmitted Session r
   assert.throws(
     () =>
       assertCanonicalContextRunTraceReader(
-        source.replace(".from(issueSessionMessages)", ".from(runDetailMessages)"),
+        source.replace(".from(taskSessionMessages)", ".from(runDetailMessages)"),
       ),
-    /must resolve the canonical run and project its transmitted Issue Session trace/,
+    /must resolve the canonical run and project its transmitted Task Session trace/,
   );
 });
 
 test("requires a fresh active-run lock after the exact target-lane hierarchy", () => {
   const canonicalRunService = [
     "export async function lockActiveProductiveRunForLaneInTransaction(",
-    "transaction: IssueSessionDbTransaction,",
-    "input: IssueExecutionTargetLaneIdentity,",
-    "): Promise<IssueExecutionRunEnvelope | null> {}",
+    "transaction: TaskSessionDbTransaction,",
+    "input: TaskExecutionTargetLaneIdentity,",
+    "): Promise<TaskExecutionRunEnvelope | null> {}",
   ].join("\n");
   const canonicalDispatcher = [
     "async function findExistingRunForLane(",
-    "transaction: IssueSessionDbTransaction,",
-    "lane: IssueExecutionTargetLaneIdentity,",
+    "transaction: TaskSessionDbTransaction,",
+    "lane: TaskExecutionTargetLaneIdentity,",
     ") {",
     "await lockLaneParents(transaction, lane);",
     "await lockLane(transaction, lane);",
@@ -221,7 +247,7 @@ test("requires a fresh active-run lock after the exact target-lane hierarchy", (
           "return lockActiveProductiveRunForLaneInTransaction(transaction, lane);",
         ),
       ),
-    /must lock company, issue, Session, exact lane/,
+    /must lock company, task, Session, exact lane/,
   );
 });
 

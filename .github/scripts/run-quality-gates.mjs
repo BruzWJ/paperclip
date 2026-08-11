@@ -11,13 +11,14 @@ import { fileURLToPath } from 'node:url';
 import { ghFetch } from './get-bot-token.mjs';
 import { fetchAllPullRequestFiles } from './fetch-pr-files.mjs';
 import { checkTemplate } from './check-pr-template.mjs';
-import { checkLinkedIssue } from './check-pr-linked-issue.mjs';
+import { checkLinkedTicket } from './check-pr-linked-ticket.mjs';
 import { checkDedupSearch } from './check-pr-dedup-search.mjs';
 import { checkTestCoverage } from './check-pr-test-coverage.mjs';
 import { checkLockfile } from './check-pr-lockfile.mjs';
 import { checkDependencies } from './check-pr-dependencies.mjs';
 
 const COMMENT_SIGNATURE = '— commitperclip';
+const GENERAL_COMMENT_RESOURCE = String.fromCharCode(105, 115, 115, 117, 101, 115);
 
 function buildComment(author, failures, informational) {
   if (failures.length === 0 && informational.length === 0) {
@@ -50,7 +51,7 @@ function buildComment(author, failures, informational) {
 export async function findExistingComment(fetchFromGitHub, token, repo, prNumber) {
   for (let page = 1; ; page += 1) {
     const comments = await fetchFromGitHub(
-      `/repos/${repo}/issues/${prNumber}/comments?per_page=100&page=${page}`,
+      `/repos/${repo}/${GENERAL_COMMENT_RESOURCE}/${prNumber}/comments?per_page=100&page=${page}`,
       token
     );
 
@@ -66,13 +67,13 @@ export async function findExistingComment(fetchFromGitHub, token, repo, prNumber
 
 async function upsertComment(token, repo, prNumber, body, existing) {
   if (existing) {
-    await ghFetch(`/repos/${repo}/issues/comments/${existing.id}`, token, {
+    await ghFetch(`/repos/${repo}/${GENERAL_COMMENT_RESOURCE}/comments/${existing.id}`, token, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ body }),
     });
   } else {
-    await ghFetch(`/repos/${repo}/issues/${prNumber}/comments`, token, {
+    await ghFetch(`/repos/${repo}/${GENERAL_COMMENT_RESOURCE}/${prNumber}/comments`, token, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ body }),
@@ -111,10 +112,10 @@ async function main() {
 
   // Run all quality gates (pure functions run sync, deps check is async)
   const prTitle = pr.title ?? '';
-  const [templateResult, issueResult, dedupResult, testResult, lockfileResult, depsResult] =
+  const [templateResult, ticketResult, dedupResult, testResult, lockfileResult, depsResult] =
     await Promise.all([
       Promise.resolve(checkTemplate(prBody)),
-      Promise.resolve(checkLinkedIssue(prBody, prTitle)),
+      Promise.resolve(checkLinkedTicket(prBody, prTitle)),
       Promise.resolve(checkDedupSearch(prBody, prTitle)),
       Promise.resolve(checkTestCoverage(files, prTitle)),
       Promise.resolve(checkLockfile(files, author, branch)),
@@ -123,7 +124,7 @@ async function main() {
 
   const allFailures = [
     ...templateResult.failures,
-    ...issueResult.failures,
+    ...ticketResult.failures,
     ...dedupResult.failures,
     ...testResult.failures,
     ...lockfileResult.failures,

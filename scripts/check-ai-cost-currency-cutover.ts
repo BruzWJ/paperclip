@@ -12,7 +12,7 @@ const REPOSITORY_ROOT = resolve(import.meta.dirname, "..");
 const GATE_PATH = "scripts/check-ai-cost-currency-cutover.ts";
 const SELF_TEST_PATH = "scripts/check-ai-cost-currency-cutover.test.ts";
 const BUDGET_OWNER = "apps/server/src/services/budgets.ts";
-const COMPANY_PURGE_OWNER = "apps/server/src/services/issue-session-lifecycle.ts";
+const COMPANY_PURGE_OWNER = "apps/server/src/services/task-session-lifecycle.ts";
 
 const RETIRED_AI_MONEY_TOKENS = [
   "budgetMonthlyCents",

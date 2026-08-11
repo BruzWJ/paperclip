@@ -37,11 +37,11 @@ const EXECUTE_TOOL_FIELDS = new Set([
   "runContextHandle",
 ]);
 
-const FACADE_FIELDS = new Set(["handle", "issues"]);
+const FACADE_FIELDS = new Set(["handle", "tasks"]);
 
 const RAW_RUN_IDENTITY_FIELDS = [
   "companyId",
-  "issueId",
+  "taskId",
   "sessionId",
   "runId",
   "agentId",
@@ -155,31 +155,31 @@ export function pluginRunContextBoundaryViolations(
     ...requireFileTokens(repositoryRoot, SDK_WORKER, [
       "async function handleExecuteTool",
       "const runContext: PluginToolRunContext = Object.freeze({",
-      'callHost("run.issues.listCompanyIssues"',
-      'callHost("run.issues.listSubIssues"',
-      'callHost("run.issues.readIssueComments"',
-      'callHost("run.issues.readIssueAgentRun"',
+      'callHost("run.tasks.listCompanyTasks"',
+      'callHost("run.tasks.listSubTasks"',
+      'callHost("run.tasks.readTaskComments"',
+      'callHost("run.tasks.readTaskAgentRun"',
     ]),
     ...requireFileTokens(repositoryRoot, SDK_HOST_CLIENT, [
       "requireExactRunContextHandle",
-      "requireRunIssueContextBoundary",
-      "INSTALLATION_ISSUE_CONTROL_PLANE_METHODS",
+      "requireRunTaskContextBoundary",
+      "INSTALLATION_TASK_CONTROL_PLANE_METHODS",
       "supplied !== active",
     ]),
     ...requireFileTokens(repositoryRoot, HOST_SERVICES, [
-      "export interface PluginRunIssueContextReader",
-      "pluginRunIssueContextReader",
-      "pluginRunIssueContextReader.listCompanyIssues({",
-      "pluginRunIssueContextReader.listSubIssues({",
-      "pluginRunIssueContextReader.readIssueComments({",
-      "pluginRunIssueContextReader.readIssueAgentRun({",
+      "export interface PluginRunTaskContextReader",
+      "pluginRunTaskContextReader",
+      "pluginRunTaskContextReader.listCompanyTasks({",
+      "pluginRunTaskContextReader.listSubTasks({",
+      "pluginRunTaskContextReader.readTaskComments({",
+      "pluginRunTaskContextReader.readTaskAgentRun({",
     ]),
     ...requireFileTokens(repositoryRoot, RUN_RUNTIME, [
       "gateway.resolvePluginRunContext(",
-      "retrieval.listCompanyIssues",
-      "retrieval.listSubIssues",
-      "retrieval.readIssueComments",
-      "retrieval.readIssueAgentRun",
+      "retrieval.listCompanyTasks",
+      "retrieval.listSubTasks",
+      "retrieval.readTaskComments",
+      "retrieval.readTaskAgentRun",
     ]),
   ];
 
@@ -281,9 +281,9 @@ export function pluginRunContextBoundaryViolations(
     );
     if (handler === null) {
       violations.push(`${SDK_WORKER}: execute-tool handler is missing`);
-    } else if (/callHost\(["']issues\./.test(handler)) {
+    } else if (/callHost\(["']tasks\./.test(handler)) {
       violations.push(
-        `${SDK_WORKER}: plugin run context can call ordinary issues.* services`,
+        `${SDK_WORKER}: plugin run context can call ordinary tasks.* services`,
       );
     }
   }
@@ -293,7 +293,7 @@ export function pluginRunContextBoundaryViolations(
     const exactValidator = between(
       hostClient,
       "function requireExactRunContextHandle",
-      "function requireRunIssueContextBoundary",
+      "function requireRunTaskContextBoundary",
     );
     if (
       exactValidator === null ||
@@ -301,7 +301,7 @@ export function pluginRunContextBoundaryViolations(
       !exactValidator.includes("invalidInvocationScope")
     ) {
       violations.push(
-        `${SDK_HOST_CLIENT}: run.issues.* does not validate the exact active opaque handle`,
+        `${SDK_HOST_CLIENT}: run.tasks.* does not validate the exact active opaque handle`,
       );
     }
   }

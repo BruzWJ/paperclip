@@ -14,27 +14,27 @@
 > - This pull request ...
 > - The benefit is ...
 
-## Linked Issues or Issue Description
+## Linked Tickets or Work Description
 
 <!--
   Required. Pick ONE of the following two paths:
 
-  (A) Issue exists — tag each linked issue with `Fixes: #123`, `Closes #123`,
-      or `Refs #123`. Include duplicates and closely related issues too.
+  (A) Ticket exists — tag each linked ticket with `Fixes: #123`, `Closes #123`,
+      or `Refs #123`. Include duplicates and closely related tasks too.
 
-  Only reference PUBLIC GitHub issues/PRs here. Do NOT paste internal,
-  instance-local Paperclip references — ticket ids like PAPA-123 / PAP-224,
-  /PAP/issues/... or agent://... links, or localhost/tailnet URLs. Other
-  contributors cannot open them. See CONTRIBUTING.md → "No Internal Issue
+  Only reference PUBLIC GitHub tickets/PRs here. Do NOT paste internal,
+  instance-local Paperclip references — task ids like PAPA-123 / PAP-224,
+  /PAP/tasks/... or agent://... links, or localhost/tailnet URLs. Other
+  contributors cannot open them. See CONTRIBUTING.md → "No Internal Task
   References".
 
-  (B) No issue exists — describe the underlying problem here, following the
-      relevant issue template so reviewers get the same fields:
-        • Bug:     .github/ISSUE_TEMPLATE/bug_report.yml
-        • Feature: .github/ISSUE_TEMPLATE/feature_request.yml
-        • Adapter: .github/ISSUE_TEMPLATE/adapter_request.yml
+  (B) No ticket exists — describe the underlying problem here using the
+      relevant field set:
+        • Bug: what happened, expected behavior, reproduction, version, deployment
+        • Feature: problem, proposed solution, alternatives, roadmap alignment
+        • Adapter: agent/provider, why it is useful, how it is invoked
 
-  See CONTRIBUTING.md → "Link Issues or Describe Them In-PR".
+  See CONTRIBUTING.md → "Link Tickets or Describe Them In-PR".
 -->
 
 -
@@ -63,7 +63,7 @@
 
 -
 
-> For core feature work, check [`ROADMAP.md`](ROADMAP.md) first and discuss it in `#dev` before opening the PR. Feature PRs that overlap with planned core work may need to be redirected — check the roadmap first. See `CONTRIBUTING.md`.
+> For core feature work, check [`ROADMAP.md`](https://github.com/paperclipai/paperclip/blob/master/ROADMAP.md) first and discuss it in `#dev` before opening the PR. Feature PRs that overlap with planned core work may need to be redirected — check the roadmap first. See `CONTRIBUTING.md`.
 
 ## Model Used
 
@@ -86,9 +86,9 @@
 - [ ] I have specified the model used (with version and capability details)
 - [ ] I have checked ROADMAP.md and confirmed this PR does not duplicate planned core work
 - [ ] I have searched GitHub for duplicate or related PRs and linked them above
-- [ ] I have either (a) linked existing issues with `Fixes: #` / `Closes #` / `Refs #` OR (b) described the issue in-PR following the relevant issue template
-- [ ] I have not referenced internal/instance-local Paperclip issues or links (only public GitHub `#NNN` / `github.com/paperclipai/paperclip` URLs)
-- [ ] My branch name describes the change (e.g. `docs/...`, `fix/...`) and contains no internal Paperclip ticket id or instance-derived details
+- [ ] I have either (a) linked existing tickets with `Fixes: #` / `Closes #` / `Refs #` OR (b) described the work in-PR using the relevant field set
+- [ ] I have not referenced internal/instance-local Paperclip tasks or links (only public GitHub `#NNN` references or PR URLs)
+- [ ] My branch name describes the change (e.g. `docs/...`, `fix/...`) and contains no internal Paperclip task ID or instance-derived details
 - [ ] I have run tests locally and they pass
 - [ ] I have added or updated tests where applicable
 - [ ] I have updated relevant documentation to reflect my changes
