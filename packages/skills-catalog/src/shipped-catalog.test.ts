@@ -27,7 +27,6 @@ const SKILL_FRONTMATTER_ROOTS = [
   path.join(REPO_ROOT, "packages/adapters"),
   path.join(REPO_ROOT, "packages/plugins"),
   path.join(REPO_ROOT, "packages/skills-catalog/catalog"),
-  path.join(REPO_ROOT, "packages/teams-catalog/catalog"),
 ];
 
 function listSkillFiles(dir: string): string[] {

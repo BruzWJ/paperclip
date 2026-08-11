@@ -18,7 +18,6 @@ import { registerDashboardCommands } from "./commands/client/dashboard.js";
 import { registerRoutineCommands } from "./commands/routines.js";
 import { registerSecretCommands } from "./commands/client/secrets.js";
 import { registerSkillsCommands } from "./commands/client/skills.js";
-import { registerTeamCommands } from "./commands/client/teams.js";
 import { applyDataDirOverride, type DataDirOptionLike } from "./config/data-dir.js";
 import { loadPaperclipEnvFile } from "./config/env.js";
 import { initTelemetryFromConfigFile, flushTelemetry } from "./telemetry.js";
@@ -135,7 +134,6 @@ registerSkillCommands(program);
 registerRoutineCommands(program);
 registerSecretCommands(program);
 registerSkillsCommands(program);
-registerTeamCommands(program);
 registerWorktreeCommands(program);
 registerPluginCommands(program);
 
