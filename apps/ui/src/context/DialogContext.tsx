@@ -1,4 +1,11 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import type { TaskWorkMode } from "@paperclipai/shared";
 
 interface NewTaskDefaults {
@@ -20,11 +27,6 @@ interface NewGoalDefaults {
   parentId?: string;
 }
 
-interface OnboardingOptions {
-  initialStep?: 1 | 2 | 3 | 4;
-  companyId?: string;
-}
-
 interface DialogContextValue {
   newTaskOpen: boolean;
   newTaskDefaults: NewTaskDefaults;
@@ -41,8 +43,7 @@ interface DialogContextValue {
   openNewAgent: () => void;
   closeNewAgent: () => void;
   onboardingOpen: boolean;
-  onboardingOptions: OnboardingOptions;
-  openOnboarding: (options?: OnboardingOptions) => void;
+  openOnboarding: () => void;
   closeOnboarding: () => void;
   // Whether the user has dismissed the route-driven onboarding wizard (the one
   // that auto-opens on /onboarding). Shared so the route launcher can hand off
@@ -60,7 +61,6 @@ type DialogStateValue = Pick<
   | "newGoalDefaults"
   | "newAgentOpen"
   | "onboardingOpen"
-  | "onboardingOptions"
   | "onboardingRouteDismissed"
 >;
 
@@ -77,8 +77,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const [newGoalDefaults, setNewGoalDefaults] = useState<NewGoalDefaults>({});
   const [newAgentOpen, setNewAgentOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
-  const [onboardingOptions, setOnboardingOptions] = useState<OnboardingOptions>({});
-  const [onboardingRouteDismissed, setOnboardingRouteDismissed] = useState(false);
+  const [onboardingRouteDismissed, setOnboardingRouteDismissed] =
+    useState(false);
 
   const openNewTask = useCallback((defaults: NewTaskDefaults = {}) => {
     setNewTaskDefaults(defaults);
@@ -116,14 +116,12 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     setNewAgentOpen(false);
   }, []);
 
-  const openOnboarding = useCallback((options: OnboardingOptions = {}) => {
-    setOnboardingOptions(options);
+  const openOnboarding = useCallback(() => {
     setOnboardingOpen(true);
   }, []);
 
   const closeOnboarding = useCallback(() => {
     setOnboardingOpen(false);
-    setOnboardingOptions({});
   }, []);
 
   const stateValue = useMemo<DialogStateValue>(
@@ -135,7 +133,6 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       newGoalDefaults,
       newAgentOpen,
       onboardingOpen,
-      onboardingOptions,
       onboardingRouteDismissed,
     }),
     [
@@ -146,7 +143,6 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       newGoalDefaults,
       newAgentOpen,
       onboardingOpen,
-      onboardingOptions,
       onboardingRouteDismissed,
     ],
   );

@@ -15,8 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * Uses the Vite-only UI server and test-owned API fixture, then captures
  * screenshots of every surface integrated by NUX Phases 1–3:
  *   - "Build a new company" step 1 (company name) + step 2 (mission)
- *   - Ordinary top-level agent identity and declarative ACP configuration
- *   - Board-authored first-task review
+ *   - Native New Agent identity, ACP configuration, and initial-task form
  *   - Onboarding front door (path picker)
  *   - "Add agents to your org" growth intake
  *   - Artifacts page
@@ -47,7 +46,9 @@ test.describe("NUX Phase 4 visual QA", () => {
     page.on("console", (msg) => {
       if (msg.type() === "error") consoleErrors.push(msg.text());
     });
-    page.on("pageerror", (err) => consoleErrors.push("PAGEERROR: " + err.message));
+    page.on("pageerror", (err) =>
+      consoleErrors.push("PAGEERROR: " + err.message),
+    );
 
     // ── Section A: company → mission → ordinary agent → task ─────────────
     await prepareOnboardingTestPage(page);
@@ -67,36 +68,43 @@ test.describe("NUX Phase 4 visual QA", () => {
       .fill("Build affordable home robots that handle household chores.");
     await page.screenshot({ path: shot("03-create-mission.png") });
 
-    // Confirming the mission creates the company + goal; step 3 configures an
-    // ordinary top-level agent with concrete board-selected controls.
-    await page.getByRole("button", { name: /Confirm mission/ }).click();
+    // Confirming the mission creates the company + goal, then hands off to the
+    // one native New Agent route.
+    await page.getByRole("button", { name: "Create company" }).click();
+    await expect(page).toHaveURL(/\/agents\/new$/, { timeout: 30_000 });
     await page.waitForSelector('input[placeholder="Agent name"]', {
       timeout: 30_000,
     });
     await page.getByPlaceholder("Agent name").fill(AGENT_NAME);
-    await page.getByPlaceholder("Optional title").fill("Interface verifier");
     await page
-      .getByPlaceholder(
-        "What work can another agent select this agent to handle?",
-      )
+      .getByPlaceholder("Title (display only)")
+      .fill("Interface verifier");
+    await page
+      .getByPlaceholder("What work is this agent equipped to handle?")
       .fill("Verifies onboarding, task, and collaboration interfaces.");
     await page.screenshot({ path: shot("04-configure-agent.png") });
-    await page.getByRole("button", { name: /^Next/ }).click();
 
-    await page.getByRole("button", { name: /Codex/ }).first().click();
-    const modelSelect = page.getByRole("combobox", { name: "Model", exact: true });
+    await page.getByRole("button", { name: "Select an adapter" }).click();
+    await page.getByRole("button", { name: "Codex", exact: true }).click();
+    const modelSelect = page.getByRole("combobox", {
+      name: "Model",
+      exact: true,
+    });
     await expect(modelSelect).toBeVisible({ timeout: 15_000 });
     await modelSelect.click();
     await page.getByRole("option", { name: "GPT-5.6", exact: true }).click();
     await page.screenshot({ path: shot("05-connect-codex-agent.png") });
+    await page.getByPlaceholder("Task title (optional)").fill(TASK_TITLE);
+    await page
+      .getByPlaceholder("Describe the first concrete assignment")
+      .fill(TASK_REQUEST);
+    await page.screenshot({ path: shot("06-review-first-task.png") });
     const createAgentButton = page.getByRole("button", {
       name: "Create agent",
     });
     await expect(createAgentButton).toBeEnabled({ timeout: 20_000 });
     await createAgentButton.click();
-    await expect(
-      page.getByRole("heading", { name: "Review" }),
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(page).toHaveURL(/\/tasks\/\d+$/, { timeout: 30_000 });
 
     // The company just created anchors the route-scoped sections below.
     const companiesRes = await request.get("/api/companies");
@@ -132,23 +140,6 @@ test.describe("NUX Phase 4 visual QA", () => {
         model: CODEX_MODEL,
       },
     });
-    const runsBeforeTask = await request.get(
-      `/api/companies/${qaCompany.id}/runs?agentId=${agent!.id}`,
-    );
-    expect(runsBeforeTask.ok()).toBe(true);
-    expect(await runsBeforeTask.json()).toEqual({
-      items: [],
-      nextCursor: null,
-    });
-
-    await page.getByPlaceholder("Task title (optional)").fill(TASK_TITLE);
-    await page
-      .getByPlaceholder(/Describe .* first concrete assignment/)
-      .fill(TASK_REQUEST);
-    await page.screenshot({ path: shot("06-review-first-task.png") });
-    await page.getByRole("button", { name: "Get started" }).click();
-    await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 });
-
     const tasksResponse = await request.get(
       `/api/companies/${qaCompany.id}/tasks`,
     );
@@ -163,7 +154,7 @@ test.describe("NUX Phase 4 visual QA", () => {
     expect(task).toEqual(
       expect.objectContaining({
         title: TASK_TITLE,
-        request: TASK_REQUEST,
+        request: TASK_REQUEST.trim(),
         ownerAgentId: agent!.id,
       }),
     );
@@ -174,7 +165,9 @@ test.describe("NUX Phase 4 visual QA", () => {
     await expect(
       page.getByRole("heading", { name: "Name your company" }),
     ).toBeVisible({ timeout: 10_000 });
-    await page.getByRole("button", { name: "← Back to start", exact: true }).click();
+    await page
+      .getByRole("button", { name: "← Back to start", exact: true })
+      .click();
     await expect(
       page.getByRole("heading", { name: "Welcome to Paperclip" }),
     ).toBeVisible({ timeout: 10_000 });
@@ -221,8 +214,8 @@ test.describe("NUX Phase 4 visual QA", () => {
     }
 
     // No React Rules-of-Hooks / render crashes on any surface we visited.
-    const hookErrors = consoleErrors.filter(
-      (e) => /Rendered more hooks|change in the order of Hooks/i.test(e),
+    const hookErrors = consoleErrors.filter((e) =>
+      /Rendered more hooks|change in the order of Hooks/i.test(e),
     );
     expect(hookErrors, hookErrors.join("\n")).toHaveLength(0);
   });

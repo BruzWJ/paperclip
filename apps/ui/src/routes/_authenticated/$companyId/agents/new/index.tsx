@@ -51,7 +51,9 @@ function createValuesForAdapterType(
   return { ...defaults, adapterType };
 }
 
-export function NewAgent() {
+type NewAgentDraft = Parameters<typeof buildNewAgentControlPlanePayloads>[0];
+
+function NewAgent() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -127,22 +129,23 @@ export function NewAgent() {
 
   const createAgent = useMutation({
     mutationFn: async (input: {
-      payloads: ReturnType<typeof buildNewAgentControlPlanePayloads>;
+      draft: NewAgentDraft;
       taskTitle: string | null;
       taskRequest: string;
     }) => {
+      const payloads = buildNewAgentControlPlanePayloads(input.draft);
       const created = await agentsApi.createRuntimeAgent(
         companyId,
-        input.payloads.runtimeAgent,
+        payloads.runtimeAgent,
         createIdempotencyKeyRef.current,
       );
       await agentsApi.updateOperationalConfiguration(
         created.agent.id,
-        input.payloads.operational,
+        payloads.operational,
       );
       await agentsApi.createAdapterConfigRevision(
         created.agent.id,
-        input.payloads.adapterRevision,
+        payloads.adapterRevision,
       );
       const task = await tasksApi.create(companyId, {
         request: input.taskRequest,
@@ -179,7 +182,7 @@ export function NewAgent() {
       return;
     setFormError(null);
     createAgent.mutate({
-      payloads: buildNewAgentControlPlanePayloads({
+      draft: {
         name,
         title,
         capabilities,
@@ -188,7 +191,7 @@ export function NewAgent() {
         runtimeAccess,
         configValues,
         adapterConfig: adapterConfigResolution.config,
-      }),
+      },
       taskTitle: initialTaskTitle.trim() || null,
       taskRequest: initialRequest.trim(),
     });

@@ -28,15 +28,22 @@ type CreatedAgent = {
 };
 
 async function configureCodexAgent(page: Page) {
-  await page.getByRole("button", { name: /Codex/ }).first().click();
-  const modelSelect = page.getByRole("combobox", { name: "Model", exact: true });
+  await page.getByRole("button", { name: "Select an adapter" }).click();
+  await page.getByRole("button", { name: "Codex", exact: true }).click();
+  const modelSelect = page.getByRole("combobox", {
+    name: "Model",
+    exact: true,
+  });
   await expect(modelSelect).toBeVisible({ timeout: 15_000 });
   await modelSelect.click();
   await page.getByRole("option", { name: "GPT-5.6", exact: true }).click();
-
 }
 
-async function listRuns(request: APIRequestContext, companyId: string, agentId: string) {
+async function listRuns(
+  request: APIRequestContext,
+  companyId: string,
+  agentId: string,
+) {
   const response = await request.get(
     `/api/companies/${companyId}/runs?agentId=${agentId}`,
   );
@@ -47,8 +54,8 @@ async function listRuns(request: APIRequestContext, companyId: string, agentId: 
   return payload.items;
 }
 
-test.describe("Onboarding wizard", () => {
-  test("creates an explicitly configured ordinary agent, then its first task", async ({
+test.describe("Onboarding handoff", () => {
+  test("creates the company, then uses New Agent for configuration and the first task", async ({
     page,
     request,
   }) => {
@@ -70,17 +77,16 @@ test.describe("Onboarding wizard", () => {
     await page
       .getByPlaceholder("What is your team trying to achieve?")
       .fill(MISSION);
-    await page.getByRole("button", { name: /Confirm mission/ }).click();
+    await page.getByRole("button", { name: "Create company" }).click();
 
+    await expect(page).toHaveURL(/\/agents\/new$/, { timeout: 30_000 });
     await expect(page.getByPlaceholder("Agent name")).toBeVisible({
       timeout: 30_000,
     });
     await page.getByPlaceholder("Agent name").fill(AGENT_NAME);
-    await page.getByPlaceholder("Optional title").fill(AGENT_TITLE);
+    await page.getByPlaceholder("Title (display only)").fill(AGENT_TITLE);
     await page
-      .getByPlaceholder(
-        "What work can another agent select this agent to handle?",
-      )
+      .getByPlaceholder("What work is this agent equipped to handle?")
       .fill("Plans and coordinates home-robotics automation work.");
 
     const companiesResponse = await request.get("/api/companies");
@@ -106,17 +112,26 @@ test.describe("Onboarding wizard", () => {
     expect(agentsBeforeConfiguration.ok()).toBe(true);
     expect(await agentsBeforeConfiguration.json()).toEqual([]);
 
-    await page.getByRole("button", { name: /^Next/ }).click();
     await configureCodexAgent(page);
+    const testAgentButton = page.getByRole("button", { name: "Test Agent" });
+    await expect(testAgentButton).toBeEnabled();
+    await testAgentButton.click();
+    await expect(
+      page.getByText(
+        "The local agent accepted this exact draft configuration.",
+      ),
+    ).toBeVisible();
+    await page.getByPlaceholder("Task title (optional)").fill(TASK_TITLE);
+    await page
+      .getByPlaceholder("Describe the first concrete assignment")
+      .fill(TASK_REQUEST);
+
     const createAgentButton = page.getByRole("button", {
       name: "Create agent",
     });
     await expect(createAgentButton).toBeEnabled({ timeout: 20_000 });
     await createAgentButton.click();
-
-    await expect(
-      page.getByRole("heading", { name: "Review" }),
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(page).toHaveURL(/\/tasks\/\d+$/, { timeout: 30_000 });
 
     const agentsResponse = await request.get(
       `/api/companies/${company!.id}/agents`,
@@ -135,16 +150,6 @@ test.describe("Onboarding wizard", () => {
       model: CODEX_MODEL,
     });
 
-    // Creating and configuring an agent alone cannot start provider work.
-    expect(await listRuns(request, company!.id, agent.id)).toEqual([]);
-
-    await page.getByPlaceholder("Task title (optional)").fill(TASK_TITLE);
-    await page
-      .getByPlaceholder(/Describe .* first concrete assignment/)
-      .fill(TASK_REQUEST);
-    await page.getByRole("button", { name: "Get started" }).click();
-    await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 });
-
     const tasksResponse = await request.get(
       `/api/companies/${company!.id}/tasks`,
     );
@@ -159,7 +164,7 @@ test.describe("Onboarding wizard", () => {
     expect(task).toEqual(
       expect.objectContaining({
         title: TASK_TITLE,
-        request: TASK_REQUEST,
+        request: TASK_REQUEST.trim(),
         ownerAgentId: agent.id,
       }),
     );

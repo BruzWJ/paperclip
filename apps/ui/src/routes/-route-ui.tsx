@@ -25,8 +25,8 @@ export function OnboardingRoutePage() {
       : "Create your first company";
   const description =
     companies.length > 0
-      ? "Run onboarding again to create another company and seed its first agent."
-      : "Get started by creating a company and your first agent.";
+      ? "Run onboarding again to create another company, then continue in New Agent."
+      : "Create your company, then continue in New Agent to configure its first agent.";
 
   return (
     <div className="mx-auto max-w-xl py-10">

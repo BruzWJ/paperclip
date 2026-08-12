@@ -6,17 +6,14 @@ const codexAdapterCatalog = [
     label: "Codex",
     modelsCount: 1,
     loaded: true,
-    configSchema: {
-      fields: [
-        {
-          key: "model",
-          label: "Model",
-          type: "select",
-          required: true,
-          options: [{ label: "GPT-5.6", value: "gpt-5.6" }],
-        },
-      ],
-    },
+    configOptions: [
+      {
+        id: "model",
+        label: "Model",
+        type: "select",
+        values: [{ label: "GPT-5.6", value: "gpt-5.6" }],
+      },
+    ],
     capabilities: {
       contractVersion: "acpx-runtime/v1",
       runtimeControls: ["session/status", "session/set_config_option"],
@@ -61,6 +58,8 @@ const canonicalCompanyDashboardUrl =
   /\/api\/companies\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/dashboard(?:\?.*)?$/i;
 const canonicalCompanyAttentionUrl =
   /\/api\/companies\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/attention(?:\?.*)?$/i;
+const canonicalAdapterTestUrl =
+  /\/api\/companies\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/adapters\/[^/?#]+\/test-configuration$/i;
 const canonicalTaskCommentsUrl =
   /\/api\/tasks\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/comments(?:\?.*)?$/i;
 
@@ -113,6 +112,16 @@ export async function prepareOnboardingTestPage(page: Page): Promise<void> {
       }),
     });
   });
+  await page.route(canonicalAdapterTestUrl, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        status: "ready",
+        message: "Configuration accepted",
+      }),
+    }),
+  );
   await page.route(canonicalTaskCommentsUrl, (route) =>
     route.fulfill({
       status: 200,

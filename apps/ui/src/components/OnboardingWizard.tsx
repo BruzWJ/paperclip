@@ -5,50 +5,24 @@ import { useDialog } from "../context/DialogContext";
 import { rememberRootRedirectCompanyId } from "../context/CompanyContext";
 import { companiesApi } from "../api/companies";
 import { goalsApi } from "../api/goals";
-import { agentsApi } from "../api/agents";
-import { tasksApi } from "../api/tasks";
-import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
 import { Dialog, DialogPortal } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "../lib/utils";
-import { getUIAdapter } from "../adapters";
-import { listUIAdapters } from "../adapters";
-import { isVisualAdapterChoice } from "../adapters/metadata";
-import { useAdapterCatalogSyncState } from "../adapters/use-adapter-catalog";
-import { defaultCreateValues } from "./agent-config-defaults";
-import { AgentConfigForm } from "./AgentConfigForm";
-import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import { parseOnboardingGoalInput } from "../lib/onboarding-goal";
-import {
-  buildOnboardingTaskPayload,
-  buildOnboardingProjectPayload,
-  selectDefaultCompanyGoalId,
-  selectReusableOnboardingProject,
-} from "../lib/onboarding-launch";
-import { buildNewAgentControlPlanePayloads } from "../lib/new-agent-control-plane-payload";
-import { useStructuralAdapterConfiguration } from "../adapters/use-structural-adapter-configuration";
-import {
-  RuntimeAgentConfigurationFields,
-  createEmptyRuntimeAgentConfigurationValues,
-  type RuntimeAgentConfigurationValues,
-} from "./RuntimeAgentConfigurationFields";
 import { AsciiArtAnimation } from "./AsciiArtAnimation";
 import { FrontDoor } from "./FrontDoor";
-import { AgentCapsule } from "./AgentCapsule";
 import {
   Building2,
-  Bot,
   ListTodo,
   ArrowLeft,
   ArrowRight,
   Sparkles,
-  Check,
   Loader2,
   X,
 } from "lucide-react";
 
-type Step = 0 | 1 | 2 | 3 | 4 | 5;
+type Step = 0 | 1 | 2;
 
 const MISSION_PROMPT_CHIPS = [
   "Build a SaaS product",
@@ -72,62 +46,6 @@ function buildMissionFromQuestionnaire(
 }
 
 const ONBOARDING_STORAGE_KEY = "paperclip-onboarding-state";
-const INCOMPLETE_ONBOARDING_STATE_MESSAGE =
-  "Onboarding state is incomplete. Please restart onboarding and try again.";
-
-function loadSavedAdapterConfiguration(
-  saved: Record<string, unknown> | null,
-): CreateConfigValues {
-  const stored =
-    saved?.adapterConfigValues &&
-    typeof saved.adapterConfigValues === "object" &&
-    !Array.isArray(saved.adapterConfigValues)
-      ? (saved.adapterConfigValues as Partial<CreateConfigValues>)
-      : {};
-  const values: CreateConfigValues = { ...defaultCreateValues };
-  if (typeof stored.adapterType === "string")
-    values.adapterType = stored.adapterType;
-  if (
-    stored.adapterSchemaValues &&
-    typeof stored.adapterSchemaValues === "object" &&
-    !Array.isArray(stored.adapterSchemaValues)
-  ) {
-    values.adapterSchemaValues = { ...stored.adapterSchemaValues };
-  }
-  return values;
-}
-
-function loadSavedRuntimeAccess(
-  saved: Record<string, unknown> | null,
-): RuntimeAgentConfigurationValues {
-  const defaults = createEmptyRuntimeAgentConfigurationValues();
-  const stored =
-    saved?.runtimeAccess &&
-    typeof saved.runtimeAccess === "object" &&
-    !Array.isArray(saved.runtimeAccess)
-      ? (saved.runtimeAccess as Record<string, unknown>)
-      : {};
-  function loadBooleanMap<Key extends string>(
-    fallback: Record<Key, boolean>,
-    value: unknown,
-  ): Record<Key, boolean> {
-    const record =
-      value && typeof value === "object" && !Array.isArray(value)
-        ? (value as Record<string, unknown>)
-        : {};
-    return Object.fromEntries(
-      Object.keys(fallback).map((key) => [key, record[key] === true]),
-    ) as Record<Key, boolean>;
-  }
-  return {
-    contextGrants: loadBooleanMap(defaults.contextGrants, stored.contextGrants),
-    actionGrants: loadBooleanMap(defaults.actionGrants, stored.actionGrants),
-    mentionReachGrants: loadBooleanMap(
-      defaults.mentionReachGrants,
-      stored.mentionReachGrants,
-    ),
-  };
-}
 
 function loadSavedState(): Record<string, unknown> | null {
   try {
@@ -141,7 +59,6 @@ function loadSavedState(): Record<string, unknown> | null {
 export function OnboardingWizard() {
   const {
     onboardingOpen,
-    onboardingOptions,
     closeOnboarding,
     onboardingRouteDismissed: routeDismissed,
     setOnboardingRouteDismissed: setRouteDismissed,
@@ -154,31 +71,19 @@ export function OnboardingWizard() {
   });
   const isOnboardingRoute = onboardingRouteMatch !== undefined;
 
-  // The one route-driven entry point is the global /onboarding screen.
-  const routeOnboardingOptions = isOnboardingRoute
-    ? { initialStep: 1 as const }
-    : null;
   const effectiveOnboardingOpen =
-    onboardingOpen || (routeOnboardingOptions !== null && !routeDismissed);
-  const effectiveOnboardingOptions: {
-    initialStep?: 1 | 2 | 3 | 4;
-    companyId?: string;
-  } = onboardingOpen ? onboardingOptions : (routeOnboardingOptions ?? {});
-
-  // Fetch the admitted catalog only when the wizard is visible. The wizard is
-  // mounted globally, including on /auth, where protected adapter routes are
-  // expected to reject signed-out browsers.
-  const { adapters: admittedAdapters } = useAdapterCatalogSyncState({
-    enabled: effectiveOnboardingOpen,
-  });
-
-  const initialStep = effectiveOnboardingOptions.initialStep ?? 0;
-  const existingCompanyId = effectiveOnboardingOptions.companyId;
+    onboardingOpen || (isOnboardingRoute && !routeDismissed);
 
   // Restore saved state from localStorage (read once on mount)
   const saved = useMemo(loadSavedState, []);
-
-  const [step, setStep] = useState<Step>((saved?.step as Step) ?? initialStep);
+  const savedStep = saved?.step;
+  const initialStep: Step =
+    savedStep === 0 || savedStep === 1 || savedStep === 2
+      ? savedStep
+      : isOnboardingRoute
+        ? 1
+        : 0;
+  const [step, setStep] = useState<Step>(initialStep);
   const [onboardingPath, setOnboardingPath] = useState<
     "create" | "grow" | null
   >((saved?.onboardingPath as "create" | "grow" | null) ?? null);
@@ -215,75 +120,20 @@ export function OnboardingWizard() {
   const [q3, setQ3] = useState((saved?.q3 as string) ?? ""); // Biggest bottleneck?
   const [q4, setQ4] = useState((saved?.q4 as string) ?? ""); // What would success look like?
 
-  // Step 2
-  const [agentName, setAgentName] = useState(
-    (saved?.agentName as string) ?? "",
-  );
-  const [agentTitle, setAgentTitle] = useState(
-    (saved?.agentTitle as string) ?? "",
-  );
-  const [agentCapabilities, setAgentCapabilities] = useState(
-    (saved?.agentCapabilities as string) ?? "",
-  );
-  const [runtimeAccess, setRuntimeAccess] =
-    useState<RuntimeAgentConfigurationValues>(() =>
-      loadSavedRuntimeAccess(saved),
-    );
-  const [initialTaskTitle, setInitialTaskTitle] = useState(
-    (saved?.initialTaskTitle as string) ?? "",
-  );
-  const [initialTaskRequest, setInitialTaskRequest] = useState(
-    (saved?.initialTaskRequest as string) ?? "",
-  );
-  const [agentCreateIdempotencyKey, setAgentCreateIdempotencyKey] = useState(
-    () =>
-      typeof saved?.agentCreateIdempotencyKey === "string"
-        ? saved.agentCreateIdempotencyKey
-        : crypto.randomUUID(),
-  );
-  const [configValues, setConfigValues] = useState<CreateConfigValues>(() =>
-    loadSavedAdapterConfiguration(saved),
-  );
-  const adapterType = configValues.adapterType;
-
-  // Created entity IDs — pre-populate from existing company when skipping step 1
   const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(
-    existingCompanyId ?? (saved?.createdCompanyId as string) ?? null,
-  );
-  const [createdAgentId, setCreatedAgentId] = useState<string | null>(
-    (saved?.createdAgentId as string) ?? null,
+    (saved?.createdCompanyId as string) ?? null,
   );
   const [createdCompanyGoalId, setCreatedCompanyGoalId] = useState<
     string | null
   >((saved?.createdCompanyGoalId as string) ?? null);
-  const [createdProjectId, setCreatedProjectId] = useState<string | null>(
-    (saved?.createdProjectId as string) ?? null,
-  );
-  const [createdTaskId, setCreatedTaskId] = useState<string | null>(
-    (saved?.createdTaskId as string) ?? null,
-  );
 
   // Reset dismissal only when entering or leaving the exact onboarding route.
   useEffect(() => {
     setRouteDismissed(false);
+    if (isOnboardingRoute) {
+      setStep((current) => (current === 0 ? 1 : current));
+    }
   }, [isOnboardingRoute, setRouteDismissed]);
-
-  // Sync step and company when onboarding opens with explicit options.
-  // Only override saved state when explicit options provide values.
-  useEffect(() => {
-    if (!effectiveOnboardingOpen) return;
-    // If explicit options are provided, they take precedence over saved state
-    if (effectiveOnboardingOptions.initialStep) {
-      setStep(effectiveOnboardingOptions.initialStep);
-    }
-    if (effectiveOnboardingOptions.companyId) {
-      setCreatedCompanyId(effectiveOnboardingOptions.companyId);
-    }
-  }, [
-    effectiveOnboardingOpen,
-    effectiveOnboardingOptions.companyId,
-    effectiveOnboardingOptions.initialStep,
-  ]);
 
   // Persist wizard state to localStorage on every change
   useEffect(() => {
@@ -298,20 +148,8 @@ export function OnboardingWizard() {
       q2,
       q3,
       q4,
-      agentName,
-      agentTitle,
-      agentCapabilities,
-      runtimeAccess,
-      initialTaskTitle,
-      initialTaskRequest,
-      agentCreateIdempotencyKey,
-      adapterType,
-      adapterConfigValues: configValues,
       createdCompanyId,
-      createdAgentId,
       createdCompanyGoalId,
-      createdProjectId,
-      createdTaskId,
       onboardingPath,
       growWorkflows,
       growPainPoints,
@@ -329,71 +167,13 @@ export function OnboardingWizard() {
     q2,
     q3,
     q4,
-    agentName,
-    agentTitle,
-    agentCapabilities,
-    runtimeAccess,
-    initialTaskTitle,
-    initialTaskRequest,
-    agentCreateIdempotencyKey,
-    adapterType,
-    configValues,
     createdCompanyId,
-    createdAgentId,
     createdCompanyGoalId,
-    createdProjectId,
-    createdTaskId,
     onboardingPath,
     growWorkflows,
     growPainPoints,
     growAutomate,
   ]);
-
-  const adapterConfigResolution = useMemo(() => {
-    try {
-      return {
-        config: getUIAdapter(adapterType).buildAdapterConfig(configValues),
-        error: null,
-      };
-    } catch (adapterConfigError) {
-      return {
-        config: {},
-        error:
-          adapterConfigError instanceof Error
-            ? adapterConfigError.message
-            : "Adapter configuration could not be built.",
-      };
-    }
-  }, [adapterType, configValues]);
-  const adapterConfiguration = useStructuralAdapterConfiguration({
-    adapterType,
-    adapterConfig: adapterConfigResolution.config,
-    enabled:
-      effectiveOnboardingOpen &&
-      step === 4 &&
-      adapterConfigResolution.error === null,
-  });
-
-  // The server is the sole catalog supplier. Do not rank or withhold its currently
-  // admitted agents in onboarding: surface every selectable candidate.
-  const availableAdapters = useMemo(
-    () =>
-      listUIAdapters()
-        .filter((a) => isVisualAdapterChoice(a.type))
-        .map((a) => ({
-          label: a.label,
-          type: a.type,
-        })),
-    [admittedAdapters],
-  );
-
-  function selectAdapterType(nextType: string) {
-    const { adapterType: _discard, ...defaults } = defaultCreateValues;
-    setConfigValues({
-      ...defaults,
-      adapterType: nextType,
-    });
-  }
 
   function reset() {
     localStorage.removeItem(ONBOARDING_STORAGE_KEY);
@@ -412,19 +192,8 @@ export function OnboardingWizard() {
     setQ2("");
     setQ3("");
     setQ4("");
-    setAgentName("");
-    setAgentTitle("");
-    setAgentCapabilities("");
-    setRuntimeAccess(createEmptyRuntimeAgentConfigurationValues());
-    setInitialTaskTitle("");
-    setInitialTaskRequest("");
-    setAgentCreateIdempotencyKey(crypto.randomUUID());
-    setConfigValues({ ...defaultCreateValues });
     setCreatedCompanyId(null);
-    setCreatedAgentId(null);
     setCreatedCompanyGoalId(null);
-    setCreatedProjectId(null);
-    setCreatedTaskId(null);
   }
 
   function handleClose() {
@@ -437,167 +206,48 @@ export function OnboardingWizard() {
     setRouteDismissed(true);
   }
 
-  async function handleLaunchToDashboard() {
-    if (!createdCompanyId || !createdAgentId) {
-      setError(INCOMPLETE_ONBOARDING_STATE_MESSAGE);
-      return;
-    }
-    if (!initialTaskRequest.trim()) {
-      setError("Write the first task request before launching.");
-      return;
-    }
+  // Onboarding owns only company setup. Agent configuration, disposable
+  // testing, persistence, and initial-task creation all belong to the native
+  // New Agent route.
+  async function handleConfirmMission() {
     setLoading(true);
     setError(null);
     try {
-      let goalId = createdCompanyGoalId;
-      if (!goalId) {
-        const goals = await goalsApi.list(createdCompanyId);
-        goalId = selectDefaultCompanyGoalId(goals);
-        setCreatedCompanyGoalId(goalId);
+      let companyId = createdCompanyId;
+      if (!companyId) {
+        const company = await companiesApi.create({ name: companyName.trim() });
+        companyId = company.id;
+        setCreatedCompanyId(companyId);
+        rememberRootRedirectCompanyId(companyId);
+        queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
       }
 
-      let projectId = createdProjectId;
-      if (!projectId) {
-        const projects = await projectsApi.list(createdCompanyId);
-        const existingOnboardingProject =
-          selectReusableOnboardingProject(projects);
-        if (existingOnboardingProject) {
-          projectId = existingOnboardingProject.id;
-        } else {
-          const project = await projectsApi.create(
-            createdCompanyId,
-            buildOnboardingProjectPayload(goalId),
-          );
-          projectId = project.id;
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.projects.list(createdCompanyId),
-          });
-        }
-        setCreatedProjectId(projectId);
-      }
-
-      if (!createdTaskId) {
-        const task = await tasksApi.create(
-          createdCompanyId,
-          buildOnboardingTaskPayload({
-            title: initialTaskTitle,
-            request: initialTaskRequest,
-            ownerAgentId: createdAgentId,
-            projectId,
-            goalId,
-          }),
-        );
-        setCreatedTaskId(task.id);
+      if (!createdCompanyGoalId) {
+        const parsedGoal = parseOnboardingGoalInput(companyGoal);
+        const goal = await goalsApi.create(companyId, {
+          title: parsedGoal.title,
+          ...(parsedGoal.description
+            ? { description: parsedGoal.description }
+            : {}),
+          level: "company",
+          status: "active",
+        });
+        setCreatedCompanyGoalId(goal.id);
         queryClient.invalidateQueries({
-          queryKey: queryKeys.tasks.list(createdCompanyId),
+          queryKey: queryKeys.goals.list(companyId),
         });
       }
 
+      rememberRootRedirectCompanyId(companyId);
+      await navigate({
+        to: "/$companyId/agents/new",
+        params: { companyId },
+      });
       reset();
       closeOnboarding();
-      void navigate({
-        to: "/$companyId/dashboard",
-        params: { companyId: createdCompanyId },
-      });
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to launch first task",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Step 2 → 3 ("Confirm mission"): create the company + its company-level
-  // goal, then advance to naming the first agent. Guarded so revisiting the
-  // mission step (e.g. via Back) doesn't create a duplicate company.
-  async function handleConfirmMission() {
-    if (createdCompanyId) {
-      setStep(3);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const company = await companiesApi.create({ name: companyName.trim() });
-      setCreatedCompanyId(company.id);
-      rememberRootRedirectCompanyId(company.id);
-      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
-
-      const parsedGoal = parseOnboardingGoalInput(companyGoal);
-      const goal = await goalsApi.create(company.id, {
-        title: parsedGoal.title,
-        ...(parsedGoal.description
-          ? { description: parsedGoal.description }
-          : {}),
-        level: "company",
-        status: "active",
-      });
-      setCreatedCompanyGoalId(goal.id);
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.goals.list(company.id),
-      });
-
-      setStep(3); // → Create your first agent
+      setRouteDismissed(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create company");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Step 4 → 5: create the ordinary root agent through the three disjoint
-  // board control-plane contracts. No provider work begins until step 5
-  // creates the first ordinary task.
-  async function handleCreateAgent() {
-    if (!createdCompanyId) return;
-    if (createdAgentId) {
-      setStep(5);
-      return;
-    }
-    if (!adapterConfiguration.valid) {
-      const schemaErrors = adapterConfiguration.fieldErrors
-        .map((entry) => entry.message)
-        .join(" ");
-      setError(
-        adapterConfiguration.error ??
-          (schemaErrors ||
-            "Complete the explicit adapter configuration before creating the agent."),
-      );
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const payloads = buildNewAgentControlPlanePayloads({
-        name: agentName.trim(),
-        title: agentTitle,
-        capabilities: agentCapabilities,
-        reportsTo: null,
-        runtimeAccess,
-        configValues,
-        adapterConfig: adapterConfigResolution.config,
-      });
-      const created = await agentsApi.createRuntimeAgent(
-        createdCompanyId,
-        payloads.runtimeAgent,
-        agentCreateIdempotencyKey,
-      );
-      await agentsApi.createAdapterConfigRevision(
-        created.agent.id,
-        payloads.adapterRevision,
-      );
-      await agentsApi.updateOperationalConfiguration(
-        created.agent.id,
-        payloads.operational,
-      );
-      setCreatedAgentId(created.agent.id);
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.agents.list(createdCompanyId),
-      });
-      setStep(5);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create agent");
     } finally {
       setLoading(false);
     }
@@ -609,20 +259,11 @@ export function OnboardingWizard() {
       if (step === 0) return; // front door requires click
       if (step === 1 && companyName.trim()) setStep(2);
       else if (step === 2 && companyName.trim() && companyGoal.trim())
-        handleConfirmMission();
-      else if (step === 3 && agentName.trim()) setStep(4);
-      else if (step === 4 && agentName.trim()) handleCreateAgent();
-      else if (step === 5) handleLaunchToDashboard();
+        void handleConfirmMission();
     }
   }
 
   if (!effectiveOnboardingOpen) return null;
-
-  const launchStateIncomplete =
-    step === 5 && (!createdCompanyId || !createdAgentId);
-  const visibleError =
-    error ??
-    (launchStateIncomplete ? INCOMPLETE_ONBOARDING_STATE_MESSAGE : null);
 
   return (
     <Dialog
@@ -662,17 +303,12 @@ export function OnboardingWizard() {
 
           {/* Left half — form (steps 1+) */}
           {step !== 0 && (
-            <div
-              className={cn(
-                "w-full flex flex-col overflow-y-auto transition-(--tp-width) duration-500 ease-in-out",
-                step === 1 || step === 2 ? "md:w-1/2" : "md:w-full",
-              )}
-            >
+            <div className="w-full flex flex-col overflow-y-auto transition-(--tp-width) duration-500 ease-in-out md:w-1/2">
               <div className="w-full max-w-md mx-auto my-auto px-8 py-12 shrink-0">
-                {/* 5-segment progress bar (brand .wsteps/.wstep) — segment N
+                {/* Company setup progress — segment N
                   filled once step ≥ N. Completed segments jump back. */}
                 <div className="flex items-center gap-1.5 mb-8">
-                  {([1, 2, 3, 4, 5] as const).map((s) => {
+                  {([1, 2] as const).map((s) => {
                     const filled = step >= s;
                     const canJump = s < step;
                     return (
@@ -693,80 +329,6 @@ export function OnboardingWizard() {
                   })}
                 </div>
 
-                {/* Persistent evolving capsule (steps 3–5): a single AgentCapsule
-                  held in the same tree slot so React reuses the DOM node and the
-                  morph reads as one capsule coming to life — dashed slot →
-                  solid (configured) → liquid fill + blue glow (online). */}
-                {step >= 3 && step <= 5 && (
-                  <div className="space-y-4 mb-6">
-                    <div className="flex items-center gap-3 mb-1">
-                      <div className="bg-muted/50 p-2">
-                        {step === 5 ? (
-                          <Check className="h-5 w-5 text-muted-foreground" />
-                        ) : (
-                          <Bot className="h-5 w-5 text-muted-foreground" />
-                        )}
-                      </div>
-                      <div>
-                        <h3 className="font-medium">
-                          {step === 3
-                            ? "Create your first agent"
-                            : step === 4
-                              ? "Connect a model"
-                              : "Review"}
-                        </h3>
-                        <p className="text-xs text-muted-foreground">
-                          {step === 3 ? (
-                            <>
-                              Give this ordinary agent a name. You can configure
-                              additional agents and reporting lines later.
-                            </>
-                          ) : step === 4 ? (
-                            <>
-                              Choose this agent&apos;s adapter and provider
-                              configuration.
-                            </>
-                          ) : (
-                            <>
-                              Everything&apos;s set up — your first agent is
-                              ready to work.
-                            </>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col items-center gap-1.5 py-1 text-center">
-                      <AgentCapsule
-                        state={
-                          step === 3
-                            ? "slot"
-                            : step === 4
-                              ? "configured"
-                              : "online"
-                        }
-                        gradient={5}
-                        glow="blue"
-                        size="md"
-                      />
-                      <p className="text-(length:--text-micro) text-muted-foreground">
-                        {step === 3 ? (
-                          "an empty slot for an agent"
-                        ) : step === 4 ? (
-                          "your first agent, taking shape"
-                        ) : (
-                          <>
-                            <span className="font-medium text-foreground">
-                              {agentName}
-                            </span>{" "}
-                            is online and ready to work!
-                          </>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
                 {/* Step content */}
                 {step === 2 && onboardingPath === "grow" && (
                   <div className="space-y-5">
@@ -777,8 +339,8 @@ export function OnboardingWizard() {
                       <div>
                         <h3 className="font-medium">Tell us about your team</h3>
                         <p className="text-xs text-muted-foreground">
-                          We&apos;ll use this to set up your first agent and
-                          plan which agents to add.
+                          We&apos;ll use this to shape the company mission
+                          before you configure its first agent.
                         </p>
                       </div>
                     </div>
@@ -1146,252 +708,30 @@ export function OnboardingWizard() {
                   </div>
                 )}
 
-                {/* Step 3: Configure the first ordinary root agent. */}
-                {step === 3 && (
-                  <div className="space-y-5">
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">
-                        Name
-                      </label>
-                      <input
-                        aria-label="Agent name"
-                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                        placeholder="Agent name"
-                        value={agentName}
-                        onChange={(e) => setAgentName(e.target.value)}
-                        autoFocus
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">
-                        Title (display only)
-                      </label>
-                      <input
-                        aria-label="Agent title"
-                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                        placeholder="Optional title"
-                        value={agentTitle}
-                        onChange={(event) => setAgentTitle(event.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">
-                        Capabilities
-                      </label>
-                      <textarea
-                        aria-label="Agent capabilities"
-                        className="min-h-24 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                        placeholder="What work can another agent select this agent to handle?"
-                        value={agentCapabilities}
-                        onChange={(event) =>
-                          setAgentCapabilities(event.target.value)
-                        }
-                      />
-                    </div>
-                    <RuntimeAgentConfigurationFields
-                      value={runtimeAccess}
-                      onChange={setRuntimeAccess}
-                      disabled={loading}
-                    />
-                  </div>
-                )}
-
-                {/* Step 4: Connect a local agent and its runtime configuration. */}
-                {step === 4 && (
-                  <div className="space-y-5">
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-2 block">
-                        Local agent
-                      </label>
-                      {availableAdapters.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          No compatible local agent is currently available.
-                          Install and authenticate a compatible agent CLI on
-                          this host, then retry.
-                        </p>
-                      ) : (
-                        <div className="grid grid-cols-2 gap-2">
-                          {availableAdapters.map((opt) => (
-                            <button
-                              key={opt.type}
-                              className={cn(
-                                "flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors",
-                                adapterType === opt.type
-                                  ? "border-foreground bg-accent"
-                                  : "border-border hover:bg-accent/50",
-                              )}
-                              onClick={() => {
-                                selectAdapterType(opt.type);
-                              }}
-                            >
-                              <span className="font-medium">{opt.label}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <AgentConfigForm
-                      mode="create"
-                      values={configValues}
-                      onChange={(patch) =>
-                        setConfigValues((current) => ({
-                          ...current,
-                          ...patch,
-                        }))
-                      }
-                      showAdapterTypeField={false}
-                      applyAdapterSchemaDefaults={false}
-                    />
-
-                    <div className="space-y-3 rounded-md border border-border p-3">
-                      {!adapterType ? (
-                        <p className="text-xs text-muted-foreground">
-                          Select an adapter to begin its explicit configuration.
-                        </p>
-                      ) : adapterConfigResolution.error ? (
-                        <p role="alert" className="text-xs text-destructive">
-                          {adapterConfigResolution.error}
-                        </p>
-                      ) : adapterConfiguration.isLoading ? (
-                        <p className="text-xs text-muted-foreground">
-                          Loading adapter configuration schema…
-                        </p>
-                      ) : adapterConfiguration.error ||
-                        !adapterConfiguration.configOptions ? (
-                        <p role="alert" className="text-xs text-destructive">
-                          Adapter configuration schema unavailable.{" "}
-                          {adapterConfiguration.error ??
-                            "The adapter did not return a schema."}
-                        </p>
-                      ) : adapterConfiguration.fieldErrors.length > 0 ? (
-                        <p role="alert" className="text-xs text-destructive">
-                          Adapter configuration is incomplete:{" "}
-                          {adapterConfiguration.fieldErrors
-                            .map((entry) => entry.message)
-                            .join(" ")}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">
-                          Draft configuration is structurally valid. Test Agent
-                          applies these exact settings through a disposable
-                          local runtime session; full workspace readiness is
-                          checked after the execution context is persisted.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 5: Review — the ordinary agent is configured */}
-                {step === 5 && (
-                  <div className="space-y-5 py-1">
-                    {/* Review checklist — everything that's now set up */}
-                    <div className="space-y-1.5">
-                      {[
-                        {
-                          label: "Company name",
-                          done: Boolean(companyName.trim()),
-                        },
-                        { label: "Mission", done: Boolean(companyGoal.trim()) },
-                        {
-                          label: "Agent created",
-                          done: Boolean(createdAgentId),
-                        },
-                        {
-                          label: "Runtime access configured",
-                          done: Boolean(createdAgentId),
-                        },
-                        {
-                          label: "Adapter revision selected",
-                          done: Boolean(createdAgentId),
-                        },
-                      ].map(({ label, done }) => (
-                        <div
-                          key={label}
-                          className="flex items-center gap-2 text-sm"
-                        >
-                          <span
-                            className={cn(
-                              "flex h-4 w-4 items-center justify-center rounded-full shrink-0",
-                              done
-                                ? "bg-green-500/15 text-green-600 dark:text-green-400"
-                                : "bg-muted text-muted-foreground",
-                            )}
-                          >
-                            <Check className="h-2.5 w-2.5" />
-                          </span>
-                          <span
-                            className={
-                              done ? "text-foreground" : "text-muted-foreground"
-                            }
-                          >
-                            {label}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {companyGoal.trim() && (
-                      <p className="text-sm text-muted-foreground italic text-center">
-                        "{companyGoal}"
-                      </p>
-                    )}
-                    <div className="space-y-3 rounded-md border border-border p-3">
-                      <div>
-                        <h3 className="text-sm font-medium">First task</h3>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          This board-authored request is the only action that
-                          starts the agent's first provider run.
-                        </p>
-                      </div>
-                      <input
-                        aria-label="First task title"
-                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        placeholder="Task title (optional)"
-                        value={initialTaskTitle}
-                        onChange={(event) =>
-                          setInitialTaskTitle(event.target.value)
-                        }
-                      />
-                      <textarea
-                        aria-label="First task request"
-                        className="min-h-28 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        placeholder={`Describe ${agentName || "the agent"}'s first concrete assignment`}
-                        value={initialTaskRequest}
-                        onChange={(event) =>
-                          setInitialTaskRequest(event.target.value)
-                        }
-                      />
-                    </div>
-                  </div>
-                )}
-
                 {/* Error */}
-                {visibleError && (
+                {error && (
                   <div className="mt-3">
-                    <p className="text-xs text-destructive">{visibleError}</p>
+                    <p className="text-xs text-destructive">{error}</p>
                   </div>
                 )}
 
                 {/* Footer navigation */}
                 <div className="flex items-center justify-between mt-8">
                   <div>
-                    {step > 1 &&
-                      step > (effectiveOnboardingOptions.initialStep ?? 0) && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setStep((step - 1) as Step)}
-                          disabled={loading}
-                        >
-                          <ArrowLeft
-                            data-icon="inline-start"
-                            className="h-3.5 w-3.5 mr-1"
-                          />
-                          Back
-                        </Button>
-                      )}
+                    {step > 1 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setStep(1)}
+                        disabled={loading}
+                      >
+                        <ArrowLeft
+                          data-icon="inline-start"
+                          className="h-3.5 w-3.5 mr-1"
+                        />
+                        Back
+                      </Button>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     {step === 1 && (
@@ -1424,56 +764,7 @@ export function OnboardingWizard() {
                         ) : (
                           <ArrowRight className="h-3.5 w-3.5 mr-1" />
                         )}
-                        {loading ? "Creating..." : "Confirm mission"}
-                      </Button>
-                    )}
-                    {step === 3 && (
-                      <Button
-                        size="sm"
-                        disabled={!agentName.trim()}
-                        onClick={() => setStep(4)}
-                      >
-                        Next
-                        <ArrowRight
-                          data-icon="inline-end"
-                          className="h-3.5 w-3.5 ml-1"
-                        />
-                      </Button>
-                    )}
-                    {step === 4 && (
-                      <Button
-                        size="sm"
-                        disabled={
-                          !agentName.trim() ||
-                          loading ||
-                          !adapterConfiguration.valid
-                        }
-                        onClick={handleCreateAgent}
-                      >
-                        {loading ? (
-                          <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                        ) : (
-                          <ArrowRight className="h-3.5 w-3.5 mr-1" />
-                        )}
-                        {loading ? "Creating agent..." : "Create agent"}
-                      </Button>
-                    )}
-                    {step === 5 && (
-                      <Button
-                        size="sm"
-                        onClick={handleLaunchToDashboard}
-                        disabled={
-                          loading ||
-                          launchStateIncomplete ||
-                          !initialTaskRequest.trim()
-                        }
-                      >
-                        {loading ? (
-                          <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                        ) : (
-                          <ArrowRight className="h-3.5 w-3.5 mr-1" />
-                        )}
-                        {loading ? "Launching..." : "Get started"}
+                        {loading ? "Creating..." : "Create company"}
                       </Button>
                     )}
                   </div>
@@ -1482,14 +773,8 @@ export function OnboardingWizard() {
             </div>
           )}
 
-          {/* Right half — ASCII art (hidden on mobile, only for the team
-              name + mission steps) */}
-          <div
-            className={cn(
-              "hidden md:block overflow-hidden bg-(--hex-1d1d1d) transition-(--tp-width-opacity) duration-500 ease-in-out",
-              step === 1 || step === 2 ? "w-1/2 opacity-100" : "w-0 opacity-0",
-            )}
-          >
+          {/* Right half — ASCII art for the company setup steps. */}
+          <div className="hidden w-1/2 overflow-hidden bg-(--hex-1d1d1d) opacity-100 transition-(--tp-width-opacity) duration-500 ease-in-out md:block">
             <AsciiArtAnimation />
           </div>
         </div>

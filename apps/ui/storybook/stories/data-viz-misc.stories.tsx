@@ -41,7 +41,13 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { SwipeToArchive } from "@/components/SwipeToArchive";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { useDialog } from "@/context/DialogContext";
 import { queryKeys } from "@/lib/queryKeys";
 import {
@@ -52,7 +58,6 @@ import {
   storybookTaskRuns,
 } from "../fixtures/paperclipData";
 
-const companyId = "11111111-1111-4111-8111-111111111111";
 const primaryTaskId = "dddddddd-dddd-4ddd-8ddd-ddddddddd001";
 
 function StoryShell({ children }: { children: React.ReactNode }) {
@@ -101,7 +106,9 @@ function makeRun(
     terminalClassification: "succeeded",
     terminalFinalizationId: "93000000-0000-4000-8000-000000000001",
     startedAt: createdAt,
-    finishedAt: new Date(new Date(createdAt).getTime() + 11 * 60_000).toISOString(),
+    finishedAt: new Date(
+      new Date(createdAt).getTime() + 11 * 60_000,
+    ).toISOString(),
     createdAt,
     updatedAt: createdAt,
     ...overrides,
@@ -109,25 +116,93 @@ function makeRun(
 }
 
 const activityRuns: TaskExecutionRunEnvelopeRecord[] = [
-  makeRun({ id: "90000000-0000-4000-8000-000000000007", createdAt: daysAgo(13).toISOString(), startedAt: daysAgo(13).toISOString() }),
-  makeRun({ id: "90000000-0000-4000-8000-000000000008", createdAt: daysAgo(10).toISOString(), startedAt: daysAgo(10).toISOString() }),
-  makeRun({ id: "90000000-0000-4000-8000-000000000009", status: "failed", terminalClassification: "failed", terminalReasonCode: "process_exit", createdAt: daysAgo(10).toISOString(), startedAt: daysAgo(10, 15).toISOString() }),
-  makeRun({ id: "90000000-0000-4000-8000-00000000000a", status: "running", terminalClassification: null, terminalFinalizationId: null, currentAttemptId: "91000000-0000-4000-8000-000000000001", currentLeaseId: "92000000-0000-4000-8000-000000000001", createdAt: daysAgo(7).toISOString(), startedAt: daysAgo(7).toISOString(), finishedAt: null }),
-  makeRun({ id: "90000000-0000-4000-8000-00000000000b", createdAt: daysAgo(5).toISOString(), startedAt: daysAgo(5).toISOString() }),
-  makeRun({ id: "90000000-0000-4000-8000-00000000000c", status: "timed_out", terminalClassification: "timed_out", terminalReasonCode: "timeout", createdAt: daysAgo(3).toISOString(), startedAt: daysAgo(3).toISOString() }),
-  makeRun({ id: "90000000-0000-4000-8000-00000000000d", createdAt: daysAgo(1).toISOString(), startedAt: daysAgo(1).toISOString() }),
-  makeRun({ id: "90000000-0000-4000-8000-00000000000e", createdAt: daysAgo(1, 16).toISOString(), startedAt: daysAgo(1, 16).toISOString() }),
+  makeRun({
+    id: "90000000-0000-4000-8000-000000000007",
+    createdAt: daysAgo(13).toISOString(),
+    startedAt: daysAgo(13).toISOString(),
+  }),
+  makeRun({
+    id: "90000000-0000-4000-8000-000000000008",
+    createdAt: daysAgo(10).toISOString(),
+    startedAt: daysAgo(10).toISOString(),
+  }),
+  makeRun({
+    id: "90000000-0000-4000-8000-000000000009",
+    status: "failed",
+    terminalClassification: "failed",
+    terminalReasonCode: "process_exit",
+    createdAt: daysAgo(10).toISOString(),
+    startedAt: daysAgo(10, 15).toISOString(),
+  }),
+  makeRun({
+    id: "90000000-0000-4000-8000-00000000000a",
+    status: "running",
+    terminalClassification: null,
+    terminalFinalizationId: null,
+    currentAttemptId: "91000000-0000-4000-8000-000000000001",
+    currentLeaseId: "92000000-0000-4000-8000-000000000001",
+    createdAt: daysAgo(7).toISOString(),
+    startedAt: daysAgo(7).toISOString(),
+    finishedAt: null,
+  }),
+  makeRun({
+    id: "90000000-0000-4000-8000-00000000000b",
+    createdAt: daysAgo(5).toISOString(),
+    startedAt: daysAgo(5).toISOString(),
+  }),
+  makeRun({
+    id: "90000000-0000-4000-8000-00000000000c",
+    status: "timed_out",
+    terminalClassification: "timed_out",
+    terminalReasonCode: "timeout",
+    createdAt: daysAgo(3).toISOString(),
+    startedAt: daysAgo(3).toISOString(),
+  }),
+  makeRun({
+    id: "90000000-0000-4000-8000-00000000000d",
+    createdAt: daysAgo(1).toISOString(),
+    startedAt: daysAgo(1).toISOString(),
+  }),
+  makeRun({
+    id: "90000000-0000-4000-8000-00000000000e",
+    createdAt: daysAgo(1, 16).toISOString(),
+    startedAt: daysAgo(1, 16).toISOString(),
+  }),
 ];
 
 const activityTasks = [
-  { priority: "high", boardPresentationStatus: "in_progress", createdAt: daysAgo(13) },
-  { priority: "critical", boardPresentationStatus: "blocked", createdAt: daysAgo(11) },
-  { priority: "medium", boardPresentationStatus: "todo", createdAt: daysAgo(9) },
-  { priority: "medium", boardPresentationStatus: "in_review", createdAt: daysAgo(9, 16) },
+  {
+    priority: "high",
+    boardPresentationStatus: "in_progress",
+    createdAt: daysAgo(13),
+  },
+  {
+    priority: "critical",
+    boardPresentationStatus: "blocked",
+    createdAt: daysAgo(11),
+  },
+  {
+    priority: "medium",
+    boardPresentationStatus: "todo",
+    createdAt: daysAgo(9),
+  },
+  {
+    priority: "medium",
+    boardPresentationStatus: "in_review",
+    createdAt: daysAgo(9, 16),
+  },
   { priority: "low", boardPresentationStatus: "done", createdAt: daysAgo(6) },
   { priority: "high", boardPresentationStatus: "todo", createdAt: daysAgo(4) },
-  { priority: "critical", boardPresentationStatus: "in_progress", createdAt: daysAgo(2) },
-  { priority: "medium", boardPresentationStatus: "done", createdAt: daysAgo(1) },
+  {
+    priority: "critical",
+    boardPresentationStatus: "in_progress",
+    createdAt: daysAgo(2),
+  },
+  {
+    priority: "medium",
+    boardPresentationStatus: "done",
+    createdAt: daysAgo(1),
+  },
 ];
 
 const kanbanTasks: Task[] = [
@@ -153,12 +228,18 @@ const kanbanTasks: Task[] = [
 ];
 
 const packageFiles: Record<string, string> = {
-  "COMPANY.md": "---\nname: Paperclip Storybook\nkind: company\n---\nFixture company package for UI review.",
-  "agents/codexcoder/AGENTS.md": "---\nname: CodexCoder\n---\nShips product UI and verifies changes.",
-  "agents/qachecker/AGENTS.md": "---\nname: QAChecker\n---\nReviews browser behavior and acceptance criteria.",
-  "projects/board-ui/PROJECT.md": "---\ntitle: Board UI\nstatus: in_progress\n---\nStorybook and operator control-plane surfaces.",
-  "tasks/PAP-1641.md": "---\ntitle: Create super-detailed storybooks\npriority: high\n---\nParent task for Storybook coverage.",
-  "tasks/PAP-1677.md": "---\ntitle: Data Visualization & Misc stories\npriority: medium\n---\nFixture task for this story file.",
+  "COMPANY.md":
+    "---\nname: Paperclip Storybook\nkind: company\n---\nFixture company package for UI review.",
+  "agents/codexcoder/AGENTS.md":
+    "---\nname: CodexCoder\n---\nShips product UI and verifies changes.",
+  "agents/qachecker/AGENTS.md":
+    "---\nname: QAChecker\n---\nReviews browser behavior and acceptance criteria.",
+  "projects/board-ui/PROJECT.md":
+    "---\ntitle: Board UI\nstatus: in_progress\n---\nStorybook and operator control-plane surfaces.",
+  "tasks/PAP-1641.md":
+    "---\ntitle: Create super-detailed storybooks\npriority: high\n---\nParent task for Storybook coverage.",
+  "tasks/PAP-1677.md":
+    "---\ntitle: Data Visualization & Misc stories\npriority: medium\n---\nFixture task for this story file.",
 };
 
 const actionMap = new Map([
@@ -174,9 +255,17 @@ function ActivityChartsMatrix({ empty = false }: { empty?: boolean }) {
 
   return (
     <StoryShell>
-      <Section eyebrow="ActivityCharts" title={empty ? "Empty activity timelines" : "Two-week activity timelines"}>
+      <Section
+        eyebrow="ActivityCharts"
+        title={
+          empty ? "Empty activity timelines" : "Two-week activity timelines"
+        }
+      >
         <div className="grid gap-4 md:grid-cols-2">
-          <ChartCard title="Run activity" subtitle="Succeeded, failed, and in-flight executions">
+          <ChartCard
+            title="Run activity"
+            subtitle="Succeeded, failed, and in-flight executions"
+          >
             <RunActivityChart runs={runs} />
           </ChartCard>
           <ChartCard title="Success rate" subtitle="Daily completion ratio">
@@ -185,7 +274,10 @@ function ActivityChartsMatrix({ empty = false }: { empty?: boolean }) {
           <ChartCard title="Task priority" subtitle="Created tasks by urgency">
             <PriorityChart tasks={tasks} />
           </ChartCard>
-          <ChartCard title="Task status" subtitle="Created tasks by workflow state">
+          <ChartCard
+            title="Task status"
+            subtitle="Created tasks by workflow state"
+          >
             <TaskStatusChart tasks={tasks} />
           </ChartCard>
         </div>
@@ -196,11 +288,25 @@ function ActivityChartsMatrix({ empty = false }: { empty?: boolean }) {
 
 function KanbanBoardDemo({ empty = false }: { empty?: boolean }) {
   const tasks: Task[] = empty ? [] : kanbanTasks;
-  const liveTaskIds = useMemo(() => new Set(["dddddddd-dddd-4ddd-8ddd-ddddddddd001", "dddddddd-dddd-4ddd-8ddd-ddddddddd016"]), []);
+  const liveTaskIds = useMemo(
+    () =>
+      new Set([
+        "dddddddd-dddd-4ddd-8ddd-ddddddddd001",
+        "dddddddd-dddd-4ddd-8ddd-ddddddddd016",
+      ]),
+    [],
+  );
 
   return (
     <StoryShell>
-      <Section eyebrow="KanbanBoard" title={empty ? "Collapsed empty workflow columns" : "Read-only task cards by status"}>
+      <Section
+        eyebrow="KanbanBoard"
+        title={
+          empty
+            ? "Collapsed empty workflow columns"
+            : "Read-only task cards by status"
+        }
+      >
         <KanbanBoard
           tasks={tasks}
           agents={storybookAgents}
@@ -225,11 +331,18 @@ function FilterBarDemo({ empty = false }: { empty?: boolean }) {
 
   return (
     <StoryShell>
-      <Section eyebrow="FilterBar" title={empty ? "No active filters" : "Active removable filter chips"}>
+      <Section
+        eyebrow="FilterBar"
+        title={empty ? "No active filters" : "Active removable filter chips"}
+      >
         <div className="rounded-lg border border-dashed border-border bg-background/70 p-4">
           <FilterBar
             filters={filters}
-            onRemove={(key) => setFilters((current) => current.filter((filter) => filter.key !== key))}
+            onRemove={(key) =>
+              setFilters((current) =>
+                current.filter((filter) => filter.key !== key),
+              )
+            }
             onClear={() => setFilters([])}
           />
           {filters.length === 0 && (
@@ -244,15 +357,30 @@ function FilterBarDemo({ empty = false }: { empty?: boolean }) {
   );
 }
 
-function LiveRunWidgetStory({ empty = false, loading = false }: { empty?: boolean; loading?: boolean }) {
+function LiveRunWidgetStory({
+  empty = false,
+  loading = false,
+}: {
+  empty?: boolean;
+  loading?: boolean;
+}) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
     if (loading) return;
-    queryClient.setQueryData(queryKeys.tasks.runs(primaryTaskId, ["queued", "scheduled_retry", "running"]), {
-      items: empty ? [] : storybookTaskRuns.filter((run) => run.status === "running"),
-      nextCursor: null,
-    });
+    queryClient.setQueryData(
+      queryKeys.tasks.runs(primaryTaskId, [
+        "queued",
+        "scheduled_retry",
+        "running",
+      ]),
+      {
+        items: empty
+          ? []
+          : storybookTaskRuns.filter((run) => run.status === "running"),
+        nextCursor: null,
+      },
+    );
   }, [empty, loading, queryClient]);
 
   if (loading) {
@@ -270,7 +398,10 @@ function LiveRunWidgetStory({ empty = false, loading = false }: { empty?: boolea
 
   return (
     <StoryShell>
-      <Section eyebrow="LiveRunWidget" title={empty ? "No active run" : "Streaming run indicator"}>
+      <Section
+        eyebrow="LiveRunWidget"
+        title={empty ? "No active run" : "Streaming run indicator"}
+      >
         <LiveRunWidget
           companyId="11111111-1111-4111-8111-111111111111"
           taskId={primaryTaskId}
@@ -286,13 +417,12 @@ function LiveRunWidgetStory({ empty = false, loading = false }: { empty?: boolea
   );
 }
 
-function OpenOnboardingOnMount({ initialStep }: { initialStep: 1 | 2 }) {
+function OpenOnboardingOnMount() {
   const { openOnboarding } = useDialog();
-  const queryClient = useQueryClient();
 
   useEffect(() => {
-    openOnboarding(initialStep === 1 ? { initialStep } : { initialStep, companyId });
-  }, [initialStep, openOnboarding, queryClient]);
+    openOnboarding();
+  }, [openOnboarding]);
 
   return <OnboardingWizard />;
 }
@@ -303,9 +433,13 @@ function FileTreeDemo({ empty = false }: { empty?: boolean }) {
     [empty],
   );
   const allFilePaths = useMemo(() => collectAllPaths(nodes, "file"), [nodes]);
-  const [expandedDirs, setExpandedDirs] = useState(() => collectAllPaths(nodes, "dir"));
+  const [expandedDirs, setExpandedDirs] = useState(() =>
+    collectAllPaths(nodes, "dir"),
+  );
   const [checkedFiles, setCheckedFiles] = useState(() => allFilePaths);
-  const [selectedFile, setSelectedFile] = useState<string | null>(empty ? null : "tasks/PAP-1677.md");
+  const [selectedFile, setSelectedFile] = useState<string | null>(
+    empty ? null : "tasks/PAP-1677.md",
+  );
 
   useEffect(() => {
     setExpandedDirs(collectAllPaths(nodes, "dir"));
@@ -313,8 +447,12 @@ function FileTreeDemo({ empty = false }: { empty?: boolean }) {
     setSelectedFile(empty ? null : "tasks/PAP-1677.md");
   }, [allFilePaths, empty, nodes]);
 
-  const selectedContent = selectedFile ? packageFiles[selectedFile] ?? "" : "";
-  const frontmatter = selectedContent ? parseFrontmatter(selectedContent) : null;
+  const selectedContent = selectedFile
+    ? (packageFiles[selectedFile] ?? "")
+    : "";
+  const frontmatter = selectedContent
+    ? parseFrontmatter(selectedContent)
+    : null;
 
   function toggleDir(path: string) {
     setExpandedDirs((current) => {
@@ -343,7 +481,12 @@ function FileTreeDemo({ empty = false }: { empty?: boolean }) {
 
   return (
     <StoryShell>
-      <Section eyebrow="FileTree" title={empty ? "Empty package export" : "Selectable company package tree"}>
+      <Section
+        eyebrow="FileTree"
+        title={
+          empty ? "Empty package export" : "Selectable company package tree"
+        }
+      >
         {empty ? (
           <div className="rounded-lg border border-dashed border-border bg-background/70 p-6 text-sm text-muted-foreground">
             No files are included in this package preview.
@@ -378,15 +521,25 @@ function FileTreeDemo({ empty = false }: { empty?: boolean }) {
                   <FileCode2 className="h-4 w-4" />
                   {selectedFile}
                 </CardTitle>
-                <CardDescription>Frontmatter and markdown body parsed from the selected package file.</CardDescription>
+                <CardDescription>
+                  Frontmatter and markdown body parsed from the selected package
+                  file.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {frontmatter ? (
                   <div className="grid gap-2 sm:grid-cols-2">
                     {Object.entries(frontmatter.data).map(([key, value]) => (
-                      <div key={key} className="rounded-md border border-border bg-background/70 p-2">
-                        <div className="text-[10px] uppercase text-muted-foreground">{key}</div>
-                        <div className="mt-1 text-sm">{Array.isArray(value) ? value.join(", ") : value}</div>
+                      <div
+                        key={key}
+                        className="rounded-md border border-border bg-background/70 p-2"
+                      >
+                        <div className="text-[10px] uppercase text-muted-foreground">
+                          {key}
+                        </div>
+                        <div className="mt-1 text-sm">
+                          {Array.isArray(value) ? value.join(", ") : value}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -445,7 +598,10 @@ function EntityRowsDemo({ empty = false }: { empty?: boolean }) {
 
   return (
     <StoryShell>
-      <Section eyebrow="EntityRow" title={empty ? "Empty list container" : "Generic list rows"}>
+      <Section
+        eyebrow="EntityRow"
+        title={empty ? "Empty list container" : "Generic list rows"}
+      >
         <div className="overflow-hidden rounded-lg border border-border bg-background/70">
           {rows.map((row) => (
             <EntityRow
@@ -456,17 +612,23 @@ function EntityRowsDemo({ empty = false }: { empty?: boolean }) {
               subtitle={row.subtitle}
               trailing={row.trailing}
               selected={row.selected}
-              linkOptions={row.id === "task" ? {
-                to: "/$companyId/tasks/$taskNumber",
-                params: {
-                  companyId: "11111111-1111-4111-8111-111111111111",
-                  taskNumber: "1677",
-                },
-              } : undefined}
+              linkOptions={
+                row.id === "task"
+                  ? {
+                      to: "/$companyId/tasks/$taskNumber",
+                      params: {
+                        companyId: "11111111-1111-4111-8111-111111111111",
+                        taskNumber: "1677",
+                      },
+                    }
+                  : undefined
+              }
             />
           ))}
           {rows.length === 0 && (
-            <div className="p-6 text-sm text-muted-foreground">No entities match this view.</div>
+            <div className="p-6 text-sm text-muted-foreground">
+              No entities match this view.
+            </div>
           )}
         </div>
       </Section>
@@ -479,7 +641,10 @@ function SwipeToArchiveDemo({ disabled = false }: { disabled?: boolean }) {
 
   return (
     <StoryShell>
-      <Section eyebrow="SwipeToArchive" title={disabled ? "Disabled mobile gesture" : "Mobile archive gesture"}>
+      <Section
+        eyebrow="SwipeToArchive"
+        title={disabled ? "Disabled mobile gesture" : "Mobile archive gesture"}
+      >
         <div className="mx-auto w-full max-w-sm overflow-hidden rounded-2xl border border-border bg-background shadow-sm">
           <div className="border-b border-border px-4 py-3 text-xs uppercase tracking-wide text-muted-foreground">
             Inbox
@@ -499,7 +664,11 @@ function SwipeToArchiveDemo({ disabled = false }: { disabled?: boolean }) {
                 leading={<Play className="h-4 w-4 text-cyan-600" />}
                 identifier="PAP-1677"
                 title="Storybook: Data Visualization & Misc stories"
-                subtitle={disabled ? "Gesture disabled while review is locked" : "Swipe left on touch devices to archive"}
+                subtitle={
+                  disabled
+                    ? "Gesture disabled while review is locked"
+                    : "Swipe left on touch devices to archive"
+                }
                 trailing={<Badge variant="outline">mobile</Badge>}
               />
             </SwipeToArchive>
@@ -525,11 +694,19 @@ function CompanyPatternIconMatrix() {
     { name: "Launch Ops", color: "#c2410c" },
     { name: "Atlas Finance", color: "#7c3aed" },
   ];
-  const sizes = ["h-8 w-8 text-xs", "h-11 w-11 text-base", "h-16 w-16 text-xl", "h-24 w-24 text-3xl"];
+  const sizes = [
+    "h-8 w-8 text-xs",
+    "h-11 w-11 text-base",
+    "h-16 w-16 text-xl",
+    "h-24 w-24 text-3xl",
+  ];
 
   return (
     <StoryShell>
-      <Section eyebrow="CompanyPatternIcon" title="Generated company pattern icons by size">
+      <Section
+        eyebrow="CompanyPatternIcon"
+        title="Generated company pattern icons by size"
+      >
         <div className="grid gap-4 md:grid-cols-2">
           {companies.map((company) => (
             <Card key={company.name} className="shadow-none">
@@ -558,7 +735,14 @@ function CompanyPatternIconMatrix() {
 function AsciiArtAnimationDemo({ loading = false }: { loading?: boolean }) {
   return (
     <StoryShell>
-      <Section eyebrow="AsciiArtAnimation" title={loading ? "Loading b6000000-0000-4000-8000-000000000001 surface" : "Animated ASCII paperclip field"}>
+      <Section
+        eyebrow="AsciiArtAnimation"
+        title={
+          loading
+            ? "Loading b6000000-0000-4000-8000-000000000001 surface"
+            : "Animated ASCII paperclip field"
+        }
+      >
         <div className="h-[360px] overflow-hidden rounded-xl border border-border bg-background">
           {loading ? (
             <div className="flex h-full items-center justify-center gap-3 text-sm text-muted-foreground">
@@ -588,7 +772,10 @@ function PageSkeletonMatrix() {
 
   return (
     <StoryShell>
-      <Section eyebrow="PageSkeleton" title="Loading skeletons for page layouts">
+      <Section
+        eyebrow="PageSkeleton"
+        title="Loading skeletons for page layouts"
+      >
         <div className="grid gap-5 xl:grid-cols-2">
           {variants.map((variant) => (
             <Card key={variant} className="shadow-none">
@@ -671,12 +858,7 @@ export const LiveRunWidgetEmpty: Story = {
 
 export const OnboardingWizardCompanyStep: Story = {
   name: "OnboardingWizard / Company Step",
-  render: () => <OpenOnboardingOnMount initialStep={1} />,
-};
-
-export const OnboardingWizardAgentStep: Story = {
-  name: "OnboardingWizard / Agent Step",
-  render: () => <OpenOnboardingOnMount initialStep={2} />,
+  render: () => <OpenOnboardingOnMount />,
 };
 
 export const FileTreePopulated: Story = {
