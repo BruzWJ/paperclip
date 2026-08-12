@@ -8,6 +8,7 @@ import type { Agent } from "@paperclipai/shared";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { syncServerAdapters } from "@/adapters/registry";
 import { AgentConfigForm } from "./AgentConfigForm";
+import { defaultCreateValues } from "./agent-config-defaults";
 
 const mockAdaptersApi = vi.hoisted(() => ({
   list: vi.fn(),
@@ -55,8 +56,9 @@ vi.mock("./MarkdownEditor", () => ({
   ),
 }));
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
-  .IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const agent = {
   id: AGENT_ID,
@@ -102,9 +104,12 @@ function Harness({
   const handleSaveActionChange = useCallback((action: (() => void) | null) => {
     setSaveAction(() => action);
   }, []);
-  const handleCancelActionChange = useCallback((action: (() => void) | null) => {
-    setCancelAction(() => action);
-  }, []);
+  const handleCancelActionChange = useCallback(
+    (action: (() => void) | null) => {
+      setCancelAction(() => action);
+    },
+    [],
+  );
   harnessState = { dirty, saveAction, cancelAction };
   return (
     <AgentConfigForm
@@ -120,7 +125,21 @@ function Harness({
   );
 }
 
-describe("AgentConfigForm (edit mode)", () => {
+function CreateHarness() {
+  const [values, setValues] = useState({
+    ...defaultCreateValues,
+    adapterType: "missing-local-agent",
+  });
+  return (
+    <AgentConfigForm
+      mode="create"
+      values={values}
+      onChange={(patch) => setValues((current) => ({ ...current, ...patch }))}
+    />
+  );
+}
+
+describe("AgentConfigForm", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
 
@@ -143,7 +162,9 @@ describe("AgentConfigForm (edit mode)", () => {
     vi.clearAllMocks();
   });
 
-  function render(onSave: (patch: Record<string, unknown>) => void = () => undefined) {
+  function render(
+    onSave: (patch: Record<string, unknown>) => void = () => undefined,
+  ) {
     act(() => {
       root.render(
         <QueryClientProvider client={queryClient}>
@@ -237,6 +258,117 @@ describe("AgentConfigForm (edit mode)", () => {
             (button) => button.textContent === "Test Agent",
           ),
         ).toBe(true);
+      });
+    });
+  });
+
+  it("does not test a draft whose advertised required settings are absent", async () => {
+    mockAdaptersApi.list.mockResolvedValue([
+      {
+        type: "missing-local-agent",
+        label: "Available local agent",
+        modelsCount: 1,
+        loaded: true,
+        configOptions: [
+          {
+            id: "model",
+            label: "Model",
+            type: "select",
+            values: [{ label: "GPT-5.6", value: "gpt-5.6" }],
+          },
+        ],
+        capabilities: {
+          contractVersion: "acpx-runtime/v1",
+          runtimeControls: [],
+        },
+      },
+    ]);
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <CreateHarness />
+          </TooltipProvider>
+        </QueryClientProvider>,
+      );
+    });
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        const button = [...container.querySelectorAll("button")].find(
+          (candidate) => candidate.textContent === "Test Agent",
+        );
+        expect(button).toBeDefined();
+        expect(button!.disabled).toBe(true);
+        expect(container.textContent).toContain(
+          "Complete the required ACPX settings before testing: Model requires an exact value.",
+        );
+      });
+    });
+    expect(mockAdaptersApi.testConfiguration).not.toHaveBeenCalled();
+  });
+
+  it("materializes an advertised current value before testing it", async () => {
+    mockAdaptersApi.list.mockResolvedValue([
+      {
+        type: "missing-local-agent",
+        label: "Available local agent",
+        modelsCount: 1,
+        loaded: true,
+        configOptions: [
+          {
+            id: "model",
+            label: "Model",
+            type: "select",
+            currentValue: "gpt-5.6",
+            values: [{ label: "GPT-5.6", value: "gpt-5.6" }],
+          },
+        ],
+        capabilities: {
+          contractVersion: "acpx-runtime/v1",
+          runtimeControls: [],
+        },
+      },
+    ]);
+    mockAdaptersApi.testConfiguration.mockResolvedValue({
+      status: "ready",
+      adapterType: "missing-local-agent",
+      runtimeControls: [],
+      testedAt: "2026-08-12T20:00:00.000Z",
+    });
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <CreateHarness />
+          </TooltipProvider>
+        </QueryClientProvider>,
+      );
+    });
+
+    let button: HTMLButtonElement | undefined;
+    await act(async () => {
+      await vi.waitFor(() => {
+        button = [...container.querySelectorAll("button")].find(
+          (candidate) => candidate.textContent === "Test Agent",
+        );
+        expect(button).toBeDefined();
+        expect(button!.disabled).toBe(false);
+        expect(
+          container.querySelector('[aria-label="Model"]')?.textContent,
+        ).toContain("GPT-5.6");
+      });
+    });
+    act(() => button!.click());
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(mockAdaptersApi.testConfiguration).toHaveBeenCalledWith(
+          COMPANY_ID,
+          "missing-local-agent",
+          { adapterConfig: { model: "gpt-5.6" } },
+        );
       });
     });
   });

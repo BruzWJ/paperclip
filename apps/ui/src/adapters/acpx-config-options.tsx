@@ -200,14 +200,9 @@ export function AcpxConfigOptions({
 
   function readValue(option: AcpAdapterConfigOption): unknown {
     if (isCreate) {
-      return values?.adapterSchemaValues?.[option.id]
-        ?? (applySchemaDefaults ? initialValue(option) : undefined);
+      return values?.adapterSchemaValues?.[option.id];
     }
-    return eff(
-      "adapterConfig",
-      option.id,
-      config[option.id] ?? initialValue(option),
-    );
+    return eff("adapterConfig", option.id, config[option.id]);
   }
 
   function writeValue(option: AcpAdapterConfigOption, value: string | boolean) {

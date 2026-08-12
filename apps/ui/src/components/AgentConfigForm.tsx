@@ -30,7 +30,11 @@ import { MarkdownEditor } from "./MarkdownEditor";
 import { ReportsToPicker } from "./ReportsToPicker";
 import { listAdapterOptions } from "../adapters/metadata";
 import { useAdapterCatalogSyncState } from "../adapters/use-adapter-catalog";
-import { buildAgentUpdatePatch, type AgentConfigOverlay } from "../lib/agent-config-patch";
+import { adapterConfigOptionErrors } from "../adapters/acpx-config-options";
+import {
+  buildAgentUpdatePatch,
+  type AgentConfigOverlay,
+} from "../lib/agent-config-patch";
 import { publicRuntimeMessage } from "../lib/public-runtime-message";
 import {
   RuntimeAgentConfigurationFields,
@@ -101,7 +105,13 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const { adapters: admittedAdapters } = useAdapterCatalogSyncState();
 
   const uploadMarkdownImage = useMutation({
-    mutationFn: async ({ file, namespace }: { file: File; namespace: string }) => {
+    mutationFn: async ({
+      file,
+      namespace,
+    }: {
+      file: File;
+      namespace: string;
+    }) => {
       if (!companyId) throw new Error("Select a company to upload images");
       return assetsApi.uploadImage(companyId, file, namespace);
     },
@@ -169,7 +179,15 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       props.onSaveActionChange?.(stableSaveAction);
       props.onCancelActionChange?.(stableCancelAction);
     }
-  }, [isCreate, isDirty, props.onDirtyChange, props.onSaveActionChange, props.onCancelActionChange, stableSaveAction, stableCancelAction]);
+  }, [
+    isCreate,
+    isDirty,
+    props.onDirtyChange,
+    props.onSaveActionChange,
+    props.onCancelActionChange,
+    stableSaveAction,
+    stableCancelAction,
+  ]);
 
   useEffect(() => {
     if (isCreate) return;
@@ -178,19 +196,26 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       props.onCancelActionChange?.(null);
       props.onDirtyChange?.(false);
     };
-  }, [isCreate, props.onDirtyChange, props.onSaveActionChange, props.onCancelActionChange]);
+  }, [
+    isCreate,
+    props.onDirtyChange,
+    props.onSaveActionChange,
+    props.onCancelActionChange,
+  ]);
 
   const currentRevisionQuery = useQuery({
     queryKey: editProps
       ? queryKeys.agents.currentAdapterConfigRevisionRoot(editProps.agent.id)
       : ["agents", "none", "adapter-config-revision-current"],
-    queryFn: () => agentsApi.getCurrentAdapterConfigRevision(editProps!.agent.id),
+    queryFn: () =>
+      agentsApi.getCurrentAdapterConfigRevision(editProps!.agent.id),
     enabled:
-      editProps !== null
-      && editProps.agent.currentAdapterConfigRevisionId !== null,
+      editProps !== null &&
+      editProps.agent.currentAdapterConfigRevisionId !== null,
   });
   const currentRevision = !isCreate
-    ? currentRevisionQuery.data as AgentAdapterConfigRevision | null | undefined
+    ? (currentRevisionQuery.data as
+        AgentAdapterConfigRevision | null | undefined)
     : null;
   const config = currentRevision
     ? Object.fromEntries(
@@ -202,15 +227,16 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
   const adapterType = isCreate
     ? props.values.adapterType
-    : overlay.adapterType
-      ?? currentRevision?.acpConfiguration.launchProfile.registryName
-      ?? "";
+    : (overlay.adapterType ??
+      currentRevision?.acpConfiguration.launchProfile.registryName ??
+      "");
   const hasAdapterType =
     adapterType.length > 0 && adapterType === adapterType.trim();
 
   const uiAdapter = findUIAdapter(adapterType);
   const catalogAdapter = useMemo(
-    () => admittedAdapters.find((adapter) => adapter.type === adapterType) ?? null,
+    () =>
+      admittedAdapters.find((adapter) => adapter.type === adapterType) ?? null,
     [adapterType, admittedAdapters],
   );
   const val = isCreate ? props.values : null;
@@ -219,7 +245,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     : null;
 
   const { data: companyAgents = [] } = useQuery({
-    queryKey: companyId ? queryKeys.agents.list(companyId) : ["agents", "none", "list"],
+    queryKey: companyId
+      ? queryKeys.agents.list(companyId)
+      : ["agents", "none", "list"],
     queryFn: () => agentsApi.list(companyId!),
     enabled: Boolean(!isCreate && companyId),
   });
@@ -230,8 +258,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
           editProps.agent.companyId,
         )
       : ["agents", "none", "runtime-configuration"],
-    queryFn: () =>
-      agentsApi.getRuntimeConfiguration(editProps!.agent.id),
+    queryFn: () => agentsApi.getRuntimeConfiguration(editProps!.agent.id),
     enabled: !isCreate,
     select: (snapshot): RuntimeAgentConfigurationValues => {
       const defaults = createEmptyRuntimeAgentConfigurationValues();
@@ -246,13 +273,17 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     },
   });
   const runtimeAccess = runtimeAccessQuery.data ?? null;
-  const effectiveRuntimeAccess = Object.keys(overlay.runtime).length > 0
-    ? overlay.runtime as RuntimeAgentConfigurationValues
-    : runtimeAccess;
+  const effectiveRuntimeAccess =
+    Object.keys(overlay.runtime).length > 0
+      ? (overlay.runtime as RuntimeAgentConfigurationValues)
+      : runtimeAccess;
 
-  const markRuntimeAccess = useCallback((runtime: RuntimeAgentConfigurationValues) => {
-    setOverlay((prev) => ({ ...prev, runtime }));
-  }, []);
+  const markRuntimeAccess = useCallback(
+    (runtime: RuntimeAgentConfigurationValues) => {
+      setOverlay((prev) => ({ ...prev, runtime }));
+    },
+    [],
+  );
 
   /** Props passed to adapter-specific config field components */
   const adapterFieldProps = {
@@ -260,10 +291,16 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     isCreate,
     adapterType,
     values: isCreate ? props.values : null,
-    set: isCreate ? (patch: Partial<CreateConfigValues>) => props.onChange(patch) : null,
+    set: isCreate
+      ? (patch: Partial<CreateConfigValues>) => props.onChange(patch)
+      : null,
     config,
     eff: eff as <T>(group: "adapterConfig", field: string, original: T) => T,
-    mark: mark as (group: "adapterConfig", field: string, value: unknown) => void,
+    mark: mark as (
+      group: "adapterConfig",
+      field: string,
+      value: unknown,
+    ) => void,
     applySchemaDefaults: props.applyAdapterSchemaDefaults ?? true,
   };
 
@@ -283,10 +320,10 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       const nextAdapterConfig = patch.adapterConfig;
       return {
         adapterConfig:
-          typeof nextAdapterConfig === "object"
-          && nextAdapterConfig !== null
-          && !Array.isArray(nextAdapterConfig)
-            ? nextAdapterConfig as Record<string, string | boolean>
+          typeof nextAdapterConfig === "object" &&
+          nextAdapterConfig !== null &&
+          !Array.isArray(nextAdapterConfig)
+            ? (nextAdapterConfig as Record<string, string | boolean>)
             : { ...config },
         error: null,
       };
@@ -301,14 +338,15 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     }
   }, [config, hasAdapterType, isCreate, overlay, props, uiAdapter, val]);
   const draftTestFingerprint = useMemo(
-    () => draftTestConfiguration.adapterConfig === null
-      ? null
-      : JSON.stringify([
-          companyId,
-          isCreate ? "create" : props.agent.id,
-          adapterType,
-          draftTestConfiguration.adapterConfig,
-        ]),
+    () =>
+      draftTestConfiguration.adapterConfig === null
+        ? null
+        : JSON.stringify([
+            companyId,
+            isCreate ? "create" : props.agent.id,
+            adapterType,
+            draftTestConfiguration.adapterConfig,
+          ]),
     [
       adapterType,
       draftTestConfiguration.adapterConfig,
@@ -337,11 +375,10 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       adapterType: string;
       adapterConfig: Record<string, string | boolean>;
       contextToken: object;
-    }) => await adaptersApi.testConfiguration(
-      input.companyId,
-      input.adapterType,
-      { adapterConfig: input.adapterConfig },
-    ),
+    }) =>
+      await adaptersApi.testConfiguration(input.companyId, input.adapterType, {
+        adapterConfig: input.adapterConfig,
+      }),
     onSuccess: (result, input) => {
       if (currentDraftTestContextToken.current !== input.contextToken) return;
       setDraftTestFeedback({
@@ -357,7 +394,10 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         result: null,
         error:
           error instanceof Error
-            ? publicRuntimeMessage(error.message, "Agent configuration test failed.")
+            ? publicRuntimeMessage(
+                error.message,
+                "Agent configuration test failed.",
+              )
             : "Agent configuration test failed.",
       });
     },
@@ -367,21 +407,40 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       ? draftTestFeedback
       : null;
   const visibleDraftTestResult = visibleDraftTestFeedback?.result ?? null;
+  const draftTestFieldErrors = useMemo(
+    () =>
+      catalogAdapter && draftTestConfiguration.adapterConfig
+        ? adapterConfigOptionErrors(
+            catalogAdapter.configOptions,
+            draftTestConfiguration.adapterConfig,
+          )
+        : [],
+    [catalogAdapter, draftTestConfiguration.adapterConfig],
+  );
+  const draftTestValidationError =
+    draftTestFieldErrors.length > 0
+      ? `Complete the required ACPX settings before testing: ${draftTestFieldErrors
+          .map(({ message }) => message)
+          .join(" ")}`
+      : null;
   const draftTestDisabled =
-    !companyId
-    || !hasAdapterType
-    || draftTestConfiguration.adapterConfig === null
-    || draftTestFingerprint === null
-    || testDraftConfiguration.isPending
-    || isSavePending;
+    !companyId ||
+    !hasAdapterType ||
+    !catalogAdapter ||
+    draftTestConfiguration.adapterConfig === null ||
+    draftTestFieldErrors.length > 0 ||
+    draftTestFingerprint === null ||
+    testDraftConfiguration.isPending ||
+    isSavePending;
 
   function handleTestAgent() {
     if (
-      draftTestDisabled
-      || !companyId
-      || draftTestConfiguration.adapterConfig === null
-      || draftTestFingerprint === null
-    ) return;
+      draftTestDisabled ||
+      !companyId ||
+      draftTestConfiguration.adapterConfig === null ||
+      draftTestFingerprint === null
+    )
+      return;
     setDraftTestFeedback(null);
     testDraftConfiguration.mutate({
       companyId: companyId,
@@ -397,7 +456,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       {isDirty && !props.hideInlineSave && (
         <div className="sticky top-0 z-10 flex items-center justify-end px-4 py-2 bg-background/90 backdrop-blur-sm border-b border-primary/20">
           <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground">Unsaved changes</span>
+            <span className="text-xs text-muted-foreground">
+              Unsaved changes
+            </span>
             <Button
               size="sm"
               onClick={handleSave}
@@ -412,11 +473,20 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       {/* ---- Identity (edit only) ---- */}
       {!isCreate && (
         <div className={cn(!cards && "border-b border-border")}>
-          {cards
-            ? <h3 className="text-sm font-medium mb-3">Identity</h3>
-            : <div className="px-4 py-2 text-xs font-medium text-muted-foreground">Identity</div>
-          }
-          <div className={cn(cards ? "border border-border rounded-lg p-4 space-y-3" : "px-4 pb-3 space-y-3")}>
+          {cards ? (
+            <h3 className="text-sm font-medium mb-3">Identity</h3>
+          ) : (
+            <div className="px-4 py-2 text-xs font-medium text-muted-foreground">
+              Identity
+            </div>
+          )}
+          <div
+            className={cn(
+              cards
+                ? "border border-border rounded-lg p-4 space-y-3"
+                : "px-4 pb-3 space-y-3",
+            )}
+          >
             <Field label="Name" hint={help.name}>
               <DraftInput
                 value={eff("identity", "name", props.agent.name)}
@@ -438,7 +508,11 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             <Field label="Reports to" hint={help.reportsTo}>
               <ReportsToPicker
                 agents={companyAgents}
-                value={eff("identity", "reportsTo", props.agent.reportsTo ?? null)}
+                value={eff(
+                  "identity",
+                  "reportsTo",
+                  props.agent.reportsTo ?? null,
+                )}
                 onChange={(id) => mark("identity", "reportsTo", id)}
                 excludeAgentIds={[props.agent.id]}
                 chooseLabel="Choose manager…"
@@ -446,11 +520,22 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             </Field>
             <Field label="Capabilities" hint={help.capabilities}>
               <div aria-busy={uploadMarkdownImage.isPending}>
-                <fieldset disabled={uploadMarkdownImage.isPending} className="min-w-0 border-0 p-0">
+                <fieldset
+                  disabled={uploadMarkdownImage.isPending}
+                  className="min-w-0 border-0 p-0"
+                >
                   <legend className="sr-only">Capabilities</legend>
                   <MarkdownEditor
-                    value={eff("identity", "capabilities", props.agent.capabilities ?? "") ?? ""}
-                    onChange={(v) => mark("identity", "capabilities", v || null)}
+                    value={
+                      eff(
+                        "identity",
+                        "capabilities",
+                        props.agent.capabilities ?? "",
+                      ) ?? ""
+                    }
+                    onChange={(v) =>
+                      mark("identity", "capabilities", v || null)
+                    }
                     placeholder="Describe what this agent can do..."
                     contentClassName="min-h-(--sz-44px) text-sm font-mono"
                     readOnly={uploadMarkdownImage.isPending}
@@ -464,7 +549,10 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   />
                 </fieldset>
                 {uploadMarkdownImage.isPending ? (
-                  <p role="status" className="mt-1 text-xs text-muted-foreground">
+                  <p
+                    role="status"
+                    className="mt-1 text-xs text-muted-foreground"
+                  >
                     Uploading image…
                   </p>
                 ) : null}
@@ -472,8 +560,16 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             </Field>
             <Field label="Instructions" hint={help.instruction}>
               <DraftTextarea
-                value={eff("identity", "instruction", props.agent.instruction ?? "") ?? ""}
-                onCommit={(v) => mark("identity", "instruction", v.trim() ? v : null)}
+                value={
+                  eff(
+                    "identity",
+                    "instruction",
+                    props.agent.instruction ?? "",
+                  ) ?? ""
+                }
+                onCommit={(v) =>
+                  mark("identity", "instruction", v.trim() ? v : null)
+                }
                 immediate
                 minRows={4}
                 placeholder="Describe this agent's role, priorities, and durable operating guidance..."
@@ -486,7 +582,13 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       {/* ---- Runtime access (edit only) ---- */}
       {!isCreate && (
         <div className={cn(!cards && "border-b border-border")}>
-          <div className={cn(cards ? "border border-border rounded-lg p-4 space-y-3" : "px-4 pb-3 space-y-3")}>
+          <div
+            className={cn(
+              cards
+                ? "border border-border rounded-lg p-4 space-y-3"
+                : "px-4 pb-3 space-y-3",
+            )}
+          >
             {runtimeAccessQuery.isError ? (
               <p role="alert" className="text-xs text-destructive">
                 Runtime access could not be loaded. Refresh the page and try
@@ -512,14 +614,34 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       )}
 
       {/* ---- Adapter ---- */}
-      <div className={cn(!cards && (isCreate ? "border-t border-border" : "border-b border-border"))}>
-        <div className={cn(cards ? "flex items-center justify-between mb-3" : "px-4 py-2 flex items-center justify-between gap-2")}>
-          {cards
-            ? <h3 className="text-sm font-medium">Adapter</h3>
-            : <span className="text-xs font-medium text-muted-foreground">Adapter</span>
-          }
+      <div
+        className={cn(
+          !cards &&
+            (isCreate ? "border-t border-border" : "border-b border-border"),
+        )}
+      >
+        <div
+          className={cn(
+            cards
+              ? "flex items-center justify-between mb-3"
+              : "px-4 py-2 flex items-center justify-between gap-2",
+          )}
+        >
+          {cards ? (
+            <h3 className="text-sm font-medium">Adapter</h3>
+          ) : (
+            <span className="text-xs font-medium text-muted-foreground">
+              Adapter
+            </span>
+          )}
         </div>
-        <div className={cn(cards ? "border border-border rounded-lg p-4 space-y-3" : "px-4 pb-3 space-y-3")}>
+        <div
+          className={cn(
+            cards
+              ? "border border-border rounded-lg p-4 space-y-3"
+              : "px-4 pb-3 space-y-3",
+          )}
+        >
           {showAdapterTypeField && (
             <Field label="Adapter type" hint={help.adapterType}>
               <AdapterTypeDropdown
@@ -527,8 +649,12 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 onChange={(t) => {
                   if (isCreate) {
                     // Reset all adapter-specific fields to defaults when switching adapter type
-                    const { adapterType: _at, ...defaults } = defaultCreateValues;
-                    const nextValues: CreateConfigValues = { ...defaults, adapterType: t };
+                    const { adapterType: _at, ...defaults } =
+                      defaultCreateValues;
+                    const nextValues: CreateConfigValues = {
+                      ...defaults,
+                      adapterType: t,
+                    };
                     set!(nextValues);
                   } else {
                     setOverlay((prev) => ({
@@ -554,8 +680,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
           {!hasAdapterType && (
             <p className="text-xs text-muted-foreground">
-                Nothing to show yet. Select an adapter to create this agent's
-                first immutable configuration revision.
+              Nothing to show yet. Select an adapter to create this agent's
+              first immutable configuration revision.
             </p>
           )}
 
@@ -564,8 +690,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               <div className="flex items-start justify-between gap-3">
                 <p className="text-xs text-muted-foreground">
                   Test the exact unsaved model and other runtime settings in a
-                  disposable no-prompt session. This does not save the agent
-                  or verify local execution readiness.
+                  disposable no-prompt session. This does not save the agent or
+                  verify local execution readiness.
                 </p>
                 <Button
                   type="button"
@@ -575,14 +701,16 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   disabled={draftTestDisabled}
                   onClick={handleTestAgent}
                 >
-                  {testDraftConfiguration.isPending
-                    ? "Testing…"
-                    : "Test Agent"}
+                  {testDraftConfiguration.isPending ? "Testing…" : "Test Agent"}
                 </Button>
               </div>
               {draftTestConfiguration.error ? (
                 <p role="alert" className="text-xs text-destructive">
                   {draftTestConfiguration.error}
+                </p>
+              ) : draftTestValidationError ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {draftTestValidationError}
                 </p>
               ) : visibleDraftTestFeedback?.error ? (
                 <p role="alert" className="text-xs text-destructive">
@@ -599,11 +727,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               ) : null}
             </div>
           ) : null}
-
         </div>
-
       </div>
-
     </div>
   );
 }
@@ -626,7 +751,7 @@ export function AdapterTypeDropdown({
         <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-accent/50 transition-colors w-full justify-between">
           <span className={cn("truncate", !value && "text-muted-foreground")}>
             {value
-              ? findUIAdapter(value)?.label ?? value
+              ? (findUIAdapter(value)?.label ?? value)
               : "Select an adapter"}
           </span>
           <ChevronDown className="h-3 w-3 text-muted-foreground" />
